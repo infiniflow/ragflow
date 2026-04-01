@@ -16,6 +16,7 @@
 import json
 import os
 from pathlib import Path
+from uuid import uuid4
 
 import requests
 from configs import HOST_ADDRESS, VERSION
@@ -37,6 +38,7 @@ SYSTEM_APP_URL = f"/{VERSION}/system"
 LLM_APP_URL = f"/{VERSION}/llm"
 PLUGIN_APP_URL = f"/{VERSION}/plugin"
 SEARCHES_URL = f"/api/{VERSION}/searches"
+CHATS_URL = f"/api/{VERSION}/chats"
 
 
 def _http_debug_enabled():
@@ -161,6 +163,39 @@ def search_list(auth, params=None, *, headers=HEADERS):
 def search_rm(auth, search_id, *, headers=HEADERS):
     res = requests.delete(url=f"{HOST_ADDRESS}{SEARCHES_URL}/{search_id}", headers=headers, auth=auth)
     return res.json()
+
+
+# CHAT APP
+def create_chat(auth, payload=None, *, headers=HEADERS, data=None):
+    if payload is None:
+        payload = {}
+    res = requests.post(url=f"{HOST_ADDRESS}{CHATS_URL}", headers=headers, auth=auth, json=payload, data=data)
+    return res.json()
+
+
+def list_chats(auth, params=None, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{CHATS_URL}", headers=headers, auth=auth, params=params)
+    return res.json()
+
+
+def delete_chat(auth, chat_id, *, headers=HEADERS):
+    res = requests.delete(url=f"{HOST_ADDRESS}{CHATS_URL}/{chat_id}", headers=headers, auth=auth)
+    return res.json()
+
+
+def delete_chats(auth, payload=None, *, headers=HEADERS, data=None):
+    if payload is None:
+        payload = {"delete_all": True}
+    res = requests.delete(url=f"{HOST_ADDRESS}{CHATS_URL}", headers=headers, auth=auth, json=payload, data=data)
+    return res.json()
+
+
+def batch_create_chats(auth, num):
+    ids = []
+    for i in range(num):
+        res = create_chat(auth, {"name": f"chat_{uuid4().hex}_{i}"})
+        ids.append(res["data"]["id"])
+    return ids
 
 
 # KB APP
