@@ -255,32 +255,71 @@ export enum Hierarchy {
   H4 = '4',
   H5 = '5',
 }
-
+const rules = [
+  {
+    // levels: [
+    //   { expression: '^#[^#]' },
+    //   { expression: '^##[^#]' },
+    //   { expression: '^###[^#]' },
+    //   { expression: '^####[^#]' },
+    // ],
+    levels: [
+      { expression: '^#[^#]' },
+      { expression: '^##[^#]' },
+      { expression: '^###[^#]' },
+      { expression: '^####[^#]' },
+    ],
+  },
+  {
+    levels: [
+      { expression: '第[零一二三四五六七八九十百0-9]+(分?编|部分)' },
+      { expression: '第[零一二三四五六七八九十百0-9]+章' },
+      { expression: '第[零一二三四五六七八九十百0-9]+节' },
+      { expression: '第[零一二三四五六七八九十百0-9]+条' },
+      { expression: '[\\(（][零一二三四五六七八九十百]+[\\)）]' },
+    ],
+  },
+  {
+    levels: [
+      { expression: '第[0-9]+章' },
+      { expression: '第[0-9]+节' },
+      { expression: '[0-9]{,2}[\\. 、]' },
+      { expression: '[0-9]{,2}\\.[0-9]{,2}[^a-zA-Z/%~-]' },
+      { expression: '[0-9]{,2}\\.[0-9]{,2}\\.[0-9]{,2}' },
+    ],
+  },
+  {
+    levels: [
+      { expression: '第[零一二三四五六七八九十百0-9]+章' },
+      { expression: '第[零一二三四五六七八九十百0-9]+节' },
+      { expression: '[零一二三四五六七八九十百]+[ 、]' },
+      { expression: '[\\(（][零一二三四五六七八九十百]+[\\)）]' },
+      { expression: '[\\(（][0-9]{,2}[\\)）]' },
+    ],
+  },
+  {
+    levels: [
+      {
+        expression: 'PART (ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)',
+      },
+      { expression: 'Chapter (I+V?|VI*|XI|IX|X)' },
+      { expression: 'Section [0-9]+' },
+      { expression: 'Article [0-9]+' },
+    ],
+  },
+];
 export const initialTitleChunkerValues = {
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
   method: 'hierarchy',
   hierarchy: Hierarchy.H3,
-  rules: [
-    {
-      levels: [
-        { expression: '^#[^#]' },
-        { expression: '^##[^#]' },
-        { expression: '^###[^#]' },
-        { expression: '^####[^#]' },
-      ],
-    },
-  ],
+  rules: rules,
 };
 
 export const initialGroupValues = {
   method: 'group',
-  rules: [
-    {
-      levels: [{ expression: '' }],
-    },
-  ],
+  rules: rules,
 };
 
 export const initialExtractorValues = {
