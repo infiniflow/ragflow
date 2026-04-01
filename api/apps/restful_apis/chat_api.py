@@ -136,20 +136,20 @@ def _validate_rerank_id(rerank_id, tenant_id):
     return f"`rerank_id` {rerank_id} doesn't exist"
 
 
-def _validate_prompt_config(prompt_config):
-    for parameter in prompt_config.get("parameters", []):
-        if parameter.get("optional"):
-            continue
-        if prompt_config.get("system", "").find("{%s}" % parameter["key"]) < 0:
-            return f"Parameter '{parameter['key']}' is not used"
-    return None
+# def _validate_prompt_config(prompt_config):
+#     for parameter in prompt_config.get("parameters", []):
+#         if parameter.get("optional"):
+#             continue
+#         if prompt_config.get("system", "").find("{%s}" % parameter["key"]) < 0:
+#             return f"Parameter '{parameter['key']}' is not used"
+#     return None
 
 
 def _validate_dataset_ids(dataset_ids, tenant_id):
     if dataset_ids is None:
         return []
     if not isinstance(dataset_ids, list):
-        return f"`dataset_ids` should be a list."
+        return "`dataset_ids` should be a list."
 
     normalized_ids = [dataset_id for dataset_id in dataset_ids if dataset_id]
     kbs = []
@@ -221,9 +221,9 @@ async def create():
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
                 return get_data_error_result(message="`prompt_config` should be an object.")
-            err = _validate_prompt_config(req["prompt_config"])
-            if err:
-                return get_data_error_result(message=err)
+            # err = _validate_prompt_config(req["prompt_config"])
+            # if err:
+            #     return get_data_error_result(message=err)
 
         req.setdefault("kb_ids", [])
         req.setdefault("llm_id", tenant.llm_id)
@@ -238,9 +238,9 @@ async def create():
         req.setdefault("vector_similarity_weight", 0.3)
         req.setdefault("icon", "")
         _apply_prompt_defaults(req)
-        err = _validate_prompt_config(req["prompt_config"])
-        if err:
-            return get_data_error_result(message=err)
+        # err = _validate_prompt_config(req["prompt_config"])
+        # if err:
+        #     return get_data_error_result(message=err)
 
         req = ensure_tenant_model_id_for_params(current_user.id, req)
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
@@ -377,9 +377,9 @@ async def update_chat(chat_id):
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
                 return get_data_error_result(message="`prompt_config` should be an object.")
-            err = _validate_prompt_config(req["prompt_config"])
-            if err:
-                return get_data_error_result(message=err)
+            # err = _validate_prompt_config(req["prompt_config"])
+            # if err:
+            #     return get_data_error_result(message=err)
 
         prompt_config = req.get("prompt_config", {})
         if not prompt_config:
@@ -467,9 +467,9 @@ async def patch_chat(chat_id):
             prompt_config = deepcopy(current_chat.get("prompt_config", {}))
             prompt_config.update(req["prompt_config"])
             req["prompt_config"] = prompt_config
-            err = _validate_prompt_config(prompt_config)
-            if err:
-                return get_data_error_result(message=err)
+            # err = _validate_prompt_config(prompt_config)
+            # if err:
+            #     return get_data_error_result(message=err)
 
         if "llm_setting" in req:
             llm_setting = deepcopy(current_chat.get("llm_setting", {}))
