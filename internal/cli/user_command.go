@@ -941,3 +941,93 @@ func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
 
 	return &response, nil
 }
+
+// InsertDatasetFromFile inserts dataset chunks from a JSON file
+func (c *RAGFlowClient) InsertDatasetFromFile(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	filePath, ok := cmd.Params["file_path"].(string)
+	if !ok {
+		return nil, fmt.Errorf("file_path not provided")
+	}
+
+	payload := map[string]interface{}{
+		"file_path": filePath,
+	}
+
+	resp, err := c.HTTPClient.Request("POST", "/kb/insert_from_file", false, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert dataset from file: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to insert dataset from file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	code, ok := resJSON["code"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: code is not a number")
+	}
+
+	var result SimpleResponse
+	result.Code = int(code)
+	if result.Code == 0 {
+		result.Message = fmt.Sprintf("Success to insert dataset from file: %s", filePath)
+	} else {
+		result.Message = fmt.Sprintf("Failed to insert dataset from file: %v", resJSON)
+	}
+	result.Duration = 0
+	return &result, nil
+}
+
+// InsertMetadataFromFile inserts metadata from a JSON file
+func (c *RAGFlowClient) InsertMetadataFromFile(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	filePath, ok := cmd.Params["file_path"].(string)
+	if !ok {
+		return nil, fmt.Errorf("file_path not provided")
+	}
+
+	payload := map[string]interface{}{
+		"file_path": filePath,
+	}
+
+	resp, err := c.HTTPClient.Request("POST", "/tenant/insert_metadata_from_file", false, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert metadata from file: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to insert metadata from file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	code, ok := resJSON["code"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: code is not a number")
+	}
+
+	var result SimpleResponse
+	result.Code = int(code)
+	if result.Code == 0 {
+		result.Message = fmt.Sprintf("Success to insert metadata from file: %s", filePath)
+	} else {
+		result.Message = fmt.Sprintf("Failed to insert metadata from file: %v", resJSON)
+	}
+	result.Duration = 0
+	return &result, nil
+}
