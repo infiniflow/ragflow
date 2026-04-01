@@ -22,12 +22,20 @@ field of the referenced chunks to improve future retrieval quality.
 This feature is disabled by default. Enable it by setting the environment
 variable CHUNK_FEEDBACK_ENABLED=true.
 
-Weight adjustments are intentionally small (0.1) to prevent individual votes
-from having outsized impact on retrieval rankings.
+Weighting modes (CHUNK_FEEDBACK_WEIGHTING):
+- relevance (default): one small budget per feedback event is split across
+  cited chunks using retrieval scores (similarity / vector_similarity /
+  term_similarity) from the reference payload, so chunks that drove the answer
+  move more than weak tail context.
+- uniform: legacy behavior — each cited chunk receives the full increment or
+  decrement (stronger total effect when many chunks are cited).
+
+Budget per event is intentionally small (0.1) so rankings shift gradually.
 """
 import logging
+import math
 import os
-from typing import List
+from typing import List, Tuple
 
 from common.constants import PAGERANK_FLD
 from common import settings
@@ -37,11 +45,70 @@ from rag.nlp.search import index_name
 # Feature flag - disabled by default to prevent unintended side effects
 CHUNK_FEEDBACK_ENABLED = os.getenv("CHUNK_FEEDBACK_ENABLED", "false").lower() == "true"
 
+# relevance: fixed budget split by retrieval signals; uniform: delta per chunk
+CHUNK_FEEDBACK_WEIGHTING = os.getenv("CHUNK_FEEDBACK_WEIGHTING", "relevance").strip().lower()
+
 # Weight adjustment constants - intentionally small to require many votes for significant impact
 UPVOTE_WEIGHT_INCREMENT = 0.1
 DOWNVOTE_WEIGHT_DECREMENT = 0.1
 MIN_PAGERANK_WEIGHT = 0
 MAX_PAGERANK_WEIGHT = 100
+
+_SCORE_KEYS = ("similarity", "vector_similarity", "term_similarity")
+
+
+def _retrieval_signal(chunk: dict) -> float:
+    """Best available retrieval score for feedback allocation; 0 if none."""
+    best = 0.0
+    for key in _SCORE_KEYS:
+        raw = chunk.get(key)
+        if raw is None:
+            continue
+        try:
+            val = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(val) and val > best:
+            best = val
+    return best
+
+
+def _allocate_deltas_uniform(
+    chunk_rows: List[Tuple[str, str]],
+    signed_budget: float,
+) -> List[Tuple[str, str, float]]:
+    """Each row gets the full signed step (legacy behavior)."""
+    step = UPVOTE_WEIGHT_INCREMENT if signed_budget > 0 else -DOWNVOTE_WEIGHT_DECREMENT
+    return [(cid, kb, step) for cid, kb in chunk_rows]
+
+
+def _allocate_deltas_relevance(
+    chunk_rows: List[Tuple[str, str, dict]],
+    signed_budget: float,
+) -> List[Tuple[str, str, float]]:
+    """
+    Split |signed_budget| across chunks using retrieval_signal weights.
+    chunk_rows: (chunk_id, kb_id, original_chunk_dict)
+    """
+    if not chunk_rows:
+        return []
+
+    magnitudes = []
+    for _cid, _kb, ch in chunk_rows:
+        s = _retrieval_signal(ch)
+        magnitudes.append(s if s > 0 else 1.0)
+
+    total = sum(magnitudes)
+    if total <= 0:
+        total = float(len(chunk_rows))
+        magnitudes = [1.0] * len(chunk_rows)
+
+    sign = 1.0 if signed_budget > 0 else -1.0
+    abs_budget = abs(signed_budget)
+    out = []
+    for (cid, kb, _ch), mag in zip(chunk_rows, magnitudes, strict=True):
+        out.append((cid, kb, sign * abs_budget * (mag / total)))
+    return out
 
 
 class ChunkFeedbackService:
@@ -101,6 +168,23 @@ class ChunkFeedbackService:
                 mapping[chunk_id] = kb_id
 
         return mapping
+
+    @staticmethod
+    def _feedback_rows_from_reference(reference: dict) -> List[Tuple[str, str, dict]]:
+        """(chunk_id, kb_id, raw_chunk) for chunks that can be updated."""
+        if not reference:
+            return []
+        mapping = ChunkFeedbackService.get_chunk_kb_mapping(reference)
+        rows: List[Tuple[str, str, dict]] = []
+        for chunk in reference.get("chunks", []):
+            chunk_id = chunk.get("id") or chunk.get("chunk_id")
+            if not chunk_id:
+                continue
+            kb_id = mapping.get(chunk_id)
+            if not kb_id:
+                continue
+            rows.append((chunk_id, kb_id, chunk))
+        return rows
 
     @staticmethod
     def update_chunk_weight(
@@ -180,32 +264,35 @@ class ChunkFeedbackService:
             logging.debug("Chunk feedback feature is disabled")
             return {"success_count": 0, "fail_count": 0, "chunk_ids": [], "disabled": True}
 
-        chunk_ids = cls.extract_chunk_ids_from_reference(reference)
-        kb_mapping = cls.get_chunk_kb_mapping(reference)
+        rows = cls._feedback_rows_from_reference(reference)
+        chunk_ids = [r[0] for r in rows]
 
         if not chunk_ids:
             logging.debug("No chunk IDs found in reference for feedback")
             return {"success_count": 0, "fail_count": 0, "chunk_ids": []}
 
-        delta = UPVOTE_WEIGHT_INCREMENT if is_positive else -DOWNVOTE_WEIGHT_DECREMENT
+        signed_budget = UPVOTE_WEIGHT_INCREMENT if is_positive else -DOWNVOTE_WEIGHT_DECREMENT
+        weighting = CHUNK_FEEDBACK_WEIGHTING if CHUNK_FEEDBACK_WEIGHTING in (
+            "uniform",
+            "relevance",
+        ) else "relevance"
+
+        if weighting == "uniform":
+            deltas = _allocate_deltas_uniform([(r[0], r[1]) for r in rows], signed_budget)
+        else:
+            deltas = _allocate_deltas_relevance(rows, signed_budget)
 
         success_count = 0
         fail_count = 0
 
-        for chunk_id in chunk_ids:
-            kb_id = kb_mapping.get(chunk_id)
-            if not kb_id:
-                logging.warning(f"No kb_id found for chunk {chunk_id}, skipping")
-                fail_count += 1
-                continue
-
+        for chunk_id, kb_id, delta in deltas:
             if cls.update_chunk_weight(tenant_id, chunk_id, kb_id, delta):
                 success_count += 1
             else:
                 fail_count += 1
 
         logging.info(
-            f"Applied {'positive' if is_positive else 'negative'} feedback to "
+            f"Applied {'positive' if is_positive else 'negative'} feedback ({weighting}) to "
             f"{success_count}/{len(chunk_ids)} chunks"
         )
 
@@ -238,12 +325,23 @@ class ChunkFeedbackService:
         if not chunk_ids:
             return {"success_count": 0, "fail_count": 0}
 
-        delta = UPVOTE_WEIGHT_INCREMENT if is_positive else -DOWNVOTE_WEIGHT_DECREMENT
+        signed_budget = UPVOTE_WEIGHT_INCREMENT if is_positive else -DOWNVOTE_WEIGHT_DECREMENT
+        weighting = CHUNK_FEEDBACK_WEIGHTING if CHUNK_FEEDBACK_WEIGHTING in (
+            "uniform",
+            "relevance",
+        ) else "relevance"
+
+        if weighting == "uniform":
+            deltas = _allocate_deltas_uniform([(cid, kb_id) for cid in chunk_ids], signed_budget)
+        else:
+            n = len(chunk_ids)
+            step = signed_budget / n
+            deltas = [(cid, kb_id, step) for cid in chunk_ids]
 
         success_count = 0
         fail_count = 0
 
-        for chunk_id in chunk_ids:
+        for chunk_id, kb_id, delta in deltas:
             if cls.update_chunk_weight(tenant_id, chunk_id, kb_id, delta):
                 success_count += 1
             else:

@@ -265,69 +265,58 @@ class TestApplyFeedback:
         assert result.get("disabled") is True
 
     def test_apply_positive_feedback(self, feedback_env, monkeypatch):
-        """Should apply positive feedback to all chunks."""
+        """Relevance mode splits the per-event budget across chunks (equal when no scores)."""
         mod, _ = feedback_env
         monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
         mock_update = MagicMock(return_value=True)
         monkeypatch.setattr(
-            mod.ChunkFeedbackService, "extract_chunk_ids_from_reference",
-            staticmethod(lambda ref: ["chunk1", "chunk2"]),
-        )
-        monkeypatch.setattr(
-            mod.ChunkFeedbackService, "get_chunk_kb_mapping",
-            staticmethod(lambda ref: {"chunk1": "kb1", "chunk2": "kb1"}),
-        )
-        monkeypatch.setattr(
             mod.ChunkFeedbackService, "update_chunk_weight", mock_update
         )
 
+        reference = {
+            "chunks": [
+                {"id": "chunk1", "dataset_id": "kb1"},
+                {"id": "chunk2", "dataset_id": "kb1"},
+            ]
+        }
         result = mod.ChunkFeedbackService.apply_feedback(
             tenant_id="tenant1",
-            reference={"chunks": []},
+            reference=reference,
             is_positive=True
         )
 
         assert result["success_count"] == 2
         assert result["fail_count"] == 0
         assert mock_update.call_count == 2
-        # Verify positive delta
-        mock_update.assert_any_call("tenant1", "chunk1", "kb1", mod.UPVOTE_WEIGHT_INCREMENT)
+        half = mod.UPVOTE_WEIGHT_INCREMENT / 2
+        mock_update.assert_any_call("tenant1", "chunk1", "kb1", pytest.approx(half))
+        mock_update.assert_any_call("tenant1", "chunk2", "kb1", pytest.approx(half))
 
     def test_apply_negative_feedback(self, feedback_env, monkeypatch):
-        """Should apply negative feedback to all chunks."""
+        """Should apply negative feedback with full budget when only one chunk."""
         mod, _ = feedback_env
         monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
         mock_update = MagicMock(return_value=True)
         monkeypatch.setattr(
-            mod.ChunkFeedbackService, "extract_chunk_ids_from_reference",
-            staticmethod(lambda ref: ["chunk1"]),
-        )
-        monkeypatch.setattr(
-            mod.ChunkFeedbackService, "get_chunk_kb_mapping",
-            staticmethod(lambda ref: {"chunk1": "kb1"}),
-        )
-        monkeypatch.setattr(
             mod.ChunkFeedbackService, "update_chunk_weight", mock_update
         )
 
+        reference = {"chunks": [{"id": "chunk1", "dataset_id": "kb1"}]}
         result = mod.ChunkFeedbackService.apply_feedback(
             tenant_id="tenant1",
-            reference={"chunks": []},
+            reference=reference,
             is_positive=False
         )
 
         assert result["success_count"] == 1
-        # Verify negative delta
-        mock_update.assert_called_with("tenant1", "chunk1", "kb1", -mod.DOWNVOTE_WEIGHT_DECREMENT)
+        mock_update.assert_called_with(
+            "tenant1", "chunk1", "kb1", pytest.approx(-mod.DOWNVOTE_WEIGHT_DECREMENT)
+        )
 
     def test_apply_feedback_no_chunks(self, feedback_env, monkeypatch):
         """Should handle empty chunk list gracefully."""
         mod, _ = feedback_env
         monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
-        monkeypatch.setattr(
-            mod.ChunkFeedbackService, "extract_chunk_ids_from_reference",
-            staticmethod(lambda ref: []),
-        )
 
         result = mod.ChunkFeedbackService.apply_feedback(
             tenant_id="tenant1",
@@ -345,22 +334,62 @@ class TestApplyFeedback:
         monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
         mock_update = MagicMock(side_effect=[True, False])
         monkeypatch.setattr(
-            mod.ChunkFeedbackService, "extract_chunk_ids_from_reference",
-            staticmethod(lambda ref: ["chunk1", "chunk2"]),
-        )
-        monkeypatch.setattr(
-            mod.ChunkFeedbackService, "get_chunk_kb_mapping",
-            staticmethod(lambda ref: {"chunk1": "kb1", "chunk2": "kb1"}),
-        )
-        monkeypatch.setattr(
             mod.ChunkFeedbackService, "update_chunk_weight", mock_update
         )
 
+        reference = {
+            "chunks": [
+                {"id": "chunk1", "dataset_id": "kb1"},
+                {"id": "chunk2", "dataset_id": "kb1"},
+            ]
+        }
         result = mod.ChunkFeedbackService.apply_feedback(
             tenant_id="tenant1",
-            reference={"chunks": []},
+            reference=reference,
             is_positive=True
         )
 
         assert result["success_count"] == 1
         assert result["fail_count"] == 1
+
+    def test_apply_positive_feedback_uniform_mode(self, feedback_env, monkeypatch):
+        """uniform: each cited chunk gets the full increment (legacy)."""
+        mod, _ = feedback_env
+        monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
+        monkeypatch.setattr(mod, "CHUNK_FEEDBACK_WEIGHTING", "uniform")
+        mock_update = MagicMock(return_value=True)
+        monkeypatch.setattr(
+            mod.ChunkFeedbackService, "update_chunk_weight", mock_update
+        )
+        reference = {
+            "chunks": [
+                {"id": "chunk1", "dataset_id": "kb1"},
+                {"id": "chunk2", "dataset_id": "kb1"},
+            ]
+        }
+        mod.ChunkFeedbackService.apply_feedback(
+            tenant_id="tenant1", reference=reference, is_positive=True
+        )
+        mock_update.assert_any_call("tenant1", "chunk1", "kb1", mod.UPVOTE_WEIGHT_INCREMENT)
+        mock_update.assert_any_call("tenant1", "chunk2", "kb1", mod.UPVOTE_WEIGHT_INCREMENT)
+
+    def test_apply_positive_feedback_relevance_weighted(self, feedback_env, monkeypatch):
+        """Higher retrieval similarity receives a larger share of the budget."""
+        mod, _ = feedback_env
+        monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
+        monkeypatch.setattr(mod, "CHUNK_FEEDBACK_WEIGHTING", "relevance")
+        mock_update = MagicMock(return_value=True)
+        monkeypatch.setattr(
+            mod.ChunkFeedbackService, "update_chunk_weight", mock_update
+        )
+        reference = {
+            "chunks": [
+                {"id": "a", "dataset_id": "kb1", "similarity": 0.9},
+                {"id": "b", "dataset_id": "kb1", "similarity": 0.1},
+            ]
+        }
+        mod.ChunkFeedbackService.apply_feedback(
+            tenant_id="tenant1", reference=reference, is_positive=True
+        )
+        mock_update.assert_any_call("tenant1", "a", "kb1", pytest.approx(0.09))
+        mock_update.assert_any_call("tenant1", "b", "kb1", pytest.approx(0.01))
