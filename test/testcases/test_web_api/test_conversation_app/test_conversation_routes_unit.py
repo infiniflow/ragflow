@@ -16,6 +16,7 @@
 
 import asyncio
 import importlib.util
+import inspect
 import sys
 from copy import deepcopy
 from pathlib import Path
@@ -217,13 +218,25 @@ def _set_request_json(monkeypatch, module, payload):
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue(deepcopy(payload)))
 
 
+def _append_stream_chunk(chunks: list, chunk) -> None:
+    if isinstance(chunk, bytes):
+        chunks.append(chunk.decode("utf-8"))
+    else:
+        chunks.append(chunk)
+
+
 async def _read_sse_text(response):
+    """Drain Response.response — Quart may use a sync generator (TTS) or async generator (SSE)."""
     chunks = []
-    async for chunk in response.response:
-        if isinstance(chunk, bytes):
-            chunks.append(chunk.decode("utf-8"))
-        else:
-            chunks.append(chunk)
+    body = response.response
+    if body is None:
+        return ""
+    if inspect.isasyncgen(body):
+        async for chunk in body:
+            _append_stream_chunk(chunks, chunk)
+    else:
+        for chunk in body:
+            _append_stream_chunk(chunks, chunk)
     return "".join(chunks)
 
 
@@ -453,6 +466,8 @@ def test_rm_and_list_conversation_guards(monkeypatch):
 
     deleted = []
     _set_request_json(monkeypatch, module, {"conversation_ids": ["conv-1"]})
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv))
+    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="dialog-1")])
     monkeypatch.setattr(module.ConversationService, "delete_by_id", lambda cid: deleted.append(cid) or True)
     res = _run(module.rm())
