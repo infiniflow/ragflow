@@ -108,9 +108,11 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-class _StubQuartHeaders:
-    def add_header(self, *_a, **_k):
-        pass
+class _StubQuartHeaders(dict):
+    """Headers with add_header (Quart) plus dict access for tests (resp.headers[\"Content-Type\"])."""
+
+    def add_header(self, key, value, **_kwargs):
+        self[key] = value
 
 
 class _StubQuartResponse:
@@ -118,9 +120,12 @@ class _StubQuartResponse:
 
     def __init__(self, body=None, *args, mimetype=None, content_type=None, **kwargs):
         self.response = body
-        self.mimetype = mimetype
-        self.content_type = content_type
+        self.mimetype = mimetype or content_type
+        self.content_type = content_type or mimetype
         self.headers = _StubQuartHeaders()
+        ct = content_type or mimetype
+        if ct:
+            self.headers["Content-Type"] = ct
 
 
 def _load_conversation_module(monkeypatch):
@@ -132,6 +137,10 @@ def _load_conversation_module(monkeypatch):
     quart_mod.current_app = SimpleNamespace()
     quart_mod.g = SimpleNamespace()
     quart_mod.session = SimpleNamespace()
+    quart_mod.jsonify = lambda d: d
+    quart_mod.has_request_context = lambda: True
+    quart_mod.has_websocket_context = lambda: False
+    quart_mod.websocket = SimpleNamespace()
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
     common_pkg = ModuleType("common")

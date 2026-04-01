@@ -79,8 +79,11 @@ async def set_conversation():
                     message="Only owner of conversation authorized for this operation.",
                     code=RetCode.OPERATING_ERROR,
                 )
-            req["user_id"] = current_user.id
-            if not ConversationService.update_by_id(conv_id, req):
+            # Do not pass through arbitrary JSON (e.g. reference, dialog_id) — mass-assignment risk.
+            payload = {"name": name, "user_id": current_user.id}
+            if isinstance(req.get("message"), list):
+                payload["message"] = req["message"]
+            if not ConversationService.update_by_id(conv_id, payload):
                 return get_data_error_result(message="Conversation not found!")
             e, conv = ConversationService.get_by_id(conv_id)
             if not e:
