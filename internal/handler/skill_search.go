@@ -49,7 +49,7 @@ func NewSkillSearchHandler(docEngine engine.DocEngine) *SkillSearchHandler {
 // @Security ApiKeyAuth
 // @Param embd_id query string true "Embedding Model ID"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/skill/search/config [get]
+// @Router /v1/skills/config [get]
 func (h *SkillSearchHandler) GetConfig(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -77,7 +77,7 @@ func (h *SkillSearchHandler) GetConfig(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Param request body service.UpdateConfigRequest true "config info"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/skill/search/config [post]
+// @Router /v1/skills/config [post]
 func (h *SkillSearchHandler) UpdateConfig(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -111,7 +111,7 @@ func (h *SkillSearchHandler) UpdateConfig(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Param request body service.SearchRequest true "search query"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/skill/search [post]
+// @Router /v1/skills/search [post]
 func (h *SkillSearchHandler) Search(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -139,19 +139,19 @@ func (h *SkillSearchHandler) Search(c *gin.Context) {
 // IndexSkillsRequest represents the request to index skills
 type IndexSkillsRequest struct {
 	Skills []service.SkillInfo `json:"skills" binding:"required"`
-	EmbdID string              `json:"embd_id" binding:"required"`
+	EmbdID string              `json:"embd_id"` // Optional, will use config's embd_id if empty
 }
 
 // IndexSkills handles the index skills request
 // @Summary Index Skills
-// @Description Index skills for search
+// @Description Index skills for search. If embd_id is not provided, will use the one from skill search config.
 // @Tags skill-search
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
 // @Param request body IndexSkillsRequest true "skills to index"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/skill/search/index [post]
+// @Router /v1/skills/index [post]
 func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -165,13 +165,28 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 		return
 	}
 
+	// If embd_id not provided, get from skill search config
+	embdID := req.EmbdID
+	if embdID == "" {
+		config, code, err := h.searchService.GetConfig(user.ID, "")
+		if err != nil {
+			jsonError(c, code, "failed to get skill search config: "+err.Error())
+			return
+		}
+		embdID = config["embd_id"].(string)
+		if embdID == "" {
+			jsonError(c, common.CodeDataError, "no embedding model configured in skill search config")
+			return
+		}
+	}
+
 	// Ensure index exists
-	if err := h.indexerService.EnsureIndex(c.Request.Context(), user.ID, h.docEngine, req.EmbdID); err != nil {
+	if err := h.indexerService.EnsureIndex(c.Request.Context(), user.ID, h.docEngine, embdID); err != nil {
 		jsonError(c, common.CodeOperatingError, err.Error())
 		return
 	}
 
-	if err := h.indexerService.BatchIndexSkills(c.Request.Context(), user.ID, req.Skills, h.docEngine, req.EmbdID); err != nil {
+	if err := h.indexerService.BatchIndexSkills(c.Request.Context(), user.ID, req.Skills, h.docEngine, embdID); err != nil {
 		jsonError(c, common.CodeOperatingError, err.Error())
 		return
 	}
@@ -184,19 +199,19 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 // ReindexRequest represents the request to reindex skills
 type ReindexRequest struct {
 	Skills []service.SkillInfo `json:"skills" binding:"required"`
-	EmbdID string              `json:"embd_id" binding:"required"`
+	EmbdID string              `json:"embd_id"` // Optional, will use config's embd_id if empty
 }
 
 // Reindex handles the reindex all skills request
 // @Summary Reindex All Skills
-// @Description Reindex all skills for a tenant
+// @Description Reindex all skills for a tenant. If embd_id is not provided, will use the one from skill search config.
 // @Tags skill-search
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
 // @Param request body ReindexRequest true "skills to reindex"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/skill/search/reindex [post]
+// @Router /v1/skills/reindex [post]
 func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -210,18 +225,28 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 		return
 	}
 
-	result, err := h.indexerService.ReindexAll(c.Request.Context(), user.ID, req.Skills, h.docEngine, req.EmbdID)
+	// If embd_id not provided, get from skill search config
+	embdID := req.EmbdID
+	if embdID == "" {
+		config, code, err := h.searchService.GetConfig(user.ID, "")
+		if err != nil {
+			jsonError(c, code, "failed to get skill search config: "+err.Error())
+			return
+		}
+		embdID = config["embd_id"].(string)
+		if embdID == "" {
+			jsonError(c, common.CodeDataError, "no embedding model configured in skill search config")
+			return
+		}
+	}
+
+	result, err := h.indexerService.ReindexAll(c.Request.Context(), user.ID, req.Skills, h.docEngine, embdID)
 	if err != nil {
 		jsonError(c, common.CodeOperatingError, err.Error())
 		return
 	}
 
 	jsonResponse(c, common.CodeSuccess, result, "success")
-}
-
-// DeleteSkillIndexRequest represents the request to delete a skill index
-type DeleteSkillIndexRequest struct {
-	SkillID string `json:"skill_id" binding:"required"`
 }
 
 // DeleteSkillIndex handles the delete skill index request
@@ -231,9 +256,9 @@ type DeleteSkillIndexRequest struct {
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param request body DeleteSkillIndexRequest true "skill to delete"
+// @Param skill_id path string true "Skill ID (skill name)"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/skill/search/index [delete]
+// @Router /v1/skills/index/{skill_id} [delete]
 func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -241,13 +266,13 @@ func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
 		return
 	}
 
-	var req DeleteSkillIndexRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
+	skillID := c.Param("skill_id")
+	if skillID == "" {
+		jsonError(c, common.CodeDataError, "skill_id is required")
 		return
 	}
 
-	err := h.indexerService.DeleteSkillIndex(c.Request.Context(), user.ID, req.SkillID, h.docEngine)
+	err := h.indexerService.DeleteSkillIndex(c.Request.Context(), user.ID, skillID, h.docEngine)
 	if err != nil {
 		jsonError(c, common.CodeOperatingError, "failed to delete skill index")
 		return

@@ -22,19 +22,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 )
 
 // CreateIndex creates an index
 func (e *elasticsearchEngine) CreateIndex(ctx context.Context, indexName, datasetID string, vectorSize int, parserID string) error {
-	// Elasticsearch doesn't support vector_size or parser_id in the same way
-	// Build mapping for ES (if needed)
-	// TODO
-	mapping := map[string]interface{}{
-		"dataset_id": datasetID,
-	}
-
 	if indexName == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}
@@ -46,6 +40,25 @@ func (e *elasticsearchEngine) CreateIndex(ctx context.Context, indexName, datase
 	}
 	if exists {
 		return fmt.Errorf("index '%s' already exists", indexName)
+	}
+
+	// Load mapping based on index type
+	var mapping map[string]interface{}
+	if datasetID == "skill" {
+		// Load skill-specific mapping
+		skillMapping, err := loadSkillMapping()
+		if err != nil {
+			return fmt.Errorf("failed to load skill mapping: %w", err)
+		}
+		mapping = skillMapping
+	} else {
+		// Default mapping for dataset
+		mapping = map[string]interface{}{
+			"settings": map[string]interface{}{
+				"number_of_shards":   1,
+				"number_of_replicas": 0,
+			},
+		}
 	}
 
 	// Prepare request body
@@ -71,7 +84,8 @@ func (e *elasticsearchEngine) CreateIndex(ctx context.Context, indexName, datase
 	defer res.Body.Close()
 
 	if res.IsError() {
-		return fmt.Errorf("elasticsearch returned error: %s", res.Status())
+		bodyBytes, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("elasticsearch returned error: %s, body: %s", res.Status(), string(bodyBytes))
 	}
 
 	// Parse response
@@ -86,6 +100,122 @@ func (e *elasticsearchEngine) CreateIndex(ctx context.Context, indexName, datase
 	}
 
 	return nil
+}
+
+// loadSkillMapping loads the skill index mapping from config file
+func loadSkillMapping() (map[string]interface{}, error) {
+	// Try multiple possible locations for the mapping file
+	possiblePaths := []string{
+		"conf/skill_es_mapping.json",
+		"../conf/skill_es_mapping.json",
+		"/app/conf/skill_es_mapping.json",
+		"/home/infominer/codebase/ragflow/conf/skill_es_mapping.json",
+	}
+
+	var data []byte
+	var err error
+	for _, path := range possiblePaths {
+		data, err = os.ReadFile(path)
+		if err == nil {
+			break
+		}
+	}
+
+	if err != nil {
+		// Fallback to default skill mapping if file not found
+		return getDefaultSkillMapping(), nil
+	}
+
+	var mapping map[string]interface{}
+	if err := json.Unmarshal(data, &mapping); err != nil {
+		return nil, fmt.Errorf("failed to parse skill mapping: %w", err)
+	}
+
+	return mapping, nil
+}
+
+// getDefaultSkillMapping returns the default skill index mapping
+func getDefaultSkillMapping() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"index": map[string]interface{}{
+				"number_of_shards":   1,
+				"number_of_replicas": 0,
+				"refresh_interval":   "1000ms",
+			},
+		},
+		"mappings": map[string]interface{}{
+			"dynamic": false,
+			"properties": map[string]interface{}{
+				"skill_id": map[string]interface{}{
+					"type":  "keyword",
+					"store": true,
+				},
+				"name": map[string]interface{}{
+					"type":   "text",
+					"index":  false,
+					"store":  true,
+				},
+				"name_tks": map[string]interface{}{
+					"type":      "text",
+					"analyzer":  "whitespace",
+					"store":     true,
+				},
+				"tags": map[string]interface{}{
+					"type":   "text",
+					"index":  false,
+					"store":  true,
+				},
+				"tags_tks": map[string]interface{}{
+					"type":      "text",
+					"analyzer":  "whitespace",
+					"store":     true,
+				},
+				"description": map[string]interface{}{
+					"type":   "text",
+					"index":  false,
+					"store":  true,
+				},
+				"description_tks": map[string]interface{}{
+					"type":      "text",
+					"analyzer":  "whitespace",
+					"store":     true,
+				},
+				"content": map[string]interface{}{
+					"type":   "text",
+					"index":  false,
+					"store":  true,
+				},
+				"content_tks": map[string]interface{}{
+					"type":      "text",
+					"analyzer":  "whitespace",
+					"store":     true,
+				},
+				"q_1024_vec": map[string]interface{}{
+					"type":       "dense_vector",
+					"dims":       1024,
+					"index":      true,
+					"similarity": "cosine",
+				},
+				"version": map[string]interface{}{
+					"type":  "keyword",
+					"store": true,
+				},
+				"status": map[string]interface{}{
+					"type":  "keyword",
+					"store": true,
+				},
+				"create_time": map[string]interface{}{
+					"type":  "long",
+					"store": true,
+				},
+				"update_time": map[string]interface{}{
+					"type":  "long",
+					"store": true,
+				},
+			},
+		},
+	}
 }
 
 // DeleteIndex deletes an index

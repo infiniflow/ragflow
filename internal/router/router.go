@@ -193,15 +193,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// }
 
 			// Skill search routes
-			skillSearch := v1.Group("/skill/search")
+			skills := v1.Group("/skills")
 			{
-				skillSearch.GET("/config", r.skillSearchHandler.GetConfig)
-				skillSearch.POST("/config", r.skillSearchHandler.UpdateConfig)
-				skillSearch.POST("", r.skillSearchHandler.Search)
-				skillSearch.POST("/index", r.skillSearchHandler.IndexSkills)
-				skillSearch.DELETE("/index", r.skillSearchHandler.DeleteSkillIndex)
-				skillSearch.POST("/reindex", r.skillSearchHandler.Reindex)
-				skillSearch.POST("/init", r.skillSearchHandler.InitializeIndex)
+				skills.GET("/config", r.skillSearchHandler.GetConfig)
+				skills.POST("/config", r.skillSearchHandler.UpdateConfig)
+				skills.POST("/search", r.skillSearchHandler.Search)
+				skills.POST("/index", r.skillSearchHandler.IndexSkills)
+				skills.DELETE("/index/:skill_id", r.skillSearchHandler.DeleteSkillIndex)
+				skills.POST("/reindex", r.skillSearchHandler.Reindex)
 			}
 		}
 

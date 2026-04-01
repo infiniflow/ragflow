@@ -32,7 +32,7 @@ import type { Skill } from '../types';
 interface SkillCardProps {
   skill: Skill;
   onView: (skill: Skill) => void;
-  onDelete: (skillId: string) => void;
+  onDelete: (skillId: string, skillName: string) => void;
   formatRelative: (timestamp: number) => string;
 }
 
@@ -117,7 +117,7 @@ const SkillCard: React.FC<SkillCardProps> = ({
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
                       <AlertDialogAction
-                        onClick={() => onDelete(skill.id)}
+                        onClick={() => onDelete(skill.id, skill.name)}
                         className="bg-state-error hover:bg-state-error/90"
                       >
                         Delete

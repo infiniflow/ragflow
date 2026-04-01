@@ -111,6 +111,12 @@ func (m *siliconflowEmbeddingModel) EncodeQuery(query string) ([]float64, error)
 	return embeddings[0], nil
 }
 
+// MaxLength returns the maximum input length for the model
+// SILICONFLOW embedding models typically support 8191 tokens
+func (m *siliconflowEmbeddingModel) MaxLength() int {
+	return 8191
+}
+
 // init registers the SILICONFLOW embedding model factory
 func init() {
 	RegisterEmbeddingModelFactory("SILICONFLOW", func(apiKey, apiBase, modelName string, httpClient *http.Client) entity.EmbeddingModel {

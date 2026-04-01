@@ -40,7 +40,7 @@ server {
         include proxy.conf;
     }
 
-    location ~ ^/api/v1/skill {
+    location ~ ^/api/v1/skills {
         proxy_pass http://127.0.0.1:9384;
         include proxy.conf;
     }

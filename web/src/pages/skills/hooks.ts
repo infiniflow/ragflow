@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import type { Skill, SkillFileEntry, SkillMetadata } from './types';
 import {
   filterUploadFiles,
+  isTextFile,
   parseFrontmatter,
   validateSkillFormat as validateSkillFormatImpl,
 } from './validation';
@@ -536,6 +537,72 @@ export const useSkills = () => {
           await uploadFileWithStructure(file, versionFolderId);
         }
 
+        // Build search index for the uploaded skill
+        try {
+          // Read all text files and build content
+          let skillMetadata: SkillMetadata = {};
+          let skillDescription = '';
+          const fileContents: { path: string; content: string }[] = [];
+
+          for (const file of filteredFiles) {
+            const relativePath = (file as any).webkitRelativePath || file.name;
+            if (!isTextFile(relativePath, file.type)) {
+              continue;
+            }
+
+            const content = await file.text();
+            fileContents.push({ path: relativePath, content });
+
+            // Parse metadata from skill.md/readme.md/index.md
+            const lowerName = file.name.toLowerCase();
+            if (
+              lowerName === 'skill.md' ||
+              lowerName === 'readme.md' ||
+              lowerName === 'index.md'
+            ) {
+              const parsed = parseMetadata(content);
+              skillMetadata = parsed.metadata;
+              skillDescription =
+                skillMetadata.description || parsed.body.slice(0, 200);
+            }
+          }
+
+          // Build concatenated content for indexing
+          const concatenatedContent = fileContents
+            .map((f) => `${f.path}\n===\n${f.content}`)
+            .join('\n\n');
+
+          // Index the skill (embd_id will be fetched from skill search config by backend)
+          const indexResponse = await fetch('/api/v1/skills/index', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: getAuthorization(),
+            },
+            body: JSON.stringify({
+              skills: [
+                {
+                  id: `${skillNameNormalized}/${version}`,
+                  name: skillMetadata.name || name,
+                  description: skillDescription,
+                  tags: skillMetadata.tags || [],
+                  content: concatenatedContent,
+                },
+              ],
+            }),
+          });
+
+          if (!indexResponse.ok) {
+            console.warn(
+              '[Skill Index] Failed to index skill:',
+              await indexResponse.text(),
+            );
+          }
+        } catch (indexError) {
+          // Indexing failure should not block upload success
+          console.warn('[Skill Index] Error indexing skill:', indexError);
+        }
+
         message.success(t('skills.uploadSuccess'));
         await fetchSkills();
         return true;
@@ -552,8 +619,41 @@ export const useSkills = () => {
 
   // Delete a skill
   const deleteSkill = useCallback(
-    async (skillId: string): Promise<boolean> => {
+    async (skillId: string, skillName?: string): Promise<boolean> => {
       try {
+        // Get skill name if not provided
+        let nameToDelete = skillName;
+        if (!nameToDelete) {
+          // Find skill in current list to get name
+          const skill = skills.find((s) => s.id === skillId);
+          if (skill) {
+            nameToDelete = skill.name;
+          }
+        }
+
+        // Delete search index first (best effort, don't block on failure)
+        if (nameToDelete) {
+          try {
+            const indexResponse = await fetch(
+              `/api/v1/skills/index/${encodeURIComponent(nameToDelete)}`,
+              {
+                method: 'DELETE',
+                headers: {
+                  Authorization: getAuthorization(),
+                },
+              },
+            );
+            if (!indexResponse.ok) {
+              console.warn(
+                'Failed to delete skill index:',
+                await indexResponse.text(),
+              );
+            }
+          } catch (indexError) {
+            console.warn('Error deleting skill index:', indexError);
+          }
+        }
+
         const { data } = await fileManagerService.removeFile({
           ids: [skillId],
         });
@@ -569,7 +669,7 @@ export const useSkills = () => {
         return false;
       }
     },
-    [t, fetchSkills],
+    [t, fetchSkills, skills],
   );
 
   // Recursively find file by path in folder structure
@@ -773,7 +873,7 @@ export const useSkillSearchConfig = () => {
   const fetchConfig = useCallback(async (embdId?: string) => {
     try {
       const response = await fetch(
-        `/api/v1/skill/search/config?embd_id=${embdId || ''}`,
+        `/api/v1/skills/config?embd_id=${embdId || ''}`,
         {
           headers: {
             Authorization: getAuthorization(),
@@ -797,7 +897,7 @@ export const useSkillSearchConfig = () => {
     async (configData: SkillSearchConfig): Promise<boolean> => {
       try {
         setLoading(true);
-        const response = await fetch('/api/v1/skill/search/config', {
+        const response = await fetch('/api/v1/skills/config', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -828,13 +928,13 @@ export const useSkillSearchConfig = () => {
   const reindex = useCallback(async (): Promise<boolean> => {
     try {
       setLoading(true);
-      const response = await fetch('/api/v1/skill/search/reindex', {
+      const response = await fetch('/api/v1/skills/reindex', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: getAuthorization(),
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ skills: [] }),
       });
       const data = await response.json();
       if (data.code === 0) {
@@ -854,17 +954,19 @@ export const useSkillSearchConfig = () => {
 
   // Initialize index
   const initializeIndex = useCallback(
-    async (embdId: string): Promise<boolean> => {
+    async (_embdId?: string): Promise<boolean> => {
       try {
-        const response = await fetch(
-          `/api/v1/skill/search/init?embd_id=${embdId}`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: getAuthorization(),
-            },
+        // Initialize index is now handled automatically when creating index
+        // Call index API directly to ensure index exists
+        // embd_id will be fetched from skill search config by backend
+        const response = await fetch('/api/v1/skills/index', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: getAuthorization(),
           },
-        );
+          body: JSON.stringify({ skills: [] }),
+        });
         const data = await response.json();
         return data.code === 0;
       } catch (error) {
@@ -879,7 +981,7 @@ export const useSkillSearchConfig = () => {
   const searchSkills = useCallback(
     async (query: string, page = 1, pageSize = 10) => {
       try {
-        const response = await fetch('/api/v1/skill/search', {
+        const response = await fetch('/api/v1/skills/search', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -928,7 +1030,7 @@ export const useSkillSearchConfig = () => {
   // Get index status
   const getIndexStatus = useCallback(async () => {
     try {
-      const response = await fetch('/api/v1/skill/search/status', {
+      const response = await fetch('/api/v1/skills/status', {
         headers: {
           Authorization: getAuthorization(),
         },

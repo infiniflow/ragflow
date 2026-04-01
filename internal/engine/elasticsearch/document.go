@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 )
@@ -58,7 +59,8 @@ func (e *elasticsearchEngine) IndexDocument(ctx context.Context, indexName, docI
 	defer res.Body.Close()
 
 	if res.IsError() {
-		return fmt.Errorf("elasticsearch returned error: %s", res.Status())
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("elasticsearch returned error: %s, body: %s", res.Status(), string(body))
 	}
 
 	return nil
@@ -231,7 +233,8 @@ func (e *elasticsearchEngine) DeleteDocument(ctx context.Context, indexName, doc
 	}
 
 	if res.IsError() {
-		return fmt.Errorf("elasticsearch returned error: %s", res.Status())
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("elasticsearch returned error: %s, body: %s", res.Status(), string(body))
 	}
 
 	return nil

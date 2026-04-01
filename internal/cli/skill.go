@@ -80,6 +80,7 @@ type SkillValidationResult struct {
 	Name        string
 	Description string
 	Version     string
+	Tags        []string
 	Error       string
 	Details     string
 }
@@ -231,6 +232,7 @@ func (v *SkillValidator) ValidateSkillDirectory(skillPath string, versionOverrid
 		Name:        metadata.Name,
 		Description: metadata.Description,
 		Version:     version,
+		Tags:        metadata.Tags,
 	}, validFiles, nil
 }
 
@@ -574,6 +576,16 @@ func (u *SkillUploader) UploadSkill(ctx stdctx.Context, skillPath string, versio
 	}
 
 	fmt.Printf("✓ Successfully uploaded skill '%s' version %s\n", skillName, version)
+
+	// 7. Index the skill for search
+	fmt.Println("Indexing skill for search...")
+	if err := u.indexSkill(ctx, result, files); err != nil {
+		// Log warning but don't fail the upload
+		fmt.Printf("⚠ Warning: Failed to index skill for search: %v\n", err)
+	} else {
+		fmt.Println("✓ Skill indexed successfully")
+	}
+
 	return nil
 }
 
@@ -686,6 +698,108 @@ func (u *SkillUploader) uploadFile(ctx stdctx.Context, file *SkillFile, parentID
 
 	// Make request using HTTPClient's multipart support
 	return u.client.HTTPClient.UploadMultipart("/files", writer.FormDataContentType(), &buf)
+}
+
+// indexSkill indexes the skill for search
+func (u *SkillUploader) indexSkill(ctx stdctx.Context, result *SkillValidationResult, files []*SkillFile) error {
+	// Get default embedding model from config
+	embdID, err := u.getDefaultEmbdID()
+	if err != nil {
+		return fmt.Errorf("failed to get default embedding model: %w", err)
+	}
+
+	// Build content by concatenating all text files
+	var contentBuilder strings.Builder
+	for _, file := range files {
+		// Skip binary and non-text files
+		if !isTextFile(file.Path, "") {
+			continue
+		}
+		// Skip large files
+		if len(file.Content) > MaxFileSize {
+			continue
+		}
+		sanitized := sanitizeRelPath(file.Path)
+		if sanitized == "" || isMacJunkPath(sanitized) || shouldIgnore(sanitized, defaultIgnorePatterns) {
+			continue
+		}
+		contentBuilder.WriteString(fmt.Sprintf("\n=== %s ===\n", file.Path))
+		contentBuilder.Write(file.Content)
+	}
+	content := contentBuilder.String()
+
+	// Build skill info for indexing
+	skillInfo := map[string]interface{}{
+		"id":          result.Name, // Use skill name as ID
+		"name":        result.Name,
+		"description": result.Description,
+		"tags":        result.Tags,
+		"content":     content,
+	}
+
+	// Build index request
+	payload := map[string]interface{}{
+		"skills":  []interface{}{skillInfo},
+		"embd_id": embdID,
+	}
+
+	// Call index API (Go service port 9384)
+	originalPort := u.client.HTTPClient.Port
+	u.client.HTTPClient.Port = 9384
+	resp, err := u.client.HTTPClient.Request("POST", "/api/v1/skills/index", true, "json", nil, payload)
+	u.client.HTTPClient.Port = originalPort
+	if err != nil {
+		return fmt.Errorf("index request failed: %w", err)
+	}
+
+	var indexResult struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			IndexedCount int `json:"indexed_count"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &indexResult); err != nil {
+		return fmt.Errorf("failed to parse index response: %w", err)
+	}
+
+	if indexResult.Code != 0 {
+		return fmt.Errorf("index failed: %s", indexResult.Msg)
+	}
+
+	return nil
+}
+
+// getDefaultEmbdID gets the default embedding model ID from skill search config
+func (u *SkillUploader) getDefaultEmbdID() (string, error) {
+	// Try to get config from API (Go service port 9384)
+	originalPort := u.client.HTTPClient.Port
+	u.client.HTTPClient.Port = 9384
+	resp, err := u.client.HTTPClient.Request("GET", "/api/v1/skills/config?embd_id=", true, "json", nil, nil)
+	u.client.HTTPClient.Port = originalPort
+	if err != nil {
+		// If API fails, return empty string (server will handle it)
+		return "", nil
+	}
+
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			EmbdID string `json:"embd_id"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &result); err != nil {
+		return "", nil
+	}
+
+	if result.Code != 0 {
+		return "", nil
+	}
+
+	return result.Data.EmbdID, nil
 }
 
 // normalizeSkillName normalizes skill name for folder creation
@@ -810,10 +924,20 @@ func (c *SearchSkillsCommand) searchSkills(args *SearchSkillsArgs) error {
 		"page_size": args.PageSize,
 	}
 
-	resp, err := c.client.HTTPClient.Request("POST", "/api/v1/skill/search", true, "json", nil, payload)
+	// Skill search API is on Go service (port 9384), not Python service (port 9380)
+	// Save original port and switch to Go service port
+	originalPort := c.client.HTTPClient.Port
+	c.client.HTTPClient.Port = 9384
+	defer func() { c.client.HTTPClient.Port = originalPort }() // Ensure port is restored
+
+	fmt.Printf("DEBUG: Sending search request to port %d, query: %s\n", c.client.HTTPClient.Port, args.Query)
+
+	resp, err := c.client.HTTPClient.Request("POST", "/api/v1/skills/search", true, "json", nil, payload)
 	if err != nil {
 		return fmt.Errorf("search request failed: %w", err)
 	}
+
+	fmt.Printf("DEBUG: Response status: %d, body: %s\n", resp.StatusCode, string(resp.Body))
 
 	var result struct {
 		Code int    `json:"code"`
@@ -833,11 +957,14 @@ func (c *SearchSkillsCommand) searchSkills(args *SearchSkillsArgs) error {
 	}
 
 	if err := json.Unmarshal(resp.Body, &result); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
+		return fmt.Errorf("failed to parse response: %w (body: %s)", err, string(resp.Body))
 	}
 
 	if result.Code != 0 {
-		return fmt.Errorf("search failed: %s", result.Msg)
+		if result.Msg != "" {
+			return fmt.Errorf("search failed: %s", result.Msg)
+		}
+		return fmt.Errorf("search failed with code: %d", result.Code)
 	}
 
 	// Print results
@@ -1023,4 +1150,203 @@ func getString(v interface{}) string {
 	default:
 		return fmt.Sprintf("%v", v)
 	}
+}
+
+// ============================================================================
+// Delete Skill Command Handler
+// ============================================================================
+
+// DeleteSkillCommand handles the delete-skill command
+type DeleteSkillCommand struct {
+	client       *RAGFlowClient
+	fileProvider *filesystem.FileProvider
+}
+
+// NewDeleteSkillCommand creates a new delete skill command handler
+func NewDeleteSkillCommand(client *RAGFlowClient, fileProvider *filesystem.FileProvider) *DeleteSkillCommand {
+	return &DeleteSkillCommand{
+		client:       client,
+		fileProvider: fileProvider,
+	}
+}
+
+// DeleteSkillArgs holds the parsed arguments for delete-skill command
+type DeleteSkillArgs struct {
+	SkillName string
+	ShowHelp  bool
+}
+
+// ParseDeleteSkillArgs parses the delete-skill command arguments
+func ParseDeleteSkillArgs(args []string) (*DeleteSkillArgs, error) {
+	result := &DeleteSkillArgs{}
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		switch arg {
+		case "-h", "--help":
+			result.ShowHelp = true
+			return result, nil
+		default:
+			// Non-flag argument is the skill name
+			if !strings.HasPrefix(arg, "-") && result.SkillName == "" {
+				result.SkillName = arg
+			}
+		}
+	}
+
+	if result.SkillName == "" && !result.ShowHelp {
+		return nil, fmt.Errorf("skill name is required")
+	}
+
+	return result, nil
+}
+
+// Execute runs the delete-skill command
+func (c *DeleteSkillCommand) Execute(args []string) error {
+	parsedArgs, err := ParseDeleteSkillArgs(args)
+	if err != nil {
+		return err
+	}
+
+	if parsedArgs.ShowHelp {
+		c.PrintHelp()
+		return nil
+	}
+
+	return c.deleteSkill(stdctx.Background(), parsedArgs.SkillName)
+}
+
+// deleteSkill deletes a skill and its index
+func (c *DeleteSkillCommand) deleteSkill(ctx stdctx.Context, skillName string) error {
+	// 1. Find skill folder
+	skillsFolderID, err := c.getSkillsFolderID(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to find skills folder: %w", err)
+	}
+
+	// 2. Find skill folder by name
+	skillFolderID, err := c.getSkillFolderID(ctx, skillsFolderID, skillName)
+	if err != nil {
+		return fmt.Errorf("skill '%s' not found: %w", skillName, err)
+	}
+
+	// 3. Delete index first
+	fmt.Printf("Deleting search index for skill '%s'...\n", skillName)
+	if err := c.deleteSkillIndex(skillName); err != nil {
+		fmt.Printf("⚠ Warning: Failed to delete search index: %v\n", err)
+	} else {
+		fmt.Printf("✓ Search index deleted\n")
+	}
+
+	// 4. Delete skill folder from file system
+	fmt.Printf("Deleting skill '%s'...\n", skillName)
+	if err := c.deleteFolder(ctx, skillFolderID); err != nil {
+		return fmt.Errorf("failed to delete skill folder: %w", err)
+	}
+
+	fmt.Printf("✓ Successfully deleted skill '%s'\n", skillName)
+	return nil
+}
+
+// deleteSkillIndex deletes the skill from search index
+func (c *DeleteSkillCommand) deleteSkillIndex(skillName string) error {
+	// Skill API is on Go service port 9384
+	originalPort := c.client.HTTPClient.Port
+	c.client.HTTPClient.Port = 9384
+	resp, err := c.client.HTTPClient.Request("DELETE", "/api/v1/skills/index/"+skillName, true, "json", nil, nil)
+	c.client.HTTPClient.Port = originalPort
+	if err != nil {
+		return fmt.Errorf("delete index request failed: %w", err)
+	}
+
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &result); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if result.Code != 0 {
+		return fmt.Errorf("delete failed: %s", result.Msg)
+	}
+
+	return nil
+}
+
+// getSkillsFolderID finds the skills folder ID
+func (c *DeleteSkillCommand) getSkillsFolderID(ctx stdctx.Context) (string, error) {
+	result, err := c.fileProvider.List(ctx, "", nil)
+	if err != nil {
+		return "", err
+	}
+
+	for _, node := range result.Nodes {
+		if node.Type == filesystem.NodeTypeDirectory && node.Name == "skills" {
+			return getString(node.Metadata["id"]), nil
+		}
+	}
+
+	return "", fmt.Errorf("skills folder not found")
+}
+
+// getSkillFolderID finds a skill folder ID by name
+func (c *DeleteSkillCommand) getSkillFolderID(ctx stdctx.Context, parentID, skillName string) (string, error) {
+	result, err := c.fileProvider.List(ctx, "skills", nil)
+	if err != nil {
+		return "", err
+	}
+
+	for _, node := range result.Nodes {
+		if node.Type == filesystem.NodeTypeDirectory && node.Name == skillName {
+			return getString(node.Metadata["id"]), nil
+		}
+	}
+
+	return "", fmt.Errorf("skill not found")
+}
+
+// deleteFolder deletes a folder by ID
+func (c *DeleteSkillCommand) deleteFolder(ctx stdctx.Context, folderID string) error {
+	payload := map[string]interface{}{
+		"file_ids": []string{folderID},
+	}
+
+	resp, err := c.client.HTTPClient.Request("DELETE", "/files", true, "json", nil, payload)
+	if err != nil {
+		return err
+	}
+
+	var result struct {
+		Code int `json:"code"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &result); err != nil {
+		return err
+	}
+
+	if result.Code != 0 {
+		return fmt.Errorf("server returned error code: %d", result.Code)
+	}
+
+	return nil
+}
+
+// PrintHelp prints the help message for delete-skill command
+func (c *DeleteSkillCommand) PrintHelp() {
+	fmt.Println(`Usage: delete-skill <skill-name>
+
+Delete a skill from RAGFlow and remove its search index.
+
+Arguments:
+  <skill-name>           Name of the skill to delete
+
+Options:
+  -h, --help            Show this help message
+
+Examples:
+  delete-skill my-skill
+  delete-skill my-awesome-skill`)
 }

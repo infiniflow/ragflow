@@ -386,6 +386,7 @@ Commands:
   Filesystem commands (no quotes): ls datasets, search "keyword", cat path, etc.
   Skill commands: 
     add-skill <path> [--version 1.0.0]
+    delete-skill <skill-name>
     search -d skills -q <query> [-k top-k]
   If no command is provided, CLI runs in interactive mode.`)
 }
@@ -735,6 +736,14 @@ func (c *CLI) executeFilesystem(input string) error {
 			return fmt.Errorf("file provider not available")
 		}
 		cmd := NewAddSkillCommand(c.client, fileProvider)
+		return cmd.Execute(cmdArgs)
+	case "delete-skill":
+		// Get the file provider from the engine
+		fileProvider, ok := c.filesystemEngine.GetProvider("files").(*filesystem.FileProvider)
+		if !ok {
+			return fmt.Errorf("file provider not available")
+		}
+		cmd := NewDeleteSkillCommand(c.client, fileProvider)
 		return cmd.Execute(cmdArgs)
 	default:
 		return fmt.Errorf("unknown filesystem command: %s", cmdType)

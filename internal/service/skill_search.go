@@ -174,7 +174,7 @@ func (s *SkillSearchService) UpdateConfig(req *UpdateConfigRequest) (map[string]
 
 // SearchRequest represents the skill search request
 type SearchRequest struct {
-	TenantID string `json:"tenant_id" binding:"required"`
+	TenantID string `json:"tenant_id"` // Set from user context, not from request body
 	Query    string `json:"query" binding:"required"`
 	Page     int    `json:"page"`
 	PageSize int    `json:"page_size"`
@@ -182,7 +182,7 @@ type SearchRequest struct {
 
 // SearchResponse represents the skill search response
 type SearchResponse struct {
-	Results    []entity.SkillSearchResult `json:"results"`
+	Skills     []entity.SkillSearchResult `json:"skills"`      // Changed from "results" to match frontend
 	Total      int64                      `json:"total"`
 	Query      string                     `json:"query"`
 	SearchType string                     `json:"search_type"` // "keyword", "vector", "hybrid"
@@ -250,7 +250,7 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 	paginatedResults := results[start:end]
 
 	return &SearchResponse{
-		Results:    paginatedResults,
+		Skills:     paginatedResults,
 		Total:      total,
 		Query:      req.Query,
 		SearchType: searchType,
@@ -458,7 +458,11 @@ func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, ten
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
 
-	vector, err := embeddingModel.EncodeQuery(text)
+	// Truncate text to prevent exceeding model's max length (consistent with Python implementation)
+	maxLength := embeddingModel.MaxLength()
+	truncatedText := truncate(text, maxLength-10)
+
+	vector, err := embeddingModel.EncodeQuery(truncatedText)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode query: %w", err)
 	}

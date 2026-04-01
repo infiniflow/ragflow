@@ -104,8 +104,8 @@ const SkillsPage: React.FC = () => {
   );
 
   const handleDelete = useCallback(
-    async (skillId: string) => {
-      await deleteSkill(skillId);
+    async (skillId: string, skillName: string) => {
+      await deleteSkill(skillId, skillName);
     },
     [deleteSkill],
   );

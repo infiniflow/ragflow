@@ -89,7 +89,7 @@ func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID stri
 	if providerConfig == nil || providerConfig.DefaultURL == "" {
 		return nil, fmt.Errorf("no API base found for provider %s", provider)
 	}
-	apiBase := fmt.Sprintf("%sembeddings/", providerConfig.DefaultURL)
+	apiBase := providerConfig.DefaultURL
 
 	return models.CreateEmbeddingModel(provider, *apiKey, apiBase, modelName, p.httpClient)
 }

@@ -86,7 +86,7 @@ export type ViewMode = 'grid' | 'list';
 export interface SkillCardProps {
   skill: Skill;
   onView: (skill: Skill) => void;
-  onDelete: (skillId: string) => void;
+  onDelete: (skillId: string, skillName: string) => void;
   formatRelative: (timestamp: number) => string;
 }
 
