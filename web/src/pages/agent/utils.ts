@@ -211,7 +211,10 @@ function transformParserParams(params: ParserFormSchemaType) {
   >((pre, cur) => {
     if (cur.fileFormat) {
       let filteredSetup: Partial<
-        ParserFormSchemaType['setups'][0] & { suffix: string[] }
+        ParserFormSchemaType['setups'][0] & { suffix: string[] } & {
+          two_column_check: boolean;
+          enable_multi_column: boolean;
+        }
       > = {
         output_format: cur.output_format,
         preprocess: cur.preprocess,
@@ -224,7 +227,9 @@ function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             parse_method: cur.parse_method,
             lang: cur.lang,
-            llm_id: cur.llm_id,
+            vlm: { llm_id: cur.vlm?.llm_id },
+            enable_multi_column: cur.enable_multi_column,
+            remove_toc: cur.remove_toc,
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -276,7 +281,7 @@ function transformParserParams(params: ParserFormSchemaType) {
         case FileType.Audio:
           filteredSetup = {
             ...filteredSetup,
-            llm_id: cur.llm_id,
+            vlm: { llm_id: cur.vlm?.llm_id },
           };
           break;
         default:

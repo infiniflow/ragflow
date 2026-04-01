@@ -146,10 +146,12 @@ export const FormSchema = z.object({
       parse_method: z.string().optional(),
       lang: z.string().optional(),
       fields: z.array(z.string()).optional(),
-      llm_id: z.string().optional(),
+      vlm: z.object({ llm_id: z.string().optional() }).optional(),
       system_prompt: z.string().optional(),
       table_result_type: z.string().optional(),
       markdown_image_response_type: z.string().optional(),
+      enable_multi_column: z.boolean().optional(),
+      remove_toc: z.boolean().optional(),
     }),
   ),
 });

@@ -9,6 +9,7 @@ import {
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { Checkbox } from '@/components/ui/checkbox';
 import { upperCase, upperFirst } from 'lodash';
 import { useTranslation } from 'react-i18next';
 import {
@@ -80,9 +81,51 @@ export function LargeModelFormField({
 }: CommonProps & Pick<LLMFormFieldProps, 'options'>) {
   return (
     <LLMFormField
-      name={buildFieldNameWithPrefix('llm_id', prefix)}
+      name={buildFieldNameWithPrefix('vlm.llm_id', prefix)}
       options={options}
     ></LLMFormField>
+  );
+}
+
+export function TwoColumnCheckFormField({ prefix }: CommonProps) {
+  const { t } = useTranslation();
+  return (
+    <RAGFlowFormItem
+      name={buildFieldNameWithPrefix(`enable_multi_column`, prefix)}
+      label={t('flow.enableMultiColumn', 'Enable multi column')}
+      horizontal={true}
+      labelClassName="w-[200px]"
+    >
+      {(field) => (
+        <Checkbox
+          checked={field.value}
+          onCheckedChange={(checked) => {
+            field.onChange?.(checked);
+          }}
+        />
+      )}
+    </RAGFlowFormItem>
+  );
+}
+
+export function RmdirFormField({ prefix }: CommonProps) {
+  const { t } = useTranslation();
+  return (
+    <RAGFlowFormItem
+      name={buildFieldNameWithPrefix(`remove_toc`, prefix)}
+      label={t('flow.remove_toc', 'Remove TOC')}
+      horizontal={true}
+      labelClassName="w-[200px]"
+    >
+      {(field) => (
+        <Checkbox
+          checked={field.value}
+          onCheckedChange={(checked) => {
+            field.onChange?.(checked);
+          }}
+        />
+      )}
+    </RAGFlowFormItem>
   );
 }
 

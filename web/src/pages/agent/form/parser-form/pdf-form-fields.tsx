@@ -14,6 +14,8 @@ import {
   LanguageFormField,
   LargeModelFormField,
   ParserMethodFormField,
+  RmdirFormField,
+  TwoColumnCheckFormField,
 } from './common-form-fields';
 import { CommonProps } from './interface';
 import { useSetInitialLanguage } from './use-set-initial-language';
@@ -96,6 +98,8 @@ export function PdfFormFields({ prefix }: CommonProps) {
 
   return (
     <>
+      <TwoColumnCheckFormField prefix={prefix} />
+      <RmdirFormField prefix={prefix} />
       <ParserMethodFormField prefix={prefix}></ParserMethodFormField>
 
       <LargeModelFormField
