@@ -305,6 +305,14 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenAvailable, Value: ident}
 	case "NAME":
 		return Token{Type: TokenName, Value: ident}
+	case "POOL":
+		return Token{Type: TokenPool, Value: ident}
+	case "INSERT":
+		return Token{Type: TokenInsert, Value: ident}
+	case "FILE":
+		return Token{Type: TokenFile, Value: ident}
+	case "METADATA":
+		return Token{Type: TokenMetadata, Value: ident}
 	default:
 		return Token{Type: TokenIdentifier, Value: ident}
 	}

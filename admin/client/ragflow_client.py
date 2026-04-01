@@ -1520,6 +1520,48 @@ class RAGFlowClient:
         else:
             print(f"Fail to get chunk, code: {res_json['code']}, message: {res_json['message']}")
 
+    # Internal
+    def insert_dataset_from_file(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+            return
+
+        file_path = command_dict["file_path"]
+        payload = {"file_path": file_path}
+        response = self.http_client.request("POST", "/kb/insert_from_file", json_body=payload,
+                                            use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200:
+            if res_json["code"] == 0:
+                print(f"Success to insert dataset from file: {file_path}")
+                if res_json.get("data"):
+                    self._print_key_value(res_json["data"])
+            else:
+                print(f"Fail to insert dataset from file, code: {res_json['code']}, message: {res_json['message']}")
+        else:
+            print(f"Fail to insert dataset from file, code: {res_json['code']}, message: {res_json['message']}")
+
+    # Internal
+    def insert_metadata_from_file(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+            return
+
+        file_path = command_dict["file_path"]
+        payload = {"file_path": file_path}
+        response = self.http_client.request("POST", "/tenant/insert_metadata_from_file", json_body=payload,
+                                            use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200:
+            if res_json["code"] == 0:
+                print(f"Success to insert metadata from file: {file_path}")
+                if res_json.get("data"):
+                    self._print_key_value(res_json["data"])
+            else:
+                print(f"Fail to insert metadata from file, code: {res_json['code']}, message: {res_json['message']}")
+        else:
+            print(f"Fail to insert metadata from file, code: {res_json['code']}, message: {res_json['message']}")
+
     def list_chunks(self, command_dict):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
@@ -1903,6 +1945,10 @@ def run_command(client: RAGFlowClient, command_dict: dict):
             return client.search_on_datasets(command_dict)
         case "get_chunk":
             return client.get_chunk(command_dict)
+        case "insert_dataset_from_file":
+            return client.insert_dataset_from_file(command_dict)
+        case "insert_metadata_from_file":
+            return client.insert_metadata_from_file(command_dict)
         case "list_chunks":
             return client.list_chunks(command_dict)
         case "meta":
