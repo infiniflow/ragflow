@@ -136,83 +136,75 @@ class TestChatAssistantsList:
     @pytest.mark.parametrize(
         "params, expected_num, expected_message",
         [
-            ({"keywords": None}, 5, ""),
-            ({"keywords": ""}, 5, ""),
-            ({"keywords": "test_chat_assistant_1"}, 1, ""),
-            ({"keywords": "unknown"}, 0, ""),
+            ({"name": None}, 5, ""),
+            ({"name": ""}, 5, ""),
+            ({"name": "test_chat_assistant_1"}, 1, ""),
+            ({"name": "unknown"}, 0, "The chat doesn't exist"),
         ],
     )
-    def test_keywords(self, client, params, expected_num, expected_message):
+    def test_name(self, client, params, expected_num, expected_message):
         if expected_message:
             with pytest.raises(Exception) as exception_info:
                 client.list_chats(**params)
             assert expected_message in str(exception_info.value)
         else:
             assistants = client.list_chats(**params)
-            if params["keywords"] in [None, ""]:
+            if params["name"] in [None, ""]:
                 assert len(assistants) == expected_num
             else:
-                assert len(assistants) == expected_num
-                if expected_num:
-                    assert assistants[0].name == params["keywords"]
-
-    @pytest.mark.p1
-    def test_exact_id_and_name_filters(self, client, add_chat_assistants):
-        _, _, chat_assistants = add_chat_assistants
-        target = chat_assistants[1]
-
-        assistants = client.list_chats(id=target.id)
-        assert len(assistants) == 1
-        assert assistants[0].id == target.id
-
-        assistants = client.list_chats(name=target.name)
-        assert len(assistants) == 1
-        assert assistants[0].name == target.name
-
-        assistants = client.list_chats(name=target.name, keywords="unknown")
-        assert len(assistants) == 1
-        assert assistants[0].name == target.name
+                assert assistants[0].name == params["name"]
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
-        "chat_assistant_id, expected_message",
+        "chat_assistant_id, expected_num, expected_message",
         [
-            (lambda r: r[0], ""),
-            ("unknown", "No authorization."),
+            (None, 5, ""),
+            ("", 5, ""),
+            (lambda r: r[0], 1, ""),
+            ("unknown", 0, "The chat doesn't exist"),
         ],
     )
-    def test_get_chat(self, client, add_chat_assistants, chat_assistant_id, expected_message):
+    def test_id(self, client, add_chat_assistants, chat_assistant_id, expected_num, expected_message):
         _, _, chat_assistants = add_chat_assistants
-        chat_id = chat_assistant_id([chat.id for chat in chat_assistants]) if callable(chat_assistant_id) else chat_assistant_id
+        if callable(chat_assistant_id):
+            params = {"id": chat_assistant_id([chat.id for chat in chat_assistants])}
+        else:
+            params = {"id": chat_assistant_id}
 
         if expected_message:
             with pytest.raises(Exception) as exception_info:
-                client.get_chat(chat_id)
+                client.list_chats(**params)
             assert expected_message in str(exception_info.value)
         else:
-            assistant = client.get_chat(chat_id)
-            assert assistant.id == chat_id
+            assistants = client.list_chats(**params)
+            if params["id"] in [None, ""]:
+                assert len(assistants) == expected_num
+            else:
+                assert assistants[0].id == params["id"]
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
-        "chat_assistant_id, keywords, expected_num, expected_message",
+        "chat_assistant_id, name, expected_num, expected_message",
         [
             (lambda r: r[0], "test_chat_assistant_0", 1, ""),
-            (lambda r: r[0], "test_chat_assistant_1", 0, ""),
-            (lambda r: r[0], "unknown", 0, ""),
+            (lambda r: r[0], "test_chat_assistant_1", 0, "The chat doesn't exist"),
+            (lambda r: r[0], "unknown", 0, "The chat doesn't exist"),
+            ("id", "chat_assistant_0", 0, "The chat doesn't exist"),
         ],
     )
-    def test_get_and_keywords_are_separate_lookups(self, client, add_chat_assistants, chat_assistant_id, keywords, expected_num, expected_message):
+    def test_name_and_id(self, client, add_chat_assistants, chat_assistant_id, name, expected_num, expected_message):
         _, _, chat_assistants = add_chat_assistants
-        chat_id = chat_assistant_id([chat.id for chat in chat_assistants]) if callable(chat_assistant_id) else chat_assistant_id
+        if callable(chat_assistant_id):
+            params = {"id": chat_assistant_id([chat.id for chat in chat_assistants]), "name": name}
+        else:
+            params = {"id": chat_assistant_id, "name": name}
 
         if expected_message:
             with pytest.raises(Exception) as exception_info:
-                client.get_chat(chat_id)
+                client.list_chats(**params)
             assert expected_message in str(exception_info.value)
         else:
-            client.get_chat(chat_id)
-            assistants = client.list_chats(keywords=keywords)
+            assistants = client.list_chats(**params)
             assert len(assistants) == expected_num
 
     @pytest.mark.p3

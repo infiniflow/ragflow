@@ -151,7 +151,7 @@ Model selection guidance
   - Chat model is tied to the chat assistant.
     Set during chat creation using --chat-payload:
 ```
-      {"name": "...", "llm_id": "<model_name>@<provider>", "llm_setting": {}}
+      {"name": "...", "llm": {"model_name": "<model_name>@<provider>"}}
 ```
     Or set tenant defaults via --set-tenant-info with --tenant-llm-id.
   - --model is required by the OpenAI-compatible endpoint but does not override
@@ -190,7 +190,7 @@ Example: chat benchmark creating dataset + upload + parse + chat (login + regist
     --document-path test/benchmark/test_docs/Doc2.pdf \
     --document-path test/benchmark/test_docs/Doc3.pdf \
     --chat-name "bench_chat" \
-    --chat-payload '{"name":"bench_chat","llm_id":"glm-4-flash@ZHIPU-AI","llm_setting":{}}' \
+    --chat-payload '{"name":"bench_chat","llm":{"model_name":"glm-4-flash@ZHIPU-AI"}}' \
     --message "What is the purpose of RAGFlow?" \
     --model "glm-4-flash@ZHIPU-AI"
 ```

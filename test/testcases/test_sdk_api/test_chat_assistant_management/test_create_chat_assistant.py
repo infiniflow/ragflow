@@ -14,8 +14,11 @@
 #  limitations under the License.
 #
 
+from operator import attrgetter
+
 import pytest
 from configs import CHAT_ASSISTANT_NAME_LIMIT
+from ragflow_sdk import Chat
 from utils import encode_avatar
 from utils.file_utils import create_image_file
 
@@ -73,16 +76,18 @@ class TestChatAssistantCreate:
             assert chat_assistant.name == "ragflow test"
 
     @pytest.mark.p3
-    def test_icon(self, client, tmp_path):
+    def test_avatar(self, client, tmp_path):
         fn = create_image_file(tmp_path / "ragflow_test.png")
-        chat_assistant = client.create_chat(name="icon_test", icon=encode_avatar(fn), dataset_ids=[])
-        assert chat_assistant.name == "icon_test"
+        chat_assistant = client.create_chat(name="avatar_test", avatar=encode_avatar(fn), dataset_ids=[])
+        assert chat_assistant.name == "avatar_test"
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
-        "llm_setting, expected_message",
+        "llm, expected_message",
         [
             ({}, ""),
+            ({"model_name": "glm-4"}, ""),
+            ({"model_name": "unknown"}, "`model_name` unknown doesn't exist"),
             ({"temperature": 0}, ""),
             ({"temperature": 1}, ""),
             pytest.param({"temperature": -1}, "", marks=pytest.mark.skip),
@@ -111,41 +116,47 @@ class TestChatAssistantCreate:
             pytest.param({"unknown": "unknown"}, "", marks=pytest.mark.skip),
         ],
     )
-    def test_llm_setting(self, client, add_chunks, llm_setting, expected_message):
+    def test_llm(self, client, add_chunks, llm, expected_message):
         dataset, _, _ = add_chunks
+        llm_o = Chat.LLM(client, llm)
 
         if expected_message:
             with pytest.raises(Exception) as exception_info:
-                client.create_chat(name="llm_test", dataset_ids=[dataset.id], llm_setting=llm_setting or None)
+                client.create_chat(name="llm_test", dataset_ids=[dataset.id], llm=llm_o)
             assert expected_message in str(exception_info.value)
         else:
-            chat_assistant = client.create_chat(name="llm_test", dataset_ids=[dataset.id], llm_setting=llm_setting or None)
-            for k, v in llm_setting.items():
-                assert getattr(chat_assistant.llm_setting, k) == v
+            chat_assistant = client.create_chat(name="llm_test", dataset_ids=[dataset.id], llm=llm_o)
+            if llm:
+                for k, v in llm.items():
+                    assert attrgetter(k)(chat_assistant.llm) == v
+            else:
+                assert attrgetter("model_name")(chat_assistant.llm) == "glm-4-flash@ZHIPU-AI"
+                assert attrgetter("temperature")(chat_assistant.llm) == 0.1
+                assert attrgetter("top_p")(chat_assistant.llm) == 0.3
+                assert attrgetter("presence_penalty")(chat_assistant.llm) == 0.4
+                assert attrgetter("frequency_penalty")(chat_assistant.llm) == 0.7
+                assert attrgetter("max_tokens")(chat_assistant.llm) == 512
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
-        "llm_id, expected_message",
+        "prompt, expected_message",
         [
-            ("glm-4", ""),
-            ("unknown", "`llm_id` unknown doesn't exist"),
-        ],
-    )
-    def test_llm_id(self, client, add_chunks, llm_id, expected_message):
-        dataset, _, _ = add_chunks
-
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                client.create_chat(name="llm_test", dataset_ids=[dataset.id], llm_id=llm_id)
-            assert expected_message in str(exception_info.value)
-        else:
-            chat_assistant = client.create_chat(name="llm_test", dataset_ids=[dataset.id], llm_id=llm_id)
-            assert chat_assistant.llm_id == llm_id
-
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "prompt_config, expected_message",
-        [
+            ({"similarity_threshold": 0}, ""),
+            ({"similarity_threshold": 1}, ""),
+            pytest.param({"similarity_threshold": -1}, "", marks=pytest.mark.skip),
+            pytest.param({"similarity_threshold": 10}, "", marks=pytest.mark.skip),
+            pytest.param({"similarity_threshold": "a"}, "", marks=pytest.mark.skip),
+            ({"keywords_similarity_weight": 0}, ""),
+            ({"keywords_similarity_weight": 1}, ""),
+            pytest.param({"keywords_similarity_weight": -1}, "", marks=pytest.mark.skip),
+            pytest.param({"keywords_similarity_weight": 10}, "", marks=pytest.mark.skip),
+            pytest.param({"keywords_similarity_weight": "a"}, "", marks=pytest.mark.skip),
+            ({"variables": []}, ""),
+            ({"top_n": 0}, ""),
+            ({"top_n": 1}, ""),
+            pytest.param({"top_n": -1}, "", marks=pytest.mark.skip),
+            pytest.param({"top_n": 10}, "", marks=pytest.mark.skip),
+            pytest.param({"top_n": "a"}, "", marks=pytest.mark.skip),
             ({"empty_response": "Hello World"}, ""),
             ({"empty_response": ""}, ""),
             ({"empty_response": "!@#$%^&*()"}, ""),
@@ -153,36 +164,55 @@ class TestChatAssistantCreate:
             pytest.param({"empty_response": 123}, "", marks=pytest.mark.skip),
             pytest.param({"empty_response": True}, "", marks=pytest.mark.skip),
             pytest.param({"empty_response": " "}, "", marks=pytest.mark.skip),
-            ({"prologue": "Hello World"}, ""),
-            ({"prologue": ""}, ""),
-            ({"prologue": "!@#$%^&*()"}, ""),
-            ({"prologue": "中文测试"}, ""),
-            pytest.param({"prologue": 123}, "", marks=pytest.mark.skip),
-            pytest.param({"prologue": True}, "", marks=pytest.mark.skip),
-            pytest.param({"prologue": " "}, "", marks=pytest.mark.skip),
-            ({"quote": True}, ""),
-            ({"quote": False}, ""),
-            ({"system": "Hello World {knowledge}"}, ""),
-            ({"system": "{knowledge}"}, ""),
-            ({"system": "!@#$%^&*() {knowledge}"}, ""),
-            ({"system": "中文测试 {knowledge}"}, ""),
-            ({"system": "Hello World"}, ""),
-            ({"system": "Hello World", "parameters": []}, ""),
-            pytest.param({"system": 123}, "", marks=pytest.mark.skip),
+            ({"opener": "Hello World"}, ""),
+            ({"opener": ""}, ""),
+            ({"opener": "!@#$%^&*()"}, ""),
+            ({"opener": "中文测试"}, ""),
+            pytest.param({"opener": 123}, "", marks=pytest.mark.skip),
+            pytest.param({"opener": True}, "", marks=pytest.mark.skip),
+            pytest.param({"opener": " "}, "", marks=pytest.mark.skip),
+            ({"show_quote": True}, ""),
+            ({"show_quote": False}, ""),
+            ({"prompt": "Hello World {knowledge}"}, ""),
+            ({"prompt": "{knowledge}"}, ""),
+            ({"prompt": "!@#$%^&*() {knowledge}"}, ""),
+            ({"prompt": "中文测试 {knowledge}"}, ""),
+            ({"prompt": "Hello World"}, ""),
+            ({"prompt": "Hello World", "variables": []}, ""),
+            pytest.param({"prompt": 123}, """AttributeError("\'int\' object has no attribute \'find\'")""", marks=pytest.mark.skip),
+            pytest.param({"prompt": True}, """AttributeError("\'int\' object has no attribute \'find\'")""", marks=pytest.mark.skip),
             pytest.param({"unknown": "unknown"}, "", marks=pytest.mark.skip),
         ],
     )
-    def test_prompt_config(self, client, add_chunks, prompt_config, expected_message):
+    def test_prompt(self, client, add_chunks, prompt, expected_message):
         dataset, _, _ = add_chunks
+        prompt_o = Chat.Prompt(client, prompt)
 
         if expected_message:
             with pytest.raises(Exception) as exception_info:
-                client.create_chat(name="prompt_test", dataset_ids=[dataset.id], prompt_config=prompt_config)
+                client.create_chat(name="prompt_test", dataset_ids=[dataset.id], prompt=prompt_o)
             assert expected_message in str(exception_info.value)
         else:
-            chat_assistant = client.create_chat(name="prompt_test", dataset_ids=[dataset.id], prompt_config=prompt_config)
-            for k, v in prompt_config.items():
-                assert getattr(chat_assistant.prompt_config, k) == v
+            chat_assistant = client.create_chat(name="prompt_test", dataset_ids=[dataset.id], prompt=prompt_o)
+            if prompt:
+                for k, v in prompt.items():
+                    if k == "keywords_similarity_weight":
+                        assert attrgetter(k)(chat_assistant.prompt) == 1 - v
+                    else:
+                        assert attrgetter(k)(chat_assistant.prompt) == v
+            else:
+                assert attrgetter("similarity_threshold")(chat_assistant.prompt) == 0.2
+                assert attrgetter("keywords_similarity_weight")(chat_assistant.prompt) == 0.7
+                assert attrgetter("top_n")(chat_assistant.prompt) == 6
+                assert attrgetter("variables")(chat_assistant.prompt) == [{"key": "knowledge", "optional": False}]
+                assert attrgetter("rerank_model")(chat_assistant.prompt) == ""
+                assert attrgetter("empty_response")(chat_assistant.prompt) == "Sorry! No relevant content was found in the knowledge base!"
+                assert attrgetter("opener")(chat_assistant.prompt) == "Hi! I'm your assistant. What can I do for you?"
+                assert attrgetter("show_quote")(chat_assistant.prompt) is True
+                assert (
+                    attrgetter("prompt")(chat_assistant.prompt)
+                    == 'You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the dataset!" Answers need to consider chat history.\n      Here is the knowledge base:\n      {knowledge}\n      The above is the knowledge base.'
+                )
 
 
 class TestChatAssistantCreate2:

@@ -20,7 +20,7 @@ PYTHONPATH="${REPO_ROOT}/test" uv run -m benchmark chat \
   --document-path "${SCRIPT_DIR}/test_docs/Doc2.pdf" \
   --document-path "${SCRIPT_DIR}/test_docs/Doc3.pdf" \
   --chat-name "bench_chat" \
-  --chat-payload '{"name":"bench_chat","llm_id":"glm-4-flash@ZHIPU-AI","llm_setting":{}}' \
+  --chat-payload '{"name":"bench_chat","llm":{"model_name":"glm-4-flash@ZHIPU-AI"}}' \
   --message "What is the purpose of RAGFlow?" \
   --model "glm-4-flash@ZHIPU-AI" \
   --iterations 10 \

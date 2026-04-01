@@ -2,13 +2,10 @@ import api from '@/utils/api';
 import { registerNextServer } from '@/utils/register-server';
 
 const {
-  createChat,
-  listChats,
-  getChat,
-  updateChat,
-  patchChat,
-  deleteChat,
-  bulkDeleteChats,
+  getDialog,
+  setDialog,
+  // listDialog,
+  removeDialog,
   getConversation,
   getConversationSSE,
   setConversation,
@@ -29,38 +26,27 @@ const {
   ask,
   mindmap,
   getRelatedQuestions,
+  listNextDialog,
   upload_and_parse,
   fetchExternalChatInfo,
 } = api;
 
 const methods = {
-  createChat: {
-    url: createChat,
+  getDialog: {
+    url: getDialog,
+    method: 'get',
+  },
+  setDialog: {
+    url: setDialog,
     method: 'post',
   },
-  listChats: {
-    url: listChats,
-    method: 'get',
+  removeDialog: {
+    url: removeDialog,
+    method: 'post',
   },
-  getChat: {
-    url: getChat,
-    method: 'get',
-  },
-  updateChat: {
-    url: updateChat,
-    method: 'put',
-  },
-  patchChat: {
-    url: patchChat,
-    method: 'patch',
-  },
-  deleteChat: {
-    url: deleteChat,
-    method: 'delete',
-  },
-  bulkDeleteChats: {
-    url: bulkDeleteChats,
-    method: 'delete',
+  listDialog: {
+    url: listNextDialog,
+    method: 'post',
   },
   listConversation: {
     url: listConversation,

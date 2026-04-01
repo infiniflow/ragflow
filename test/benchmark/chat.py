@@ -26,8 +26,8 @@ def create_chat(
     body = dict(payload or {})
     if "name" not in body:
         body["name"] = name
-    if dataset_ids is not None and "kb_ids" not in body:
-        body["kb_ids"] = dataset_ids
+    if dataset_ids is not None and "dataset_ids" not in body:
+        body["dataset_ids"] = dataset_ids
     res = client.request_json("POST", "/chats", json_body=body)
     if res.get("code") != 0:
         raise ChatError(f"Create chat failed: {res.get('message')}")
@@ -35,23 +35,24 @@ def create_chat(
 
 
 def get_chat(client: HttpClient, chat_id: str) -> Dict[str, Any]:
-    res = client.request_json("GET", f"/chats/{chat_id}")
+    res = client.request_json("GET", "/chats", params={"id": chat_id})
     if res.get("code") != 0:
         raise ChatError(f"Get chat failed: {res.get('message')}")
-    data = res.get("data", {})
+    data = res.get("data", [])
     if not data:
         raise ChatError("Chat not found")
-    return data
+    return data[0]
 
 
 def resolve_model(model: Optional[str], chat_data: Optional[Dict[str, Any]]) -> str:
     if model:
         return model
     if chat_data:
-        llm_id = chat_data.get("llm_id")
-        if llm_id:
-            return llm_id
-    raise ChatError("Model name is required; provide --model or use a chat with llm_id.")
+        llm = chat_data.get("llm") or {}
+        llm_name = llm.get("model_name")
+        if llm_name:
+            return llm_name
+    raise ChatError("Model name is required; provide --model or use a chat with llm.model_name.")
 
 
 def _parse_stream_error(response) -> Optional[str]:
