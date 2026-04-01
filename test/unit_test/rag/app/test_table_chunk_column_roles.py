@@ -19,8 +19,20 @@
 
 from __future__ import annotations
 
-import warnings
+import sys
 from unittest.mock import MagicMock, patch
+
+# Mock heavy modules that trigger ONNX model loading at import time
+# table.py -> deepdoc.parser.figure_parser -> rag.app.picture -> OCR()
+for mod in [
+    "deepdoc.vision.ocr",
+    "deepdoc.parser.figure_parser",
+    "rag.app.picture",
+]:
+    if mod not in sys.modules:
+        sys.modules[mod] = MagicMock()
+
+import warnings
 
 # Importing rag.app.table pulls api -> rag.llm -> deepdoc -> xgboost; xgboost may warn on
 # pkg_resources in a way that breaks its compat shim unless pkg_resources loads first.
