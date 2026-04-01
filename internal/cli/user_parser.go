@@ -155,6 +155,8 @@ func (p *Parser) parseListCommand() (*Command, error) {
 		return p.parseListModelsOfProvider()
 	case TokenProviders:
 		return p.parseListProviders()
+	case TokenInstances:
+		return p.parseListInstances()
 	case TokenDefault:
 		return p.parseListDefaultModels()
 	case TokenAvailable:
@@ -354,6 +356,8 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 		return p.parseShowProvider()
 	case TokenModel:
 		return p.parseShowModel()
+	case TokenInstance:
+		return p.parseShowInstance()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -517,6 +521,8 @@ func (p *Parser) parseCreateCommand() (*Command, error) {
 		return p.parseCreateToken()
 	case TokenIndex:
 		return p.parseCreateIndex()
+	case TokenProvider:
+		return p.parseCreateProviderInstance()
 	default:
 		return nil, fmt.Errorf("unknown CREATE target: %s", p.curToken.Value)
 	}
@@ -805,6 +811,8 @@ func (p *Parser) parseDropCommand() (*Command, error) {
 		return p.parseDropToken()
 	case TokenIndex:
 		return p.parseDropIndex()
+	case TokenInstance:
+		return p.parseDropInstance()
 	default:
 		return nil, fmt.Errorf("unknown DROP target: %s", p.curToken.Value)
 	}
@@ -1017,6 +1025,8 @@ func (p *Parser) parseAlterCommand() (*Command, error) {
 		return p.parseAlterRole()
 	case TokenProvider:
 		return p.parseAlterProvider()
+	case TokenInstance:
+		return p.parseAlterInstance()
 	default:
 		return nil, fmt.Errorf("unknown ALTER target: %s", p.curToken.Value)
 	}
@@ -1169,6 +1179,204 @@ func (p *Parser) parseAlterProvider() (*Command, error) {
 	cmd := NewCommand("alter_provider")
 	cmd.Params["provider_name"] = providerName
 	cmd.Params["new_name"] = newName
+
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// parseCreateProviderInstance parses CREATE PROVIDER <name> INSTANCE <instance_name> <api_key> command
+// instance_name cannot be "default"
+func (p *Parser) parseCreateProviderInstance() (*Command, error) {
+	p.nextToken() // consume PROVIDER
+
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected provider name: %w", err)
+	}
+
+	p.nextToken()
+	if p.curToken.Type != TokenInstance {
+		return nil, fmt.Errorf("expected INSTANCE after provider name")
+	}
+	p.nextToken()
+
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected instance name: %w", err)
+	}
+
+	// Check if instance_name is "default"
+	if instanceName == "default" {
+		return nil, fmt.Errorf("instance name cannot be 'default'")
+	}
+
+	p.nextToken()
+	apiKey, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected API key: %w", err)
+	}
+
+	cmd := NewCommand("create_provider_instance")
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["api_key"] = apiKey
+
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// parseListInstances parses LIST INSTANCES FROM PROVIDER <name> command
+func (p *Parser) parseListInstances() (*Command, error) {
+	p.nextToken() // consume INSTANCES
+
+	if p.curToken.Type != TokenFrom {
+		return nil, fmt.Errorf("expected FROM")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenProvider {
+		return nil, fmt.Errorf("expected PROVIDER after FROM")
+	}
+	p.nextToken()
+
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected provider name after FROM PROVIDER: %w", err)
+	}
+
+	cmd := NewCommand("list_provider_instances")
+	cmd.Params["provider_name"] = providerName
+
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// parseShowInstance parses SHOW INSTANCE <name> FROM PROVIDER <name> command
+func (p *Parser) parseShowInstance() (*Command, error) {
+	p.nextToken() // consume INSTANCE
+
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected instance name: %w", err)
+	}
+
+	p.nextToken()
+	if p.curToken.Type != TokenFrom {
+		return nil, fmt.Errorf("expected FROM")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenProvider {
+		return nil, fmt.Errorf("expected PROVIDER after FROM")
+	}
+	p.nextToken()
+
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected provider name after FROM PROVIDER: %w", err)
+	}
+
+	cmd := NewCommand("show_provider_instance")
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["provider_name"] = providerName
+
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// parseAlterInstance parses ALTER INSTANCE <name> NAME <new_name> FROM PROVIDER <name> command
+func (p *Parser) parseAlterInstance() (*Command, error) {
+	p.nextToken() // consume INSTANCE
+
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected instance name: %w", err)
+	}
+
+	p.nextToken()
+	if p.curToken.Type != TokenName {
+		return nil, fmt.Errorf("expected NAME")
+	}
+	p.nextToken()
+
+	newName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected new instance name: %w", err)
+	}
+
+	p.nextToken()
+	if p.curToken.Type != TokenFrom {
+		return nil, fmt.Errorf("expected FROM")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenProvider {
+		return nil, fmt.Errorf("expected PROVIDER after FROM")
+	}
+	p.nextToken()
+
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected provider name after FROM PROVIDER: %w", err)
+	}
+
+	cmd := NewCommand("alter_provider_instance")
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["new_name"] = newName
+	cmd.Params["provider_name"] = providerName
+
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// parseDropInstance parses DROP INSTANCE <name> FROM PROVIDER <name> command
+func (p *Parser) parseDropInstance() (*Command, error) {
+	p.nextToken() // consume INSTANCE
+
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected instance name: %w", err)
+	}
+
+	p.nextToken()
+	if p.curToken.Type != TokenFrom {
+		return nil, fmt.Errorf("expected FROM")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenProvider {
+		return nil, fmt.Errorf("expected PROVIDER after FROM")
+	}
+	p.nextToken()
+
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected provider name after FROM PROVIDER: %w", err)
+	}
+
+	cmd := NewCommand("drop_provider_instance")
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["provider_name"] = providerName
 
 	p.nextToken()
 	// Semicolon is optional

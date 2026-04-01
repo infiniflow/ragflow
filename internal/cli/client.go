@@ -218,6 +218,17 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListProviders(cmd)
 	case "delete_provider":
 		return c.DeleteProvider(cmd)
+	// Provider instance commands
+	case "create_provider_instance":
+		return c.CreateProviderInstance(cmd)
+	case "list_provider_instances":
+		return c.ListProviderInstances(cmd)
+	case "show_provider_instance":
+		return c.ShowProviderInstance(cmd)
+	case "alter_provider_instance":
+		return c.AlterProviderInstance(cmd)
+	case "drop_provider_instance":
+		return c.DropProviderInstance(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)
