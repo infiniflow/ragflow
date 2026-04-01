@@ -1054,7 +1054,7 @@ func (c *RAGFlowClient) ShowProviderInstance(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to show instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonResponse
+	var result CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("show instance failed: invalid JSON (%w)", err)
 	}

@@ -227,7 +227,7 @@ func (m *ModelProviderService) DeleteModelProvider(providerName, userID string) 
 	return common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) CreateProviderInstance(providerName, apiKey, userID string) (common.ErrorCode, error) {
+func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName, apiKey, userID string) (common.ErrorCode, error) {
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -254,10 +254,11 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, apiKey, user
 	now := time.Now().Unix()
 	nowDate := time.Now().Truncate(time.Second)
 	tenantModelProvider := &entity.TenantModelInstance{
-		ID:         instanceID,
-		ProviderID: provider.ID,
-		APIKey:     apiKey,
-		Status:     "active",
+		ID:           instanceID,
+		InstanceName: instanceName,
+		ProviderID:   provider.ID,
+		APIKey:       apiKey,
+		Status:       "active",
 	}
 	tenantModelProvider.CreateTime = &now
 	tenantModelProvider.UpdateTime = &now
@@ -291,7 +292,7 @@ func (m *ModelProviderService) ListProviderInstances(providerName, userID string
 	}
 
 	// Check if provider exists
-	instances, err := m.modelInstanceDAO.GetByProviderIDAndTenantID(provider.ID)
+	instances, err := m.modelInstanceDAO.GetAllInstancesByProviderID(provider.ID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -299,10 +300,11 @@ func (m *ModelProviderService) ListProviderInstances(providerName, userID string
 	var result []map[string]interface{}
 	for _, instance := range instances {
 		result = append(result, map[string]interface{}{
-			"id":         instance.ID,
-			"providerID": instance.ProviderID,
-			"apiKey":     instance.APIKey,
-			"status":     instance.Status,
+			"id":           instance.ID,
+			"instanceName": instance.InstanceName,
+			"providerID":   instance.ProviderID,
+			"apiKey":       instance.APIKey,
+			"status":       instance.Status,
 		})
 	}
 
@@ -311,12 +313,71 @@ func (m *ModelProviderService) ListProviderInstances(providerName, userID string
 }
 
 func (m *ModelProviderService) ShowProviderInstance(providerName, instanceName, userID string) (map[string]interface{}, common.ErrorCode, error) {
-	return nil, common.CodeSuccess, nil
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return nil, common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	result := map[string]interface{}{
+		"id":           instance.ID,
+		"instanceName": instance.InstanceName,
+		"providerID":   instance.ProviderID,
+		"status":       instance.Status,
+	}
+
+	return result, common.CodeSuccess, nil
 }
 
 func (m *ModelProviderService) AlterProviderInstance(providerName, instanceName, newInstanceName, apiKey, userID string) (common.ErrorCode, error) {
 	return common.CodeSuccess, nil
 }
 func (m *ModelProviderService) DropProviderInstance(providerName, instanceName, userID string) (common.ErrorCode, error) {
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	count, err := m.modelInstanceDAO.DeleteByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	if count == 0 {
+		return common.CodeNotFound, errors.New("provider instance not found")
+	}
+
 	return common.CodeSuccess, nil
 }

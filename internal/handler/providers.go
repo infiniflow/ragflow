@@ -272,7 +272,7 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	_, err := h.modelProviderService.CreateProviderInstance(providerName, req.APIKey, userID)
+	_, err := h.modelProviderService.CreateProviderInstance(providerName, req.InstanceName, req.APIKey, userID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeServerError,
@@ -337,30 +337,11 @@ func (h *ProviderHandler) ShowProviderInstance(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	// Get tenant ID from user
-	tenants, err := h.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	instance, errorCode, err := h.modelProviderService.ShowProviderInstance(providerName, instanceName, userID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
+			"code":    errorCode,
 			"message": err.Error(),
-		})
-		return
-	}
-	if len(tenants) == 0 {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeNotFound,
-			"message": "User has no tenants",
-		})
-		return
-	}
-	tenantID := tenants[0].TenantID
-
-	// Get tenant LLM by tenant ID, factory and model name
-	tenantLLMDAO := dao.NewTenantLLMDAO()
-	instance, err := tenantLLMDAO.GetByTenantFactoryAndModelName(tenantID, providerName, instanceName)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeNotFound,
-			"message": "Instance not found: " + err.Error(),
 		})
 		return
 	}
@@ -405,51 +386,16 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	// Get tenant ID from user
-	tenants, err := h.userTenantDAO.GetByUserIDAndRole(userID, "owner")
-	if err != nil {
+	if userID == "" {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": err.Error(),
-		})
-		return
-	}
-	if len(tenants) == 0 {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeNotFound,
-			"message": "User has no tenants",
-		})
-		return
-	}
-	tenantID := tenants[0].TenantID
-
-	// Get existing instance
-	tenantLLMDAO := dao.NewTenantLLMDAO()
-	instance, err := tenantLLMDAO.GetByTenantFactoryAndModelName(tenantID, providerName, instanceName)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeNotFound,
-			"message": "Instance not found: " + err.Error(),
-		})
-		return
-	}
-
-	// Update the llm_name
-	instance.LLMName = &req.LLMName
-
-	// Save the updated instance
-	err = tenantLLMDAO.Update(instance)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": "Failed to update instance: " + err.Error(),
+			"code":    common.CodeUnauthorized,
+			"message": "Unauthorized",
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
+		"code":    common.CodeNotFound,
 		"message": "success",
 	})
 }
@@ -475,45 +421,11 @@ func (h *ProviderHandler) DropProviderInstance(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	// Get tenant ID from user
-	tenants, err := h.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	_, err := h.modelProviderService.DropProviderInstance(providerName, instanceName, userID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeServerError,
 			"message": err.Error(),
-		})
-		return
-	}
-	if len(tenants) == 0 {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeNotFound,
-			"message": "User has no tenants",
-		})
-		return
-	}
-	tenantID := tenants[0].TenantID
-
-	// Check if instance is used in any model group
-	// First get the instance to check
-	tenantLLMDAO := dao.NewTenantLLMDAO()
-	_, err = tenantLLMDAO.GetByTenantFactoryAndModelName(tenantID, providerName, instanceName)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeNotFound,
-			"message": "Instance not found: " + err.Error(),
-		})
-		return
-	}
-
-	// TODO: Check if instance is used in any model group
-	// For now, just delete the instance
-
-	// Delete the instance
-	err = tenantLLMDAO.Delete(tenantID, providerName, instanceName)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": "Failed to delete instance: " + err.Error(),
 		})
 		return
 	}
