@@ -141,12 +141,22 @@ type Model struct {
 	Features   Features `json:"features"`
 }
 
+// URLSuffix represents the URL suffixes for different API endpoints
+type URLSuffix struct {
+	Chat        string `json:"chat"`
+	AsyncChat   string `json:"async_chat"`
+	AsyncResult string `json:"async_result"`
+	Embedding   string `json:"embedding"`
+	Rerank      string `json:"rerank"`
+}
+
 // Provider represents an LLM provider
 type Provider struct {
-	Name   string  `json:"name"`
-	Tags   string  `json:"tags"`
-	URL    string  `json:"url"`
-	Models []Model `json:"models"`
+	Name      string    `json:"name"`
+	Tags      string    `json:"tags"`
+	URL       string    `json:"url"`
+	URLSuffix URLSuffix `json:"url_suffix"`
+	Models    []Model   `json:"models"`
 }
 
 // ProviderManager manages provider and model operations
@@ -218,9 +228,10 @@ func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 
 	for _, provider := range pm.Providers {
 		providerData := map[string]interface{}{
-			"name": provider.Name,
-			"tags": provider.Tags,
-			"url":  provider.URL,
+			"name":       provider.Name,
+			"tags":       provider.Tags,
+			"url":        provider.URL,
+			"url_suffix": provider.URLSuffix,
 		}
 		providers = append(providers, providerData)
 	}

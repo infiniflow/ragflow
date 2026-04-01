@@ -60,11 +60,17 @@ func (h *ProviderHandler) ListProviders(c *gin.Context) {
 			return
 		}
 
+		for _, provider := range providers {
+			delete(provider, "url_suffix")
+			delete(provider, "tags")
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"code":    0,
 			"message": "success",
 			"data":    providers,
 		})
+		return
 	}
 
 	userID := c.GetString("user_id")
