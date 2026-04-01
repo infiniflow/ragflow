@@ -20,6 +20,7 @@ import sys
 from copy import deepcopy
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from anyio import Path as AsyncPath
@@ -702,6 +703,74 @@ def test_delete_msg_and_thumbup_matrix_unit(monkeypatch):
     assert res["code"] == 0
     assert res["data"]["message"][0]["thumbup"] is False
     assert res["data"]["message"][0]["feedback"] == "needs sources"
+
+
+@pytest.mark.p2
+def test_thumbup_boolean_and_chunk_feedback_idempotency_unit(monkeypatch):
+    module = _load_conversation_module(monkeypatch)
+    mock_apply = MagicMock(
+        return_value={"success_count": 1, "fail_count": 0, "chunk_ids": ["c1"]}
+    )
+    monkeypatch.setattr(module.ChunkFeedbackService, "apply_feedback", mock_apply)
+    monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_a, **_k: True)
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialog()))
+
+    _set_request_json(
+        monkeypatch,
+        module,
+        {"conversation_id": "conv-bad", "message_id": "asst-1", "thumbup": 1},
+    )
+    conv_bad = _DummyConversation(
+        conv_id="conv-bad",
+        message=[
+            {"id": "u1", "role": "user"},
+            {"id": "asst-1", "role": "assistant"},
+        ],
+        reference=[{"chunks": [{"id": "c1", "dataset_id": "kb1"}]}],
+    )
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv_bad))
+    res = _run(module.thumbup.__wrapped__())
+    assert res.get("message") == "thumbup must be a boolean"
+    mock_apply.assert_not_called()
+
+    mock_apply.reset_mock()
+    _set_request_json(
+        monkeypatch,
+        module,
+        {"conversation_id": "conv-idem", "message_id": "asst-1", "thumbup": True},
+    )
+    conv_idem = _DummyConversation(
+        conv_id="conv-idem",
+        message=[
+            {"id": "u1", "role": "user"},
+            {"id": "asst-1", "role": "assistant", "thumbup": True},
+        ],
+        reference=[{"chunks": [{"id": "c1", "dataset_id": "kb1"}]}],
+    )
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv_idem))
+    res = _run(module.thumbup.__wrapped__())
+    assert res["code"] == 0
+    mock_apply.assert_not_called()
+
+    mock_apply.reset_mock()
+    _set_request_json(
+        monkeypatch,
+        module,
+        {"conversation_id": "conv-first", "message_id": "asst-1", "thumbup": True},
+    )
+    conv_first = _DummyConversation(
+        conv_id="conv-first",
+        message=[
+            {"id": "u1", "role": "user"},
+            {"id": "asst-1", "role": "assistant"},
+        ],
+        reference=[{"chunks": [{"id": "c1", "dataset_id": "kb1"}]}],
+    )
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv_first))
+    res = _run(module.thumbup.__wrapped__())
+    assert res["code"] == 0
+    mock_apply.assert_called_once()
+    assert mock_apply.call_args.kwargs["is_positive"] is True
 
 
 @pytest.mark.p2

@@ -115,32 +115,6 @@ class ChunkFeedbackService:
     """Service to update chunk weights based on user feedback."""
 
     @staticmethod
-    def extract_chunk_ids_from_reference(reference: dict) -> List[str]:
-        """
-        Extract chunk IDs from a conversation message reference.
-
-        Note: After chunks_format(), chunks use 'id' (not 'chunk_id')
-
-        Args:
-            reference: The reference dict containing chunks information
-
-        Returns:
-            List of chunk IDs that were used in the response
-        """
-        if not reference:
-            return []
-
-        chunks = reference.get("chunks", [])
-        chunk_ids = []
-        for chunk in chunks:
-            # chunks_format() uses 'id', raw chunks use 'chunk_id'
-            chunk_id = chunk.get("id") or chunk.get("chunk_id")
-            if chunk_id:
-                chunk_ids.append(chunk_id)
-
-        return chunk_ids
-
-    @staticmethod
     def get_chunk_kb_mapping(reference: dict) -> dict:
         """
         Extract chunk ID to knowledgebase ID mapping from reference.
@@ -171,19 +145,15 @@ class ChunkFeedbackService:
 
     @staticmethod
     def _feedback_rows_from_reference(reference: dict) -> List[Tuple[str, str, dict]]:
-        """(chunk_id, kb_id, raw_chunk) for chunks that can be updated."""
+        """(chunk_id, kb_id, raw_chunk) for chunks that can be updated (single pass)."""
         if not reference:
             return []
-        mapping = ChunkFeedbackService.get_chunk_kb_mapping(reference)
         rows: List[Tuple[str, str, dict]] = []
         for chunk in reference.get("chunks", []):
             chunk_id = chunk.get("id") or chunk.get("chunk_id")
-            if not chunk_id:
-                continue
-            kb_id = mapping.get(chunk_id)
-            if not kb_id:
-                continue
-            rows.append((chunk_id, kb_id, chunk))
+            kb_id = chunk.get("dataset_id") or chunk.get("kb_id")
+            if chunk_id and kb_id:
+                rows.append((chunk_id, kb_id, chunk))
         return rows
 
     @staticmethod
@@ -196,11 +166,14 @@ class ChunkFeedbackService:
         """
         Update the pagerank weight of a single chunk.
 
+        Not atomic: concurrent feedback on the same chunk can race (read-modify-write).
+        Use a doc-store atomic increment if the backend supports it when this becomes hot.
+
         Args:
             tenant_id: The tenant ID for index naming
             chunk_id: The chunk ID to update
             kb_id: The knowledgebase ID
-            delta: Weight change (+0.1 for upvote, -0.1 for downvote)
+            delta: Signed weight change (magnitude depends on weighting mode)
 
         Returns:
             True if update succeeded, False otherwise
@@ -211,7 +184,7 @@ class ChunkFeedbackService:
             # Get current chunk to read existing pagerank
             chunk = settings.docStoreConn.get(chunk_id, idx_name, [kb_id])
             if not chunk:
-                logging.warning(f"Chunk {chunk_id} not found in index {idx_name}")
+                logging.warning("Chunk %s not found in index %s", chunk_id, idx_name)
                 return False
 
             current_weight = chunk.get(PAGERANK_FLD, 0) or 0
@@ -230,15 +203,18 @@ class ChunkFeedbackService:
 
             if success:
                 logging.info(
-                    f"Updated chunk {chunk_id} pagerank: {current_weight} -> {new_weight}"
+                    "Updated chunk %s pagerank: %s -> %s",
+                    chunk_id,
+                    current_weight,
+                    new_weight,
                 )
             else:
-                logging.warning(f"Failed to update chunk {chunk_id} pagerank")
+                logging.warning("Failed to update chunk %s pagerank", chunk_id)
 
             return success
 
         except Exception as e:
-            logging.exception(f"Error updating chunk {chunk_id} weight: {e}")
+            logging.exception("Error updating chunk %s weight: %s", chunk_id, e)
             return False
 
     @classmethod
@@ -292,8 +268,11 @@ class ChunkFeedbackService:
                 fail_count += 1
 
         logging.info(
-            f"Applied {'positive' if is_positive else 'negative'} feedback ({weighting}) to "
-            f"{success_count}/{len(chunk_ids)} chunks"
+            "Applied %s feedback (%s) to %s/%s chunks",
+            "positive" if is_positive else "negative",
+            weighting,
+            success_count,
+            len(chunk_ids),
         )
 
         return {
@@ -301,50 +280,3 @@ class ChunkFeedbackService:
             "fail_count": fail_count,
             "chunk_ids": chunk_ids
         }
-
-    @classmethod
-    def apply_feedback_to_chunks(
-        cls,
-        tenant_id: str,
-        chunk_ids: List[str],
-        kb_id: str,
-        is_positive: bool
-    ) -> dict:
-        """
-        Apply user feedback to specific chunk IDs (when kb_id is known).
-
-        Args:
-            tenant_id: The tenant ID
-            chunk_ids: List of chunk IDs to update
-            kb_id: The knowledgebase ID
-            is_positive: True for upvote, False for downvote
-
-        Returns:
-            Dict with 'success_count' and 'fail_count'
-        """
-        if not chunk_ids:
-            return {"success_count": 0, "fail_count": 0}
-
-        signed_budget = UPVOTE_WEIGHT_INCREMENT if is_positive else -DOWNVOTE_WEIGHT_DECREMENT
-        weighting = CHUNK_FEEDBACK_WEIGHTING if CHUNK_FEEDBACK_WEIGHTING in (
-            "uniform",
-            "relevance",
-        ) else "relevance"
-
-        if weighting == "uniform":
-            deltas = _allocate_deltas_uniform([(cid, kb_id) for cid in chunk_ids], signed_budget)
-        else:
-            n = len(chunk_ids)
-            step = signed_budget / n
-            deltas = [(cid, kb_id, step) for cid in chunk_ids]
-
-        success_count = 0
-        fail_count = 0
-
-        for chunk_id, kb_id, delta in deltas:
-            if cls.update_chunk_weight(tenant_id, chunk_id, kb_id, delta):
-                success_count += 1
-            else:
-                fail_count += 1
-
-        return {"success_count": success_count, "fail_count": fail_count}

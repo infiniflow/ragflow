@@ -370,31 +370,37 @@ async def thumbup():
     e, conv = ConversationService.get_by_id(req["conversation_id"])
     if not e:
         return get_data_error_result(message="Conversation not found!")
-    up_down = req.get("thumbup")
+    thumb_raw = req.get("thumbup")
+    if not isinstance(thumb_raw, bool):
+        return get_data_error_result(message="thumbup must be a boolean")
     feedback = req.get("feedback", "")
     conv_dict = conv.to_dict()
     message_index = None
+    apply_chunk_feedback = False
     for i, msg in enumerate(conv_dict["message"]):
         if req["message_id"] == msg.get("id", "") and msg.get("role", "") == "assistant":
-            if up_down:
+            prior_thumb = msg.get("thumbup")
+            if thumb_raw is True:
                 msg["thumbup"] = True
                 if "feedback" in msg:
                     del msg["feedback"]
+                apply_chunk_feedback = prior_thumb is not True
             else:
                 msg["thumbup"] = False
                 if feedback:
                     msg["feedback"] = feedback
+                apply_chunk_feedback = prior_thumb is not False
             message_index = i
             break
 
-    # Apply feedback to chunk weights if reference exists
-    if message_index is not None and up_down is not None:
+    # Apply chunk feedback only when the vote direction actually changes (idempotent repeat votes are no-ops).
+    if message_index is not None and apply_chunk_feedback:
         try:
             # Get the dialog to find tenant_id
             e_dia, dia = DialogService.get_by_id(conv.dialog_id)
             if e_dia and dia:
-                # Reference list corresponds to assistant messages (every 2nd message starting from index 1)
-                # Assistant messages are at indices 1, 3, 5, ... so reference index = (message_index - 1) // 2
+                # Reference list aligns with assistant turns: one entry per user/assistant pair after the first
+                # assistant message (indices 1, 3, 5, ...), matching delete_msg reference indexing for paired turns.
                 ref_index = (message_index - 1) // 2
                 if 0 <= ref_index < len(conv_dict.get("reference", [])):
                     reference = conv_dict["reference"][ref_index]
@@ -402,14 +408,15 @@ async def thumbup():
                         feedback_result = ChunkFeedbackService.apply_feedback(
                             tenant_id=dia.tenant_id,
                             reference=reference,
-                            is_positive=bool(up_down)
+                            is_positive=thumb_raw is True,
                         )
                         logging.debug(
-                            f"Chunk feedback applied: {feedback_result['success_count']} succeeded, "
-                            f"{feedback_result['fail_count']} failed"
+                            "Chunk feedback applied: %s succeeded, %s failed",
+                            feedback_result["success_count"],
+                            feedback_result["fail_count"],
                         )
         except Exception as e:
-            logging.warning(f"Failed to apply chunk feedback: {e}")
+            logging.warning("Failed to apply chunk feedback: %s", e)
 
     ConversationService.update_by_id(conv_dict["id"], conv_dict)
     return get_json_result(data=conv_dict)

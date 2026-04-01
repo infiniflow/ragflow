@@ -82,45 +82,51 @@ def feedback_env(monkeypatch):
     return _load_feedback_module(monkeypatch)
 
 
-class TestExtractChunkIds:
-    """Tests for extract_chunk_ids_from_reference method."""
+class TestFeedbackRowsFromReference:
+    """Chunk id + kb resolution via _feedback_rows_from_reference (single pass)."""
 
     def test_empty_reference(self, feedback_env):
-        """Should return empty list for empty reference."""
         mod, _ = feedback_env
-        assert mod.ChunkFeedbackService.extract_chunk_ids_from_reference({}) == []
-        assert mod.ChunkFeedbackService.extract_chunk_ids_from_reference(None) == []
+        assert mod.ChunkFeedbackService._feedback_rows_from_reference({}) == []
+        assert mod.ChunkFeedbackService._feedback_rows_from_reference(None) == []
 
-    def test_reference_with_id_field(self, feedback_env):
-        """Should extract 'id' from formatted chunks (chunks_format output)."""
+    def test_reference_with_id_and_dataset(self, feedback_env):
         mod, _ = feedback_env
         reference = {
             "chunks": [
-                {"id": "chunk1", "content": "test"},
-                {"id": "chunk2", "content": "test2"},
+                {"id": "chunk1", "content": "test", "dataset_id": "kb1"},
+                {"id": "chunk2", "content": "test2", "dataset_id": "kb1"},
             ]
         }
-        result = mod.ChunkFeedbackService.extract_chunk_ids_from_reference(reference)
-        assert result == ["chunk1", "chunk2"]
+        rows = mod.ChunkFeedbackService._feedback_rows_from_reference(reference)
+        assert [r[0] for r in rows] == ["chunk1", "chunk2"]
 
-    def test_reference_with_chunk_id_field(self, feedback_env):
-        """Should fall back to 'chunk_id' field for raw chunks."""
+    def test_reference_with_chunk_id_and_kb_id(self, feedback_env):
         mod, _ = feedback_env
         reference = {
             "chunks": [
-                {"chunk_id": "chunk1", "content": "test"},
-                {"chunk_id": "chunk2", "content": "test2"},
+                {"chunk_id": "chunk1", "content": "test", "kb_id": "kb1"},
+                {"chunk_id": "chunk2", "content": "test2", "kb_id": "kb1"},
             ]
         }
-        result = mod.ChunkFeedbackService.extract_chunk_ids_from_reference(reference)
-        assert result == ["chunk1", "chunk2"]
+        rows = mod.ChunkFeedbackService._feedback_rows_from_reference(reference)
+        assert [r[0] for r in rows] == ["chunk1", "chunk2"]
+
+    def test_reference_skips_chunks_without_kb(self, feedback_env):
+        mod, _ = feedback_env
+        reference = {
+            "chunks": [
+                {"id": "chunk1", "dataset_id": "kb1"},
+                {"id": "chunk2", "content": "no kb"},
+            ]
+        }
+        rows = mod.ChunkFeedbackService._feedback_rows_from_reference(reference)
+        assert [r[0] for r in rows] == ["chunk1"]
 
     def test_reference_with_no_chunks(self, feedback_env):
-        """Should return empty list if no chunks key."""
         mod, _ = feedback_env
         reference = {"doc_aggs": [{"doc_id": "doc1"}]}
-        result = mod.ChunkFeedbackService.extract_chunk_ids_from_reference(reference)
-        assert result == []
+        assert mod.ChunkFeedbackService._feedback_rows_from_reference(reference) == []
 
 
 class TestGetChunkKbMapping:
