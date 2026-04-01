@@ -30,12 +30,10 @@ import {
 import { useHandleSearchStrChange } from './logic-hooks/use-change-search';
 
 export const enum ChatApiAction {
-  FetchChatList = 'fetchChatList',
-  DeleteChat = 'deleteChat',
-  CreateChat = 'createChat',
-  UpdateChat = 'updateChat',
-  PatchChat = 'patchChat',
-  FetchChat = 'fetchChat',
+  FetchDialogList = 'fetchDialogList',
+  RemoveDialog = 'removeDialog',
+  SetDialog = 'setDialog',
+  FetchDialog = 'fetchDialog',
   FetchConversationList = 'fetchConversationList',
   FetchConversation = 'fetchConversation',
   FetchConversationManually = 'fetchConversationManually',
@@ -62,7 +60,7 @@ export const useGetChatSearchParams = () => {
   };
 };
 
-export const useFetchChatList = () => {
+export const useFetchDialogList = () => {
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
@@ -71,19 +69,19 @@ export const useFetchChatList = () => {
     data,
     isFetching: loading,
     refetch,
-  } = useQuery<{ chats: IDialog[]; total: number }>({
+  } = useQuery<{ dialogs: IDialog[]; total: number }>({
     queryKey: [
-      ChatApiAction.FetchChatList,
+      ChatApiAction.FetchDialogList,
       {
         debouncedSearchString,
         ...pagination,
       },
     ],
-    initialData: { chats: [], total: 0 },
+    initialData: { dialogs: [], total: 0 },
     gcTime: 0,
     refetchOnWindowFocus: false,
     queryFn: async () => {
-      const { data } = await chatService.listChats(
+      const { data } = await chatService.listDialog(
         {
           params: {
             keywords: debouncedSearchString,
@@ -95,7 +93,7 @@ export const useFetchChatList = () => {
         true,
       );
 
-      return data?.data ?? { chats: [], total: 0 };
+      return data?.data ?? { dialogs: [], total: 0 };
     },
   });
 
@@ -117,7 +115,7 @@ export const useFetchChatList = () => {
   };
 };
 
-export const useDeleteChat = () => {
+export const useRemoveDialog = () => {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
 
@@ -126,23 +124,22 @@ export const useDeleteChat = () => {
     isPending: loading,
     mutateAsync,
   } = useMutation({
-    mutationKey: [ChatApiAction.DeleteChat],
-    mutationFn: async (chatId: string) => {
-      const { data } = await chatService.deleteChat(chatId);
+    mutationKey: [ChatApiAction.RemoveDialog],
+    mutationFn: async (dialogIds: string[]) => {
+      const { data } = await chatService.removeDialog({ dialogIds });
       if (data.code === 0) {
-        queryClient.invalidateQueries({
-          queryKey: [ChatApiAction.FetchChatList],
-        });
+        queryClient.invalidateQueries({ queryKey: ['fetchDialogList'] });
+
         message.success(t('message.deleted'));
       }
       return data.code;
     },
   });
 
-  return { data, loading, deleteChat: mutateAsync };
+  return { data, loading, removeDialog: mutateAsync };
 };
 
-export const useCreateChat = () => {
+export const useSetDialog = () => {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
 
@@ -151,96 +148,31 @@ export const useCreateChat = () => {
     isPending: loading,
     mutateAsync,
   } = useMutation({
-    mutationKey: [ChatApiAction.CreateChat],
-    mutationFn: async (params: Record<string, any>) => {
-      const { data } = await chatService.createChat(params);
+    mutationKey: [ChatApiAction.SetDialog],
+    mutationFn: async (params: Partial<IDialog>) => {
+      const { data } = await chatService.setDialog(params);
       if (data.code === 0) {
         queryClient.invalidateQueries({
           exact: false,
-          queryKey: [ChatApiAction.FetchChatList],
+          queryKey: [ChatApiAction.FetchDialogList],
         });
-        message.success(t('message.created'));
+
+        queryClient.invalidateQueries({
+          queryKey: [ChatApiAction.FetchDialog],
+        });
+
+        message.success(
+          t(`message.${params.dialog_id ? 'modified' : 'created'}`),
+        );
       }
       return data?.code;
     },
   });
 
-  return { data, loading, createChat: mutateAsync };
+  return { data, loading, setDialog: mutateAsync };
 };
 
-export const useUpdateChat = () => {
-  const queryClient = useQueryClient();
-  const { t } = useTranslation();
-
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [ChatApiAction.UpdateChat],
-    mutationFn: async ({
-      chatId,
-      params,
-    }: {
-      chatId: string;
-      params: Record<string, any>;
-    }) => {
-      const { data } = await chatService.updateChat(
-        { url: api.updateChat(chatId), data: params },
-        true,
-      );
-      if (data.code === 0) {
-        queryClient.invalidateQueries({
-          exact: false,
-          queryKey: [ChatApiAction.FetchChatList],
-        });
-        queryClient.invalidateQueries({ queryKey: [ChatApiAction.FetchChat] });
-        message.success(t('message.modified'));
-      }
-      return data?.code;
-    },
-  });
-
-  return { data, loading, updateChat: mutateAsync };
-};
-
-export const usePatchChat = () => {
-  const queryClient = useQueryClient();
-  const { t } = useTranslation();
-
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [ChatApiAction.PatchChat],
-    mutationFn: async ({
-      chatId,
-      params,
-    }: {
-      chatId: string;
-      params: Record<string, any>;
-    }) => {
-      const { data } = await chatService.patchChat(
-        { url: api.patchChat(chatId), data: params },
-        true,
-      );
-      if (data.code === 0) {
-        queryClient.invalidateQueries({
-          exact: false,
-          queryKey: [ChatApiAction.FetchChatList],
-        });
-        queryClient.invalidateQueries({ queryKey: [ChatApiAction.FetchChat] });
-        message.success(t('message.modified'));
-      }
-      return data?.code;
-    },
-  });
-
-  return { data, loading, patchChat: mutateAsync };
-};
-
-export const useFetchChat = () => {
+export const useFetchDialog = () => {
   const { id } = useParams();
 
   const {
@@ -248,13 +180,17 @@ export const useFetchChat = () => {
     isFetching: loading,
     refetch,
   } = useQuery<IDialog>({
-    queryKey: [ChatApiAction.FetchChat, id],
+    queryKey: [ChatApiAction.FetchDialog, id],
     gcTime: 0,
     initialData: {} as IDialog,
     enabled: !!id,
     refetchOnWindowFocus: false,
     queryFn: async () => {
-      const { data } = await chatService.getChat(id);
+      const { data } = await chatService.getDialog(
+        { params: { dialogId: id } },
+        true,
+      );
+
       return data?.data ?? ({} as IDialog);
     },
   });

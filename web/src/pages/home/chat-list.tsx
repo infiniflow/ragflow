@@ -2,7 +2,7 @@ import { HomeCard } from '@/components/home-card';
 import { MoreButton } from '@/components/more-button';
 import { RenameDialog } from '@/components/rename-dialog';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useFetchChatList } from '@/hooks/use-chat-request';
+import { useFetchDialogList } from '@/hooks/use-chat-request';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChatDropdown } from '../next-chats/chat-dropdown';
@@ -16,7 +16,7 @@ export function ChatList({
   setLoading?: (loading: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const { data, loading } = useFetchChatList();
+  const { data, loading } = useFetchDialogList();
   const { navigateToChat } = useNavigatePage();
 
   const {
@@ -28,12 +28,12 @@ export function ChatList({
     chatRenameLoading,
   } = useRenameChat();
   useEffect(() => {
-    setListLength(data?.chats?.length || 0);
+    setListLength(data?.dialogs?.length || 0);
     setLoading?.(loading || false);
   }, [data, setListLength, loading, setLoading]);
   return (
     <>
-      {data.chats.slice(0, 10).map((x) => (
+      {data.dialogs.slice(0, 10).map((x) => (
         <HomeCard
           key={x.id}
           data={{

@@ -14,7 +14,7 @@ import {
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
-  useFetchChat,
+  useFetchDialog,
   useGetChatSearchParams,
   useRemoveConversation,
 } from '@/hooks/use-chat-request';
@@ -48,7 +48,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
     handleInputChange,
     searchString,
   } = useSelectDerivedConversationList();
-  const { data } = useFetchChat();
+  const { data } = useFetchDialog();
   const { visible, switchVisible } = useSetModalState(true);
   const { removeConversation } = useRemoveConversation();
   const { setConversationBoth } = useChatUrlParams();

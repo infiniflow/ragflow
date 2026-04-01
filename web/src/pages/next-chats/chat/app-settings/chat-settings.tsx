@@ -4,7 +4,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { DatasetMetadata } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useFetchChat, useUpdateChat } from '@/hooks/use-chat-request';
+import { useFetchDialog, useSetDialog } from '@/hooks/use-chat-request';
 import { cn } from '@/lib/utils';
 import {
   removeUselessFieldsFromValues,
@@ -28,8 +28,8 @@ type ChatSettingsProps = { hasSingleChatBox: boolean };
 
 export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   const formSchema = useChatSettingSchema();
-  const { data } = useFetchChat();
-  const { updateChat, loading } = useUpdateChat();
+  const { data } = useFetchDialog();
+  const { setDialog, loading } = useSetDialog();
   const { id } = useParams();
   const { t } = useTranslation();
 
@@ -45,7 +45,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       name: '',
       icon: '',
       description: '',
-      dataset_ids: [],
+      kb_ids: [],
       prompt_config: {
         quote: true,
         keyword: false,
@@ -75,32 +75,22 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       'llm_setting.',
     );
 
-    updateChat({
-      chatId: id!,
-      params: {
-        ...omit(data, [
-          'operator_permission',
-          'tenant_id',
-          'created_by',
-          'create_time',
-          'create_date',
-          'update_time',
-          'update_date',
-          'id',
-        ]),
-        ...nextValues,
-      },
+    setDialog({
+      ...omit(data, 'operator_permission'),
+      ...nextValues,
+      dialog_id: id,
     });
   }
 
   function onInvalid(errors: any) {
-    void errors;
+    console.log('Form validation failed:', errors);
   }
 
   useEffect(() => {
     const llmSettingEnabledValues = setLLMSettingEnabledValues(
       data.llm_setting,
     );
+
     const nextData = {
       ...data,
       ...llmSettingEnabledValues,

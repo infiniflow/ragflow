@@ -67,7 +67,7 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
 
 export function KnowledgeBaseFormField({
   showVariable = false,
-  name = 'dataset_ids',
+  name = 'kb_ids',
   required = false,
 }: {
   showVariable?: boolean;

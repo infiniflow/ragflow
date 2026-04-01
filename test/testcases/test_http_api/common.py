@@ -216,21 +216,9 @@ def list_chat_assistants(auth, params=None):
     return res.json()
 
 
-def get_chat_assistant(auth, chat_assistant_id):
-    url = f"{HOST_ADDRESS}{CHAT_ASSISTANT_API_URL}/{chat_assistant_id}"
-    res = requests.get(url=url, headers=HEADERS, auth=auth)
-    return res.json()
-
-
 def update_chat_assistant(auth, chat_assistant_id, payload=None):
     url = f"{HOST_ADDRESS}{CHAT_ASSISTANT_API_URL}/{chat_assistant_id}"
     res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
-    return res.json()
-
-
-def patch_chat_assistant(auth, chat_assistant_id, payload=None):
-    url = f"{HOST_ADDRESS}{CHAT_ASSISTANT_API_URL}/{chat_assistant_id}"
-    res = requests.patch(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
