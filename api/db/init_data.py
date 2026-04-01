@@ -109,6 +109,7 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
 
 
 _LLM_FACTORY_HASH_KEY = "__llm_factory_hash__"
+_GRAPH_TEMPLATES_HASH_KEY = "__graph_templates_hash__"
 
 
 def _get_llm_factory_hash():
@@ -223,12 +224,45 @@ def init_llm_factory():
 
 
 
+def _get_graph_templates_hash():
+    """Compute hash of all agent template files to detect changes."""
+    dir = os.path.join(get_project_base_directory(), "agent", "templates")
+    if not os.path.exists(dir):
+        return ""
+    h = hashlib.md5()
+    for fnm in sorted(os.listdir(dir)):
+        fpath = os.path.join(dir, fnm)
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                content = f.read()
+            h.update(fnm.encode())
+            h.update(content.encode())
+        except Exception:
+            pass
+    return h.hexdigest()
+
+
 def add_graph_templates():
     dir = os.path.join(get_project_base_directory(), "agent", "templates")
-    CanvasTemplateService.filter_delete([1 == 1])
     if not os.path.exists(dir):
         logging.warning("Missing agent templates!")
         return
+
+    current_hash = _get_graph_templates_hash()
+    stored_hash = None
+    try:
+        rows = list(SystemSettingsService.get_by_name(_GRAPH_TEMPLATES_HASH_KEY))
+        if rows:
+            stored_hash = rows[0].value if hasattr(rows[0], "value") else None
+    except Exception:
+        pass
+
+    if stored_hash == current_hash and current_hash:
+        logging.info("Agent templates unchanged (hash=%s), skipping rebuild.", current_hash)
+        return
+
+    logging.info("Agent templates changed (stored=%s, current=%s), rebuilding...", stored_hash, current_hash)
+    CanvasTemplateService.filter_delete([1 == 1])
 
     for fnm in os.listdir(dir):
         try:
@@ -239,6 +273,16 @@ def add_graph_templates():
                 CanvasTemplateService.update_by_id(cnvs["id"], cnvs)
         except Exception as e:
             logging.exception(f"Add agent templates error: {e}")
+
+    try:
+        rows = list(SystemSettingsService.get_by_name(_GRAPH_TEMPLATES_HASH_KEY))
+        if rows:
+            SystemSettingsService.update_by_name(_GRAPH_TEMPLATES_HASH_KEY, {"value": current_hash})
+        else:
+            SystemSettingsService.save(name=_GRAPH_TEMPLATES_HASH_KEY, value=current_hash, source="system", data_type="string")
+    except Exception:
+        pass
+    logging.info("Agent templates rebuild done.")
 
 
 def init_web_data():

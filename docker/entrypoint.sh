@@ -184,18 +184,18 @@ PY=python3
 NGINX_CONF_DIR="/etc/nginx/conf.d"
 if [ -n "$API_PROXY_SCHEME" ]; then
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
-        cp -f "$NGINX_CONF_DIR/ragflow.conf.hybrid" "$NGINX_CONF_DIR/ragflow.conf"
+        cp -f "$NGINX_CONF_DIR/ragflow.conf.hybrid" "$NGINX_CONF_DIR/ragflow.conf" || true
         echo "Applied nginx config: ragflow.conf.hybrid"
     elif [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        cp -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
+        cp -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf" || true
         echo "Applied nginx config: ragflow.conf.golang (default)"
     else
-        cp -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
+        cp -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf" || true
         echo "Applied nginx config: ragflow.conf.python"
     fi
 else
     # Default to python backend
-    cp -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
+    cp -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf" || true
     echo "Default: applied nginx config: ragflow.conf.python"
 fi
 
@@ -236,6 +236,14 @@ function ensure_docling() {
       || uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
 }
 
+function ensure_extra_deps() {
+    # Ensure optional connector dependencies are installed when missing from the base image.
+    "$PY" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('alibabacloud_dingtalk') else 1)" 2>/dev/null \
+      || { echo "[extra-deps] Installing alibabacloud_dingtalk..."; \
+           "$PY" -m pip install --quiet alibabacloud-dingtalk alibabacloud-tea-openapi alibabacloud-tea-util; \
+           echo "[extra-deps] alibabacloud_dingtalk installed."; }
+}
+
 function ensure_db_init() {
     echo "Initializing database tables..."
     "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
@@ -264,6 +272,7 @@ function wait_for_server() {
 # Start components based on flags
 # -----------------------------------------------------------------------------
 ensure_docling
+ensure_extra_deps
 ensure_db_init
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then

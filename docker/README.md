@@ -199,6 +199,25 @@ The [.env](./.env) file contains important environment variables for Docker.
 
 ## 📋 Setup Examples
 
+### 🚀 Quick Start
+
+Start and stop all RAGFlow services using project name:
+
+```bash
+# Start all services
+docker compose -p ragflow up -d
+
+# Stop all services
+docker compose -p ragflow down
+
+# Restart all services
+docker compose -p ragflow down
+docker compose -p ragflow up -d
+```
+
+> [!NOTE]
+> Using `-p ragflow` ensures all services (including those defined in `docker-compose-base.yml`) are managed together.
+
 ### 🔒 HTTPS Setup
 
 #### Prerequisites
