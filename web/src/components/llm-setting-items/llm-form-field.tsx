@@ -9,6 +9,7 @@ export type LLMFormFieldProps = {
   name?: string;
   testId?: string;
   optionTestIdPrefix?: string;
+  config?: any;
 };
 
 export const useModelOptions = () => {
@@ -26,6 +27,7 @@ export function LLMFormField({
   name,
   testId,
   optionTestIdPrefix,
+  config,
 }: LLMFormFieldProps) {
   const { t } = useTranslation();
   const { modelOptions } = useModelOptions();
@@ -36,6 +38,7 @@ export function LLMFormField({
         options={options || modelOptions}
         testId={testId}
         optionTestIdPrefix={optionTestIdPrefix}
+        {...config}
       ></SelectWithSearch>
     </RAGFlowFormItem>
   );

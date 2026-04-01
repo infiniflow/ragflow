@@ -83,6 +83,7 @@ export function LargeModelFormField({
     <LLMFormField
       name={buildFieldNameWithPrefix('vlm.llm_id', prefix)}
       options={options}
+      config={{ allowClear: true }}
     ></LLMFormField>
   );
 }
