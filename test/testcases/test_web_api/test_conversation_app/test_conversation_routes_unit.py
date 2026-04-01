@@ -25,6 +25,11 @@ from unittest.mock import MagicMock
 import pytest
 
 
+def _write_upload_test_bytes(path: str) -> None:
+    """Sync write for _DummyUploadedFile.save (keeps pathlib out of async def for ASYNC240)."""
+    Path(path).write_bytes(b"audio-bytes")
+
+
 class _DummyManager:
     def route(self, *_args, **_kwargs):
         def decorator(func):
@@ -96,7 +101,7 @@ class _DummyUploadedFile:
 
     async def save(self, path):
         self.saved_path = path
-        Path(path).write_bytes(b"audio-bytes")
+        await asyncio.to_thread(_write_upload_test_bytes, path)
 
 
 def _run(coro):
