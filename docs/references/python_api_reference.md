@@ -1150,7 +1150,7 @@ for c in rag_object.retrieve(dataset_ids=[dataset.id],document_ids=[doc.id]):
 ```python
 RAGFlow.create_chat(
     name: str,
-    icon: str = “”,
+    icon: str = "",
     dataset_ids: list[str] | None = None,
     llm_id: str | None = None,
     llm_setting: dict | None = None,
