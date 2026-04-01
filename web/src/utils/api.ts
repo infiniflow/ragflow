@@ -1,4 +1,4 @@
-let api_host = `/v1`;
+const api_host = `/v1`;
 const ExternalApi = `/api`;
 
 export { ExternalApi, api_host };

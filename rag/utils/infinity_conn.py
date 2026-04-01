@@ -148,8 +148,11 @@ class InfinityConnection(InfinityConnectionBase):
             filter_cond = None
             filter_fulltext = ""
             if condition:
-                # Remove kb_id filter for Infinity (it uses table separation instead)
-                condition = {k: v for k, v in condition.items() if k != "kb_id"}
+                # For metadata table (ragflow_doc_meta_), keep kb_id filter
+                # For chunk tables, remove kb_id filter as they use table separation per KB
+                is_meta_table = any(indexName.startswith("ragflow_doc_meta_") for indexName in index_names)
+                if not is_meta_table:
+                    condition = {k: v for k, v in condition.items() if k != "kb_id"}
 
                 table_found = False
                 for indexName in index_names:
@@ -243,6 +246,7 @@ class InfinityConnection(InfinityConnectionBase):
                         for matchExpr in match_expressions:
                             if isinstance(matchExpr, MatchTextExpr):
                                 fields = ",".join(matchExpr.fields)
+                                self.logger.info(f"INFINITY search match_text: {matchExpr.matching_text}")
                                 builder = builder.match_text(
                                     fields,
                                     matchExpr.matching_text,
