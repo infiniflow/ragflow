@@ -94,7 +94,7 @@ async def create(tenant_id):
     req["tenant_id"] = tenant_id
     # prompt more parameter
     default_prompt = {
-        "system": """You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the dataset!" Answers need to consider chat history.
+        "system": """You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the dataset!" Answers need to consider chat history. Please always respond in Chinese (中文).
       Here is the knowledge base:
       {knowledge}
       The above is the knowledge base.""",

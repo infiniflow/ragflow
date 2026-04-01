@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import asyncio
+import hashlib
 import logging
 import json
 import os
@@ -107,7 +108,71 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
             logging.error("'{}' doesn't work!".format(tenant["embd_id"]))
 
 
+_LLM_FACTORY_HASH_KEY = "__llm_factory_hash__"
+
+
+def _get_llm_factory_hash():
+    """Compute hash of llm factory config to detect changes."""
+    factory_llm_infos = settings.FACTORY_LLM_INFOS
+    content = json.dumps(factory_llm_infos, sort_keys=True, ensure_ascii=False)
+    return hashlib.md5(content.encode()).hexdigest()
+
+
+def _get_stored_hash():
+    """Get stored hash from system_settings table."""
+    try:
+        rows = list(SystemSettingsService.get_by_name(_LLM_FACTORY_HASH_KEY))
+        if rows:
+            return rows[0].value if hasattr(rows[0], "value") else None
+    except Exception:
+        pass
+    return None
+
+
+def _set_stored_hash(hash_value):
+    """Store hash in system_settings table."""
+    try:
+        rows = list(SystemSettingsService.get_by_name(_LLM_FACTORY_HASH_KEY))
+        if rows:
+            SystemSettingsService.update_by_name(_LLM_FACTORY_HASH_KEY, {"value": hash_value})
+        else:
+            SystemSettingsService.save(name=_LLM_FACTORY_HASH_KEY, value=hash_value, source="system", data_type="string")
+    except Exception:
+        pass
+
+
+def _sync_kb_doc_counts():
+    """Sync document counts for all knowledge bases efficiently."""
+    doc_count = DocumentService.get_all_kb_doc_count()
+    kb_ids = KnowledgebaseService.get_all_ids()
+    if not kb_ids:
+        return
+    from api.db.db_models import DB, Knowledgebase as KBModel
+    from common.time_utils import current_timestamp, datetime_format
+    from datetime import datetime
+    ts = current_timestamp()
+    dt = datetime_format(datetime.now())
+    with DB.atomic():
+        for kb_id in kb_ids:
+            count = doc_count.get(kb_id, 0)
+            KBModel.update(
+                doc_num=count,
+                update_time=ts,
+                update_date=dt
+            ).where(KBModel.id == kb_id).execute()
+    logging.info("Synced doc_num for %d knowledge bases.", len(kb_ids))
+
+
 def init_llm_factory():
+    current_hash = _get_llm_factory_hash()
+    stored_hash = _get_stored_hash()
+
+    if stored_hash == current_hash:
+        logging.info("LLM factory data unchanged (hash=%s), skipping full rebuild.", current_hash)
+        _sync_kb_doc_counts()
+        return
+
+    logging.info("LLM factory data changed (stored=%s, current=%s), rebuilding...", stored_hash, current_hash)
     LLMFactoriesService.filter_delete([1 == 1])
     factory_llm_infos = settings.FACTORY_LLM_INFOS
     for factory_llm_info in factory_llm_infos:
@@ -137,7 +202,6 @@ def init_llm_factory():
     TenantService.filter_update([1 == 1], {
         "parser_ids": "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag"})
     ## insert openai two embedding models to the current openai user.
-    # print("Start to insert 2 OpenAI embedding models...")
     tenant_ids = set([row["tenant_id"] for row in TenantLLMService.get_openai_models()])
     for tid in tenant_ids:
         for row in TenantLLMService.query(llm_factory="OpenAI", tenant_id=tid):
@@ -153,9 +217,9 @@ def init_llm_factory():
             except Exception:
                 pass
             break
-    doc_count = DocumentService.get_all_kb_doc_count()
-    for kb_id in KnowledgebaseService.get_all_ids():
-        KnowledgebaseService.update_document_number_in_init(kb_id=kb_id, doc_num=doc_count.get(kb_id, 0))
+    _sync_kb_doc_counts()
+    _set_stored_hash(current_hash)
+    logging.info("LLM factory rebuild done.")
 
 
 
@@ -220,6 +284,7 @@ def init_table():
 
 
 def fix_empty_tenant_model_id():
+    logging.info("fix_empty_tenant_model_id: checking knowledgebase...")
     # knowledgebase
     empty_tenant_embd_id_kbs = KnowledgebaseService.get_null_tenant_embd_id_row()
     if empty_tenant_embd_id_kbs:
@@ -268,6 +333,7 @@ def fix_empty_tenant_model_id():
             if tenant_llm:
                 update_cnt += DialogService.filter_update([Dialog.id.in_(v)], {"tenant_rerank_id": tenant_llm.id})
         logging.info(f"Update {update_cnt} tenant_rerank_id in table dialog.")
+    logging.info("fix_empty_tenant_model_id: checking memory...")
     # memory
     empty_tenant_embd_id_memories = MemoryService.get_null_tenant_embd_id_row()
     if empty_tenant_embd_id_memories:
@@ -285,6 +351,7 @@ def fix_empty_tenant_model_id():
                 update_cnt += MemoryService.filter_update([Memory.id.in_(v)], {"tenant_embd_id": tenant_llm.id})
         logging.info(f"Update {update_cnt} tenant_embd_id in table memory.")
 
+    logging.info("fix_empty_tenant_model_id: checking memory llm_id...")
     empty_tenant_llm_id_memories = MemoryService.get_null_tenant_llm_id_row()
     if empty_tenant_llm_id_memories:
         logging.info(f"Found {len(empty_tenant_llm_id_memories)} empty tenant_llm_id memories.")
@@ -300,6 +367,7 @@ def fix_empty_tenant_model_id():
             if tenant_llm:
                 update_cnt += MemoryService.filter_update([Memory.id.in_(v)], {"tenant_llm_id": tenant_llm.id})
         logging.info(f"Update {update_cnt} tenant_llm_id in table memory.")
+    logging.info("fix_empty_tenant_model_id: checking tenant...")
     # tenant
     empty_tenant_model_id_tenants = TenantService.get_null_tenant_model_id_rows()
     if empty_tenant_model_id_tenants:

@@ -47,12 +47,20 @@ redis:
 task_executor:
   message_queue_type: 'redis'
 user_default_llm:
+  factory: 'SILICONFLOW'
+  api_key: 'aofhnkwerusronfykuduveuwonporiqyyphtkamzxst'
+  base_url: 'https://api.siliconflow.cn/v1'
   default_models:
+    chat_model:
+      name: 'Qwen/Qwen2.5-7B-Instruct'
+      factory: 'SILICONFLOW'
+      api_key: 'aofhnkwerusronfykuduveuwonporiqyyphtkamzxst'
+      base_url: 'https://api.siliconflow.cn/v1'
     embedding_model:
-      name: 'bge-m3'
-      factory: 'xxxx'
-      api_key: 'xxx'
-      base_url: 'http://localhost:6380'
+      name: 'BAAI/bge-m3'
+      factory: 'SILICONFLOW'
+      api_key: 'aofhnkwerusronfykuduveuwonporiqyyphtkamzxst'
+      base_url: 'https://api.siliconflow.cn/v1'
 # postgres:
 #   name: 'rag_flow'
 #   user: 'rag_flow'
