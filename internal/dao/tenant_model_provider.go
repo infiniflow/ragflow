@@ -42,6 +42,16 @@ func (dao *TenantModelProviderDAO) GetByID(id string) (*entity.TenantModelProvid
 	return &provider, nil
 }
 
+// GetByTenantIDAndProviderName get the providers by tenant ID and provider name
+func (dao *TenantModelProviderDAO) GetByTenantIDAndProviderName(tenantID, providerName string) (*entity.TenantModelProvider, error) {
+	var provider entity.TenantModelProvider
+	err := DB.Where("tenant_id = ? AND provider_name = ?", tenantID, providerName).First(&provider).Error
+	if err != nil {
+		return nil, err
+	}
+	return &provider, nil
+}
+
 // DeleteByTenantID deletes all model providers by tenant ID (hard delete)
 func (dao *TenantModelProviderDAO) DeleteByTenantID(tenantID string) (int64, error) {
 	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.TenantModelProvider{})

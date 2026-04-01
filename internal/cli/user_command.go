@@ -961,13 +961,14 @@ func (c *RAGFlowClient) CreateProviderInstance(cmd *Command) (ResponseIf, error)
 		return nil, fmt.Errorf("API key not provided")
 	}
 
+	url := fmt.Sprintf("/providers/%s/instances", providerName)
+
 	payload := map[string]interface{}{
-		"provider_name": providerName,
 		"instance_name": instanceName,
 		"api_key":       apiKey,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/providers/intances", true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create provider instance: %w", err)
 	}

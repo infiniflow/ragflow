@@ -30,6 +30,7 @@ import (
 type ProviderHandler struct {
 	userService          *service.UserService
 	modelProviderService *service.ModelProviderService
+	userTenantDAO        *dao.UserTenantDAO
 }
 
 // NewProviderHandler create provider handler
@@ -37,6 +38,7 @@ func NewProviderHandler(userService *service.UserService, modelProviderService *
 	return &ProviderHandler{
 		userService:          userService,
 		modelProviderService: modelProviderService,
+		userTenantDAO:        dao.NewUserTenantDAO(),
 	}
 }
 
@@ -232,5 +234,292 @@ func (h *ProviderHandler) ShowModel(c *gin.Context) {
 		"code":    0,
 		"message": "success",
 		"data":    model,
+	})
+}
+
+type CreateProviderInstanceRequest struct {
+	InstanceName string `json:"instance_name" binding:"required"`
+	APIKey       string `json:"api_key" binding:"required"`
+}
+
+func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	var req CreateProviderInstanceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Check if instance name is "default"
+	if req.InstanceName == "default" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "Instance name cannot be 'default'",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	_, err := h.modelProviderService.CreateProviderInstance(providerName, req.APIKey, userID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+	})
+}
+
+func (h *ProviderHandler) ListProviderInstances(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	instances, errorCode, err := h.modelProviderService.ListProviderInstances(providerName, userID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    errorCode,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    instances,
+	})
+}
+
+func (h *ProviderHandler) ShowProviderInstance(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	// Get tenant ID from user
+	tenants, err := h.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": err.Error(),
+		})
+		return
+	}
+	if len(tenants) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"message": "User has no tenants",
+		})
+		return
+	}
+	tenantID := tenants[0].TenantID
+
+	// Get tenant LLM by tenant ID, factory and model name
+	tenantLLMDAO := dao.NewTenantLLMDAO()
+	instance, err := tenantLLMDAO.GetByTenantFactoryAndModelName(tenantID, providerName, instanceName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"message": "Instance not found: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    instance,
+	})
+}
+
+type AlterProviderInstanceRequest struct {
+	LLMName string `json:"llm_name" binding:"required"`
+}
+
+func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	var req AlterProviderInstanceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	// Get tenant ID from user
+	tenants, err := h.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": err.Error(),
+		})
+		return
+	}
+	if len(tenants) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"message": "User has no tenants",
+		})
+		return
+	}
+	tenantID := tenants[0].TenantID
+
+	// Get existing instance
+	tenantLLMDAO := dao.NewTenantLLMDAO()
+	instance, err := tenantLLMDAO.GetByTenantFactoryAndModelName(tenantID, providerName, instanceName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"message": "Instance not found: " + err.Error(),
+		})
+		return
+	}
+
+	// Update the llm_name
+	instance.LLMName = &req.LLMName
+
+	// Save the updated instance
+	err = tenantLLMDAO.Update(instance)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": "Failed to update instance: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+	})
+}
+
+func (h *ProviderHandler) DropProviderInstance(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	// Get tenant ID from user
+	tenants, err := h.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": err.Error(),
+		})
+		return
+	}
+	if len(tenants) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"message": "User has no tenants",
+		})
+		return
+	}
+	tenantID := tenants[0].TenantID
+
+	// Check if instance is used in any model group
+	// First get the instance to check
+	tenantLLMDAO := dao.NewTenantLLMDAO()
+	_, err = tenantLLMDAO.GetByTenantFactoryAndModelName(tenantID, providerName, instanceName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"message": "Instance not found: " + err.Error(),
+		})
+		return
+	}
+
+	// TODO: Check if instance is used in any model group
+	// For now, just delete the instance
+
+	// Delete the instance
+	err = tenantLLMDAO.Delete(tenantID, providerName, instanceName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": "Failed to delete instance: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
 	})
 }

@@ -1242,11 +1242,6 @@ func (p *Parser) parseListInstances() (*Command, error) {
 	}
 	p.nextToken()
 
-	if p.curToken.Type != TokenProvider {
-		return nil, fmt.Errorf("expected PROVIDER after FROM")
-	}
-	p.nextToken()
-
 	providerName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, fmt.Errorf("expected provider name after FROM PROVIDER: %w", err)

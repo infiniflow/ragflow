@@ -28,6 +28,19 @@ func NewTenantModelInstanceDAO() *TenantModelInstanceDAO {
 	return &TenantModelInstanceDAO{}
 }
 
+func (dao *TenantModelInstanceDAO) Create(instance *entity.TenantModelInstance) error {
+	return DB.Create(instance).Error
+}
+
+func (dao *TenantModelInstanceDAO) GetByProviderIDAndTenantID(providerID string) ([]*entity.TenantModelInstance, error) {
+	var instances []*entity.TenantModelInstance
+	err := DB.Where("provider_id = ?", providerID).Find(&instances).Error
+	if err != nil {
+		return nil, err
+	}
+	return instances, nil
+}
+
 // GetByID get tenant model instance by primary key (id)
 func (dao *TenantModelInstanceDAO) GetByID(id string) (*entity.TenantModelInstance, error) {
 	var instance entity.TenantModelInstance

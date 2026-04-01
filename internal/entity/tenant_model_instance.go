@@ -18,11 +18,10 @@ package entity
 
 // TenantModelInstance tenant model instance table
 type TenantModelInstance struct {
-	ID         string  `gorm:"column:id;primaryKey;size:32" json:"id"`
-	ProviderID string  `gorm:"column:provider_id;size:32;not null;index" json:"provider_id"`
-	APIKey     string  `gorm:"column:api_key;size:512;not null;uniqueIndex" json:"api_key"`
-	Endpoint   *string `gorm:"column:endpoint;size:512" json:"endpoint,omitempty"`
-	Status     string  `gorm:"column:status;size:32;default:'active'" json:"status"`
+	ID         string `gorm:"column:id;primaryKey;size:32" json:"id"`
+	ProviderID string `gorm:"column:provider_id;size:32;not null;index" json:"provider_id"`
+	APIKey     string `gorm:"column:api_key;size:512;not null;uniqueIndex" json:"api_key"`
+	Status     string `gorm:"column:status;size:32;default:'active'" json:"status"`
 	BaseModel
 }
 
