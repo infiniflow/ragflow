@@ -170,6 +170,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseGenerateCommand()
 	case TokenImport:
 		return p.parseImportCommand()
+	case TokenInsert:
+		return p.parseInsertCommand()
 	case TokenSearch:
 		return p.parseSearchCommand()
 	case TokenParse:
@@ -221,7 +223,7 @@ func (p *Parser) expectSemicolon() error {
 }
 
 func isKeyword(tokenType int) bool {
-	return tokenType >= TokenLogin && tokenType <= TokenDocMeta
+	return tokenType >= TokenLogin && tokenType <= TokenMetadata
 }
 
 // isCECommand checks if the given string is a ContextEngine command

@@ -108,6 +108,9 @@ const (
 	TokenName // For ALTER PROVIDER <name> NAME <new_name>
 	TokenInstance
 	TokenInstances
+	TokenInsert
+	TokenFile
+	TokenMetadata
 
 	// Literals
 	TokenIdentifier

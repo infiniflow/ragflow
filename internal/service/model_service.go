@@ -265,6 +265,25 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 	tenantModelProvider.CreateDate = &nowDate
 	tenantModelProvider.UpdateDate = &nowDate
 	err = m.modelInstanceDAO.Create(tenantModelProvider)
+
+	//models, err := dao.GetModelProviderManager().ListModels(providerName)
+	//if err != nil {
+	//	return common.CodeServerError, err
+	//}
+	//for _, model := range models {
+	//	modelID, err := generateUUID1Hex()
+	//	if err != nil {
+	//		return common.CodeServerError, errors.New("fail to get UUID")
+	//	}
+	//	tenantModel := &entity.TenantModel{
+	//		ID:         modelID,
+	//		ModelName:  model.Name,
+	//		ModelType:  model.Type,
+	//		ProviderID: provider.ID,
+	//		InstanceID: instanceID,
+	//	}
+	//}
+
 	if err != nil {
 		return common.CodeServerError, errors.New("fail to create model provider")
 	}

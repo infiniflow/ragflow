@@ -1149,11 +1149,13 @@ for c in rag_object.retrieve(dataset_ids=[dataset.id],document_ids=[doc.id]):
 
 ```python
 RAGFlow.create_chat(
-    name: str, 
-    avatar: str = "", 
-    dataset_ids: list[str] = [], 
-    llm: Chat.LLM = None, 
-    prompt: Chat.Prompt = None
+    name: str,
+    icon: str = "",
+    dataset_ids: list[str] | None = None,
+    llm_id: str | None = None,
+    llm_setting: dict | None = None,
+    prompt_config: dict | None = None,
+    **kwargs
 ) -> Chat
 ```
 
@@ -1165,46 +1167,37 @@ Creates a chat assistant.
 
 The name of the chat assistant.
 
-##### avatar: `str`
+##### icon: `str`
 
-Base64 encoding of the avatar. Defaults to `""`.
+Base64 encoding of the avatar. Defaults to `””`.
 
 ##### dataset_ids: `list[str]`
 
-The IDs of the associated datasets. Defaults to `[""]`.
+The IDs of the associated datasets. Defaults to `[]`. When omitted or empty, the SDK creates an empty chat assistant and you can attach datasets later.
 
-##### llm: `Chat.LLM`
+##### llm_id: `str | None`
 
-The LLM settings for the chat assistant to create. Defaults to `None`. When the value is `None`, a dictionary with the following values will be generated as the default. An `LLM` object contains the following attributes:
+The LLM model name/ID to use. If `None`, the user’s default chat model is used. Defaults to `None`.
 
-- `model_name`: `str`  
-  The chat model name. If it is `None`, the user's default chat model will be used.  
-- `temperature`: `float`  
-  Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
-- `top_p`: `float`  
-  Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
-- `presence_penalty`: `float`  
-  This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.2`.
-- `frequency penalty`: `float`  
-  Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
+##### llm_setting: `dict | None`
 
-##### prompt: `Chat.Prompt`
+LLM generation settings. Defaults to `None` (server defaults apply). Supported keys:
 
-Instructions for the LLM to follow.  A `Prompt` object contains the following attributes:
+- `”temperature”`: `float` Controls the randomness of the model’s predictions. Defaults to `0.1`.
+- `”top_p”`: `float` Nucleus sampling threshold. Defaults to `0.3`.
+- `”presence_penalty”`: `float` Penalizes tokens that have already appeared. Defaults to `0.4`.
+- `”frequency_penalty”`: `float` Reduces repetition of frequent tokens. Defaults to `0.7`.
+- `”max_token”`: `int` Maximum number of tokens in the response. Defaults to `512`.
 
-- `similarity_threshold`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
-- `keywords_similarity_weight`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
-- `top_n`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
-- `variables`: `list[dict[]]` This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:
-  - `knowledge` is a reserved variable, which represents the retrieved chunks.
-  - All the variables in 'System' should be curly bracketed.
-  - The default value is `[{"key": "knowledge", "optional": True}]`.
-- `rerank_model`: `str` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
-- `top_k`: `int` Refers to the process of reordering or selecting the top-k items from a list or set based on a specific ranking criterion. Default to 1024.
-- `empty_response`: `str` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank. Defaults to `None`.
-- `opener`: `str` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
-- `show_quote`: `bool` Indicates whether the source of text should be displayed. Defaults to `True`.
-- `prompt`: `str` The prompt content.
+##### prompt_config: `dict | None`
+
+Instructions for the LLM to follow. Defaults to `None` (server defaults apply). Supported keys:
+
+- `”system”`: `str` The system prompt content.
+- `”empty_response”`: `str` Response when nothing is retrieved. Leave blank to let the LLM improvise. Defaults to `None`.
+- `”prologue”`: `str` The opening greeting shown to the user. Defaults to `”Hi! I’m your assistant. What can I do for you?”`.
+- `”quote”`: `bool` Whether to display source references. Defaults to `True`.
+- `”parameters”`: `list[dict]` Variables used in the system prompt. Each entry has `”key”` (`str`) and `”optional”` (`bool`). The `knowledge` variable is reserved for retrieved chunks. Default: `[{“key”: “knowledge”, “optional”: True}]`.
 
 #### Returns
 
@@ -1232,36 +1225,37 @@ assistant = rag_object.create_chat("Miss R", dataset_ids=dataset_ids)
 Chat.update(update_message: dict)
 ```
 
-Updates configurations for the current chat assistant.
+Partially updates configurations for the current chat assistant.
+
+`Chat.update()` uses `PATCH /api/v1/chats/{chat_id}`. Only the provided keys are changed; all other fields are preserved.
 
 #### Parameters
 
-##### update_message: `dict[str, str|list[str]|dict[]]`, *Required*
+##### update_message: `dict`, *Required*
 
-A dictionary representing the attributes to update, with the following keys:
+A dictionary representing the attributes to update. Supported keys:
 
-- `"name"`: `str` The revised name of the chat assistant.
-- `"avatar"`: `str` Base64 encoding of the avatar. Defaults to `""`
-- `"dataset_ids"`: `list[str]` The datasets to update.
-- `"llm"`: `dict` The LLM settings:
-  - `"model_name"`, `str` The chat model name.
-  - `"temperature"`, `float` Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses.  
-  - `"top_p"`, `float` Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from.  
-  - `"presence_penalty"`, `float` This discourages the model from repeating the same information by penalizing words that have appeared in the conversation.
-  - `"frequency penalty"`, `float` Similar to presence penalty, this reduces the model’s tendency to repeat the same words.
-- `"prompt"` : Instructions for the LLM to follow.
-  - `"similarity_threshold"`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted rerank score during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
-  - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
-  - `"top_n"`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
-  - `"variables"`: `list[dict[]]`  This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:
-    - `knowledge` is a reserved variable, which represents the retrieved chunks.
-    - All the variables in 'System' should be curly bracketed.
-    - The default value is `[{"key": "knowledge", "optional": True}]`.
-  - `"rerank_model"`: `str` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
-  - `"empty_response"`: `str` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is retrieved, leave this blank. Defaults to `None`.
-  - `"opener"`: `str` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
-  - `"show_quote`: `bool` Indicates whether the source of text should be displayed Defaults to `True`.
-  - `"prompt"`: `str` The prompt content.
+- `”name”`: `str` The revised name of the chat assistant.
+- `”icon”`: `str` Base64 encoding of the avatar.
+- `”dataset_ids”`: `list[str]` The datasets to associate with the chat assistant.
+- `”llm_id”`: `str` The LLM model name/ID to use.
+- `”llm_setting”`: `dict` LLM generation settings:
+  - `”temperature”`: `float` Controls the randomness of the model’s predictions.
+  - `”top_p”`: `float` Nucleus sampling threshold.
+  - `”presence_penalty”`: `float` Penalizes tokens that have already appeared.
+  - `”frequency_penalty”`: `float` Reduces repetition of frequent tokens.
+  - `”max_token”`: `int` Maximum number of tokens in the response.
+- `”prompt_config”`: `dict` Instructions for the LLM to follow:
+  - `”system”`: `str` The system prompt content.
+  - `”empty_response”`: `str` Response when nothing is retrieved. Leave blank to let the LLM improvise.
+  - `”prologue”`: `str` The opening greeting shown to the user.
+  - `”quote”`: `bool` Whether to display source references.
+  - `”parameters”`: `list[dict]` Variables used in the system prompt.
+- `”similarity_threshold”`: `float` Minimum similarity score for retrieved chunks. Defaults to `0.2`.
+- `”vector_similarity_weight”`: `float` Weight of vector cosine similarity in the hybrid score. Defaults to `0.3`.
+- `”top_n”`: `int` Number of top chunks fed to the LLM. Defaults to `6`.
+- `”top_k”`: `int` Candidate pool size for reranking. Defaults to `1024`.
+- `”rerank_id”`: `str` Reranking model ID. If empty, vector cosine similarity is used.
 
 #### Returns
 
@@ -1277,7 +1271,7 @@ rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:
 datasets = rag_object.list_datasets(name="kb_1")
 dataset_id = datasets[0].id
 assistant = rag_object.create_chat("Miss R", dataset_ids=[dataset_id])
-assistant.update({"name": "Stefan", "llm": {"temperature": 0.8}, "prompt": {"top_n": 8}})
+assistant.update({"name": "Stefan", "llm_setting": {"temperature": 0.8}, "top_n": 8})
 ```
 
 ---
@@ -1328,8 +1322,11 @@ RAGFlow.list_chats(
     page_size: int = 30, 
     orderby: str = "create_time", 
     desc: bool = True,
-    id: str = None,
-    name: str = None
+    id: str | None = None,
+    name: str | None = None,
+    keywords: str | None = None,
+    owner_ids: str | list[str] | None = None,
+    parser_id: str | None = None
 ) -> list[Chat]
 ```
 
@@ -1356,13 +1353,27 @@ The attribute by which the results are sorted. Available options:
 
 Indicates whether the retrieved chat assistants should be sorted in descending order. Defaults to `True`.
 
-##### id: `str`  
+##### id: `str | None`
 
-The ID of the chat assistant to retrieve. Defaults to `None`.
+Exact match on chat assistant ID. Defaults to `None`.
 
-##### name: `str`  
+##### name: `str | None`
 
-The name of the chat assistant to retrieve. Defaults to `None`.
+Exact match on chat assistant name. Defaults to `None`.
+
+##### keywords: `str | None`
+
+Case-insensitive fuzzy match against chat assistant names. Defaults to `None`.
+
+##### owner_ids: `str | list[str] | None`
+
+Filter by owner tenant IDs. Defaults to `None`.
+
+##### parser_id: `str | None`
+
+Filter by parser type. Defaults to `None`.
+
+When `id` or `name` is provided, exact filtering takes precedence over `keywords`.
 
 #### Returns
 
