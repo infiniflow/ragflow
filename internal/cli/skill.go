@@ -720,6 +720,173 @@ func (e *SkillConflictError) Error() string {
 }
 
 // ============================================================================
+// Search Skills Command Handler
+// ============================================================================
+
+// SearchSkillsCommand handles the search-skills command
+type SearchSkillsCommand struct {
+	client *RAGFlowClient
+}
+
+// NewSearchSkillsCommand creates a new search command handler
+func NewSearchSkillsCommand(client *RAGFlowClient) *SearchSkillsCommand {
+	return &SearchSkillsCommand{client: client}
+}
+
+// SearchSkillsArgs holds the parsed arguments for search-skills command
+type SearchSkillsArgs struct {
+	Query      string
+	Page       int
+	PageSize   int
+	ShowHelp   bool
+}
+
+// ParseSearchSkillsArgs parses the search-skills command arguments
+func ParseSearchSkillsArgs(args []string) (*SearchSkillsArgs, error) {
+	result := &SearchSkillsArgs{
+		Page:     1,
+		PageSize: 10,
+	}
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		switch arg {
+		case "-h", "--help":
+			result.ShowHelp = true
+			return result, nil
+		case "-q", "--query":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				result.Query = args[i+1]
+				i++
+			} else {
+				return nil, fmt.Errorf("query flag requires a value")
+			}
+		case "-p", "--page":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				fmt.Sscanf(args[i+1], "%d", &result.Page)
+				i++
+			}
+		case "-n", "--page-size":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				fmt.Sscanf(args[i+1], "%d", &result.PageSize)
+				i++
+			}
+		default:
+			// Non-flag argument is treated as query (for convenience)
+			if !strings.HasPrefix(arg, "-") && result.Query == "" {
+				result.Query = arg
+			}
+		}
+	}
+
+	if result.Query == "" && !result.ShowHelp {
+		return nil, fmt.Errorf("query is required (use -q or --query)")
+	}
+
+	return result, nil
+}
+
+// Execute runs the search-skills command
+func (c *SearchSkillsCommand) Execute(args []string) error {
+	parsedArgs, err := ParseSearchSkillsArgs(args)
+	if err != nil {
+		return err
+	}
+
+	if parsedArgs.ShowHelp {
+		c.PrintHelp()
+		return nil
+	}
+
+	return c.searchSkills(parsedArgs)
+}
+
+// searchSkills performs the actual search
+func (c *SearchSkillsCommand) searchSkills(args *SearchSkillsArgs) error {
+	payload := map[string]interface{}{
+		"query":     args.Query,
+		"page":      args.Page,
+		"page_size": args.PageSize,
+	}
+
+	resp, err := c.client.HTTPClient.Request("POST", "/api/v1/skill/search", true, "json", nil, payload)
+	if err != nil {
+		return fmt.Errorf("search request failed: %w", err)
+	}
+
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			Skills []struct {
+				SkillID     string   `json:"skill_id"`
+				Name        string   `json:"name"`
+				Description string   `json:"description"`
+				Tags        []string `json:"tags"`
+				Score       float64  `json:"score"`
+				BM25Score   float64  `json:"bm25_score,omitempty"`
+				VectorScore float64  `json:"vector_score,omitempty"`
+			} `json:"skills"`
+			Total int `json:"total"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &result); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if result.Code != 0 {
+		return fmt.Errorf("search failed: %s", result.Msg)
+	}
+
+	// Print results
+	if len(result.Data.Skills) == 0 {
+		fmt.Println("No skills found matching your query.")
+		return nil
+	}
+
+	fmt.Printf("Found %d skill(s) matching '%s':\n\n", result.Data.Total, args.Query)
+
+	for i, skill := range result.Data.Skills {
+		fmt.Printf("%d. %s (score: %.3f)\n", i+1, skill.Name, skill.Score)
+		if skill.Description != "" {
+			fmt.Printf("   %s\n", skill.Description)
+		}
+		if len(skill.Tags) > 0 {
+			fmt.Printf("   Tags: %s\n", strings.Join(skill.Tags, ", "))
+		}
+		if skill.BM25Score > 0 || skill.VectorScore > 0 {
+			fmt.Printf("   [BM25: %.3f, Vector: %.3f]\n", skill.BM25Score, skill.VectorScore)
+		}
+		fmt.Println()
+	}
+
+	return nil
+}
+
+// PrintHelp prints the help message for search-skills command
+func (c *SearchSkillsCommand) PrintHelp() {
+	fmt.Println(`Usage: search skills [options] <query>
+
+Search for skills using semantic search.
+
+Arguments:
+  <query>                Search query (can also use -q flag)
+
+Options:
+  -q, --query string     Search query (required if not provided as argument)
+  -p, --page int         Page number (default: 1)
+  -n, --page-size int    Number of results per page (default: 10)
+  -h, --help            Show this help message
+
+Examples:
+  search skills "data processing"
+  search skills -q "machine learning"
+  search skills -q "api" -p 1 -n 20`)
+}
+
+// ============================================================================
 // AddSkill Command Handler
 // ============================================================================
 

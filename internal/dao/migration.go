@@ -18,6 +18,7 @@ package dao
 
 import (
 	"fmt"
+	"ragflow/internal/entity"
 	"ragflow/internal/logger"
 	"strings"
 
@@ -49,6 +50,11 @@ func RunMigrations(db *gorm.DB) error {
 	// Modify column types that AutoMigrate may not handle correctly
 	if err := modifyColumnTypes(db); err != nil {
 		return fmt.Errorf("failed to modify column types: %w", err)
+	}
+
+	// Create skill search tables
+	if err := migrateSkillSearchTables(db); err != nil {
+		return fmt.Errorf("failed to migrate skill search tables: %w", err)
 	}
 
 	logger.Info("All manual migrations completed successfully")
@@ -312,4 +318,52 @@ func addColumnIfNotExists(db *gorm.DB, tableName, columnName, columnDef string) 
 		zap.String("column", columnName))
 	sql := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", tableName, columnName, columnDef)
 	return db.Exec(sql).Error
+}
+
+// migrateSkillSearchTables creates skill search related tables
+func migrateSkillSearchTables(db *gorm.DB) error {
+	// Create skill_search_configs table only
+	if !db.Migrator().HasTable("skill_search_configs") {
+		logger.Info("Creating skill_search_configs table...")
+		sql := `
+		CREATE TABLE IF NOT EXISTS skill_search_configs (
+			id VARCHAR(32) PRIMARY KEY,
+			tenant_id VARCHAR(32) NOT NULL,
+			embd_id VARCHAR(128) NOT NULL,
+			vector_similarity_weight FLOAT DEFAULT 0.3,
+			similarity_threshold FLOAT DEFAULT 0.2,
+			field_config JSON,
+			rerank_id VARCHAR(128),
+			tenant_rerank_id BIGINT,
+			top_k BIGINT DEFAULT 10,
+			index_version VARCHAR(32) DEFAULT '1.0.0',
+			status VARCHAR(1) DEFAULT '1',
+			create_time BIGINT,
+			update_time DATETIME,
+			INDEX idx_tenant_id (tenant_id),
+			UNIQUE INDEX idx_tenant_embd (tenant_id, embd_id)
+		)
+		`
+		if err := db.Exec(sql).Error; err != nil {
+			logger.Warn("Failed to create skill_search_configs table with MySQL dialect, trying generic", zap.Error(err))
+			// Try with AutoMigrate as fallback
+			if err := db.AutoMigrate(&entity.SkillSearchConfig{}); err != nil {
+				return err
+			}
+		}
+	} else {
+		// Table exists, check if unique index exists
+		var indexExists int64
+		db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+			WHERE TABLE_NAME = 'skill_search_configs' AND INDEX_NAME = 'idx_tenant_embd'`).Scan(&indexExists)
+		if indexExists == 0 {
+			logger.Info("Adding unique index idx_tenant_embd to skill_search_configs...")
+			if err := db.Exec(`ALTER TABLE skill_search_configs 
+				ADD UNIQUE INDEX idx_tenant_embd (tenant_id, embd_id)`).Error; err != nil {
+				logger.Warn("Failed to add unique index idx_tenant_embd", zap.Error(err))
+			}
+		}
+	}
+
+	return nil
 }

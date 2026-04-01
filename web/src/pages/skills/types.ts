@@ -111,3 +111,56 @@ export interface UploadModalProps {
   onUpload: (name: string, version: string, files: File[]) => Promise<boolean>;
   loading?: boolean;
 }
+
+// ============================================================================
+// Skill Search Types
+// ============================================================================
+
+export interface FieldWeight {
+  enabled: boolean;
+  weight: number;
+}
+
+export interface FieldConfig {
+  name: FieldWeight;
+  tags: FieldWeight;
+  description: FieldWeight;
+  content: FieldWeight;
+}
+
+export interface SkillSearchConfig {
+  id?: string;
+  tenant_id?: string;
+  embd_id: string;
+  vector_similarity_weight: number;
+  similarity_threshold: number;
+  field_config: FieldConfig;
+  rerank_id?: string;
+  top_k: number;
+}
+
+export interface SkillSearchResult {
+  skill_id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  score: number;
+  bm25_score?: number;
+  vector_score?: number;
+}
+
+export interface SkillSearchResponse {
+  results: SkillSearchResult[];
+  total: number;
+  query: string;
+  search_type: string;
+}
+
+export interface SearchConfigModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  config?: SkillSearchConfig;
+  onSave: (config: SkillSearchConfig) => Promise<boolean>;
+  onReindex?: () => Promise<boolean>;
+  loading?: boolean;
+}

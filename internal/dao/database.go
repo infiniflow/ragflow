@@ -146,6 +146,7 @@ func InitDB() error {
 		&entity.EvaluationResult{},
 		&entity.TimeRecord{},
 		&entity.License{},
+		&entity.SkillSearchConfig{},
 	}
 
 	for _, m := range models {

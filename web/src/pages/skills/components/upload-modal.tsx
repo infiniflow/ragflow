@@ -8,7 +8,6 @@ import {
   CheckCircle,
   File as FileIcon,
   FolderOpen,
-  Github,
   Globe,
   Inbox,
   Loader2,
@@ -907,7 +906,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
             {t('skills.upload') || 'Upload'}
           </TabsTrigger>
           <TabsTrigger value="git" disabled={uploading}>
-            <Github className="mr-2 size-4" />
+            <Globe className="mr-2 size-4" />
             {t('skills.importFromGit') || 'Import from Git'}
           </TabsTrigger>
         </TabsList>
@@ -1149,7 +1148,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
                 disabled={gitImporting}
                 className="flex-1"
               >
-                <Github className="mr-2 size-4" />
+                <Globe className="mr-2 size-4" />
                 GitHub
               </Button>
               <Button

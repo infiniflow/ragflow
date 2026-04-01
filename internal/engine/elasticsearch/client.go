@@ -78,8 +78,8 @@ func NewEngine(cfg interface{}) (*elasticsearchEngine, error) {
 	return engine, nil
 }
 
-// Type returns the engine type
-func (e *elasticsearchEngine) Type() string {
+// GetType returns the engine type
+func (e *elasticsearchEngine) GetType() string {
 	return "elasticsearch"
 }
 

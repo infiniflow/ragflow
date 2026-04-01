@@ -1,4 +1,5 @@
 import fileManagerService from '@/services/file-manager-service';
+import { getAuthorization } from '@/utils/authorization-util';
 import { message } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -736,5 +737,221 @@ export const useSkills = () => {
     deleteSkill,
     getSkillFileContent,
     getSkillVersionFiles,
+  };
+};
+
+// Skill Search Config Hook
+interface FieldWeight {
+  enabled: boolean;
+  weight: number;
+}
+
+interface FieldConfig {
+  name: FieldWeight;
+  tags: FieldWeight;
+  description: FieldWeight;
+  content: FieldWeight;
+}
+
+interface SkillSearchConfig {
+  id?: string;
+  tenant_id?: string;
+  embd_id: string;
+  vector_similarity_weight: number;
+  similarity_threshold: number;
+  field_config: FieldConfig;
+  rerank_id?: string;
+  top_k: number;
+}
+
+export const useSkillSearchConfig = () => {
+  const { t } = useTranslation();
+  const [config, setConfig] = useState<SkillSearchConfig | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // Fetch config
+  const fetchConfig = useCallback(async (embdId?: string) => {
+    try {
+      const response = await fetch(
+        `/api/v1/skill/search/config?embd_id=${embdId || ''}`,
+        {
+          headers: {
+            Authorization: getAuthorization(),
+          },
+        },
+      );
+      const data = await response.json();
+      if (data.code === 0 && data.data) {
+        setConfig(data.data);
+        return data.data;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error fetching skill search config:', error);
+      return null;
+    }
+  }, []);
+
+  // Save config
+  const saveConfig = useCallback(
+    async (configData: SkillSearchConfig): Promise<boolean> => {
+      try {
+        setLoading(true);
+        const response = await fetch('/api/v1/skill/search/config', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: getAuthorization(),
+          },
+          body: JSON.stringify(configData),
+        });
+        const data = await response.json();
+        if (data.code === 0) {
+          setConfig(data.data);
+          message.success(t('skillSearch.saveSuccess'));
+          return true;
+        }
+        message.error(data.message || t('skillSearch.saveError'));
+        return false;
+      } catch (error) {
+        console.error('Error saving skill search config:', error);
+        message.error(t('skillSearch.saveError'));
+        return false;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [t],
+  );
+
+  // Reindex all skills
+  const reindex = useCallback(async (): Promise<boolean> => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/v1/skill/search/reindex', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: getAuthorization(),
+        },
+        body: JSON.stringify({}),
+      });
+      const data = await response.json();
+      if (data.code === 0) {
+        message.success(t('skillSearch.reindexSuccess'));
+        return true;
+      }
+      message.error(data.message || t('skillSearch.reindexError'));
+      return false;
+    } catch (error) {
+      console.error('Error reindexing skills:', error);
+      message.error(t('skillSearch.reindexError'));
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
+
+  // Initialize index
+  const initializeIndex = useCallback(
+    async (embdId: string): Promise<boolean> => {
+      try {
+        const response = await fetch(
+          `/api/v1/skill/search/init?embd_id=${embdId}`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: getAuthorization(),
+            },
+          },
+        );
+        const data = await response.json();
+        return data.code === 0;
+      } catch (error) {
+        console.error('Error initializing skill search index:', error);
+        return false;
+      }
+    },
+    [],
+  );
+
+  // Search skills
+  const searchSkills = useCallback(
+    async (query: string, page = 1, pageSize = 10) => {
+      try {
+        const response = await fetch('/api/v1/skill/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: getAuthorization(),
+          },
+          body: JSON.stringify({
+            query,
+            page,
+            page_size: pageSize,
+          }),
+        });
+        const data = await response.json();
+        if (data.code === 0 && data.data) {
+          // Transform backend results to Skill[] format
+          const skills: Skill[] = (data.data.skills || []).map(
+            (result: any) => ({
+              id: result.skill_id,
+              name: result.name,
+              description: result.description,
+              source_type: 'search',
+              created_at: Date.now(),
+              updated_at: Date.now(),
+              metadata: {
+                tags: result.tags || [],
+                score: result.score,
+                bm25_score: result.bm25_score,
+                vector_score: result.vector_score,
+              },
+              files: [],
+            }),
+          );
+          return {
+            skills,
+            total: data.data.total || 0,
+          };
+        }
+        return { skills: [], total: 0 };
+      } catch (error) {
+        console.error('Error searching skills:', error);
+        return { skills: [], total: 0 };
+      }
+    },
+    [],
+  );
+
+  // Get index status
+  const getIndexStatus = useCallback(async () => {
+    try {
+      const response = await fetch('/api/v1/skill/search/status', {
+        headers: {
+          Authorization: getAuthorization(),
+        },
+      });
+      const data = await response.json();
+      if (data.code === 0) {
+        return data.data;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting skill index status:', error);
+      return null;
+    }
+  }, []);
+
+  return {
+    config,
+    configLoading: loading,
+    fetchConfig,
+    saveConfig,
+    reindex,
+    initializeIndex,
+    searchSkills,
+    getIndexStatus,
   };
 };

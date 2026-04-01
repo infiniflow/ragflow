@@ -168,8 +168,8 @@ func NewEngine(cfg interface{}) (*infinityEngine, error) {
 	return engine, nil
 }
 
-// Type returns the engine type
-func (e *infinityEngine) Type() string {
+// GetType returns the engine type
+func (e *infinityEngine) GetType() string {
 	return "infinity"
 }
 

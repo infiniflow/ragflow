@@ -60,6 +60,9 @@ type DocEngine interface {
 	// Health check
 	Ping(ctx context.Context) error
 	Close() error
+
+	// GetType returns the engine type
+	GetType() string
 }
 
 // Type returns the engine type (helper method for runtime type checking)

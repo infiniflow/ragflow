@@ -39,6 +39,7 @@ type Router struct {
 	searchHandler        *handler.SearchHandler
 	fileHandler          *handler.FileHandler
 	memoryHandler        *handler.MemoryHandler
+	skillSearchHandler   *handler.SkillSearchHandler
 }
 
 // NewRouter create router
@@ -58,6 +59,7 @@ func NewRouter(
 	searchHandler *handler.SearchHandler,
 	fileHandler *handler.FileHandler,
 	memoryHandler *handler.MemoryHandler,
+	skillSearchHandler *handler.SkillSearchHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -75,6 +77,7 @@ func NewRouter(
 		searchHandler:        searchHandler,
 		fileHandler:          fileHandler,
 		memoryHandler:        memoryHandler,
+		skillSearchHandler:   skillSearchHandler,
 	}
 }
 
@@ -188,6 +191,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("", r.memoryHandler.GetMessages)
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
+
+			// Skill search routes
+			skillSearch := v1.Group("/skill/search")
+			{
+				skillSearch.GET("/config", r.skillSearchHandler.GetConfig)
+				skillSearch.POST("/config", r.skillSearchHandler.UpdateConfig)
+				skillSearch.POST("", r.skillSearchHandler.Search)
+				skillSearch.POST("/index", r.skillSearchHandler.IndexSkills)
+				skillSearch.DELETE("/index", r.skillSearchHandler.DeleteSkillIndex)
+				skillSearch.POST("/reindex", r.skillSearchHandler.Reindex)
+				skillSearch.POST("/init", r.skillSearchHandler.InitializeIndex)
+			}
 		}
 
 		// Knowledge base routes

@@ -548,7 +548,7 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 			}
 
 			// Build query for this table
-			result, err := e.executeTableSearch(db, tableName, outputColumns, req.Question, req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, req.SimilarityThreshold, minMatch)
+			result, err := e.executeTableSearch(db, tableName, outputColumns, req.Question, req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, req.SimilarityThreshold, minMatch, req.VectorSimilarityWeight)
 			if err != nil {
 				// Skip this table on error
 				continue
@@ -573,7 +573,7 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 						continue
 					}
 					// Search without match - pass empty question
-					result, err := e.executeTableSearch(db, tableName, outputColumns, "", req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, req.SimilarityThreshold, 0.0)
+					result, err := e.executeTableSearch(db, tableName, outputColumns, "", req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, req.SimilarityThreshold, 0.0, req.VectorSimilarityWeight)
 					if err != nil {
 						continue
 					}
@@ -589,7 +589,7 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 					if err != nil {
 						continue
 					}
-					result, err := e.executeTableSearch(db, tableName, outputColumns, req.Question, req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, lowerThreshold, 0.1)
+					result, err := e.executeTableSearch(db, tableName, outputColumns, req.Question, req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, lowerThreshold, 0.1, req.VectorSimilarityWeight)
 					if err != nil {
 						continue
 					}
@@ -707,7 +707,7 @@ func getScore(chunk map[string]interface{}) float64 {
 }
 
 // executeTableSearch executes search on a single table
-func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName string, outputColumns []string, question string, vector []float64, filterStr string, topK, pageSize, offset int, orderBy *OrderByExpr, rankFeature map[string]float64, similarityThreshold float64, minMatch float64) (*types.SearchResponse, error) {
+func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName string, outputColumns []string, question string, vector []float64, filterStr string, topK, pageSize, offset int, orderBy *OrderByExpr, rankFeature map[string]float64, similarityThreshold float64, minMatch float64, vectorSimilarityWeight float64) (*types.SearchResponse, error) {
 	// Debug logging
 	fmt.Printf("[DEBUG] executeTableSearch: question=%s, topK=%d, pageSize=%d, similarityThreshold=%f, filterStr=%s\n", question, topK, pageSize, similarityThreshold, filterStr)
 
@@ -799,10 +799,19 @@ func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName str
 	}
 
 	// Add fusion (for text+vector combination)
+	// Fusion weights: first is text weight (1 - vector_similarity_weight), second is vector weight
+	// Reference: Python rag/utils/infinity_conn.py L214-218
 	if hasTextMatch && hasVectorMatch {
+		// Get vector similarity weight from search request
+		vectorWeight := vectorSimilarityWeight
+		if vectorWeight <= 0 || vectorWeight > 1 {
+			vectorWeight = 0.3 // default
+		}
+		textWeight := 1.0 - vectorWeight
+
 		fusionParams := map[string]interface{}{
 			"normalize": "atan",
-			"weights":   "0.05,0.95",
+			"weights":   fmt.Sprintf("%.2f,%.2f", textWeight, vectorWeight),
 		}
 		fmt.Printf("[DEBUG] FusionExpr: method=weighted_sum, topn=%d, fusion_params=%v\n", topK, fusionParams)
 		fmt.Printf("[DEBUG] Before Fusion - table has MatchText=%v, MatchDense=%v\n", hasTextMatch, hasVectorMatch)

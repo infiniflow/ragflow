@@ -16,13 +16,15 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Settings,
 } from 'lucide-react';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import SearchConfigModal from './components/search-config-modal';
 import SkillCard from './components/skill-card';
 import SkillDetail from './components/skill-detail';
 import UploadModal from './components/upload-modal';
-import { useSkills } from './hooks';
+import { useSkills, useSkillSearchConfig } from './hooks';
 import type { Skill } from './types';
 
 // Format relative time
@@ -61,10 +63,28 @@ const SkillsPage: React.FC = () => {
     getSkillVersionFiles,
   } = useSkills();
 
+  const {
+    config,
+    configLoading,
+    saveConfig,
+    fetchConfig,
+    reindex,
+    searchSkills,
+  } = useSkillSearchConfig();
+
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [configModalOpen, setConfigModalOpen] = useState(false);
+  const [searchResults, setSearchResults] = useState<Skill[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+
+  // Fetch config on mount
+  useEffect(() => {
+    fetchConfig(config?.embd_id);
+  }, [fetchConfig]);
 
   const handleViewSkill = useCallback((skill: Skill) => {
     setSelectedSkill(skill);
@@ -90,9 +110,73 @@ const SkillsPage: React.FC = () => {
     [deleteSkill],
   );
 
-  const sortedSkills = useMemo(() => {
-    return [...filteredSkills].sort((a, b) => b.updated_at - a.updated_at);
-  }, [filteredSkills]);
+  // Handle search - all searches go through skillsearch API
+  const handleSearch = useCallback(
+    async (query: string) => {
+      setSearchQuery(query);
+
+      if (!query.trim()) {
+        setSearchResults([]);
+        setHasSearched(false);
+        return;
+      }
+
+      setIsSearching(true);
+      setHasSearched(true);
+      try {
+        const results = await searchSkills(query, 1, 20);
+        if (results?.skills) {
+          setSearchResults(results.skills);
+        } else {
+          setSearchResults([]);
+        }
+      } catch (error) {
+        console.error('Search error:', error);
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    },
+    [searchSkills, setSearchQuery],
+  );
+
+  // Handle search input change (for controlled input)
+  const handleSearchInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = e.target.value;
+      setSearchQuery(value);
+      if (!value.trim()) {
+        setSearchResults([]);
+        setHasSearched(false);
+      }
+    },
+    [setSearchQuery],
+  );
+
+  // Handle search on Enter key
+  const handleSearchKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') {
+        handleSearch(searchQuery);
+      }
+    },
+    [handleSearch, searchQuery],
+  );
+
+  // Handle search button click
+  const handleSearchClick = useCallback(() => {
+    handleSearch(searchQuery);
+  }, [handleSearch, searchQuery]);
+
+  // Determine which skills to display
+  const displayedSkills = useMemo(() => {
+    // If search is active, show search results; otherwise show all skills
+    const skills = hasSearched ? searchResults : filteredSkills;
+    return [...skills].sort((a, b) => b.updated_at - a.updated_at);
+  }, [hasSearched, searchResults, filteredSkills]);
+
+  // Show loading state
+  const isLoading = loading || isSearching || configLoading;
 
   return (
     <TooltipProvider>
@@ -103,6 +187,19 @@ const SkillsPage: React.FC = () => {
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-semibold">{t('skills.title')}</h2>
               <div className="flex items-center gap-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setConfigModalOpen(true)}
+                      disabled={loading}
+                    >
+                      <Settings className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t('skills.configureSearch')}</TooltipContent>
+                </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -125,13 +222,24 @@ const SkillsPage: React.FC = () => {
 
             {/* Search and View Controls */}
             <div className="flex justify-between items-center">
-              <Input
-                placeholder={t('skills.searchPlaceholder')}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-[300px]"
-                prefix={<Search className="size-4 text-text-secondary" />}
-              />
+              <div className="relative">
+                <Input
+                  placeholder={
+                    t('skills.searchPlaceholder') || 'Search skills...'
+                  }
+                  value={searchQuery}
+                  onChange={handleSearchInputChange}
+                  onKeyDown={handleSearchKeyDown}
+                  className="w-[300px] pr-10"
+                />
+                <button
+                  onClick={handleSearchClick}
+                  disabled={isSearching}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Search className="size-4" />
+                </button>
+              </div>
               <Segmented
                 value={viewMode}
                 onChange={(v) => setViewMode(v as 'grid' | 'list')}
@@ -144,16 +252,22 @@ const SkillsPage: React.FC = () => {
           </div>
 
           {/* Skills List */}
-          {loading ? (
+          {isLoading ? (
             <div className="flex justify-center py-16">
               <Spin size="large" />
             </div>
-          ) : sortedSkills.length === 0 ? (
+          ) : displayedSkills.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-text-secondary">
               <FolderOpen className="size-16 mb-4 opacity-50" />
-              {searchQuery ? (
+              {hasSearched ? (
                 <p>
-                  {t('skills.noSearchResults')}: "{searchQuery}"
+                  {t('skills.noSearchResults') || 'No search results'}: "
+                  {searchQuery}"
+                </p>
+              ) : searchQuery ? (
+                <p>
+                  {t('skills.noSearchResults') || 'No search results'}: "
+                  {searchQuery}"
                 </p>
               ) : (
                 <div className="text-center">
@@ -177,7 +291,7 @@ const SkillsPage: React.FC = () => {
                     : '1fr',
               }}
             >
-              {sortedSkills.map((skill) => (
+              {displayedSkills.map((skill) => (
                 <SkillCard
                   key={skill.id}
                   skill={skill}
@@ -205,6 +319,16 @@ const SkillsPage: React.FC = () => {
           onCancel={() => setUploadModalOpen(false)}
           onUpload={handleUpload}
           loading={loading}
+        />
+
+        {/* Search Config Modal */}
+        <SearchConfigModal
+          open={configModalOpen}
+          onOpenChange={setConfigModalOpen}
+          config={config || undefined}
+          onSave={saveConfig}
+          onReindex={reindex}
+          loading={configLoading}
         />
       </PageContainer>
     </TooltipProvider>

@@ -384,7 +384,9 @@ Configuration File:
 Commands:
   SQL commands (use quotes): "LIST USERS", "CREATE USER 'email' 'password'", etc.
   Filesystem commands (no quotes): ls datasets, search "keyword", cat path, etc.
-  Skill commands: add-skill <path> [--version 1.0.0]
+  Skill commands: 
+    add-skill <path> [--version 1.0.0]
+    search -d skills -q <query> [-k top-k]
   If no command is provided, CLI runs in interactive mode.`)
 }
 
@@ -684,6 +686,20 @@ func (c *CLI) executeFilesystem(input string) error {
 		searchPath := "datasets"
 		if len(searchOpts.Dirs) > 0 {
 			searchPath = searchOpts.Dirs[0]
+		}
+		// Check if searching skills
+		if searchPath == "skills" {
+			searchCmd := NewSearchSkillsCommand(c.client)
+			// Convert searchOpts to search args
+			args := &SearchSkillsArgs{
+				Query:    searchOpts.Query,
+				Page:     1,
+				PageSize: searchOpts.TopK,
+			}
+			if args.PageSize <= 0 {
+				args.PageSize = 10
+			}
+			return searchCmd.searchSkills(args)
 		}
 		ceCmd = &filesystem.Command{
 			Type: filesystem.CommandSearch,
@@ -1246,17 +1262,17 @@ func parseSearchCommandArgs(args []string) (*SearchCommandOptions, error) {
 func printSearchHelp() {
 	help := `Search command usage: search [options]
 
-Search for content in datasets. Currently only supports searching in datasets.
+Search for content in datasets or skills.
 
 Options:
   -d, --dir <path>       Directory to search in (can be specified multiple times)
-                         Currently only supports paths under 'datasets/'
+                         Supports: 'datasets', 'datasets/kb1', 'skills'
                          Example: -d datasets/kb1 -d datasets/kb2
   -q, --query <query>    Search query (required)
                          Example: -q "machine learning"
   -k, --top-k <number>   Number of top results to return (default: 10)
                          Example: -k 20
-  -t, --threshold <num>  Similarity threshold, 0.0-1.0 (default: 0.2)
+  -t, --threshold <num>  Similarity threshold, 0.0-1.0 (default: 0.2, datasets only)
                          Example: -t 0.5
   -h, --help             Show this help message
 
@@ -1268,6 +1284,7 @@ Examples:
   search -d datasets/kb1 -q "AI" --output plain     # Search with plain text output
   search -q "data mining"                           # Search all datasets
   search -q "RAG" -k 20 -t 0.5                      # Return 20 results with threshold 0.5
+  search -d skills -q "data processing"             # Search skills using semantic search
 `
 	fmt.Println(help)
 }
