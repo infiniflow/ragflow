@@ -18,12 +18,12 @@ package service
 
 import (
 	"ragflow/internal/dao"
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
 )
 
 // FileService file service
 type FileService struct {
-	fileDAO         *dao.FileDAO
+	fileDAO          *dao.FileDAO
 	file2DocumentDAO *dao.File2DocumentDAO
 }
 
@@ -37,7 +37,7 @@ func NewFileService() *FileService {
 
 // FileInfo file info with additional fields
 type FileInfo struct {
-	*model.File
+	*entity.File
 	Size           int64                    `json:"size"`
 	KbsInfo        []map[string]interface{} `json:"kbs_info"`
 	HasChildFolder bool                     `json:"has_child_folder,omitempty"`
@@ -45,9 +45,9 @@ type FileInfo struct {
 
 // ListFilesResponse list files response
 type ListFilesResponse struct {
-	Total          int64              `json:"total"`
-	Files          []map[string]interface{} `json:"files"`
-	ParentFolder   map[string]interface{}   `json:"parent_folder"`
+	Total        int64                    `json:"total"`
+	Files        []map[string]interface{} `json:"files"`
+	ParentFolder map[string]interface{}   `json:"parent_folder"`
 }
 
 // GetRootFolder gets or creates root folder for tenant
@@ -91,7 +91,7 @@ func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, order
 	fileResponses := make([]map[string]interface{}, len(files))
 	for i, file := range files {
 		fileInfo := s.toFileInfo(file)
-		
+
 		// If folder, calculate size and check for child folders
 		if file.Type == "folder" {
 			folderSize, err := s.fileDAO.GetFolderSize(file.ID)
@@ -111,7 +111,7 @@ func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, order
 			}
 			fileInfo.KbsInfo = kbsInfo
 		}
-		
+
 		fileResponses[i] = s.fileInfoToResponse(fileInfo)
 	}
 
@@ -123,29 +123,29 @@ func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, order
 }
 
 // toFileResponse converts file model to response format
-func (s *FileService) toFileResponse(file *model.File) map[string]interface{} {
+func (s *FileService) toFileResponse(file *entity.File) map[string]interface{} {
 	result := map[string]interface{}{
-		"id":         file.ID,
-		"parent_id":  file.ParentID,
-		"tenant_id":  file.TenantID,
-		"created_by": file.CreatedBy,
-		"name":       file.Name,
-		"size":       file.Size,
-		"type":       file.Type,
+		"id":          file.ID,
+		"parent_id":   file.ParentID,
+		"tenant_id":   file.TenantID,
+		"created_by":  file.CreatedBy,
+		"name":        file.Name,
+		"size":        file.Size,
+		"type":        file.Type,
 		"create_time": file.CreateTime,
 		"update_time": file.UpdateTime,
 	}
-	
+
 	if file.Location != nil {
 		result["location"] = *file.Location
 	}
 	result["source_type"] = file.SourceType
-	
+
 	return result
 }
 
 // toFileInfo converts file model to FileInfo
-func (s *FileService) toFileInfo(file *model.File) *FileInfo {
+func (s *FileService) toFileInfo(file *entity.File) *FileInfo {
 	return &FileInfo{
 		File:           file,
 		Size:           file.Size,

@@ -1,4 +1,4 @@
-let api_host = `/v1`;
+const api_host = `/v1`;
 const ExternalApi = `/api`;
 
 export { ExternalApi, api_host };
@@ -129,10 +129,13 @@ export default {
   get_dataset_filter: `${api_host}/document/filter`,
 
   // chat
-  setDialog: `${api_host}/dialog/set`,
-  getDialog: `${api_host}/dialog/get`,
-  removeDialog: `${api_host}/dialog/rm`,
-  listDialog: `${api_host}/dialog/list`,
+  createChat: `${ExternalApi}${api_host}/chats`,
+  listChats: `${ExternalApi}${api_host}/chats`,
+  getChat: (chatId: string) => `${ExternalApi}${api_host}/chats/${chatId}`,
+  updateChat: (chatId: string) => `${ExternalApi}${api_host}/chats/${chatId}`,
+  patchChat: (chatId: string) => `${ExternalApi}${api_host}/chats/${chatId}`,
+  deleteChat: (chatId: string) => `${ExternalApi}${api_host}/chats/${chatId}`,
+  bulkDeleteChats: `${ExternalApi}${api_host}/chats`,
   setConversation: `${api_host}/conversation/set`,
   getConversation: `${api_host}/conversation/get`,
   getConversationSSE: (dialogId: string) =>
@@ -157,7 +160,6 @@ export default {
   uploadAndParseExternal: `${api_host}/api/document/upload_and_parse`,
 
   // next chat
-  listNextDialog: `${api_host}/dialog/next`,
   fetchExternalChatInfo: (id: string) =>
     `${ExternalApi}${api_host}/chatbots/${id}/info`,
 
@@ -238,12 +240,15 @@ export default {
   testMcpServer: `${api_host}/mcp_server/test_mcp`,
 
   // next-search
-  createSearch: `${api_host}/search/create`,
-  getSearchList: `${api_host}/search/list`,
-  deleteSearch: `${api_host}/search/rm`,
-  getSearchDetail: `${api_host}/search/detail`,
+  createSearch: `${ExternalApi}${api_host}/searches`,
+  getSearchList: `${ExternalApi}${api_host}/searches`,
+  deleteSearch: (params: { search_id: string }) =>
+    `${ExternalApi}${api_host}/searches/${params.search_id}`,
+  getSearchDetail: (params: { search_id: string }) =>
+    `${ExternalApi}${api_host}/searches/${params.search_id}`,
   getSearchDetailShare: `${ExternalApi}${api_host}/searchbots/detail`,
-  updateSearchSetting: `${api_host}/search/update`,
+  updateSearchSetting: (params: { search_id: string }) =>
+    `${ExternalApi}${api_host}/searches/${params.search_id}`,
   askShare: `${ExternalApi}${api_host}/searchbots/ask`,
   mindmapShare: `${ExternalApi}${api_host}/searchbots/mindmap`,
   getRelatedQuestionsShare: `${ExternalApi}${api_host}/searchbots/related_questions`,

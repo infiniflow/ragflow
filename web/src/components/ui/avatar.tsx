@@ -86,7 +86,7 @@ export const AvatarGroup = ({
         return (
           <div key={index} className="-ml-2 hover:z-10 relative">
             {React.cloneElement(avatar as React.ReactElement<AvatarProps>, {
-              className: 'ring-2 ring-background',
+              className: cn('ring-2 ring-background', avatar.props.className),
             })}
           </div>
         );

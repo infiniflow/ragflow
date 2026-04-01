@@ -43,6 +43,7 @@ from common import settings
 from common.config_utils import show_configs
 from common.data_source import (
     BlobStorageConnector,
+    RSSConnector,
     NotionConnector,
     DiscordConnector,
     GoogleDriveConnector,
@@ -243,6 +244,26 @@ class OCI_STORAGE(_BlobLikeBase):
 class GOOGLE_CLOUD_STORAGE(_BlobLikeBase):
     SOURCE_NAME: str = FileSource.GOOGLE_CLOUD_STORAGE
     DEFAULT_BUCKET_TYPE: str = "google_cloud_storage"
+
+
+class RSS(SyncBase):
+    SOURCE_NAME: str = FileSource.RSS
+
+    async def _generate(self, task: dict):
+        self.connector = RSSConnector(
+            feed_url=self.conf["feed_url"],
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+        self.connector.load_credentials(self.conf.get("credentials", {}))
+        self.connector.validate_connector_settings()
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            return self.connector.load_from_state()
+
+        return self.connector.poll_source(
+            task["poll_range_start"].timestamp(),
+            datetime.now(timezone.utc).timestamp(),
+        )
 
 
 class Confluence(SyncBase):
@@ -1398,6 +1419,7 @@ class REST_API(SyncBase):
 
 
 func_factory = {
+    FileSource.RSS: RSS,
     FileSource.S3: S3,
     FileSource.R2: R2,
     FileSource.OCI_STORAGE: OCI_STORAGE,
@@ -1484,7 +1506,7 @@ async def main():
                                   __/ |
                                  |___/
     """)
-    logging.info(f"RAGFlow version: {get_ragflow_version()}")
+    logging.info(f"RAGFlow data sync version: {get_ragflow_version()}")
     show_configs()
     settings.init_settings()
     if sys.platform != "win32":

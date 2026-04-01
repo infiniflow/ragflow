@@ -230,7 +230,7 @@ def _load_user_app(monkeypatch):
             return True
 
         @staticmethod
-        def get_api_key(tenant_id, model_name):
+        def get_api_key(tenant_id, model_name, model_type=None):
             return _MockTableObject(
                 id=1,
                 tenant_id=tenant_id,
@@ -343,6 +343,10 @@ def _load_user_app(monkeypatch):
     api_utils_mod.server_error_response = _server_error_response
     api_utils_mod.validate_request = _validate_request
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
+
+    tenant_utils_mod = ModuleType("api.utils.tenant_utils")
+    tenant_utils_mod.ensure_tenant_model_id_for_params = lambda _tenant_id, params: params
+    monkeypatch.setitem(sys.modules, "api.utils.tenant_utils", tenant_utils_mod)
 
     crypt_mod = ModuleType("api.utils.crypt")
     crypt_mod.decrypt = lambda value: value
