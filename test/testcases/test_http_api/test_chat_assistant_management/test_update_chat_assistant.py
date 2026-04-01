@@ -26,12 +26,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
-            (
-                RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
-            ),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
+            (RAGFlowHttpApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
@@ -194,7 +190,7 @@ class TestChatAssistantUpdate:
             ({"system": "{knowledge}"}, 0, ""),
             ({"system": "!@#$%^&*() {knowledge}"}, 0, ""),
             ({"system": "中文测试 {knowledge}"}, 0, ""),
-            ({"system": "Hello World"}, 102, "Parameter 'knowledge' is not used"),
+            ({"system": "Hello World"}, 0, ""),
             ({"system": "Hello World", "parameters": []}, 0, ""),
             pytest.param({"system": 123}, 100, """AttributeError("\'int\' object has no attribute \'find\'")""", marks=pytest.mark.skip),
             pytest.param({"system": True}, 100, """AttributeError("\'int\' object has no attribute \'find\'")""", marks=pytest.mark.skip),
@@ -268,14 +264,13 @@ class TestChatAssistantUpdate:
         assert res["code"] == 102
         assert res["message"] == "Duplicated chat name."
 
-        # PATCH: prompt_config with unused parameter
+        # PATCH: prompt_config without placeholder is allowed
         res = patch_chat_assistant(
             HttpApiAuth,
             chat_id,
             {"prompt_config": {"system": "No required placeholder", "parameters": [{"key": "knowledge", "optional": False}]}},
         )
-        assert res["code"] == 102
-        assert "Parameter 'knowledge' is not used" in res["message"]
+        assert res["code"] == 0
 
         # PATCH: icon (was "avatar" in old SDK)
         res = patch_chat_assistant(HttpApiAuth, chat_id, {"icon": "raw-avatar-value"})

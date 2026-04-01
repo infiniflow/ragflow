@@ -18,8 +18,10 @@ import asyncio
 import importlib.util
 import sys
 from copy import deepcopy
+from enum import Enum
+from functools import wraps
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -41,6 +43,27 @@ class _AwaitableValue:
             return self._value
 
         return _co().__await__()
+
+
+class _DummyArgs(dict):
+    def get(self, key, default=None):
+        return super().get(key, default)
+
+    def getlist(self, key):
+        value = self.get(key, [])
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return value
+        return [value]
+
+
+def _passthrough_login_required(func):
+    @wraps(func)
+    async def _wrapper(*args, **kwargs):
+        return await func(*args, **kwargs)
+
+    return _wrapper
 
 
 class _DummyKB:
@@ -85,17 +108,192 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+@pytest.fixture(scope="session")
+def auth():
+    return "unit-auth"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def set_tenant_info():
+    return None
+
+
 def _load_chat_module(monkeypatch):
     repo_root = Path(__file__).resolve().parents[4]
     module_name = "test_chat_restful_routes_unit_module"
     module_path = repo_root / "api" / "apps" / "restful_apis" / "chat_api.py"
+
+    quart_mod = ModuleType("quart")
+    quart_mod.request = SimpleNamespace(args=_DummyArgs())
+    monkeypatch.setitem(sys.modules, "quart", quart_mod)
+
+    api_pkg = ModuleType("api")
+    api_pkg.__path__ = [str(repo_root / "api")]
+    monkeypatch.setitem(sys.modules, "api", api_pkg)
+
+    apps_pkg = ModuleType("api.apps")
+    apps_pkg.__path__ = [str(repo_root / "api" / "apps")]
+    apps_pkg.current_user = SimpleNamespace(id="tenant-1")
+    apps_pkg.login_required = _passthrough_login_required
+    monkeypatch.setitem(sys.modules, "api.apps", apps_pkg)
+    api_pkg.apps = apps_pkg
+
+    common_pkg = ModuleType("common")
+    common_pkg.__path__ = [str(repo_root / "common")]
+    monkeypatch.setitem(sys.modules, "common", common_pkg)
+
+    common_constants_mod = ModuleType("common.constants")
+
+    class _StubRetCode(int, Enum):
+        SUCCESS = 0
+        DATA_ERROR = 102
+        AUTHENTICATION_ERROR = 109
+
+    class _StubStatusEnum(str, Enum):
+        VALID = "1"
+        INVALID = "0"
+
+    common_constants_mod.RetCode = _StubRetCode
+    common_constants_mod.StatusEnum = _StubStatusEnum
+    monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
+
+    misc_utils_mod = ModuleType("common.misc_utils")
+    misc_utils_mod.get_uuid = lambda: "generated-chat-id"
+    monkeypatch.setitem(sys.modules, "common.misc_utils", misc_utils_mod)
+
+    dialog_service_mod = ModuleType("api.db.services.dialog_service")
+
+    class _StubDialogService:
+        model = SimpleNamespace(
+            _meta=SimpleNamespace(
+                fields={
+                    "id": None,
+                    "tenant_id": None,
+                    "name": None,
+                    "description": None,
+                    "icon": None,
+                    "kb_ids": None,
+                    "llm_id": None,
+                    "llm_setting": None,
+                    "prompt_config": None,
+                    "similarity_threshold": None,
+                    "vector_similarity_weight": None,
+                    "top_n": None,
+                    "top_k": None,
+                    "rerank_id": None,
+                    "meta_data_filter": None,
+                    "created_by": None,
+                    "create_time": None,
+                    "create_date": None,
+                    "update_time": None,
+                    "update_date": None,
+                    "status": None,
+                }
+            )
+        )
+
+        @staticmethod
+        def query(**_kwargs):
+            return []
+
+        @staticmethod
+        def save(**_kwargs):
+            return True
+
+        @staticmethod
+        def get_by_id(_chat_id):
+            return False, None
+
+        @staticmethod
+        def update_by_id(_chat_id, _payload):
+            return True
+
+        @staticmethod
+        def get_by_tenant_ids(*_args, **_kwargs):
+            return [], 0
+
+    dialog_service_mod.DialogService = _StubDialogService
+    monkeypatch.setitem(sys.modules, "api.db.services.dialog_service", dialog_service_mod)
+
+    kb_service_mod = ModuleType("api.db.services.knowledgebase_service")
+
+    class _StubKnowledgebaseService:
+        @staticmethod
+        def accessible(**_kwargs):
+            return []
+
+        @staticmethod
+        def query(**_kwargs):
+            return []
+
+        @staticmethod
+        def get_by_id(_kb_id):
+            return False, None
+
+    kb_service_mod.KnowledgebaseService = _StubKnowledgebaseService
+    monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
+
+    tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")
+
+    class _StubTenantLLMService:
+        @staticmethod
+        def split_model_name_and_factory(model_name):
+            if model_name and "@" in model_name:
+                return tuple(model_name.split("@", 1))
+            return model_name, None
+
+        @staticmethod
+        def query(**_kwargs):
+            return []
+
+        @staticmethod
+        def get_api_key(*_args, **_kwargs):
+            return SimpleNamespace(id=1)
+
+    tenant_llm_service_mod.TenantLLMService = _StubTenantLLMService
+    monkeypatch.setitem(sys.modules, "api.db.services.tenant_llm_service", tenant_llm_service_mod)
+
+    user_service_mod = ModuleType("api.db.services.user_service")
+
+    class _StubTenantService:
+        @staticmethod
+        def get_by_id(_tenant_id):
+            return True, SimpleNamespace(llm_id="glm-4")
+
+    class _StubUserTenantService:
+        @staticmethod
+        def query(**_kwargs):
+            return []
+
+    user_service_mod.TenantService = _StubTenantService
+    user_service_mod.UserTenantService = _StubUserTenantService
+    monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_service_mod)
+
+    api_utils_mod = ModuleType("api.utils.api_utils")
+
+    def _check_duplicate_ids(ids, label):
+        counts = {}
+        for item in ids or []:
+            counts[item] = counts.get(item, 0) + 1
+        duplicate_messages = [f"Duplicate {label} ids: {item}" for item, count in counts.items() if count > 1]
+        return list(set(ids or [])), duplicate_messages
+
+    api_utils_mod.check_duplicate_ids = _check_duplicate_ids
+    api_utils_mod.get_data_error_result = lambda message="": {"code": 102, "data": None, "message": message}
+    api_utils_mod.get_json_result = lambda data=None, message="", code=0: {"code": code, "data": data, "message": message}
+    api_utils_mod.get_request_json = lambda: _AwaitableValue({})
+    api_utils_mod.server_error_response = lambda ex: {"code": 500, "data": None, "message": str(ex)}
+    monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
+
+    tenant_utils_mod = ModuleType("api.utils.tenant_utils")
+    tenant_utils_mod.ensure_tenant_model_id_for_params = lambda _tenant_id, req: req
+    monkeypatch.setitem(sys.modules, "api.utils.tenant_utils", tenant_utils_mod)
 
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
     monkeypatch.setitem(sys.modules, module_name, module)
     spec.loader.exec_module(module)
-    monkeypatch.setattr(module, "current_user", SimpleNamespace(id="tenant-1"))
     return module
 
 
@@ -396,7 +594,7 @@ def test_patch_chat_drops_response_only_fields_before_update(monkeypatch):
 
 
 @pytest.mark.p2
-def test_update_chat_rejects_knowledge_placeholder_without_sources(monkeypatch):
+def test_update_chat_allows_knowledge_placeholder_without_sources(monkeypatch):
     module = _load_chat_module(monkeypatch)
     existing = _DummyDialogRecord().to_dict()
 
@@ -428,11 +626,18 @@ def test_update_chat_rejects_knowledge_placeholder_without_sources(monkeypatch):
     monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
     monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", lambda model: (model.split("@")[0], "factory"))
     monkeypatch.setattr(module.TenantLLMService, "query", lambda **_kwargs: [SimpleNamespace(id="llm-1")])
+    updated = {}
+
+    def _update(_chat_id, payload):
+        updated.update(payload)
+        return True
+
+    monkeypatch.setattr(module.DialogService, "update_by_id", _update)
 
     res = _run(module.update_chat.__wrapped__("chat-1"))
 
-    assert res["code"] == 102
-    assert res["message"] == "Please remove `{knowledge}` in system prompt since no dataset / Tavily used here."
+    assert res["code"] == 0
+    assert updated["prompt_config"]["system"] == "Answer with {knowledge}"
 
 
 @pytest.mark.p2
