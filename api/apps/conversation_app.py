@@ -370,6 +370,17 @@ async def thumbup():
     e, conv = ConversationService.get_by_id(req["conversation_id"])
     if not e:
         return get_data_error_result(message="Conversation not found!")
+    tenants = UserTenantService.query(user_id=current_user.id)
+    for tenant in tenants:
+        dialog = DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id)
+        if dialog and len(dialog) > 0:
+            break
+    else:
+        return get_json_result(
+            data=False,
+            message="Only owner of conversation authorized for this operation.",
+            code=RetCode.OPERATING_ERROR,
+        )
     thumb_raw = req.get("thumbup")
     if not isinstance(thumb_raw, bool):
         return get_data_error_result(message="thumbup must be a boolean")

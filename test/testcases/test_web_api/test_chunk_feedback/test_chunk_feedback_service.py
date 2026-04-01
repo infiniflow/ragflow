@@ -291,12 +291,11 @@ class TestApplyFeedback:
             is_positive=True
         )
 
-        assert result["success_count"] == 2
+        assert result["success_count"] == 1
         assert result["fail_count"] == 0
-        assert mock_update.call_count == 2
-        half = mod.UPVOTE_WEIGHT_INCREMENT / 2
-        mock_update.assert_any_call("tenant1", "chunk1", "kb1", pytest.approx(half))
-        mock_update.assert_any_call("tenant1", "chunk2", "kb1", pytest.approx(half))
+        assert mock_update.call_count == 1
+        # One integer unit split across two chunks (largest remainder → first chunk gets +1)
+        mock_update.assert_called_once_with("tenant1", "chunk1", "kb1", 1)
 
     def test_apply_negative_feedback(self, feedback_env, monkeypatch):
         """Should apply negative feedback with full budget when only one chunk."""
@@ -315,9 +314,7 @@ class TestApplyFeedback:
         )
 
         assert result["success_count"] == 1
-        mock_update.assert_called_with(
-            "tenant1", "chunk1", "kb1", pytest.approx(-mod.DOWNVOTE_WEIGHT_DECREMENT)
-        )
+        mock_update.assert_called_with("tenant1", "chunk1", "kb1", -1)
 
     def test_apply_feedback_no_chunks(self, feedback_env, monkeypatch):
         """Should handle empty chunk list gracefully."""
@@ -335,9 +332,10 @@ class TestApplyFeedback:
         assert result["chunk_ids"] == []
 
     def test_apply_feedback_partial_failure(self, feedback_env, monkeypatch):
-        """Should count failures correctly."""
+        """Should count failures correctly (uniform gives each chunk a unit)."""
         mod, _ = feedback_env
         monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
+        monkeypatch.setattr(mod, "CHUNK_FEEDBACK_WEIGHTING", "uniform")
         mock_update = MagicMock(side_effect=[True, False])
         monkeypatch.setattr(
             mod.ChunkFeedbackService, "update_chunk_weight", mock_update
@@ -397,5 +395,4 @@ class TestApplyFeedback:
         mod.ChunkFeedbackService.apply_feedback(
             tenant_id="tenant1", reference=reference, is_positive=True
         )
-        mock_update.assert_any_call("tenant1", "a", "kb1", pytest.approx(0.09))
-        mock_update.assert_any_call("tenant1", "b", "kb1", pytest.approx(0.01))
+        mock_update.assert_called_once_with("tenant1", "a", "kb1", 1)

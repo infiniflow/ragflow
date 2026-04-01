@@ -653,6 +653,16 @@ def test_delete_msg_and_thumbup_matrix_unit(monkeypatch):
 
     updates = []
     monkeypatch.setattr(module.ConversationService, "update_by_id", lambda conv_id, payload: updates.append((conv_id, payload)) or True)
+    monkeypatch.setattr(
+        module.UserTenantService,
+        "query",
+        lambda user_id: [SimpleNamespace(tenant_id="tenant-1")],
+    )
+    monkeypatch.setattr(
+        module.DialogService,
+        "query",
+        lambda tenant_id, id: [SimpleNamespace(icon="av.png")],
+    )
 
     _set_request_json(monkeypatch, module, {"conversation_id": "missing", "message_id": "pair-1"})
     monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (False, None))
@@ -714,6 +724,16 @@ def test_thumbup_boolean_and_chunk_feedback_idempotency_unit(monkeypatch):
     monkeypatch.setattr(module.ChunkFeedbackService, "apply_feedback", mock_apply)
     monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_a, **_k: True)
     monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialog()))
+    monkeypatch.setattr(
+        module.UserTenantService,
+        "query",
+        lambda user_id: [SimpleNamespace(tenant_id="tenant-1")],
+    )
+    monkeypatch.setattr(
+        module.DialogService,
+        "query",
+        lambda tenant_id, id: [SimpleNamespace(icon="av.png")],
+    )
 
     _set_request_json(
         monkeypatch,
