@@ -131,17 +131,21 @@ class TestFeedbackRowsFromReference:
         assert mod.ChunkFeedbackService._feedback_rows_from_reference(reference) == []
 
 
-class TestGetChunkKbMapping:
-    """Tests for get_chunk_kb_mapping method."""
+def _chunk_id_to_kb_map(mod, reference):
+    """Same mapping shape as feedback updates (chunk_id -> kb_id)."""
+    rows = mod.ChunkFeedbackService._feedback_rows_from_reference(reference or {})
+    return {r[0]: r[1] for r in rows}
+
+
+class TestFeedbackChunkKbMapping:
+    """Chunk id -> kb_id resolution via _feedback_rows_from_reference."""
 
     def test_empty_reference(self, feedback_env):
-        """Should return empty dict for empty reference."""
         mod, _ = feedback_env
-        assert mod.ChunkFeedbackService.get_chunk_kb_mapping({}) == {}
-        assert mod.ChunkFeedbackService.get_chunk_kb_mapping(None) == {}
+        assert _chunk_id_to_kb_map(mod, {}) == {}
+        assert _chunk_id_to_kb_map(mod, None) == {}
 
     def test_reference_with_dataset_id(self, feedback_env):
-        """Should map id to dataset_id (chunks_format output)."""
         mod, _ = feedback_env
         reference = {
             "chunks": [
@@ -149,11 +153,9 @@ class TestGetChunkKbMapping:
                 {"id": "chunk2", "dataset_id": "kb2"},
             ]
         }
-        result = mod.ChunkFeedbackService.get_chunk_kb_mapping(reference)
-        assert result == {"chunk1": "kb1", "chunk2": "kb2"}
+        assert _chunk_id_to_kb_map(mod, reference) == {"chunk1": "kb1", "chunk2": "kb2"}
 
     def test_reference_with_kb_id(self, feedback_env):
-        """Should fall back to kb_id for raw chunks."""
         mod, _ = feedback_env
         reference = {
             "chunks": [
@@ -161,20 +163,17 @@ class TestGetChunkKbMapping:
                 {"chunk_id": "chunk2", "kb_id": "kb2"},
             ]
         }
-        result = mod.ChunkFeedbackService.get_chunk_kb_mapping(reference)
-        assert result == {"chunk1": "kb1", "chunk2": "kb2"}
+        assert _chunk_id_to_kb_map(mod, reference) == {"chunk1": "kb1", "chunk2": "kb2"}
 
     def test_reference_missing_kb_id(self, feedback_env):
-        """Should skip chunks without kb_id/dataset_id."""
         mod, _ = feedback_env
         reference = {
             "chunks": [
                 {"id": "chunk1", "dataset_id": "kb1"},
-                {"id": "chunk2"},  # No dataset_id
+                {"id": "chunk2"},
             ]
         }
-        result = mod.ChunkFeedbackService.get_chunk_kb_mapping(reference)
-        assert result == {"chunk1": "kb1"}
+        assert _chunk_id_to_kb_map(mod, reference) == {"chunk1": "kb1"}
 
 
 class TestUpdateChunkWeight:
@@ -184,6 +183,7 @@ class TestUpdateChunkWeight:
         """Should update chunk weight successfully."""
         mod, settings_mod = feedback_env
         mock_doc_store = MagicMock()
+        mock_doc_store.adjust_chunk_pagerank_fea = None
         mock_doc_store.get.return_value = {"pagerank_fea": 10}
         mock_doc_store.update.return_value = True
         settings_mod.docStoreConn = mock_doc_store
@@ -202,6 +202,7 @@ class TestUpdateChunkWeight:
         """Should return False if chunk not found."""
         mod, settings_mod = feedback_env
         mock_doc_store = MagicMock()
+        mock_doc_store.adjust_chunk_pagerank_fea = None
         mock_doc_store.get.return_value = None
         settings_mod.docStoreConn = mock_doc_store
 
@@ -218,6 +219,7 @@ class TestUpdateChunkWeight:
         """Should clamp weight to MAX_PAGERANK_WEIGHT."""
         mod, settings_mod = feedback_env
         mock_doc_store = MagicMock()
+        mock_doc_store.adjust_chunk_pagerank_fea = None
         mock_doc_store.get.return_value = {"pagerank_fea": mod.MAX_PAGERANK_WEIGHT}
         mock_doc_store.update.return_value = True
         settings_mod.docStoreConn = mock_doc_store
@@ -238,6 +240,7 @@ class TestUpdateChunkWeight:
         """Should clamp weight to MIN_PAGERANK_WEIGHT."""
         mod, settings_mod = feedback_env
         mock_doc_store = MagicMock()
+        mock_doc_store.adjust_chunk_pagerank_fea = None
         mock_doc_store.get.return_value = {"pagerank_fea": 0}
         mock_doc_store.update.return_value = True
         settings_mod.docStoreConn = mock_doc_store
@@ -253,31 +256,36 @@ class TestUpdateChunkWeight:
         new_value = call_args[0][1]
         assert new_value["pagerank_fea"] == mod.MIN_PAGERANK_WEIGHT
 
-    def test_update_weight_zero_elasticsearch_removes_field(self, feedback_env):
-        """rank_feature cannot store 0 on ES — use remove payload (see kb_app)."""
+    def test_update_weight_elasticsearch_uses_atomic_adjust(self, feedback_env):
+        """Elasticsearch uses script-based adjust (rank_feature zero handled in script)."""
         mod, settings_mod = feedback_env
         settings_mod.DOC_ENGINE = "elasticsearch"
         mock_doc_store = MagicMock()
-        mock_doc_store.get.return_value = {"pagerank_fea": 1}
-        mock_doc_store.update.return_value = True
+        mock_adjust = MagicMock(return_value=True)
+        mock_doc_store.adjust_chunk_pagerank_fea = mock_adjust
         settings_mod.docStoreConn = mock_doc_store
 
-        mod.ChunkFeedbackService.update_chunk_weight(
+        assert mod.ChunkFeedbackService.update_chunk_weight(
             tenant_id="tenant1",
             chunk_id="chunk1",
             kb_id="kb1",
             delta=-1,
         )
+        mock_adjust.assert_called_once_with(
+            "chunk1",
+            "idx-tenant1",
+            "kb1",
+            -1,
+            mod.MIN_PAGERANK_WEIGHT,
+            mod.MAX_PAGERANK_WEIGHT,
+        )
 
-        new_value = mock_doc_store.update.call_args[0][1]
-        assert new_value == {"remove": "pagerank_fea"}
-
-    def test_update_weight_zero_opensearch_removes_field(self, feedback_env):
+    def test_update_weight_opensearch_uses_atomic_adjust(self, feedback_env):
         mod, settings_mod = feedback_env
         settings_mod.DOC_ENGINE = "opensearch"
         mock_doc_store = MagicMock()
-        mock_doc_store.get.return_value = {"pagerank_fea": 2}
-        mock_doc_store.update.return_value = True
+        mock_adjust = MagicMock(return_value=True)
+        mock_doc_store.adjust_chunk_pagerank_fea = mock_adjust
         settings_mod.docStoreConn = mock_doc_store
 
         mod.ChunkFeedbackService.update_chunk_weight(
@@ -286,8 +294,14 @@ class TestUpdateChunkWeight:
             kb_id="kb1",
             delta=-2,
         )
-
-        assert mock_doc_store.update.call_args[0][1] == {"remove": "pagerank_fea"}
+        mock_adjust.assert_called_once_with(
+            "chunk1",
+            "idx-tenant1",
+            "kb1",
+            -2,
+            mod.MIN_PAGERANK_WEIGHT,
+            mod.MAX_PAGERANK_WEIGHT,
+        )
 
 
 class TestApplyFeedback:

@@ -36,6 +36,14 @@ from rag.prompts.generator import chunks_format
 from common.constants import RetCode, LLMType
 
 
+def _conversation_user_id_mismatch(conv, current_user_id) -> bool:
+    """True when the conversation is tied to a user and that user is not the caller."""
+    uid = getattr(conv, "user_id", None)
+    if uid is None:
+        return False
+    return str(uid) != str(current_user_id)
+
+
 @manager.route("/set", methods=["POST"])  # noqa: F821
 @login_required
 async def set_conversation():
@@ -88,6 +96,8 @@ async def get():
         e, conv = ConversationService.get_by_id(conv_id)
         if not e:
             return get_data_error_result(message="Conversation not found!")
+        if _conversation_user_id_mismatch(conv, current_user.id):
+            return get_json_result(data=False, message="Only owner of conversation authorized for this operation.", code=RetCode.OPERATING_ERROR)
         tenants = UserTenantService.query(user_id=current_user.id)
         for tenant in tenants:
             dialog = DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id)
@@ -140,6 +150,8 @@ async def rm():
             exist, conv = ConversationService.get_by_id(cid)
             if not exist:
                 return get_data_error_result(message="Conversation not found!")
+            if _conversation_user_id_mismatch(conv, current_user.id):
+                return get_json_result(data=False, message="Only owner of conversation authorized for this operation.", code=RetCode.OPERATING_ERROR)
             tenants = UserTenantService.query(user_id=current_user.id)
             for tenant in tenants:
                 if DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id):
@@ -370,6 +382,12 @@ async def thumbup():
     e, conv = ConversationService.get_by_id(req["conversation_id"])
     if not e:
         return get_data_error_result(message="Conversation not found!")
+    if _conversation_user_id_mismatch(conv, current_user.id):
+        return get_json_result(
+            data=False,
+            message="Only owner of conversation authorized for this operation.",
+            code=RetCode.OPERATING_ERROR,
+        )
     tenants = UserTenantService.query(user_id=current_user.id)
     for tenant in tenants:
         dialog = DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id)

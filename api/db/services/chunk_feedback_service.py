@@ -140,15 +140,6 @@ class ChunkFeedbackService:
     """Service to update chunk weights based on user feedback."""
 
     @staticmethod
-    def get_chunk_kb_mapping(reference: dict) -> dict:
-        """
-        Extract chunk ID to knowledgebase ID mapping from reference.
-
-        Delegates to the same path as feedback updates (single source of truth).
-        """
-        return {r[0]: r[1] for r in ChunkFeedbackService._feedback_rows_from_reference(reference)}
-
-    @staticmethod
     def _feedback_rows_from_reference(reference: dict) -> List[Tuple[str, str, dict]]:
         """(chunk_id, kb_id, raw_chunk) for chunks that can be updated (single pass)."""
         if not reference:
@@ -171,8 +162,8 @@ class ChunkFeedbackService:
         """
         Update the pagerank weight of a single chunk.
 
-        Not atomic: concurrent feedback on the same chunk can race (read-modify-write).
-        Use a doc-store atomic increment if the backend supports it when this becomes hot.
+        Elasticsearch, OpenSearch, and OceanBase/SeekDB use an atomic adjust on the
+        doc store when supported; Infinity still uses read-modify-write.
 
         Args:
             tenant_id: The tenant ID for index naming
@@ -185,21 +176,36 @@ class ChunkFeedbackService:
         """
         try:
             idx_name = index_name(tenant_id)
+            conn = settings.docStoreConn
+            adjust = getattr(conn, "adjust_chunk_pagerank_fea", None)
+            if callable(adjust):
+                success = adjust(
+                    chunk_id,
+                    idx_name,
+                    kb_id,
+                    int(delta),
+                    MIN_PAGERANK_WEIGHT,
+                    MAX_PAGERANK_WEIGHT,
+                )
+                if success:
+                    logging.info(
+                        "Adjusted chunk %s pagerank by %s (atomic)",
+                        chunk_id,
+                        delta,
+                    )
+                else:
+                    logging.warning("Failed atomic pagerank adjust for chunk %s", chunk_id)
+                return success
 
-            # Get current chunk to read existing pagerank
-            chunk = settings.docStoreConn.get(chunk_id, idx_name, [kb_id])
+            chunk = conn.get(chunk_id, idx_name, [kb_id])
             if not chunk:
                 logging.warning("Chunk %s not found in index %s", chunk_id, idx_name)
                 return False
 
             current_weight = int(float(chunk.get(PAGERANK_FLD, 0) or 0))
             new_weight = current_weight + int(delta)
-
-            # Clamp to valid range (integer; matches doc-store column types)
             new_weight = max(MIN_PAGERANK_WEIGHT, min(MAX_PAGERANK_WEIGHT, new_weight))
 
-            # Elasticsearch/OpenSearch map pagerank_fea as rank_feature; zero must not be
-            # indexed — remove the field (same as kb_app / dataset_api_service).
             condition = {"id": chunk_id}
             engine = settings.DOC_ENGINE.lower()
             if new_weight == 0 and engine in ("elasticsearch", "opensearch"):
@@ -207,9 +213,7 @@ class ChunkFeedbackService:
             else:
                 new_value = {PAGERANK_FLD: int(new_weight)}
 
-            success = settings.docStoreConn.update(
-                condition, new_value, idx_name, kb_id
-            )
+            success = conn.update(condition, new_value, idx_name, kb_id)
 
             if success:
                 logging.info(

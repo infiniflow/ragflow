@@ -23,7 +23,6 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from anyio import Path as AsyncPath
 
 
 class _DummyManager:
@@ -56,11 +55,12 @@ class _DummyRequest:
 
 
 class _DummyConversation:
-    def __init__(self, *, conv_id="conv-1", dialog_id="dialog-1", message=None, reference=None):
+    def __init__(self, *, conv_id="conv-1", dialog_id="dialog-1", message=None, reference=None, user_id=None):
         self.id = conv_id
         self.dialog_id = dialog_id
         self.message = message if message is not None else []
         self.reference = reference if reference is not None else []
+        self.user_id = user_id
 
     def to_dict(self):
         return {
@@ -96,7 +96,7 @@ class _DummyUploadedFile:
 
     async def save(self, path):
         self.saved_path = path
-        await AsyncPath(path).write_bytes(b"audio-bytes")
+        Path(path).write_bytes(b"audio-bytes")
 
 
 def _run(coro):
@@ -105,6 +105,11 @@ def _run(coro):
 
 def _load_conversation_module(monkeypatch):
     repo_root = Path(__file__).resolve().parents[4]
+
+    quart_mod = ModuleType("quart")
+    quart_mod.Response = SimpleNamespace
+    quart_mod.request = SimpleNamespace()
+    monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
     common_pkg = ModuleType("common")
     common_pkg.__path__ = [str(repo_root / "common")]
@@ -137,6 +142,15 @@ def _load_conversation_module(monkeypatch):
     deepdoc_parser_utils = ModuleType("deepdoc.parser.utils")
     deepdoc_parser_utils.get_text = lambda *_args, **_kwargs: ""
     monkeypatch.setitem(sys.modules, "deepdoc.parser.utils", deepdoc_parser_utils)
+
+    deepdoc_mineru_module = ModuleType("deepdoc.parser.mineru_parser")
+
+    class _StubMinerUParser:
+        pass
+
+    deepdoc_mineru_module.MinerUParser = _StubMinerUParser
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.mineru_parser", deepdoc_mineru_module)
+
     monkeypatch.setitem(sys.modules, "xgboost", ModuleType("xgboost"))
 
     apps_mod = ModuleType("api.apps")
@@ -284,6 +298,18 @@ def test_get_and_getsse_authorization_and_reference_paths(monkeypatch):
     assert res["data"]["avatar"] == "bot-avatar"
     assert res["data"]["reference"][0]["chunks"] == [{"chunk": "normalized"}]
 
+    conv_wrong_owner = _DummyConversation(
+        reference=[{"doc": "d"}],
+        user_id="another-user",
+    )
+    monkeypatch.setattr(module, "request", _DummyRequest(args={"conversation_id": "conv-1"}))
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv_wrong_owner))
+    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(icon="bot-avatar")])
+    res = _run(module.get())
+    assert res["code"] == module.RetCode.OPERATING_ERROR
+    assert "Only owner of conversation" in res["message"]
+
     monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (False, None))
     res = _run(module.get())
     assert res["message"] == "Conversation not found!"
@@ -346,6 +372,13 @@ def test_rm_and_list_conversation_guards(monkeypatch):
     monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv))
     monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
+    res = _run(module.rm())
+    assert res["code"] == module.RetCode.OPERATING_ERROR
+
+    conv_foreign = _DummyConversation(conv_id="conv-1", dialog_id="dialog-1", user_id="not-user-1")
+    _set_request_json(monkeypatch, module, {"conversation_ids": ["conv-1"]})
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv_foreign))
+    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="dialog-1")])
     res = _run(module.rm())
     assert res["code"] == module.RetCode.OPERATING_ERROR
 
@@ -734,6 +767,21 @@ def test_thumbup_boolean_and_chunk_feedback_idempotency_unit(monkeypatch):
         "query",
         lambda tenant_id, id: [SimpleNamespace(icon="av.png")],
     )
+
+    _set_request_json(
+        monkeypatch,
+        module,
+        {"conversation_id": "conv-other-user", "message_id": "asst-1", "thumbup": True},
+    )
+    conv_other_owner = _DummyConversation(
+        conv_id="conv-other-user",
+        message=[{"id": "asst-1", "role": "assistant"}],
+        user_id="different-user",
+    )
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv_other_owner))
+    res = _run(module.thumbup.__wrapped__())
+    assert res["code"] == module.RetCode.OPERATING_ERROR
+    mock_apply.assert_not_called()
 
     _set_request_json(
         monkeypatch,
