@@ -38,11 +38,18 @@ services:
       - ${GO_ADMIN_PORT}:9383
     volumes:
       - ./ragflow-logs:/ragflow/logs
-      # - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
-      # - ./nginx/proxy.conf:/etc/nginx/proxy.conf
-      # - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ragflow.conf.python:/etc/nginx/conf.d/ragflow.conf
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx/proxy.conf:/etc/nginx/proxy.conf
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
-      - ./entrypoint.sh:/ragflow/entrypoint.sh
+      # - ./entrypoint.sh:/ragflow/entrypoint.sh
+      - ../api:/ragflow/api
+      - ../rag:/ragflow/rag
+      - ../deepdoc:/ragflow/deepdoc
+      - ../agent:/ragflow/agent
+      - ../common:/ragflow/common
+      - ../sdk:/ragflow/sdk
     env_file: .env
     networks:
       - ragflow
