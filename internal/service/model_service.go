@@ -221,7 +221,7 @@ func (m *ModelProviderService) DeleteModelProvider(providerName, userID string) 
 
 	_, err = m.modelProviderDAO.DeleteByTenantIDAndProviderName(tenantID, providerName)
 	if err != nil {
-		return common.CodeServerError, errors.New("fail to delete model provider")
+		return common.CodeServerError, err
 	}
 
 	return common.CodeSuccess, nil

@@ -42,24 +42,15 @@ func (dao *TenantModelProviderDAO) GetByID(id string) (*entity.TenantModelProvid
 	return &provider, nil
 }
 
-// DeleteByTenantID deletes all files by tenant ID (hard delete)
+// DeleteByTenantID deletes all model providers by tenant ID (hard delete)
 func (dao *TenantModelProviderDAO) DeleteByTenantID(tenantID string) (int64, error) {
-	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.File{})
+	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.TenantModelProvider{})
 	return result.RowsAffected, result.Error
 }
 
-// DeleteByTenantID deletes all files by tenant ID (hard delete)
+// DeleteByTenantID deletes all providers by tenant ID (hard delete)
 func (dao *TenantModelProviderDAO) DeleteByTenantIDAndProviderName(tenantID, providerName string) (int64, error) {
-	result := DB.Unscoped().Where("tenant_id = ? AND provider_name = ?", tenantID, providerName).Delete(&entity.File{})
-	return result.RowsAffected, result.Error
-}
-
-// DeleteByIDs deletes files by IDs (hard delete)
-func (dao *TenantModelProviderDAO) DeleteByIDs(ids []string) (int64, error) {
-	if len(ids) == 0 {
-		return 0, nil
-	}
-	result := DB.Unscoped().Where("id IN ?", ids).Delete(&entity.File{})
+	result := DB.Unscoped().Where("tenant_id = ? AND provider_name = ?", tenantID, providerName).Delete(&entity.TenantModelProvider{})
 	return result.RowsAffected, result.Error
 }
 

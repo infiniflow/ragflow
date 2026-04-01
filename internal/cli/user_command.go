@@ -778,7 +778,7 @@ func (c *RAGFlowClient) AddProvider(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to add provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result SimpleResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("add provider failed: invalid JSON (%w)", err)
 	}
@@ -832,23 +832,25 @@ func (c *RAGFlowClient) DeleteProvider(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("provider name not provided")
 	}
 
+	url := fmt.Sprintf("/providers/%s", providerName)
+
 	// Build payload
 	payload := map[string]interface{}{
 		"llm_factory": providerName,
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", "/llm/factory", true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("DELETE", url, true, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to drop provider: %w", err)
+		return nil, fmt.Errorf("failed to delete provider: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to delete provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var result SimpleResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("drop provider failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("delete provider failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {

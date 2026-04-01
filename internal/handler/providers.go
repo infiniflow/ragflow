@@ -89,7 +89,7 @@ func (h *ProviderHandler) ListProviders(c *gin.Context) {
 }
 
 type AddProviderRequest struct {
-	ProviderName string `json:"provider_name" binding:"required,provider_name"`
+	ProviderName string `json:"provider_name" binding:"required"`
 }
 
 func (h *ProviderHandler) AddProvider(c *gin.Context) {
@@ -131,18 +131,20 @@ func (h *ProviderHandler) DeleteProvider(c *gin.Context) {
 		return
 	}
 
-	provider, err := dao.GetModelProviderManager().GetProviderByName(providerName)
+	userID := c.GetString("user_id")
+
+	errorCode, err := h.modelProviderService.DeleteModelProvider(providerName, userID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeNotFound,
+			"code":    errorCode,
 			"message": err.Error(),
 		})
 		return
 	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
-		"data":    provider,
 	})
 }
 
