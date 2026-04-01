@@ -27,10 +27,12 @@ from PIL import Image
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
+from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid
 from deepdoc.parser import ExcelParser
+from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
@@ -41,9 +43,8 @@ from rag.nlp import BULLET_PATTERN, bullets_category, docx_question_level, not_b
 from rag.utils.base64_image import image2id
 
 
-
-
 from common.misc_utils import thread_pool_exec
+
 
 class ParserParam(ProcessParamBase):
     def __init__(self):
@@ -80,6 +81,10 @@ class ParserParam(ProcessParamBase):
                 "json",
             ],
             "video": [],
+            "epub": [
+                "text",
+                "json",
+            ],
         }
 
         self.setups = {
@@ -164,6 +169,12 @@ class ParserParam(ProcessParamBase):
                 "output_format": "text",
                 "prompt": "",
             },
+            "epub": {
+                "suffix": [
+                    "epub",
+                ],
+                "output_format": "json",
+            },
         }
 
     def check(self):
@@ -172,7 +183,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "tcadp parser", "paddleocr"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "tcadp parser", "paddleocr"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -216,6 +227,11 @@ class ParserParam(ProcessParamBase):
         if email_config:
             email_output_format = email_config.get("output_format", "")
             self.check_valid_value(email_output_format, "Email output format abnormal.", self.allowed_output_format["email"])
+
+        epub_config = self.setups.get("epub", "")
+        if epub_config:
+            epub_output_format = epub_config.get("output_format", "")
+            self.check_valid_value(epub_output_format, "EPUB output format abnormal.", self.allowed_output_format["epub"])
 
     def get_input_form(self) -> dict[str, dict]:
         return {}
@@ -304,8 +320,10 @@ class Parser(ProcessBase):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PDF.")
         conf = self._param.setups["pdf"]
         self.set_output("output_format", conf["output_format"])
-        abstract_enabled = kwargs.get("abstract", False)
-        author_enabled = kwargs.get("author", False)
+
+        abstract_enabled = "abstract" in self._param.setups["pdf"].get("preprocess", [])
+        author_enabled = "author" in self._param.setups["pdf"].get("preprocess", [])
+        title_enabled = "title" in self._param.setups["pdf"].get("preprocess", [])
 
         raw_parse_method = conf.get("parse_method", "")
         parser_model_name = None
@@ -349,7 +367,8 @@ class Parser(ProcessBase):
                 raise RuntimeError("MinerU model not configured. Please add MinerU in Model Providers or set MINERU_* env.")
 
             tenant_id = self._canvas._tenant_id
-            ocr_model = LLMBundle(tenant_id, LLMType.OCR, llm_name=parser_model_name, lang=conf.get("lang", "Chinese"))
+            ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, parser_model_name)
+            ocr_model = LLMBundle(tenant_id, ocr_model_config, lang=conf.get("lang", "Chinese"))
             pdf_parser = ocr_model.mdl
 
             lines, _ = pdf_parser.parse_pdf(
@@ -365,6 +384,27 @@ class Parser(ProcessBase):
                     "image": pdf_parser.crop(poss, 1),
                     "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)],
                     "text": t,
+                }
+                bboxes.append(box)
+        elif parse_method.lower() == "docling":
+            pdf_parser = DoclingParser(docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""))
+            lines, _ = pdf_parser.parse_pdf(
+                filepath=name,
+                binary=blob,
+                callback=self.callback,
+                parse_method=conf.get("docling_parse_method", "raw"),
+                docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""),
+            )
+            bboxes = []
+            for item in lines:
+                if not isinstance(item, tuple) or not item:
+                    continue
+                text = item[0]
+                poss = item[-1] if len(item) >= 2 else ""
+                box = {
+                    "text": text,
+                    "image": pdf_parser.crop(poss, 1) if isinstance(poss, str) and poss else None,
+                    "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)] if isinstance(poss, str) and poss else [],
                 }
                 bboxes.append(box)
         elif parse_method.lower() == "tcadp parser":
@@ -388,8 +428,6 @@ class Parser(ProcessBase):
                 if position_tag:
                     # Extract position information from TCADP's position tag
                     # Format: @@{page_number}\t{x0}\t{x1}\t{top}\t{bottom}##
-                    import re
-
                     match = re.match(r"@@([0-9-]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)##", position_tag)
                     if match:
                         pn, x0, x1, top, bott = match.groups()
@@ -432,7 +470,8 @@ class Parser(ProcessBase):
                 raise RuntimeError("PaddleOCR model not configured. Please add PaddleOCR in Model Providers or set PADDLEOCR_* env.")
 
             tenant_id = self._canvas._tenant_id
-            ocr_model = LLMBundle(tenant_id, LLMType.OCR, llm_name=parser_model_name)
+            ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, parser_model_name)
+            ocr_model = LLMBundle(tenant_id, ocr_model_config)
             pdf_parser = ocr_model.mdl
 
             lines, _ = pdf_parser.parse_pdf(
@@ -453,7 +492,11 @@ class Parser(ProcessBase):
                 }
                 bboxes.append(box)
         else:
-            vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("parse_method"), lang=self._param.setups["pdf"].get("lang"))
+            if conf.get("parse_method"):
+                vision_model_config = get_model_config_by_type_and_name(self._canvas._tenant_id, LLMType.IMAGE2TEXT, conf["parse_method"])
+            else:
+                vision_model_config = get_tenant_default_model_by_type(self._canvas._tenant_id, LLMType.IMAGE2TEXT)
+            vision_model = LLMBundle(self._canvas._tenant_id, vision_model_config, lang=self._param.setups["pdf"].get("lang"))
             lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
             bboxes = []
             for t, poss in lines:
@@ -477,6 +520,8 @@ class Parser(ProcessBase):
                 b["doc_type_kwd"] = "image"
             elif layout == "table":
                 b["doc_type_kwd"] = "table"
+            if title_enabled and "title" in str(b.get("layout_type", "").lower()):
+                b["title"] = True
 
         # Get authors
         if author_enabled:
@@ -539,7 +584,6 @@ class Parser(ProcessBase):
                     break
             if abstract_idx is not None:
                 bboxes[abstract_idx]["abstract"] = True
-
 
         if conf.get("output_format") == "json":
             self.set_output("json", bboxes)
@@ -654,7 +698,7 @@ class Parser(ProcessBase):
             for text, image, html in main_sections:
                 section = {"text": text, "image": image}
                 text_key = text.strip() if isinstance(text, str) else ""
-                if text_key and text_key in title_texts:
+                if text_key and text_key in title_texts and "title" in self._param.setups["word"].get("preprocess", []):
                     section["title"] = True
                 sections.append(section)
                 tbls.append(((None, html), ""))
@@ -665,7 +709,6 @@ class Parser(ProcessBase):
         elif conf.get("output_format") == "markdown":
             markdown_text = docx_parser.to_markdown(name, binary=blob)
             self.set_output("markdown", markdown_text)
-
 
     def _slides(self, name, blob, **kwargs):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PowerPoint Document")
@@ -761,7 +804,7 @@ class Parser(ProcessBase):
                     "text": section_text,
                 }
                 text_key = section_text.strip() if isinstance(section_text, str) else ""
-                if text_key and text_key in title_texts:
+                if text_key and text_key in title_texts and "title" in self._param.setups["text&markdown"].get("preprocess", []):
                     json_result["title"] = True
 
                 images = []
@@ -795,7 +838,8 @@ class Parser(ProcessBase):
         else:
             lang = conf["lang"]
             # use VLM to describe the picture
-            cv_model = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["parse_method"], lang=lang)
+            cv_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, conf["parse_method"])
+            cv_model = LLMBundle(self._canvas.get_tenant_id(), cv_model_config, lang=lang)
             img_binary = io.BytesIO()
             img.save(img_binary, format="JPEG")
             img_binary.seek(0)
@@ -806,11 +850,13 @@ class Parser(ProcessBase):
             else:
                 txt = cv_model.describe(img_binary.read())
 
-        json_result = [{
-            "text": txt,
-            "image": img,
-            "doc_type_kwd": "image",
-        }]
+        json_result = [
+            {
+                "text": txt,
+                "image": img,
+                "doc_type_kwd": "image",
+            }
+        ]
         self.set_output("json", json_result)
 
     def _audio(self, name, blob, **kwargs):
@@ -826,8 +872,8 @@ class Parser(ProcessBase):
             tmpf.write(blob)
             tmpf.flush()
             tmp_path = os.path.abspath(tmpf.name)
-
-            seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.SPEECH2TEXT, llm_name=conf["llm_id"])
+            seq2txt_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), LLMType.SPEECH2TEXT, conf["llm_id"])
+            seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), seq2txt_model_config)
             txt = seq2txt_mdl.transcription(tmp_path)
 
             self.set_output("text", txt)
@@ -837,8 +883,8 @@ class Parser(ProcessBase):
 
         conf = self._param.setups["video"]
         self.set_output("output_format", conf["output_format"])
-
-        cv_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"])
+        cv_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, conf["llm_id"])
+        cv_mdl = LLMBundle(self._canvas.get_tenant_id(), cv_model_config)
         video_prompt = str(conf.get("prompt", "") or "")
         txt = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name, video_prompt=video_prompt))
 
@@ -980,6 +1026,22 @@ class Parser(ProcessBase):
                             content_txt += fb
             self.set_output("text", content_txt)
 
+    def _epub(self, name, blob, **kwargs):
+        from deepdoc.parser import EpubParser
+
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on an EPUB.")
+        conf = self._param.setups["epub"]
+        self.set_output("output_format", conf["output_format"])
+
+        epub_parser = EpubParser()
+        sections = epub_parser(name, binary=blob)
+
+        if conf.get("output_format") == "json":
+            json_results = [{"text": s} for s in sections if s]
+            self.set_output("json", json_results)
+        else:
+            self.set_output("text", "\n".join(s for s in sections if s))
+
     async def _invoke(self, **kwargs):
         function_map = {
             "pdf": self._pdf,
@@ -991,6 +1053,7 @@ class Parser(ProcessBase):
             "audio": self._audio,
             "video": self._video,
             "email": self._email,
+            "epub": self._epub,
         }
 
         try:
@@ -1013,6 +1076,7 @@ class Parser(ProcessBase):
             call_kwargs = dict(kwargs)
             call_kwargs.pop("name", None)
             call_kwargs.pop("blob", None)
+
             await thread_pool_exec(function_map[p_type], name, blob, **call_kwargs)
             done = True
             break

@@ -17,6 +17,7 @@ import {
 export {
   AgentDialogueMode,
   AgentStructuredOutputField,
+  BeginId,
   JsonSchemaDataType,
   Operator,
   initialBeginValues,
@@ -46,8 +47,6 @@ import {
   ToggleLeft,
   WrapText,
 } from 'lucide-react';
-
-export const BeginId = 'begin';
 
 export const CommonOperatorList = Object.values(Operator).filter(
   (x) => x !== Operator.Note,
@@ -693,6 +692,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Loop]: [Operator.Begin],
   [Operator.LoopStart]: [Operator.Begin],
   [Operator.ExitLoop]: [Operator.Begin],
+  [Operator.PDFGenerator]: [Operator.Begin],
 };
 
 export const NodeMap = {

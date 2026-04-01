@@ -14,6 +14,7 @@ import {
 } from '@/components/file-upload';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 import { t } from 'i18next';
 import {
   Atom,
@@ -211,6 +212,7 @@ export function NextMessageInput({
         </FileUploadList>
 
         <Textarea
+          data-testid="chat-textarea"
           value={value}
           onChange={onInputChange}
           placeholder={t('chat.messagePlaceholder')}
@@ -233,6 +235,7 @@ export function NextMessageInput({
                   variant="transparent"
                   className="rounded-sm border-0"
                   disabled={isUploading || sendLoading}
+                  data-testid="chat-detail-attach"
                 >
                   <Paperclip className="size-3.5" />
                   <span className="sr-only">Attach file</span>
@@ -244,9 +247,12 @@ export function NextMessageInput({
               <Button
                 type="button"
                 size="sm"
-                variant={enableThinking ? 'accent' : 'transparent'}
-                className="border-0 h-7 text-sm"
+                variant={'outline'}
+                className={cn('border-0 h-7 text-sm bg-bg-card', {
+                  'bg-text-primary text-bg-base': enableThinking,
+                })}
                 onClick={handleThinkingToggle}
+                data-testid="chat-detail-thinking-toggle"
               >
                 <Atom />
                 <span>Thinking</span>
@@ -260,6 +266,7 @@ export function NextMessageInput({
                 size="icon-xs"
                 className="border-0"
                 onClick={handleInternetToggle}
+                data-testid="chat-detail-internet-toggle"
               >
                 <Globe />
               </Button>
@@ -267,7 +274,11 @@ export function NextMessageInput({
           </div>
 
           {sendLoading ? (
-            <Button onClick={stopOutputMessage} size="icon-xs">
+            <Button
+              data-testid="chat-stream-status"
+              onClick={stopOutputMessage}
+              size="icon-xs"
+            >
               <CircleStop />
             </Button>
           ) : (
@@ -276,6 +287,7 @@ export function NextMessageInput({
                 onOk={(value) => {
                   setAudioInputValue(value);
                 }}
+                testId="chat-detail-audio-toggle"
               />
 
               <Button
@@ -283,6 +295,7 @@ export function NextMessageInput({
                 disabled={
                   sendDisabled || isUploading || sendLoading || !value.trim()
                 }
+                data-testid="chat-detail-send"
               >
                 <Send />
                 <span className="sr-only">Send message</span>

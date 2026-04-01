@@ -4,6 +4,9 @@ import i18n, { changeLanguageAsync } from '@/locales/config';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { configResponsive } from 'ahooks';
 import dayjs from 'dayjs';
+import 'dayjs/locale/ar';
+import 'dayjs/locale/tr';
+import 'dayjs/locale/zh-cn';
 import advancedFormat from 'dayjs/plugin/advancedFormat';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import localeData from 'dayjs/plugin/localeData';
@@ -13,7 +16,6 @@ import weekday from 'dayjs/plugin/weekday';
 import React, { useEffect } from 'react';
 import { RouterProvider } from 'react-router';
 import { ThemeProvider } from './components/theme-provider';
-import { SidebarProvider } from './components/ui/sidebar';
 import { TooltipProvider } from './components/ui/tooltip';
 import { ThemeEnum } from './constants/common';
 import { routers } from './routes';
@@ -62,30 +64,33 @@ const queryClient = new QueryClient({
 });
 
 function Root({ children }: React.PropsWithChildren) {
-  useEffect(() => {
-    const lng = storage.getLanguage();
-    if (lng) {
-      document.documentElement.lang = lng;
-    }
-  }, []);
+  const updateDocumentLocale = (lng: string) => {
+    document.documentElement.lang = lng;
+    document.documentElement.dir = 'ltr';
+    dayjs.locale(lng === 'zh' ? 'zh-cn' : lng);
+  };
 
   useEffect(() => {
     const handleLanguageChanged = (lng: string) => {
       storage.setLanguage(lng);
-      document.documentElement.lang = lng;
+      updateDocumentLocale(lng);
     };
 
+    updateDocumentLocale(storage.getLanguage() || i18n.language || 'en');
     i18n.on('languageChanged', handleLanguageChanged);
 
     return () => {
       i18n.off('languageChanged', handleLanguageChanged);
     };
   }, []);
-
   return (
-    <SidebarProvider className="h-full">
-      <div className="w-full h-dvh relative">{children}</div>
-    </SidebarProvider>
+    <>
+      {children}
+
+      <Sonner position="top-right" expand richColors closeButton />
+
+      <Toaster />
+    </>
   );
 }
 
@@ -93,7 +98,7 @@ const RootProvider = ({ children }: React.PropsWithChildren) => {
   useEffect(() => {
     const lng = storage.getLanguage();
     if (lng) {
-      changeLanguageAsync(lng);
+      void changeLanguageAsync(lng);
     }
   }, []);
 
@@ -105,8 +110,6 @@ const RootProvider = ({ children }: React.PropsWithChildren) => {
           storageKey="ragflow-ui-theme"
         >
           <Root>{children}</Root>
-          <Sonner position={'top-right'} expand richColors closeButton></Sonner>
-          <Toaster />
         </ThemeProvider>
       </QueryClientProvider>
     </TooltipProvider>

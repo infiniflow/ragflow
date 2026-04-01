@@ -113,7 +113,7 @@ class OpenAIEmbed(Base):
         return np.array(ress), total_tokens
 
     def encode_queries(self, text):
-        res = self.client.embeddings.create(input=[truncate(text, 8191)], model=self.model_name, encoding_format="float",extra_body={"drop_params": True})
+        res = self.client.embeddings.create(input=[truncate(text, 8191)], model=self.model_name, encoding_format="float", extra_body={"drop_params": True})
         try:
             return np.array(res.data[0].embedding), total_token_count_from_response(res)
         except Exception as _e:
@@ -358,7 +358,7 @@ class JinaMultiVecEmbed(Base):
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name
 
-    def encode(self, texts: list[str|bytes], task="retrieval.passage"):
+    def encode(self, texts: list[str | bytes], task="retrieval.passage"):
         batch_size = 16
         ress = []
         token_count = 0
@@ -370,9 +370,9 @@ class JinaMultiVecEmbed(Base):
                 img_b64s = None
                 try:
                     base64.b64decode(text, validate=True)
-                    img_b64s = text.decode('utf8')
+                    img_b64s = text.decode("utf8")
                 except Exception:
-                    img_b64s = base64.b64encode(text).decode('utf8')
+                    img_b64s = base64.b64encode(text).decode("utf8")
                 input.append({"image": img_b64s})  # base64 encoded image
         for i in range(0, len(texts), batch_size):
             data = {"model": self.model_name, "input": input[i : i + batch_size]}
@@ -380,20 +380,20 @@ class JinaMultiVecEmbed(Base):
                 data["return_multivector"] = True
 
             if "v3" in self.model_name or "v4" in self.model_name:
-                data['task'] = task
-                data['truncate'] = True
+                data["task"] = task
+                data["truncate"] = True
 
             response = requests.post(self.base_url, headers=self.headers, json=data)
             try:
                 res = response.json()
-                for d in res['data']:
-                    if data.get("return_multivector", False): # v4
-                        token_embs = np.asarray(d['embeddings'], dtype=np.float32)
+                for d in res["data"]:
+                    if data.get("return_multivector", False):  # v4
+                        token_embs = np.asarray(d["embeddings"], dtype=np.float32)
                         chunk_emb = token_embs.mean(axis=0)
 
                     else:
                         # v2/v3
-                        chunk_emb = np.asarray(d['embedding'], dtype=np.float32)
+                        chunk_emb = np.asarray(d["embedding"], dtype=np.float32)
 
                     ress.append(chunk_emb)
 
@@ -444,6 +444,7 @@ class MistralEmbed(Base):
     def encode_queries(self, text):
         import time
         import random
+
         retry_max = 5
         while retry_max > 0:
             try:
@@ -462,6 +463,7 @@ class BedrockEmbed(Base):
 
     def __init__(self, key, model_name, **kwargs):
         import boto3
+
         # `key` protocol (backend stores as JSON string in `api_key`):
         # - Must decode into a dict.
         # - Required: `auth_mode`, `bedrock_region`.
@@ -497,9 +499,8 @@ class BedrockEmbed(Base):
                 aws_secret_access_key=creds["SecretAccessKey"],
                 aws_session_token=creds["SessionToken"],
             )
-        else: # assume_role
+        else:  # assume_role
             self.client = boto3.client("bedrock-runtime", region_name=self.bedrock_region)
-
 
     def encode(self, texts: list):
         texts = [truncate(t, 8196) for t in texts]
@@ -770,14 +771,17 @@ class SILICONFLOWEmbed(Base):
     _FACTORY_NAME = "SILICONFLOW"
 
     def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1/embeddings"):
-        if not base_url:
-            base_url = "https://api.siliconflow.cn/v1/embeddings"
+        normalized_base_url = (base_url or "").strip()
+        if not normalized_base_url:
+            normalized_base_url = "https://api.siliconflow.cn/v1/embeddings"
+        if "/embeddings" not in normalized_base_url:
+            normalized_base_url = urljoin(f"{normalized_base_url.rstrip('/')}/", "embeddings").rstrip("/")
         self.headers = {
             "accept": "application/json",
             "content-type": "application/json",
             "authorization": f"Bearer {key}",
         }
-        self.base_url = base_url
+        self.base_url = normalized_base_url
         self.model_name = model_name
 
     def encode(self, texts: list):
@@ -1035,6 +1039,7 @@ class GiteeEmbed(SILICONFLOWEmbed):
             base_url = "https://ai.gitee.com/v1/embeddings"
         super().__init__(key, model_name, base_url)
 
+
 class DeepInfraEmbed(OpenAIEmbed):
     _FACTORY_NAME = "DeepInfra"
 
@@ -1061,6 +1066,7 @@ class CometAPIEmbed(OpenAIEmbed):
             base_url = "https://api.cometapi.com/v1"
         super().__init__(key, model_name, base_url)
 
+
 class DeerAPIEmbed(OpenAIEmbed):
     _FACTORY_NAME = "DeerAPI"
 
@@ -1077,3 +1083,91 @@ class JiekouAIEmbed(OpenAIEmbed):
         if not base_url:
             base_url = "https://api.jiekou.ai/openai/v1/embeddings"
         super().__init__(key, model_name, base_url)
+
+
+class RAGconEmbed(OpenAIEmbed):
+    """
+    RAGcon Embedding Provider - routes through LiteLLM proxy
+
+    Default Base URL: https://connect.ragcon.ai/v1
+    """
+
+    _FACTORY_NAME = "RAGcon"
+
+    def __init__(self, key, model_name="text-embedding-3-small", base_url=None):
+        if not base_url:
+            base_url = "https://connect.ragcon.com/v1"
+
+        super().__init__(key, model_name, base_url)
+
+
+class PerplexityEmbed(Base):
+    _FACTORY_NAME = "Perplexity"
+
+    def __init__(self, key, model_name="pplx-embed-v1-0.6b", base_url="https://api.perplexity.ai"):
+        if not base_url:
+            base_url = "https://api.perplexity.ai"
+        self.base_url = base_url.rstrip("/")
+        self.api_key = key
+        self.model_name = model_name
+        self.headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+
+    @staticmethod
+    def _decode_base64_int8(b64_str):
+        raw = base64.b64decode(b64_str)
+        return np.frombuffer(raw, dtype=np.int8).astype(np.float32)
+
+    def _is_contextualized(self):
+        return "context" in self.model_name
+
+    def encode(self, texts: list):
+        batch_size = 512
+        ress = []
+        token_count = 0
+
+        if self._is_contextualized():
+            url = f"{self.base_url}/v1/contextualizedembeddings"
+            for i in range(0, len(texts), batch_size):
+                batch = texts[i : i + batch_size]
+                payload = {
+                    "model": self.model_name,
+                    "input": [[chunk] for chunk in batch],
+                    "encoding_format": "base64_int8",
+                }
+                response = requests.post(url, headers=self.headers, json=payload)
+                try:
+                    res = response.json()
+                    for doc in res["data"]:
+                        for chunk_emb in doc["data"]:
+                            ress.append(self._decode_base64_int8(chunk_emb["embedding"]))
+                    token_count += res.get("usage", {}).get("total_tokens", 0)
+                except Exception as _e:
+                    log_exception(_e, response)
+                    raise Exception(f"Error: {response.text}")
+        else:
+            url = f"{self.base_url}/v1/embeddings"
+            for i in range(0, len(texts), batch_size):
+                batch = texts[i : i + batch_size]
+                payload = {
+                    "model": self.model_name,
+                    "input": batch,
+                    "encoding_format": "base64_int8",
+                }
+                response = requests.post(url, headers=self.headers, json=payload)
+                try:
+                    res = response.json()
+                    for d in res["data"]:
+                        ress.append(self._decode_base64_int8(d["embedding"]))
+                    token_count += res.get("usage", {}).get("total_tokens", 0)
+                except Exception as _e:
+                    log_exception(_e, response)
+                    raise Exception(f"Error: {response.text}")
+
+        return np.array(ress), token_count
+
+    def encode_queries(self, text):
+        embds, cnt = self.encode([text])
+        return np.array(embds[0]), cnt

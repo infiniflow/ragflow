@@ -216,10 +216,33 @@ def _load_user_app(monkeypatch):
 
     tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")
 
+    class _MockTableObject:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+        def to_dict(self):
+            return {k: v for k, v in self.__dict__.items()}
+
     class _StubTenantLLMService:
         @staticmethod
         def insert_many(_payload):
             return True
+
+        @staticmethod
+        def get_api_key(tenant_id, model_name, model_type=None):
+            return _MockTableObject(
+                id=1,
+                tenant_id=tenant_id,
+                llm_factory="",
+                model_type="chat",
+                llm_name=model_name,
+                api_key="fake-api-key",
+                api_base="https://api.example.com",
+                max_tokens=8192,
+                used_tokens=0,
+                status=1
+            )
 
     tenant_llm_service_mod.TenantLLMService = _StubTenantLLMService
     monkeypatch.setitem(sys.modules, "api.db.services.tenant_llm_service", tenant_llm_service_mod)

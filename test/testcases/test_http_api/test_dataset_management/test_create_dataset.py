@@ -23,7 +23,7 @@ from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
 
-from common import create_dataset
+from test_http_api.common import create_dataset, delete_all_datasets
 
 
 @pytest.mark.usefixtures("clear_datasets")
@@ -32,11 +32,11 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
+                401,
+                "<Unauthorized '401: Unauthorized'>",
             ),
         ],
         ids=["empty_auth", "invalid_api_token"],
@@ -94,8 +94,9 @@ class TestDatasetCreate:
     @pytest.mark.p1
     @given(name=valid_names())
     @example("a" * 128)
-    @settings(max_examples=20)
+    @settings(max_examples=20, deadline=None)
     def test_name(self, HttpApiAuth, name):
+        delete_all_datasets(HttpApiAuth)
         res = create_dataset(HttpApiAuth, {"name": name})
         assert res["code"] == 0, res
         assert res["data"]["name"] == name, res
@@ -250,7 +251,7 @@ class TestDatasetCreate:
     def test_embedding_model_invalid(self, HttpApiAuth, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
         res = create_dataset(HttpApiAuth, payload)
-        assert res["code"] == 101, res
+        assert res["code"] == 102, res
         if "tenant_no_auth" in name:
             assert res["message"] == f"Unauthorized model: <{embedding_model}>", res
         else:
@@ -380,7 +381,7 @@ class TestDatasetCreate:
         payload = {"name": name, "chunk_method": chunk_method}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in res["message"], res
 
     @pytest.mark.p2
     def test_chunk_method_unset(self, HttpApiAuth):
@@ -394,7 +395,7 @@ class TestDatasetCreate:
         payload = {"name": "chunk_method_none", "chunk_method": None}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in res["message"], res
 
     @pytest.mark.p1
     @pytest.mark.parametrize(

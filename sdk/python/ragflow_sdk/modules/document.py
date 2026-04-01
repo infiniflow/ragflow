@@ -87,15 +87,18 @@ class Document(Base):
             return chunks
         raise Exception(res.get("message"))
 
-    def add_chunk(self, content: str, important_keywords: list[str] = [], questions: list[str] = []):
-        res = self.post(f"/datasets/{self.dataset_id}/documents/{self.id}/chunks", {"content": content, "important_keywords": important_keywords, "questions": questions})
+    def add_chunk(self, content: str, important_keywords: list[str] = [], questions: list[str] = [], image_base64: str | None = None, *, tag_kwd: list[str] = []):
+        body = {"content": content, "important_keywords": important_keywords, "tag_kwd": tag_kwd, "questions": questions}
+        if image_base64 is not None:
+            body["image_base64"] = image_base64
+        res = self.post(f"/datasets/{self.dataset_id}/documents/{self.id}/chunks", body)
         res = res.json()
         if res.get("code") == 0:
             return Chunk(self.rag, res["data"].get("chunk"))
         raise Exception(res.get("message"))
 
-    def delete_chunks(self, ids: list[str] | None = None):
-        res = self.rm(f"/datasets/{self.dataset_id}/documents/{self.id}/chunks", {"chunk_ids": ids})
+    def delete_chunks(self, ids: list[str] | None = None, delete_all: bool = False):
+        res = self.rm(f"/datasets/{self.dataset_id}/documents/{self.id}/chunks", {"chunk_ids": ids, "delete_all": delete_all})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))
