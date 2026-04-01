@@ -32,7 +32,7 @@ class QueryBase(ABC):
 
     @staticmethod
     def sub_special_char(line):
-        return re.sub(r"([:\{\}/\[\]\-\*\"\(\)\|\+~\^])", r"\\\1", line).strip()
+        return re.sub(r"([:\{\}/\[\]\-\*\?\"\(\)\|\+~\^])", r"\\\1", line).strip()
 
     @staticmethod
     def rmWWW(txt):

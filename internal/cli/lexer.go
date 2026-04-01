@@ -301,6 +301,10 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenVectorSize, Value: ident}
 	case "DOC_META":
 		return Token{Type: TokenDocMeta, Value: ident}
+	case "AVAILABLE":
+		return Token{Type: TokenAvailable, Value: ident}
+	case "NAME":
+		return Token{Type: TokenName, Value: ident}
 	default:
 		return Token{Type: TokenIdentifier, Value: ident}
 	}
