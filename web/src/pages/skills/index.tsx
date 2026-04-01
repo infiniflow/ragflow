@@ -81,15 +81,36 @@ const SkillsPage: React.FC = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
 
-  // Fetch config on mount
+  // Fetch config on mount - only once
   useEffect(() => {
-    fetchConfig(config?.embd_id);
-  }, [fetchConfig]);
-
-  const handleViewSkill = useCallback((skill: Skill) => {
-    setSelectedSkill(skill);
-    setDetailOpen(true);
+    fetchConfig();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Handle view skill - search results need _folderId from existing skills
+  const handleViewSkill = useCallback(
+    (skill: Skill) => {
+      // If skill has no _folderId (from search results), try to find it in skills list
+      if (!(skill as any)._folderId) {
+        // Use a closure to capture filteredSkills at call time
+        const existingSkill = filteredSkills.find((s) => s.id === skill.id);
+        if (existingSkill && (existingSkill as any)._folderId) {
+          // Merge _folderId from existing skill
+          skill = { ...skill, _folderId: (existingSkill as any)._folderId };
+        } else {
+          // Search result doesn't have _folderId and skill not in local list
+          // This happens when index is outdated (folder_id not stored in ES)
+          console.warn(
+            `[Skill Search] Skill "${skill.name}" has no folder_id. ` +
+              'Please reindex skills to fix this issue.',
+          );
+        }
+      }
+      setSelectedSkill(skill);
+      setDetailOpen(true);
+    },
+    [filteredSkills],
+  );
 
   const handleCloseDetail = useCallback(() => {
     setDetailOpen(false);
@@ -179,13 +200,13 @@ const SkillsPage: React.FC = () => {
   const isLoading = loading || isSearching || configLoading;
 
   return (
-    <TooltipProvider>
-      <PageContainer>
-        <div className="min-h-[calc(100vh-200px)]">
-          {/* Header */}
-          <div className="mb-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-semibold">{t('skills.title')}</h2>
+    <PageContainer>
+      <div className="min-h-[calc(100vh-200px)]">
+        {/* Header */}
+        <div className="mb-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-semibold">{t('skills.title')}</h2>
+            <TooltipProvider>
               <div className="flex items-center gap-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -218,120 +239,120 @@ const SkillsPage: React.FC = () => {
                   {t('skills.addSkill') || 'Add Skill'}
                 </Button>
               </div>
-            </div>
-
-            {/* Search and View Controls */}
-            <div className="flex justify-between items-center">
-              <div className="relative">
-                <Input
-                  placeholder={
-                    t('skills.searchPlaceholder') || 'Search skills...'
-                  }
-                  value={searchQuery}
-                  onChange={handleSearchInputChange}
-                  onKeyDown={handleSearchKeyDown}
-                  className="w-[300px] pr-10"
-                />
-                <button
-                  onClick={handleSearchClick}
-                  disabled={isSearching}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Search className="size-4" />
-                </button>
-              </div>
-              <Segmented
-                value={viewMode}
-                onChange={(v) => setViewMode(v as 'grid' | 'list')}
-                options={[
-                  { value: 'grid', label: <LayoutGrid className="size-4" /> },
-                  { value: 'list', label: <List className="size-4" /> },
-                ]}
-              />
-            </div>
+            </TooltipProvider>
           </div>
 
-          {/* Skills List */}
-          {isLoading ? (
-            <div className="flex justify-center py-16">
-              <Spin size="large" />
+          {/* Search and View Controls */}
+          <div className="flex justify-between items-center">
+            <div className="relative">
+              <Input
+                placeholder={
+                  t('skills.searchPlaceholder') || 'Search skills...'
+                }
+                value={searchQuery}
+                onChange={handleSearchInputChange}
+                onKeyDown={handleSearchKeyDown}
+                className="w-[300px] pr-10"
+              />
+              <button
+                onClick={handleSearchClick}
+                disabled={isSearching}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Search className="size-4" />
+              </button>
             </div>
-          ) : displayedSkills.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-text-secondary">
-              <FolderOpen className="size-16 mb-4 opacity-50" />
-              {hasSearched ? (
-                <p>
-                  {t('skills.noSearchResults') || 'No search results'}: "
-                  {searchQuery}"
-                </p>
-              ) : searchQuery ? (
-                <p>
-                  {t('skills.noSearchResults') || 'No search results'}: "
-                  {searchQuery}"
-                </p>
-              ) : (
-                <div className="text-center">
-                  <p className="mb-2">{t('skills.noSkills')}</p>
-                  <button
-                    className="text-accent-primary hover:underline"
-                    onClick={() => setUploadModalOpen(true)}
-                  >
-                    {t('skills.addSkill') || 'Add Skill'}
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div
-              className="grid gap-4"
-              style={{
-                gridTemplateColumns:
-                  viewMode === 'grid'
-                    ? 'repeat(auto-fill, minmax(360px, 1fr))'
-                    : '1fr',
-              }}
-            >
-              {displayedSkills.map((skill) => (
-                <SkillCard
-                  key={skill.id}
-                  skill={skill}
-                  onView={handleViewSkill}
-                  onDelete={handleDelete}
-                  formatRelative={formatRelative}
-                />
-              ))}
-            </div>
-          )}
+            <Segmented
+              value={viewMode}
+              onChange={(v) => setViewMode(v as 'grid' | 'list')}
+              options={[
+                { value: 'grid', label: <LayoutGrid className="size-4" /> },
+                { value: 'list', label: <List className="size-4" /> },
+              ]}
+            />
+          </div>
         </div>
 
-        {/* Skill Detail Drawer */}
-        <SkillDetail
-          skill={selectedSkill}
-          open={detailOpen}
-          onClose={handleCloseDetail}
-          getFileContent={getSkillFileContent}
-          getVersionFiles={getSkillVersionFiles}
-        />
+        {/* Skills List */}
+        {isLoading ? (
+          <div className="flex justify-center py-16">
+            <Spin size="large" />
+          </div>
+        ) : displayedSkills.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-text-secondary">
+            <FolderOpen className="size-16 mb-4 opacity-50" />
+            {hasSearched ? (
+              <p>
+                {t('skills.noSearchResults') || 'No search results'}: "
+                {searchQuery}"
+              </p>
+            ) : searchQuery ? (
+              <p>
+                {t('skills.noSearchResults') || 'No search results'}: "
+                {searchQuery}"
+              </p>
+            ) : (
+              <div className="text-center">
+                <p className="mb-2">{t('skills.noSkills')}</p>
+                <button
+                  className="text-accent-primary hover:underline"
+                  onClick={() => setUploadModalOpen(true)}
+                >
+                  {t('skills.addSkill') || 'Add Skill'}
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div
+            className="grid gap-4"
+            style={{
+              gridTemplateColumns:
+                viewMode === 'grid'
+                  ? 'repeat(auto-fill, minmax(360px, 1fr))'
+                  : '1fr',
+            }}
+          >
+            {displayedSkills.map((skill) => (
+              <SkillCard
+                key={skill.id}
+                skill={skill}
+                onView={handleViewSkill}
+                onDelete={handleDelete}
+                formatRelative={formatRelative}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
-        {/* Upload Modal */}
-        <UploadModal
-          open={uploadModalOpen}
-          onCancel={() => setUploadModalOpen(false)}
-          onUpload={handleUpload}
-          loading={loading}
-        />
+      {/* Skill Detail Drawer */}
+      <SkillDetail
+        skill={selectedSkill}
+        open={detailOpen}
+        onClose={handleCloseDetail}
+        getFileContent={getSkillFileContent}
+        getVersionFiles={getSkillVersionFiles}
+      />
 
-        {/* Search Config Modal */}
-        <SearchConfigModal
-          open={configModalOpen}
-          onOpenChange={setConfigModalOpen}
-          config={config || undefined}
-          onSave={saveConfig}
-          onReindex={reindex}
-          loading={configLoading}
-        />
-      </PageContainer>
-    </TooltipProvider>
+      {/* Upload Modal */}
+      <UploadModal
+        open={uploadModalOpen}
+        onCancel={() => setUploadModalOpen(false)}
+        onUpload={handleUpload}
+        loading={loading}
+      />
+
+      {/* Search Config Modal */}
+      <SearchConfigModal
+        open={configModalOpen}
+        onOpenChange={setConfigModalOpen}
+        config={config || undefined}
+        onSave={saveConfig}
+        onReindex={reindex}
+        loading={configLoading}
+      />
+    </PageContainer>
   );
 };
 

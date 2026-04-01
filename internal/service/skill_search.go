@@ -413,6 +413,7 @@ func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interfac
 
 		// Extract fields
 		skillID := getString(chunk, "skill_id")
+		folderID := getString(chunk, "folder_id")
 		name := getString(chunk, "name")
 		description := getString(chunk, "description")
 
@@ -428,6 +429,7 @@ func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interfac
 
 		result := entity.SkillSearchResult{
 			SkillID:     skillID,
+			FolderID:    folderID,
 			Name:        name,
 			Description: description,
 			Tags:        tags,
@@ -668,6 +670,7 @@ func (s *SkillSearchService) escapeQueryString(text string) string {
 // SkillInfo represents skill information for indexing
 type SkillInfo struct {
 	ID          string   `json:"id"`
+	FolderID    string   `json:"folder_id"` // File system folder ID for retrieving files
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	Tags        []string `json:"tags"`

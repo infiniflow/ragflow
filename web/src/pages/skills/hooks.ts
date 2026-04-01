@@ -1,7 +1,7 @@
 import fileManagerService from '@/services/file-manager-service';
 import { getAuthorization } from '@/utils/authorization-util';
 import { message } from 'antd';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Skill, SkillFileEntry, SkillMetadata } from './types';
 import {
@@ -180,9 +180,11 @@ export const useSkills = () => {
       const createDate = firstFileDate || new Date().toISOString();
       const updateDate = createDate;
 
+      const skillName = metadata.name || folderName;
+
       return {
-        id: folderId,
-        name: metadata.name || folderName,
+        id: skillName, // Use skill name as ID (consistent with search results)
+        name: skillName,
         description,
         source_type: 'local',
         created_at: new Date(createDate).getTime(),
@@ -190,6 +192,7 @@ export const useSkills = () => {
         files: fileEntries,
         metadata: { ...metadata, version: versionName },
         versions: allVersions,
+        _folderId: folderId, // Internal use for file operations
       };
     } catch (error) {
       console.error('Error fetching skill details:', error);
@@ -287,15 +290,18 @@ export const useSkills = () => {
 
       const createDate = firstFileDate || new Date().toISOString();
 
+      const skillName = metadata.name || folderName;
+
       return {
-        id: folderId,
-        name: metadata.name || folderName,
+        id: skillName, // Use skill name as ID (consistent with search results)
+        name: skillName,
         description,
         source_type: 'local',
         created_at: new Date(createDate).getTime(),
         updated_at: new Date(createDate).getTime(),
         files: fileEntries,
         metadata,
+        _folderId: folderId, // Internal use for file operations
       };
     } catch (error) {
       console.error('Error fetching legacy skill details:', error);
@@ -583,6 +589,7 @@ export const useSkills = () => {
               skills: [
                 {
                   id: `${skillNameNormalized}/${version}`,
+                  folder_id: skillFolderId, // Pass folder ID for file retrieval
                   name: skillMetadata.name || name,
                   description: skillDescription,
                   tags: skillMetadata.tags || [],
@@ -621,14 +628,19 @@ export const useSkills = () => {
   const deleteSkill = useCallback(
     async (skillId: string, skillName?: string): Promise<boolean> => {
       try {
+        // Find skill to get its folder ID - use skills state directly
+        const skill = skills.find((s) => s.id === skillId);
+        if (!skill) {
+          throw new Error('Skill not found');
+        }
+
         // Get skill name if not provided
-        let nameToDelete = skillName;
-        if (!nameToDelete) {
-          // Find skill in current list to get name
-          const skill = skills.find((s) => s.id === skillId);
-          if (skill) {
-            nameToDelete = skill.name;
-          }
+        const nameToDelete = skillName || skill.name;
+
+        // Get folder ID for file deletion
+        const folderId = (skill as any)._folderId;
+        if (!folderId) {
+          throw new Error('Skill folder ID not found');
         }
 
         // Delete search index first (best effort, don't block on failure)
@@ -655,7 +667,7 @@ export const useSkills = () => {
         }
 
         const { data } = await fileManagerService.removeFile({
-          ids: [skillId],
+          ids: [folderId],
         });
 
         if (data.code !== 0) throw new Error('Failed to delete skill');
@@ -695,6 +707,33 @@ export const useSkills = () => {
 
       if (!versionFolder) return null;
       currentFolderId = versionFolder.id;
+    } else {
+      // No version specified, try to find the latest version folder
+      const { data } = await fileManagerService.listFile({
+        parent_id: currentFolderId,
+      });
+      if (data.code !== 0) return null;
+
+      const files = data.data?.files || [];
+      const versionFolders = files.filter(
+        (f: any) => f.type === 'folder' && /^\d+\.\d+\.\d+/.test(f.name),
+      );
+
+      if (versionFolders.length > 0) {
+        // Sort by version number (descending) to get the latest
+        const sortedVersions = versionFolders.sort((a: any, b: any) => {
+          const va = a.name.split('.').map(Number);
+          const vb = b.name.split('.').map(Number);
+          for (let i = 0; i < Math.max(va.length, vb.length); i++) {
+            const na = va[i] || 0;
+            const nb = vb[i] || 0;
+            if (na !== nb) return nb - na; // Descending order
+          }
+          return 0;
+        });
+        currentFolderId = sortedVersions[0].id;
+      }
+      // If no version folders found, stay at current level (legacy structure)
     }
 
     // Now find the file in the version folder (or original folder if no version)
@@ -728,22 +767,32 @@ export const useSkills = () => {
 
   // Get file content for a skill
   // Automatically handles versioned skills by checking skill.metadata.version
+  // Can be called with an optional skill object (for search results not in skills state)
   const getSkillFileContent = useCallback(
     async (
       skillId: string,
       filePath: string,
       version?: string,
+      skillObj?: Skill,
     ): Promise<string | null> => {
       try {
-        // If version is not provided, try to find it from the skill
+        // Find the skill to get its folder ID
+        // Use provided skill object if available (for search results), otherwise look up in skills state
+        const skill = skillObj || skills.find((s) => s.id === skillId);
+        if (!skill) return null;
+
+        // Use internal _folderId for file operations
+        const folderId = (skill as any)._folderId;
+        if (!folderId) return null;
+
+        // If version is not provided, try to find it from the skill or auto-discover
         let targetVersion = version;
         if (!targetVersion) {
-          const skill = skills.find((s) => s.id === skillId);
           targetVersion = skill?.metadata?.version;
         }
 
         // Handle both file name and file path
-        const file = await findFileByPath(skillId, filePath, targetVersion);
+        const file = await findFileByPath(folderId, filePath, targetVersion);
         if (!file) return null;
         return await fetchFileContent(file.id);
       } catch (error) {
@@ -755,19 +804,57 @@ export const useSkills = () => {
   );
 
   // Fetch files for a specific version of a skill
+  // Can be called with an optional skill object (for search results not in skills state)
   const getSkillVersionFiles = useCallback(
-    async (skillId: string, version: string): Promise<SkillFileEntry[]> => {
+    async (
+      skillId: string,
+      version: string,
+      skillObj?: Skill,
+    ): Promise<SkillFileEntry[]> => {
       try {
+        // Find the skill to get its folder ID
+        // Use provided skill object if available (for search results), otherwise look up in skills state
+        const skill = skillObj || skills.find((s) => s.id === skillId);
+        if (!skill) return [];
+
+        // Use internal _folderId for file operations
+        const folderId = (skill as any)._folderId;
+        if (!folderId) return [];
+
         // First, list the skill folder to find the version folder
         const { data: skillFolderData } = await fileManagerService.listFile({
-          parent_id: skillId,
+          parent_id: folderId,
         });
 
         if (skillFolderData.code !== 0) return [];
 
         const skillItems = skillFolderData.data?.files || [];
+
+        // If version is not provided, find the latest version folder
+        let targetVersion = version;
+        if (!targetVersion) {
+          // Find all version folders (matching semver pattern x.y.z)
+          const versionFolders = skillItems.filter(
+            (f: any) => f.type === 'folder' && /^\d+\.\d+\.\d+/.test(f.name),
+          );
+          if (versionFolders.length === 0) return [];
+
+          // Sort by version number (descending) to get the latest
+          const sortedVersions = versionFolders.sort((a: any, b: any) => {
+            const va = a.name.split('.').map(Number);
+            const vb = b.name.split('.').map(Number);
+            for (let i = 0; i < Math.max(va.length, vb.length); i++) {
+              const na = va[i] || 0;
+              const nb = vb[i] || 0;
+              if (na !== nb) return nb - na; // Descending order
+            }
+            return 0;
+          });
+          targetVersion = sortedVersions[0].name;
+        }
+
         const versionFolder = skillItems.find(
-          (f: any) => f.name === version && f.type === 'folder',
+          (f: any) => f.name === targetVersion && f.type === 'folder',
         );
 
         if (!versionFolder) return [];
@@ -809,19 +896,26 @@ export const useSkills = () => {
         return [];
       }
     },
-    [],
+    [skills],
   );
 
   // Filter skills by search query
-  const filteredSkills = skills.filter(
-    (skill) =>
-      skill.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      skill.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      skill.metadata?.tags?.some((tag) =>
-        tag.toLowerCase().includes(searchQuery.toLowerCase()),
+  const filteredSkills = useMemo(
+    () =>
+      skills.filter(
+        (skill) =>
+          skill.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          skill.description
+            ?.toLowerCase()
+            .includes(searchQuery.toLowerCase()) ||
+          skill.metadata?.tags?.some((tag) =>
+            tag.toLowerCase().includes(searchQuery.toLowerCase()),
+          ),
       ),
+    [skills, searchQuery],
   );
 
+  // Fetch skills on mount
   useEffect(() => {
     fetchSkills();
   }, [fetchSkills]);
@@ -996,9 +1090,10 @@ export const useSkillSearchConfig = () => {
         const data = await response.json();
         if (data.code === 0 && data.data) {
           // Transform backend results to Skill[] format
+          // Use folder_id if available (for file operations), otherwise skill_id
           const skills: Skill[] = (data.data.skills || []).map(
             (result: any) => ({
-              id: result.skill_id,
+              id: result.skill_id, // Use skill name as ID (consistent with list view)
               name: result.name,
               description: result.description,
               source_type: 'search',
@@ -1011,6 +1106,7 @@ export const useSkillSearchConfig = () => {
                 vector_score: result.vector_score,
               },
               files: [],
+              _folderId: result.folder_id, // Store folder_id for file operations if needed
             }),
           );
           return {

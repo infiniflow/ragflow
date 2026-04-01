@@ -96,12 +96,13 @@ func (s *SkillSearchConfig) ToMap() map[string]interface{} {
 
 // SkillSearchResult represents a skill search result
 type SkillSearchResult struct {
-	SkillID     string   `json:"skill_id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Tags        []string `json:"tags"`
-	Score       float64  `json:"score"`
-	BM25Score   float64  `json:"bm25_score,omitempty"`
-	VectorScore float64  `json:"vector_score,omitempty"`
-	IndexVersion string  `json:"index_version,omitempty"`
+	SkillID      string   `json:"skill_id"`
+	FolderID     string   `json:"folder_id"` // File system folder ID for retrieving files
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	Tags         []string `json:"tags"`
+	Score        float64  `json:"score"`
+	BM25Score    float64  `json:"bm25_score,omitempty"`
+	VectorScore  float64  `json:"vector_score,omitempty"`
+	IndexVersion string   `json:"index_version,omitempty"`
 }

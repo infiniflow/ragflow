@@ -31,10 +31,12 @@ interface SkillDetailProps {
     skillId: string,
     filePath: string,
     version?: string,
+    skillObj?: Skill,
   ) => Promise<string | null>;
   getVersionFiles?: (
     skillId: string,
     version: string,
+    skillObj?: Skill,
   ) => Promise<SkillFileEntry[]>;
 }
 
@@ -104,58 +106,87 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
   const hasVersions = skill?.versions && skill.versions.length > 0;
   const availableVersions = skill?.versions || [];
 
-  // Initialize selected version when skill changes
+  // Reset state when skill changes or drawer opens/closes
   useEffect(() => {
-    if (skill && hasVersions) {
-      const defaultVersion = skill.metadata?.version || availableVersions[0];
-      setSelectedVersion(defaultVersion);
+    if (open && skill) {
+      // Initialize version
+      if (hasVersions) {
+        const defaultVersion = skill.metadata?.version || availableVersions[0];
+        setSelectedVersion(defaultVersion);
+      } else {
+        setSelectedVersion('');
+      }
     } else {
+      // Reset when closed
       setSelectedVersion('');
       setVersionFiles([]);
+      setSelectedFile(null);
+      setFileContent('');
     }
-  }, [skill?.id, skill?.versions]);
+  }, [open, skill?.id, hasVersions]);
 
-  // Load files when version changes
+  // Load files when version or skill changes
   useEffect(() => {
+    let isMounted = true;
+
     const loadVersionFiles = async () => {
-      if (!skill || !selectedVersion || !getVersionFiles) {
-        setVersionFiles([]);
+      if (!skill || !getVersionFiles) {
+        if (isMounted) setVersionFiles([]);
         return;
       }
 
-      // If it's the default version, use skill.files
-      if (selectedVersion === skill.metadata?.version) {
-        setVersionFiles(skill.files);
+      // Check if skill has _folderId (required for file operations)
+      if (!(skill as any)._folderId) {
+        console.warn(
+          `[Skill Detail] Skill "${skill.name}" has no folder_id. ` +
+            'Please reindex skills in settings to fix this issue.',
+        );
+        if (isMounted) setVersionFiles([]);
         return;
       }
 
-      setVersionLoading(true);
+      // If it's the default version and skill.files is not empty, use skill.files
+      // Only for local skills (not search results which have empty files array)
+      if (
+        selectedVersion === skill.metadata?.version &&
+        skill.files.length > 0 &&
+        skill.source_type !== 'search'
+      ) {
+        if (isMounted) setVersionFiles(skill.files);
+        return;
+      }
+
+      // Load files for the selected version
+      if (isMounted) setVersionLoading(true);
       try {
-        const files = await getVersionFiles(skill.id, selectedVersion);
-        setVersionFiles(files);
+        const versionToLoad = selectedVersion || skill.metadata?.version || '';
+        // Pass skill object to handle search results not in skills state
+        const files = await getVersionFiles(skill.id, versionToLoad, skill);
+        if (isMounted) setVersionFiles(files);
       } catch (error) {
         console.error('Failed to load version files:', error);
-        setVersionFiles([]);
+        if (isMounted) setVersionFiles([]);
       } finally {
-        setVersionLoading(false);
+        if (isMounted) setVersionLoading(false);
       }
     };
 
     loadVersionFiles();
-  }, [skill?.id, selectedVersion, getVersionFiles]);
 
-  // Reset selected file when version changes
-  useEffect(() => {
-    setSelectedFile(null);
-    setFileContent('');
-  }, [selectedVersion]);
+    return () => {
+      isMounted = false;
+    };
+  }, [skill, selectedVersion]);
 
   // Use version files if available, otherwise use skill.files
   const currentFiles = useMemo(() => {
     if (hasVersions && versionFiles.length > 0) {
       return versionFiles;
     }
-    return skill?.files || [];
+    if (skill?.files && skill.files.length > 0) {
+      return skill.files;
+    }
+    return versionFiles;
   }, [skill?.files, versionFiles, hasVersions]);
 
   const treeData = useMemo(() => buildFileTree(currentFiles), [currentFiles]);
@@ -165,17 +196,18 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
       if (!skill || !item) return;
 
       const file = currentFiles.find((f) => f.path === item.id);
-
       if (!file || file.is_dir) return;
 
       setSelectedFile(item.id);
       setLoading(true);
 
       try {
+        // Pass skill object to handle search results not in skills state
         const content = await getFileContent(
           skill.id,
           file.path,
           selectedVersion || undefined,
+          skill,
         );
         setFileContent(content || '');
       } catch (error) {
@@ -184,12 +216,12 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
         setLoading(false);
       }
     },
-    [skill, currentFiles, getFileContent, selectedVersion],
+    [skill, currentFiles, selectedVersion, getFileContent],
   );
 
   // Auto-select SKILL.md or README on open
   useEffect(() => {
-    if (skill && open && currentFiles.length > 0 && !selectedFile) {
+    if (open && skill && currentFiles.length > 0 && !selectedFile) {
       // Priority: SKILL.md > README.md > index.md
       const priorityFiles = ['skill.md', 'readme.md', 'index.md'];
       let targetFile: SkillFileEntry | undefined;
@@ -205,7 +237,7 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
         handleSelect({ id: targetFile.path } as TreeDataItem);
       }
     }
-  }, [skill?.id, open, currentFiles, handleSelect]);
+  }, [open, skill?.id, currentFiles.length]);
 
   const renderFileContent = () => {
     if (!selectedFile) {
@@ -234,8 +266,18 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
     return <CodeViewer content={fileContent} filename={filename} />;
   };
 
+  // Handle sheet open change
+  const handleOpenChange = useCallback(
+    (v: boolean) => {
+      if (!v) {
+        onClose();
+      }
+    },
+    [onClose],
+  );
+
   return (
-    <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent side="right" className="w-[90%] sm:max-w-[90%] p-0">
         {skill && (
           <div className="flex h-full">
@@ -298,6 +340,16 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
                 {versionLoading ? (
                   <div className="flex justify-center py-10">
                     <Spin size="default" />
+                  </div>
+                ) : currentFiles.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-text-secondary">
+                    <FolderOpen className="size-8 mb-2 opacity-50" />
+                    <p className="text-sm">
+                      {skill?.source_type === 'search' &&
+                      !(skill as any)._folderId
+                        ? 'Please reindex skills in settings to view files'
+                        : t('skills.noFiles') || 'No files'}
+                    </p>
                   </div>
                 ) : (
                   <div>

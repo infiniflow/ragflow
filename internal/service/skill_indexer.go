@@ -108,6 +108,7 @@ func (s *SkillIndexerService) IndexSkill(ctx context.Context, tenantID string, s
 	// Build base document
 	doc := map[string]interface{}{
 		"skill_id":    skill.ID,
+		"folder_id":   skill.FolderID,
 		"name":        skill.Name,
 		"tags":        strings.Join(skill.Tags, ", "),
 		"description": skill.Description,
@@ -206,6 +207,7 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID str
 
 		doc := map[string]interface{}{
 			"skill_id":    skill.ID,
+			"folder_id":   skill.FolderID,
 			"name":        skill.Name,
 			"tags":        strings.Join(skill.Tags, ", "),
 			"description": skill.Description,

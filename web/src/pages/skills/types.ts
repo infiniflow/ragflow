@@ -5,7 +5,7 @@
 // ============================================================================
 
 export interface Skill {
-  id: string;
+  id: string; // Skill name (used as identifier, consistent with search results)
   name: string;
   description: string;
   source_type: 'local' | 'git' | 'central';
@@ -16,6 +16,7 @@ export interface Skill {
   files: SkillFileEntry[];
   metadata?: SkillMetadata;
   versions?: string[]; // Available versions (for versioned skills)
+  _folderId?: string; // Internal: file system folder ID for file operations
 }
 
 export interface SkillFileEntry {

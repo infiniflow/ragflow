@@ -743,11 +743,8 @@ func (u *SkillUploader) indexSkill(ctx stdctx.Context, result *SkillValidationRe
 		"embd_id": embdID,
 	}
 
-	// Call index API (Go service port 9384)
-	originalPort := u.client.HTTPClient.Port
-	u.client.HTTPClient.Port = 9384
-	resp, err := u.client.HTTPClient.Request("POST", "/api/v1/skills/index", true, "json", nil, payload)
-	u.client.HTTPClient.Port = originalPort
+	// Call index API
+	resp, err := u.client.HTTPClient.Request("POST", "/skills/index", true, "json", nil, payload)
 	if err != nil {
 		return fmt.Errorf("index request failed: %w", err)
 	}
@@ -773,11 +770,8 @@ func (u *SkillUploader) indexSkill(ctx stdctx.Context, result *SkillValidationRe
 
 // getDefaultEmbdID gets the default embedding model ID from skill search config
 func (u *SkillUploader) getDefaultEmbdID() (string, error) {
-	// Try to get config from API (Go service port 9384)
-	originalPort := u.client.HTTPClient.Port
-	u.client.HTTPClient.Port = 9384
-	resp, err := u.client.HTTPClient.Request("GET", "/api/v1/skills/config?embd_id=", true, "json", nil, nil)
-	u.client.HTTPClient.Port = originalPort
+	// Try to get config from API
+	resp, err := u.client.HTTPClient.Request("GET", "/skills/config?embd_id=", true, "json", nil, nil)
 	if err != nil {
 		// If API fails, return empty string (server will handle it)
 		return "", nil
@@ -924,20 +918,13 @@ func (c *SearchSkillsCommand) searchSkills(args *SearchSkillsArgs) error {
 		"page_size": args.PageSize,
 	}
 
-	// Skill search API is on Go service (port 9384), not Python service (port 9380)
-	// Save original port and switch to Go service port
-	originalPort := c.client.HTTPClient.Port
-	c.client.HTTPClient.Port = 9384
-	defer func() { c.client.HTTPClient.Port = originalPort }() // Ensure port is restored
-
-	fmt.Printf("DEBUG: Sending search request to port %d, query: %s\n", c.client.HTTPClient.Port, args.Query)
-
-	resp, err := c.client.HTTPClient.Request("POST", "/api/v1/skills/search", true, "json", nil, payload)
+	// Call skill search API
+	resp, err := c.client.HTTPClient.Request("POST", "/skills/search", true, "json", nil, payload)
 	if err != nil {
 		return fmt.Errorf("search request failed: %w", err)
 	}
 
-	fmt.Printf("DEBUG: Response status: %d, body: %s\n", resp.StatusCode, string(resp.Body))
+
 
 	var result struct {
 		Code int    `json:"code"`
@@ -1251,11 +1238,8 @@ func (c *DeleteSkillCommand) deleteSkill(ctx stdctx.Context, skillName string) e
 
 // deleteSkillIndex deletes the skill from search index
 func (c *DeleteSkillCommand) deleteSkillIndex(skillName string) error {
-	// Skill API is on Go service port 9384
-	originalPort := c.client.HTTPClient.Port
-	c.client.HTTPClient.Port = 9384
-	resp, err := c.client.HTTPClient.Request("DELETE", "/api/v1/skills/index/"+skillName, true, "json", nil, nil)
-	c.client.HTTPClient.Port = originalPort
+	// Call delete skill index API
+	resp, err := c.client.HTTPClient.Request("DELETE", "/skills/index/"+skillName, true, "json", nil, nil)
 	if err != nil {
 		return fmt.Errorf("delete index request failed: %w", err)
 	}

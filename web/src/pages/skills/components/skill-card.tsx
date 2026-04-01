@@ -151,7 +151,9 @@ const SkillCard: React.FC<SkillCardProps> = ({
               <span className="text-text-secondary text-xs">
                 {skill.versions && skill.versions.length > 0
                   ? `${skill.versions.length} versions`
-                  : `${fileCount} files`}
+                  : fileCount > 0
+                    ? `${fileCount} files`
+                    : ''}
               </span>
 
               <div className="flex items-center gap-2">
