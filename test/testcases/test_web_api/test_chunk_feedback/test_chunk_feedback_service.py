@@ -130,50 +130,16 @@ class TestFeedbackRowsFromReference:
         reference = {"doc_aggs": [{"doc_id": "doc1"}]}
         assert mod.ChunkFeedbackService._feedback_rows_from_reference(reference) == []
 
-
-def _chunk_id_to_kb_map(mod, reference):
-    """Same mapping shape as feedback updates (chunk_id -> kb_id)."""
-    rows = mod.ChunkFeedbackService._feedback_rows_from_reference(reference or {})
-    return {r[0]: r[1] for r in rows}
-
-
-class TestFeedbackChunkKbMapping:
-    """Chunk id -> kb_id resolution via _feedback_rows_from_reference."""
-
-    def test_empty_reference(self, feedback_env):
-        mod, _ = feedback_env
-        assert _chunk_id_to_kb_map(mod, {}) == {}
-        assert _chunk_id_to_kb_map(mod, None) == {}
-
-    def test_reference_with_dataset_id(self, feedback_env):
+    def test_chunk_id_to_kb_map_matches_row_pairs(self, feedback_env):
         mod, _ = feedback_env
         reference = {
             "chunks": [
-                {"id": "chunk1", "dataset_id": "kb1"},
-                {"id": "chunk2", "dataset_id": "kb2"},
+                {"id": "a", "dataset_id": "kb1"},
+                {"chunk_id": "b", "kb_id": "kb2"},
             ]
         }
-        assert _chunk_id_to_kb_map(mod, reference) == {"chunk1": "kb1", "chunk2": "kb2"}
-
-    def test_reference_with_kb_id(self, feedback_env):
-        mod, _ = feedback_env
-        reference = {
-            "chunks": [
-                {"chunk_id": "chunk1", "kb_id": "kb1"},
-                {"chunk_id": "chunk2", "kb_id": "kb2"},
-            ]
-        }
-        assert _chunk_id_to_kb_map(mod, reference) == {"chunk1": "kb1", "chunk2": "kb2"}
-
-    def test_reference_missing_kb_id(self, feedback_env):
-        mod, _ = feedback_env
-        reference = {
-            "chunks": [
-                {"id": "chunk1", "dataset_id": "kb1"},
-                {"id": "chunk2"},
-            ]
-        }
-        assert _chunk_id_to_kb_map(mod, reference) == {"chunk1": "kb1"}
+        rows = mod.ChunkFeedbackService._feedback_rows_from_reference(reference)
+        assert {r[0]: r[1] for r in rows} == {"a": "kb1", "b": "kb2"}
 
 
 class TestUpdateChunkWeight:

@@ -51,7 +51,6 @@ async def set_conversation():
     conv_id = req.get("conversation_id")
     is_new = req.get("is_new")
     name = req.get("name", "New conversation")
-    req["user_id"] = current_user.id
 
     if len(name) > 255:
         name = name[0:255]
@@ -60,6 +59,27 @@ async def set_conversation():
     if not is_new:
         del req["conversation_id"]
         try:
+            e, conv = ConversationService.get_by_id(conv_id)
+            if not e:
+                return get_data_error_result(message="Conversation not found!")
+            if _conversation_user_id_mismatch(conv, current_user.id):
+                return get_json_result(
+                    data=False,
+                    message="Only owner of conversation authorized for this operation.",
+                    code=RetCode.OPERATING_ERROR,
+                )
+            tenants = UserTenantService.query(user_id=current_user.id)
+            for tenant in tenants:
+                dialog = DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id)
+                if dialog and len(dialog) > 0:
+                    break
+            else:
+                return get_json_result(
+                    data=False,
+                    message="Only owner of conversation authorized for this operation.",
+                    code=RetCode.OPERATING_ERROR,
+                )
+            req["user_id"] = current_user.id
             if not ConversationService.update_by_id(conv_id, req):
                 return get_data_error_result(message="Conversation not found!")
             e, conv = ConversationService.get_by_id(conv_id)
@@ -70,6 +90,7 @@ async def set_conversation():
         except Exception as e:
             return server_error_response(e)
 
+    req["user_id"] = current_user.id
     try:
         e, dia = DialogService.get_by_id(req["dialog_id"])
         if not e:

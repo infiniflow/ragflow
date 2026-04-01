@@ -103,12 +103,30 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+class _StubQuartHeaders:
+    def add_header(self, *_a, **_k):
+        pass
+
+
+class _StubQuartResponse:
+    """Minimal Response callable for streaming routes (Response(body, mimetype=...))."""
+
+    def __init__(self, body=None, *args, mimetype=None, content_type=None, **kwargs):
+        self.response = body
+        self.mimetype = mimetype
+        self.content_type = content_type
+        self.headers = _StubQuartHeaders()
+
+
 def _load_conversation_module(monkeypatch):
     repo_root = Path(__file__).resolve().parents[4]
 
     quart_mod = ModuleType("quart")
-    quart_mod.Response = SimpleNamespace
+    quart_mod.Response = _StubQuartResponse
     quart_mod.request = SimpleNamespace()
+    quart_mod.current_app = SimpleNamespace()
+    quart_mod.g = SimpleNamespace()
+    quart_mod.session = SimpleNamespace()
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
     common_pkg = ModuleType("common")
@@ -233,24 +251,61 @@ def test_set_conversation_update_create_and_errors(monkeypatch):
         "name": "rename",
     }
     _set_request_json(monkeypatch, module, update_payload)
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, _DummyConversation(conv_id="conv-1")))
+    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(icon="x")])
     monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_args, **_kwargs: False)
     res = _run(module.set_conversation())
     assert "Conversation not found" in res["message"]
 
     _set_request_json(monkeypatch, module, update_payload)
+
+    _get_state = {"n": 0}
+
+    def _get_fail_second(_id):
+        _get_state["n"] += 1
+        if _get_state["n"] == 1:
+            return (True, _DummyConversation(conv_id="conv-1"))
+        return (False, None)
+
+    monkeypatch.setattr(module.ConversationService, "get_by_id", _get_fail_second)
+    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(icon="x")])
     monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (False, None))
     res = _run(module.set_conversation())
     assert "Fail to update" in res["message"]
 
     _set_request_json(monkeypatch, module, update_payload)
-    monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, _DummyConversation(conv_id="conv-1")))
+    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(icon="x")])
+    monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_args, **_kwargs: True)
     res = _run(module.set_conversation())
     assert res["code"] == 0
     assert res["data"]["id"] == "conv-1"
 
     _set_request_json(monkeypatch, module, update_payload)
+    monkeypatch.setattr(
+        module.ConversationService,
+        "get_by_id",
+        lambda _id: (True, _DummyConversation(conv_id="conv-1", user_id="someone-else")),
+    )
+    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(icon="x")])
+    res = _run(module.set_conversation())
+    assert res["code"] == module.RetCode.OPERATING_ERROR
+
+    _set_request_json(monkeypatch, module, update_payload)
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, _DummyConversation(conv_id="conv-1")))
+    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
+    res = _run(module.set_conversation())
+    assert res["code"] == module.RetCode.OPERATING_ERROR
+
+    _set_request_json(monkeypatch, module, update_payload)
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, _DummyConversation(conv_id="conv-1")))
+    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(icon="x")])
 
     def _raise_update(*_args, **_kwargs):
         raise RuntimeError("update boom")
