@@ -40,6 +40,7 @@ type Router struct {
 	fileHandler          *handler.FileHandler
 	memoryHandler        *handler.MemoryHandler
 	skillSearchHandler   *handler.SkillSearchHandler
+	providerHandler      *handler.ProviderHandler
 }
 
 // NewRouter create router
@@ -60,6 +61,7 @@ func NewRouter(
 	fileHandler *handler.FileHandler,
 	memoryHandler *handler.MemoryHandler,
 	skillSearchHandler *handler.SkillSearchHandler,
+	providerHandler *handler.ProviderHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -78,23 +80,22 @@ func NewRouter(
 		fileHandler:          fileHandler,
 		memoryHandler:        memoryHandler,
 		skillSearchHandler:   skillSearchHandler,
+		providerHandler:      providerHandler,
 	}
 }
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
 	// Health check
-	engine.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"status": "ok",
-		})
-	})
+	engine.GET("/health", r.systemHandler.Health)
 
 	// System endpoints
 	engine.GET("/v1/system/ping", r.systemHandler.Ping)
 	engine.GET("/v1/system/config", r.systemHandler.GetConfig)
 	engine.GET("/v1/system/configs", r.systemHandler.GetConfigs)
 	engine.GET("/v1/system/version", r.systemHandler.GetVersion)
+	engine.GET("/v1/system/log_level", r.systemHandler.GetLogLevel)
+	engine.PUT("/v1/system/log_level", r.systemHandler.SetLogLevel)
 	engine.POST("/v1/user/register", r.userHandler.Register)
 	// User login channels endpoint
 	engine.GET("/v1/user/login/channels", r.userHandler.GetLoginChannels)
@@ -202,6 +203,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 				skills.DELETE("/index/:skill_id", r.skillSearchHandler.DeleteSkillIndex)
 				skills.POST("/reindex", r.skillSearchHandler.Reindex)
 			}
+
+			// provider pool route group
+			provider := v1.Group("/providers")
+			{
+				provider.GET("/", r.providerHandler.ListProviders)
+				provider.GET("/:provider_name", r.providerHandler.ShowProvider)
+				provider.GET("/:provider_name/models", r.providerHandler.ListModels)
+				provider.GET("/:provider_name/models/:model_name", r.providerHandler.ShowModel)
+			}
 		}
 
 		// Knowledge base routes
@@ -218,6 +228,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			kb.GET("/basic_info", r.knowledgebaseHandler.GetBasicInfo)
 			kb.POST("/index", r.knowledgebaseHandler.CreateIndex)
 			kb.DELETE("/index", r.knowledgebaseHandler.DeleteIndex)
+			kb.POST("/insert_from_file", r.knowledgebaseHandler.InsertDatasetFromFile)
 
 			// KB ID specific routes
 			kbByID := kb.Group("/:kb_id")
@@ -235,6 +246,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		{
 			tenant.POST("/doc_meta_index", r.tenantHandler.CreateDocMetaIndex)
 			tenant.DELETE("/doc_meta_index", r.tenantHandler.DeleteDocMetaIndex)
+			tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile)
 		}
 
 		// Document routes

@@ -281,3 +281,15 @@ func (e *elasticsearchEngine) CreateDocMetaIndex(ctx context.Context, indexName 
 	// TODO
 	return nil
 }
+
+// InsertDataset inserts documents into a dataset index
+func (e *elasticsearchEngine) InsertDataset(ctx context.Context, documents []map[string]interface{}, indexName string, knowledgebaseID string) ([]string, error) {
+    // TODO
+	return []string{}, nil
+}
+
+// InsertMetadata inserts documents into tenant's metadata index
+func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, documents []map[string]interface{}, tenantID string) ([]string, error) {
+	// TODO
+	return []string{}, nil
+}

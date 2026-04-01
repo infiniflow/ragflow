@@ -46,6 +46,10 @@ type DocEngine interface {
 	DeleteIndex(ctx context.Context, indexName string) error
 	IndexExists(ctx context.Context, indexName string) (bool, error)
 
+	// Insert operations
+	InsertDataset(ctx context.Context, documents []map[string]interface{}, indexName string, knowledgebaseID string) ([]string, error)
+	InsertMetadata(ctx context.Context, documents []map[string]interface{}, tenantID string) ([]string, error)
+
 	// Document operations
 	IndexDocument(ctx context.Context, indexName, docID string, doc interface{}) error
 	BulkIndex(ctx context.Context, indexName string, docs []interface{}) (interface{}, error)

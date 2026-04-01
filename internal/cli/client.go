@@ -17,9 +17,7 @@
 package cli
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -103,264 +101,6 @@ func (a *httpClientAdapter) Request(method, path string, useAPIBase bool, authKi
 	}, nil
 }
 
-// LoginUserInteractive performs interactive login with username and password
-func (c *RAGFlowClient) LoginUserInteractive(username, password string) error {
-	// First, ping the server to check if it's available
-	// For admin mode, use /admin/ping with useAPIBase=true
-	// For user mode, use /system/ping with useAPIBase=false
-	var pingPath string
-	var useAPIBase bool
-	if c.ServerType == "admin" {
-		pingPath = "/admin/ping"
-		useAPIBase = true
-	} else {
-		pingPath = "/system/ping"
-		useAPIBase = false
-	}
-
-	resp, err := c.HTTPClient.Request("GET", pingPath, useAPIBase, "web", nil, nil)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		fmt.Println("Can't access server for login (connection failed)")
-		return err
-	}
-
-	if resp.StatusCode != 200 {
-		fmt.Println("Server is down")
-		return fmt.Errorf("server is down")
-	}
-
-	// Check response - admin returns JSON with message "PONG", user returns plain "pong"
-	resJSON, err := resp.JSON()
-	if err == nil {
-		// Admin mode returns {"code":0,"message":"PONG"}
-		if msg, ok := resJSON["message"].(string); !ok || msg != "pong" {
-			fmt.Println("Server is down")
-			return fmt.Errorf("server is down")
-		}
-	} else {
-		// User mode returns plain "pong"
-		if string(resp.Body) != "pong" {
-			fmt.Println("Server is down")
-			return fmt.Errorf("server is down")
-		}
-	}
-
-	// If password is not provided, prompt for it
-	if password == "" {
-		fmt.Printf("password for %s: ", username)
-		var err error
-		password, err = readPassword()
-		if err != nil {
-			return fmt.Errorf("failed to read password: %w", err)
-		}
-		password = strings.TrimSpace(password)
-	}
-
-	// Login
-	token, err := c.loginUser(username, password)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		fmt.Println("Can't access server for login (connection failed)")
-		return err
-	}
-
-	c.HTTPClient.LoginToken = token
-	fmt.Printf("Login user %s successfully\n", username)
-	return nil
-}
-
-// LoginUser performs user login
-func (c *RAGFlowClient) LoginUser(cmd *Command) error {
-	// First, ping the server to check if it's available
-	// For admin mode, use /admin/ping with useAPIBase=true
-	// For user mode, use /system/ping with useAPIBase=false
-	var pingPath string
-	var useAPIBase bool
-	if c.ServerType == "admin" {
-		pingPath = "/admin/ping"
-		useAPIBase = true
-	} else {
-		pingPath = "/system/ping"
-		useAPIBase = false
-	}
-
-	resp, err := c.HTTPClient.Request("GET", pingPath, useAPIBase, "web", nil, nil)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		fmt.Println("Can't access server for login (connection failed)")
-		return err
-	}
-
-	if resp.StatusCode != 200 {
-		fmt.Println("Server is down")
-		return fmt.Errorf("server is down")
-	}
-
-	// Check response - admin returns JSON with message "PONG", user returns plain "pong"
-	resJSON, err := resp.JSON()
-	if err == nil {
-		// Admin mode returns {"code":0,"message":"PONG"}
-		if msg, ok := resJSON["message"].(string); !ok || msg != "pong" {
-			fmt.Println("Server is down")
-			return fmt.Errorf("server is down")
-		}
-	} else {
-		// User mode returns plain "pong"
-		if string(resp.Body) != "pong" {
-			fmt.Println("Server is down")
-			return fmt.Errorf("server is down")
-		}
-	}
-
-	email, ok := cmd.Params["email"].(string)
-	if !ok {
-		return fmt.Errorf("email not provided")
-	}
-
-	password, ok := cmd.Params["password"].(string)
-	if !ok {
-		// Get password from user input (hidden)
-		fmt.Printf("password for %s: ", email)
-		password, err = readPassword()
-		if err != nil {
-			return fmt.Errorf("failed to read password: %w", err)
-		}
-		password = strings.TrimSpace(password)
-	}
-
-	// Login
-	token, err := c.loginUser(email, password)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		fmt.Println("Can't access server for login (connection failed)")
-		return err
-	}
-
-	c.HTTPClient.LoginToken = token
-	fmt.Printf("Login user %s successfully\n", email)
-	return nil
-}
-
-// loginUser performs the actual login request
-func (c *RAGFlowClient) loginUser(email, password string) (string, error) {
-	// Encrypt password using scrypt (same as Python implementation)
-	encryptedPassword, err := EncryptPassword(password)
-	if err != nil {
-		return "", fmt.Errorf("failed to encrypt password: %w", err)
-	}
-
-	payload := map[string]interface{}{
-		"email":    email,
-		"password": encryptedPassword,
-	}
-
-	var path string
-	if c.ServerType == "admin" {
-		path = "/admin/login"
-	} else {
-		path = "/user/login"
-	}
-
-	resp, err := c.HTTPClient.Request("POST", path, c.ServerType == "admin", "", nil, payload)
-	if err != nil {
-		return "", err
-	}
-
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return "", fmt.Errorf("login failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return "", fmt.Errorf("login failed: %s", result.Message)
-	}
-
-	token := resp.Headers.Get("Authorization")
-	if token == "" {
-		return "", fmt.Errorf("login failed: missing Authorization header")
-	}
-
-	return token, nil
-}
-
-func (c *RAGFlowClient) Logout() (ResponseIf, error) {
-	if c.HTTPClient.LoginToken == "" {
-		return nil, fmt.Errorf("not logged in")
-	}
-
-	var path string
-	if c.ServerType == "admin" {
-		path = "/admin/logout"
-	} else {
-		path = "/user/logout"
-	}
-
-	resp, err := c.HTTPClient.Request("GET", path, c.ServerType == "admin", "web", nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("login failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("login failed: %s", result.Message)
-	}
-
-	return &result, nil
-}
-
-// readPassword reads password from terminal without echoing
-func readPassword() (string, error) {
-	// Check if stdin is a terminal by trying to get terminal size
-	if isTerminal() {
-		// Use stty to disable echo
-		cmd := exec.Command("stty", "-echo")
-		cmd.Stdin = os.Stdin
-		if err := cmd.Run(); err != nil {
-			// Fallback: read normally
-			return readPasswordFallback()
-		}
-		defer func() {
-			// Re-enable echo
-			cmd := exec.Command("stty", "echo")
-			cmd.Stdin = os.Stdin
-			cmd.Run()
-		}()
-
-		reader := bufio.NewReader(os.Stdin)
-		password, err := reader.ReadString('\n')
-		fmt.Println() // New line after password input
-		if err != nil {
-			return "", err
-		}
-		return strings.TrimSpace(password), nil
-	}
-
-	// Fallback for non-terminal input (e.g., piped input)
-	return readPasswordFallback()
-}
-
-// isTerminal checks if stdin is a terminal
-func isTerminal() bool {
-	var termios syscall.Termios
-	_, _, err := syscall.Syscall6(syscall.SYS_IOCTL, os.Stdin.Fd(), syscall.TCGETS, uintptr(unsafe.Pointer(&termios)), 0, 0, 0)
-	return err == 0
-}
-
-// readPasswordFallback reads password as plain text (fallback mode)
-func readPasswordFallback() (string, error) {
-	reader := bufio.NewReader(os.Stdin)
-	password, err := reader.ReadString('\n')
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(password), nil
-}
-
 // ExecuteCommand executes a parsed command
 // Returns benchmark result map for commands that support it (e.g., ping_server with iterations > 1)
 func (c *RAGFlowClient) ExecuteCommand(cmd *Command) (ResponseIf, error) {
@@ -420,6 +160,14 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListAdminTokens(cmd)
 	case "drop_token":
 		return c.DropAdminToken(cmd)
+	case "list_available_providers":
+		return c.ListAvailableProviders(cmd)
+	case "show_provider":
+		return c.ShowProvider(cmd)
+	case "list_provider_models":
+		return c.ListModels(cmd)
+	case "show_model":
+		return c.ShowModel(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
@@ -463,11 +211,30 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CreateDocMetaIndex(cmd)
 	case "drop_doc_meta_index":
 		return c.DropDocMetaIndex(cmd)
-	// Filesystem commands
+	case "list_pool_providers":
+		return c.ListAvailableProviders(cmd)
+	case "show_provider":
+		return c.ShowProvider(cmd)
+	case "list_provider_models":
+		return c.ListModels(cmd)
+	case "show_model":
+		return c.ShowModel(cmd)
+	// Provider commands
+	case "create_provider":
+		return c.CreateProvider(cmd)
+	case "list_providers":
+		return c.ListProviders(cmd)
+	case "drop_provider":
+		return c.DropProvider(cmd)
+	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)
 	case "ce_search":
 		return c.CESearch(cmd)
+	case "insert_dataset_from_file":
+		return c.InsertDatasetFromFile(cmd)
+	case "insert_metadata_from_file":
+		return c.InsertMetadataFromFile(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
