@@ -19,6 +19,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"ragflow/internal/entity"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -26,7 +27,6 @@ import (
 	"github.com/google/uuid"
 
 	"ragflow/internal/dao"
-	"ragflow/internal/model"
 )
 
 // ChatService chat service
@@ -49,7 +49,7 @@ func NewChatService() *ChatService {
 
 // ChatWithKBNames chat with knowledge base names
 type ChatWithKBNames struct {
-	*model.Chat
+	*entity.Chat
 	KBNames []string `json:"kb_names"`
 }
 
@@ -109,7 +109,7 @@ type ListChatsNextResponse struct {
 
 // ListChatsNext list chats with advanced filtering (equivalent to list_dialogs_next)
 func (s *ChatService) ListChatsNext(userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string) (*ListChatsNextResponse, error) {
-	var chats []*model.Chat
+	var chats []*entity.Chat
 	var total int64
 	var err error
 
@@ -142,7 +142,7 @@ func (s *ChatService) ListChatsNext(userID string, keywords string, page, pageSi
 				}
 				chats = chats[start:end]
 			} else {
-				chats = []*model.Chat{}
+				chats = []*entity.Chat{}
 			}
 		}
 	}
@@ -164,7 +164,7 @@ func (s *ChatService) ListChatsNext(userID string, keywords string, page, pageSi
 }
 
 // getKBNames gets knowledge base names by IDs
-func (s *ChatService) getKBNames(kbIDs model.JSONSlice) []string {
+func (s *ChatService) getKBNames(kbIDs entity.JSONSlice) []string {
 	var names []string
 	for _, kbID := range kbIDs {
 		kbIDStr, ok := kbID.(string)
@@ -225,7 +225,7 @@ type SetDialogRequest struct {
 
 // SetDialogResponse set chat response
 type SetDialogResponse struct {
-	*model.Chat
+	*entity.Chat
 	KBNames []string `json:"kb_names"`
 }
 
@@ -393,7 +393,7 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 	}
 
 	// Convert prompt config to JSONMap with all fields
-	promptConfigMap := model.JSONMap{
+	promptConfigMap := entity.JSONMap{
 		"system":           promptConfig.System,
 		"prologue":         promptConfig.Prologue,
 		"empty_response":   promptConfig.EmptyResponse,
@@ -420,7 +420,7 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 	}
 
 	// Convert kbIDs to JSONSlice
-	kbIDsJSON := make(model.JSONSlice, len(kbIDs))
+	kbIDsJSON := make(entity.JSONSlice, len(kbIDs))
 	for i, id := range kbIDs {
 		kbIDsJSON[i] = id
 	}
@@ -441,7 +441,7 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 		language := "English"
 
 		// Create new chat
-		chat := &model.Chat{
+		chat := &entity.Chat{
 			ID:                     newID,
 			TenantID:               tenantID,
 			Name:                   &name,
@@ -451,7 +451,7 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 			LLMID:                  llmID,
 			LLMSetting:             llmSetting,
 			PromptConfig:           promptConfigMap,
-			MetaDataFilter:         (*model.JSONMap)(&metaDataFilter),
+			MetaDataFilter:         (*entity.JSONMap)(&metaDataFilter),
 			TopN:                   topN,
 			TopK:                   topK,
 			RerankID:               rerankID,
@@ -558,7 +558,7 @@ func (s *ChatService) splitModelNameAndFactory(embdID string) string {
 }
 
 // getEmbdIDs extracts embedding IDs from knowledge bases
-func getEmbdIDs(kbs []*model.Knowledgebase) []string {
+func getEmbdIDs(kbs []*entity.Knowledgebase) []string {
 	ids := make([]string, len(kbs))
 	for i, kb := range kbs {
 		ids[i] = kb.EmbdID

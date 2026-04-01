@@ -28,6 +28,8 @@ def validate_chunk_details(dataset_id: str, document_id: str, payload: dict, chu
         assert chunk.important_keywords == payload["important_keywords"]
     if "questions" in payload:
         assert chunk.questions == [str(q).strip() for q in payload.get("questions", []) if str(q).strip()]
+    if "tag_kwd" in payload:
+        assert chunk.tag_kwd == payload["tag_kwd"]
 
 
 class TestAddChunk:
@@ -100,6 +102,34 @@ class TestAddChunk:
         ],
     )
     def test_questions(self, add_document, payload, expected_message):
+        dataset, document = add_document
+        chunks_count = len(document.list_chunks())
+
+        if expected_message:
+            with pytest.raises(Exception) as exception_info:
+                document.add_chunk(**payload)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
+        else:
+            chunk = document.add_chunk(**payload)
+            validate_chunk_details(dataset.id, document.id, payload, chunk)
+
+            sleep(1)
+            chunks = document.list_chunks()
+            assert len(chunks) == chunks_count + 1, str(chunks)
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "payload, expected_message",
+        [
+            ({"content": "chunk test test_tag_kwd 1", "tag_kwd": ["tag1", "tag2"]}, ""),
+            ({"content": "chunk test test_tag_kwd 2", "tag_kwd": [""]}, ""),
+            ({"content": "chunk test test_tag_kwd 3", "tag_kwd": [1]}, "not instance of"),
+            ({"content": "chunk test test_tag_kwd 4", "tag_kwd": ["tag", "tag"]}, ""),
+            ({"content": "chunk test test_tag_kwd 5", "tag_kwd": "abc"}, "not instance of"),
+            ({"content": "chunk test test_tag_kwd 6", "tag_kwd": 123}, "not instance of"),
+        ],
+    )
+    def test_tag_kwd(self, add_document, payload, expected_message):
         dataset, document = add_document
         chunks_count = len(document.list_chunks())
 

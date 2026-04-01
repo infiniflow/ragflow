@@ -55,6 +55,11 @@ func (p *Parser) Parse(adminCommand bool) (*Command, error) {
 		return p.parseMetaCommand()
 	}
 
+	// Check for ContextEngine commands (ls, cat, search)
+	if p.curToken.Type == TokenIdentifier && isCECommand(p.curToken.Value) {
+		return p.parseCECommand()
+	}
+
 	// Parse SQL-like command
 	return p.parseSQLCommand(adminCommand)
 }
@@ -81,6 +86,8 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenLogin:
 		return p.parseAdminLoginUser()
+	case TokenLogout:
+		return p.parseAdminLogout()
 	case TokenPing:
 		return p.parseAdminPingServer()
 	case TokenList:
@@ -131,6 +138,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenLogin:
 		return p.parseLoginUser()
+	case TokenLogout:
+		return p.parseLogout()
 	case TokenPing:
 		return p.parsePingServer()
 	case TokenList:
@@ -157,6 +166,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseGenerateCommand()
 	case TokenImport:
 		return p.parseImportCommand()
+	case TokenInsert:
+		return p.parseInsertCommand()
 	case TokenSearch:
 		return p.parseSearchCommand()
 	case TokenParse:
@@ -208,7 +219,17 @@ func (p *Parser) expectSemicolon() error {
 }
 
 func isKeyword(tokenType int) bool {
-	return tokenType >= TokenLogin && tokenType <= TokenPing
+	return tokenType >= TokenLogin && tokenType <= TokenMetadata
+}
+
+// isCECommand checks if the given string is a ContextEngine command
+func isCECommand(s string) bool {
+	upper := strings.ToUpper(s)
+	switch upper {
+	case "LS", "LIST", "SEARCH":
+		return true
+	}
+	return false
 }
 
 // Helper functions for parsing
@@ -236,4 +257,93 @@ func (p *Parser) parseNumber() (int, error) {
 func tokenTypeToString(t int) string {
 	// Simplified for error messages
 	return fmt.Sprintf("token(%d)", t)
+}
+
+// parseCECommand parses ContextEngine commands (ls, search)
+func (p *Parser) parseCECommand() (*Command, error) {
+	cmdName := strings.ToUpper(p.curToken.Value)
+
+	switch cmdName {
+	case "LS", "LIST":
+		return p.parseCEListCommand()
+	case "SEARCH":
+		return p.parseCESearchCommand()
+	default:
+		return nil, fmt.Errorf("unknown ContextEngine command: %s", cmdName)
+	}
+}
+
+// parseCEListCommand parses the ls command
+// Syntax: ls [path] or ls datasets
+func (p *Parser) parseCEListCommand() (*Command, error) {
+	p.nextToken() // consume LS/LIST
+
+	cmd := NewCommand("ce_ls")
+
+	// Check if there's a path argument
+	// Also accept TokenDatasets since "datasets" is a keyword but can be a path
+	if p.curToken.Type == TokenIdentifier || p.curToken.Type == TokenQuotedString ||
+		p.curToken.Type == TokenDatasets {
+		path := p.curToken.Value
+		// Remove quotes if present
+		if p.curToken.Type == TokenQuotedString {
+			path = strings.Trim(path, "\"'")
+		}
+		cmd.Params["path"] = path
+		p.nextToken()
+	} else {
+		// Default to "datasets" root
+		cmd.Params["path"] = "datasets"
+	}
+
+	// Optional semicolon
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// parseCESearchCommand parses the search command
+// Syntax: search <query> or search <query> in <path>
+func (p *Parser) parseCESearchCommand() (*Command, error) {
+	p.nextToken() // consume SEARCH
+
+	cmd := NewCommand("ce_search")
+
+	if p.curToken.Type != TokenIdentifier && p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected query after SEARCH")
+	}
+
+	query := p.curToken.Value
+	if p.curToken.Type == TokenQuotedString {
+		query = strings.Trim(query, "\"'")
+	}
+	cmd.Params["query"] = query
+	p.nextToken()
+
+	// Check for optional "in <path>" clause
+	if p.curToken.Type == TokenIdentifier && strings.ToUpper(p.curToken.Value) == "IN" {
+		p.nextToken() // consume IN
+
+		if p.curToken.Type != TokenIdentifier && p.curToken.Type != TokenQuotedString {
+			return nil, fmt.Errorf("expected path after IN")
+		}
+
+		path := p.curToken.Value
+		if p.curToken.Type == TokenQuotedString {
+			path = strings.Trim(path, "\"'")
+		}
+		cmd.Params["path"] = path
+		p.nextToken()
+	} else {
+		cmd.Params["path"] = "."
+	}
+
+	// Optional semicolon
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
 }

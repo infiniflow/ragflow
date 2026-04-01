@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 export const formSchema = z
   .object({
-    parseType: z.number(),
+    parse_type: z.number(),
     name: z.string().min(1, {
       message: 'Username must be at least 2 characters.',
     }),

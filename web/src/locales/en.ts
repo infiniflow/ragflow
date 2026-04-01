@@ -1015,6 +1015,8 @@ Example: Virtual Hosted Style`,
       newDocs: 'New docs',
       timeStarted: 'Time started',
       log: 'Log',
+      rssDescription:
+        'Connect to a public RSS or Atom feed and sync feed entries into your knowledge base.',
       confluenceDescription:
         'Integrate your Confluence workspace to search documentation.',
       s3Description:

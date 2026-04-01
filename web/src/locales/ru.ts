@@ -100,6 +100,7 @@ export default {
       search: 'Поиск',
       welcome: 'Добро пожаловать в',
       dataset: 'Датасет',
+      memories: 'Память',
     },
     knowledgeList: {
       welcome: 'С возвращением',
@@ -110,8 +111,12 @@ export default {
       doc: 'Документы',
       searchKnowledgePlaceholder: 'Поиск',
       noMoreData: `Это всё. Больше ничего нет.`,
+      parserRequired: 'Chunk method is required',
     },
     knowledgeDetails: {
+      redoAll: 'Очистите существующие фрагменты',
+      emptyMetadata: 'Нет метаданных',
+      metadataField: 'Поле метаданных',
       localUpload: 'Локальная загрузка',
       fileSize: 'Размер файла',
       fileType: 'Тип файла',
@@ -280,6 +285,9 @@ export default {
       reRankModelWaring: 'Re-rank модель очень требовательна ко времени.',
     },
     knowledgeConfiguration: {
+      overlappedPercent: 'Процент перекрытия(%)',
+      autoMetadata: 'Авто-метаданные',
+      autoMetadataTip: `Автоматическая генерация метаданных. Применяется к новым файлам во время синтаксического анализа (парсинга). Существующие файлы требуют повторного разбора для обновления (фрагменты остаются сохраненными). Имейте в виду, что дополнительные токены будут использоваться моделью индексации, указанной в разделе "Конфигурация".`,
       imageTableContextWindow: 'Окно контекста изображения и таблицы',
       imageTableContextWindowTip:
         'Захватывает N токенов текста выше и ниже изображения и таблицы, чтобы дать более богатый контекст.',
@@ -288,6 +296,15 @@ export default {
       scopeDataset: 'Датасет',
       generationScope: 'Область генерации',
       scopeSingleFile: 'Один файл',
+      mineruOptions: 'Опции MinerU',
+      mineruParseMethod: 'Метод парсинга',
+      mineruParseMethodTip:
+        'Метод для парсинга PDF: auto (автоматическое определение), txt (извлечение текста), ocr (оптическое распознавание символов)',
+      mineruFormulaEnable: 'Распознавание формул',
+      mineruFormulaEnableTip:
+        'Включает распознавание формул. Примечание: Для документов, написанных кириллицей, это может работать некорректно.',
+      mineruTableEnable: 'Распознавание таблиц',
+      mineruTableEnableTip: 'Включает распознавание и извлечение таблиц.',
       autoParse: 'Авто-парсинг',
       rebuildTip:
         'Повторно загружает файлы из связанного источника данных и снова их парсит.',
@@ -317,7 +334,9 @@ export default {
       editLinkDataPipeline: 'Редактировать пайплайн обработки',
       linkPipelineSetTip:
         'Управление связью пайплайна обработки с этим набором данных',
+      globalIndexModel: 'Индексирующая модель',
       default: 'По умолчанию',
+      settings: 'Настройки',
       dataPipeline: 'Переключить или настроить конвейер приема данных',
       linkDataPipeline: 'Связать пайплайн обработки',
       enableAutoGenerate: 'Включить авто-генерацию',
