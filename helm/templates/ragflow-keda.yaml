@@ -1,0 +1,81 @@
+{{- if ((.Values.ragflow.taskexecutor).autoscaling).enabled }}
+{{- /*
+  Resolve the Redis address for KEDA triggers.
+  Uses the internal service when redis.enabled=true, otherwise the external host/port.
+*/}}
+{{- $redisHost := "" }}
+{{- if .Values.redis.enabled }}
+  {{- $redisHost = printf "%s-redis-svc.%s.svc" (include "ragflow.fullname" .) .Release.Namespace }}
+{{- else }}
+  {{- $redisHost = required "env.REDIS_HOST is required when redis.enabled=false" .Values.env.REDIS_HOST }}
+{{- end }}
+{{- $redisPort := default "6379" .Values.env.REDIS_PORT }}
+{{- $address := printf "%s:%s" $redisHost $redisPort }}
+{{- $authName := printf "%s-redis-auth" (include "ragflow.fullname" .) }}
+{{- $pending := .Values.ragflow.taskexecutor.autoscaling.pendingEntriesCount | toString }}
+---
+# TriggerAuthentication: provides the Redis password to KEDA scalers
+# from the same Secret used by all ragflow pods.
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ $authName }}
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+spec:
+  secretTargetRef:
+    - parameter: password
+      name: {{ include "ragflow.fullname" . }}-env-config
+      key: REDIS_PASSWORD
+---
+# ScaledObject: autoscale ragflow-taskexecutor based on pending messages
+# in both RAGFlow Redis Streams (priority-1 first, then priority-0).
+#
+# RAGFlow uses Redis Streams with a consumer group:
+#   stream rag_flow_svr_queue_1   - high-priority tasks  (DB 1)
+#   stream rag_flow_svr_queue     - normal-priority tasks (DB 1)
+#   consumer group: rag_flow_svr_task_broker
+#
+# KEDA adds one replica for every <pendingEntriesCount> unprocessed messages
+# across either stream.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "ragflow.fullname" . }}-taskexecutor
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "ragflow.fullname" . }}-taskexecutor
+  minReplicaCount: {{ .Values.ragflow.taskexecutor.autoscaling.minReplicas }}
+  maxReplicaCount: {{ .Values.ragflow.taskexecutor.autoscaling.maxReplicas }}
+  pollingInterval: {{ default 15 .Values.ragflow.taskexecutor.autoscaling.pollingInterval }}
+  cooldownPeriod: {{ .Values.ragflow.taskexecutor.autoscaling.cooldownPeriod }}
+  # Keep minReplicas running if KEDA cannot reach Redis
+  fallback:
+    failureThreshold: 3
+    replicas: {{ .Values.ragflow.taskexecutor.autoscaling.minReplicas }}
+  triggers:
+    # High-priority queue (priority 1)
+    - type: redis-streams
+      authenticationRef:
+        name: {{ $authName }}
+      metadata:
+        address: {{ $address }}
+        stream: rag_flow_svr_queue_1
+        consumerGroup: rag_flow_svr_task_broker
+        pendingEntriesCount: {{ $pending | quote }}
+        databaseIndex: "1"
+        enableTLS: "false"
+    # Normal-priority queue (priority 0)
+    - type: redis-streams
+      authenticationRef:
+        name: {{ $authName }}
+      metadata:
+        address: {{ $address }}
+        stream: rag_flow_svr_queue
+        consumerGroup: rag_flow_svr_task_broker
+        pendingEntriesCount: {{ $pending | quote }}
+        databaseIndex: "1"
+        enableTLS: "false"
+{{- end }}

@@ -1,0 +1,87 @@
+{{- if .Values.tei.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ragflow.fullname" . }}-tei
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tei
+spec:
+  replicas: {{ .Values.tei.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "ragflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: tei
+  template:
+    metadata:
+      labels:
+        {{- include "ragflow.labels" . | nindent 8 }}
+        app.kubernetes.io/component: tei
+    spec:
+      {{- if or .Values.global.imagePullSecrets .Values.tei.image.pullSecrets }}
+      imagePullSecrets:
+        {{- with .Values.global.imagePullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.tei.image.pullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.tei.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tei.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: tei
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.tei.image.repository) }}:{{ .Values.tei.image.tag }}
+        {{- with .Values.tei.image.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
+        args:
+          - "--model-id"
+          - {{ .Values.tei.modelId | default "BAAI/bge-m3" | quote }}
+          - "--port"
+          - {{ .Values.tei.service.port | default "80" | quote }}
+        ports:
+          - containerPort: {{ .Values.tei.service.port | default 80 }}
+            name: http
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        {{- with .Values.tei.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ragflow.fullname" . }}-tei
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tei
+spec:
+  selector:
+    {{- include "ragflow.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: tei
+  ports:
+    - name: http
+      protocol: TCP
+      port: {{ .Values.tei.service.port | default 80 }}
+      targetPort: http
+  type: {{ .Values.tei.service.type | default "ClusterIP" }}
+{{- end }}

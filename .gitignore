@@ -212,3 +212,5 @@ backup
 
 /target
 tests/.env.test
+
+helm/values.yaml
