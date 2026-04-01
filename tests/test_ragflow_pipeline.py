@@ -102,7 +102,8 @@ def list_datasets(cfg: dict) -> list:
         raise RuntimeError(f"list_datasets failed: {data.get('message')}")
     return data["data"]
 
-
+# To be updated with the full country name → ISO code mapping as needed.
+# This allows users to input either format when creating datasets.
 MARKET_ISO_CODES = {
     "United Kingdom": "UK", "Ireland": "IE", "France": "FR",
     "Germany": "DE", "Italy": "IT", "Spain": "ES", "Belgium": "BE",
@@ -268,6 +269,129 @@ def create_pdf_dataset(
     return data["data"]
 
 
+def create_web_dataset(
+    cfg: dict,
+    brand: str,
+    car_model: str,
+    year: str,
+    market: str,
+    trim: str = "All",
+) -> dict:
+    """
+    MCP tool: create_web_dataset
+    Create a RagFlow dataset for HTML/web page ingestion (DeepDoc naive parser).
+    Dataset name is auto-generated:
+        {Brand}_{Model}_{Year}_{Market}_{Trim}_Web_{YYYYMMDD}_{HHMM}
+
+    chunk_method is "naive" — DeepDoc handles HTML structure automatically,
+    stripping tags and chunking by semantic paragraph boundaries.
+
+    Args:
+        cfg       : config dict from load_config()
+        brand     : car brand e.g. "Opel", "Peugeot"
+        car_model : car model e.g. "Corsa", "208"
+        year      : model year e.g. "2023", "2025"
+        market    : target market — ISO code or full name
+        trim      : car trim level (default: "All")
+
+    Returns:
+        dict with dataset metadata including "id" and "name"
+    """
+    from datetime import date
+    market_iso = _normalize_market(market)
+    name = _build_dataset_name(brand, car_model, year, market_iso, trim, "Web")
+    retrieval_date = date.today().isoformat()
+
+    resp = requests.post(
+        f"{cfg['base_url']}/api/v1/datasets",
+        headers=_headers(cfg),
+        json={
+            "name":            name,
+            "chunk_method":    "naive",
+            "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
+            "parser_config": {
+                "brand":          brand,
+                "car_model":      car_model,
+                "year":           year,
+                "market":         market_iso,
+                "trim":           trim,
+                "source_type":    "Web",
+                "retrieval_date": retrieval_date,
+            },
+        },
+    )
+    data = resp.json()
+    if data.get("code") != 0:
+        raise RuntimeError(f"create_web_dataset failed: {data.get('message')}")
+    print(f"✅ Web Dataset created: {data['data']['name']}")
+    print(f"   id={data['data']['id']}")
+    print(f"   brand={brand}, car_model={car_model}, year={year}, market={market_iso}, trim={trim}")
+    print(f"   retrieval_date={retrieval_date}")
+    return data["data"]
+
+
+def create_image_dataset(
+    cfg: dict,
+    brand: str,
+    car_model: str,
+    year: str,
+    market: str,
+    trim: str = "All",
+) -> dict:
+    """
+    MCP tool: create_image_dataset
+    Create a RagFlow dataset for image ingestion (DeepDoc picture parser).
+    Dataset name is auto-generated:
+        {Brand}_{Model}_{Year}_{Market}_{Trim}_Images_{YYYYMMDD}_{HHMM}
+
+    chunk_method is "picture" — DeepDoc vision parser extracts text via OCR
+    and generates semantic descriptions of visual content (specs, diagrams,
+    brochure images, badge/logo photos).
+
+    Args:
+        cfg       : config dict from load_config()
+        brand     : car brand e.g. "Opel", "Peugeot"
+        car_model : car model e.g. "Corsa", "208"
+        year      : model year e.g. "2023", "2025"
+        market    : target market — ISO code or full name
+        trim      : car trim level (default: "All")
+
+    Returns:
+        dict with dataset metadata including "id" and "name"
+    """
+    from datetime import date
+    market_iso = _normalize_market(market)
+    name = _build_dataset_name(brand, car_model, year, market_iso, trim, "Images")
+    retrieval_date = date.today().isoformat()
+
+    resp = requests.post(
+        f"{cfg['base_url']}/api/v1/datasets",
+        headers=_headers(cfg),
+        json={
+            "name":            name,
+            "chunk_method":    "picture",
+            "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
+            "parser_config": {
+                "brand":          brand,
+                "car_model":      car_model,
+                "year":           year,
+                "market":         market_iso,
+                "trim":           trim,
+                "source_type":    "Images",
+                "retrieval_date": retrieval_date,
+            },
+        },
+    )
+    data = resp.json()
+    if data.get("code") != 0:
+        raise RuntimeError(f"create_image_dataset failed: {data.get('message')}")
+    print(f"✅ Images Dataset created: {data['data']['name']}")
+    print(f"   id={data['data']['id']}")
+    print(f"   brand={brand}, car_model={car_model}, year={year}, market={market_iso}, trim={trim}")
+    print(f"   retrieval_date={retrieval_date}")
+    return data["data"]
+
+
 def delete_dataset(cfg: dict, dataset_id: str) -> bool:
     """
     MCP tool: delete_dataset
@@ -367,6 +491,136 @@ def ingest_pdf(
         raise RuntimeError(f"ingest_pdf failed: {data.get('message')}")
     doc = data["data"][0]
     print(f"✅ PDF uploaded: {path.name} (doc_id={doc['id']})")
+    return doc
+
+
+def ingest_html(
+    cfg: dict,
+    dataset_id: str,
+    source: str,
+) -> dict:
+    """
+    MCP tool: ingest_html
+    Upload an HTML page as a document in a dataset.
+    Accepts either a local file path or a URL (auto-downloaded to /tmp).
+    The dataset must have been created with chunk_method="naive".
+
+    Args:
+        cfg        : config dict from load_config()
+        dataset_id : target dataset ID (created with create_web_dataset())
+        source     : one of:
+                       - absolute/relative local path: "/ragflow/tests/corsa.html"
+                       - HTTP/HTTPS URL: "https://www.opel.ie/cars/corsa.html"
+                     If a URL is given, the page is fetched and saved to
+                     /tmp/<sanitised_filename>.html before upload.
+
+    Returns:
+        dict with document metadata including "id" field
+    """
+    import urllib.request
+    import re
+
+    # ── Resolve source to a local file path ──────────────────────────────────
+    if source.startswith("http://") or source.startswith("https://"):
+        safe_name = re.sub(r"[^\w\-.]", "_", source.split("//", 1)[-1])[:80]
+        if not safe_name.endswith(".html"):
+            safe_name += ".html"
+        local_path = Path(f"/tmp/{safe_name}")
+        print(f"🌐 Fetching HTML from URL: {source}")
+        urllib.request.urlretrieve(source, local_path)
+        print(f"   Saved to: {local_path}")
+    else:
+        local_path = Path(source)
+
+    if not local_path.exists():
+        raise FileNotFoundError(f"HTML file not found: {local_path}")
+
+    # ── Upload ────────────────────────────────────────────────────────────────
+    upload_headers = {"Authorization": f"Bearer {cfg['ragflow_api_key']}"}
+    with open(local_path, "rb") as f:
+        resp = requests.post(
+            f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/documents",
+            headers=upload_headers,
+            files={"file": (local_path.name, f, "text/html")},
+        )
+    data = resp.json()
+    if data.get("code") != 0:
+        raise RuntimeError(f"ingest_html failed: {data.get('message')}")
+    doc = data["data"][0]
+    print(f"✅ HTML uploaded: {local_path.name} (doc_id={doc['id']})")
+    return doc
+
+
+def ingest_image(
+    cfg: dict,
+    dataset_id: str,
+    source: str,
+) -> dict:
+    """
+    MCP tool: ingest_image
+    Upload an image file as a document in a dataset.
+    Accepts either a local file path or a URL (auto-downloaded to /tmp).
+    The dataset must have been created with chunk_method="picture".
+
+    Supported formats: JPEG, PNG, WEBP, BMP, TIFF (anything DeepDoc picture
+    parser accepts). DeepDoc will OCR any text present and generate a
+    semantic description of the visual content.
+
+    Args:
+        cfg        : config dict from load_config()
+        dataset_id : target dataset ID (created with create_image_dataset())
+        source     : one of:
+                       - absolute/relative local path: "/ragflow/tests/corsa_badge.jpg"
+                       - HTTP/HTTPS URL: "https://example.com/corsa_spec.jpg"
+                     If a URL is given, the image is fetched and saved to
+                     /tmp/<sanitised_filename> before upload.
+
+    Returns:
+        dict with document metadata including "id" field
+    """
+    import urllib.request
+    import mimetypes
+    import re
+
+    # ── MIME type map for upload Content-Type header ──────────────────────────
+    _MIME = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".png": "image/png",  ".webp": "image/webp",
+        ".bmp": "image/bmp",  ".tiff": "image/tiff", ".tif": "image/tiff",
+    }
+
+    # ── Resolve source to a local file path ──────────────────────────────────
+    if source.startswith("http://") or source.startswith("https://"):
+        safe_name = re.sub(r"[^\w\-.]", "_", source.split("//", 1)[-1])[:80]
+        ext = Path(safe_name).suffix.lower()
+        if ext not in _MIME:
+            safe_name += ".jpg"
+        local_path = Path(f"/tmp/{safe_name}")
+        print(f"🌐 Fetching image from URL: {source}")
+        urllib.request.urlretrieve(source, local_path)
+        print(f"   Saved to: {local_path}")
+    else:
+        local_path = Path(source)
+
+    if not local_path.exists():
+        raise FileNotFoundError(f"Image file not found: {local_path}")
+
+    ext = local_path.suffix.lower()
+    mime = _MIME.get(ext, mimetypes.guess_type(str(local_path))[0] or "image/jpeg")
+
+    # ── Upload ────────────────────────────────────────────────────────────────
+    upload_headers = {"Authorization": f"Bearer {cfg['ragflow_api_key']}"}
+    with open(local_path, "rb") as f:
+        resp = requests.post(
+            f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/documents",
+            headers=upload_headers,
+            files={"file": (local_path.name, f, mime)},
+        )
+    data = resp.json()
+    if data.get("code") != 0:
+        raise RuntimeError(f"ingest_image failed: {data.get('message')}")
+    doc = data["data"][0]
+    print(f"✅ Image uploaded: {local_path.name} (doc_id={doc['id']}, mime={mime})")
     return doc
 
 
@@ -857,6 +1111,170 @@ def run_pdf_pipeline(
     }
 
 
+def run_web_pipeline(
+    cfg: dict,
+    source: str,
+    question: str,
+    brand: str,
+    car_model: str,
+    year: str,
+    market: str,
+    trim: str = "All",
+    top_n: int = 3,
+    similarity_threshold: float = 0.1,
+    cleanup: bool = False,
+) -> dict:
+    """
+    MCP tool: run_web_pipeline
+    Run the complete HTML/web ingestion pipeline end-to-end:
+    create dataset → upload HTML → parse → retrieve → display.
+
+    Accepts a local HTML file path or a live URL. If a URL is given,
+    the page is fetched to /tmp before upload (see ingest_html).
+
+    Args:
+        cfg                  : config dict from load_config()
+        source               : local path or URL of the HTML page.
+                               Local example : "/ragflow/tests/corsa_ie.html"
+                               URL example   : "https://www.opel.ie/cars/corsa.html"
+        question             : retrieval query to test after ingestion
+        brand                : car brand e.g. "Opel", "Peugeot"
+        car_model            : car model e.g. "Corsa", "208"
+        year                 : model year e.g. "2023", "2025"
+        market               : target market ISO code or full name
+        trim                 : trim level (default: "All")
+        top_n                : number of chunks to retrieve
+        similarity_threshold : minimum similarity score
+        cleanup              : if True, delete dataset after test (default: False)
+
+    Returns:
+        dict with keys: dataset_id, doc_id, chunks, elapsed_seconds, source
+    """
+    print(f"\n{'='*60}")
+    print(f"  WEB PIPELINE TEST")
+    print(f"  Source  : {source}")
+    print(f"  Brand   : {brand} {car_model} {year} {_normalize_market(market)}")
+    print(f"{'='*60}")
+
+    start = time.time()
+
+    # Step 1 — Create dataset
+    dataset = create_web_dataset(cfg, brand, car_model, year, market, trim)
+    dataset_id = dataset["id"]
+
+    # Step 2 — Upload HTML (local or URL)
+    doc = ingest_html(cfg, dataset_id, source)
+    doc_id = doc["id"]
+
+    # Step 3 — Trigger parsing
+    trigger_parsing(cfg, dataset_id, doc_id)
+
+    # Step 4 — Wait for completion
+    wait_for_completion(cfg, dataset_id, doc_id)
+
+    # Step 5 — Retrieve
+    chunks = retrieve(cfg, dataset_id, question, top_n, similarity_threshold)
+
+    # Step 6 — Display
+    display_results(chunks)
+
+    elapsed = round(time.time() - start, 1)
+    print(f"\n⏱️  Total pipeline time: {elapsed}s")
+
+    if cleanup:
+        delete_dataset(cfg, dataset_id)
+
+    return {
+        "dataset_id":      dataset_id,
+        "doc_id":          doc_id,
+        "chunks":          chunks,
+        "elapsed_seconds": elapsed,
+        "source":          source,
+    }
+
+
+def run_image_pipeline(
+    cfg: dict,
+    source: str,
+    question: str,
+    brand: str,
+    car_model: str,
+    year: str,
+    market: str,
+    trim: str = "All",
+    top_n: int = 3,
+    similarity_threshold: float = 0.1,
+    cleanup: bool = False,
+) -> dict:
+    """
+    MCP tool: run_image_pipeline
+    Run the complete image ingestion pipeline end-to-end:
+    create dataset → upload image → parse (DeepDoc picture) → retrieve → display.
+
+    Accepts a local image file path or a URL. If a URL is given, the image
+    is fetched to /tmp before upload (see ingest_image).
+
+    Args:
+        cfg                  : config dict from load_config()
+        source               : local path or URL of the image file.
+                               Local example : "/ragflow/tests/corsa_badge.jpg"
+                               URL example   : "https://example.com/corsa_spec.png"
+        question             : retrieval query to test after ingestion
+        brand                : car brand e.g. "Opel", "Peugeot"
+        car_model            : car model e.g. "Corsa", "208"
+        year                 : model year e.g. "2023", "2025"
+        market               : target market ISO code or full name
+        trim                 : trim level (default: "All")
+        top_n                : number of chunks to retrieve
+        similarity_threshold : minimum similarity score
+        cleanup              : if True, delete dataset after test (default: False)
+
+    Returns:
+        dict with keys: dataset_id, doc_id, chunks, elapsed_seconds, source
+    """
+    print(f"\n{'='*60}")
+    print(f"  IMAGE PIPELINE TEST")
+    print(f"  Source  : {source}")
+    print(f"  Brand   : {brand} {car_model} {year} {_normalize_market(market)}")
+    print(f"{'='*60}")
+
+    start = time.time()
+
+    # Step 1 — Create dataset
+    dataset = create_image_dataset(cfg, brand, car_model, year, market, trim)
+    dataset_id = dataset["id"]
+
+    # Step 2 — Upload image (local or URL)
+    doc = ingest_image(cfg, dataset_id, source)
+    doc_id = doc["id"]
+
+    # Step 3 — Trigger parsing
+    trigger_parsing(cfg, dataset_id, doc_id)
+
+    # Step 4 — Wait for completion
+    wait_for_completion(cfg, dataset_id, doc_id)
+
+    # Step 5 — Retrieve
+    chunks = retrieve(cfg, dataset_id, question, top_n, similarity_threshold)
+
+    # Step 6 — Display
+    display_results(chunks)
+
+    elapsed = round(time.time() - start, 1)
+    print(f"\n⏱️  Total pipeline time: {elapsed}s")
+
+    if cleanup:
+        delete_dataset(cfg, dataset_id)
+
+    return {
+        "dataset_id":      dataset_id,
+        "doc_id":          doc_id,
+        "chunks":          chunks,
+        "elapsed_seconds": elapsed,
+        "source":          source,
+    }
+
+
 def compare_backends(
     cfg: dict,
     url: str,
@@ -1032,6 +1450,38 @@ if __name__ == "__main__":
     # chunks = retrieve_by_brand_model(cfg, "Opel", "Corsa", QUESTION,
     #                                   year="2025", market="IE", source_type="Docs")
     # display_results(chunks)
+
+    # Option I: HTML / web page ingestion (local file)
+    # run_web_pipeline(
+    #     cfg=cfg, source="/ragflow/tests/corsa_ie.html",
+    #     question="engine performance and fuel economy",
+    #     brand="Opel", car_model="Corsa", year="2025", market="IE", trim="All",
+    #     top_n=3, cleanup=False,
+    # )
+
+    # Option I (URL variant): fetch live page then ingest
+    # run_web_pipeline(
+    #     cfg=cfg, source="https://www.opel.ie/cars/corsa.html",
+    #     question="engine performance and fuel economy",
+    #     brand="Opel", car_model="Corsa", year="2025", market="IE", trim="All",
+    #     top_n=3, cleanup=False,
+    # )
+
+    # Option J: image ingestion (local file — DeepDoc picture parser)
+    # run_image_pipeline(
+    #     cfg=cfg, source="/ragflow/tests/corsa_badge.jpg",
+    #     question="exterior design and colour options",
+    #     brand="Opel", car_model="Corsa", year="2025", market="IE", trim="All",
+    #     top_n=3, cleanup=False,
+    # )
+
+    # Option J (URL variant): fetch image from URL then ingest
+    # run_image_pipeline(
+    #     cfg=cfg, source="https://example.com/corsa_spec.jpg",
+    #     question="exterior design and colour options",
+    #     brand="Opel", car_model="Corsa", year="2025", market="IE", trim="All",
+    #     top_n=3, cleanup=False,
+    # )
 
     # ── Default: run Option A (fastest smoke test) ────────────────────────────
     run_video_pipeline(
