@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { isEmpty } from 'lodash';
 import { Trash2 } from 'lucide-react';
 import { memo, useEffect, useRef } from 'react';
 import { useFieldArray, useForm, useFormContext } from 'react-hook-form';
@@ -149,37 +148,37 @@ function CardBody({ cardName }: CardBodyProps) {
   );
 }
 
-type GroupCardBodyProps = {
-  cardName: string;
-};
+// type GroupCardBodyProps = {
+//   cardName: string;
+// };
 
-function GroupCardBody({ cardName }: GroupCardBodyProps) {
-  const { t } = useTranslation();
-  const form = useFormContext();
+// function GroupCardBody({ cardName }: GroupCardBodyProps) {
+//   const { t } = useTranslation();
+//   const form = useFormContext();
 
-  const levelsName = `${cardName}.levels`;
+//   const levelsName = `${cardName}.levels`;
 
-  const { fields: levelFields } = useFieldArray({
-    name: levelsName,
-    control: form.control,
-  });
+//   const { fields: levelFields } = useFieldArray({
+//     name: levelsName,
+//     control: form.control,
+//   });
 
-  return (
-    <CardContent className="p-4">
-      <div className="space-y-4">
-        {levelFields.map((levelField, levelIndex) => (
-          <RAGFlowFormItem
-            key={levelField.id}
-            name={`${levelsName}.${levelIndex}.expression`}
-            label={`${t('flow.regularExpressions')}`}
-          >
-            <Input />
-          </RAGFlowFormItem>
-        ))}
-      </div>
-    </CardContent>
-  );
-}
+//   return (
+//     <CardContent className="p-4">
+//       <div className="space-y-4">
+//         {levelFields.map((levelField, levelIndex) => (
+//           <RAGFlowFormItem
+//             key={levelField.id}
+//             name={`${levelsName}.${levelIndex}.expression`}
+//             label={`${t('flow.regularExpressions')}`}
+//           >
+//             <Input />
+//           </RAGFlowFormItem>
+//         ))}
+//       </div>
+//     </CardContent>
+//   );
+// }
 
 const TitleChunkerForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslation();
@@ -227,28 +226,28 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
       initialMode.current = method;
 
       if (method === 'group') {
-        const rules = groupValues.current?.rules?.map((item) => {
-          const levels = item.levels.filter((level) => {
-            return !isEmpty(level.expression);
-          });
-          if (levels.length === 0) {
-            return { levels: [{ expression: '' }] };
-          }
-          return {
-            levels: levels,
-          };
-        });
+        // const rules = groupValues.current?.rules?.map((item) => {
+        //   const levels = item.levels.filter((level) => {
+        //     return !isEmpty(level.expression);
+        //   });
+        //   if (levels.length === 0) {
+        //     return { levels: [{ expression: '' }] };
+        //   }
+        //   return {
+        //     levels: levels,
+        //   };
+        // });
+        let modeValues: FormModeValues | null = null;
+        modeValues = groupValues.current;
         form.reset({
           method: 'group',
           hierarchy: undefined,
-          rules: rules || initialGroupValues.rules,
+          rules: modeValues?.rules || initialGroupValues.rules,
         });
       } else {
-        let modeValues: FormModeValues | null = null;
         const defaultHierarchy = Hierarchy.H3;
-
+        let modeValues: FormModeValues | null = null;
         modeValues = hierarchyModeValues.current;
-
         if (modeValues) {
           form.reset({
             method: method,
@@ -298,7 +297,7 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
             <SelectWithSearch options={hierarchyOptions}></SelectWithSearch>
           </RAGFlowFormItem>
         )}
-        {method === 'group' ? (
+        {/* {method === 'group' ? (
           <Card>
             <CardHeader className="flex flex-row justify-between items-center py-3 px-4 border-b bg-muted/20">
               <span className="font-medium text-sm">
@@ -307,48 +306,48 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
             </CardHeader>
             <GroupCardBody cardName={`${name}.0`} />
           </Card>
-        ) : (
-          <div className="space-y-4">
-            {fields.map((cardField, cardIndex) => (
-              <Card key={cardField.id}>
-                <CardHeader className="flex flex-row justify-between items-center py-3 px-4 border-b bg-muted/20">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm">
-                      {t('flow.rule', 'Rule')} {cardIndex + 1}
-                    </span>
-                  </div>
-                  {fields.length > 1 && (
-                    <Button
-                      type="button"
-                      variant={'ghost'}
-                      size="sm"
-                      onClick={() => remove(cardIndex)}
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </CardHeader>
-                <CardBody
-                  cardIndex={cardIndex}
-                  cardName={`${name}.${cardIndex}`}
-                />
-              </Card>
-            ))}
-          </div>
-        )}
-        {method !== 'group' && (
-          <BlockButton
-            onClick={() =>
-              append({
-                levels: [{ expression: '' }],
-              })
-            }
-            className="mt-4"
-          >
-            {t('flow.rule', 'Add Rule')}
-          </BlockButton>
-        )}
+        ) : ( */}
+        <div className="space-y-4">
+          {fields.map((cardField, cardIndex) => (
+            <Card key={cardField.id}>
+              <CardHeader className="flex flex-row justify-between items-center py-3 px-4 border-b bg-muted/20">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-sm">
+                    {t('flow.rule', 'Rule')} {cardIndex + 1}
+                  </span>
+                </div>
+                {fields.length > 1 && (
+                  <Button
+                    type="button"
+                    variant={'ghost'}
+                    size="sm"
+                    onClick={() => remove(cardIndex)}
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </CardHeader>
+              <CardBody
+                cardIndex={cardIndex}
+                cardName={`${name}.${cardIndex}`}
+              />
+            </Card>
+          ))}
+        </div>
+        {/* )} */}
+        {/* {method !== 'group' && ( */}
+        <BlockButton
+          onClick={() =>
+            append({
+              levels: [{ expression: '' }],
+            })
+          }
+          className="mt-4"
+        >
+          {t('flow.rule', 'Add Rule')}
+        </BlockButton>
+        {/* )} */}
       </FormWrapper>
       <div className="p-5">
         <Output list={outputList}></Output>
