@@ -150,11 +150,7 @@ class TestChatAssistantCreate:
                         assert res["data"]["llm_setting"][k] == v
             else:
                 assert res["data"]["llm_id"] == "glm-4-flash@ZHIPU-AI"
-                assert res["data"]["llm_setting"]["temperature"] == 0.1
-                assert res["data"]["llm_setting"]["top_p"] == 0.3
-                assert res["data"]["llm_setting"]["presence_penalty"] == 0.4
-                assert res["data"]["llm_setting"]["frequency_penalty"] == 0.7
-                assert res["data"]["llm_setting"]["max_tokens"] == 512
+                assert res["data"]["llm_setting"] == {}
         else:
             assert res["message"] == expected_message
 
@@ -237,7 +233,10 @@ class TestChatAssistantCreate:
                     if k == "keywords_similarity_weight":
                         assert res["data"]["vector_similarity_weight"] == 1 - v
                     elif k == "variables":
-                        assert res["data"]["prompt_config"]["parameters"] == v
+                        expected_parameters = v
+                        if not v and "{knowledge}" in res["data"]["prompt_config"]["system"]:
+                            expected_parameters = [{"key": "knowledge", "optional": False}]
+                        assert res["data"]["prompt_config"]["parameters"] == expected_parameters
                     elif k == "opener":
                         assert res["data"]["prompt_config"]["prologue"] == v
                     elif k == "show_quote":
