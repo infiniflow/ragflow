@@ -26,7 +26,7 @@ from typing import Union
 import xxhash
 from peewee import fn
 
-from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileType
+from api.db import KNOWLEDGEBASE_FOLDER_NAME, SKILLS_FOLDER_NAME, FileType
 from api.db.db_models import DB, Document, File, File2Document, Knowledgebase, Task
 from api.db.services import duplicate_name
 from api.db.services.common_service import CommonService
@@ -290,6 +290,28 @@ class FileService(CommonService):
         }
         cls.save(**file)
         return file
+
+    @classmethod
+    @DB.connection_context()
+    def init_skills_folder(cls, root_id, tenant_id):
+        # Initialize skills folder if not exists
+        # Args:
+        #     root_id: Root folder ID
+        #     tenant_id: Tenant ID
+        for _ in cls.model.select().where((cls.model.name == SKILLS_FOLDER_NAME) & (cls.model.parent_id == root_id)):
+            return
+        file_id = get_uuid()
+        file = {
+            "id": file_id,
+            "parent_id": root_id,
+            "tenant_id": tenant_id,
+            "created_by": tenant_id,
+            "name": SKILLS_FOLDER_NAME,
+            "type": FileType.FOLDER.value,
+            "size": 0,
+            "location": "",
+        }
+        cls.save(**file)
 
     @classmethod
     @DB.connection_context()

@@ -1,6 +1,7 @@
 import { FileIconMap } from '@/constants/file';
 import { cn } from '@/lib/utils';
 import { getExtension } from '@/utils/document-util';
+import { Settings } from 'lucide-react';
 import { CSSProperties } from 'react';
 
 type IconFontType = {
@@ -36,6 +37,14 @@ export function FileIcon({
   type,
 }: IconFontType & { type?: string }) {
   const isFolder = type === 'folder';
+  const isSkills = type === 'skills';
+  if (isSkills) {
+    return (
+      <span className={cn('size-4', className)}>
+        <Settings className="size-4" />
+      </span>
+    );
+  }
   return (
     <span className={cn('size-4', className)}>
       <IconFont

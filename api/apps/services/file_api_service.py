@@ -158,6 +158,7 @@ def list_files(tenant_id: str, args: dict):
         root_folder = FileService.get_root_folder(tenant_id)
         pf_id = root_folder["id"]
         FileService.init_knowledgebase_docs(pf_id, tenant_id)
+        FileService.init_skills_folder(pf_id, tenant_id)
 
     e, file = FileService.get_by_id(pf_id)
     if not e:

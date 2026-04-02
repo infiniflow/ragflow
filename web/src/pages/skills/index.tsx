@@ -9,6 +9,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { PageContainer } from '@/layouts/components/page-container';
+import { Routes } from '@/routes';
 import {
   FolderOpen,
   LayoutGrid,
@@ -20,7 +21,7 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLocation } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import SearchConfigModal from './components/search-config-modal';
 import SkillCard from './components/skill-card';
 import SkillDetail from './components/skill-detail';
@@ -61,6 +62,7 @@ const formatRelative = (timestamp: number): string => {
 const SkillsPage: React.FC = () => {
   const { t } = useTranslation();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const {
     skills,
     filteredSkills,
@@ -256,7 +258,16 @@ const SkillsPage: React.FC = () => {
         {/* Header */}
         <div className="mb-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-2xl font-semibold">{t('skills.title')}</h2>
+            <div className="flex items-center gap-2">
+              <span
+                className="text-text-secondary cursor-pointer hover:text-text-primary"
+                onClick={() => navigate(Routes.Files)}
+              >
+                root
+              </span>
+              <span className="text-text-secondary">/</span>
+              <h2 className="text-2xl font-semibold">{t('skills.title')}</h2>
+            </div>
             <TooltipProvider>
               <div className="flex items-center gap-2">
                 <Tooltip>
