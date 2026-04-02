@@ -1186,14 +1186,14 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to enable/disable model: %w", err)
+		return nil, fmt.Errorf("failed to chat model: %w", err)
 	}
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to enable/disable model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to chat model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 	var result SimpleResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("enable/disable model failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("chat model failed: invalid JSON (%w)", err)
 	}
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)

@@ -494,7 +494,7 @@ func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, mod
 	return common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName, userID, status string) (*string, common.ErrorCode, error) {
+func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName, userID, message string) (*string, common.ErrorCode, error) {
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -526,19 +526,18 @@ func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName
 			return nil, common.CodeNotFound, errors.New("provider not found")
 		}
 
-		sendUrl, resultUrl, err := dao.GetModelProviderManager().GetModelUrl(providerName, modelName, "chat")
+		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		if err != nil {
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
+		}
+
+		var response string
+		response, err = providerInfo.ModelDriver.Chat(&modelName, &instance.APIKey, &message, nil)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
-		if sendUrl != nil {
-			if resultUrl != nil {
-				message := fmt.Sprintf("Streamly chat to %s/%s", *sendUrl, *resultUrl)
-				return &message, common.CodeSuccess, nil
-			}
-			message := fmt.Sprintf("Chat to %s", *sendUrl)
-			return &message, common.CodeSuccess, nil
-		}
-		return nil, common.CodeServerError, errors.New("no url")
+
+		return &response, common.CodeSuccess, nil
 	}
 
 	return nil, common.CodeServerError, errors.New("model is disabled")

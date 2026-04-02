@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"ragflow/internal/entity/models"
 	"strings"
 )
 
@@ -142,22 +143,14 @@ type Model struct {
 	ModelTypeMap map[string]bool
 }
 
-// URLSuffix represents the URL suffixes for different API endpoints
-type URLSuffix struct {
-	Chat        string `json:"chat"`
-	AsyncChat   string `json:"async_chat"`
-	AsyncResult string `json:"async_result"`
-	Embedding   string `json:"embedding"`
-	Rerank      string `json:"rerank"`
-}
-
 // Provider represents an LLM provider
 type Provider struct {
-	Name      string    `json:"name"`
-	Tags      string    `json:"tags"`
-	URL       string    `json:"url"`
-	URLSuffix URLSuffix `json:"url_suffix"`
-	Models    []Model   `json:"models"`
+	Name        string           `json:"name"`
+	Tags        string           `json:"tags"`
+	URL         string           `json:"url"`
+	URLSuffix   models.URLSuffix `json:"url_suffix"`
+	Models      []Model          `json:"models"`
+	ModelDriver models.ModelDriver
 }
 
 // ProviderManager manages provider and model operations
@@ -182,6 +175,8 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 		return nil, fmt.Errorf("error reading directory %s: %w", dirPath, err)
 	}
 
+	modelFactory := models.NewModelFactory()
+
 	// Iterate through all files
 	for _, file := range files {
 		// Skip directories
@@ -198,7 +193,8 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 		filePath := filepath.Join(dirPath, file.Name())
 
 		// Read the file
-		data, err := os.ReadFile(filePath)
+		var data []byte
+		data, err = os.ReadFile(filePath)
 		if err != nil {
 			return nil, fmt.Errorf("error reading file %s: %w", filePath, err)
 		}
@@ -214,6 +210,11 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 			for _, modelType := range model.ModelTypes {
 				model.ModelTypeMap[modelType] = true
 			}
+		}
+
+		provider.ModelDriver, err = modelFactory.CreateModelDriver(provider.Name, provider.URL, provider.URLSuffix)
+		if err != nil {
+			return nil, fmt.Errorf("error creating model driver for provider %s: %w", provider.Name, err)
 		}
 
 		// Add to providers list
