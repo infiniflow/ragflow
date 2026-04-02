@@ -44,7 +44,7 @@ from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_by_id, \
     get_model_config_by_type_and_name
-from common.misc_utils import get_uuid
+from common.misc_utils import get_uuid, thread_pool_exec
 from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_json_result, \
     get_result, get_request_json, server_error_response, token_required, validate_request
 from rag.app.tag import label_question
@@ -61,11 +61,11 @@ async def create_agent_session(tenant_id, agent_id):
     user_id = req.get("user_id") or request.args.get("user_id", tenant_id)
     release_mode = bool(req.get("release", request.args.get("release", False)))
 
-    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
+    if not await thread_pool_exec(UserCanvasService.query, user_id=tenant_id, id=agent_id):
         return get_error_data_result("You cannot access the agent.")
 
     try:
-        cvs, dsl = UserCanvasService.get_agent_dsl_with_release(agent_id, release_mode, tenant_id)
+        cvs, dsl = await thread_pool_exec(UserCanvasService.get_agent_dsl_with_release, agent_id, release_mode, tenant_id)
     except LookupError:
         return get_error_data_result("Agent not found.")
     except PermissionError as e:
@@ -77,7 +77,7 @@ async def create_agent_session(tenant_id, agent_id):
 
     cvs.dsl = json.loads(str(canvas))
     # Get the version title based on release_mode
-    version_title = UserCanvasVersionService.get_latest_version_title(cvs.id, release_mode=release_mode)
+    version_title = await thread_pool_exec(UserCanvasVersionService.get_latest_version_title, cvs.id, release_mode=release_mode)
     conv = {
         "id": session_id,
         "dialog_id": cvs.id,
@@ -87,7 +87,7 @@ async def create_agent_session(tenant_id, agent_id):
         "dsl": cvs.dsl,
         "version_title": version_title
     }
-    API4ConversationService.save(**conv)
+    await thread_pool_exec(API4ConversationService.save, **conv)
     conv["agent_id"] = conv.pop("dialog_id")
     return get_result(data=conv)
 
@@ -100,12 +100,12 @@ async def chat_completion(tenant_id, chat_id):
         req = {"question": ""}
     if not req.get("session_id"):
         req["question"] = ""
-    dia = DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value)
+    dia = await thread_pool_exec(DialogService.query, tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value)
     if not dia:
         return get_error_data_result(f"You don't own the chat {chat_id}")
     dia = dia[0]
     if req.get("session_id"):
-        if not ConversationService.query(id=req["session_id"], dialog_id=chat_id):
+        if not await thread_pool_exec(ConversationService.query, id=req["session_id"], dialog_id=chat_id):
             return get_error_data_result(f"You don't own the session {req['session_id']}")
 
     metadata_condition = req.get("metadata_condition") or {}
@@ -113,7 +113,7 @@ async def chat_completion(tenant_id, chat_id):
         return get_error_data_result(message="metadata_condition must be an object.")
 
     if metadata_condition and req.get("question"):
-        metas = DocMetadataService.get_flatted_meta_by_kbs(dia.kb_ids or [])
+        metas = await thread_pool_exec(DocMetadataService.get_flatted_meta_by_kbs, dia.kb_ids or [])
         filtered_doc_ids = meta_filter(
             metas,
             convert_conditions(metadata_condition),
@@ -256,7 +256,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
     # Treat context tokens as reasoning tokens
     context_token_used = sum(num_tokens_from_string(message["content"]) for message in messages)
 
-    dia = DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value)
+    dia = await thread_pool_exec(DialogService.query, tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value)
     if not dia:
         return get_error_data_result(f"You don't own the chat {chat_id}")
     dia = dia[0]
@@ -267,7 +267,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
 
     doc_ids_str = None
     if metadata_condition:
-        metas = DocMetadataService.get_flatted_meta_by_kbs(dia.kb_ids or [])
+        metas = await thread_pool_exec(DocMetadataService.get_flatted_meta_by_kbs, dia.kb_ids or [])
         filtered_doc_ids = meta_filter(
             metas,
             convert_conditions(metadata_condition),
@@ -372,7 +372,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             response["usage"] = {"prompt_tokens": prompt_tokens, "completion_tokens": token_used, "total_tokens": prompt_tokens + token_used}
             if need_reference:
                 reference_payload = final_reference if final_reference is not None else last_ans.get("reference", [])
-                response["choices"][0]["delta"]["reference"] = _build_reference_chunks(
+                response["choices"][0]["delta"]["reference"] = await _build_reference_chunks(
                     reference_payload,
                     include_metadata=include_reference_metadata,
                     metadata_fields=metadata_fields,
@@ -426,7 +426,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             ],
         }
         if need_reference:
-            response["choices"][0]["message"]["reference"] = _build_reference_chunks(
+            response["choices"][0]["message"]["reference"] = await _build_reference_chunks(
                 answer.get("reference", {}),
                 include_metadata=include_reference_metadata,
                 metadata_fields=metadata_fields,
@@ -443,7 +443,7 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
     messages = req.get("messages", [])
     if not messages:
         return get_error_data_result("You must provide at least one message.")
-    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
+    if not await thread_pool_exec(UserCanvasService.query, user_id=tenant_id, id=agent_id):
         return get_error_data_result(f"You don't own the agent {agent_id}")
 
     filtered_messages = [m for m in messages if m["role"] in ["user", "assistant"]]
@@ -584,7 +584,7 @@ async def agent_completions(tenant_id, agent_id):
 @manager.route("/agents/<agent_id>/sessions", methods=["GET"])  # noqa: F821
 @token_required
 async def list_agent_session(tenant_id, agent_id):
-    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
+    if not await thread_pool_exec(UserCanvasService.query, user_id=tenant_id, id=agent_id):
         return get_error_data_result(message=f"You don't own the agent {agent_id}.")
     id = request.args.get("id")
     user_id = request.args.get("user_id")
@@ -597,7 +597,7 @@ async def list_agent_session(tenant_id, agent_id):
         desc = True
     # dsl defaults to True in all cases except for False and false
     include_dsl = request.args.get("dsl") != "False" and request.args.get("dsl") != "false"
-    total, convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id,
+    total, convs = await thread_pool_exec(API4ConversationService.get_list, agent_id, tenant_id, page_number, items_per_page, orderby, desc, id,
                                                     user_id, include_dsl)
     if not convs:
         return get_result(data=[])
@@ -650,7 +650,7 @@ async def delete_agent_session(tenant_id, agent_id):
     errors = []
     success_count = 0
     req = await get_request_json()
-    cvs = UserCanvasService.query(user_id=tenant_id, id=agent_id)
+    cvs = await thread_pool_exec(UserCanvasService.query, user_id=tenant_id, id=agent_id)
     if not cvs:
         return get_error_data_result(f"You don't own the agent {agent_id}")
 
@@ -660,7 +660,7 @@ async def delete_agent_session(tenant_id, agent_id):
     ids = req.get("ids")
     if not ids:
         if req.get("delete_all") is True:
-            ids = [conv.id for conv in API4ConversationService.query(dialog_id=agent_id)]
+            ids = [conv.id for conv in await thread_pool_exec(API4ConversationService.query, dialog_id=agent_id)]
             if not ids:
                 return get_result()
         else:
@@ -672,11 +672,11 @@ async def delete_agent_session(tenant_id, agent_id):
     conv_list = unique_conv_ids
 
     for session_id in conv_list:
-        conv = API4ConversationService.query(id=session_id, dialog_id=agent_id)
+        conv = await thread_pool_exec(API4ConversationService.query, id=session_id, dialog_id=agent_id)
         if not conv:
             errors.append(f"The agent doesn't own the session {session_id}")
             continue
-        API4ConversationService.delete_by_id(session_id)
+        await thread_pool_exec(API4ConversationService.delete_by_id, session_id)
         success_count += 1
 
     if errors:
@@ -709,9 +709,9 @@ async def ask_about(tenant_id):
         return get_error_data_result("`dataset_ids` should be a list.")
     req["kb_ids"] = req.pop("dataset_ids")
     for kb_id in req["kb_ids"]:
-        if not KnowledgebaseService.accessible(kb_id, tenant_id):
+        if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id, tenant_id):
             return get_error_data_result(f"You don't own the dataset {kb_id}.")
-        kbs = KnowledgebaseService.query(id=kb_id)
+        kbs = await thread_pool_exec(KnowledgebaseService.query, id=kb_id)
         kb = kbs[0]
         if kb.chunk_num == 0:
             return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
@@ -797,7 +797,7 @@ async def chatbot_completions(dialog_id):
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
-    objs = APIToken.query(beta=token)
+    objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
@@ -823,11 +823,11 @@ async def chatbots_inputs(dialog_id):
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
-    objs = APIToken.query(beta=token)
+    objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
-    e, dialog = DialogService.get_by_id(dialog_id)
+    e, dialog = await thread_pool_exec(DialogService.get_by_id, dialog_id)
     if not e:
         return get_error_data_result(f"Can't find dialog by ID: {dialog_id}")
 
@@ -849,7 +849,7 @@ async def agent_bot_completions(agent_id):
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
-    objs = APIToken.query(beta=token)
+    objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
@@ -892,11 +892,11 @@ async def begin_inputs(agent_id):
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
-    objs = APIToken.query(beta=token)
+    objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
-    e, cvs = UserCanvasService.get_by_id(agent_id)
+    e, cvs = await thread_pool_exec(UserCanvasService.get_by_id, agent_id)
     if not e:
         return get_error_data_result(f"Can't find agent by ID: {agent_id}")
 
@@ -913,7 +913,7 @@ async def ask_about_embedded():
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
-    objs = APIToken.query(beta=token)
+    objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
@@ -923,7 +923,7 @@ async def ask_about_embedded():
     search_id = req.get("search_id", "")
     search_config = {}
     if search_id:
-        if search_app := SearchService.get_detail(search_id):
+        if search_app := await thread_pool_exec(SearchService.get_detail, search_id):
             search_config = search_app.get("search_config", {})
 
     async def stream():
@@ -952,7 +952,7 @@ async def retrieval_test_embedded():
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
-    objs = APIToken.query(beta=token)
+    objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
@@ -987,7 +987,7 @@ async def retrieval_test_embedded():
         meta_data_filter = {}
         chat_mdl = None
         if req.get("search_id", ""):
-            search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
+            search_config = (await thread_pool_exec(SearchService.get_detail, req.get("search_id", ""))).get("search_config", {})
             meta_data_filter = search_config.get("meta_data_filter", {})
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_id = search_config.get("chat_id", "")
@@ -1012,20 +1012,20 @@ async def retrieval_test_embedded():
                 chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
         if meta_data_filter:
-            metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
+            metas = await thread_pool_exec(DocMetadataService.get_flatted_meta_by_kbs, kb_ids)
             local_doc_ids = await apply_meta_data_filter(meta_data_filter, metas, _question, chat_mdl, local_doc_ids)
 
-        tenants = UserTenantService.query(user_id=tenant_id)
+        tenants = await thread_pool_exec(UserTenantService.query, user_id=tenant_id)
         for kb_id in kb_ids:
             for tenant in tenants:
-                if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
+                if await thread_pool_exec(KnowledgebaseService.query, tenant_id=tenant.tenant_id, id=kb_id):
                     tenant_ids.append(tenant.tenant_id)
                     break
             else:
                 return get_json_result(data=False, message="Only owner of dataset authorized for this operation.",
                                        code=RetCode.OPERATING_ERROR)
 
-        e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
+        e, kb = await thread_pool_exec(KnowledgebaseService.get_by_id, kb_ids[0])
         if not e:
             return get_error_data_result(message="Knowledgebase not found!")
 
@@ -1084,7 +1084,7 @@ async def related_questions_embedded():
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
-    objs = APIToken.query(beta=token)
+    objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
@@ -1096,7 +1096,7 @@ async def related_questions_embedded():
     search_id = req.get("search_id", "")
     search_config = {}
     if search_id:
-        if search_app := SearchService.get_detail(search_id):
+        if search_app := await thread_pool_exec(SearchService.get_detail, search_id):
             search_config = search_app.get("search_config", {})
 
     question = req["question"]
@@ -1132,7 +1132,7 @@ async def detail_share_embedded():
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
-    objs = APIToken.query(beta=token)
+    objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
@@ -1141,15 +1141,15 @@ async def detail_share_embedded():
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
     try:
-        tenants = UserTenantService.query(user_id=tenant_id)
+        tenants = await thread_pool_exec(UserTenantService.query, user_id=tenant_id)
         for tenant in tenants:
-            if SearchService.query(tenant_id=tenant.tenant_id, id=search_id):
+            if await thread_pool_exec(SearchService.query, tenant_id=tenant.tenant_id, id=search_id):
                 break
         else:
             return get_json_result(data=False, message="Has no permission for this operation.",
                                    code=RetCode.OPERATING_ERROR)
 
-        search = SearchService.get_detail(search_id)
+        search = await thread_pool_exec(SearchService.get_detail, search_id)
         if not search:
             return get_error_data_result(message="Can't find this Search App!")
         return get_json_result(data=search)
@@ -1164,7 +1164,7 @@ async def mindmap():
     if len(token) != 2:
         return get_error_data_result(message='Authorization is not valid!')
     token = token[1]
-    objs = APIToken.query(beta=token)
+    objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
@@ -1172,7 +1172,7 @@ async def mindmap():
     req = await get_request_json()
 
     search_id = req.get("search_id", "")
-    search_app = SearchService.get_detail(search_id) if search_id else {}
+    search_app = (await thread_pool_exec(SearchService.get_detail, search_id)) if search_id else {}
 
     mind_map =await gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
     if "error" in mind_map:
@@ -1262,7 +1262,7 @@ async def tts(tenant_id):
     return resp
 
 
-def _build_reference_chunks(reference, include_metadata=False, metadata_fields=None):
+async def _build_reference_chunks(reference, include_metadata=False, metadata_fields=None):
     chunks = chunks_format(reference)
     if not include_metadata:
         return chunks
@@ -1280,7 +1280,7 @@ def _build_reference_chunks(reference, include_metadata=False, metadata_fields=N
 
     meta_by_doc = {}
     for kb_id, doc_ids in doc_ids_by_kb.items():
-        meta_map = DocMetadataService.get_metadata_for_documents(list(doc_ids), kb_id)
+        meta_map = await thread_pool_exec(DocMetadataService.get_metadata_for_documents, list(doc_ids), kb_id)
         if meta_map:
             meta_by_doc.update(meta_map)
 
