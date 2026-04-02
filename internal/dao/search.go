@@ -17,9 +17,8 @@
 package dao
 
 import (
+	"ragflow/internal/entity"
 	"strings"
-
-	"ragflow/internal/model"
 )
 
 // SearchDAO search data access object
@@ -31,12 +30,12 @@ func NewSearchDAO() *SearchDAO {
 }
 
 // ListByTenantIDs list searches by tenant IDs with pagination and filtering
-func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string) ([]*model.Search, int64, error) {
-	var searches []*model.Search
+func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string) ([]*entity.Search, int64, error) {
+	var searches []*entity.Search
 	var total int64
 
 	// Build query with join to user table for nickname and avatar
-	query := DB.Model(&model.Search{}).
+	query := DB.Model(&entity.Search{}).
 		Select(`
 			search.*,
 			user.nickname,
@@ -78,11 +77,11 @@ func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, p
 }
 
 // ListByOwnerIDs list searches by owner IDs with filtering (manual pagination)
-func (dao *SearchDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby string, desc bool, keywords string) ([]*model.Search, int64, error) {
-	var searches []*model.Search
+func (dao *SearchDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby string, desc bool, keywords string) ([]*entity.Search, int64, error) {
+	var searches []*entity.Search
 
 	// Build query with join to user table
-	query := DB.Model(&model.Search{}).
+	query := DB.Model(&entity.Search{}).
 		Select(`
 			search.*,
 			user.nickname,
@@ -117,8 +116,8 @@ func (dao *SearchDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby s
 }
 
 // GetByID gets search by ID
-func (dao *SearchDAO) GetByID(id string) (*model.Search, error) {
-	var search model.Search
+func (dao *SearchDAO) GetByID(id string) (*entity.Search, error) {
+	var search entity.Search
 	err := DB.Where("id = ?", id).First(&search).Error
 	if err != nil {
 		return nil, err

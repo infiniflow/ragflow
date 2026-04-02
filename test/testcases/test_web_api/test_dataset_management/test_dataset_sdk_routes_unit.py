@@ -149,6 +149,8 @@ def _load_dataset_module(monkeypatch):
 
     apps_pkg = ModuleType("api.apps")
     apps_pkg.__path__ = [str(repo_root / "api" / "apps")]
+    apps_pkg.login_required = lambda func: func
+    apps_pkg.current_user = SimpleNamespace(id="tenant-current")
     monkeypatch.setitem(sys.modules, "api.apps", apps_pkg)
     api_pkg.apps = apps_pkg
 
@@ -220,6 +222,17 @@ def _load_dataset_module(monkeypatch):
     file_service_mod.FileService = _StubFileService
     monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
     services_pkg.file_service = file_service_mod
+
+    connector_service_mod = ModuleType("api.db.services.connector_service")
+
+    class _StubConnector2KbService:
+        @staticmethod
+        def link_connectors(*_args, **_kwargs):
+            return []
+
+    connector_service_mod.Connector2KbService = _StubConnector2KbService
+    monkeypatch.setitem(sys.modules, "api.db.services.connector_service", connector_service_mod)
+    services_pkg.connector_service = connector_service_mod
 
     knowledgebase_service_mod = ModuleType("api.db.services.knowledgebase_service")
 
@@ -295,7 +308,13 @@ def _load_dataset_module(monkeypatch):
         def get_joined_tenants_by_user_id(_tenant_id):
             return [{"tenant_id": "tenant-1"}]
 
+    class _StubUserService:
+        @staticmethod
+        def get_by_ids(_ids):
+            return []
+
     user_service_mod.TenantService = _StubTenantService
+    user_service_mod.UserService = _StubUserService
     monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_service_mod)
     services_pkg.user_service = user_service_mod
 
@@ -377,6 +396,7 @@ def _load_dataset_module(monkeypatch):
     api_utils_mod.get_result = _get_result
     api_utils_mod.remap_dictionary_keys = lambda data: data
     api_utils_mod.token_required = _token_required
+    api_utils_mod.add_tenant_id_to_kwargs = lambda func: func
     api_utils_mod.verify_embedding_availability = lambda _embd_id, _tenant_id: (True, None)
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
@@ -415,6 +435,16 @@ def _load_dataset_module(monkeypatch):
     module.manager = _DummyManager()
     monkeypatch.setitem(sys.modules, module_name, module)
     spec.loader.exec_module(module)
+    # Backward-compatible aliases used by this unit test module.
+    module.KnowledgebaseService = module.dataset_api_service.KnowledgebaseService
+    module.DocumentService = module.dataset_api_service.DocumentService
+    module.File2DocumentService = module.dataset_api_service.File2DocumentService
+    module.FileService = module.dataset_api_service.FileService
+    module.TaskService = module.dataset_api_service.TaskService
+    module.TenantService = module.dataset_api_service.TenantService
+    module.settings = module.dataset_api_service.settings
+    module.search = search_mod
+    module.queue_raptor_o_graphrag_tasks = module.dataset_api_service.queue_raptor_o_graphrag_tasks
     return module
 
 
@@ -426,7 +456,8 @@ def test_create_route_error_matrix_unit(monkeypatch):
 
     monkeypatch.setattr(module.KnowledgebaseService, "create_with_name", lambda **_kwargs: (False, {"code": 777, "message": "early"}))
     res = _run(inspect.unwrap(module.create)("tenant-1"))
-    assert res["code"] == 777, res
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert res["message"] == {"code": 777, "message": "early"}, res
 
     monkeypatch.setattr(module.KnowledgebaseService, "create_with_name", lambda **_kwargs: (True, {"id": "kb-1"}))
     monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tenant_id: (False, None))
@@ -445,7 +476,7 @@ def test_create_route_error_matrix_unit(monkeypatch):
 
     monkeypatch.setattr(module.KnowledgebaseService, "save", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("save boom")))
     res = _run(inspect.unwrap(module.create)("tenant-1"))
-    assert res["message"] == "Database operation failed", res
+    assert res["message"] == "Internal server error", res
 
 
 @pytest.mark.p3
@@ -484,7 +515,8 @@ def test_update_route_branch_matrix_unit(monkeypatch):
 
     monkeypatch.setattr(module.KnowledgebaseService, "get_or_none", lambda **_kwargs: None)
     res = _run(inspect.unwrap(module.update)("tenant-1", "kb-1"))
-    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "lacks permission for dataset" in res["message"], res
 
     kb = _KB(kb_id="kb-1", name="old", chunk_num=0)
 
@@ -534,7 +566,7 @@ def test_update_route_branch_matrix_unit(monkeypatch):
     req_state.update({"pagerank": 0})
     res = _run(inspect.unwrap(module.update)("tenant-1", "kb-1"))
     assert res["code"] == module.RetCode.SUCCESS, res
-    assert update_calls and update_calls[-1][0] == {"exists": module.PAGERANK_FLD}, update_calls
+    assert update_calls and update_calls[-1][0] == {"exists": module.dataset_api_service.PAGERANK_FLD}, update_calls
 
     monkeypatch.setattr(module.KnowledgebaseService, "update_by_id", lambda *_args, **_kwargs: False)
     req_state.clear()
@@ -545,7 +577,7 @@ def test_update_route_branch_matrix_unit(monkeypatch):
     monkeypatch.setattr(module.KnowledgebaseService, "update_by_id", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
     res = _run(inspect.unwrap(module.update)("tenant-1", "kb-1"))
-    assert "Dataset created failed" in res["message"], res
+    assert "Dataset updated failed" in res["message"], res
 
     monkeypatch.setattr(
         module.KnowledgebaseService,
@@ -636,30 +668,30 @@ def test_run_trace_graphrag_matrix_unit(monkeypatch):
     warnings = []
     monkeypatch.setattr(module.logging, "warning", lambda msg, *_args, **_kwargs: warnings.append(msg))
 
-    res = inspect.unwrap(module.run_graphrag)("tenant-1", "")
+    res = _run(inspect.unwrap(module.run_graphrag)("tenant-1", ""))
     assert 'Dataset ID' in res["message"], res
 
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: False)
-    res = inspect.unwrap(module.run_graphrag)("tenant-1", "kb-1")
-    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
+    res = _run(inspect.unwrap(module.run_graphrag)("tenant-1", "kb-1"))
+    assert res["code"] == module.RetCode.DATA_ERROR, res
 
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
-    res = inspect.unwrap(module.run_graphrag)("tenant-1", "kb-1")
+    res = _run(inspect.unwrap(module.run_graphrag)("tenant-1", "kb-1"))
     assert "Invalid Dataset ID" in res["message"], res
 
     stale_kb = _KB(kb_id="kb-1", graphrag_task_id="task-old")
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, stale_kb))
     monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (False, None))
     monkeypatch.setattr(module.DocumentService, "get_by_kb_id", lambda **_kwargs: ([{"id": "doc-1"}], 1))
-    monkeypatch.setattr(module, "queue_raptor_o_graphrag_tasks", lambda **_kwargs: "task-new")
+    monkeypatch.setattr(module.dataset_api_service, "queue_raptor_o_graphrag_tasks", lambda **_kwargs: "task-new")
     monkeypatch.setattr(module.KnowledgebaseService, "update_by_id", lambda *_args, **_kwargs: True)
-    res = inspect.unwrap(module.run_graphrag)("tenant-1", "kb-1")
+    res = _run(inspect.unwrap(module.run_graphrag)("tenant-1", "kb-1"))
     assert res["code"] == module.RetCode.SUCCESS, res
     assert any("GraphRAG" in msg for msg in warnings), warnings
 
     monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (True, SimpleNamespace(progress=0)))
-    res = inspect.unwrap(module.run_graphrag)("tenant-1", "kb-1")
+    res = _run(inspect.unwrap(module.run_graphrag)("tenant-1", "kb-1"))
     assert "already running" in res["message"], res
 
     warnings.clear()
@@ -673,9 +705,9 @@ def test_run_trace_graphrag_matrix_unit(monkeypatch):
         queue_calls.update(kwargs)
         return "queued-id"
 
-    monkeypatch.setattr(module, "queue_raptor_o_graphrag_tasks", _queue)
+    monkeypatch.setattr(module.dataset_api_service, "queue_raptor_o_graphrag_tasks", _queue)
     monkeypatch.setattr(module.KnowledgebaseService, "update_by_id", lambda *_args, **_kwargs: False)
-    res = inspect.unwrap(module.run_graphrag)("tenant-1", "kb-1")
+    res = _run(inspect.unwrap(module.run_graphrag)("tenant-1", "kb-1"))
     assert res["code"] == module.RetCode.SUCCESS, res
     assert res["data"]["graphrag_task_id"] == "queued-id", res
     assert queue_calls["doc_ids"] == ["doc-1", "doc-2"], queue_calls
@@ -686,7 +718,7 @@ def test_run_trace_graphrag_matrix_unit(monkeypatch):
 
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: False)
     res = inspect.unwrap(module.trace_graphrag)("tenant-1", "kb-1")
-    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
+    assert res["code"] == module.RetCode.DATA_ERROR, res
 
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
@@ -712,39 +744,39 @@ def test_run_trace_raptor_matrix_unit(monkeypatch):
     warnings = []
     monkeypatch.setattr(module.logging, "warning", lambda msg, *_args, **_kwargs: warnings.append(msg))
 
-    res = inspect.unwrap(module.run_raptor)("tenant-1", "")
+    res = _run(inspect.unwrap(module.run_raptor)("tenant-1", ""))
     assert 'Dataset ID' in res["message"], res
 
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: False)
-    res = inspect.unwrap(module.run_raptor)("tenant-1", "kb-1")
-    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
+    res = _run(inspect.unwrap(module.run_raptor)("tenant-1", "kb-1"))
+    assert res["code"] == module.RetCode.DATA_ERROR, res
 
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
-    res = inspect.unwrap(module.run_raptor)("tenant-1", "kb-1")
+    res = _run(inspect.unwrap(module.run_raptor)("tenant-1", "kb-1"))
     assert "Invalid Dataset ID" in res["message"], res
 
     stale_kb = _KB(kb_id="kb-1", raptor_task_id="task-old")
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, stale_kb))
     monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (False, None))
     monkeypatch.setattr(module.DocumentService, "get_by_kb_id", lambda **_kwargs: ([{"id": "doc-1"}], 1))
-    monkeypatch.setattr(module, "queue_raptor_o_graphrag_tasks", lambda **_kwargs: "task-new")
+    monkeypatch.setattr(module.dataset_api_service, "queue_raptor_o_graphrag_tasks", lambda **_kwargs: "task-new")
     monkeypatch.setattr(module.KnowledgebaseService, "update_by_id", lambda *_args, **_kwargs: True)
-    res = inspect.unwrap(module.run_raptor)("tenant-1", "kb-1")
+    res = _run(inspect.unwrap(module.run_raptor)("tenant-1", "kb-1"))
     assert res["code"] == module.RetCode.SUCCESS, res
     assert any("RAPTOR" in msg for msg in warnings), warnings
 
     monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (True, SimpleNamespace(progress=0)))
-    res = inspect.unwrap(module.run_raptor)("tenant-1", "kb-1")
+    res = _run(inspect.unwrap(module.run_raptor)("tenant-1", "kb-1"))
     assert "already running" in res["message"], res
 
     warnings.clear()
     no_task_kb = _KB(kb_id="kb-1", raptor_task_id="")
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, no_task_kb))
     monkeypatch.setattr(module.DocumentService, "get_by_kb_id", lambda **_kwargs: ([{"id": "doc-1"}], 1))
-    monkeypatch.setattr(module, "queue_raptor_o_graphrag_tasks", lambda **_kwargs: "queued-raptor")
+    monkeypatch.setattr(module.dataset_api_service, "queue_raptor_o_graphrag_tasks", lambda **_kwargs: "queued-raptor")
     monkeypatch.setattr(module.KnowledgebaseService, "update_by_id", lambda *_args, **_kwargs: False)
-    res = inspect.unwrap(module.run_raptor)("tenant-1", "kb-1")
+    res = _run(inspect.unwrap(module.run_raptor)("tenant-1", "kb-1"))
     assert res["code"] == module.RetCode.SUCCESS, res
     assert res["data"]["raptor_task_id"] == "queued-raptor", res
     assert any("Cannot save raptor_task_id" in msg for msg in warnings), warnings
@@ -754,7 +786,7 @@ def test_run_trace_raptor_matrix_unit(monkeypatch):
 
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: False)
     res = inspect.unwrap(module.trace_raptor)("tenant-1", "kb-1")
-    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
+    assert res["code"] == module.RetCode.DATA_ERROR, res
 
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))

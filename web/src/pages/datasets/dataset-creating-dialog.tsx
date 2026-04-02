@@ -21,6 +21,7 @@ import { FormLayout } from '@/constants/form';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { omit } from 'lodash';
 import { useEffect } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -87,18 +88,17 @@ export function InputForm({ onOk }: IModalProps<any>) {
     },
   });
 
-  function onSubmit(data: z.infer<typeof FormSchema>) {
-    console.log('submit', data);
-    onOk?.(data);
-  }
-
   const parseType = useWatch({
     control: form.control,
     name: 'parseType',
   });
 
+  function onSubmit(data: z.infer<typeof FormSchema>) {
+    const nextData = parseType === 1 ? data : omit(data, 'chunk_method');
+    onOk?.(nextData);
+  }
+
   useEffect(() => {
-    console.log('parseType', parseType);
     if (parseType === 1) {
       form.setValue('pipeline_id', '');
     }
@@ -133,7 +133,9 @@ export function InputForm({ onOk }: IModalProps<any>) {
 
         <EmbeddingModelItem line={2} isEdit={false} />
         <ParseTypeItem />
-        {parseType === 1 && <ChunkMethodItem></ChunkMethodItem>}
+        {parseType === 1 && (
+          <ChunkMethodItem name="chunk_method"></ChunkMethodItem>
+        )}
         {parseType === 2 && (
           <DataFlowSelect
             isMult={false}

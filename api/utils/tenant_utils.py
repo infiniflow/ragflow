@@ -13,12 +13,23 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from common.constants import LLMType
 from api.db.services.tenant_llm_service import TenantLLMService
+
+_KEY_TO_MODEL_TYPE = {
+    "llm_id": LLMType.CHAT,
+    "embd_id": LLMType.EMBEDDING,
+    "asr_id": LLMType.SPEECH2TEXT,
+    "img2txt_id": LLMType.IMAGE2TEXT,
+    "rerank_id": LLMType.RERANK,
+    "tts_id": LLMType.TTS,
+}
 
 def ensure_tenant_model_id_for_params(tenant_id: str, param_dict: dict) -> dict:
     for key in ["llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id"]:
         if param_dict.get(key) and not param_dict.get(f"tenant_{key}"):
-            tenant_model = TenantLLMService.get_api_key(tenant_id, param_dict[key])
+            model_type = _KEY_TO_MODEL_TYPE.get(key)
+            tenant_model = TenantLLMService.get_api_key(tenant_id, param_dict[key], model_type)
             if tenant_model:
                 param_dict.update({f"tenant_{key}": tenant_model.id})
             else:

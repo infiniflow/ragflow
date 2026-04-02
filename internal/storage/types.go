@@ -78,8 +78,8 @@ type Storage interface {
 	// Returns the data or nil if not found
 	Get(bucket, fnm string, tenantID ...string) ([]byte, error)
 
-	// Rm removes an object from storage
-	Rm(bucket, fnm string, tenantID ...string) error
+	// Remove removes an object from storage
+	Remove(bucket, fnm string, tenantID ...string) error
 
 	// ObjExist checks if an object exists
 	ObjExist(bucket, fnm string, tenantID ...string) bool

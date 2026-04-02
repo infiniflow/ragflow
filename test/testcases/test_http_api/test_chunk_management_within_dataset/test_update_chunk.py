@@ -119,6 +119,25 @@ class TestUpdatedChunk:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
+            ({"tag_kwd": ["tag1", "tag2"]}, 0, ""),
+            ({"tag_kwd": [""]}, 0, ""),
+            ({"tag_kwd": [1]}, 102, "`tag_kwd` must be a list of strings"),
+            ({"tag_kwd": ["tag", "tag"]}, 0, ""),
+            ({"tag_kwd": "tag"}, 102, "`tag_kwd` should be a list"),
+            ({"tag_kwd": 123}, 102, "`tag_kwd` should be a list"),
+        ],
+    )
+    def test_tag_kwd(self, HttpApiAuth, add_chunks, payload, expected_code, expected_message):
+        dataset_id, document_id, chunk_ids = add_chunks
+        res = update_chunk(HttpApiAuth, dataset_id, document_id, chunk_ids[0], payload)
+        assert res["code"] == expected_code
+        if expected_code != 0:
+            assert res["message"] == expected_message
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "payload, expected_code, expected_message",
+        [
             ({"available": True}, 0, ""),
             pytest.param({"available": "True"}, 100, """ValueError("invalid literal for int() with base 10: \'True\'")""", marks=pytest.mark.skip),
             ({"available": 1}, 0, ""),

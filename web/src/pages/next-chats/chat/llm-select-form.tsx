@@ -1,7 +1,7 @@
 import { LargeModelFormFieldWithoutFilter } from '@/components/large-model-form-field';
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { Form } from '@/components/ui/form';
-import { useFetchDialog } from '@/hooks/use-chat-request';
+import { useFetchChat } from '@/hooks/use-chat-request';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isEmpty } from 'lodash';
 import { useEffect } from 'react';
@@ -10,7 +10,7 @@ import { z } from 'zod';
 
 export function LLMSelectForm() {
   const FormSchema = z.object(LlmSettingSchema);
-  const { data } = useFetchDialog();
+  const { data } = useFetchChat();
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
@@ -25,7 +25,6 @@ export function LLMSelectForm() {
     if (!isEmpty(data)) {
       form.reset({ llm_id: data.llm_id, ...data.llm_setting });
     }
-    form.reset(data);
   }, [data, form]);
 
   return (

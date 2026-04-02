@@ -17,8 +17,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useSelectFlatLlmList } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
-import { PropsWithChildren } from 'react';
+import { PropsWithChildren, useMemo } from 'react';
 
 export function CardWithForm() {
   return (
@@ -79,8 +80,17 @@ export function LabelCard({ children, className, ...props }: LabelCardProps) {
 }
 
 export function LLMLabelCard({ llmId }: { llmId?: string }) {
+  const flatLlmList = useSelectFlatLlmList();
+
+  const isValidLlm = useMemo(() => {
+    if (!llmId) return false;
+    return flatLlmList.some((llm) => llm.uuid === llmId);
+  }, [flatLlmList, llmId]);
+
   return (
-    <LabelCard>
+    <LabelCard
+      className={isValidLlm ? '' : 'bg-state-error-5 border-state-error border'}
+    >
       <LLMLabel value={llmId}></LLMLabel>
     </LabelCard>
   );

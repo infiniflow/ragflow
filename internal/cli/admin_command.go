@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package cli
 
 import (
@@ -983,8 +999,8 @@ func (c *RAGFlowClient) ShowUserPermission(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// CreateAdminToken generates an API token for a user (admin mode only)
-func (c *RAGFlowClient) CreateAdminToken(cmd *Command) (ResponseIf, error) {
+// GenerateAdminToken generates an API token for a user (admin mode only)
+func (c *RAGFlowClient) GenerateAdminToken(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "admin" {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
@@ -1003,7 +1019,7 @@ func (c *RAGFlowClient) CreateAdminToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to generate token: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonResponse
+	var result CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("generate token failed: invalid JSON (%w)", err)
 	}
@@ -1012,10 +1028,9 @@ func (c *RAGFlowClient) CreateAdminToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
 
-	// Remove extra field from data
-	for _, item := range result.Data {
-		delete(item, "extra")
-	}
+	delete(result.Data, "update_date")
+	delete(result.Data, "update_time")
+	delete(result.Data, "create_time")
 
 	result.Duration = resp.Duration
 	return &result, nil
@@ -1052,7 +1067,11 @@ func (c *RAGFlowClient) ListAdminTokens(cmd *Command) (ResponseIf, error) {
 
 	// Remove extra field from data
 	for _, item := range result.Data {
-		delete(item, "extra")
+		delete(item, "dialog_id")
+		delete(item, "source")
+		delete(item, "update_date")
+		delete(item, "update_time")
+		delete(item, "create_time")
 	}
 
 	result.Duration = resp.Duration

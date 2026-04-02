@@ -15,9 +15,9 @@
 #
 
 import asyncio
+import importlib
 import importlib.util
 import inspect
-import json
 import sys
 from copy import deepcopy
 from datetime import datetime
@@ -157,6 +157,10 @@ def _load_kb_module(monkeypatch):
     return module
 
 
+def _dataset_sdk_routes_unit_module():
+    return importlib.import_module("test.testcases.test_web_api.test_dataset_management.test_dataset_sdk_routes_unit")
+
+
 def _set_request_json(monkeypatch, module, payload):
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue(deepcopy(payload)))
 
@@ -183,147 +187,14 @@ def set_tenant_info():
 
 @pytest.mark.p3
 def test_create_branches(monkeypatch):
-    module = _load_kb_module(monkeypatch)
-
-    _set_request_json(monkeypatch, module, {"name": "early"})
-    monkeypatch.setattr(module.KnowledgebaseService, "create_with_name", lambda **_kwargs: (False, {"code": 777, "message": "early"}))
-    res = _run(inspect.unwrap(module.create)())
-    assert res["code"] == 777, res
-
-    _set_request_json(monkeypatch, module, {"name": "save-fail"})
-    monkeypatch.setattr(module.KnowledgebaseService, "create_with_name", lambda **_kwargs: (True, {"id": "kb-1"}))
-    monkeypatch.setattr(module.KnowledgebaseService, "save", lambda **_kwargs: False)
-    res = _run(inspect.unwrap(module.create)())
-    assert res["code"] == module.RetCode.DATA_ERROR, res
-
-    _set_request_json(monkeypatch, module, {"name": "save-ok"})
-    monkeypatch.setattr(module.KnowledgebaseService, "save", lambda **_kwargs: True)
-    res = _run(inspect.unwrap(module.create)())
-    assert res["code"] == module.RetCode.SUCCESS, res
-    assert res["data"]["kb_id"] == "kb-1", res
-
-    _set_request_json(monkeypatch, module, {"name": "save-ex"})
-    def _raise_save(**_kwargs):
-        raise RuntimeError("save boom")
-    monkeypatch.setattr(module.KnowledgebaseService, "save", _raise_save)
-    res = _run(inspect.unwrap(module.create)())
-    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
-    assert "save boom" in res["message"], res
+    module = _dataset_sdk_routes_unit_module()
+    module.test_create_route_error_matrix_unit(monkeypatch)
 
 
 @pytest.mark.p3
 def test_update_branches(monkeypatch):
-    module = _load_kb_module(monkeypatch)
-    update_route = _unwrap_route(module.update)
-
-    _set_request_json(monkeypatch, module, _base_update_payload(name=1))
-    res = _run(update_route())
-    assert res["code"] == module.RetCode.DATA_ERROR, res
-    assert "must be string" in res["message"], res
-
-    _set_request_json(monkeypatch, module, _base_update_payload(name=" "))
-    res = _run(update_route())
-    assert res["code"] == module.RetCode.DATA_ERROR, res
-    assert "can't be empty" in res["message"], res
-
-    _set_request_json(monkeypatch, module, _base_update_payload(name="a" * 129))
-    res = _run(update_route())
-    assert res["code"] == module.RetCode.DATA_ERROR, res
-    assert "large than" in res["message"], res
-
-    monkeypatch.setattr(module.settings, "DOC_ENGINE_INFINITY", True)
-    _set_request_json(monkeypatch, module, _base_update_payload(parser_id="tag"))
-    res = _run(update_route())
-    assert res["code"] == module.RetCode.OPERATING_ERROR, res
-
-    _set_request_json(monkeypatch, module, _base_update_payload(pagerank=50))
-    res = _run(update_route())
-    assert res["code"] == module.RetCode.DATA_ERROR, res
-    assert "pagerank" in res["message"], res
-
-    monkeypatch.setattr(module.settings, "DOC_ENGINE_INFINITY", False)
-    monkeypatch.setattr(module.KnowledgebaseService, "accessible4deletion", lambda *_args, **_kwargs: False)
-    _set_request_json(monkeypatch, module, _base_update_payload())
-    res = _run(update_route())
-    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
-
-    monkeypatch.setattr(module.KnowledgebaseService, "accessible4deletion", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [])
-    _set_request_json(monkeypatch, module, _base_update_payload())
-    res = _run(update_route())
-    assert res["code"] == module.RetCode.OPERATING_ERROR, res
-
-    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **kwargs: [SimpleNamespace(id="kb-1")] if kwargs.get("created_by") else [])
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
-    _set_request_json(monkeypatch, module, _base_update_payload())
-    res = _run(update_route())
-    assert res["code"] == module.RetCode.DATA_ERROR, res
-    assert "Can't find this dataset" in res["message"], res
-
-    kb = _DummyKB(kb_id="kb-1", name="old_name", pagerank=0)
-    def _query_duplicate(**kwargs):
-        if kwargs.get("created_by"):
-            return [SimpleNamespace(id="kb-1")]
-        if kwargs.get("name"):
-            return [SimpleNamespace(id="dup")]
-        return []
-    monkeypatch.setattr(module.KnowledgebaseService, "query", _query_duplicate)
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
-    monkeypatch.setattr(module.FileService, "filter_update", lambda *_args, **_kwargs: None)
-    _set_request_json(monkeypatch, module, _base_update_payload(name="new_name"))
-    res = _run(update_route())
-    assert res["code"] == module.RetCode.DATA_ERROR, res
-    assert "Duplicated dataset name" in res["message"], res
-
-    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **kwargs: [SimpleNamespace(id="kb-1")] if kwargs.get("created_by") else [])
-    monkeypatch.setattr(module.KnowledgebaseService, "update_by_id", lambda *_args, **_kwargs: False)
-    _set_request_json(monkeypatch, module, _base_update_payload(name="new_name", connectors=["c1"]))
-    res = _run(update_route())
-    assert res["code"] == module.RetCode.DATA_ERROR, res
-
-    async def _thread_pool_exec(func, *args, **kwargs):
-        return func(*args, **kwargs)
-
-    monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_exec)
-    monkeypatch.setattr(module.settings, "docStoreConn", SimpleNamespace(update=lambda *_args, **_kwargs: True))
-    monkeypatch.setattr(module.search, "index_name", lambda _tenant: "idx")
-    monkeypatch.setattr(module.KnowledgebaseService, "update_by_id", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(module.Connector2KbService, "link_connectors", lambda *_args, **_kwargs: ["warn"])
-    monkeypatch.setattr(module.logging, "error", lambda *_args, **_kwargs: None)
-
-    kb_first = _DummyKB(kb_id="kb-1", name="old_name", pagerank=0)
-    kb_second = _DummyKB(kb_id="kb-1", name="new_kb", pagerank=50)
-    get_by_id_results = [(True, kb_first), (True, kb_second)]
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: get_by_id_results.pop(0))
-    _set_request_json(monkeypatch, module, _base_update_payload(name="new_kb", pagerank=50, connectors=["conn-1"]))
-    res = _run(update_route())
-    assert res["code"] == module.RetCode.SUCCESS, res
-    assert res["data"]["connectors"] == ["conn-1"], res
-
-    kb_first = _DummyKB(kb_id="kb-1", name="old_name", pagerank=50)
-    kb_second = _DummyKB(kb_id="kb-1", name="new_kb", pagerank=0)
-    get_by_id_results = [(True, kb_first), (True, kb_second)]
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: get_by_id_results.pop(0))
-    monkeypatch.setattr(module.Connector2KbService, "link_connectors", lambda *_args, **_kwargs: [])
-    _set_request_json(monkeypatch, module, _base_update_payload(name="new_kb", pagerank=0))
-    res = _run(update_route())
-    assert res["code"] == module.RetCode.SUCCESS, res
-
-    kb_first = _DummyKB(kb_id="kb-1", name="old_name", pagerank=0)
-    get_by_id_results = [(True, kb_first), (False, None)]
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: get_by_id_results.pop(0))
-    _set_request_json(monkeypatch, module, _base_update_payload(name="new_kb"))
-    res = _run(update_route())
-    assert res["code"] == module.RetCode.DATA_ERROR, res
-    assert "Database error" in res["message"], res
-
-    def _raise_query(**_kwargs):
-        raise RuntimeError("update boom")
-    monkeypatch.setattr(module.KnowledgebaseService, "query", _raise_query)
-    _set_request_json(monkeypatch, module, _base_update_payload())
-    res = _run(update_route())
-    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
-    assert "update boom" in res["message"], res
+    module = _dataset_sdk_routes_unit_module()
+    module.test_update_route_branch_matrix_unit(monkeypatch)
 
 
 @pytest.mark.p3
@@ -382,113 +253,14 @@ def test_detail_branches(monkeypatch):
 
 @pytest.mark.p3
 def test_list_kbs_owner_ids_and_desc(monkeypatch):
-    module = _load_kb_module(monkeypatch)
-
-    _set_request_args(monkeypatch, module, {"keywords": "", "page": "1", "page_size": "2", "parser_id": "naive", "orderby": "create_time", "desc": "false"})
-    _set_request_json(monkeypatch, module, {})
-    monkeypatch.setattr(module.TenantService, "get_joined_tenants_by_user_id", lambda _uid: [{"tenant_id": "tenant-1"}])
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_tenant_ids", lambda *_args, **_kwargs: ([{"id": "kb-1", "tenant_id": "tenant-1"}], 1))
-    res = _run(inspect.unwrap(module.list_kbs)())
-    assert res["code"] == module.RetCode.SUCCESS, res
-    assert res["data"]["total"] == 1, res
-
-    _set_request_json(monkeypatch, module, {"owner_ids": ["tenant-1"]})
-    monkeypatch.setattr(
-        module.KnowledgebaseService,
-        "get_by_tenant_ids",
-        lambda *_args, **_kwargs: (
-            [{"id": "kb-1", "tenant_id": "tenant-1"}, {"id": "kb-2", "tenant_id": "tenant-2"}],
-            2,
-        ),
-    )
-    res = _run(inspect.unwrap(module.list_kbs)())
-    assert res["code"] == module.RetCode.SUCCESS, res
-    assert res["data"]["total"] == 1, res
-    assert all(kb["tenant_id"] == "tenant-1" for kb in res["data"]["kbs"]), res
-
-    def _raise_kb_list(*_args, **_kwargs):
-        raise RuntimeError("list boom")
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_tenant_ids", _raise_kb_list)
-    res = _run(inspect.unwrap(module.list_kbs)())
-    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
-    assert "list boom" in res["message"], res
+    module = _dataset_sdk_routes_unit_module()
+    module.test_list_knowledge_graph_delete_kg_matrix_unit(monkeypatch)
 
 
 @pytest.mark.p3
 def test_rm_and_rm_sync_branches(monkeypatch):
-    module = _load_kb_module(monkeypatch)
-
-    _set_request_json(monkeypatch, module, {"kb_id": "kb-1"})
-    monkeypatch.setattr(module.KnowledgebaseService, "accessible4deletion", lambda *_args, **_kwargs: False)
-    res = _run(inspect.unwrap(module.rm)())
-    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
-
-    monkeypatch.setattr(module.KnowledgebaseService, "accessible4deletion", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [])
-    res = _run(inspect.unwrap(module.rm)())
-    assert res["code"] == module.RetCode.OPERATING_ERROR, res
-
-    async def _thread_pool_exec(func, *args, **kwargs):
-        return func(*args, **kwargs)
-    monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_exec)
-
-    kbs = [SimpleNamespace(id="kb-1", tenant_id="tenant-1", name="kb-1")]
-    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: kbs)
-    monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [SimpleNamespace(id="doc-1")])
-    monkeypatch.setattr(module.DocumentService, "remove_document", lambda *_args, **_kwargs: False)
-    res = _run(inspect.unwrap(module.rm)())
-    assert res["code"] == module.RetCode.DATA_ERROR, res
-    assert "Document removal" in res["message"], res
-
-    monkeypatch.setattr(module.DocumentService, "remove_document", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(module.File2DocumentService, "get_by_document_id", lambda _doc_id: [SimpleNamespace(file_id="file-1")])
-    monkeypatch.setattr(module.FileService, "filter_delete", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(module.File2DocumentService, "delete_by_document_id", lambda _doc_id: None)
-
-    class _DocStore:
-        def delete(self, *_args, **_kwargs):
-            raise RuntimeError("drop failed")
-
-        def delete_idx(self, *_args, **_kwargs):
-            return True
-
-    monkeypatch.setattr(module.settings, "docStoreConn", _DocStore())
-    monkeypatch.setattr(module.search, "index_name", lambda _tenant_id: "idx")
-    monkeypatch.setattr(module.KnowledgebaseService, "delete_by_id", lambda _kb_id: False)
-    res = _run(inspect.unwrap(module.rm)())
-    assert res["code"] == module.RetCode.DATA_ERROR, res
-    assert "Knowledgebase removal" in res["message"], res
-
-    class _Storage:
-        def __init__(self):
-            self.removed = []
-
-        def remove_bucket(self, kb_id):
-            self.removed.append(kb_id)
-
-    storage = _Storage()
-    monkeypatch.setattr(module.settings, "STORAGE_IMPL", storage)
-
-    class _GoodDocStore:
-        def delete(self, *_args, **_kwargs):
-            return True
-
-        def delete_idx(self, *_args, **_kwargs):
-            return True
-
-    monkeypatch.setattr(module.settings, "docStoreConn", _GoodDocStore())
-    monkeypatch.setattr(module.KnowledgebaseService, "delete_by_id", lambda _kb_id: True)
-    res = _run(inspect.unwrap(module.rm)())
-    assert res["code"] == module.RetCode.SUCCESS, res
-    assert res["data"] is True, res
-    assert storage.removed == ["kb-1"], storage.removed
-
-    def _raise_rm(**_kwargs):
-        raise RuntimeError("rm boom")
-    monkeypatch.setattr(module.KnowledgebaseService, "query", _raise_rm)
-    res = _run(inspect.unwrap(module.rm)())
-    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
-    assert "rm boom" in res["message"], res
+    module = _dataset_sdk_routes_unit_module()
+    module.test_delete_route_error_summary_matrix_unit(monkeypatch)
 
 
 @pytest.mark.p3
@@ -562,78 +334,8 @@ def test_tags_and_meta_branches(monkeypatch):
 
 @pytest.mark.p3
 def test_knowledge_graph_branches(monkeypatch):
-    module = _load_kb_module(monkeypatch)
-
-    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: False)
-    res = _run(inspect.unwrap(module.knowledge_graph)("kb-1"))
-    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
-
-    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, _DummyKB(tenant_id="tenant-1")))
-    monkeypatch.setattr(module.search, "index_name", lambda _tenant_id: "idx")
-    monkeypatch.setattr(module.settings, "docStoreConn", SimpleNamespace(index_exist=lambda *_args, **_kwargs: False))
-    res = _run(inspect.unwrap(module.knowledge_graph)("kb-1"))
-    assert res["code"] == module.RetCode.SUCCESS, res
-    assert res["data"] == {"graph": {}, "mind_map": {}}, res
-
-    monkeypatch.setattr(module.settings, "docStoreConn", SimpleNamespace(index_exist=lambda *_args, **_kwargs: True))
-
-    class _EmptyRetriever:
-        async def search(self, *_args, **_kwargs):
-            return SimpleNamespace(ids=[], field={})
-
-    monkeypatch.setattr(module.settings, "retriever", _EmptyRetriever())
-    res = _run(inspect.unwrap(module.knowledge_graph)("kb-1"))
-    assert res["code"] == module.RetCode.SUCCESS, res
-    assert res["data"] == {"graph": {}, "mind_map": {}}, res
-
-    graph_payload = {
-        "nodes": [{"id": "n2", "pagerank": 2}, {"id": "n1", "pagerank": 3}],
-        "edges": [
-            {"source": "n1", "target": "n2", "weight": 2},
-            {"source": "n1", "target": "n1", "weight": 3},
-            {"source": "n1", "target": "n3", "weight": 4},
-        ],
-    }
-
-    class _GraphRetriever:
-        async def search(self, *_args, **_kwargs):
-            return SimpleNamespace(
-                ids=["bad"],
-                field={
-                    "bad": {"knowledge_graph_kwd": "graph", "content_with_weight": "{bad json"},
-                },
-            )
-
-    monkeypatch.setattr(module.settings, "retriever", _GraphRetriever())
-    res = _run(inspect.unwrap(module.knowledge_graph)("kb-1"))
-    assert res["code"] == module.RetCode.SUCCESS, res
-    assert res["data"]["graph"] == {}, res
-
-    class _GraphRetrieverSuccess:
-        async def search(self, *_args, **_kwargs):
-            return SimpleNamespace(
-                ids=["good"],
-                field={
-                    "good": {"knowledge_graph_kwd": "graph", "content_with_weight": json.dumps(graph_payload)},
-                },
-            )
-
-    monkeypatch.setattr(module.settings, "retriever", _GraphRetrieverSuccess())
-    res = _run(inspect.unwrap(module.knowledge_graph)("kb-1"))
-    assert res["code"] == module.RetCode.SUCCESS, res
-    assert len(res["data"]["graph"]["nodes"]) == 2, res
-    assert len(res["data"]["graph"]["edges"]) == 1, res
-
-    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: False)
-    res = inspect.unwrap(module.delete_knowledge_graph)("kb-1")
-    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
-
-    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(module.settings, "docStoreConn", SimpleNamespace(delete=lambda *_args, **_kwargs: True))
-    res = inspect.unwrap(module.delete_knowledge_graph)("kb-1")
-    assert res["code"] == module.RetCode.SUCCESS, res
-    assert res["data"] is True, res
+    module = _dataset_sdk_routes_unit_module()
+    module.test_list_knowledge_graph_delete_kg_matrix_unit(monkeypatch)
 
 
 @pytest.mark.p3
@@ -851,6 +553,14 @@ def test_pipeline_log_detail_and_delete_routes_branches(monkeypatch):
     ],
 )
 def test_run_pipeline_task_routes_branch_matrix(monkeypatch, route_name, task_attr, response_key, task_type):
+    if route_name in {"run_graphrag", "run_raptor"}:
+        module = _dataset_sdk_routes_unit_module()
+        if route_name == "run_graphrag":
+            module.test_run_trace_graphrag_matrix_unit(monkeypatch)
+        else:
+            module.test_run_trace_raptor_matrix_unit(monkeypatch)
+        return
+
     module = _load_kb_module(monkeypatch)
     route = inspect.unwrap(getattr(module, route_name))
 
@@ -924,6 +634,14 @@ def test_run_pipeline_task_routes_branch_matrix(monkeypatch, route_name, task_at
     ],
 )
 def test_trace_pipeline_task_routes_branch_matrix(monkeypatch, route_name, task_attr, empty_on_missing_task, error_text):
+    if route_name in {"trace_graphrag", "trace_raptor"}:
+        module = _dataset_sdk_routes_unit_module()
+        if route_name == "trace_graphrag":
+            module.test_run_trace_graphrag_matrix_unit(monkeypatch)
+        else:
+            module.test_run_trace_raptor_matrix_unit(monkeypatch)
+        return
+
     module = _load_kb_module(monkeypatch)
     route = inspect.unwrap(getattr(module, route_name))
 

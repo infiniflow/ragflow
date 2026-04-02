@@ -21,7 +21,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
+
 	"strings"
 )
 
@@ -112,7 +113,7 @@ func (m *siliconflowEmbeddingModel) EncodeQuery(query string) ([]float64, error)
 
 // init registers the SILICONFLOW embedding model factory
 func init() {
-	RegisterEmbeddingModelFactory("SILICONFLOW", func(apiKey, apiBase, modelName string, httpClient *http.Client) model.EmbeddingModel {
+	RegisterEmbeddingModelFactory("SILICONFLOW", func(apiKey, apiBase, modelName string, httpClient *http.Client) entity.EmbeddingModel {
 		return &siliconflowEmbeddingModel{
 			apiKey:     apiKey,
 			apiBase:    apiBase,

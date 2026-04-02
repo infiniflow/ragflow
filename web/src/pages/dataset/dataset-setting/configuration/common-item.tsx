@@ -60,7 +60,7 @@ interface IProps {
   name?: string;
 }
 export function ChunkMethodItem(props: IProps) {
-  const { line } = props;
+  const { line, name = 'parser_id' } = props;
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   // const handleChunkMethodSelectChange = useHandleChunkMethodSelectChange(form);
@@ -69,7 +69,7 @@ export function ChunkMethodItem(props: IProps) {
   return (
     <FormField
       control={form.control}
-      name={'parser_id'}
+      name={name}
       render={({ field }) => (
         <FormItem className=" items-center space-y-1">
           <div className={line === 1 ? 'flex items-center' : ''}>
@@ -207,14 +207,20 @@ export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
   );
 }
 
-export function ParseTypeItem({ line = 2 }: { line?: number }) {
+export function ParseTypeItem({
+  line = 2,
+  name = 'parseType',
+}: {
+  line?: number;
+  name?: string;
+}) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
 
   return (
     <FormField
       control={form.control}
-      name={'parseType'}
+      name={name}
       render={({ field }) => (
         <FormItem className=" items-center space-y-0 ">
           <div

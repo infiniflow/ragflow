@@ -422,7 +422,7 @@ class PaddleOCRParser(RAGFlowPdfParser):
         """Convert API response to table tuples."""
         return []
 
-    def __images__(self, fnm, page_from=0, page_to=100, callback=None):
+    def __images__(self, fnm, page_from=0, page_to=10**9, callback=None):
         """Generate page images from PDF for cropping."""
         self.page_from = page_from
         self.page_to = page_to

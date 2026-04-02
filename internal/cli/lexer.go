@@ -149,6 +149,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 	switch upper {
 	case "LOGIN":
 		return Token{Type: TokenLogin, Value: ident}
+	case "LOGOUT":
+		return Token{Type: TokenLogout, Value: ident}
 	case "REGISTER":
 		return Token{Type: TokenRegister, Value: ident}
 	case "LIST":
@@ -293,6 +295,24 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenToken, Value: ident}
 	case "TOKENS":
 		return Token{Type: TokenTokens, Value: ident}
+	case "INDEX":
+		return Token{Type: TokenIndex, Value: ident}
+	case "VECTOR_SIZE":
+		return Token{Type: TokenVectorSize, Value: ident}
+	case "DOC_META":
+		return Token{Type: TokenDocMeta, Value: ident}
+	case "AVAILABLE":
+		return Token{Type: TokenAvailable, Value: ident}
+	case "NAME":
+		return Token{Type: TokenName, Value: ident}
+	case "POOL":
+		return Token{Type: TokenPool, Value: ident}
+	case "INSERT":
+		return Token{Type: TokenInsert, Value: ident}
+	case "FILE":
+		return Token{Type: TokenFile, Value: ident}
+	case "METADATA":
+		return Token{Type: TokenMetadata, Value: ident}
 	default:
 		return Token{Type: TokenIdentifier, Value: ident}
 	}

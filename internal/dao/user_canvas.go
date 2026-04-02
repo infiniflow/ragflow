@@ -17,7 +17,7 @@
 package dao
 
 import (
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
 )
 
 // UserCanvasDAO user canvas data access object
@@ -29,13 +29,13 @@ func NewUserCanvasDAO() *UserCanvasDAO {
 }
 
 // Create user canvas
-func (dao *UserCanvasDAO) Create(userCanvas *model.UserCanvas) error {
+func (dao *UserCanvasDAO) Create(userCanvas *entity.UserCanvas) error {
 	return DB.Create(userCanvas).Error
 }
 
 // GetByID get user canvas by ID
-func (dao *UserCanvasDAO) GetByID(id string) (*model.UserCanvas, error) {
-	var canvas model.UserCanvas
+func (dao *UserCanvasDAO) GetByID(id string) (*entity.UserCanvas, error) {
+	var canvas entity.UserCanvas
 	err := DB.Where("id = ?", id).First(&canvas).Error
 	if err != nil {
 		return nil, err
@@ -44,13 +44,13 @@ func (dao *UserCanvasDAO) GetByID(id string) (*model.UserCanvas, error) {
 }
 
 // Update update user canvas
-func (dao *UserCanvasDAO) Update(userCanvas *model.UserCanvas) error {
+func (dao *UserCanvasDAO) Update(userCanvas *entity.UserCanvas) error {
 	return DB.Save(userCanvas).Error
 }
 
 // Delete delete user canvas
 func (dao *UserCanvasDAO) Delete(id string) error {
-	return DB.Delete(&model.UserCanvas{}, id).Error
+	return DB.Delete(&entity.UserCanvas{}, id).Error
 }
 
 // GetList get canvases list with pagination and filtering
@@ -62,9 +62,9 @@ func (dao *UserCanvasDAO) GetList(
 	desc bool,
 	id, title string,
 	canvasCategory string,
-) ([]*model.UserCanvas, error) {
+) ([]*entity.UserCanvas, error) {
 
-	query := DB.Model(&model.UserCanvas{}).
+	query := DB.Model(&entity.UserCanvas{}).
 		Where("user_id = ?", tenantID)
 
 	if id != "" {
@@ -93,7 +93,7 @@ func (dao *UserCanvasDAO) GetList(
 		query = query.Offset(offset).Limit(itemsPerPage)
 	}
 
-	var canvases []*model.UserCanvas
+	var canvases []*entity.UserCanvas
 	err := query.Find(&canvases).Error
 	return canvases, err
 }
@@ -102,7 +102,7 @@ func (dao *UserCanvasDAO) GetList(
 // Similar to Python UserCanvasService.get_all_agents_by_tenant_ids
 func (dao *UserCanvasDAO) GetAllCanvasesByTenantIDs(tenantIDs []string, userID string) ([]*CanvasBasicInfo, error) {
 
-	query := DB.Model(&model.UserCanvas{}).
+	query := DB.Model(&entity.UserCanvas{}).
 		Select("id, avatar, title, permission, canvas_type, canvas_category").
 		Where("user_id IN (?) AND permission = ?", tenantIDs, "team").
 		Or("user_id = ?", userID).
@@ -114,7 +114,7 @@ func (dao *UserCanvasDAO) GetAllCanvasesByTenantIDs(tenantIDs []string, userID s
 }
 
 // GetByCanvasID get user canvas by canvas ID (alias for GetByID)
-func (dao *UserCanvasDAO) GetByCanvasID(canvasID string) (*model.UserCanvas, error) {
+func (dao *UserCanvasDAO) GetByCanvasID(canvasID string) (*entity.UserCanvas, error) {
 	return dao.GetByID(canvasID)
 }
 
@@ -130,14 +130,14 @@ type CanvasBasicInfo struct {
 
 // DeleteByUserID deletes all canvases by user ID (hard delete)
 func (dao *UserCanvasDAO) DeleteByUserID(userID string) (int64, error) {
-	result := DB.Unscoped().Where("user_id = ?", userID).Delete(&model.UserCanvas{})
+	result := DB.Unscoped().Where("user_id = ?", userID).Delete(&entity.UserCanvas{})
 	return result.RowsAffected, result.Error
 }
 
 // GetAllCanvasIDsByUserID gets all canvas IDs by user ID
 func (dao *UserCanvasDAO) GetAllCanvasIDsByUserID(userID string) ([]string, error) {
 	var canvasIDs []string
-	err := DB.Model(&model.UserCanvas{}).
+	err := DB.Model(&entity.UserCanvas{}).
 		Where("user_id = ?", userID).
 		Pluck("id", &canvasIDs).Error
 	return canvasIDs, err

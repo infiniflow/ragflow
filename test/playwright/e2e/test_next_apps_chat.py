@@ -172,7 +172,7 @@ def _mm_open_and_close_embed_dialog_if_available(page) -> bool:
 
 
 def _mm_settings_save_request(req) -> bool:
-    return req.method.upper() in MM_REQUEST_METHOD_WHITELIST and "/dialog/set" in req.url
+    return req.method.upper() in MM_REQUEST_METHOD_WHITELIST and "/api/v1/chats" in req.url
 
 
 def _mm_open_settings_panel(page):
@@ -559,9 +559,11 @@ def mm_step_07_settings_open_close_cancel_save(ctx: FlowContext, step, snap):
         with page.expect_request(_mm_settings_save_request, timeout=RESULT_TIMEOUT_MS) as req_info:
             page.get_by_test_id("chat-settings-save").click()
         payload = _mm_payload_from_request(req_info.value)
-        assert payload.get("dialog_id"), "missing dialog_id in /dialog/set payload"
-        assert "llm_id" in payload, "missing llm_id in /dialog/set payload"
-        assert "llm_setting" in payload, "missing llm_setting in /dialog/set payload"
+        assert payload.get("name"), "missing name in /api/v1/chats payload"
+        assert "kb_ids" in payload, "missing kb_ids in /api/v1/chats payload"
+        assert payload.get("llm_id"), "missing llm_id in /api/v1/chats payload"
+        assert "llm_setting" in payload, "missing llm_setting in /api/v1/chats payload"
+        assert "prompt_config" in payload, "missing prompt_config in /api/v1/chats payload"
 
     ctx.state["mm_settings_saved"] = True
     snap("chat_mm_settings_saved")
@@ -659,8 +661,7 @@ def mm_step_11_apply_multimodel_config(ctx: FlowContext, step, snap):
         with page.expect_request(_mm_settings_save_request, timeout=RESULT_TIMEOUT_MS) as req_info:
             apply_btn.click()
         payload = _mm_payload_from_request(req_info.value)
-        assert payload.get("dialog_id"), "missing dialog_id in apply-config payload"
-        assert "llm_id" in payload, "missing llm_id in apply-config payload"
+        assert payload.get("llm_id"), "missing llm_id in apply-config payload"
         assert "llm_setting" in payload, "missing llm_setting in apply-config payload"
 
     ctx.state["mm_cards_configured"] = True

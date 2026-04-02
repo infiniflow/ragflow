@@ -22,11 +22,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"ragflow/internal/entity"
 	"strings"
 	"time"
 
 	"ragflow/internal/logger"
-	"ragflow/internal/model"
+
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 
@@ -38,6 +39,7 @@ import (
 )
 
 var DB *gorm.DB
+var modelProviderManager *entity.ProviderManager
 
 // LLMFactoryConfig represents a single LLM factory configuration
 type LLMFactoryConfig struct {
@@ -111,40 +113,40 @@ func InitDB() error {
 
 	// Auto migrate all models
 	models := []interface{}{
-		&model.User{},
-		&model.Tenant{},
-		&model.UserTenant{},
-		&model.File{},
-		&model.File2Document{},
-		&model.TenantLLM{},
-		&model.Chat{},
-		&model.ChatSession{},
-		&model.Task{},
-		&model.APIToken{},
-		&model.API4Conversation{},
-		&model.Knowledgebase{},
-		&model.InvitationCode{},
-		&model.Document{},
-		&model.UserCanvas{},
-		&model.CanvasTemplate{},
-		&model.UserCanvasVersion{},
-		&model.LLMFactories{},
-		&model.LLM{},
-		&model.TenantLangfuse{},
-		&model.SystemSettings{},
-		&model.Connector{},
-		&model.Connector2Kb{},
-		&model.SyncLogs{},
-		&model.MCPServer{},
-		&model.Memory{},
-		&model.Search{},
-		&model.PipelineOperationLog{},
-		&model.EvaluationDataset{},
-		&model.EvaluationCase{},
-		&model.EvaluationRun{},
-		&model.EvaluationResult{},
-		&model.TimeRecord{},
-		&model.License{},
+		&entity.User{},
+		&entity.Tenant{},
+		&entity.UserTenant{},
+		&entity.File{},
+		&entity.File2Document{},
+		&entity.TenantLLM{},
+		&entity.Chat{},
+		&entity.ChatSession{},
+		&entity.Task{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.Knowledgebase{},
+		&entity.InvitationCode{},
+		&entity.Document{},
+		&entity.UserCanvas{},
+		&entity.CanvasTemplate{},
+		&entity.UserCanvasVersion{},
+		&entity.LLMFactories{},
+		&entity.LLM{},
+		&entity.TenantLangfuse{},
+		&entity.SystemSettings{},
+		&entity.Connector{},
+		&entity.Connector2Kb{},
+		&entity.SyncLogs{},
+		&entity.MCPServer{},
+		&entity.Memory{},
+		&entity.Search{},
+		&entity.PipelineOperationLog{},
+		&entity.EvaluationDataset{},
+		&entity.EvaluationCase{},
+		&entity.EvaluationRun{},
+		&entity.EvaluationResult{},
+		&entity.TimeRecord{},
+		&entity.License{},
 	}
 
 	for _, m := range models {
@@ -154,17 +156,28 @@ func InitDB() error {
 	}
 
 	// Run manual migrations for complex schema changes
-	if err := RunMigrations(DB); err != nil {
+	if err = RunMigrations(DB); err != nil {
 		return fmt.Errorf("failed to run manual migrations: %w", err)
 	}
 
 	logger.Info("Database connected and migrated successfully")
+
+	modelProviderManager, err = entity.NewProviderManager("conf/models")
+	if err != nil {
+		log.Fatal("Failed to load model providers:", err)
+	}
+	logger.Info("Model providers loaded successfully")
 	return nil
 }
 
 // GetDB get database instance
 func GetDB() *gorm.DB {
 	return DB
+}
+
+// GetModelProviderManager get database instance
+func GetModelProviderManager() *entity.ProviderManager {
+	return modelProviderManager
 }
 
 // autoMigrateSafely runs AutoMigrate and ignores duplicate index errors
@@ -223,7 +236,7 @@ func InitLLMFactory() error {
 			status = "1"
 		}
 
-		llmFactory := &model.LLMFactories{
+		llmFactory := &entity.LLMFactories{
 			Name:   factory.Name,
 			Logo:   utility.StringPtr(factory.Logo),
 			Tags:   factory.Tags,
@@ -231,7 +244,7 @@ func InitLLMFactory() error {
 			Status: &status,
 		}
 
-		var existingFactory model.LLMFactories
+		var existingFactory entity.LLMFactories
 		result := db.Where("name = ?", factory.Name).First(&existingFactory)
 		if result.Error != nil {
 			if err := db.Create(llmFactory).Error; err != nil {
@@ -239,7 +252,7 @@ func InitLLMFactory() error {
 				continue
 			}
 		} else {
-			if err := db.Model(&model.LLMFactories{}).Where("name = ?", factory.Name).Updates(map[string]interface{}{
+			if err := db.Model(&entity.LLMFactories{}).Where("name = ?", factory.Name).Updates(map[string]interface{}{
 				"logo":   llmFactory.Logo,
 				"tags":   llmFactory.Tags,
 				"rank":   llmFactory.Rank,
@@ -251,7 +264,7 @@ func InitLLMFactory() error {
 
 		for _, llm := range factory.LLM {
 			llmStatus := "1"
-			llmModel := &model.LLM{
+			llmModel := &entity.LLM{
 				LLMName:   llm.LLMName,
 				ModelType: llm.ModelType,
 				FID:       factory.Name,
@@ -261,14 +274,14 @@ func InitLLMFactory() error {
 				Status:    &llmStatus,
 			}
 
-			var existingLLM model.LLM
+			var existingLLM entity.LLM
 			result := db.Where("llm_name = ? AND fid = ?", llm.LLMName, factory.Name).First(&existingLLM)
 			if result.Error != nil {
 				if err := db.Create(llmModel).Error; err != nil {
 					log.Printf("Failed to create LLM %s/%s: %v", factory.Name, llm.LLMName, err)
 				}
 			} else {
-				if err := db.Model(&model.LLM{}).Where("llm_name = ? AND fid = ?", llm.LLMName, factory.Name).Updates(map[string]interface{}{
+				if err := db.Model(&entity.LLM{}).Where("llm_name = ? AND fid = ?", llm.LLMName, factory.Name).Updates(map[string]interface{}{
 					"model_type": llmModel.ModelType,
 					"max_tokens": llmModel.MaxTokens,
 					"tags":       llmModel.Tags,

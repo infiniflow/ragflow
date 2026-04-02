@@ -287,7 +287,9 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
               variant="dashed"
               size="icon"
               className="size-16 flex flex-col items-center gap-1 !bg-transparent"
-              onClick={() => {
+              type="button"
+              onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+                e.stopPropagation();
                 innerInputRef.current?.click();
               }}
             >
@@ -299,8 +301,10 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
               <Button
                 variant="transparent"
                 size="icon"
+                type="button"
                 className="group/button size-full p-0 transition-all relative gap-0 overflow-hidden"
-                onClick={() => {
+                onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+                  e.stopPropagation();
                   innerInputRef.current?.click();
                 }}
               >

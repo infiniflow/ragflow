@@ -21,21 +21,21 @@ import (
 	"fmt"
 	"net/http"
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"strings"
 	"time"
 
-	"ragflow/internal/model"
 	"ragflow/internal/service/models"
 )
 
 // ModelProvider provides model instances based on tenant and model type
 type ModelProvider interface {
 	// GetEmbeddingModel returns an embedding model for the given tenant
-	GetEmbeddingModel(ctx context.Context, tenantID string, modelName string) (model.EmbeddingModel, error)
+	GetEmbeddingModel(ctx context.Context, tenantID string, modelName string) (entity.EmbeddingModel, error)
 	// GetChatModel returns a chat model for the given tenant
-	GetChatModel(ctx context.Context, tenantID string, modelName string) (model.ChatModel, error)
+	GetChatModel(ctx context.Context, tenantID string, modelName string) (entity.ChatModel, error)
 	// GetRerankModel returns a rerank model for the given tenant
-	GetRerankModel(ctx context.Context, tenantID string, modelName string) (model.RerankModel, error)
+	GetRerankModel(ctx context.Context, tenantID string, modelName string) (entity.RerankModel, error)
 }
 
 // ModelProviderImpl implements ModelProvider
@@ -66,7 +66,7 @@ func parseModelName(compositeName string) (modelName, provider string, err error
 }
 
 // GetEmbeddingModel returns an embedding model for the given tenant
-func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID string, compositeModelName string) (model.EmbeddingModel, error) {
+func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID string, compositeModelName string) (entity.EmbeddingModel, error) {
 	// Parse composite model name to extract model name and provider
 	modelName, provider, err := parseModelName(compositeModelName)
 	if err != nil {
@@ -95,7 +95,7 @@ func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID stri
 }
 
 // GetChatModel returns a chat model for the given tenant
-func (p *ModelProviderImpl) GetChatModel(ctx context.Context, tenantID string, compositeModelName string) (model.ChatModel, error) {
+func (p *ModelProviderImpl) GetChatModel(ctx context.Context, tenantID string, compositeModelName string) (entity.ChatModel, error) {
 	// Parse composite model name to extract model name and provider
 	_, _, err := parseModelName(compositeModelName)
 	if err != nil {
@@ -106,7 +106,7 @@ func (p *ModelProviderImpl) GetChatModel(ctx context.Context, tenantID string, c
 }
 
 // GetRerankModel returns a rerank model for the given tenant
-func (p *ModelProviderImpl) GetRerankModel(ctx context.Context, tenantID string, compositeModelName string) (model.RerankModel, error) {
+func (p *ModelProviderImpl) GetRerankModel(ctx context.Context, tenantID string, compositeModelName string) (entity.RerankModel, error) {
 	// Parse composite model name to extract model name and provider
 	_, _, err := parseModelName(compositeModelName)
 	if err != nil {

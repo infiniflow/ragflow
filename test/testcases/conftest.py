@@ -165,7 +165,7 @@ def token(auth):
     response = requests.post(url=url, headers=auth)
     res = response.json()
     if res.get("code") != 0:
-        error_msg = f"access: {url}, POST method, error code: {res.get("code")}, message: {res.get('message')}"
+        error_msg = f"access: {url}, POST method, error code: {res.get('code')}, message: {res.get('message')}"
         raise Exception(error_msg)
     return res["data"].get("token")
 

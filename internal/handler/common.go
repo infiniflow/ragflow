@@ -18,18 +18,18 @@ package handler
 
 import (
 	"ragflow/internal/common"
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
 
 	"github.com/gin-gonic/gin"
 )
 
-func GetUser(c *gin.Context) (*model.User, common.ErrorCode, string) {
+func GetUser(c *gin.Context) (*entity.User, common.ErrorCode, string) {
 	userAny, exist := c.Get("user")
 	if !exist {
 		return nil, common.CodeUnauthorized, "User not found"
 	}
 
-	user, ok := userAny.(*model.User)
+	user, ok := userAny.(*entity.User)
 	if !ok {
 		return nil, common.CodeUnauthorized, "User not found"
 	}

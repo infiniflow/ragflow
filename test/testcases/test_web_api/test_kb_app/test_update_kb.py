@@ -71,8 +71,8 @@ class TestDatasetUpdate:
     def test_dataset_id_not_uuid(self, WebApiAuth):
         payload = {"name": "not uuid", "description": "", "chunk_method": "naive"}
         res = update_dataset(WebApiAuth, "not_uuid", payload)
-        assert res["code"] == 109, res
-        assert "No authorization." in res["message"], res
+        assert res["code"] == 101, res
+        assert "Invalid UUID1 format" in res["message"], res
 
     @pytest.mark.p1
     @given(name=valid_names())
@@ -112,7 +112,7 @@ class TestDatasetUpdate:
         payload = {"name": name, "description": "", "chunk_method": "naive"}
         res = update_dataset(WebApiAuth, kb_id, payload)
         assert res["code"] == 102, res
-        assert res["message"] == "Duplicated dataset name.", res
+        assert res["message"] == "Dataset name 'kb_1' already exists", res
 
     @pytest.mark.p3
     def test_name_case_insensitive(self, WebApiAuth, add_datasets_func):
@@ -121,7 +121,7 @@ class TestDatasetUpdate:
         payload = {"name": name, "description": "", "chunk_method": "naive"}
         res = update_dataset(WebApiAuth, kb_id, payload)
         assert res["code"] == 102, res
-        assert res["message"] == "Duplicated dataset name.", res
+        assert res["message"] == "Dataset name 'KB_1' already exists", res
 
     @pytest.mark.p2
     def test_avatar(self, WebApiAuth, add_dataset_func, tmp_path):

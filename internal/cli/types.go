@@ -26,6 +26,7 @@ type Command struct {
 const (
 	// Keywords
 	TokenLogin = iota
+	TokenLogout
 	TokenRegister
 	TokenList
 	TokenServices
@@ -68,6 +69,7 @@ const (
 	TokenKey
 	TokenKeys
 	TokenGenerate
+	TokenAvailable
 	TokenModel
 	TokenModels
 	TokenProvider
@@ -98,6 +100,13 @@ const (
 	TokenToken
 	TokenTokens
 	TokenUnset
+	TokenIndex
+	TokenVectorSize
+	TokenDocMeta
+	TokenName // For ALTER PROVIDER <name> NAME <new_name>
+	TokenInsert
+	TokenFile
+	TokenMetadata
 
 	// Literals
 	TokenIdentifier

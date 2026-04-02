@@ -17,7 +17,7 @@
 package dao
 
 import (
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
 )
 
 // UserTenantDAO user tenant data access object
@@ -29,13 +29,13 @@ func NewUserTenantDAO() *UserTenantDAO {
 }
 
 // Create create user tenant relationship
-func (dao *UserTenantDAO) Create(userTenant *model.UserTenant) error {
+func (dao *UserTenantDAO) Create(userTenant *entity.UserTenant) error {
 	return DB.Create(userTenant).Error
 }
 
 // GetByID get user tenant relationship by ID
-func (dao *UserTenantDAO) GetByID(id string) (*model.UserTenant, error) {
-	var userTenant model.UserTenant
+func (dao *UserTenantDAO) GetByID(id string) (*entity.UserTenant, error) {
+	var userTenant entity.UserTenant
 	err := DB.Where("id = ? AND status = ?", id, "1").First(&userTenant).Error
 	if err != nil {
 		return nil, err
@@ -44,25 +44,25 @@ func (dao *UserTenantDAO) GetByID(id string) (*model.UserTenant, error) {
 }
 
 // Update update user tenant relationship
-func (dao *UserTenantDAO) Update(userTenant *model.UserTenant) error {
+func (dao *UserTenantDAO) Update(userTenant *entity.UserTenant) error {
 	return DB.Save(userTenant).Error
 }
 
 // Delete delete user tenant relationship (soft delete by setting status to "0")
 func (dao *UserTenantDAO) Delete(id string) error {
-	return DB.Model(&model.UserTenant{}).Where("id = ?", id).Update("status", "0").Error
+	return DB.Model(&entity.UserTenant{}).Where("id = ?", id).Update("status", "0").Error
 }
 
 // GetByUserID get user tenant relationships by user ID
-func (dao *UserTenantDAO) GetByUserID(userID string) ([]*model.UserTenant, error) {
-	var relations []*model.UserTenant
+func (dao *UserTenantDAO) GetByUserID(userID string) ([]*entity.UserTenant, error) {
+	var relations []*entity.UserTenant
 	err := DB.Where("user_id = ? AND status = ?", userID, "1").Find(&relations).Error
 	return relations, err
 }
 
 // GetByTenantID get user tenant relationships by tenant ID
-func (dao *UserTenantDAO) GetByTenantID(tenantID string) ([]*model.UserTenant, error) {
-	var relations []*model.UserTenant
+func (dao *UserTenantDAO) GetByTenantID(tenantID string) ([]*entity.UserTenant, error) {
+	var relations []*entity.UserTenant
 	err := DB.Where("tenant_id = ? AND status = ?", tenantID, "1").Find(&relations).Error
 	return relations, err
 }
@@ -70,7 +70,7 @@ func (dao *UserTenantDAO) GetByTenantID(tenantID string) ([]*model.UserTenant, e
 // GetTenantIDsByUserID get tenant ID list by user ID
 func (dao *UserTenantDAO) GetTenantIDsByUserID(userID string) ([]string, error) {
 	var tenantIDs []string
-	err := DB.Model(&model.UserTenant{}).
+	err := DB.Model(&entity.UserTenant{}).
 		Select("tenant_id").
 		Where("user_id = ? AND status = ?", userID, "1").
 		Pluck("tenant_id", &tenantIDs).Error
@@ -78,8 +78,8 @@ func (dao *UserTenantDAO) GetTenantIDsByUserID(userID string) ([]string, error) 
 }
 
 // FilterByUserIDAndTenantID filter user tenant relationship by user ID and tenant ID
-func (dao *UserTenantDAO) FilterByUserIDAndTenantID(userID, tenantID string) (*model.UserTenant, error) {
-	var userTenant model.UserTenant
+func (dao *UserTenantDAO) FilterByUserIDAndTenantID(userID, tenantID string) (*entity.UserTenant, error) {
+	var userTenant entity.UserTenant
 	err := DB.Where("user_id = ? AND tenant_id = ? AND status = ?", userID, tenantID, "1").
 		First(&userTenant).Error
 	if err != nil {
@@ -89,8 +89,8 @@ func (dao *UserTenantDAO) FilterByUserIDAndTenantID(userID, tenantID string) (*m
 }
 
 // GetByUserIDAndRole get user tenant relationships by user ID and role
-func (dao *UserTenantDAO) GetByUserIDAndRole(userID, role string) ([]*model.UserTenant, error) {
-	var relations []*model.UserTenant
+func (dao *UserTenantDAO) GetByUserIDAndRole(userID, role string) ([]*entity.UserTenant, error) {
+	var relations []*entity.UserTenant
 	err := DB.Where("user_id = ? AND role = ? AND status = ?", userID, role, "1").Find(&relations).Error
 	return relations, err
 }
@@ -98,7 +98,7 @@ func (dao *UserTenantDAO) GetByUserIDAndRole(userID, role string) ([]*model.User
 // GetNumMembers get number of members in a tenant (excluding owner)
 func (dao *UserTenantDAO) GetNumMembers(tenantID string) (int64, error) {
 	var count int64
-	err := DB.Model(&model.UserTenant{}).
+	err := DB.Model(&entity.UserTenant{}).
 		Where("tenant_id = ? AND status = ? AND role != ?", tenantID, "1", "owner").
 		Count(&count).Error
 	return count, err
@@ -127,19 +127,19 @@ func (dao *UserTenantDAO) GetTenantsByUserID(userID string) ([]*TenantInfoByUser
 
 // DeleteByUserID delete user tenant relationships by user ID (hard delete)
 func (dao *UserTenantDAO) DeleteByUserID(userID string) (int64, error) {
-	result := DB.Unscoped().Where("user_id = ?", userID).Delete(&model.UserTenant{})
+	result := DB.Unscoped().Where("user_id = ?", userID).Delete(&entity.UserTenant{})
 	return result.RowsAffected, result.Error
 }
 
 // DeleteByTenantID delete user tenant relationships by tenant ID (hard delete)
 func (dao *UserTenantDAO) DeleteByTenantID(tenantID string) (int64, error) {
-	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&model.UserTenant{})
+	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.UserTenant{})
 	return result.RowsAffected, result.Error
 }
 
 // GetByUserIDAll get all user tenant relationships by user ID (including deleted)
-func (dao *UserTenantDAO) GetByUserIDAll(userID string) ([]*model.UserTenant, error) {
-	var relations []*model.UserTenant
+func (dao *UserTenantDAO) GetByUserIDAll(userID string) ([]*entity.UserTenant, error) {
+	var relations []*entity.UserTenant
 	err := DB.Where("user_id = ?", userID).Find(&relations).Error
 	return relations, err
 }

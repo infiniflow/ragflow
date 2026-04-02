@@ -17,7 +17,7 @@
 package dao
 
 import (
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
 )
 
 // File2DocumentDAO file to document mapping data access object
@@ -32,7 +32,7 @@ func NewFile2DocumentDAO() *File2DocumentDAO {
 func (dao *File2DocumentDAO) GetKBInfoByFileID(fileID string) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}
 
-	rows, err := DB.Model(&model.File{}).
+	rows, err := DB.Model(&entity.File{}).
 		Select("knowledgebase.id, knowledgebase.name, file2document.document_id").
 		Joins("JOIN file2document ON file2document.file_id = ?", fileID).
 		Joins("JOIN document ON document.id = file2document.document_id").

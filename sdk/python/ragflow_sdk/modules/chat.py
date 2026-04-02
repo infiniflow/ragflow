@@ -23,50 +23,22 @@ class Chat(Base):
     def __init__(self, rag, res_dict):
         self.id = ""
         self.name = "assistant"
-        self.avatar = "path/to/avatar"
-        self.llm = Chat.LLM(rag, {})
-        self.prompt = Chat.Prompt(rag, {})
+        self.icon = ""
+        self.dataset_ids = []
+        self.llm_id = None
+        self.llm_setting = {}
+        self.prompt_config = {}
+        self.similarity_threshold = 0.2
+        self.vector_similarity_weight = 0.3
+        self.top_n = 6
+        self.top_k = 1024
+        self.rerank_id = ""
         super().__init__(rag, res_dict)
-
-    class LLM(Base):
-        def __init__(self, rag, res_dict):
-            self.model_name = None
-            self.temperature = 0.1
-            self.top_p = 0.3
-            self.presence_penalty = 0.4
-            self.frequency_penalty = 0.7
-            self.max_tokens = 512
-            super().__init__(rag, res_dict)
-
-    class Prompt(Base):
-        def __init__(self, rag, res_dict):
-            self.similarity_threshold = 0.2
-            self.keywords_similarity_weight = 0.7
-            self.top_n = 8
-            self.top_k = 1024
-            self.variables = [{"key": "knowledge", "optional": True}]
-            self.rerank_model = ""
-            self.empty_response = None
-            self.opener = "Hi! I'm your assistant. What can I do for you?"
-            self.show_quote = True
-            self.prompt = (
-                "You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base."
-                "**Essential Rules:**"
-                "- Your answer must be derived **solely** from this knowledge base: `{knowledge}`."
-                "- **When information is available**: Summarize the content to give a detailed answer."
-                "- **When information is unavailable**: Your response must contain this exact sentence: 'The answer you are looking for is not found in the knowledge base!' "
-                "- **Always consider** the entire conversation history."
-            )
-            super().__init__(rag, res_dict)
 
     def update(self, update_message: dict):
         if not isinstance(update_message, dict):
             raise Exception("ValueError('`update_message` must be a dict')")
-        if update_message.get("llm") == {}:
-            raise Exception("ValueError('`llm` cannot be empty')")
-        if update_message.get("prompt") == {}:
-            raise Exception("ValueError('`prompt` cannot be empty')")
-        res = self.put(f"/chats/{self.id}", update_message)
+        res = self.patch(f"/chats/{self.id}", update_message)
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])

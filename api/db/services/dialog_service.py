@@ -105,7 +105,18 @@ class DialogService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_tenant_ids(cls, joined_tenant_ids, user_id, page_number, items_per_page, orderby, desc, keywords, parser_id=None):
+    def get_by_tenant_ids(
+        cls,
+        joined_tenant_ids,
+        user_id,
+        page_number,
+        items_per_page,
+        orderby,
+        desc,
+        keywords,
+        id=None,
+        name=None,
+    ):
         from api.db.db_models import User
 
         fields = [
@@ -132,25 +143,20 @@ class DialogService(CommonService):
             cls.model.update_time,
             cls.model.create_time,
         ]
+        dialogs = (
+            cls.model.select(*fields)
+            .join(User, on=(cls.model.tenant_id == User.id))
+            .where(
+                (cls.model.tenant_id.in_(joined_tenant_ids) | (cls.model.tenant_id == user_id))
+                & (cls.model.status == StatusEnum.VALID.value),
+            )
+        )
+        if id:
+            dialogs = dialogs.where(cls.model.id == id)
+        if name:
+            dialogs = dialogs.where(cls.model.name == name)
         if keywords:
-            dialogs = (
-                cls.model.select(*fields)
-                .join(User, on=(cls.model.tenant_id == User.id))
-                .where(
-                    (cls.model.tenant_id.in_(joined_tenant_ids) | (cls.model.tenant_id == user_id)) & (cls.model.status == StatusEnum.VALID.value),
-                    (fn.LOWER(cls.model.name).contains(keywords.lower())),
-                )
-            )
-        else:
-            dialogs = (
-                cls.model.select(*fields)
-                .join(User, on=(cls.model.tenant_id == User.id))
-                .where(
-                    (cls.model.tenant_id.in_(joined_tenant_ids) | (cls.model.tenant_id == user_id)) & (cls.model.status == StatusEnum.VALID.value),
-                )
-            )
-        if parser_id:
-            dialogs = dialogs.where(cls.model.parser_id == parser_id)
+            dialogs = dialogs.where(fn.LOWER(cls.model.name).contains(keywords.lower()))
         if desc:
             dialogs = dialogs.order_by(cls.model.getter_by(orderby).desc())
         else:
@@ -257,8 +263,9 @@ def get_models(dialog):
         raise Exception("**ERROR**: Knowledge bases use different embedding models.")
 
     if embedding_list:
-        embd_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.EMBEDDING, embedding_list[0])
-        embd_mdl = LLMBundle(dialog.tenant_id, embd_model_config)
+        embd_owner_tenant_id = kbs[0].tenant_id
+        embd_model_config = get_model_config_by_type_and_name(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
+        embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
         if not embd_mdl:
             raise LookupError("Embedding model(%s) not found" % embedding_list[0])
 
@@ -1367,8 +1374,9 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
 
     is_knowledge_graph = all([kb.parser_id == ParserType.KG for kb in kbs])
     retriever = settings.retriever if not is_knowledge_graph else settings.kg_retriever
-    embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embedding_list[0])
-    embd_mdl = LLMBundle(tenant_id, embd_model_config)
+    embd_owner_tenant_id = kbs[0].tenant_id
+    embd_model_config = get_model_config_by_type_and_name(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
+    embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
     chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_llm_name)
     chat_mdl = LLMBundle(tenant_id, chat_model_config)
     if rerank_id:
@@ -1449,9 +1457,11 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
     if tenant_embedding_list[0]:
         embd_model_config = get_model_config_by_id(tenant_embedding_list[0])
+        embd_owner_tenant_id = kbs[0].tenant_id
     else:
-        embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, kbs[0].embd_id)
-    embd_mdl = LLMBundle(tenant_id, embd_model_config)
+        embd_owner_tenant_id = kbs[0].tenant_id
+        embd_model_config = get_model_config_by_type_and_name(embd_owner_tenant_id, LLMType.EMBEDDING, kbs[0].embd_id)
+    embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
     chat_id = search_config.get("chat_id", "")
     if chat_id:
         chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_id)

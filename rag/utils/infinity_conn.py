@@ -148,8 +148,11 @@ class InfinityConnection(InfinityConnectionBase):
             filter_cond = None
             filter_fulltext = ""
             if condition:
-                # Remove kb_id filter for Infinity (it uses table separation instead)
-                condition = {k: v for k, v in condition.items() if k != "kb_id"}
+                # For metadata table (ragflow_doc_meta_), keep kb_id filter
+                # For chunk tables, remove kb_id filter as they use table separation per KB
+                is_meta_table = any(indexName.startswith("ragflow_doc_meta_") for indexName in index_names)
+                if not is_meta_table:
+                    condition = {k: v for k, v in condition.items() if k != "kb_id"}
 
                 table_found = False
                 for indexName in index_names:
@@ -243,6 +246,7 @@ class InfinityConnection(InfinityConnectionBase):
                         for matchExpr in match_expressions:
                             if isinstance(matchExpr, MatchTextExpr):
                                 fields = ",".join(matchExpr.fields)
+                                self.logger.info(f"INFINITY search match_text: {matchExpr.matching_text}")
                                 builder = builder.match_text(
                                     fields,
                                     matchExpr.matching_text,
@@ -315,6 +319,20 @@ class InfinityConnection(InfinityConnectionBase):
         return res_fields.get(chunk_id, None)
 
     def insert(self, documents: list[dict], index_name: str, knowledgebase_id: str = None) -> list[str]:
+        '''
+        # Save input to file to test inserting from file in GO
+        import datetime
+        import os
+        debug_file = os.path.join("/var/infinity/tmp", f"insert_{index_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.json")
+        with open(debug_file, 'w') as f:
+            json.dump({
+                "table_name": index_name,
+                "knowledgebase_id": knowledgebase_id,
+                "chunks": documents
+            }, f, indent=2)
+        self.logger.debug(f"Saved insert input to {debug_file}")
+        '''
+
         inf_conn = self.connPool.get_conn()
         try:
             db_instance = inf_conn.get_database(self.dbName)

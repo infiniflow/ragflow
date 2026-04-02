@@ -14,12 +14,7 @@ const LLMLabel = ({ value }: IProps) => {
 
   return (
     <div className="flex items-center gap-1 text-xs text-text-secondary">
-      <LlmIcon
-        name={getLLMIconName(fId, llmName)}
-        width={20}
-        height={20}
-        size={'small'}
-      />
+      <LlmIcon name={getLLMIconName(fId, llmName)} width={20} height={20} />
       <span className="flex-1 truncate"> {llmName}</span>
     </div>
   );

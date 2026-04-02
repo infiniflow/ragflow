@@ -4,7 +4,7 @@ import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import searchService, { searchServiceNext } from '@/services/search-service';
+import searchService from '@/services/search-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { useCallback, useState } from 'react';
@@ -103,14 +103,13 @@ export const useFetchSearchList = () => {
       },
     ],
     queryFn: async () => {
-      const { data: response } = await searchServiceNext.getSearchList(
+      const { data: response } = await searchService.getSearchList(
         {
           params: {
             keywords: debouncedSearchString,
             page_size: pagination.pageSize,
             page: pagination.current,
           },
-          data: {},
         },
         true,
       );
@@ -203,24 +202,21 @@ export const useFetchSearchDetail = (tenantId?: string) => {
   const [searchParams] = useSearchParams();
   const shared_id = searchParams.get('shared_id');
   const searchId = id || shared_id;
-  let param: { search_id: string | null; tenant_id?: string } = {
-    search_id: searchId,
-  };
-  if (shared_id) {
-    param = {
-      search_id: searchId,
-      tenant_id: tenantId,
-    };
-  }
-  const fetchSearchDetailFunc = shared_id
-    ? searchService.getSearchDetailShare
-    : searchService.getSearchDetail;
 
   const { data, isLoading, isError } = useQuery<SearchDetailResponse, Error>({
     queryKey: ['searchDetail', searchId],
     enabled: !shared_id || !!tenantId,
     queryFn: async () => {
-      const { data: response } = await fetchSearchDetailFunc(param);
+      let res;
+      if (shared_id) {
+        res = await searchService.getSearchDetailShare(
+          { params: { search_id: searchId, tenant_id: tenantId } },
+          true,
+        );
+      } else {
+        res = await searchService.getSearchDetail({ search_id: searchId });
+      }
+      const response = res.data;
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to fetch search detail');
       }

@@ -477,6 +477,7 @@ class Dealer:
                 "docnm_kwd": dnm,
                 "kb_id": chunk["kb_id"],
                 "important_kwd": chunk.get("important_kwd", []),
+                "tag_kwd": chunk.get("tag_kwd", []),
                 "image_id": chunk.get("img_id", ""),
                 "similarity": float(sim_np[i]),
                 "vector_similarity": float(vsim[i]),

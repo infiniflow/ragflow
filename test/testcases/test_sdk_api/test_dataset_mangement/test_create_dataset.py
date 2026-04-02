@@ -306,8 +306,9 @@ class TestDatasetCreate:
             ("qa", "qa"),
             ("table", "table"),
             ("tag", "tag"),
+            ("resume", "resume")
         ],
-        ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+        ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "resume"],
     )
     def test_chunk_method(self, client, name, chunk_method):
         payload = {"name": name, "chunk_method": chunk_method}
@@ -327,7 +328,7 @@ class TestDatasetCreate:
         payload = {"name": name, "chunk_method": chunk_method}
         with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(exception_info.value), str(exception_info.value)
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_chunk_method_unset(self, client):

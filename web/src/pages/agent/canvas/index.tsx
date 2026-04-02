@@ -44,7 +44,6 @@ import { useNodeLoading } from '../hooks/use-node-loading';
 import {
   useHideFormSheetOnNodeDeletion,
   useShowDrawer,
-  useShowLogSheet,
 } from '../hooks/use-show-drawer';
 import { useStopMessageUnmount } from '../hooks/use-stop-message';
 import { LogSheet } from '../log-sheet';
@@ -134,6 +133,15 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     useState<ReactFlowInstance<any, any>>();
 
   const {
+    addEventList,
+    setCurrentMessageId,
+    currentEventListWithoutMessageById,
+    clearEventList,
+    currentMessageId,
+    latestTaskId,
+  } = useCacheChatLog();
+
+  const {
     onNodeClick,
     clickedNode,
     formDrawerVisible,
@@ -146,25 +154,17 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideRunOrChatDrawer,
     showChatModal,
     showFormDrawer,
+    logSheetVisible,
+    showLogSheet,
+    hideLogSheet,
   } = useShowDrawer({
     drawerVisible,
     hideDrawer,
-  });
-
-  const {
-    addEventList,
     setCurrentMessageId,
-    currentEventListWithoutMessageById,
-    clearEventList,
-    currentMessageId,
-    latestTaskId,
-  } = useCacheChatLog();
+  });
 
   const { stopMessage } = useStopMessageUnmount(chatVisible, latestTaskId);
 
-  const { showLogSheet, logSheetVisible, hideLogSheet } = useShowLogSheet({
-    setCurrentMessageId,
-  });
   const [lastSendLoading, setLastSendLoading] = useState(false);
 
   const [currentSendLoading, setCurrentSendLoading] = useState(false);

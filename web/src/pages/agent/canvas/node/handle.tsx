@@ -18,10 +18,20 @@ export function CommonHandle({
   const { visible, hideModal, showModal } = useSetModalState();
   const { canShowDropdown, setActiveDropdown, clearActiveDropdown } =
     useDropdownManager();
-  const { hasChildNode } = useGraphStore((state) => state);
+  const { hasDownstreamNode, hasUpstreamNode } = useGraphStore(
+    (state) => state,
+  );
   const isPipeline = useIsPipeline();
 
-  const isConnectable = !(isPipeline && hasChildNode(nodeId)); // Using useMemo will cause isConnectable to not be updated when the subsequent connection line is deleted
+  let isConnectable = true;
+
+  if (isPipeline) {
+    if (props.type === 'source') {
+      isConnectable = !hasDownstreamNode(nodeId);
+    } else if (props.type === 'target') {
+      isConnectable = !hasUpstreamNode(nodeId);
+    }
+  }
 
   const value = useMemo(
     () => ({
