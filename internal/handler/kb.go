@@ -17,8 +17,11 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
+	"os"
 	"ragflow/internal/common"
+	"ragflow/internal/engine"
 	"ragflow/internal/service"
 	"strconv"
 	"strings"
@@ -702,4 +705,93 @@ func (h *KnowledgebaseHandler) DeleteIndex(c *gin.Context) {
 	}
 
 	jsonResponse(c, common.CodeSuccess, nil, "success")
+}
+
+// InsertDatasetFromFileRequest request for inserting chunks into dataset from file
+type InsertDatasetFromFileRequest struct {
+	FilePath string `json:"file_path" binding:"required"`
+}
+
+// @Summary Insert chunks into dataset from file
+// @Description Internal: Insert into dataset table from a JSON file (table name extracted from file)
+// @Tags knowledgebase
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body InsertDatasetFromFileRequest true "insert dataset request"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/kb/insert_from_file [post]
+func (h *KnowledgebaseHandler) InsertDatasetFromFile(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req InsertDatasetFromFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if req.FilePath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "file_path is required",
+		})
+		return
+	}
+
+	// Read the JSON file
+	data, err := os.ReadFile(req.FilePath)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "failed to read file: " + err.Error(),
+		})
+		return
+	}
+
+	// Parse JSON - format: {"table_name": ..., "knowledgebase_id": ..., "chunks": [...]}
+	var debugFormat struct {
+		TableNamePrefix string                   `json:"table_name"`
+		KnowledgebaseID string                   `json:"knowledgebase_id"`
+		Chunks          []map[string]interface{} `json:"chunks"`
+	}
+
+	if err := json.Unmarshal(data, &debugFormat); err != nil || debugFormat.Chunks == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "invalid JSON format: expected {\"table_name\": ..., \"knowledgebase_id\": ..., \"chunks\": [...]}",
+		})
+		return
+	}
+
+	if len(debugFormat.Chunks) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "no chunks found in file",
+		})
+		return
+	}
+
+	// Get the document engine and insert
+	docEngine := engine.Get()
+	result, err := docEngine.InsertDataset(c.Request.Context(), debugFormat.Chunks, debugFormat.TableNamePrefix, debugFormat.KnowledgebaseID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "failed to insert into dataset: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    result,
+		"message": "success",
+	})
 }

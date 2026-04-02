@@ -213,6 +213,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			kb.GET("/basic_info", r.knowledgebaseHandler.GetBasicInfo)
 			kb.POST("/index", r.knowledgebaseHandler.CreateIndex)
 			kb.DELETE("/index", r.knowledgebaseHandler.DeleteIndex)
+			kb.POST("/insert_from_file", r.knowledgebaseHandler.InsertDatasetFromFile)
 
 			// KB ID specific routes
 			kbByID := kb.Group("/:kb_id")
@@ -230,6 +231,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		{
 			tenant.POST("/doc_meta_index", r.tenantHandler.CreateDocMetaIndex)
 			tenant.DELETE("/doc_meta_index", r.tenantHandler.DeleteDocMetaIndex)
+			tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile)
 		}
 
 		// Document routes
