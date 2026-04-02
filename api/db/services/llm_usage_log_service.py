@@ -20,23 +20,25 @@ class LLMUsageLogService(CommonService):
         user_id: str = None,
         biz_type: str = "other",
         biz_id: str = None,
+        session_id: str = None,
         prompt_tokens: int = 0,
         completion_tokens: int = 0,
         cost: float = 0.0,
     ):
-        """写入一条 LLM 调用明细记录。
+        """Create one detailed LLM usage record.
 
         Args:
-            tenant_id:        租户 ID
-            tenant_llm_id:    TenantLLM.id（关联具体模型配置）
-            model_type:       模型类型，如 "chat"/"embedding"/"rerank"
-            total_tokens:     本次调用消耗的总 token 数
-            user_id:          发起调用的用户 ID（可选）
-            biz_type:         业务类型，如 "dialog"/"agent"/"document_parse"
-            biz_id:           业务对象 ID，如 session_id/canvas_id/document_id
-            prompt_tokens:    输入 token 数（Chat 模式有值，其他模式为 0）
-            completion_tokens:输出 token 数（Chat 模式有值，其他模式为 0）
-            cost:             本次调用费用（USD），LiteLLM 模式有值，其他暂为 0
+            tenant_id:         Tenant ID.
+            tenant_llm_id:     TenantLLM.id linked to the concrete model configuration.
+            model_type:        Model type, such as "chat", "embedding", or "rerank".
+            total_tokens:      Total tokens consumed by this call.
+            user_id:           User ID that initiated the call, if any.
+            biz_type:          Business type, such as "dialog", "agent", or "document_parse".
+            biz_id:            Business object ID, such as dialog.id, canvas.id, or document_id.
+            session_id:        Session ID, such as Conversation.id or API4Conversation.id.
+            prompt_tokens:     Input token count. Non-chat modes usually use 0.
+            completion_tokens: Output token count. Non-chat modes usually use 0.
+            cost:              Call cost in USD. Populated in LiteLLM mode; otherwise currently 0.
         """
         try:
             cls.model.create(
@@ -45,6 +47,7 @@ class LLMUsageLogService(CommonService):
                 user_id=user_id,
                 biz_type=biz_type,
                 biz_id=biz_id,
+                session_id=session_id,
                 tenant_llm_id=tenant_llm_id,
                 model_type=model_type,
                 prompt_tokens=prompt_tokens,
@@ -55,6 +58,6 @@ class LLMUsageLogService(CommonService):
             )
         except Exception:
             logging.exception(
-                "LLMUsageLogService.create failed for tenant_id=%s, biz_type=%s, biz_id=%s",
-                tenant_id, biz_type, biz_id,
+                "LLMUsageLogService.create failed for tenant_id=%s, biz_type=%s, biz_id=%s, session_id=%s",
+                tenant_id, biz_type, biz_id, session_id,
             )

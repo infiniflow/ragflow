@@ -1048,7 +1048,7 @@ def _parse_json_with_repair(text: str) -> dict:
     raise json.JSONDecodeError("All JSON repair strategies failed", text, 0)
 
 
-def _call_llm(prompt: str, tenant_id , lang: str) -> Optional[dict]:
+def _call_llm(prompt: str, tenant_id, lang: str, doc_id: str = "") -> Optional[dict]:
     """
     Call LLM and parse JSON response (ref SmartResume's retry + fault-tolerance strategy).
 
@@ -1068,7 +1068,7 @@ def _call_llm(prompt: str, tenant_id , lang: str) -> Optional[dict]:
         from api.db.services.llm_service import LLMBundle
         from common.constants import LLMType
 
-        llm =  LLMBundle(tenant_id, LLMType.CHAT, lang=lang)
+        llm = LLMBundle(tenant_id, LLMType.CHAT, lang=lang, biz_type="document", biz_id=doc_id)
 
         for attempt in range(_LLM_MAX_RETRIES + 1):
             try:
@@ -1265,44 +1265,44 @@ def _extract_description_from_range(
     return "\n".join(line.strip() for line in extracted_lines if line.strip())
 
 
-def _extract_basic_info(indexed_text: str, tenant_id , lang: str) -> Optional[dict]:
+def _extract_basic_info(indexed_text: str, tenant_id, lang: str, doc_id: str = "") -> Optional[dict]:
     """Extract basic info (subtask 1).
 
     Basic info is usually at the beginning of the resume, first 8000 chars suffice.
     """
     prompt = get_basic_info_prompt(lang).format(indexed_text=indexed_text[:8000])
-    return _call_llm(prompt,tenant_id, lang)
+    return _call_llm(prompt, tenant_id, lang, doc_id)
 
 
-def _extract_work_experience(indexed_text: str, tenant_id , lang: str) -> Optional[dict]:
+def _extract_work_experience(indexed_text: str, tenant_id, lang: str, doc_id: str = "") -> Optional[dict]:
     """Extract work experience (subtask 2, using index pointers).
 
     Work experience may span the middle-to-end of the resume, use full text to avoid truncation.
     """
     prompt = get_work_exp_prompt(lang).format(indexed_text=indexed_text)
-    return _call_llm(prompt, tenant_id , lang)
+    return _call_llm(prompt, tenant_id, lang, doc_id)
 
 
-def _extract_education(indexed_text: str, tenant_id , lang: str) -> Optional[dict]:
+def _extract_education(indexed_text: str, tenant_id, lang: str, doc_id: str = "") -> Optional[dict]:
     """Extract education background (subtask 3).
 
     Education is usually at the end of the resume, must use full text to avoid truncation.
     Resume text is generally under 30K chars, within LLM context window.
     """
     prompt = get_education_prompt(lang).format(indexed_text=indexed_text)
-    return _call_llm(prompt,tenant_id, lang)
+    return _call_llm(prompt, tenant_id, lang, doc_id)
 
 
-def _extract_project_experience(indexed_text: str, tenant_id , lang: str) -> Optional[dict]:
+def _extract_project_experience(indexed_text: str, tenant_id, lang: str, doc_id: str = "") -> Optional[dict]:
     """Extract project experience (subtask 4, using index pointers).
 
     Project experience may span the middle-to-end of the resume, use full text to avoid truncation.
     """
     prompt = get_project_exp_prompt(lang).format(indexed_text=indexed_text)
-    return _call_llm(prompt, tenant_id , lang)
+    return _call_llm(prompt, tenant_id, lang, doc_id)
 
 
-def parse_with_llm(indexed_text: str, lines: list[str], tenant_id , lang: str) -> Optional[dict]:
+def parse_with_llm(indexed_text: str, lines: list[str], tenant_id, lang: str, doc_id: str = "") -> Optional[dict]:
     """
     Extract resume info using parallel task decomposition strategy (ref SmartResume Section 3.2).
 
@@ -1322,10 +1322,10 @@ def parse_with_llm(indexed_text: str, lines: list[str], tenant_id , lang: str) -
     try:
         # Execute four subtasks in parallel
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            future_basic = executor.submit(_extract_basic_info, indexed_text, tenant_id , lang)
-            future_work = executor.submit(_extract_work_experience, indexed_text, tenant_id , lang)
-            future_edu = executor.submit(_extract_education, indexed_text, tenant_id, lang)
-            future_project = executor.submit(_extract_project_experience, indexed_text, tenant_id , lang)
+            future_basic = executor.submit(_extract_basic_info, indexed_text, tenant_id, lang, doc_id)
+            future_work = executor.submit(_extract_work_experience, indexed_text, tenant_id, lang, doc_id)
+            future_edu = executor.submit(_extract_education, indexed_text, tenant_id, lang, doc_id)
+            future_project = executor.submit(_extract_project_experience, indexed_text, tenant_id, lang, doc_id)
 
             basic_info = future_basic.result(timeout=60)
             work_exp = future_work.result(timeout=60)
@@ -2053,7 +2053,7 @@ def _postprocess_resume(resume: dict, lines: list[str], lang: str = "Chinese") -
 # ==================== Pipeline Orchestration & Chunk Construction ====================
 
 
-def parse_resume(filename: str, binary: bytes, tenant_id , lang: str = "Chinese") -> tuple[dict, list[str], list[dict]]:
+def parse_resume(filename: str, binary: bytes, tenant_id, lang: str = "Chinese", doc_id: str = "") -> tuple[dict, list[str], list[dict]]:
     """
     Resume parsing pipeline orchestration function
 
@@ -2081,7 +2081,7 @@ def parse_resume(filename: str, binary: bytes, tenant_id , lang: str = "Chinese"
         return {"name_kwd": default_name}, [], []
 
     # Phase 2: Parallel LLM structured extraction
-    resume = parse_with_llm(indexed_text, lines, tenant_id , lang)
+    resume = parse_with_llm(indexed_text, lines, tenant_id, lang, doc_id)
 
     # Phase 3: Fallback to regex parsing when LLM fails
     if not resume:
@@ -2489,7 +2489,13 @@ def chunk(filename, binary, tenant_id, from_page=0, to_page=100000,
         callback(0.1, "Starting resume parsing...")
 
         # Parse resume
-        resume, lines, line_positions = parse_resume(filename, binary, tenant_id , lang)
+        resume, lines, line_positions = parse_resume(
+            filename,
+            binary,
+            tenant_id,
+            lang,
+            kwargs.get("doc_id", ""),
+        )
         callback(0.6, "Resume structured extraction complete")
 
         # Build document chunks (with coordinate info)

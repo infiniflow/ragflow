@@ -129,7 +129,7 @@ def by_mineru(
         if mineru_llm_name:
             try:
                 ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, mineru_llm_name)
-                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
+                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang, biz_type="document", biz_id=kwargs.get("doc_id", ""))
                 pdf_parser = ocr_model.mdl
                 sections, tables = pdf_parser.parse_pdf(
                     filepath=filename,
@@ -211,7 +211,7 @@ def by_paddleocr(
         if paddleocr_llm_name:
             try:
                 ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, paddleocr_llm_name)
-                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
+                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang, biz_type="document", biz_id=kwargs.get("doc_id", ""))
                 pdf_parser = ocr_model.mdl
                 sections, tables = pdf_parser.parse_pdf(
                     filepath=filename,
@@ -244,6 +244,8 @@ def by_plaintext(filename, binary=None, from_page=0, to_page=100000, callback=No
             tenant_id,
             model_config=vision_model_config,
             lang=kwargs.get("lang", "Chinese"),
+            biz_type="document",
+            biz_id=kwargs.get("doc_id", ""),
         )
         pdf_parser = VisionParser(vision_model=vision_model, **kwargs)
 
@@ -909,7 +911,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         try:
             vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
-            vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
+            vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config, biz_type="document", biz_id=kwargs.get("doc_id", ""))
             callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
         except Exception as e:
             logging.warning(f"Failed to detect figure extraction: {e}")

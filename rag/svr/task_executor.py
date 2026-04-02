@@ -281,6 +281,7 @@ async def build_chunks(task, progress_callback):
                 kb_id=task["kb_id"],
                 parser_config=task["parser_config"],
                 tenant_id=task["tenant_id"],
+                doc_id=task["doc_id"],
             )
         logging.info("Chunking({}) {}/{} done".format(timer() - st, task["location"], task["name"]))
     except TaskCanceledException:
@@ -344,7 +345,7 @@ async def build_chunks(task, progress_callback):
         st = timer()
         progress_callback(msg="Start to generate keywords for every chunk ...")
         chat_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.CHAT, task["llm_id"])
-        chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
+        chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"], biz_type="document", biz_id=task["doc_id"])
 
         async def doc_keyword_extraction(chat_mdl, d, topn):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "keywords", {"topn": topn})
@@ -378,7 +379,7 @@ async def build_chunks(task, progress_callback):
         st = timer()
         progress_callback(msg="Start to generate questions for every chunk ...")
         chat_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.CHAT, task["llm_id"])
-        chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
+        chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"], biz_type="document", biz_id=task["doc_id"])
 
         async def doc_question_proposal(chat_mdl, d, topn):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "question", {"topn": topn})
@@ -411,7 +412,7 @@ async def build_chunks(task, progress_callback):
         st = timer()
         progress_callback(msg="Start to generate meta-data for every chunk ...")
         chat_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.CHAT, task["llm_id"])
-        chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
+        chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"], biz_type="document", biz_id=task["doc_id"])
 
         async def gen_metadata_task(chat_mdl, d):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "metadata",
@@ -466,7 +467,7 @@ async def build_chunks(task, progress_callback):
         else:
             all_tags = json.loads(all_tags)
         chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, task["llm_id"])
-        chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
+        chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"], biz_type="document", biz_id=task["doc_id"])
 
         docs_to_tag = []
         for d in docs:
@@ -522,7 +523,7 @@ async def build_chunks(task, progress_callback):
 def build_TOC(task, docs, progress_callback):
     progress_callback(msg="Start to generate table of content ...")
     chat_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.CHAT, task["llm_id"])
-    chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
+    chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"], biz_type="document", biz_id=task.get("doc_id", ""))
     docs = sorted(docs, key=lambda d: (
         d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
         d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
@@ -674,7 +675,7 @@ async def run_dataflow(task: dict):
             e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
             embedding_id = kb.embd_id
             embd_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.EMBEDDING, embedding_id)
-            embedding_model = LLMBundle(task["tenant_id"], embd_model_config)
+            embedding_model = LLMBundle(task["tenant_id"], embd_model_config, biz_type="document", biz_id=doc_id)
 
             @timeout(60)
             def batch_encode(txts):
@@ -1004,7 +1005,7 @@ async def do_handle_task(task):
             embd_model_config = get_model_config_by_type_and_name(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
         else:
             embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
-        embedding_model = LLMBundle(task_tenant_id, embd_model_config, lang=task_language)
+        embedding_model = LLMBundle(task_tenant_id, embd_model_config, lang=task_language, biz_type="document", biz_id=task_doc_id)
         vts, _ = embedding_model.encode(["ok"])
         vector_size = len(vts[0])
     except Exception as e:
@@ -1057,7 +1058,7 @@ async def do_handle_task(task):
 
         # bind LLM for raptor
         chat_model_config = get_model_config_by_type_and_name(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
-        chat_model = LLMBundle(task_tenant_id, chat_model_config, lang=task_language)
+        chat_model = LLMBundle(task_tenant_id, chat_model_config, lang=task_language, biz_type="document", biz_id=task_doc_id)
         # run RAPTOR
         async with kg_limiter:
             chunks, token_count = await run_raptor_for_kb(
@@ -1102,7 +1103,7 @@ async def do_handle_task(task):
         graphrag_conf = kb_parser_config.get("graphrag", {})
         start_ts = timer()
         chat_model_config = get_model_config_by_type_and_name(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
-        chat_model = LLMBundle(task_tenant_id, chat_model_config, lang=task_language)
+        chat_model = LLMBundle(task_tenant_id, chat_model_config, lang=task_language, biz_type="document", biz_id=task_doc_id)
         with_resolution = graphrag_conf.get("resolution", False)
         with_community = graphrag_conf.get("community", False)
         async with kg_limiter:

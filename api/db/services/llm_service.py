@@ -86,14 +86,15 @@ def get_init_tenant_llm(user_id):
 class LLMBundle(LLM4Tenant):
     def __init__(self, tenant_id: str, model_config: dict, lang="Chinese",
                  user_id: str = None, biz_type: str = None, biz_id: str = None,
-                 **kwargs):
+                 session_id: str = None, **kwargs):
         super().__init__(tenant_id, model_config, lang, **kwargs)
         self.user_id = user_id
         self.biz_type = biz_type or "other"
         self.biz_id = biz_id
+        self.session_id = session_id
 
     def _log_usage(self, model_type: str, usage: LLMUsage):
-        """将本次 LLM 调用的 token 消耗写入明细日志表，失败只记日志不影响主流程。"""
+        """Write token usage for this LLM call to the detail log table; failures are logged without affecting the main flow."""
         tenant_llm_id = self.model_config.get("id")
         if not tenant_llm_id:
             return
@@ -104,6 +105,7 @@ class LLMBundle(LLM4Tenant):
             user_id=self.user_id,
             biz_type=self.biz_type,
             biz_id=self.biz_id,
+            session_id=self.session_id,
             prompt_tokens=usage.prompt_tokens,
             completion_tokens=usage.completion_tokens,
             total_tokens=usage.total_tokens,

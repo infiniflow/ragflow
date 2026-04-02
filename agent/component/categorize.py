@@ -124,7 +124,10 @@ class Categorize(LLM, ABC):
         self.set_input_value(query_key, msg[-1]["content"])
         self._param.update_prompt()
         chat_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
-        chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config)
+        chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config,
+                             biz_type="agent",
+                             biz_id=self._canvas._id,
+                             session_id=self._canvas.get_history_id())
 
         user_prompt = """
 ---- Real Data ----
