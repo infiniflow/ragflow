@@ -1,4 +1,4 @@
-let api_host = `/v1`;
+const api_host = `/v1`;
 const ExternalApi = `/api`;
 
 export { ExternalApi, api_host };
@@ -128,10 +128,13 @@ export default {
   get_dataset_filter: `${api_host}/document/filter`,
 
   // chat
-  setDialog: `${api_host}/dialog/set`,
-  getDialog: `${api_host}/dialog/get`,
-  removeDialog: `${api_host}/dialog/rm`,
-  listDialog: `${api_host}/dialog/list`,
+  createChat: `${ExternalApi}${api_host}/chats`,
+  listChats: `${ExternalApi}${api_host}/chats`,
+  getChat: (chatId: string) => `${ExternalApi}${api_host}/chats/${chatId}`,
+  updateChat: (chatId: string) => `${ExternalApi}${api_host}/chats/${chatId}`,
+  patchChat: (chatId: string) => `${ExternalApi}${api_host}/chats/${chatId}`,
+  deleteChat: (chatId: string) => `${ExternalApi}${api_host}/chats/${chatId}`,
+  bulkDeleteChats: `${ExternalApi}${api_host}/chats`,
   setConversation: `${api_host}/conversation/set`,
   getConversation: `${api_host}/conversation/get`,
   getConversationSSE: (dialogId: string) =>
@@ -156,7 +159,6 @@ export default {
   uploadAndParseExternal: `${api_host}/api/document/upload_and_parse`,
 
   // next chat
-  listNextDialog: `${api_host}/dialog/next`,
   fetchExternalChatInfo: (id: string) =>
     `${ExternalApi}${api_host}/chatbots/${id}/info`,
 

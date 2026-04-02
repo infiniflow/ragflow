@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import api_new_token, api_rm_token, api_stats, api_token_list, batch_create_dialogs
+from common import api_new_token, api_rm_token, api_stats, api_token_list, batch_create_chats
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
@@ -55,17 +55,17 @@ class TestAuthorization:
         assert expected_fragment in res["message"], res
 
 
-@pytest.mark.usefixtures("clear_dialogs")
+@pytest.mark.usefixtures("clear_chats")
 class TestApiTokens:
     @pytest.mark.p2
     def test_token_lifecycle(self, WebApiAuth):
-        dialog_id = batch_create_dialogs(WebApiAuth, 1)[0]
-        create_res = api_new_token(WebApiAuth, {"dialog_id": dialog_id})
+        chat_id = batch_create_chats(WebApiAuth, 1)[0]
+        create_res = api_new_token(WebApiAuth, {"dialog_id": chat_id})
         assert create_res["code"] == 0, create_res
         token = create_res["data"]["token"]
         tenant_id = create_res["data"]["tenant_id"]
 
-        list_res = api_token_list(WebApiAuth, {"dialog_id": dialog_id})
+        list_res = api_token_list(WebApiAuth, {"dialog_id": chat_id})
         assert list_res["code"] == 0, list_res
         assert any(item["token"] == token for item in list_res["data"]), list_res
 

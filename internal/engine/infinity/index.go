@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
@@ -343,4 +344,322 @@ func (e *infinityEngine) CreateDocMetaIndex(ctx context.Context, indexName strin
 	}
 
 	return nil
+}
+
+// InsertDataset inserts chunks into a dataset table
+// Table name format: {tableNamePrefix}_{knowledgebaseID}
+// Auto-create the table if it doesn't exist
+// Transform chunks before insert:
+// - docnm_kwd -> docnm
+// - title_kwd/title_sm_tks -> docnm (if docnm_kwd not set)
+// - content_with_weight/content_ltks/content_sm_ltks -> content
+// - important_kwd -> important_keywords (+ important_kwd_empty_count)
+// - question_kwd -> questions (joined with \n)
+// - kb_id: list -> str (first element)
+// - position_int: list -> hex_joined string
+// - chunk_data: dict -> JSON string
+// - meta_fields: dict -> JSON string
+// - *_feas fields -> JSON string
+// - keyword fields with list values -> ### joined string
+// - Missing embeddings filled with zeros
+// Delete existing rows with matching IDs before insert
+func (e *infinityEngine) InsertDataset(ctx context.Context, chunks []map[string]interface{}, tableNamePrefix string, knowledgebaseID string) ([]string, error) {
+	tableName := fmt.Sprintf("%s_%s", tableNamePrefix, knowledgebaseID)
+	logger.Info("InfinityConnection.InsertDataset called", zap.String("tableName", tableName), zap.Int("chunkCount", len(chunks)))
+
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to get database: %w", err)
+	}
+
+	table, err := db.GetTable(tableName)
+	if err != nil {
+		// Table doesn't exist, try to create it
+		errMsg := strings.ToLower(err.Error())
+		if !strings.Contains(errMsg, "not found") && !strings.Contains(errMsg, "doesn't exist") {
+			return nil, fmt.Errorf("Failed to get table %s: %w", tableName, err)
+		}
+
+		// Infer vector size from chunks
+		vectorSize := 0
+		vectorPattern := regexp.MustCompile(`q_(\d+)_vec`)
+		for _, chunk := range chunks {
+			for key := range chunk {
+				matches := vectorPattern.FindStringSubmatch(key)
+				if len(matches) >= 2 {
+					vectorSize, _ = strconv.Atoi(matches[1])
+					break
+				}
+			}
+			if vectorSize > 0 {
+				break
+			}
+		}
+		if vectorSize == 0 {
+			return nil, fmt.Errorf("cannot infer vector size from chunks")
+		}
+
+		// Determine parser_id from chunk structure
+		parserID := ""
+		if chunkData, ok := chunks[0]["chunk_data"].(map[string]interface{}); ok && chunkData != nil {
+			parserID = "table"
+		}
+
+		// Create table
+		if err := e.CreateIndex(ctx, tableNamePrefix, knowledgebaseID, vectorSize, parserID); err != nil {
+			return nil, fmt.Errorf("Failed to create table: %w", err)
+		}
+
+		table, err = db.GetTable(tableName)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to get table after creation: %w", err)
+		}
+	}
+
+	// Get embedding columns and their sizes
+	var embeddingCols [][2]interface{}
+	colsResp, err := table.ShowColumns()
+	if err != nil {
+		return nil, fmt.Errorf("Failed to get columns: %w", err)
+	}
+	result, ok := colsResp.(*infinity.QueryResult)
+	if !ok {
+		return nil, fmt.Errorf("unexpected response type: %T", colsResp)
+	}
+
+	// ShowColumns returns a result set where Data contains arrays of column values
+	re := regexp.MustCompile(`Embedding\([a-z]+,(\d+)\)`)
+	if nameArr, ok := result.Data["name"]; ok {
+		if typeArr, ok := result.Data["type"]; ok {
+			for i := 0; i < len(nameArr); i++ {
+				colName, _ := nameArr[i].(string)
+				colType, _ := typeArr[i].(string)
+				matches := re.FindStringSubmatch(colType)
+				if len(matches) >= 2 {
+					size, _ := strconv.Atoi(matches[1])
+					embeddingCols = append(embeddingCols, [2]interface{}{colName, size})
+				}
+			}
+		}
+	}
+
+	// Transform chunks
+	insertChunks := make([]map[string]interface{}, len(chunks))
+	for i, chunk := range chunks {
+		d := make(map[string]interface{})
+
+		for k, v := range chunk {
+			switch k {
+			case "docnm_kwd":
+				d["docnm"] = v
+			case "title_kwd":
+				if _, exists := chunk["docnm_kwd"]; !exists {
+					d["docnm"] = utility.ConvertToString(v)
+				}
+			case "title_sm_tks":
+				if _, exists := chunk["docnm_kwd"]; !exists {
+					d["docnm"] = utility.ConvertToString(v)
+				}
+			case "important_kwd":
+				if list, ok := v.([]interface{}); ok {
+					emptyCount := 0
+					tokens := make([]string, 0)
+					for _, item := range list {
+						if str, ok := item.(string); ok {
+							if str == "" {
+								emptyCount++
+							} else {
+								tokens = append(tokens, str)
+							}
+						}
+					}
+					d["important_keywords"] = strings.Join(tokens, ",")
+					d["important_kwd_empty_count"] = emptyCount
+				} else {
+					d["important_keywords"] = utility.ConvertToString(v)
+				}
+			case "important_tks":
+				if _, exists := chunk["important_kwd"]; !exists {
+					d["important_keywords"] = v
+				}
+			case "content_with_weight":
+				d["content"] = v
+			case "content_ltks":
+				if _, exists := chunk["content_with_weight"]; !exists {
+					d["content"] = v
+				}
+			case "content_sm_ltks":
+				if _, exists := chunk["content_with_weight"]; !exists {
+					d["content"] = v
+				}
+			case "authors_tks":
+				d["authors"] = v
+			case "authors_sm_tks":
+				if _, exists := chunk["authors_tks"]; !exists {
+					d["authors"] = v
+				}
+			case "question_kwd":
+				d["questions"] = strings.Join(utility.ConvertToStringSlice(v), "\n")
+			case "question_tks":
+				if _, exists := chunk["question_kwd"]; !exists {
+					d["questions"] = utility.ConvertToString(v)
+				}
+			case "kb_id":
+				if list, ok := v.([]interface{}); ok && len(list) > 0 {
+					d["kb_id"] = list[0]
+				} else {
+					d["kb_id"] = v
+				}
+			case "position_int":
+				if list, ok := v.([]interface{}); ok {
+					d["position_int"] = utility.ConvertPositionIntArrayToHex(list)
+				} else {
+					d["position_int"] = v
+				}
+			case "page_num_int", "top_int":
+				if list, ok := v.([]interface{}); ok {
+					d[k] = utility.ConvertIntArrayToHex(list)
+				} else {
+					d[k] = v
+				}
+			case "chunk_data":
+				d["chunk_data"] = utility.ConvertMapToJSONString(v)
+			default:
+				// Check for *_feas fields
+				if strings.HasSuffix(k, "_feas") {
+					jsonBytes, _ := json.Marshal(v)
+					d[k] = string(jsonBytes)
+				} else if fieldKeyword(k) {
+					// keyword fields with list values -> ### joined
+					if list, ok := v.([]interface{}); ok {
+						d[k] = strings.Join(utility.ConvertToStringSlice(list), "###")
+					} else {
+						d[k] = v
+					}
+				} else {
+					d[k] = v
+				}
+			}
+		}
+
+		// Remove intermediate token fields
+		for _, key := range []string{"docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks",
+			"content_with_weight", "content_ltks", "content_sm_ltks", "authors_tks", "authors_sm_tks",
+			"question_kwd", "question_tks"} {
+			delete(d, key)
+		}
+
+		// Fill missing embedding columns with zeros (raw slice, matching Python SDK)
+		for _, ec := range embeddingCols {
+			name, size := ec[0].(string), ec[1].(int)
+			if _, exists := d[name]; !exists {
+				zeros := make([]float64, size)
+				for i := range zeros {
+					zeros[i] = 0
+				}
+				d[name] = zeros
+			}
+		}
+
+		insertChunks[i] = d
+	}
+
+	// Delete existing rows with matching IDs
+	if len(insertChunks) > 0 {
+		idList := make([]string, len(insertChunks))
+		for i, chunk := range insertChunks {
+			idList[i] = fmt.Sprintf("'%v'", chunk["id"])
+		}
+		filter := fmt.Sprintf("id IN (%s)", strings.Join(idList, ", "))
+		logger.Debug(fmt.Sprintf("Deleting existing rows with filter: %s", filter))
+		delResp, delErr := table.Delete(filter)
+		if delErr != nil {
+			logger.Warn(fmt.Sprintf("Failed to delete existing rows: %v", delErr))
+		} else {
+			logger.Info(fmt.Sprintf("Deleted %d existing rows", delResp.DeletedRows))
+		}
+	}
+
+	// Insert chunks to dataset
+	_, err = table.Insert(insertChunks)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to insert chunks to dataset: %w", err)
+	}
+
+	logger.Info("InfinityConnection.InsertDataset result", zap.String("tableName", tableName), zap.Int("count", len(insertChunks)))
+	return []string{}, nil
+}
+
+// InsertMetadata inserts document metadata into tenant's metadata table
+// Table name format: ragflow_doc_meta_{tenant_id}
+// Auto-create the table if it doesn't exist
+// Replace existing metadata with same id and kb_id
+func (e *infinityEngine) InsertMetadata(ctx context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error) {
+	tableName := fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
+	logger.Info("InfinityConnection.InsertMetadata called", zap.String("tableName", tableName), zap.Int("metaCount", len(metadata)))
+
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to get database: %w", err)
+	}
+
+	table, err := db.GetTable(tableName)
+	if err != nil {
+		// Table doesn't exist, try to create it
+		errMsg := strings.ToLower(err.Error())
+		if !strings.Contains(errMsg, "not found") && !strings.Contains(errMsg, "doesn't exist") {
+			return nil, fmt.Errorf("Failed to get table %s: %w", tableName, err)
+		}
+
+		// Create metadata table
+		if createErr := e.CreateDocMetaIndex(ctx, tableName); createErr != nil {
+			return nil, fmt.Errorf("Failed to create metadata table: %w", createErr)
+		}
+
+		table, err = db.GetTable(tableName)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to get table after creation: %w", err)
+		}
+	}
+
+	// Transform metadata - convert meta_fields map to JSON string
+	insertMetadata := make([]map[string]interface{}, len(metadata))
+	for i, m := range metadata {
+		d := make(map[string]interface{})
+		for k, v := range m {
+			if k == "meta_fields" {
+				d["meta_fields"] = utility.ConvertMapToJSONString(v)
+			} else {
+				d[k] = v
+			}
+		}
+		insertMetadata[i] = d
+	}
+
+	// Delete existing metadata with same id and kb_id, then insert new
+	if len(insertMetadata) > 0 {
+		idList := make([]string, len(insertMetadata))
+		for i, m := range insertMetadata {
+			docID := fmt.Sprintf("'%v'", m["id"])
+			kbID := fmt.Sprintf("'%v'", m["kb_id"])
+			idList[i] = fmt.Sprintf("(id = %s AND kb_id = %s)", docID, kbID)
+		}
+		filter := strings.Join(idList, " OR ")
+		logger.Debug(fmt.Sprintf("Deleting existing metadata with filter: %s", filter))
+		delResp, delErr := table.Delete(filter)
+		if delErr != nil {
+			logger.Warn(fmt.Sprintf("Failed to delete existing metadata: %v", delErr))
+		} else if delResp.DeletedRows > 0 {
+			logger.Info(fmt.Sprintf("Deleted %d existing metadata entries", delResp.DeletedRows))
+		}
+	}
+
+	// Insert metadata
+	_, err = table.Insert(insertMetadata)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to insert metadata: %w", err)
+	}
+
+	logger.Info("InfinityConnection.InsertMetadata result", zap.String("tableName", tableName), zap.Int("metaCount", len(metadata)))
+	return []string{}, nil
 }

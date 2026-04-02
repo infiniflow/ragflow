@@ -1006,15 +1006,17 @@ Commands (User Mode):
   LIST MODEL PROVIDERS;                                  - List model providers
   LIST DEFAULT MODELS;                                   - List default models
   LIST TOKENS;                                           - List API tokens
+  LIST PROVIDERS;                                        - List available LLM providers
   CREATE TOKEN;                                          - Create new API token
+  CREATE PROVIDER 'name';                                - Create a provider without API key
+  CREATE PROVIDER 'name' 'api_key';                      - Create a provider with API key
   DROP TOKEN 'token_value';                              - Delete an API token
+  DROP PROVIDER 'name';                                  - Delete a provider
   SET TOKEN 'token_value';                               - Set and validate API token
   SHOW TOKEN;                                            - Show current API token
+  SHOW PROVIDER 'name';                                  - Show provider details
   UNSET TOKEN;                                           - Remove current API token
-  CREATE INDEX FOR DATASET 'name' VECTOR_SIZE N;         - Create index for dataset
-  DROP INDEX FOR DATASET 'name';                         - Drop index for dataset
-  CREATE INDEX DOC_META;                                 - Create doc meta index
-  DROP INDEX DOC_META;                                   - Drop doc meta index
+  ALTER PROVIDER 'name' NAME 'new_name';                 - Rename a provider
 
 Context Engine Commands (no quotes):
   ls [path]                    - List resources
