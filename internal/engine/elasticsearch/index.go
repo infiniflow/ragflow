@@ -85,6 +85,10 @@ func (e *elasticsearchEngine) CreateIndex(ctx context.Context, indexName, datase
 
 	if res.IsError() {
 		bodyBytes, _ := io.ReadAll(res.Body)
+		reason := extractErrorReason(bodyBytes)
+		if reason != "" {
+			return fmt.Errorf("elasticsearch error: %s", reason)
+		}
 		return fmt.Errorf("elasticsearch returned error: %s, body: %s", res.Status(), string(bodyBytes))
 	}
 
@@ -152,48 +156,84 @@ func getDefaultSkillMapping() map[string]interface{} {
 					"store": true,
 				},
 				"name": map[string]interface{}{
-					"type":   "text",
-					"index":  false,
-					"store":  true,
+					"type":  "text",
+					"index": false,
+					"store": true,
 				},
 				"name_tks": map[string]interface{}{
-					"type":      "text",
-					"analyzer":  "whitespace",
-					"store":     true,
+					"type":     "text",
+					"analyzer": "whitespace",
+					"store":    true,
 				},
 				"tags": map[string]interface{}{
-					"type":   "text",
-					"index":  false,
-					"store":  true,
+					"type":  "text",
+					"index": false,
+					"store": true,
 				},
 				"tags_tks": map[string]interface{}{
-					"type":      "text",
-					"analyzer":  "whitespace",
-					"store":     true,
+					"type":     "text",
+					"analyzer": "whitespace",
+					"store":    true,
 				},
 				"description": map[string]interface{}{
-					"type":   "text",
-					"index":  false,
-					"store":  true,
+					"type":  "text",
+					"index": false,
+					"store": true,
 				},
 				"description_tks": map[string]interface{}{
-					"type":      "text",
-					"analyzer":  "whitespace",
-					"store":     true,
+					"type":     "text",
+					"analyzer": "whitespace",
+					"store":    true,
 				},
 				"content": map[string]interface{}{
-					"type":   "text",
-					"index":  false,
-					"store":  true,
+					"type":  "text",
+					"index": false,
+					"store": true,
 				},
 				"content_tks": map[string]interface{}{
-					"type":      "text",
-					"analyzer":  "whitespace",
-					"store":     true,
+					"type":     "text",
+					"analyzer": "whitespace",
+					"store":    true,
+				},
+				"q_3072_vec": map[string]interface{}{
+					"type":       "dense_vector",
+					"dims":       3072,
+					"index":      true,
+					"similarity": "cosine",
+				},
+				"q_2560_vec": map[string]interface{}{
+					"type":       "dense_vector",
+					"dims":       2560,
+					"index":      true,
+					"similarity": "cosine",
+				},
+				"q_1536_vec": map[string]interface{}{
+					"type":       "dense_vector",
+					"dims":       1536,
+					"index":      true,
+					"similarity": "cosine",
 				},
 				"q_1024_vec": map[string]interface{}{
 					"type":       "dense_vector",
 					"dims":       1024,
+					"index":      true,
+					"similarity": "cosine",
+				},
+				"q_768_vec": map[string]interface{}{
+					"type":       "dense_vector",
+					"dims":       768,
+					"index":      true,
+					"similarity": "cosine",
+				},
+				"q_512_vec": map[string]interface{}{
+					"type":       "dense_vector",
+					"dims":       512,
+					"index":      true,
+					"similarity": "cosine",
+				},
+				"q_256_vec": map[string]interface{}{
+					"type":       "dense_vector",
+					"dims":       256,
 					"index":      true,
 					"similarity": "cosine",
 				},
@@ -245,6 +285,11 @@ func (e *elasticsearchEngine) DeleteIndex(ctx context.Context, indexName string)
 	defer res.Body.Close()
 
 	if res.IsError() {
+		bodyBytes, _ := io.ReadAll(res.Body)
+		reason := extractErrorReason(bodyBytes)
+		if reason != "" {
+			return fmt.Errorf("elasticsearch error: %s", reason)
+		}
 		return fmt.Errorf("elasticsearch returned error: %s", res.Status())
 	}
 
@@ -273,6 +318,11 @@ func (e *elasticsearchEngine) IndexExists(ctx context.Context, indexName string)
 		return false, nil
 	}
 
+	bodyBytes, _ := io.ReadAll(res.Body)
+	reason := extractErrorReason(bodyBytes)
+	if reason != "" {
+		return false, fmt.Errorf("elasticsearch error: %s", reason)
+	}
 	return false, fmt.Errorf("elasticsearch returned error: %s", res.Status())
 }
 

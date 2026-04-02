@@ -243,3 +243,39 @@ func convertBytes(bytes int64) string {
 	}
 	return fmt.Sprintf("%d b", bytes)
 }
+
+// extractErrorReason extracts the error reason from Elasticsearch error response
+// It tries to find the most specific error message in the response
+func extractErrorReason(bodyBytes []byte) string {
+	var errResp map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &errResp); err != nil {
+		return ""
+	}
+
+	// Try to get error from root_cause
+	if errorObj, ok := errResp["error"].(map[string]interface{}); ok {
+		if rootCauses, ok := errorObj["root_cause"].([]interface{}); ok && len(rootCauses) > 0 {
+			if rootCause, ok := rootCauses[0].(map[string]interface{}); ok {
+				if reason, ok := rootCause["reason"].(string); ok && reason != "" {
+					return reason
+				}
+			}
+		}
+		// Fallback to main error reason
+		if reason, ok := errorObj["reason"].(string); ok && reason != "" {
+			return reason
+		}
+		// Try failed_shards
+		if failedShards, ok := errorObj["failed_shards"].([]interface{}); ok && len(failedShards) > 0 {
+			if shard, ok := failedShards[0].(map[string]interface{}); ok {
+				if reason, ok := shard["reason"].(map[string]interface{}); ok {
+					if r, ok := reason["reason"].(string); ok && r != "" {
+						return r
+					}
+				}
+			}
+		}
+	}
+
+	return ""
+}

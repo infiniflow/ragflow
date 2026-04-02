@@ -258,6 +258,7 @@ export default {
       vectorOnly: 'Vector Only',
       reindex: 'Reindex All',
       reindexing: 'Reindexing...',
+      reindexSuccess: 'Reindexed successfully',
       pleaseSelectEmbeddingModel: 'Please select an embedding model',
       saveSuccess: 'Saved successfully',
       saveError: 'Failed to save',

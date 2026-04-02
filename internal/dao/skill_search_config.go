@@ -58,9 +58,16 @@ func (dao *SkillSearchConfigDAO) GetByTenantID(tenantID, hubID string) (*entity.
 }
 
 // GetLatestByTenantID retrieves the latest skill search config by tenant ID (ordered by update_time desc)
+// Prioritizes configs with non-empty embd_id to return user-saved configs over auto-created ones
 func (dao *SkillSearchConfigDAO) GetLatestByTenantID(tenantID, hubID string) (*entity.SkillSearchConfig, error) {
 	var config entity.SkillSearchConfig
-	err := DB.Where("tenant_id = ? AND hub_id = ? AND status = ?", tenantID, normalizeHubID(hubID), "1").Order("update_time desc").First(&config).Error
+	// First try to get the latest config with non-empty embd_id (user-saved config)
+	err := DB.Where("tenant_id = ? AND hub_id = ? AND status = ? AND embd_id != ?", tenantID, normalizeHubID(hubID), "1", "").Order("update_time desc").First(&config).Error
+	if err == nil {
+		return &config, nil
+	}
+	// If no user-saved config found, get any config
+	err = DB.Where("tenant_id = ? AND hub_id = ? AND status = ?", tenantID, normalizeHubID(hubID), "1").Order("update_time desc").First(&config).Error
 	if err != nil {
 		return nil, err
 	}

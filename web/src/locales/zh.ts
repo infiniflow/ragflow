@@ -233,6 +233,7 @@ export default {
       vectorOnly: '仅向量',
       reindex: '重建索引',
       reindexing: '重建索引中...',
+      reindexSuccess: '重建索引成功',
       pleaseSelectEmbeddingModel: '请选择嵌入模型',
       saveSuccess: '保存成功',
       saveError: '保存失败',

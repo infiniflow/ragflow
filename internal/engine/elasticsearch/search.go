@@ -183,8 +183,12 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 		bodyBytes, err := io.ReadAll(res.Body)
 		if err != nil {
 			logger.Error("Elasticsearch failed to read error response body", err)
-		} else {
-			logger.Warn("Elasticsearch error response", zap.String("body", string(bodyBytes)))
+			return nil, fmt.Errorf("Elasticsearch returned error: %s", res.Status())
+		}
+		logger.Warn("Elasticsearch error response", zap.String("body", string(bodyBytes)))
+		reason := extractErrorReason(bodyBytes)
+		if reason != "" {
+			return nil, fmt.Errorf("Elasticsearch error: %s", reason)
 		}
 		return nil, fmt.Errorf("Elasticsearch returned error: %s", res.Status())
 	}
@@ -306,8 +310,12 @@ func (e *elasticsearchEngine) searchLegacy(ctx context.Context, searchReq *Searc
 		bodyBytes, err := io.ReadAll(res.Body)
 		if err != nil {
 			logger.Error("Elasticsearch failed to read error response body", err)
-		} else {
-			logger.Warn("Elasticsearch error response", zap.String("body", string(bodyBytes)))
+			return nil, fmt.Errorf("Elasticsearch returned error: %s", res.Status())
+		}
+		logger.Warn("Elasticsearch error response", zap.String("body", string(bodyBytes)))
+		reason := extractErrorReason(bodyBytes)
+		if reason != "" {
+			return nil, fmt.Errorf("Elasticsearch error: %s", reason)
 		}
 		return nil, fmt.Errorf("Elasticsearch returned error: %s", res.Status())
 	}

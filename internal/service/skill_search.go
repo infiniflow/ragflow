@@ -67,6 +67,7 @@ func (s *SkillSearchService) GetConfig(tenantID, hubID, embdID string) (map[stri
 
 	if embdID == "" {
 		// If embd_id is not provided, get the latest config for the tenant
+		// Prioritize configs with non-empty embd_id (user-saved configs)
 		config, err = s.configDAO.GetLatestByTenantID(tenantID, hubID)
 		if err != nil {
 			// No config found, return default config

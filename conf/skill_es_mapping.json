@@ -73,6 +73,24 @@
         "analyzer": "whitespace",
         "store": true
       },
+      "q_3072_vec": {
+        "type": "dense_vector",
+        "dims": 3072,
+        "index": true,
+        "similarity": "cosine"
+      },
+      "q_2560_vec": {
+        "type": "dense_vector",
+        "dims": 2560,
+        "index": true,
+        "similarity": "cosine"
+      },
+      "q_1536_vec": {
+        "type": "dense_vector",
+        "dims": 1536,
+        "index": true,
+        "similarity": "cosine"
+      },
       "q_1024_vec": {
         "type": "dense_vector",
         "dims": 1024,

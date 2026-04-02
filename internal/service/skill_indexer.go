@@ -102,7 +102,8 @@ func (s *SkillIndexerService) IndexSkill(ctx context.Context, tenantID, hubID st
 	now := time.Now()
 	timestamp := now.UnixMilli()
 
-	dimension := getEmbeddingDimension(embdID)
+	// Use actual vector dimension instead of hardcoded value
+	dimension := len(vector)
 	vectorField := fmt.Sprintf("q_%d_vec", dimension)
 
 	// Determine engine type
@@ -196,7 +197,11 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, hu
 	// Index all skills
 	now := time.Now()
 	timestamp := now.UnixMilli()
-	dimension := getEmbeddingDimension(embdID)
+	// Use actual vector dimension from first vector (all should have same dimension)
+	dimension := 1024 // default
+	if len(vectors) > 0 && len(vectors[0]) > 0 {
+		dimension = len(vectors[0])
+	}
 	vectorField := fmt.Sprintf("q_%d_vec", dimension)
 	isES := isElasticsearch(docEngine)
 	indexName := getSkillIndexName(tenantID, hubID)
