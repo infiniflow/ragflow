@@ -571,7 +571,7 @@ def get_agent_version(agent_id, version_id, tenant_id):
 @manager.route("/agents/<agent_id>/logs/<message_id>", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-def get_agent_logs(agent_id, message_id, tenant_id):
+async def get_agent_logs(agent_id, message_id, tenant_id):
     if not UserCanvasService.accessible(agent_id, tenant_id):
         return get_json_result(
             data=False,
@@ -580,11 +580,12 @@ def get_agent_logs(agent_id, message_id, tenant_id):
         )
 
     try:
-        binary = REDIS_CONN.get(f"{agent_id}-{message_id}-logs")
+        binary = await thread_pool_exec(REDIS_CONN.get, f"{agent_id}-{message_id}-logs")
         if not binary:
             return get_json_result(data={})
 
-        return get_json_result(data=json.loads(binary.encode("utf-8")))
+        payload = binary.decode("utf-8") if isinstance(binary, bytes) else binary
+        return get_json_result(data=json.loads(payload))
     except Exception as exc:
         logging.exception(exc)
         return server_error_response(exc)
