@@ -69,7 +69,7 @@ class IterationItem(ComponentBase, ABC):
             if p._id != pid:
                 continue
 
-            if p.component_name.lower() in ["categorize", "message", "switch", "userfillup", "interationitem"]:
+            if p.component_name.lower() in ["categorize", "message", "switch", "userfillup", "iterationitem"]:
                 continue
 
             for k, o in p._param.outputs.items():
