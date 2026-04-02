@@ -2,6 +2,9 @@
   "name": "xAI",
   "tags": "LLM",
   "url": "https://api.x.ai/v1",
+  "url_suffix": {
+    "chat": "chat/completions"
+  },
   "models": [
     {
       "name": "grok-4",
