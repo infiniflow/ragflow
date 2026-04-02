@@ -332,7 +332,7 @@ func looksLikeSQL(s string) bool {
 		"LIST ", "SHOW ", "CREATE ", "DROP ", "ALTER ",
 		"LOGIN ", "REGISTER ", "PING", "GRANT ", "REVOKE ",
 		"SET ", "UNSET ", "UPDATE ", "DELETE ", "INSERT ",
-		"SELECT ", "DESCRIBE ", "EXPLAIN ", "ADD ", "ENABLE ", "DISABLE ", "CHAT ", "USE",
+		"SELECT ", "DESCRIBE ", "EXPLAIN ", "ADD ", "ENABLE ", "DISABLE ", "CHAT ", "USE", "ASYNC",
 	}
 	for _, prefix := range sqlPrefixes {
 		if strings.HasPrefix(s, prefix) {
@@ -1021,6 +1021,8 @@ Commands (User Mode):
   USE MODEL 'provider/instance/model';                   - Set current model for chat
   CHAT 'message';                                        - Chat using current model
   CHAT 'provider/instance/model' 'message';              - Chat with specified model
+  ASYNC CHAT 'message';                                  - Async chat using current model
+  ASYNC CHAT 'provider/instance/model' 'message';        - Async chat with specified model
 
 Context Engine Commands (no quotes):
   ls [path]                    - List resources

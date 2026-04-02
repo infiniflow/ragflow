@@ -1212,6 +1212,57 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+func (c *RAGFlowClient) AsyncChatToModel(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	var providerName, instanceName, modelName string
+
+	// Check if model_name is provided in command
+	if compositeModelName, ok := cmd.Params["model_name"].(string); ok && compositeModelName != "" {
+		names := strings.Split(compositeModelName, "/")
+		if len(names) != 3 {
+			return nil, fmt.Errorf("model name must be in format 'provider/instance/model'")
+		}
+		providerName = names[0]
+		instanceName = names[1]
+		modelName = names[2]
+	} else if c.CurrentModel != nil {
+		// Use current model if set
+		providerName = c.CurrentModel.Provider
+		instanceName = c.CurrentModel.Instance
+		modelName = c.CurrentModel.Model
+	} else {
+		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
+	}
+
+	message := cmd.Params["message"].(string)
+
+	url := fmt.Sprintf("/providers/%s/instances/%s/models/%s/async", providerName, instanceName, modelName)
+
+	payload := map[string]interface{}{
+		"message": message,
+	}
+
+	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to async chat model: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to async chat model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result MessageResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("async chat model failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // UseModel sets the current model for chat
 func (c *RAGFlowClient) UseModel(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {

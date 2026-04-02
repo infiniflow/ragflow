@@ -2090,6 +2090,61 @@ func (p *Parser) parseUseCommand() (*Command, error) {
 	return cmd, nil
 }
 
+func (p *Parser) parseAsyncChatCommand() (*Command, error) {
+	p.nextToken() // consume ASYNC
+
+	if p.curToken.Type != TokenChat {
+		return nil, fmt.Errorf("expected CHAT after ASYNC")
+	}
+	p.nextToken() // consume CHAT
+
+	var modelName string
+	var message string
+
+	// Check if we have a quoted string that looks like a model identifier (contains two slashes)
+	// Format: 'provider/instance/model' or just 'message'
+	if p.curToken.Type == TokenQuotedString {
+		firstArg := p.curToken.Value
+
+		// Check if it looks like a model identifier (contains exactly 2 slashes)
+		slashCount := strings.Count(firstArg, "/")
+		if slashCount == 2 {
+			// This is likely a model identifier, expect another quoted string for message
+			modelName = firstArg
+			p.nextToken()
+
+			// After model name, expect message
+			if p.curToken.Type != TokenQuotedString {
+				return nil, fmt.Errorf("expected message after model name")
+			}
+			message = p.curToken.Value
+			p.nextToken()
+		} else {
+			// This is just a message, use current model
+			message = firstArg
+			p.nextToken()
+		}
+	} else if p.curToken.Type == TokenIdentifier {
+		// Context engine style: async chat <message>
+		message = p.curToken.Value
+		p.nextToken()
+	} else {
+		return nil, fmt.Errorf("expected model name (quoted string) or message")
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("async_chat_to_model")
+	if modelName != "" {
+		cmd.Params["model_name"] = modelName
+	}
+	cmd.Params["message"] = message
+	return cmd, nil
+}
+
 func (p *Parser) parseParseCommand() (*Command, error) {
 	p.nextToken() // consume PARSE
 

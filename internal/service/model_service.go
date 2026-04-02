@@ -542,3 +542,56 @@ func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName
 
 	return nil, common.CodeServerError, errors.New("model is disabled")
 }
+
+// AsyncChatResponse represents the response from async chat
+type AsyncChatResponse struct {
+	TaskID string `json:"task_id"`
+}
+
+func (m *ModelProviderService) AsyncChatToModel(providerName, instanceName, modelName, userID, message string) (*AsyncChatResponse, common.ErrorCode, error) {
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return nil, common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+	if err != nil {
+		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+		if providerInfo == nil {
+			return nil, common.CodeNotFound, errors.New("provider not found")
+		}
+
+		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		if err != nil {
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
+		}
+
+		taskID, err := providerInfo.ModelDriver.AsyncChat(&modelName, &instance.APIKey, &message, nil)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+
+		return &AsyncChatResponse{TaskID: taskID}, common.CodeSuccess, nil
+	}
+
+	return nil, common.CodeServerError, errors.New("model is disabled")
+}

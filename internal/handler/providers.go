@@ -585,3 +585,59 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		"message": response,
 	})
 }
+
+func (h *ProviderHandler) AsyncChatToModel(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	modelName := c.Param("model_name")
+	if modelName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Model name is required",
+		})
+		return
+	}
+
+	var req ChatToModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		println("JSON bind error: %v (type: %T)", err, err)
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	response, errorCode, err := h.modelProviderService.AsyncChatToModel(providerName, instanceName, modelName, userID, req.Message)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    errorCode,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    response,
+		"message": "success",
+	})
+}

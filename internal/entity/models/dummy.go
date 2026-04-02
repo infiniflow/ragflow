@@ -39,6 +39,16 @@ func (z *DummyModel) Chat(modelName, apiKey, message *string, genConf map[string
 	return "", fmt.Errorf("not implemented")
 }
 
+// AsyncChat sends a message asynchronously and returns a task ID
+func (z *DummyModel) AsyncChat(modelName, apiKey, message *string, genConf map[string]interface{}) (string, error) {
+	return "", fmt.Errorf("not implemented")
+}
+
+// GetAsyncChatResult gets the result of an async chat task
+func (z *DummyModel) GetAsyncChatResult(taskID, apiKey *string) (string, error) {
+	return "", fmt.Errorf("not implemented")
+}
+
 // ChatStreamly sends a message and streams response
 func (z *DummyModel) ChatStreamly(modelName, apiKey, message *string, genConf map[string]interface{}) (<-chan string, error) {
 	return nil, fmt.Errorf("not implemented")

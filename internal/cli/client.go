@@ -247,6 +247,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.EnableOrDisableModel(cmd, "disable")
 	case "chat_to_model":
 		return c.ChatToModel(cmd)
+	case "async_chat_to_model":
+		return c.AsyncChatToModel(cmd)
 	case "use_model":
 		return c.UseModel(cmd)
 	case "show_current_model":

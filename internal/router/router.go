@@ -203,11 +203,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances/:instance_name", r.providerHandler.ShowProviderInstance)
 				provider.PUT("/:provider_name/instances/:instance_name", r.providerHandler.AlterProviderInstance)
 				provider.DELETE("/:provider_name/instances/:instance_name", r.providerHandler.DropProviderInstance)
-				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
-				provider.PUT("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.EnableOrDisableModel)
-				provider.POST("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.ChatToModel)
-			}
+			provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
+			provider.PUT("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.EnableOrDisableModel)
+			provider.POST("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.ChatToModel)
+			provider.POST("/:provider_name/instances/:instance_name/models/:model_name/async", r.providerHandler.AsyncChatToModel)
 		}
+	}
 
 		// Knowledge base routes
 		kb := authorized.Group("/v1/kb")

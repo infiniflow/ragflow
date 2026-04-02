@@ -194,6 +194,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseChatCommand()
 	case TokenUse:
 		return p.parseUseCommand()
+	case TokenAsync:
+		return p.parseAsyncChatCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}

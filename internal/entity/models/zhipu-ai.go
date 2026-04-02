@@ -127,6 +127,110 @@ func (z *ZhipuAIModel) Chat(modelName, apiKey, message *string, genConf map[stri
 	return content, nil
 }
 
+// AsyncChat sends a message asynchronously and returns a task ID
+func (z *ZhipuAIModel) AsyncChat(modelName, apiKey, message *string, genConf map[string]interface{}) (string, error) {
+	if message == nil {
+		return "", fmt.Errorf("message is nil")
+	}
+
+	url := fmt.Sprintf("%s/%s", z.BaseURL, z.URLSuffix.AsyncChat)
+
+	// Build request body
+	reqBody := map[string]interface{}{
+		"model": modelName,
+		"messages": []map[string]string{
+			{"role": "user", "content": *message},
+		},
+		"stream": false,
+	}
+
+	// Add generation config if provided
+	if genConf != nil {
+		if maxTokens, ok := genConf["max_tokens"]; ok {
+			reqBody["max_tokens"] = maxTokens
+		}
+		if temperature, ok := genConf["temperature"]; ok {
+			reqBody["temperature"] = temperature
+		}
+		if topP, ok := genConf["top_p"]; ok {
+			reqBody["top_p"] = topP
+		}
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response to get task ID
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Try to get task_id from response
+	taskID, ok := result["id"].(string)
+	if !ok {
+		return "", fmt.Errorf("no task id in response")
+	}
+
+	return taskID, nil
+}
+
+// GetAsyncChatResult gets the result of an async chat task
+func (z *ZhipuAIModel) GetAsyncChatResult(taskID, apiKey *string) (string, error) {
+	url := fmt.Sprintf("%s/%s/%s", z.BaseURL, z.URLSuffix.AsyncResult, *taskID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return string(body), nil
+}
+
 // ChatStreamly sends a message and streams response
 func (z *ZhipuAIModel) ChatStreamly(modelName, apiKey, message *string, genConf map[string]interface{}) (<-chan string, error) {
 	url := fmt.Sprintf("%s/chat/completions", z.BaseURL)
