@@ -273,6 +273,14 @@ async def build_chunks(task, progress_callback):
             logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
             raise
 
+    # ── video: resolve youtube_url from metadata, keep task["name"] as title ──
+    extra_kwargs = {}
+    if task["parser_id"].lower() == ParserType.VIDEO.value:
+        _meta = DocMetadataService.get_document_metadata(task["doc_id"]) or {}
+        _youtube_url = _meta.get("youtube_url", "")
+        if _youtube_url:
+            extra_kwargs["youtube_url"] = _youtube_url
+
     try:
         async with chunk_limiter:
             cks = await thread_pool_exec(
@@ -286,6 +294,7 @@ async def build_chunks(task, progress_callback):
                 kb_id=task["kb_id"],
                 parser_config=task["parser_config"],
                 tenant_id=task["tenant_id"],
+                **extra_kwargs,
             )
         logging.info("Chunking({}) {}/{} done".format(timer() - st, task["location"], task["name"]))
     except TaskCanceledException:
