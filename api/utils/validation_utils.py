@@ -13,9 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import pathlib
+import re
 from collections import Counter
 import string
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, List
 from uuid import UUID
 
 from quart import Request
@@ -32,7 +34,9 @@ from pydantic import (
 from pydantic_core import PydanticCustomError
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
-from api.constants import DATASET_NAME_LIMIT
+from api.db import FileType
+from api.constants import DATASET_NAME_LIMIT, FILE_NAME_LEN_LIMIT
+from api.db.services.document_service import DocumentService
 
 
 async def validate_and_parse_json_request(
@@ -390,6 +394,36 @@ class ParserConfig(Base):
     pages: Annotated[list[list[int]] | None, Field(default=None)]
     ext: Annotated[dict, Field(default={})]
 
+class UpdateDocumentReq(Base):
+    model_config = ConfigDict(extra='ignore')
+    chunk_method: Annotated[str | None, Field(default=None, max_length=65535)]
+    enabled: Annotated[str | None, Field(default=None, max_length=1)]
+    chunk_count: Annotated[int | None, Field(default=None, ge=0)]
+    token_count: Annotated[int | None, Field(default=None, ge=0)]
+    progress: Annotated[float | None, Field(default=None, ge=0.0, le=1.0)]
+    parser_config: Annotated[ParserConfig | None, Field(default=None)]
+    meta_fields: Annotated[dict | None, Field(default={})]
+
+    @field_validator("chunk_method", mode="after")
+    @classmethod
+    def validate_document_update_req(cls, chunk_method: str | None):
+        if chunk_method:
+            # Validate chunk method if present
+            valid_chunk_method = {"naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one", "knowledge_graph", "email", "tag"}
+            if chunk_method not in valid_chunk_method:
+                raise PydanticCustomError("format_invalid", "`chunk_method` {chunk_method} doesn't exist", {"chunk_method":chunk_method})
+
+        return chunk_method
+
+    @field_validator("enabled", mode="after")
+    @classmethod
+    def validate_document_update_req(cls, enabled: str | None):
+        if enabled:
+            converted = int(enabled)
+            if converted < 0 or converted > 1:
+                raise PydanticCustomError("format_invalid", "`enabled` value invalid, only accept 0 or 1 but is {enabled}", {"enabled":enabled})
+
+        return enabled
 
 class CreateDatasetReq(Base):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=DATASET_NAME_LIMIT), Field(...)]
