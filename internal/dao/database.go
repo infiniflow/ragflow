@@ -39,6 +39,7 @@ import (
 )
 
 var DB *gorm.DB
+var modelProviderManager *entity.ProviderManager
 
 // LLMFactoryConfig represents a single LLM factory configuration
 type LLMFactoryConfig struct {
@@ -146,6 +147,11 @@ func InitDB() error {
 		&entity.EvaluationResult{},
 		&entity.TimeRecord{},
 		&entity.License{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+		&entity.TenantModelGroupMapping{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelGroup{},
 	}
 
 	for _, m := range models {
@@ -155,17 +161,28 @@ func InitDB() error {
 	}
 
 	// Run manual migrations for complex schema changes
-	if err := RunMigrations(DB); err != nil {
+	if err = RunMigrations(DB); err != nil {
 		return fmt.Errorf("failed to run manual migrations: %w", err)
 	}
 
 	logger.Info("Database connected and migrated successfully")
+
+	modelProviderManager, err = entity.NewProviderManager("conf/models")
+	if err != nil {
+		log.Fatal("Failed to load model providers:", err)
+	}
+	logger.Info("Model providers loaded successfully")
 	return nil
 }
 
 // GetDB get database instance
 func GetDB() *gorm.DB {
 	return DB
+}
+
+// GetModelProviderManager get database instance
+func GetModelProviderManager() *entity.ProviderManager {
+	return modelProviderManager
 }
 
 // autoMigrateSafely runs AutoMigrate and ignores duplicate index errors

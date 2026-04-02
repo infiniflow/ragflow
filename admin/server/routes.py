@@ -30,6 +30,7 @@ from roles import RoleMgr
 from api.common.exceptions import AdminException
 from common.versions import get_ragflow_version
 from api.utils.api_utils import generate_confirmation_token
+from common.log_utils import get_log_levels, set_log_level
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/api/v1/admin")
 
@@ -650,5 +651,41 @@ def test_sandbox_connection():
         return success_response(res)
     except AdminException as e:
         return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route("/log_levels", methods=["GET"])
+@login_required
+@check_admin_auth
+def get_logger_levels():
+    """Get current log levels for all packages."""
+    try:
+        res = get_log_levels()
+        return success_response(res, "Get log levels", 0)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route("/log_levels", methods=["PUT"])
+@login_required
+@check_admin_auth
+def set_logger_level():
+    """Set log level for a package."""
+    try:
+        data = request.get_json()
+        if not data or "pkg_name" not in data or "level" not in data:
+            return error_response("pkg_name and level are required", 400)
+
+        pkg_name = data["pkg_name"]
+        level = data["level"]
+        if not isinstance(pkg_name, str) or not isinstance(level, str):
+            return error_response("pkg_name and level must be strings", 400)
+
+        success = set_log_level(pkg_name, level)
+        if success:
+            return success_response({"pkg_name": pkg_name, "level": level}, "Log level updated successfully")
+        else:
+            return error_response(f"Invalid log level: {level}", 400)
     except Exception as e:
         return error_response(str(e), 500)

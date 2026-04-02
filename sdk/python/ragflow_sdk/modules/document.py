@@ -87,8 +87,8 @@ class Document(Base):
             return chunks
         raise Exception(res.get("message"))
 
-    def add_chunk(self, content: str, important_keywords: list[str] = [], questions: list[str] = [], image_base64: str | None = None):
-        body = {"content": content, "important_keywords": important_keywords, "questions": questions}
+    def add_chunk(self, content: str, important_keywords: list[str] = [], questions: list[str] = [], image_base64: str | None = None, *, tag_kwd: list[str] = []):
+        body = {"content": content, "important_keywords": important_keywords, "tag_kwd": tag_kwd, "questions": questions}
         if image_base64 is not None:
             body["image_base64"] = image_base64
         res = self.post(f"/datasets/{self.dataset_id}/documents/{self.id}/chunks", body)

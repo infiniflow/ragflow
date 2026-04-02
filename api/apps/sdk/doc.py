@@ -28,7 +28,7 @@ from quart_schema import security_scheme_blueprint
 
 from api.constants import FILE_NAME_LEN_LIMIT
 from api.db import FileType
-from api.db.db_models import APIToken, File, Task
+from api.db.db_models import APIToken, Document, File, Task
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService
@@ -59,6 +59,7 @@ class Chunk(BaseModel):
     document_id: str = ""
     docnm_kwd: str = ""
     important_keywords: list = Field(default_factory=list)
+    tag_kwd: list = Field(default_factory=list)
     questions: list = Field(default_factory=list)
     question_tks: str = ""
     image_id: str = ""
@@ -875,10 +876,18 @@ async def parse(tenant_id, dataset_id):
             continue
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
-        if doc[0].run == TaskStatus.RUNNING.value:
-            return get_error_data_result("Can't parse document that is currently being processed")
         info = {"run": "1", "progress": 0, "progress_msg": "", "chunk_num": 0, "token_num": 0}
-        DocumentService.update_by_id(id, info)
+        if (
+            DocumentService.filter_update(
+                [
+                    Document.id == id,
+                    ((Document.run.is_null(True)) | (Document.run != TaskStatus.RUNNING.value)),
+                ],
+                info,
+            )
+            == 0
+        ):
+            return get_error_data_result("Can't parse document that is currently being processed")
         settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), dataset_id)
         TaskService.filter_delete([Task.doc_id == id])
         e, doc = DocumentService.get_by_id(id)
@@ -1050,6 +1059,11 @@ async def list_chunks(tenant_id, dataset_id, document_id):
                     items:
                       type: string
                     description: Important keywords.
+                  tag_kwd:
+                    type: array
+                    items:
+                      type: string
+                    description: Tag keywords.
                   image_id:
                     type: string
                     description: Image ID associated with the chunk.
@@ -1139,6 +1153,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
                 "document_id": sres.field[id]["doc_id"],
                 "docnm_kwd": sres.field[id]["docnm_kwd"],
                 "important_keywords": sres.field[id].get("important_kwd", []),
+                "tag_kwd": sres.field[id].get("tag_kwd", []),
                 "questions": sres.field[id].get("question_kwd", []),
                 "dataset_id": sres.field[id].get("kb_id", sres.field[id].get("dataset_id")),
                 "image_id": sres.field[id].get("img_id", ""),
@@ -1253,6 +1268,10 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     d["docnm_kwd"] = doc.name
     d["doc_id"] = document_id
     if "tag_kwd" in req:
+        if not isinstance(req["tag_kwd"], list):
+            return get_error_data_result("`tag_kwd` is required to be a list")
+        if not all(isinstance(t, str) for t in req["tag_kwd"]):
+            return get_error_data_result("`tag_kwd` must be a list of strings")
         d["tag_kwd"] = req["tag_kwd"]
     if "tag_feas" in req:
         d["tag_feas"] = req["tag_feas"]
@@ -1285,6 +1304,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         "content_with_weight": "content",
         "doc_id": "document_id",
         "important_kwd": "important_keywords",
+        "tag_kwd": "tag_kwd",
         "question_kwd": "questions",
         "kb_id": "dataset_id",
         "create_timestamp_flt": "create_timestamp",
@@ -1434,6 +1454,11 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
               items:
                 type: string
               description: Updated important keywords.
+            tag_kwd:
+              type: array
+              items:
+                type: string
+              description: Updated tag keywords.
             available:
               type: boolean
               description: Availability status of the chunk.
@@ -1482,6 +1507,10 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
             return get_error_data_result("`positions` should be a list")
         d["position_int"] = req["positions"]
     if "tag_kwd" in req:
+        if not isinstance(req["tag_kwd"], list):
+            return get_error_data_result("`tag_kwd` should be a list")
+        if not all(isinstance(t, str) for t in req["tag_kwd"]):
+            return get_error_data_result("`tag_kwd` must be a list of strings")
         d["tag_kwd"] = req["tag_kwd"]
     if "tag_feas" in req:
         d["tag_feas"] = req["tag_feas"]
