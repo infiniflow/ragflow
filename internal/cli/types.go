@@ -42,6 +42,8 @@ const (
 	TokenAlter
 	TokenActive
 	TokenAdmin
+	TokenAdd
+	TokenDelete
 	TokenPassword
 	TokenDataset
 	TokenDatasets
@@ -69,7 +71,7 @@ const (
 	TokenKey
 	TokenKeys
 	TokenGenerate
-	TokenPool
+	TokenAvailable
 	TokenModel
 	TokenModels
 	TokenProvider
@@ -103,6 +105,15 @@ const (
 	TokenIndex
 	TokenVectorSize
 	TokenDocMeta
+	TokenName // For ALTER PROVIDER <name> NAME <new_name>
+	TokenInstance
+	TokenInstances
+	TokenDisable
+	TokenEnable
+	TokenUse
+	TokenInsert
+	TokenFile
+	TokenMetadata
 
 	// Literals
 	TokenIdentifier

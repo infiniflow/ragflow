@@ -26,7 +26,8 @@ from quart import request, send_file
 
 from api.apps.sdk import doc_validation
 from api.constants import FILE_NAME_LEN_LIMIT
-from api.db.db_models import APIToken, File, Task
+from api.db import FileType
+from api.db.db_models import APIToken, Document, File, Task
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService
@@ -902,10 +903,18 @@ async def parse(tenant_id, dataset_id):
             continue
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
-        if doc[0].run == TaskStatus.RUNNING.value:
-            return get_error_data_result("Can't parse document that is currently being processed")
         info = {"run": "1", "progress": 0, "progress_msg": "", "chunk_num": 0, "token_num": 0}
-        DocumentService.update_by_id(id, info)
+        if (
+            DocumentService.filter_update(
+                [
+                    Document.id == id,
+                    ((Document.run.is_null(True)) | (Document.run != TaskStatus.RUNNING.value)),
+                ],
+                info,
+            )
+            == 0
+        ):
+            return get_error_data_result("Can't parse document that is currently being processed")
         settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), dataset_id)
         TaskService.filter_delete([Task.doc_id == id])
         e, doc = DocumentService.get_by_id(id)

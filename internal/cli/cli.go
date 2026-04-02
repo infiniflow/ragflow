@@ -332,7 +332,7 @@ func looksLikeSQL(s string) bool {
 		"LIST ", "SHOW ", "CREATE ", "DROP ", "ALTER ",
 		"LOGIN ", "REGISTER ", "PING", "GRANT ", "REVOKE ",
 		"SET ", "UNSET ", "UPDATE ", "DELETE ", "INSERT ",
-		"SELECT ", "DESCRIBE ", "EXPLAIN ",
+		"SELECT ", "DESCRIBE ", "EXPLAIN ", "ADD ", "ENABLE ", "DISABLE ", "CHAT ", "USE",
 	}
 	for _, prefix := range sqlPrefixes {
 		if strings.HasPrefix(s, prefix) {
@@ -1006,15 +1006,21 @@ Commands (User Mode):
   LIST MODEL PROVIDERS;                                  - List model providers
   LIST DEFAULT MODELS;                                   - List default models
   LIST TOKENS;                                           - List API tokens
+  LIST PROVIDERS;                                        - List available LLM providers
   CREATE TOKEN;                                          - Create new API token
+  ADD PROVIDER 'name';                                - Create a provider without API key
+  ADD PROVIDER 'name' 'api_key';                      - Create a provider with API key
   DROP TOKEN 'token_value';                              - Delete an API token
+  DELETE PROVIDER 'name';                                  - Delete a provider
   SET TOKEN 'token_value';                               - Set and validate API token
   SHOW TOKEN;                                            - Show current API token
+  SHOW PROVIDER 'name';                                  - Show provider details
+  SHOW CURRENT MODEL;                                    - Show current model settings
   UNSET TOKEN;                                           - Remove current API token
-  CREATE INDEX FOR DATASET 'name' VECTOR_SIZE N;         - Create index for dataset
-  DROP INDEX FOR DATASET 'name';                         - Drop index for dataset
-  CREATE INDEX DOC_META;                                 - Create doc meta index
-  DROP INDEX DOC_META;                                   - Drop doc meta index
+  ALTER PROVIDER 'name' NAME 'new_name';                 - Rename a provider
+  USE MODEL 'provider/instance/model';                   - Set current model for chat
+  CHAT 'message';                                        - Chat using current model
+  CHAT 'provider/instance/model' 'message';              - Chat with specified model
 
 Context Engine Commands (no quotes):
   ls [path]                    - List resources

@@ -319,6 +319,20 @@ class InfinityConnection(InfinityConnectionBase):
         return res_fields.get(chunk_id, None)
 
     def insert(self, documents: list[dict], index_name: str, knowledgebase_id: str = None) -> list[str]:
+        '''
+        # Save input to file to test inserting from file in GO
+        import datetime
+        import os
+        debug_file = os.path.join("/var/infinity/tmp", f"insert_{index_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.json")
+        with open(debug_file, 'w') as f:
+            json.dump({
+                "table_name": index_name,
+                "knowledgebase_id": knowledgebase_id,
+                "chunks": documents
+            }, f, indent=2)
+        self.logger.debug(f"Saved insert input to {debug_file}")
+        '''
+
         inf_conn = self.connPool.get_conn()
         try:
             db_instance = inf_conn.get_database(self.dbName)
@@ -625,6 +639,9 @@ class InfinityConnection(InfinityConnectionBase):
                     res[field] = res["authors"]
 
         column_map = {col.lower(): col for col in res.columns}
+        # row_id() is returned by infinity as "row_id", add mapping for lookup
+        if "row_id()" in fields_all and "row_id" in column_map:
+            column_map["row_id()"] = column_map["row_id"]
         matched_columns = {column_map[col.lower()]: col for col in fields_all if col.lower() in column_map}
         none_columns = [col for col in fields_all if col.lower() not in column_map]
 

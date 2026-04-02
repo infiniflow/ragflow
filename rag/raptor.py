@@ -91,7 +91,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             return response
         embds, _ = await thread_pool_exec(self._embd_model.encode, [txt])
         if len(embds) < 1 or len(embds[0]) < 1:
-            raise Exception("Embedding error: ")
+            raise Exception("Embedding error: empty embeddings returned")
         embds = embds[0]
         await thread_pool_exec(set_embed_cache, self._embd_model.llm_name, txt, embds)
         return embds

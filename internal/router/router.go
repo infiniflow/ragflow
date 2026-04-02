@@ -39,6 +39,7 @@ type Router struct {
 	searchHandler        *handler.SearchHandler
 	fileHandler          *handler.FileHandler
 	memoryHandler        *handler.MemoryHandler
+	providerHandler      *handler.ProviderHandler
 }
 
 // NewRouter create router
@@ -58,6 +59,7 @@ func NewRouter(
 	searchHandler *handler.SearchHandler,
 	fileHandler *handler.FileHandler,
 	memoryHandler *handler.MemoryHandler,
+	providerHandler *handler.ProviderHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -75,6 +77,7 @@ func NewRouter(
 		searchHandler:        searchHandler,
 		fileHandler:          fileHandler,
 		memoryHandler:        memoryHandler,
+		providerHandler:      providerHandler,
 	}
 }
 
@@ -99,15 +102,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 	// User logout endpoint
 	engine.GET("/v1/user/logout", r.userHandler.Logout)
-
-	// provider pool route group
-	provider := engine.Group("/api/v1/providers")
-	{
-		provider.GET("/", handler.ListPoolProviders)
-		provider.GET("/:provider_name", handler.ShowPoolProvider)
-		provider.GET("/:provider_name/models", handler.ListPoolModels)
-		provider.GET("/:provider_name/models/:model_name", handler.ShowPoolModel)
-	}
 
 	// Protected routes
 	authorized := engine.Group("")
@@ -195,6 +189,30 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("", r.memoryHandler.GetMessages)
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
+
+			file := v1.Group("/files")
+			{
+				file.POST("", r.fileHandler.UploadFile)
+			}
+
+			// provider pool route group
+			provider := v1.Group("/providers")
+			{
+				provider.GET("/", r.providerHandler.ListProviders)
+				provider.POST("/", r.providerHandler.AddProvider)
+				provider.GET("/:provider_name", r.providerHandler.ShowProvider)
+				provider.DELETE("/:provider_name", r.providerHandler.DeleteProvider)
+				provider.GET("/:provider_name/models", r.providerHandler.ListModels)
+				provider.GET("/:provider_name/models/:model_name", r.providerHandler.ShowModel)
+				provider.POST("/:provider_name/instances", r.providerHandler.CreateProviderInstance)
+				provider.GET("/:provider_name/instances", r.providerHandler.ListProviderInstances)
+				provider.GET("/:provider_name/instances/:instance_name", r.providerHandler.ShowProviderInstance)
+				provider.PUT("/:provider_name/instances/:instance_name", r.providerHandler.AlterProviderInstance)
+				provider.DELETE("/:provider_name/instances/:instance_name", r.providerHandler.DropProviderInstance)
+				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
+				provider.PUT("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.EnableOrDisableModel)
+				provider.POST("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.ChatToModel)
+			}
 		}
 
 		// Knowledge base routes
@@ -211,6 +229,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			kb.GET("/basic_info", r.knowledgebaseHandler.GetBasicInfo)
 			kb.POST("/index", r.knowledgebaseHandler.CreateIndex)
 			kb.DELETE("/index", r.knowledgebaseHandler.DeleteIndex)
+			kb.POST("/insert_from_file", r.knowledgebaseHandler.InsertDatasetFromFile)
 
 			// KB ID specific routes
 			kbByID := kb.Group("/:kb_id")
@@ -228,6 +247,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		{
 			tenant.POST("/doc_meta_index", r.tenantHandler.CreateDocMetaIndex)
 			tenant.DELETE("/doc_meta_index", r.tenantHandler.DeleteDocMetaIndex)
+			tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile)
 		}
 
 		// Document routes
