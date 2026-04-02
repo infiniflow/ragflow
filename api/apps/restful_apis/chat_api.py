@@ -14,13 +14,25 @@
 #  limitations under the License.
 #
 
+import json
+import logging
+import os
+import re
+import tempfile
 from copy import deepcopy
 
-from quart import request
+from quart import Response, request
 
 from api.apps import current_user, login_required
-from api.db.services.dialog_service import DialogService
+from api.db.joint_services.tenant_model_service import (
+    get_model_config_by_type_and_name,
+    get_tenant_default_model_by_type,
+)
+from api.db.services.conversation_service import ConversationService, structure_answer
+from api.db.services.dialog_service import DialogService, async_ask, async_chat, gen_mindmap
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.llm_service import LLMBundle
+from api.db.services.search_service import SearchService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import (
@@ -29,10 +41,13 @@ from api.utils.api_utils import (
     get_json_result,
     get_request_json,
     server_error_response,
+    validate_request,
 )
 from api.utils.tenant_utils import ensure_tenant_model_id_for_params
-from common.constants import RetCode, StatusEnum
+from common.constants import LLMType, RetCode, StatusEnum
 from common.misc_utils import get_uuid
+from rag.prompts.generator import chunks_format
+from rag.prompts.template import load_prompt
 
 _DEFAULT_PROMPT_CONFIG = {
     "system": (
@@ -93,6 +108,13 @@ def _validate_name(name, *, required=True):
     if len(name.encode("utf-8")) > 255:
         return None, f"Chat name length is {len(name.encode('utf-8'))} which is larger than 255."
     return name, None
+
+
+def _build_session_response(conv: dict) -> dict:
+    conv = dict(conv)
+    conv["chat_id"] = conv.pop("dialog_id", conv.get("chat_id"))
+    conv["messages"] = conv.pop("message", conv.get("messages", []))
+    return conv
 
 
 def _ensure_owned_chat(chat_id):
@@ -567,3 +589,458 @@ async def bulk_delete_chats():
         return get_data_error_result(message="; ".join(all_errors))
 
     return get_json_result(data={"success_count": success_count})
+
+
+@manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
+@login_required
+async def create_session(chat_id):
+    if not _ensure_owned_chat(chat_id):
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+    try:
+        req = await get_request_json()
+        ok, dia = DialogService.get_by_id(chat_id)
+        if not ok:
+            return get_data_error_result(message="Chat not found!")
+        name = req.get("name", "New session")
+        if not isinstance(name, str) or not name.strip():
+            return get_data_error_result(message="`name` can not be empty.")
+        name = name.strip()[:255]
+        conv = {
+            "id": get_uuid(),
+            "dialog_id": chat_id,
+            "name": name,
+            "message": [{"role": "assistant", "content": dia.prompt_config.get("prologue", "")}],
+            "user_id": req.get("user_id", current_user.id),
+            "reference": [],
+        }
+        ConversationService.save(**conv)
+        ok, conv_obj = ConversationService.get_by_id(conv["id"])
+        if not ok:
+            return get_data_error_result(message="Fail to create a session!")
+        return get_json_result(data=_build_session_response(conv_obj.to_dict()))
+    except Exception as ex:
+        return server_error_response(ex)
+
+
+@manager.route("/chats/<chat_id>/sessions", methods=["GET"])  # noqa: F821
+@login_required
+def list_sessions(chat_id):
+    try:
+        if not _ensure_owned_chat(chat_id):
+            return get_json_result(
+                data=False,
+                message="No authorization.",
+                code=RetCode.AUTHENTICATION_ERROR,
+            )
+        page_number = int(request.args.get("page", 1))
+        items_per_page = int(request.args.get("page_size", 30))
+        orderby = request.args.get("orderby", "create_time")
+        desc = request.args.get("desc", "true").lower() != "false"
+        session_id = request.args.get("id")
+        name = request.args.get("name")
+        user_id = request.args.get("user_id")
+        convs = ConversationService.get_list(
+            chat_id, page_number, items_per_page, orderby, desc, session_id, name, user_id
+        )
+        if items_per_page == 0:
+            convs = []
+        return get_json_result(data=[_build_session_response(c) for c in convs])
+    except Exception as ex:
+        return server_error_response(ex)
+
+
+@manager.route("/chats/<chat_id>/sessions/<session_id>", methods=["GET"])  # noqa: F821
+@login_required
+async def get_session(chat_id, session_id):
+    if not _ensure_owned_chat(chat_id):
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+    try:
+        ok, conv = ConversationService.get_by_id(session_id)
+        if not ok:
+            return get_data_error_result(message="Session not found!")
+        if conv.dialog_id != chat_id:
+            return get_data_error_result(message="Session does not belong to this chat!")
+        dialog = _ensure_owned_chat(chat_id)
+        avatar = dialog[0].icon if dialog else ""
+        for ref in conv.reference:
+            if isinstance(ref, list):
+                continue
+            ref["chunks"] = chunks_format(ref)
+        result = _build_session_response(conv.to_dict())
+        result["avatar"] = avatar
+        return get_json_result(data=result)
+    except Exception as ex:
+        return server_error_response(ex)
+
+
+@manager.route("/chats/<chat_id>/sessions/<session_id>", methods=["PUT"])  # noqa: F821
+@login_required
+async def update_session(chat_id, session_id):
+    if not _ensure_owned_chat(chat_id):
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+    try:
+        req = await get_request_json()
+        if not ConversationService.query(id=session_id, dialog_id=chat_id):
+            return get_data_error_result(message="Session not found!")
+        if "message" in req or "messages" in req:
+            return get_data_error_result(message="`messages` cannot be changed.")
+        if "reference" in req:
+            return get_data_error_result(message="`reference` cannot be changed.")
+        name = req.get("name")
+        if name is not None:
+            if not isinstance(name, str) or not name.strip():
+                return get_data_error_result(message="`name` can not be empty.")
+            req["name"] = name.strip()[:255]
+        update_fields = {k: v for k, v in req.items() if k not in {"id", "dialog_id", "chat_id", "user_id"}}
+        if not ConversationService.update_by_id(session_id, update_fields):
+            return get_data_error_result(message="Session not found!")
+        ok, conv = ConversationService.get_by_id(session_id)
+        if not ok:
+            return get_data_error_result(message="Fail to update a session!")
+        return get_json_result(data=_build_session_response(conv.to_dict()))
+    except Exception as ex:
+        return server_error_response(ex)
+
+
+@manager.route("/chats/<chat_id>/sessions", methods=["DELETE"])  # noqa: F821
+@login_required
+async def delete_sessions(chat_id):
+    if not _ensure_owned_chat(chat_id):
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+    try:
+        req = await get_request_json()
+        if not req:
+            return get_json_result(data={})
+
+        session_ids = req.get("ids")
+        if not session_ids:
+            if req.get("delete_all") is True:
+                session_ids = [conv.id for conv in ConversationService.query(dialog_id=chat_id)]
+                if not session_ids:
+                    return get_json_result(data={})
+            else:
+                return get_json_result(data={})
+        unique_ids, duplicate_messages = check_duplicate_ids(session_ids, "session")
+        errors = []
+        success_count = 0
+        for sid in unique_ids:
+            if not ConversationService.query(id=sid, dialog_id=chat_id):
+                errors.append(f"The chat doesn't own the session {sid}")
+                continue
+            ConversationService.delete_by_id(sid)
+            success_count += 1
+        all_errors = errors + duplicate_messages
+        if all_errors:
+            if success_count > 0:
+                return get_json_result(
+                    data={"success_count": success_count, "errors": all_errors},
+                    message=f"Partially deleted {success_count} sessions with {len(all_errors)} errors",
+                )
+            return get_data_error_result(message="; ".join(all_errors))
+        return get_json_result(data=True)
+    except Exception as ex:
+        return server_error_response(ex)
+
+
+@manager.route("/chats/<chat_id>/sessions/<session_id>/messages/<msg_id>", methods=["DELETE"])  # noqa: F821
+@login_required
+async def delete_session_message(chat_id, session_id, msg_id):
+    if not _ensure_owned_chat(chat_id):
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+    try:
+        ok, conv = ConversationService.get_by_id(session_id)
+        if not ok or conv.dialog_id != chat_id:
+            return get_data_error_result(message="Session not found!")
+        conv = conv.to_dict()
+        for i, msg in enumerate(conv["message"]):
+            if msg_id != msg.get("id", ""):
+                continue
+            assert conv["message"][i + 1]["id"] == msg_id
+            conv["message"].pop(i)
+            conv["message"].pop(i)
+            conv["reference"].pop(max(0, i // 2 - 1))
+            break
+        ConversationService.update_by_id(conv["id"], conv)
+        return get_json_result(data=_build_session_response(conv))
+    except Exception as ex:
+        return server_error_response(ex)
+
+
+@manager.route("/chats/<chat_id>/sessions/<session_id>/messages/<msg_id>/feedback", methods=["PUT"])  # noqa: F821
+@login_required
+async def update_message_feedback(chat_id, session_id, msg_id):
+    if not _ensure_owned_chat(chat_id):
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+    try:
+        req = await get_request_json()
+        ok, conv = ConversationService.get_by_id(session_id)
+        if not ok or conv.dialog_id != chat_id:
+            return get_data_error_result(message="Session not found!")
+        up_down = req.get("thumbup")
+        feedback = req.get("feedback", "")
+        conv = conv.to_dict()
+        for msg in conv["message"]:
+            if msg_id == msg.get("id", "") and msg.get("role", "") == "assistant":
+                if up_down:
+                    msg["thumbup"] = True
+                    msg.pop("feedback", None)
+                else:
+                    msg["thumbup"] = False
+                    if feedback:
+                        msg["feedback"] = feedback
+                break
+        ConversationService.update_by_id(conv["id"], conv)
+        return get_json_result(data=_build_session_response(conv))
+    except Exception as ex:
+        return server_error_response(ex)
+
+
+@manager.route("/chats/tts", methods=["POST"])  # noqa: F821
+@login_required
+async def tts():
+    req = await get_request_json()
+    text = req["text"]
+
+    try:
+        default_tts_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.TTS)
+    except Exception as e:
+        return get_data_error_result(message=str(e))
+
+    tts_mdl = LLMBundle(current_user.id, default_tts_model_config)
+
+    def stream_audio():
+        try:
+            for txt in re.split(r"[，。/《》？；：！\n\r:;]+", text):
+                for chunk in tts_mdl.tts(txt):
+                    yield chunk
+        except Exception as e:
+            yield ("data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e)}}, ensure_ascii=False)).encode("utf-8")
+
+    resp = Response(stream_audio(), mimetype="audio/mpeg")
+    resp.headers.add_header("Cache-Control", "no-cache")
+    resp.headers.add_header("Connection", "keep-alive")
+    resp.headers.add_header("X-Accel-Buffering", "no")
+    return resp
+
+
+@manager.route("/chats/transcriptions", methods=["POST"])  # noqa: F821
+@login_required
+async def transcriptions():
+    req = await request.form
+    stream_mode = req.get("stream", "false").lower() == "true"
+    files = await request.files
+    if "file" not in files:
+        return get_data_error_result(message="Missing 'file' in multipart form-data")
+
+    uploaded = files["file"]
+
+    ALLOWED_EXTS = {
+        ".wav", ".mp3", ".m4a", ".aac",
+        ".flac", ".ogg", ".webm",
+        ".opus", ".wma",
+    }
+
+    filename = uploaded.filename or ""
+    suffix = os.path.splitext(filename)[-1].lower()
+    if suffix not in ALLOWED_EXTS:
+        return get_data_error_result(
+            message=f"Unsupported audio format: {suffix}. Allowed: {', '.join(sorted(ALLOWED_EXTS))}"
+        )
+
+    fd, temp_audio_path = tempfile.mkstemp(suffix=suffix)
+    os.close(fd)
+    await uploaded.save(temp_audio_path)
+
+    try:
+        default_asr_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.SPEECH2TEXT)
+    except Exception as e:
+        return get_data_error_result(message=str(e))
+
+    asr_mdl = LLMBundle(current_user.id, default_asr_model_config)
+    if not stream_mode:
+        text = asr_mdl.transcription(temp_audio_path)
+        try:
+            os.remove(temp_audio_path)
+        except Exception as e:
+            logging.error(f"Failed to remove temp audio file: {str(e)}")
+        return get_json_result(data={"text": text})
+
+    async def event_stream():
+        try:
+            for evt in asr_mdl.stream_transcription(temp_audio_path):
+                yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            err = {"event": "error", "text": str(e)}
+            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+        finally:
+            try:
+                os.remove(temp_audio_path)
+            except Exception as e:
+                logging.error(f"Failed to remove temp audio file: {str(e)}")
+
+    return Response(event_stream(), content_type="text/event-stream")
+
+
+@manager.route("/chats/mindmap", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("question", "kb_ids")
+async def mindmap():
+    req = await get_request_json()
+    search_id = req.get("search_id", "")
+    search_app = SearchService.get_detail(search_id) if search_id else {}
+    search_config = search_app.get("search_config", {}) if search_app else {}
+    kb_ids = search_config.get("kb_ids", [])
+    kb_ids.extend(req["kb_ids"])
+    kb_ids = list(set(kb_ids))
+
+    mind_map = await gen_mindmap(req["question"], kb_ids, search_app.get("tenant_id", current_user.id), search_config)
+    if "error" in mind_map:
+        return server_error_response(Exception(mind_map["error"]))
+    return get_json_result(data=mind_map)
+
+
+@manager.route("/chats/related_questions", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("question")
+async def related_questions():
+    req = await get_request_json()
+
+    search_id = req.get("search_id", "")
+    search_config = {}
+    if search_id:
+        if search_app := SearchService.get_detail(search_id):
+            search_config = search_app.get("search_config", {})
+
+    question = req["question"]
+
+    chat_id = search_config.get("chat_id", "")
+    if chat_id:
+        chat_model_config = get_model_config_by_type_and_name(current_user.id, LLMType.CHAT, chat_id)
+    else:
+        chat_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.CHAT)
+    chat_mdl = LLMBundle(current_user.id, chat_model_config)
+
+    gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
+    if "parameter" in gen_conf:
+        del gen_conf["parameter"]
+    prompt = load_prompt("related_question")
+    ans = await chat_mdl.async_chat(
+        prompt,
+        [
+            {
+                "role": "user",
+                "content": f"\nKeywords: {question}\nRelated search terms:\n    ",
+            }
+        ],
+        gen_conf,
+    )
+    return get_json_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])
+
+
+@manager.route("/chats/<chat_id>/sessions/<session_id>/completions", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("messages")
+async def session_completion(chat_id, session_id):
+    req = await get_request_json()
+    msg = []
+    for m in req["messages"]:
+        if m["role"] == "system":
+            continue
+        if m["role"] == "assistant" and not msg:
+            continue
+        msg.append(m)
+    message_id = msg[-1].get("id") if msg else None
+    chat_model_id = req.pop("llm_id", "")
+
+    chat_model_config = {}
+    for model_config in ["temperature", "top_p", "frequency_penalty", "presence_penalty", "max_tokens"]:
+        config = req.get(model_config)
+        if config:
+            chat_model_config[model_config] = config
+
+    try:
+        e, conv = ConversationService.get_by_id(session_id)
+        if not e:
+            return get_data_error_result(message="Session not found!")
+        if conv.dialog_id != chat_id:
+            return get_data_error_result(message="Session does not belong to this chat!")
+        conv.message = deepcopy(req["messages"])
+        e, dia = DialogService.get_by_id(chat_id)
+        if not e:
+            return get_data_error_result(message="Chat not found!")
+        del req["messages"]
+
+        if not conv.reference:
+            conv.reference = []
+        conv.reference = [r for r in conv.reference if r]
+        conv.reference.append({"chunks": [], "doc_aggs": []})
+
+        if chat_model_id:
+            if not TenantLLMService.get_api_key(tenant_id=dia.tenant_id, model_name=chat_model_id):
+                return get_data_error_result(message=f"Cannot use specified model {chat_model_id}.")
+            dia.llm_id = chat_model_id
+            dia.llm_setting = chat_model_config
+
+        is_embedded = bool(chat_model_id)
+        stream_mode = req.pop("stream", True)
+
+        async def stream():
+            nonlocal dia, msg, req, conv
+            try:
+                async for ans in async_chat(dia, msg, True, **req):
+                    ans = structure_answer(conv, ans, message_id, conv.id)
+                    yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
+                if not is_embedded:
+                    ConversationService.update_by_id(conv.id, conv.to_dict())
+            except Exception as ex:
+                logging.exception(ex)
+                yield "data:" + json.dumps({"code": 500, "message": str(ex), "data": {"answer": "**ERROR**: " + str(ex), "reference": []}}, ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
+
+        if stream_mode:
+            resp = Response(stream(), mimetype="text/event-stream")
+            resp.headers.add_header("Cache-control", "no-cache")
+            resp.headers.add_header("Connection", "keep-alive")
+            resp.headers.add_header("X-Accel-Buffering", "no")
+            resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+            return resp
+
+        answer = None
+        async for ans in async_chat(dia, msg, **req):
+            answer = structure_answer(conv, ans, message_id, conv.id)
+            if not is_embedded:
+                ConversationService.update_by_id(conv.id, conv.to_dict())
+            break
+        return get_json_result(data=answer)
+    except Exception as ex:
+        return server_error_response(ex)
+
+
+@manager.route("/chats/ask", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("question", "kb_ids")
+async def ask():
+    req = await get_request_json()
+    uid = current_user.id
+
+    search_id = req.get("search_id", "")
+    search_config = {}
+    if search_id:
+        if search_app := SearchService.get_detail(search_id):
+            search_config = search_app.get("search_config", {})
+
+    async def stream():
+        nonlocal req, uid
+        try:
+            async for ans in async_ask(req["question"], req["kb_ids"], uid, search_config=search_config):
+                yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
+        except Exception as ex:
+            yield "data:" + json.dumps({"code": 500, "message": str(ex), "data": {"answer": "**ERROR**: " + str(ex), "reference": []}}, ensure_ascii=False) + "\n\n"
+        yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
+
+    resp = Response(stream(), mimetype="text/event-stream")
+    resp.headers.add_header("Cache-control", "no-cache")
+    resp.headers.add_header("Connection", "keep-alive")
+    resp.headers.add_header("X-Accel-Buffering", "no")
+    resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+    return resp
