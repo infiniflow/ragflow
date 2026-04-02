@@ -2118,12 +2118,12 @@ The above is the content you need to summarize.`,
       tokenizerRequired: 'Моля, първо добавете възел Индексатор',
       tokenizerDescription:
         'Трансформира текст в необходимата структура от данни (напр. векторни вграждания за Embedding Search) в зависимост от избрания метод за търсене.',
-      splitter: 'Токен',
-      splitterDescription:
+      tokenChunker: 'Token Chunker',
+      tokenChunkerDescription:
         'Разделя текст на фрагменти по дължина на токени с незадължителни разделители и припокриване.',
-      hierarchicalMergerDescription:
+      titleChunkerDescription:
         'Разделя документи на секции по йерархия на заглавия с regex правила за по-фин контрол.',
-      hierarchicalMerger: 'Заглавие',
+      titleChunker: 'Title Chunker',
       extractor: 'Трансформатор',
       extractorDescription:
         'Използва LLM за извличане на структурирани прозрения от фрагменти на документи — като обобщения, класификации и др.',
@@ -2135,6 +2135,8 @@ The above is the content you need to summarize.`,
         image: 'Изображение',
         email: 'Имейл',
         'text&markdown': 'Текст и маркиране',
+        code: 'Code',
+        html: 'HTML',
         word: 'Word',
         slides: 'PPTX',
         audio: 'Аудио',

@@ -39,9 +39,9 @@ import {
 import { BeginFormSchemaType } from './form/begin-form/schema';
 import { DataOperationsFormSchemaType } from './form/data-operations-form';
 import { ExtractorFormSchemaType } from './form/extractor-form';
-import { HierarchicalMergerFormSchemaType } from './form/hierarchical-merger-form';
 import { ParserFormSchemaType } from './form/parser-form';
-import { SplitterFormSchemaType } from './form/splitter-form';
+import { TitleChunkerFormSchemaType } from './form/title-chunker-form';
+import { TokenChunkerFormSchemaType } from './form/token-chunker-form';
 import { BeginQuery, IPosition } from './interface';
 
 function buildAgentExceptionGoto(edges: Edge[], nodeId: string) {
@@ -211,7 +211,10 @@ function transformParserParams(params: ParserFormSchemaType) {
   >((pre, cur) => {
     if (cur.fileFormat) {
       let filteredSetup: Partial<
-        ParserFormSchemaType['setups'][0] & { suffix: string[] }
+        ParserFormSchemaType['setups'][0] & { suffix: string[] } & {
+          two_column_check: boolean;
+          enable_multi_column: boolean;
+        }
       > = {
         output_format: cur.output_format,
         preprocess: cur.preprocess,
@@ -224,6 +227,9 @@ function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             parse_method: cur.parse_method,
             lang: cur.lang,
+            vlm: { llm_id: cur.vlm?.llm_id },
+            enable_multi_column: cur.enable_multi_column,
+            remove_toc: cur.remove_toc,
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -271,10 +277,11 @@ function transformParserParams(params: ParserFormSchemaType) {
           };
           break;
         case FileType.Video:
+        case FileType.Docx:
         case FileType.Audio:
           filteredSetup = {
             ...filteredSetup,
-            llm_id: cur.llm_id,
+            vlm: { llm_id: cur.vlm?.llm_id },
           };
           break;
         default:
@@ -289,13 +296,16 @@ function transformParserParams(params: ParserFormSchemaType) {
   return { ...params, setups };
 }
 
-function transformSplitterParams(params: SplitterFormSchemaType) {
+function transformTokenChunkerParams(params: TokenChunkerFormSchemaType) {
   const { image_table_context_window, ...rest } = params;
   const imageTableContextWindow = Number(image_table_context_window || 0);
   return {
     ...rest,
     overlapped_percent: Number(params.overlapped_percent) / 100,
-    delimiters: transformObjectArrayToPureArray(params.delimiters, 'value'),
+    delimiters:
+      params.delimiter_mode === 'delimiter'
+        ? transformObjectArrayToPureArray(params.delimiters, 'value')
+        : [],
     table_context_size: imageTableContextWindow,
     image_context_size: imageTableContextWindow,
 
@@ -306,14 +316,16 @@ function transformSplitterParams(params: SplitterFormSchemaType) {
   };
 }
 
-function transformHierarchicalMergerParams(
-  params: HierarchicalMergerFormSchemaType,
-) {
-  const levels = params.levels.map((x) =>
-    transformObjectArrayToPureArray(x.expressions, 'expression'),
+function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
+  const levels = params.rules.map((rule) =>
+    transformObjectArrayToPureArray(rule.levels, 'expression'),
   );
 
-  return { ...params, hierarchy: Number(params.hierarchy), levels };
+  return {
+    method: params.method,
+    hierarchy: Number(params.hierarchy || 0),
+    levels,
+  };
 }
 
 function transformExtractorParams(params: ExtractorFormSchemaType) {
@@ -437,12 +449,12 @@ export const buildDslComponentsByGraph = (
           params = transformParserParams(params);
           break;
 
-        case Operator.Splitter:
-          params = transformSplitterParams(params);
+        case Operator.TokenChunker:
+          params = transformTokenChunkerParams(params);
           break;
 
-        case Operator.HierarchicalMerger:
-          params = transformHierarchicalMergerParams(params);
+        case Operator.TitleChunker:
+          params = transformTitleChunkerParams(params);
           break;
         case Operator.Extractor:
           params = transformExtractorParams(params);

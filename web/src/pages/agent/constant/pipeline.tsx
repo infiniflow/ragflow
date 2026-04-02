@@ -10,6 +10,8 @@ export enum FileType {
   Image = 'image',
   Email = 'email',
   TextMarkdown = 'text&markdown',
+  Code = 'code',
+  Html = 'html',
   Docx = 'word',
   PowerPoint = 'slides',
   Video = 'video',
@@ -62,6 +64,8 @@ export const OutputFormatMap = {
   [FileType.Image]: ImageOutputFormat,
   [FileType.Email]: EmailOutputFormat,
   [FileType.TextMarkdown]: TextMarkdownOutputFormat,
+  [FileType.Code]: TextMarkdownOutputFormat,
+  [FileType.Html]: TextMarkdownOutputFormat,
   [FileType.Docx]: DocxOutputFormat,
   [FileType.PowerPoint]: PptOutputFormat,
   [FileType.Video]: VideoOutputFormat,
@@ -74,6 +78,8 @@ export const InitialOutputFormatMap = {
   [FileType.Image]: ImageOutputFormat.Text,
   [FileType.Email]: EmailOutputFormat.Text,
   [FileType.TextMarkdown]: TextMarkdownOutputFormat.Text,
+  [FileType.Code]: TextMarkdownOutputFormat.Text,
+  [FileType.Html]: TextMarkdownOutputFormat.Text,
   [FileType.Docx]: DocxOutputFormat.Json,
   [FileType.PowerPoint]: PptOutputFormat.Json,
   [FileType.Video]: VideoOutputFormat.Text,
@@ -209,6 +215,16 @@ export const initialParserValues = {
       preprocess: PreprocessValue.main_content,
     },
     {
+      fileFormat: FileType.Code,
+      output_format: TextMarkdownOutputFormat.Text,
+      preprocess: PreprocessValue.main_content,
+    },
+    {
+      fileFormat: FileType.Html,
+      output_format: TextMarkdownOutputFormat.Text,
+      preprocess: PreprocessValue.main_content,
+    },
+    {
       fileFormat: FileType.Docx,
       output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
@@ -222,7 +238,7 @@ export const initialParserValues = {
   ],
 };
 
-export const initialSplitterValues = {
+export const initialTokenChunkerValues = {
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
@@ -239,18 +255,71 @@ export enum Hierarchy {
   H4 = '4',
   H5 = '5',
 }
-
-export const initialHierarchicalMergerValues = {
+const rules = [
+  {
+    // levels: [
+    //   { expression: '^#[^#]' },
+    //   { expression: '^##[^#]' },
+    //   { expression: '^###[^#]' },
+    //   { expression: '^####[^#]' },
+    // ],
+    levels: [
+      { expression: '^#[^#]' },
+      { expression: '^##[^#]' },
+      { expression: '^###[^#]' },
+      { expression: '^####[^#]' },
+    ],
+  },
+  {
+    levels: [
+      { expression: '第[零一二三四五六七八九十百0-9]+(分?编|部分)' },
+      { expression: '第[零一二三四五六七八九十百0-9]+章' },
+      { expression: '第[零一二三四五六七八九十百0-9]+节' },
+      { expression: '第[零一二三四五六七八九十百0-9]+条' },
+      { expression: '[\\(（][零一二三四五六七八九十百]+[\\)）]' },
+    ],
+  },
+  {
+    levels: [
+      { expression: '第[0-9]+章' },
+      { expression: '第[0-9]+节' },
+      { expression: '[0-9]{,2}[\\. 、]' },
+      { expression: '[0-9]{,2}\\.[0-9]{,2}[^a-zA-Z/%~-]' },
+      { expression: '[0-9]{,2}\\.[0-9]{,2}\\.[0-9]{,2}' },
+    ],
+  },
+  {
+    levels: [
+      { expression: '第[零一二三四五六七八九十百0-9]+章' },
+      { expression: '第[零一二三四五六七八九十百0-9]+节' },
+      { expression: '[零一二三四五六七八九十百]+[ 、]' },
+      { expression: '[\\(（][零一二三四五六七八九十百]+[\\)）]' },
+      { expression: '[\\(（][0-9]{,2}[\\)）]' },
+    ],
+  },
+  {
+    levels: [
+      {
+        expression: 'PART (ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)',
+      },
+      { expression: 'Chapter (I+V?|VI*|XI|IX|X)' },
+      { expression: 'Section [0-9]+' },
+      { expression: 'Article [0-9]+' },
+    ],
+  },
+];
+export const initialTitleChunkerValues = {
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
+  method: 'hierarchy',
   hierarchy: Hierarchy.H3,
-  levels: [
-    { expressions: [{ expression: '^#[^#]' }] },
-    { expressions: [{ expression: '^##[^#]' }] },
-    { expressions: [{ expression: '^###[^#]' }] },
-    { expressions: [{ expression: '^####[^#]' }] },
-  ],
+  rules: rules,
+};
+
+export const initialGroupValues = {
+  method: 'group',
+  rules: rules,
 };
 
 export const initialExtractorValues = {
@@ -269,6 +338,22 @@ export const FileTypeSuffixMap = {
   [FileType.Image]: ['jpg', 'jpeg', 'png', 'gif'],
   [FileType.Email]: ['eml', 'msg'],
   [FileType.TextMarkdown]: ['md', 'markdown', 'mdx', 'txt'],
+  [FileType.Code]: [
+    'py',
+    'js',
+    'java',
+    'c',
+    'cpp',
+    'h',
+    'php',
+    'go',
+    'ts',
+    'sh',
+    'cs',
+    'kt',
+    'sql',
+  ],
+  [FileType.Html]: ['htm', 'html'],
   [FileType.Docx]: ['doc', 'docx'],
   [FileType.PowerPoint]: ['pptx', 'ppt'],
   [FileType.Video]: ['mp4', 'avi', 'mkv'],
@@ -293,7 +378,7 @@ export const FileTypeSuffixMap = {
 
 export const SingleOperators = [
   Operator.Tokenizer,
-  Operator.Splitter,
-  Operator.HierarchicalMerger,
+  Operator.TokenChunker,
+  Operator.TitleChunker,
   Operator.Parser,
 ];

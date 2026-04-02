@@ -41,6 +41,7 @@ import { PptFormFields } from './ppt-form-fields';
 import { SpreadsheetFormFields } from './spreadsheet-form-fields';
 import { buildFieldNameWithPrefix } from './utils';
 import { AudioFormFields, VideoFormFields } from './video-form-fields';
+import { WordFormFields } from './word-form-fields';
 
 const outputList = buildOutputList(initialParserValues.outputs);
 
@@ -69,6 +70,11 @@ const PreprocessOptionConfigsMap: Partial<
     { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
   ],
   [FileType.TextMarkdown]: [
+    { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
+    { value: PreprocessValue.section_title },
+  ],
+  [FileType.Code]: [{ value: MAIN_CONTENT_PREPROCESS_VALUE, required: true }],
+  [FileType.Html]: [
     { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
     { value: PreprocessValue.section_title },
   ],
@@ -116,6 +122,7 @@ const FileFormatWidgetMap = {
   [FileType.PDF]: PdfFormFields,
   [FileType.Spreadsheet]: SpreadsheetFormFields,
   [FileType.PowerPoint]: PptFormFields,
+  [FileType.Docx]: WordFormFields,
   [FileType.Video]: VideoFormFields,
   [FileType.Audio]: AudioFormFields,
   [FileType.Email]: EmailFormFields,
@@ -139,10 +146,12 @@ export const FormSchema = z.object({
       parse_method: z.string().optional(),
       lang: z.string().optional(),
       fields: z.array(z.string()).optional(),
-      llm_id: z.string().optional(),
+      vlm: z.object({ llm_id: z.string().optional() }).optional(),
       system_prompt: z.string().optional(),
       table_result_type: z.string().optional(),
       markdown_image_response_type: z.string().optional(),
+      enable_multi_column: z.boolean().optional(),
+      remove_toc: z.boolean().optional(),
     }),
   ),
 });

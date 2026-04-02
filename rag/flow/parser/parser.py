@@ -31,12 +31,13 @@ from api.db.joint_services.tenant_model_service import get_model_config_by_type_
 from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid
-from deepdoc.parser import ExcelParser
+from deepdoc.parser import ExcelParser, HtmlParser, TxtParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
+from rag.flow.parser.pdf_chunk_metadata import normalize_pdf_items_metadata
 from rag.flow.parser.schema import ParserFromUpstream
 from rag.llm.cv_model import Base as VLM
 from rag.nlp import BULLET_PATTERN, bullets_category, docx_question_level, not_bullet
@@ -74,6 +75,14 @@ class ParserParam(ProcessParamBase):
                 "json",
             ],
             "text&markdown": [
+                "text",
+                "json",
+            ],
+            "code": [
+                "text",
+                "json",
+            ],
+            "html": [
                 "text",
                 "json",
             ],
@@ -115,6 +124,28 @@ class ParserParam(ProcessParamBase):
             "text&markdown": {
                 "suffix": ["md", "markdown", "mdx", "txt"],
                 "output_format": "json",
+            },
+            "code": {
+                "suffix": [
+                    "py",
+                    "js",
+                    "java",
+                    "c",
+                    "cpp",
+                    "h",
+                    "php",
+                    "go",
+                    "ts",
+                    "sh",
+                    "cs",
+                    "kt",
+                    "sql",
+                ],
+                "output_format": "text",
+            },
+            "html": {
+                "suffix": ["htm", "html"],
+                "output_format": "text",
             },
             "slides": {
                 "parse_method": "deepdoc",  # deepdoc/tcadp_parser
@@ -214,6 +245,16 @@ class ParserParam(ProcessParamBase):
         if text_config:
             text_output_format = text_config.get("output_format", "")
             self.check_valid_value(text_output_format, "Text output format abnormal.", self.allowed_output_format["text&markdown"])
+
+        code_config = self.setups.get("code", "")
+        if code_config:
+            code_output_format = code_config.get("output_format", "")
+            self.check_valid_value(code_output_format, "Code output format abnormal.", self.allowed_output_format["code"])
+
+        html_config = self.setups.get("html", "")
+        if html_config:
+            html_output_format = html_config.get("output_format", "")
+            self.check_valid_value(html_output_format, "HTML output format abnormal.", self.allowed_output_format["html"])
 
         audio_config = self.setups.get("audio", "")
         if audio_config:
@@ -316,6 +357,42 @@ class Parser(ProcessBase):
 
         return {txt for level, txt in normalized_lines if level <= h2_level}
 
+    @staticmethod
+    def _section_text(section):
+        if isinstance(section, (tuple, list)):
+            text = section[0] if section else ""
+        else:
+            text = section
+
+        if not isinstance(text, str):
+            return ""
+
+        return text if text.strip() else ""
+
+    def _set_text_sections_output(self, setup_key, sections, title_lines=None):
+        conf = self._param.setups[setup_key]
+        texts = []
+        for section in sections or []:
+            text = self._section_text(section)
+            if text:
+                texts.append(text)
+
+        if conf.get("output_format") == "json":
+            title_texts = set()
+            if title_lines and "title" in conf.get("preprocess", []):
+                title_texts = self._extract_title_texts(title_lines)
+
+            results = []
+            for text in texts:
+                item = {"text": text}
+                if title_texts and text.strip() in title_texts:
+                    item["title"] = True
+                results.append(item)
+            self.set_output("json", results)
+            return
+
+        self.set_output("text", "\n".join(texts))
+
     def _pdf(self, name, blob, **kwargs):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PDF.")
         conf = self._param.setups["pdf"]
@@ -382,7 +459,7 @@ class Parser(ProcessBase):
             for t, poss in lines:
                 box = {
                     "image": pdf_parser.crop(poss, 1),
-                    "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)],
+                    "positions": [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)],
                     "text": t,
                 }
                 bboxes.append(box)
@@ -404,7 +481,7 @@ class Parser(ProcessBase):
                 box = {
                     "text": text,
                     "image": pdf_parser.crop(poss, 1) if isinstance(poss, str) and poss else None,
-                    "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)] if isinstance(poss, str) and poss else [],
+                    "positions": [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)] if isinstance(poss, str) and poss else [],
                 }
                 bboxes.append(box)
         elif parse_method.lower() == "tcadp parser":
@@ -488,7 +565,7 @@ class Parser(ProcessBase):
                 box = {
                     "text": t,
                     "image": cropped_image,
-                    "positions": positions,
+                    "positions": [[pos[0] + 1, *pos[1:]] for pos in positions] if positions else [],
                 }
                 bboxes.append(box)
         else:
@@ -503,7 +580,7 @@ class Parser(ProcessBase):
                 for pn, x0, x1, top, bott in RAGFlowPdfParser.extract_positions(poss):
                     bboxes.append(
                         {
-                            "page_number": int(pn[0]),
+                            "page_number": int(pn[0]) + 1,
                             "x0": float(x0),
                             "x1": float(x1),
                             "top": float(top),
@@ -586,6 +663,7 @@ class Parser(ProcessBase):
                 bboxes[abstract_idx]["abstract"] = True
 
         if conf.get("output_format") == "json":
+            normalize_pdf_items_metadata(bboxes)
             self.set_output("json", bboxes)
         if conf.get("output_format") == "markdown":
             mkdn = ""
@@ -821,6 +899,28 @@ class Parser(ProcessBase):
         else:
             self.set_output("text", "\n".join([section_text for section_text, _ in sections]))
 
+    def _code(self, name, blob, **kwargs):
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on a code or plain text file.")
+        conf = self._param.setups["code"]
+        self.set_output("output_format", conf["output_format"])
+
+        sections = TxtParser()(
+            name,
+            blob,
+            conf.get("chunk_token_num", 128),
+            conf.get("delimiter", "\n!?;。；！？"),
+        )
+        self._set_text_sections_output("code", sections)
+
+    def _html(self, name, blob, **kwargs):
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on an HTML document.")
+        conf = self._param.setups["html"]
+        self.set_output("output_format", conf["output_format"])
+
+        sections = HtmlParser()(name, blob, int(conf.get("chunk_token_num", 512)))
+        title_lines = self._extract_markdown_title_lines(sections)
+        self._set_text_sections_output("html", sections, title_lines=title_lines)
+
     def _image(self, name, blob, **kwargs):
         from deepdoc.vision import OCR
 
@@ -1046,6 +1146,8 @@ class Parser(ProcessBase):
         function_map = {
             "pdf": self._pdf,
             "text&markdown": self._markdown,
+            "code": self._code,
+            "html": self._html,
             "spreadsheet": self._spreadsheet,
             "slides": self._slides,
             "word": self._word,
