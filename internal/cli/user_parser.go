@@ -1872,6 +1872,140 @@ func (p *Parser) parseSearchCommand() (*Command, error) {
 	return cmd, nil
 }
 
+func (p *Parser) parseListModelsOfProvider() (*Command, error) {
+	if p.curToken.Type != TokenModels {
+		return nil, fmt.Errorf("expected MODELS")
+	}
+
+	p.nextToken()
+	if p.curToken.Type != TokenFrom {
+		return nil, fmt.Errorf("expected FROM")
+	}
+	p.nextToken()
+
+	// Parse first quoted string (could be instance_name or provider_name)
+	firstName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	// Check if there's a second quoted string (provider_name)
+	// If so, format is: LIST MODELS FROM <instance_name> <provider_name>
+	// If not, format is: LIST MODELS FROM <provider_name>
+	if p.curToken.Type == TokenQuotedString {
+		// Two arguments: instance_name and provider_name
+		instanceName, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd := NewCommand("list_instance_models")
+		cmd.Params["instance_name"] = instanceName
+		cmd.Params["provider_name"] = firstName
+		p.nextToken()
+		// Semicolon is optional for UNSET TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
+		}
+		return cmd, nil
+	}
+
+	// Only one argument: provider_name
+	cmd := NewCommand("list_provider_models")
+	cmd.Params["provider_name"] = firstName
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseEnableCommand() (*Command, error) {
+	p.nextToken() // consume ENABLE
+
+	if p.curToken.Type != TokenModel {
+		return nil, fmt.Errorf("expected MODEL")
+	}
+	p.nextToken()
+
+	modelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenFrom {
+		return nil, fmt.Errorf("expected FROM")
+	}
+	p.nextToken()
+
+	modelProvider, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	modelInstance, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("enable_model")
+	cmd.Params["model_name"] = modelName
+	cmd.Params["instance_name"] = modelInstance
+	cmd.Params["provider_name"] = modelProvider
+	return cmd, nil
+}
+
+func (p *Parser) parseDisableCommand() (*Command, error) {
+	p.nextToken() // consume DISABLE
+
+	if p.curToken.Type != TokenModel {
+		return nil, fmt.Errorf("expected MODEL")
+	}
+	p.nextToken()
+
+	modelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenFrom {
+		return nil, fmt.Errorf("expected FROM")
+	}
+	p.nextToken()
+
+	modelProvider, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	modelInstance, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("disable_model")
+	cmd.Params["model_name"] = modelName
+	cmd.Params["instance_name"] = modelInstance
+	cmd.Params["provider_name"] = modelProvider
+	return cmd, nil
+}
+
 func (p *Parser) parseParseCommand() (*Command, error) {
 	p.nextToken() // consume PARSE
 
@@ -1998,6 +2132,7 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 		return p.parseInsertCommand()
 	case TokenSearch:
 		return p.parseSearchCommand()
+
 	default:
 		return nil, fmt.Errorf("invalid user statement: %s", p.curToken.Value)
 	}

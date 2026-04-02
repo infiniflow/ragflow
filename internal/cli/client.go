@@ -158,6 +158,8 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowProvider(cmd)
 	case "list_provider_models":
 		return c.ListModels(cmd)
+	case "list_instance_models":
+		return c.ListInstanceModels(cmd)
 	case "show_model":
 		return c.ShowModel(cmd)
 	// TODO: Implement other commands
@@ -209,6 +211,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowProvider(cmd)
 	case "list_provider_models":
 		return c.ListModels(cmd)
+	case "list_instance_models":
+		return c.ListInstanceModels(cmd)
 	case "show_model":
 		return c.ShowModel(cmd)
 	// Provider commands
@@ -229,6 +233,10 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.AlterProviderInstance(cmd)
 	case "drop_provider_instance":
 		return c.DropProviderInstance(cmd)
+	case "enable_model":
+		return c.EnableOrDisableModel(cmd, "enable")
+	case "disable_model":
+		return c.EnableOrDisableModel(cmd, "disable")
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)

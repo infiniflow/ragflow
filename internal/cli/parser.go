@@ -186,6 +186,10 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseShutdownCommand()
 	case TokenRestart:
 		return p.parseRestartCommand()
+	case TokenEnable:
+		return p.parseEnableCommand()
+	case TokenDisable:
+		return p.parseDisableCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}

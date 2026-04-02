@@ -28,6 +28,15 @@ func NewTenantModelDAO() *TenantModelDAO {
 	return &TenantModelDAO{}
 }
 
+func (dao *TenantModelDAO) Create(instance *entity.TenantModel) error {
+	return DB.Create(instance).Error
+}
+
+func (dao *TenantModelDAO) DeleteByModelID(modelID string) (int64, error) {
+	result := DB.Unscoped().Where("id = ?", modelID).Delete(&entity.TenantModel{})
+	return result.RowsAffected, result.Error
+}
+
 // GetByID get tenant model by primary key (id)
 func (dao *TenantModelDAO) GetByID(id string) (*entity.TenantModel, error) {
 	var model entity.TenantModel
@@ -36,4 +45,23 @@ func (dao *TenantModelDAO) GetByID(id string) (*entity.TenantModel, error) {
 		return nil, err
 	}
 	return &model, nil
+}
+
+func (dao *TenantModelDAO) GetModelByProviderIDAndInstanceIDAndModelName(providerID, instanceID, modelName string) (*entity.TenantModel, error) {
+	var model entity.TenantModel
+	err := DB.Where("provider_id = ? AND instance_id = ? AND model_name = ?", providerID, instanceID, modelName).First(&model).Error
+	if err != nil {
+		return nil, err
+	}
+	return &model, nil
+}
+
+// GetModelsByInstanceID get all models by instance ID
+func (dao *TenantModelDAO) GetModelsByInstanceID(instanceID string) ([]*entity.TenantModel, error) {
+	var models []*entity.TenantModel
+	err := DB.Where("instance_id = ?", instanceID).Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	return models, nil
 }
