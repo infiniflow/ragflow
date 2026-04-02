@@ -743,7 +743,15 @@ async def ingest_video(tenant_id, dataset_id):
         return get_error_data_result(message="Missing required field: url")
 
     youtube_url: str = req["url"].strip()
-    video_title: str = req.get("title", "").strip()
+    video_title: str = req.get("title", "").strip() or youtube_url
+    # business metadata fields — stored in DocMetadataService, not parser_config
+    _meta_brand          = req.get("brand", "")
+    _meta_car_model      = req.get("car_model", "")
+    _meta_year           = req.get("year", "")
+    _meta_market         = req.get("market", "")
+    _meta_trim           = req.get("trim", "")
+    _meta_source_type    = req.get("source_type", "Video")
+    _meta_retrieval_date = req.get("retrieval_date", "")
 
     # Validate it looks like a YouTube URL
     if not re.search(r"(?:youtube\.com/watch|youtu\.be/)", youtube_url):
@@ -766,8 +774,8 @@ async def ingest_video(tenant_id, dataset_id):
     # Build the document record — no file binary, no MinIO upload
     doc_id = get_uuid()
     parser_config = dict(kb.parser_config or {})
-    if video_title:
-        parser_config["video_title"] = video_title
+    # note: video_title and youtube_url are stored in DocMetadataService below,
+    # not in parser_config — keeps upstream ParserConfig schema clean
 
     doc = {
         "id": doc_id,
@@ -777,10 +785,10 @@ async def ingest_video(tenant_id, dataset_id):
         "parser_config": parser_config,
         "created_by": tenant_id,
         "type": FileType.DOC.value,
-        "name": youtube_url,           # URL stored as document name — passed to video.chunk()
+        "name": video_title,           # human-readable title as document name
         "source_type": "local",
         "suffix": "url",
-        "location": youtube_url,       # URL stored as location — bypassed in task_executor
+        "location": youtube_url,       # URL stored as location — read by task_executor via metadata
         "size": 0,
         "thumbnail": "",
     }
@@ -790,10 +798,28 @@ async def ingest_video(tenant_id, dataset_id):
     except Exception as e:
         return get_error_data_result(message=f"Failed to register video document: {e}")
 
+    # ── store business metadata via DocMetadataService (Fix 4) ────────────
+    from api.db.services.doc_metadata_service import DocMetadataService
+    _doc_metadata = {
+        "youtube_url":      youtube_url,
+        "video_title":      video_title,
+        "brand":            _meta_brand,
+        "car_model":        _meta_car_model,
+        "year":             _meta_year,
+        "market":           _meta_market,
+        "trim":             _meta_trim,
+        "source_type":      _meta_source_type,
+        "retrieval_date":   _meta_retrieval_date,
+    }
+    try:
+        DocMetadataService.update_document_metadata(doc_id, _doc_metadata)
+    except Exception as e:
+        logging.warning(f"ingest_video: metadata update failed for {doc_id}: {e}")
+
     # Return same shape as the file upload endpoint
     return get_result(data=[{
         "id": doc_id,
-        "name": youtube_url,
+        "name": video_title,
         "chunk_method": "video",
         "dataset_id": dataset_id,
         "location": youtube_url,
