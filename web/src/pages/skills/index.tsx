@@ -29,6 +29,7 @@ import {
   RefreshCw,
   Search,
   Settings,
+  Trash2,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -86,6 +87,7 @@ const SkillsPage: React.FC = () => {
     setSearchQuery,
     fetchHubs,
     createHub,
+    deleteHub,
     fetchSkills,
     uploadSkill,
     deleteSkill,
@@ -103,11 +105,17 @@ const SkillsPage: React.FC = () => {
   } = useSkillSearchConfig(selectedHubId);
 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [hubViewMode, setHubViewMode] = useState<'grid' | 'list'>('grid');
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [createHubModalOpen, setCreateHubModalOpen] = useState(false);
+  const [deleteHubModalOpen, setDeleteHubModalOpen] = useState(false);
+  const [hubToDelete, setHubToDelete] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [searchResults, setSearchResults] = useState<Skill[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -149,9 +157,20 @@ const SkillsPage: React.FC = () => {
 
   useEffect(() => {
     if (!selectedHubId) return;
+    // Clear search results when switching hubs
+    setSearchResults([]);
+    setHasSearched(false);
+    setSearchQuery('');
     fetchConfig(undefined, selectedHubId);
-    fetchSkills(selectedHubId);
-  }, [selectedHubId, fetchConfig, fetchSkills]);
+    // Use hub name for file system operations
+    fetchSkills(selectedHubName);
+  }, [
+    selectedHubId,
+    selectedHubName,
+    fetchConfig,
+    fetchSkills,
+    setSearchQuery,
+  ]);
 
   const handleViewSkill = useCallback(
     (skill: Skill) => {
@@ -179,16 +198,34 @@ const SkillsPage: React.FC = () => {
 
   const handleUpload = useCallback(
     async (name: string, version: string, files: File[]) => {
-      return await uploadSkill(name, version, files, selectedHubId);
+      // Pass both hub name (for file system) and hub ID (for indexing)
+      return await uploadSkill(
+        name,
+        version,
+        files,
+        selectedHubName,
+        selectedHubId,
+      );
     },
-    [uploadSkill, selectedHubId],
+    [uploadSkill, selectedHubName, selectedHubId],
   );
 
   const handleDelete = useCallback(
-    async (skillId: string, skillName: string) => {
-      await deleteSkill(skillId, skillName, selectedHubId);
+    async (skillId: string, skillName: string, folderId?: string) => {
+      // Pass both hub ID (for index), hub name (for file system), and folderId (for search results)
+      const success = await deleteSkill(
+        skillId,
+        skillName,
+        selectedHubId,
+        selectedHubName,
+        folderId,
+      );
+      // If delete succeeded and we have search results, remove the skill from searchResults
+      if (success) {
+        setSearchResults((prev) => prev.filter((s) => s.id !== skillId));
+      }
     },
-    [deleteSkill, selectedHubId],
+    [deleteSkill, selectedHubId, selectedHubName],
   );
 
   const handleCreateHub = useCallback(async () => {
@@ -203,6 +240,25 @@ const SkillsPage: React.FC = () => {
     setSelectedHubId(newHub.id);
     setSelectedHubName(newHub.name);
   }, [hubInput, createHub, loadHubs]);
+
+  const handleDeleteHub = useCallback(async () => {
+    if (!hubToDelete) return;
+    const success = await deleteHub(hubToDelete.id);
+    if (success) {
+      setDeleteHubModalOpen(false);
+      setHubToDelete(null);
+      await loadHubs();
+    }
+  }, [hubToDelete, deleteHub, loadHubs]);
+
+  const openDeleteHubModal = useCallback(
+    (hub: { id: string; name: string }, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setHubToDelete(hub);
+      setDeleteHubModalOpen(true);
+    },
+    [],
+  );
 
   const handleSearch = useCallback(
     async (query: string) => {
@@ -323,6 +379,9 @@ const SkillsPage: React.FC = () => {
         onClick={() => {
           setSelectedHubId('');
           setSelectedHubName('');
+          setSearchResults([]);
+          setHasSearched(false);
+          setSearchQuery('');
         }}
       >
         {t('skills.title')}
@@ -348,10 +407,20 @@ const SkillsPage: React.FC = () => {
               showFilter={false}
               icon="skills"
             >
-              <Button onClick={() => setCreateHubModalOpen(true)}>
-                <Plus className="size-[1em]" />
-                {t('skills.createHub') || 'Create Skills Hub'}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Segmented
+                  value={hubViewMode}
+                  onChange={(v) => setHubViewMode(v as 'grid' | 'list')}
+                  options={[
+                    { value: 'grid', label: <LayoutGrid className="size-4" /> },
+                    { value: 'list', label: <List className="size-4" /> },
+                  ]}
+                />
+                <Button onClick={() => setCreateHubModalOpen(true)}>
+                  <Plus className="size-[1em]" />
+                  {t('skills.createHub') || 'Create Skills Hub'}
+                </Button>
+              </div>
             </ListFilterBar>
           </header>
 
@@ -361,31 +430,89 @@ const SkillsPage: React.FC = () => {
                 <Spin size="large" />
               </div>
             ) : filteredHubs.length ? (
-              <CardContainer className="flex-1 overflow-auto">
-                {filteredHubs.map((hub) => (
-                  <div
-                    key={hub.id}
-                    className="group flex flex-col rounded-xl border border-border p-4 hover:border-accent-primary hover:shadow-md transition-all cursor-pointer bg-bg-card"
-                    onClick={() => {
-                      setSelectedHubId(hub.id);
-                      setSelectedHubName(hub.name);
-                    }}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-lg truncate">
-                          {hub.name}
-                        </h3>
+              hubViewMode === 'grid' ? (
+                <CardContainer className="flex-1 overflow-auto">
+                  {filteredHubs.map((hub) => (
+                    <div
+                      key={hub.id}
+                      className="group flex flex-col rounded-xl border border-border p-4 hover:border-accent-primary hover:shadow-md transition-all cursor-pointer bg-bg-card relative"
+                      onClick={() => {
+                        setSelectedHubId(hub.id);
+                        setSelectedHubName(hub.name);
+                      }}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-lg truncate">
+                            {hub.name}
+                          </h3>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 text-text-secondary hover:text-red-500"
+                          onClick={(e: React.MouseEvent) =>
+                            openDeleteHubModal(hub, e)
+                          }
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                      <div className="mt-auto pt-2">
+                        <span className="text-accent-primary text-sm">
+                          {t('skills.enterHub') || 'Enter'} →
+                        </span>
                       </div>
                     </div>
-                    <div className="mt-auto pt-2">
-                      <span className="text-accent-primary text-sm">
-                        {t('skills.enterHub') || 'Enter'} →
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </CardContainer>
+                  ))}
+                </CardContainer>
+              ) : (
+                <div className="flex-1 overflow-auto border border-border rounded-lg">
+                  <table className="w-full">
+                    <thead className="bg-bg-secondary sticky top-0">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-text-secondary">
+                          {t('skills.hubName') || 'Name'}
+                        </th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-text-secondary w-24">
+                          {t('common.action') || 'Action'}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {filteredHubs.map((hub) => (
+                        <tr
+                          key={hub.id}
+                          className="hover:bg-bg-secondary/50 cursor-pointer transition-colors"
+                          onClick={() => {
+                            setSelectedHubId(hub.id);
+                            setSelectedHubName(hub.name);
+                          }}
+                        >
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <FolderOpen className="size-4 text-text-secondary" />
+                              <span className="font-medium">{hub.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-text-secondary hover:text-red-500"
+                              onClick={(e: React.MouseEvent) =>
+                                openDeleteHubModal(hub, e)
+                              }
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
             ) : (
               <div className="flex-1 flex items-center justify-center">
                 {hubSearchString ? (
@@ -453,6 +580,41 @@ const SkillsPage: React.FC = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Delete Hub Modal */}
+        <Dialog open={deleteHubModalOpen} onOpenChange={setDeleteHubModalOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>
+                {t('skills.deleteHubTitle') || 'Delete Skills Hub'}
+              </DialogTitle>
+              <DialogDescription>
+                {t('skills.deleteHubDescription') ||
+                  'Are you sure you want to delete this skills hub? This action cannot be undone and all skills in this hub will be permanently deleted.'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <p className="text-sm text-text-secondary">
+                {t('skills.deleteHubName') || 'Hub name'}:{' '}
+                <strong>{hubToDelete?.name}</strong>
+              </p>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDeleteHubModalOpen(false);
+                  setHubToDelete(null);
+                }}
+              >
+                {t('common.cancel')}
+              </Button>
+              <Button variant="destructive" onClick={handleDeleteHub}>
+                {t('common.delete')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </>
     );
   }
@@ -486,7 +648,7 @@ const SkillsPage: React.FC = () => {
                   <Button
                     variant="outline"
                     size="icon"
-                    onClick={() => fetchSkills(selectedHubId)}
+                    onClick={() => fetchSkills(selectedHubName)}
                     disabled={loading}
                   >
                     <RefreshCw className={loading ? 'animate-spin' : ''} />

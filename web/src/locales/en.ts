@@ -131,7 +131,12 @@ export default {
       noHubs: 'No Skills Hub yet. Create your first one!',
       enterHub: 'Enter',
       hubCreated: 'Skills Hub created successfully',
+      hubDeleted: 'Skills Hub deleted successfully',
       fetchError: 'Failed to fetch skills',
+      deleteHubTitle: 'Delete Skills Hub',
+      deleteHubDescription:
+        'Are you sure you want to delete this skills hub? This action cannot be undone and all skills in this hub will be permanently deleted.',
+      deleteHubName: 'Hub name',
       uploadSuccess: 'Skill uploaded successfully',
       uploadError: 'Failed to upload skill',
       deleteSuccess: 'Skill deleted successfully',
