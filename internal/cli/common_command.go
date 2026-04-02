@@ -237,13 +237,13 @@ func (c *RAGFlowClient) Logout() (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ListPoolProviders(cmd *Command) (ResponseIf, error) {
+func (c *RAGFlowClient) ListAvailableProviders(cmd *Command) (ResponseIf, error) {
 
 	var endPoint string
 	if c.ServerType == "admin" {
-		endPoint = fmt.Sprintf("/admin/providers")
+		endPoint = fmt.Sprintf("/admin/providers?available=true")
 	} else {
-		endPoint = fmt.Sprintf("/providers")
+		endPoint = fmt.Sprintf("/providers?available=true")
 	}
 
 	resp, err := c.HTTPClient.Request("GET", endPoint, true, "web", nil, nil)
@@ -267,7 +267,7 @@ func (c *RAGFlowClient) ListPoolProviders(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ShowPoolProvider(cmd *Command) (ResponseIf, error) {
+func (c *RAGFlowClient) ShowProvider(cmd *Command) (ResponseIf, error) {
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("provider_name not provided")
@@ -301,7 +301,7 @@ func (c *RAGFlowClient) ShowPoolProvider(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ListPoolModels(cmd *Command) (ResponseIf, error) {
+func (c *RAGFlowClient) ListModels(cmd *Command) (ResponseIf, error) {
 
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
@@ -336,7 +336,7 @@ func (c *RAGFlowClient) ListPoolModels(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ShowPoolModel(cmd *Command) (ResponseIf, error) {
+func (c *RAGFlowClient) ShowModel(cmd *Command) (ResponseIf, error) {
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("provider_name not provided")

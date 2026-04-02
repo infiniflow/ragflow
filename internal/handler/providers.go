@@ -20,28 +20,53 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/service"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
-func ListPoolProviders(c *gin.Context) {
-	providers, err := dao.GetModelProviderManager().ListProviders()
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeNotFound,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    providers,
-	})
+// ProviderHandler provider handler
+type ProviderHandler struct {
+	userService *service.UserService
 }
 
-func ShowPoolProvider(c *gin.Context) {
+// NewProviderHandler create provider handler
+func NewProviderHandler(userService *service.UserService) *ProviderHandler {
+	return &ProviderHandler{
+		userService: userService,
+	}
+}
+
+func (h *ProviderHandler) ListProviders(c *gin.Context) {
+
+	keywords := ""
+	if queryKeywords := c.Query("available"); queryKeywords != "" {
+		keywords = queryKeywords
+	}
+
+	// convert keywords to small case
+	keywords = strings.ToLower(keywords)
+	if keywords == "true" {
+		// list pool providers
+		providers, err := dao.GetModelProviderManager().ListProviders()
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeNotFound,
+				"message": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"message": "success",
+			"data":    providers,
+		})
+	}
+}
+
+func (h *ProviderHandler) ShowProvider(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -66,7 +91,7 @@ func ShowPoolProvider(c *gin.Context) {
 	})
 }
 
-func ListPoolModels(c *gin.Context) {
+func (h *ProviderHandler) ListModels(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -90,7 +115,7 @@ func ListPoolModels(c *gin.Context) {
 	})
 }
 
-func ShowPoolModel(c *gin.Context) {
+func (h *ProviderHandler) ShowModel(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{

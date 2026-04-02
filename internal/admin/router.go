@@ -17,8 +17,6 @@
 package admin
 
 import (
-	"ragflow/internal/handler"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -47,15 +45,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		admin.POST("/login", r.handler.Login)
 
 		admin.POST("/reports", r.handler.Reports)
-
-		// provider pool route group
-		provider := admin.Group("providers")
-		{
-			provider.GET("/", handler.ListPoolProviders)
-			provider.GET("/:provider_name", handler.ShowPoolProvider)
-			provider.GET("/:provider_name/models", handler.ListPoolModels)
-			provider.GET("/:provider_name/models/:model_name", handler.ShowPoolModel)
-		}
 
 		// Protected routes
 		protected := admin.Group("")
@@ -136,6 +125,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Log level
 			protected.GET("/log_level", r.handler.GetLogLevel)
 			protected.PUT("/log_level", r.handler.SetLogLevel)
+
+			provider := protected.Group("/providers")
+			{
+				provider.GET("/", r.handler.ListProviders)
+				provider.GET("/:provider_name", r.handler.ShowProvider)
+				provider.GET("/:provider_name/models", r.handler.ListModels)
+				provider.GET("/:provider_name/models/:model_name", r.handler.ShowModel)
+			}
 		}
 	}
 
