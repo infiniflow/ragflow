@@ -61,11 +61,7 @@ class Chunk(BaseModel):
     image_id: str = ""
     available: bool = True
     positions: list[list[int]] = Field(default_factory=list)
-    youtube_url: str = ""
-    video_id: str = ""
-    video_title: str = ""
-    timestamp_seconds: int = 0
-    transcript_segment: str = ""
+    properties: dict = Field(default_factory=dict)
 
     @validator("positions")
     def validate_positions(cls, value):
@@ -1113,11 +1109,10 @@ async def list_chunks(tenant_id, dataset_id, document_id):
             "image_id": chunk.get("img_id", ""),
             "available": bool(chunk.get("available_int", 1)),
             "positions": chunk.get("position_int", []),
-            "youtube_url": chunk.get("youtube_url", ""),
-            "video_id": chunk.get("video_id", ""),
-            "video_title": chunk.get("video_title", ""),
-            "timestamp_seconds": int(chunk.get("timestamp_seconds", 0)),
-            "transcript_segment": chunk.get("transcript_segment", ""),
+            "properties": {
+                k: chunk[k] for k in ("timestamp_seconds", "transcript_segment")
+                if k in chunk
+            },
         }
         res["chunks"].append(final_chunk)
         _ = Chunk(**final_chunk)
@@ -1137,11 +1132,10 @@ async def list_chunks(tenant_id, dataset_id, document_id):
                 "image_id": sres.field[id].get("img_id", ""),
                 "available": bool(int(sres.field[id].get("available_int", "1"))),
                 "positions": sres.field[id].get("position_int", []),
-                "youtube_url": sres.field[id].get("youtube_url", ""),
-                "video_id": sres.field[id].get("video_id", ""),
-                "video_title": sres.field[id].get("video_title", ""),
-                "timestamp_seconds": int(sres.field[id].get("timestamp_seconds", 0)),
-                "transcript_segment": sres.field[id].get("transcript_segment", ""),
+                "properties": {
+                    k: sres.field[id][k] for k in ("timestamp_seconds", "transcript_segment")
+                    if k in sres.field[id]
+                },
             }
             res["chunks"].append(d)
             _ = Chunk(**d)  # validate the chunk

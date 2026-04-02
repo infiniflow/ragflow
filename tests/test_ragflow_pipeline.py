@@ -782,12 +782,12 @@ def display_results(chunks: list, max_content_length: int = 200) -> None:
               f"(term={chunk.get('term_similarity', 0):.4f}, "
               f"vector={chunk.get('vector_similarity', 0):.4f})")
 
-        # Video-specific fields
-        if chunk.get("youtube_url"):
-            print(f"  Video       : {chunk.get('video_title', 'N/A')}")
-            print(f"  YouTube URL : {chunk.get('youtube_url')}")
-            print(f"  Timestamp   : {chunk.get('timestamp_seconds')}s")
-            print(f"  Deep-link   : {chunk.get('transcript_segment')}")
+        # Video-specific fields (timestamp_seconds and transcript_segment now in properties)
+        _props = chunk.get("properties", {})
+        if _props.get("timestamp_seconds") is not None:
+            print(f"  Video       : {chunk.get('docnm_kwd', 'N/A')}")
+            print(f"  Timestamp   : {_props.get('timestamp_seconds')}s")
+            print(f"  Deep-link   : {_props.get('transcript_segment', 'N/A')}")
         else:
             print(f"  Source      : {chunk.get('document_keyword', 'N/A')}")
 
