@@ -237,6 +237,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.EnableOrDisableModel(cmd, "enable")
 	case "disable_model":
 		return c.EnableOrDisableModel(cmd, "disable")
+	case "chat_to_model":
+		return c.ChatToModel(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)

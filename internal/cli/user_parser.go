@@ -2006,6 +2006,32 @@ func (p *Parser) parseDisableCommand() (*Command, error) {
 	return cmd, nil
 }
 
+func (p *Parser) parseChatCommand() (*Command, error) {
+	p.nextToken() // consume CHAT
+
+	modelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	message, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("chat_to_model")
+	cmd.Params["model_name"] = modelName
+	cmd.Params["message"] = message
+	return cmd, nil
+}
+
 func (p *Parser) parseParseCommand() (*Command, error) {
 	p.nextToken() // consume PARSE
 

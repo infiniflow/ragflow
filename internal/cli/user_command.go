@@ -1161,6 +1161,47 @@ func (c *RAGFlowClient) EnableOrDisableModel(cmd *Command, status string) (Respo
 	return &result, nil
 }
 
+func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	compositeModelName, ok := cmd.Params["model_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("composite model name not provided")
+	}
+
+	message := cmd.Params["message"].(string)
+
+	names := strings.Split(compositeModelName, "/")
+	providerName := names[0]
+	instanceName := names[1]
+	modelName := names[2]
+
+	url := fmt.Sprintf("/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
+
+	payload := map[string]interface{}{
+		"message": message,
+	}
+
+	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to enable/disable model: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to enable/disable model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("enable/disable model failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // Context related commands
 
 // CEList handles the ls command - lists nodes using Context Engine

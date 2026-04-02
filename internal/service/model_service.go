@@ -493,3 +493,53 @@ func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, mod
 
 	return common.CodeSuccess, nil
 }
+
+func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName, userID, status string) (*string, common.ErrorCode, error) {
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return nil, common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+	if err != nil {
+		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+		if providerInfo == nil {
+			return nil, common.CodeNotFound, errors.New("provider not found")
+		}
+
+		sendUrl, resultUrl, err := dao.GetModelProviderManager().GetModelUrl(providerName, modelName, "chat")
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		if sendUrl != nil {
+			if resultUrl != nil {
+				message := fmt.Sprintf("Streamly chat to %s/%s", *sendUrl, *resultUrl)
+				return &message, common.CodeSuccess, nil
+			}
+			message := fmt.Sprintf("Chat to %s", *sendUrl)
+			return &message, common.CodeSuccess, nil
+		}
+		return nil, common.CodeServerError, errors.New("no url")
+	}
+
+	return nil, common.CodeServerError, errors.New("model is disabled")
+}
