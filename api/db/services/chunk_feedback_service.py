@@ -31,9 +31,9 @@ Weighting modes (CHUNK_FEEDBACK_WEIGHTING):
   decrement (stronger total effect when many chunks are cited).
 
 Budget per feedback event is a small integer (1) applied to pagerank_fea
-(0–100, integer in Infinity/OB/ES mappings). Relevance mode splits that unit
-across cited chunks; uniform mode applies one unit per chunk (legacy, stronger
-when many chunks are cited).
+(0–100, integer in OB/ES mappings). Relevance mode splits that unit across
+cited chunks; uniform mode applies one unit per chunk (legacy, stronger when
+many chunks are cited).
 """
 import logging
 import math
@@ -162,8 +162,11 @@ class ChunkFeedbackService:
         """
         Update the pagerank weight of a single chunk.
 
-        Elasticsearch, OpenSearch, and OceanBase/SeekDB use an atomic adjust on the
-        doc store when supported; Infinity still uses read-modify-write.
+        Elasticsearch, OpenSearch, and OceanBase/SeekDB use an atomic adjust on
+        the doc store when supported.
+
+        Infinity path is intentionally skipped for now until Infinity exposes
+        internal row id required for safe single-row updates.
 
         Args:
             tenant_id: The tenant ID for index naming
@@ -177,6 +180,13 @@ class ChunkFeedbackService:
         try:
             idx_name = index_name(tenant_id)
             conn = settings.docStoreConn
+            engine = settings.DOC_ENGINE.lower()
+            if engine == "infinity":
+                logging.info(
+                    "Skip chunk feedback update for Infinity backend (chunk=%s) until row-id support lands.",
+                    chunk_id,
+                )
+                return False
             adjust = getattr(conn, "adjust_chunk_pagerank_fea", None)
             if callable(adjust):
                 success = adjust(
@@ -207,7 +217,6 @@ class ChunkFeedbackService:
             new_weight = max(MIN_PAGERANK_WEIGHT, min(MAX_PAGERANK_WEIGHT, new_weight))
 
             condition = {"id": chunk_id}
-            engine = settings.DOC_ENGINE.lower()
             if new_weight == 0 and engine in ("elasticsearch", "opensearch"):
                 new_value = {"remove": PAGERANK_FLD}
             else:

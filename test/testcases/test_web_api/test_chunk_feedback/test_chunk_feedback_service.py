@@ -148,6 +148,7 @@ class TestUpdateChunkWeight:
     def test_update_weight_success(self, feedback_env):
         """Should update chunk weight successfully."""
         mod, settings_mod = feedback_env
+        settings_mod.DOC_ENGINE = "mysql"
         mock_doc_store = MagicMock()
         mock_doc_store.adjust_chunk_pagerank_fea = None
         mock_doc_store.get.return_value = {"pagerank_fea": 10}
@@ -167,6 +168,7 @@ class TestUpdateChunkWeight:
     def test_update_weight_chunk_not_found(self, feedback_env):
         """Should return False if chunk not found."""
         mod, settings_mod = feedback_env
+        settings_mod.DOC_ENGINE = "mysql"
         mock_doc_store = MagicMock()
         mock_doc_store.adjust_chunk_pagerank_fea = None
         mock_doc_store.get.return_value = None
@@ -184,6 +186,7 @@ class TestUpdateChunkWeight:
     def test_update_weight_clamp_max(self, feedback_env):
         """Should clamp weight to MAX_PAGERANK_WEIGHT."""
         mod, settings_mod = feedback_env
+        settings_mod.DOC_ENGINE = "mysql"
         mock_doc_store = MagicMock()
         mock_doc_store.adjust_chunk_pagerank_fea = None
         mock_doc_store.get.return_value = {"pagerank_fea": mod.MAX_PAGERANK_WEIGHT}
@@ -205,6 +208,7 @@ class TestUpdateChunkWeight:
     def test_update_weight_clamp_min(self, feedback_env):
         """Should clamp weight to MIN_PAGERANK_WEIGHT."""
         mod, settings_mod = feedback_env
+        settings_mod.DOC_ENGINE = "mysql"
         mock_doc_store = MagicMock()
         mock_doc_store.adjust_chunk_pagerank_fea = None
         mock_doc_store.get.return_value = {"pagerank_fea": 0}
@@ -268,6 +272,23 @@ class TestUpdateChunkWeight:
             mod.MIN_PAGERANK_WEIGHT,
             mod.MAX_PAGERANK_WEIGHT,
         )
+
+    def test_update_weight_infinity_skips_until_row_id_support(self, feedback_env):
+        """Infinity is intentionally skipped until safe single-row update is available."""
+        mod, settings_mod = feedback_env
+        settings_mod.DOC_ENGINE = "infinity"
+        mock_doc_store = MagicMock()
+        settings_mod.docStoreConn = mock_doc_store
+
+        ok = mod.ChunkFeedbackService.update_chunk_weight(
+            tenant_id="tenant1",
+            chunk_id="chunk1",
+            kb_id="kb1",
+            delta=1,
+        )
+        assert ok is False
+        mock_doc_store.get.assert_not_called()
+        mock_doc_store.update.assert_not_called()
 
 
 class TestApplyFeedback:
