@@ -1166,17 +1166,27 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	compositeModelName, ok := cmd.Params["model_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("composite model name not provided")
+	var providerName, instanceName, modelName string
+
+	// Check if model_name is provided in command
+	if compositeModelName, ok := cmd.Params["model_name"].(string); ok && compositeModelName != "" {
+		names := strings.Split(compositeModelName, "/")
+		if len(names) != 3 {
+			return nil, fmt.Errorf("model name must be in format 'provider/instance/model'")
+		}
+		providerName = names[0]
+		instanceName = names[1]
+		modelName = names[2]
+	} else if c.CurrentModel != nil {
+		// Use current model if set
+		providerName = c.CurrentModel.Provider
+		instanceName = c.CurrentModel.Instance
+		modelName = c.CurrentModel.Model
+	} else {
+		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
 	}
 
 	message := cmd.Params["message"].(string)
-
-	names := strings.Split(compositeModelName, "/")
-	providerName := names[0]
-	instanceName := names[1]
-	modelName := names[2]
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
 
@@ -1199,6 +1209,59 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
 	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// UseModel sets the current model for chat
+func (c *RAGFlowClient) UseModel(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	modelIdentifier, ok := cmd.Params["model_identifier"].(string)
+	if !ok || modelIdentifier == "" {
+		return nil, fmt.Errorf("model identifier not provided")
+	}
+
+	names := strings.Split(modelIdentifier, "/")
+	if len(names) != 3 {
+		return nil, fmt.Errorf("model identifier must be in format 'provider/instance/model'")
+	}
+
+	c.CurrentModel = &CurrentModel{
+		Provider: names[0],
+		Instance: names[1],
+		Model:    names[2],
+	}
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = fmt.Sprintf("Current model set to: %s/%s/%s", c.CurrentModel.Provider, c.CurrentModel.Instance, c.CurrentModel.Model)
+	return &result, nil
+}
+
+// ShowCurrentModel displays the current model configuration
+func (c *RAGFlowClient) ShowCurrentModel(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	if c.CurrentModel == nil {
+		return nil, fmt.Errorf("no current model set. Use 'use model' command first")
+	}
+
+	var result CommonResponse
+	result.Code = 0
+	result.Data = []map[string]interface{}{
+		{
+			"provider": c.CurrentModel.Provider,
+			"instance": c.CurrentModel.Instance,
+			"model":    c.CurrentModel.Model,
+		},
+	}
 	return &result, nil
 }
 

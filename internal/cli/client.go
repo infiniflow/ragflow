@@ -24,6 +24,13 @@ import (
 // PasswordPromptFunc is a function type for password input
 type PasswordPromptFunc func(prompt string) (string, error)
 
+// CurrentModel holds the current model configuration
+type CurrentModel struct {
+	Provider string
+	Instance string
+	Model    string
+}
+
 // RAGFlowClient handles API interactions with the RAGFlow server
 type RAGFlowClient struct {
 	HTTPClient     *HTTPClient
@@ -31,6 +38,7 @@ type RAGFlowClient struct {
 	PasswordPrompt PasswordPromptFunc // Function for password input
 	OutputFormat   OutputFormat       // Output format: table, plain, json
 	ContextEngine  *ce.Engine         // Context Engine for virtual filesystem
+	CurrentModel   *CurrentModel      // Current model configuration
 }
 
 // NewRAGFlowClient creates a new RAGFlow client
@@ -239,6 +247,10 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.EnableOrDisableModel(cmd, "disable")
 	case "chat_to_model":
 		return c.ChatToModel(cmd)
+	case "use_model":
+		return c.UseModel(cmd)
+	case "show_current_model":
+		return c.ShowCurrentModel(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)

@@ -332,7 +332,7 @@ func looksLikeSQL(s string) bool {
 		"LIST ", "SHOW ", "CREATE ", "DROP ", "ALTER ",
 		"LOGIN ", "REGISTER ", "PING", "GRANT ", "REVOKE ",
 		"SET ", "UNSET ", "UPDATE ", "DELETE ", "INSERT ",
-		"SELECT ", "DESCRIBE ", "EXPLAIN ", "ADD ", "ENABLE ", "DISABLE ", "CHAT ",
+		"SELECT ", "DESCRIBE ", "EXPLAIN ", "ADD ", "ENABLE ", "DISABLE ", "CHAT ", "USE",
 	}
 	for _, prefix := range sqlPrefixes {
 		if strings.HasPrefix(s, prefix) {
@@ -1015,8 +1015,12 @@ Commands (User Mode):
   SET TOKEN 'token_value';                               - Set and validate API token
   SHOW TOKEN;                                            - Show current API token
   SHOW PROVIDER 'name';                                  - Show provider details
+  SHOW CURRENT MODEL;                                    - Show current model settings
   UNSET TOKEN;                                           - Remove current API token
   ALTER PROVIDER 'name' NAME 'new_name';                 - Rename a provider
+  USE MODEL 'provider/instance/model';                   - Set current model for chat
+  CHAT 'message';                                        - Chat using current model
+  CHAT 'provider/instance/model' 'message';              - Chat with specified model
 
 Context Engine Commands (no quotes):
   ls [path]                    - List resources

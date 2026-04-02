@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // Command parsers
@@ -350,15 +351,23 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 		return NewCommand("show_token"), nil
 	case TokenCurrent:
 		p.nextToken()
-		if p.curToken.Type != TokenUser {
-			return nil, fmt.Errorf("expected USER after CURRENT")
-		}
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
+		if p.curToken.Type == TokenUser {
 			p.nextToken()
+			// Semicolon is optional for SHOW CURRENT USER
+			if p.curToken.Type == TokenSemicolon {
+				p.nextToken()
+			}
+			return NewCommand("show_current_user"), nil
+		} else if p.curToken.Type == TokenModel {
+			p.nextToken()
+			// Semicolon is optional for SHOW CURRENT MODEL
+			if p.curToken.Type == TokenSemicolon {
+				p.nextToken()
+			}
+			return NewCommand("show_current_model"), nil
+		} else {
+			return nil, fmt.Errorf("expected USER or MODEL after CURRENT")
 		}
-		return NewCommand("show_current_user"), nil
 	case TokenUser:
 		return p.parseShowUser()
 	case TokenRole:
@@ -2009,26 +2018,75 @@ func (p *Parser) parseDisableCommand() (*Command, error) {
 func (p *Parser) parseChatCommand() (*Command, error) {
 	p.nextToken() // consume CHAT
 
-	modelName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-	p.nextToken()
+	var modelName string
+	var message string
 
-	message, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
+	// Check if we have a quoted string that looks like a model identifier (contains two slashes)
+	// Format: 'provider/instance/model' or just 'message'
+	if p.curToken.Type == TokenQuotedString {
+		firstArg := p.curToken.Value
+		
+		// Check if it looks like a model identifier (contains exactly 2 slashes)
+		slashCount := strings.Count(firstArg, "/")
+		if slashCount == 2 {
+			// This is likely a model identifier, expect another quoted string for message
+			modelName = firstArg
+			p.nextToken()
+			
+			// After model name, expect message
+			if p.curToken.Type != TokenQuotedString {
+				return nil, fmt.Errorf("expected message after model name")
+			}
+			message = p.curToken.Value
+			p.nextToken()
+		} else {
+			// This is just a message, use current model
+			message = firstArg
+			p.nextToken()
+		}
+	} else if p.curToken.Type == TokenIdentifier {
+		// Context engine style: chat <message>
+		message = p.curToken.Value
+		p.nextToken()
+	} else {
+		return nil, fmt.Errorf("expected model name (quoted string) or message")
 	}
-	p.nextToken()
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
 
 	cmd := NewCommand("chat_to_model")
-	cmd.Params["model_name"] = modelName
+	if modelName != "" {
+		cmd.Params["model_name"] = modelName
+	}
 	cmd.Params["message"] = message
+	return cmd, nil
+}
+
+func (p *Parser) parseUseCommand() (*Command, error) {
+	p.nextToken() // consume USE
+
+	if p.curToken.Type != TokenModel {
+		return nil, fmt.Errorf("expected MODEL after USE")
+	}
+	p.nextToken() // consume MODEL
+
+	// Parse model identifier in format 'provider/instance/model'
+	modelIdentifier, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected model identifier in format 'provider/instance/model': %w", err)
+	}
+	p.nextToken()
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("use_model")
+	cmd.Params["model_identifier"] = modelIdentifier
 	return cmd, nil
 }
 
