@@ -135,7 +135,7 @@ async def retrieval(tenant_id):
             model_config = get_model_config_by_id(kb.tenant_embd_id)
         else:
             model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
-        embd_mdl = LLMBundle(kb.tenant_id, model_config)
+        embd_mdl = LLMBundle(kb.tenant_id, model_config, biz_type="kb_retrieval", biz_id=kb_id)
         if metadata_condition:
             doc_ids.extend(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
         if not doc_ids and metadata_condition:
@@ -161,7 +161,7 @@ async def retrieval(tenant_id):
                                                  [tenant_id],
                                                  [kb_id],
                                                  embd_mdl,
-                                                 LLMBundle(kb.tenant_id, model_config))
+                                                 LLMBundle(kb.tenant_id, model_config, biz_type="kb_retrieval", biz_id=kb_id))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 

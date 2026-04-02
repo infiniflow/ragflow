@@ -15,6 +15,7 @@
 #
 import asyncio
 import binascii
+import inspect
 import logging
 import re
 import time
@@ -212,7 +213,7 @@ class DialogService(CommonService):
 async def async_chat_solo(dialog, messages, stream=True, **kwargs):
     conversation_id = kwargs.get("conversation_id")
     biz_type = "dialog"
-    biz_id = dialog.id
+    biz_id = getattr(dialog, "id", None)
     session_id = conversation_id
     llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
     attachments = ""
@@ -261,7 +262,7 @@ async def async_chat_solo(dialog, messages, stream=True, **kwargs):
 
 def get_models(dialog, biz_type="dialog", biz_id=None, session_id=None):
     if biz_id is None:
-        biz_id = dialog.id
+        biz_id = getattr(dialog, "id", None)
     embd_mdl, chat_mdl, rerank_mdl, tts_mdl = None, None, None, None
     kbs = KnowledgebaseService.get_by_ids(dialog.kb_ids)
     embedding_list = list(set([kb.embd_id for kb in kbs]))
@@ -292,6 +293,18 @@ def get_models(dialog, biz_type="dialog", biz_id=None, session_id=None):
         default_tts_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.TTS)
         tts_mdl = LLMBundle(dialog.tenant_id, default_tts_model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
     return kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl
+
+
+def _get_models_with_runtime_context(dialog, conversation_id=None):
+    call_kwargs = {}
+    params = inspect.signature(get_models).parameters
+    if "biz_type" in params:
+        call_kwargs["biz_type"] = "dialog"
+    if "biz_id" in params:
+        call_kwargs["biz_id"] = getattr(dialog, "id", None)
+    if "session_id" in params:
+        call_kwargs["session_id"] = conversation_id
+    return get_models(dialog, **call_kwargs)
 
 
 def split_file_attachments(files: list[dict] | None, raw: bool = False) -> tuple[list[str], list[str] | list[dict]]:
@@ -500,7 +513,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             pass
 
     check_langfuse_tracer_ts = timer()
-    kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog, biz_type="dialog", biz_id=dialog.id, session_id=conversation_id)
+    dialog_biz_id = getattr(dialog, "id", None)
+    kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = _get_models_with_runtime_context(dialog, conversation_id)
     toolcall_session, tools = kwargs.get("toolcall_session"), kwargs.get("tools")
     if toolcall_session and tools:
         chat_mdl.bind_tools(toolcall_session, tools)
@@ -549,12 +563,14 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             prompt_config["system"] = prompt_config["system"].replace("{%s}" % p["key"], " ")
 
     if len(questions) > 1 and prompt_config.get("refine_multiturn"):
-        questions = [await full_question(dialog.tenant_id, dialog.llm_id, messages)]
+        questions = [await full_question(dialog.tenant_id, dialog.llm_id, messages,
+                                         biz_type="dialog", biz_id=getattr(dialog, "id", None), session_id=conversation_id)]
     else:
         questions = questions[-1:]
 
     if prompt_config.get("cross_languages"):
-        questions = [await cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
+        questions = [await cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"],
+                                            biz_type="dialog", biz_id=getattr(dialog, "id", None), session_id=conversation_id)]
 
     if dialog.meta_data_filter:
         metas = DocMetadataService.get_flatted_meta_by_kbs(dialog.kb_ids)
@@ -644,7 +660,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             if prompt_config.get("use_kg"):
                 default_chat_model = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
                 ck = await settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl,
-                                                       LLMBundle(dialog.tenant_id, default_chat_model, biz_type="dialog", biz_id=dialog.id, session_id=conversation_id))
+                                                       LLMBundle(dialog.tenant_id, default_chat_model, biz_type="dialog", biz_id=dialog_biz_id, session_id=conversation_id))
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
 
@@ -1368,7 +1384,7 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
     if state.endswith_think:
         yield ("marker", "</think>", state)
 
-async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}, biz_type="dialog", biz_id=None):
+async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}, biz_type="dialog", biz_id=None, session_id=None):
     doc_ids = search_config.get("doc_ids", [])
     rerank_mdl = None
     kb_ids = search_config.get("kb_ids", kb_ids)
@@ -1383,12 +1399,12 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     retriever = settings.retriever if not is_knowledge_graph else settings.kg_retriever
     embd_owner_tenant_id = kbs[0].tenant_id
     embd_model_config = get_model_config_by_type_and_name(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
-    embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config, biz_type=biz_type, biz_id=biz_id)
+    embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
     chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_llm_name)
-    chat_mdl = LLMBundle(tenant_id, chat_model_config, biz_type=biz_type, biz_id=biz_id)
+    chat_mdl = LLMBundle(tenant_id, chat_model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
     if rerank_id:
         rerank_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.RERANK, rerank_id)
-        rerank_mdl = LLMBundle(tenant_id, rerank_model_config, biz_type=biz_type, biz_id=biz_id)
+        rerank_mdl = LLMBundle(tenant_id, rerank_model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
     max_tokens = chat_mdl.max_length
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
 
@@ -1452,7 +1468,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     yield final
 
 
-async def gen_mindmap(question, kb_ids, tenant_id, search_config={}, biz_type="dialog", biz_id=None):
+async def gen_mindmap(question, kb_ids, tenant_id, search_config={}, biz_type="dialog", biz_id=None, session_id=None):
     meta_data_filter = search_config.get("meta_data_filter", {})
     doc_ids = search_config.get("doc_ids", [])
     rerank_id = search_config.get("rerank_id", "")
@@ -1468,16 +1484,16 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}, biz_type="d
     else:
         embd_owner_tenant_id = kbs[0].tenant_id
         embd_model_config = get_model_config_by_type_and_name(embd_owner_tenant_id, LLMType.EMBEDDING, kbs[0].embd_id)
-    embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config, biz_type=biz_type, biz_id=biz_id)
+    embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
     chat_id = search_config.get("chat_id", "")
     if chat_id:
         chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-    chat_mdl = LLMBundle(tenant_id, chat_model_config, biz_type=biz_type, biz_id=biz_id)
+    chat_mdl = LLMBundle(tenant_id, chat_model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
     if rerank_id:
         rerank_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.RERANK, rerank_id)
-        rerank_mdl = LLMBundle(tenant_id, rerank_model_config, biz_type=biz_type, biz_id=biz_id)
+        rerank_mdl = LLMBundle(tenant_id, rerank_model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
 
     if meta_data_filter:
         metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)

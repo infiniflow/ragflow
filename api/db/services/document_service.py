@@ -1036,7 +1036,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
     else:
         embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
-    embd_mdl = LLMBundle(kb.tenant_id, embd_model_config, lang=kb.language)
+    # The embd_mdl instantiation was moved into the embedding function to allow passing the per-document doc_id
 
     err, files = FileService.upload_document(kb, file_objs, user_id)
     assert not err, "\n".join(err)
@@ -1086,10 +1086,11 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
     es_bulk_size = 64
 
     def embedding(doc_id, cnts, batch_size=16):
-        nonlocal embd_mdl, chunk_counts, token_counts
+        nonlocal chunk_counts, token_counts, embd_model_config, kb
+        doc_embd_mdl = LLMBundle(kb.tenant_id, embd_model_config, lang=kb.language, biz_type="document", biz_id=doc_id)
         vectors = []
         for i in range(0, len(cnts), batch_size):
-            vts, c = embd_mdl.encode(cnts[i : i + batch_size])
+            vts, c = doc_embd_mdl.encode(cnts[i : i + batch_size])
             vectors.extend(vts.tolist())
             chunk_counts[doc_id] += len(cnts[i : i + batch_size])
             token_counts[doc_id] += c
@@ -1100,8 +1101,9 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
 
     _, tenant = TenantService.get_by_id(kb.tenant_id)
     tenant_llm_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
-    llm_bdl = LLMBundle(kb.tenant_id, tenant_llm_config)
+
     for doc_id in docids:
+        llm_bdl = LLMBundle(kb.tenant_id, tenant_llm_config, biz_type="document", biz_id=doc_id)
         cks = [c for c in docs if c["doc_id"] == doc_id]
 
         if parser_ids[doc_id] != ParserType.PICTURE.value:

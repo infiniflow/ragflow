@@ -185,7 +185,8 @@ class Retrieval(ToolBase, ABC):
             )
 
         if self._param.cross_languages:
-            query = await cross_languages(kbs[0].tenant_id, None, query, self._param.cross_languages)
+            query = await cross_languages(kbs[0].tenant_id, None, query, self._param.cross_languages,
+                                          biz_type="agent", biz_id=self._canvas._id, session_id=self._canvas.get_history_id())
 
         if kbs:
             query = re.sub(r"^user[:：\s]*", "", query, flags=re.IGNORECASE)
