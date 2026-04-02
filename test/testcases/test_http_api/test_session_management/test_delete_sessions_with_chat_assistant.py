@@ -146,6 +146,7 @@ class TestSessionWithChatAssistantDelete:
             pytest.param("not json", 100, """AttributeError("\'str\' object has no attribute \'get\'")""", 5, marks=pytest.mark.skip),
             pytest.param(lambda r: {"ids": r[:1]}, 0, "", 4, marks=pytest.mark.p3),
             pytest.param(lambda r: {"ids": r}, 0, "", 0, marks=pytest.mark.p1),
+            pytest.param({"delete_all": True}, 0, "", 0, marks=pytest.mark.p1),
             pytest.param({"ids": []}, 0, "", 5, marks=pytest.mark.p3),
         ],
     )

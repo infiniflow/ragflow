@@ -719,9 +719,17 @@ async def delete_sessions(chat_id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
         req = await get_request_json()
-        session_ids = (req or {}).get("ids", [])
+        if not req:
+            return get_json_result(data={})
+
+        session_ids = req.get("ids")
         if not session_ids:
-            return get_json_result(data=True)
+            if req.get("delete_all") is True:
+                session_ids = [conv.id for conv in ConversationService.query(dialog_id=chat_id)]
+                if not session_ids:
+                    return get_json_result(data={})
+            else:
+                return get_json_result(data={})
         unique_ids, duplicate_messages = check_duplicate_ids(session_ids, "session")
         errors = []
         success_count = 0

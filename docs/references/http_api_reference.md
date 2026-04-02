@@ -3619,6 +3619,202 @@ Failure:
 
 ---
 
+### Get chat assistant's session
+
+**GET** `/api/v1/chats/{chat_id}/sessions/{session_id}`
+
+Gets a specific session of a specified chat assistant, including its messages, references, and avatar.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/chats/{chat_id}/sessions/{session_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions/{session_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request Parameters
+
+- `chat_id`: (*Path parameter*)  
+  The ID of the associated chat assistant.
+- `session_id`: (*Path parameter*)  
+  The ID of the session to retrieve.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "chat_id": "2ca4b22e878011ef88fe0242ac120005",
+        "id": "4606b4ec87ad11efbc4f0242ac120006",
+        "name": "new session",
+        "avatar": "data:image/png;base64,...",
+        "messages": [
+            {
+                "content": "Hi! I am your assistant, can I help you?",
+                "role": "assistant"
+            }
+        ],
+        "reference": []
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Session not found!"
+}
+```
+
+---
+
+### Delete a message from a chat assistant's session
+
+**DELETE** `/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id}`
+
+Deletes a user message and its paired assistant reply from a specified chat assistant session.
+
+#### Request
+
+- Method: DELETE
+- URL: `/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request Parameters
+
+- `chat_id`: (*Path parameter*)  
+  The ID of the associated chat assistant.
+- `session_id`: (*Path parameter*)  
+  The ID of the session that owns the message.
+- `msg_id`: (*Path parameter*)  
+  The ID of the message to delete.
+
+#### Response
+
+Success: returns the updated session object.
+
+```json
+{
+    "code": 0,
+    "data": {
+        "chat_id": "2ca4b22e878011ef88fe0242ac120005",
+        "id": "4606b4ec87ad11efbc4f0242ac120006",
+        "messages": [],
+        "reference": []
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Session not found!"
+}
+```
+
+---
+
+### Update message feedback in a chat assistant's session
+
+**PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id}/feedback`
+
+Updates feedback for an assistant message in a specified chat assistant session.
+
+#### Request
+
+- Method: PUT
+- URL: `/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id}/feedback`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"thumbup"`: `boolean`
+  - `"feedback"`: `string` (optional)
+
+##### Request example
+
+```bash
+curl --request PUT \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id}/feedback \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "thumbup": false,
+          "feedback": "The answer missed the cited document."
+     }'
+```
+
+##### Request Parameters
+
+- `chat_id`: (*Path parameter*)  
+  The ID of the associated chat assistant.
+- `session_id`: (*Path parameter*)  
+  The ID of the session that owns the message.
+- `msg_id`: (*Path parameter*)  
+  The ID of the assistant message to update.
+- `"thumbup"`: (*Body parameter*), `boolean`  
+  Whether the assistant message is marked as positive feedback.
+- `"feedback"`: (*Body parameter*), `string`  
+  Optional feedback text, typically used when `"thumbup"` is `false`.
+
+#### Response
+
+Success: returns the updated session object.
+
+```json
+{
+    "code": 0,
+    "data": {
+        "chat_id": "2ca4b22e878011ef88fe0242ac120005",
+        "id": "4606b4ec87ad11efbc4f0242ac120006",
+        "messages": [
+            {
+                "id": "message-id",
+                "role": "assistant",
+                "content": "Here is the answer.",
+                "thumbup": false,
+                "feedback": "The answer missed the cited document."
+            }
+        ]
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Session not found!"
+}
+```
+
+---
+
 ### Delete chat assistant's sessions
 
 **DELETE** `/api/v1/chats/{chat_id}/sessions`
