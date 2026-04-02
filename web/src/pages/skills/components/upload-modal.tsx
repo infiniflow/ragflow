@@ -70,7 +70,6 @@ const UploadModal: React.FC<UploadModalProps> = ({
   open,
   onCancel,
   onUpload,
-  loading,
 }) => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('upload');
@@ -777,7 +776,6 @@ const UploadModal: React.FC<UploadModalProps> = ({
 
       // Filter out common non-skill files
       const filteredGitFiles = gitFiles.filter((f) => {
-        const ext = f.path.split('.').pop()?.toLowerCase();
         const name = f.path.split('/').pop()?.toLowerCase();
         // Skip common non-code files
         if (
@@ -897,7 +895,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
       title={t('skills.addSkill') || 'Add Skill'}
       showfooter={false}
       onCancel={handleCancel}
-      size="lg"
+      size="large"
     >
       <Tabs value={activeTab} onValueChange={handleTabChange} className="mt-4">
         <TabsList className="grid w-full grid-cols-2">

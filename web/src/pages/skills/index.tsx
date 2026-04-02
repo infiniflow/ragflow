@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLocation } from 'react-router';
 import SearchConfigModal from './components/search-config-modal';
 import SkillCard from './components/skill-card';
 import SkillDetail from './components/skill-detail';
@@ -59,6 +60,7 @@ const formatRelative = (timestamp: number): string => {
 
 const SkillsPage: React.FC = () => {
   const { t } = useTranslation();
+  const { pathname } = useLocation();
   const {
     skills,
     filteredSkills,
@@ -89,6 +91,28 @@ const SkillsPage: React.FC = () => {
   const [searchResults, setSearchResults] = useState<Skill[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+
+  const clearModalLocks = useCallback(() => {
+    setDetailOpen(false);
+    setUploadModalOpen(false);
+    setConfigModalOpen(false);
+    setSelectedSkill(null);
+    document.body.style.removeProperty('pointer-events');
+    document.body.style.removeProperty('overflow');
+  }, []);
+
+  // Close all overlays and release body locks when route changes.
+  useEffect(() => {
+    clearModalLocks();
+  }, [pathname, clearModalLocks]);
+
+  // Extra safety for unmount in case an overlay lock leaks.
+  useEffect(() => {
+    return () => {
+      document.body.style.removeProperty('pointer-events');
+      document.body.style.removeProperty('overflow');
+    };
+  }, []);
 
   // Fetch config on mount - only once
   useEffect(() => {
@@ -354,31 +378,36 @@ const SkillsPage: React.FC = () => {
       </div>
 
       {/* Skill Detail Drawer */}
-      <SkillDetail
-        skill={selectedSkill}
-        open={detailOpen}
-        onClose={handleCloseDetail}
-        getFileContent={getSkillFileContent}
-        getVersionFiles={getSkillVersionFiles}
-      />
+      {detailOpen && selectedSkill && (
+        <SkillDetail
+          skill={selectedSkill}
+          open={detailOpen}
+          onClose={handleCloseDetail}
+          getFileContent={getSkillFileContent}
+          getVersionFiles={getSkillVersionFiles}
+        />
+      )}
 
       {/* Upload Modal */}
-      <UploadModal
-        open={uploadModalOpen}
-        onCancel={() => setUploadModalOpen(false)}
-        onUpload={handleUpload}
-        loading={loading}
-      />
+      {uploadModalOpen && (
+        <UploadModal
+          open={uploadModalOpen}
+          onCancel={() => setUploadModalOpen(false)}
+          onUpload={handleUpload}
+        />
+      )}
 
       {/* Search Config Modal */}
-      <SearchConfigModal
-        open={configModalOpen}
-        onOpenChange={setConfigModalOpen}
-        config={config || undefined}
-        onSave={saveConfig}
-        onReindex={reindex}
-        loading={configLoading}
-      />
+      {configModalOpen && (
+        <SearchConfigModal
+          open={configModalOpen}
+          onOpenChange={setConfigModalOpen}
+          config={config || undefined}
+          onSave={saveConfig}
+          onReindex={reindex}
+          loading={configLoading}
+        />
+      )}
     </PageContainer>
   );
 };
