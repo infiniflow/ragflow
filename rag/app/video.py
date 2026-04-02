@@ -382,14 +382,19 @@ def chunk(filename, binary=None, from_page=0, to_page=100_000,
     """
     Main entry point called by task_executor.build_chunks().
 
-    `filename` carries the YouTube URL — RagFlow stores the document
-    source path here, and for video documents we register the URL as
-    the filename.
+    `filename` is the human-readable video title (task["name"]).
+    `youtube_url` is passed as a kwarg by task_executor, read from
+    document metadata via DocMetadataService (see Fix 1).
+
+    parser_config optional fields:
+      chunk_by: "segment" (default) -- chunk by transcript segments (~60s windows)
+                "seconds"           -- chunk by fixed time window (SEGMENT_SECONDS)
 
     Returns a list of chunk dicts. Each must contain `content_with_weight`
     (the text to embed). All other keys become stored metadata.
     """
-    youtube_url: str = filename.strip()
+    youtube_url: str = kwargs.get("youtube_url", "").strip()
+    video_title: str = filename.strip()
 
     logger.info("video.chunk: starting ingestion for %s", youtube_url)
 
@@ -427,20 +432,17 @@ def chunk(filename, binary=None, from_page=0, to_page=100_000,
             callback(-1, msg)
         return []
 
-    # retrieve video title from parser_config if provided
-    video_title = ""
-    if parser_config and isinstance(parser_config, dict):
-        video_title = parser_config.get("video_title", "")
-    if not video_title:
-        video_title = youtube_url
+    # chunk_by: "segment" (default) or "seconds" -- controls chunking strategy
+    _cfg = parser_config if isinstance(parser_config, dict) else {}
+    chunk_by = _cfg.get("chunk_by", "segment")  # noqa: F841 -- reserved for future use
 
     chunks = []
     for seg in segments:
         deeplink = f"https://www.youtube.com/watch?v={video_id}&t={seg['timestamp_seconds']}s"
         d = {
-            "docnm_kwd": filename,
+            "docnm_kwd": video_title,
             "title_tks": rag_tokenizer.tokenize(
-                re.sub(r"\.[a-zA-Z]+$", "", filename)
+                re.sub(r"\.[a-zA-Z]+$", "", video_title)
             ),
         }
         d["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(d["title_tks"])
