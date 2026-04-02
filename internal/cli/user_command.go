@@ -751,10 +751,10 @@ func (c *RAGFlowClient) DropDocMetaIndex(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// CreateProvider creates a new model provider
-// CREATE PROVIDER <name>
-// CREATE PROVIDER <name> <api_key>
-func (c *RAGFlowClient) CreateProvider(cmd *Command) (ResponseIf, error) {
+// AddProvider creates a new model provider
+// ADD PROVIDER <name>
+// ADD PROVIDER <name> <api_key>
+func (c *RAGFlowClient) AddProvider(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -764,28 +764,23 @@ func (c *RAGFlowClient) CreateProvider(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("provider name not provided")
 	}
 
-	// Get optional api_key
-	apiKey, _ := cmd.Params["api_key"].(string)
-
 	// Build payload
 	payload := map[string]interface{}{
-		"llm_factory": providerName,
-		"api_key":     apiKey,
-		"verify":      apiKey != "", // Only verify if api_key is provided
+		"provider_name": providerName,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/llm/set_api_key", true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/providers", true, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create provider: %w", err)
+		return nil, fmt.Errorf("failed to add provider: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to add provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result SimpleResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("create provider failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("add provider failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -803,7 +798,7 @@ func (c *RAGFlowClient) ListProviders(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", "/llm/factories", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/providers", true, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list providers: %w", err)
 	}
@@ -825,9 +820,9 @@ func (c *RAGFlowClient) ListProviders(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// DropProvider deletes a provider
-// DROP PROVIDER <name>
-func (c *RAGFlowClient) DropProvider(cmd *Command) (ResponseIf, error) {
+// DeleteProvider deletes a provider
+// DELETE PROVIDER <name>
+func (c *RAGFlowClient) DeleteProvider(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -837,23 +832,25 @@ func (c *RAGFlowClient) DropProvider(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("provider name not provided")
 	}
 
+	url := fmt.Sprintf("/providers/%s", providerName)
+
 	// Build payload
 	payload := map[string]interface{}{
 		"llm_factory": providerName,
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", "/llm/factory", true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("DELETE", url, true, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to drop provider: %w", err)
+		return nil, fmt.Errorf("failed to delete provider: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to delete provider: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var result SimpleResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("drop provider failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("delete provider failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -861,6 +858,410 @@ func (c *RAGFlowClient) DropProvider(cmd *Command) (ResponseIf, error) {
 	}
 
 	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// CreateProviderInstance creates a new provider instance
+// CREATE PROVIDER <name> INSTANCE <instance_name> <api_key>
+func (c *RAGFlowClient) CreateProviderInstance(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance name not provided")
+	}
+
+	apiKey, ok := cmd.Params["api_key"].(string)
+	if !ok {
+		return nil, fmt.Errorf("API key not provided")
+	}
+
+	url := fmt.Sprintf("/providers/%s/instances", providerName)
+
+	payload := map[string]interface{}{
+		"instance_name": instanceName,
+		"api_key":       apiKey,
+	}
+
+	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create provider instance: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to create provider instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("create provider instance failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// ListProviderInstances lists all instances of a provider
+// LIST INSTANCES FROM PROVIDER <name>
+func (c *RAGFlowClient) ListProviderInstances(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	url := fmt.Sprintf("/providers/%s/instances", providerName)
+
+	resp, err := c.HTTPClient.Request("GET", url, true, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list instances: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list instances: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list instances failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// ShowProviderInstance shows details of a specific instance
+// SHOW INSTANCE <name> FROM PROVIDER <name>
+func (c *RAGFlowClient) ShowProviderInstance(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance name not provided")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	url := fmt.Sprintf("/providers/%s/instances/%s", providerName, instanceName)
+
+	resp, err := c.HTTPClient.Request("GET", url, true, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show instance: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("show instance failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AlterProviderInstance renames a provider instance
+// ALTER INSTANCE <name> NAME <new_name> FROM PROVIDER <name>
+func (c *RAGFlowClient) AlterProviderInstance(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance name not provided")
+	}
+
+	newName, ok := cmd.Params["new_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("new name not provided")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	url := fmt.Sprintf("/providers/%s/instances/%s", providerName, instanceName)
+
+	payload := map[string]interface{}{
+		"llm_name": newName,
+	}
+
+	resp, err := c.HTTPClient.Request("PUT", url, true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to alter instance: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to alter instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("alter instance failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// DropProviderInstance deletes a provider instance
+// DROP INSTANCE <name> FROM PROVIDER <name>
+func (c *RAGFlowClient) DropProviderInstance(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance name not provided")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	url := fmt.Sprintf("/providers/%s/instances/%s", providerName, instanceName)
+
+	resp, err := c.HTTPClient.Request("DELETE", url, true, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to drop instance: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to drop instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("drop instance failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) ListInstanceModels(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider_name not provided")
+	}
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance_name not provided")
+	}
+
+	var endPoint string
+	endPoint = fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
+
+	resp, err := c.HTTPClient.Request("GET", endPoint, true, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list instance models: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list instance models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to list instance models: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) EnableOrDisableModel(cmd *Command, status string) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	modelName, ok := cmd.Params["model_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model name not provided")
+	}
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance name not provided")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	url := fmt.Sprintf("/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
+
+	payload := map[string]interface{}{
+		"status": status,
+	}
+
+	resp, err := c.HTTPClient.Request("PUT", url, true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to enable/disable model: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to enable/disable model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("enable/disable model failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	var providerName, instanceName, modelName string
+
+	// Check if model_name is provided in command
+	if compositeModelName, ok := cmd.Params["model_name"].(string); ok && compositeModelName != "" {
+		names := strings.Split(compositeModelName, "/")
+		if len(names) != 3 {
+			return nil, fmt.Errorf("model name must be in format 'provider/instance/model'")
+		}
+		providerName = names[0]
+		instanceName = names[1]
+		modelName = names[2]
+	} else if c.CurrentModel != nil {
+		// Use current model if set
+		providerName = c.CurrentModel.Provider
+		instanceName = c.CurrentModel.Instance
+		modelName = c.CurrentModel.Model
+	} else {
+		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
+	}
+
+	message := cmd.Params["message"].(string)
+
+	url := fmt.Sprintf("/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
+
+	payload := map[string]interface{}{
+		"message": message,
+	}
+
+	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to chat model: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to chat model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result MessageResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("chat model failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// UseModel sets the current model for chat
+func (c *RAGFlowClient) UseModel(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	modelIdentifier, ok := cmd.Params["model_identifier"].(string)
+	if !ok || modelIdentifier == "" {
+		return nil, fmt.Errorf("model identifier not provided")
+	}
+
+	names := strings.Split(modelIdentifier, "/")
+	if len(names) != 3 {
+		return nil, fmt.Errorf("model identifier must be in format 'provider/instance/model'")
+	}
+
+	c.CurrentModel = &CurrentModel{
+		Provider: names[0],
+		Instance: names[1],
+		Model:    names[2],
+	}
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = fmt.Sprintf("Current model set to: %s/%s/%s", c.CurrentModel.Provider, c.CurrentModel.Instance, c.CurrentModel.Model)
+	return &result, nil
+}
+
+// ShowCurrentModel displays the current model configuration
+func (c *RAGFlowClient) ShowCurrentModel(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	if c.CurrentModel == nil {
+		return nil, fmt.Errorf("no current model set. Use 'use model' command first")
+	}
+
+	var result CommonResponse
+	result.Code = 0
+	result.Data = []map[string]interface{}{
+		{
+			"provider": c.CurrentModel.Provider,
+			"instance": c.CurrentModel.Instance,
+			"model":    c.CurrentModel.Model,
+		},
+	}
 	return &result, nil
 }
 
@@ -888,7 +1289,7 @@ func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
 
 	// Execute list command through Filesystem Engine
 	ctx := context.Background()
-	result, err := c.FilesystemEngine.List(ctx, path, opts)
+	result, err := c.ContextEngine.List(ctx, path, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -927,7 +1328,7 @@ func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
 
 	// Execute search command through Filesystem Engine
 	ctx := context.Background()
-	result, err := c.FilesystemEngine.Search(ctx, path, opts)
+	result, err := c.ContextEngine.Search(ctx, path, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -947,7 +1348,6 @@ func (c *RAGFlowClient) InsertDatasetFromFile(cmd *Command) (ResponseIf, error) 
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
-
 	filePath, ok := cmd.Params["file_path"].(string)
 	if !ok {
 		return nil, fmt.Errorf("file_path not provided")

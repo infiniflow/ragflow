@@ -42,6 +42,8 @@ const (
 	TokenAlter
 	TokenActive
 	TokenAdmin
+	TokenAdd
+	TokenDelete
 	TokenPassword
 	TokenDataset
 	TokenDatasets
@@ -105,6 +107,11 @@ const (
 	TokenDocMeta
 	TokenName // For ALTER PROVIDER <name> NAME <new_name>
 	TokenPool
+	TokenInstance
+	TokenInstances
+	TokenDisable
+	TokenEnable
+	TokenUse
 	TokenInsert
 	TokenFile
 	TokenMetadata

@@ -17,8 +17,17 @@
 package service
 
 import (
+	"fmt"
+	"mime/multipart"
+	"os"
+	"path/filepath"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/storage"
+	"ragflow/internal/util"
+	"strings"
+
+	"github.com/google/uuid"
 )
 
 // FileService file service
@@ -217,4 +226,218 @@ func (s *FileService) GetAllParentFolders(fileID string) ([]map[string]interface
 	}
 
 	return result, nil
+}
+
+const (
+	FileTypeFolder  = "folder"
+	FileTypeVirtual = "virtual"
+)
+
+// GetDocCount gets document count for a tenant
+func (s *FileService) GetDocCount(tenantID string) (int64, error) {
+	documentDAO := dao.NewDocumentDAO()
+	return documentDAO.CountByTenantID(tenantID)
+}
+
+// UploadFile uploads files to a folder
+func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
+	if parentID == "" {
+		rootFolder, err := s.fileDAO.GetRootFolder(tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get root folder: %w", err)
+		}
+		parentID = rootFolder.ID
+	}
+
+	_, err := s.fileDAO.GetByID(parentID)
+	if err != nil {
+		return nil, fmt.Errorf("Can't find this folder!")
+	}
+
+	maxFileNumPerUser := os.Getenv("MAX_FILE_NUM_PER_USER")
+	if maxFileNumPerUser != "" {
+		var maxNum int64
+		if _, err := fmt.Sscanf(maxFileNumPerUser, "%d", &maxNum); err == nil && maxNum > 0 {
+			docCount, err := s.GetDocCount(tenantID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get document count: %w", err)
+			}
+			if docCount >= maxNum {
+				return nil, fmt.Errorf("Exceed the maximum file number of a free user!")
+			}
+		}
+	}
+
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	var result []map[string]interface{}
+
+	for _, fileHeader := range files {
+		filename := fileHeader.Filename
+		if filename == "" {
+			return nil, fmt.Errorf("No file selected!")
+		}
+
+		fileType := util.FilenameType(filename)
+
+		fileObjNames := s.parseFilePath(filename)
+
+		idList, err := s.fileDAO.GetIDListByID(parentID, fileObjNames, 1, []string{parentID})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get file ID list: %w", err)
+		}
+
+		var lastFolder *entity.File
+		if len(fileObjNames) != len(idList)-1 {
+			lastID := idList[len(idList)-1]
+			lastFolder, err = s.fileDAO.GetByID(lastID)
+			if err != nil {
+				return nil, fmt.Errorf("Folder not found!")
+			}
+			createdFolder, err := s.createFolderRecursive(lastFolder, fileObjNames, len(idList), tenantID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create folder: %w", err)
+			}
+			lastFolder = createdFolder
+		} else {
+			lastID := idList[len(idList)-2]
+			lastFolder, err = s.fileDAO.GetByID(lastID)
+			if err != nil {
+				return nil, fmt.Errorf("Folder not found!")
+			}
+		}
+
+		location := fileObjNames[len(fileObjNames)-1]
+		for storageImpl.ObjExist(lastFolder.ID, location) {
+			location += "_"
+		}
+
+		src, err := fileHeader.Open()
+		if err != nil {
+			return nil, fmt.Errorf("failed to open uploaded file: %w", err)
+		}
+		defer src.Close()
+
+		data := make([]byte, fileHeader.Size)
+		if _, err := src.Read(data); err != nil {
+			return nil, fmt.Errorf("failed to read file data: %w", err)
+		}
+
+		if err := storageImpl.Put(lastFolder.ID, location, data); err != nil {
+			return nil, fmt.Errorf("failed to store file: %w", err)
+		}
+
+		uniqueName := s.getUniqueFilename(fileObjNames[len(fileObjNames)-1], lastFolder.ID)
+
+		fileRecord := &entity.File{
+			ID:         s.generateUUID(),
+			ParentID:   lastFolder.ID,
+			TenantID:   tenantID,
+			CreatedBy:  tenantID,
+			Name:       uniqueName,
+			Location:   &location,
+			Size:       int64(len(data)),
+			Type:       fileType,
+			SourceType: "",
+		}
+
+		if err := s.fileDAO.Insert(fileRecord); err != nil {
+			return nil, fmt.Errorf("failed to insert file record: %w", err)
+		}
+
+		result = append(result, s.toFileResponse(fileRecord))
+	}
+
+	return result, nil
+}
+
+func (s *FileService) parseFilePath(filename string) []string {
+	filename = strings.TrimPrefix(filename, "/")
+	parts := strings.Split(filename, "/")
+	var result []string
+	for _, part := range parts {
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
+}
+
+func (s *FileService) createFolderRecursive(parentFolder *entity.File, names []string, count int, tenantID string) (*entity.File, error) {
+	if count > len(names)-2 {
+		return parentFolder, nil
+	}
+
+	newFolder, err := s.fileDAO.CreateFolder(parentFolder.ID, tenantID, names[count], FileTypeFolder)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.createFolderRecursive(newFolder, names, count+1, tenantID)
+}
+
+func (s *FileService) getUniqueFilename(name, parentID string) string {
+	existingFiles := s.fileDAO.Query(name, parentID)
+	if len(existingFiles) == 0 {
+		return name
+	}
+
+	base := filepath.Base(name)
+	ext := filepath.Ext(name)
+	nameWithoutExt := strings.TrimSuffix(base, ext)
+
+	counter := 1
+	for {
+		newName := fmt.Sprintf("%s_%d%s", nameWithoutExt, counter, ext)
+		existingFiles = s.fileDAO.Query(newName, parentID)
+		if len(existingFiles) == 0 {
+			return newName
+		}
+		counter++
+	}
+}
+
+func (s *FileService) generateUUID() string {
+	id := uuid.New().String()
+	return strings.ReplaceAll(id, "-", "")
+}
+
+// CreateFolder creates a new folder or virtual file
+func (s *FileService) CreateFolder(tenantID, name, parentID, fileType string) (map[string]interface{}, error) {
+	if parentID == "" {
+		rootFolder, err := s.fileDAO.GetRootFolder(tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get root folder: %w", err)
+		}
+		parentID = rootFolder.ID
+	}
+
+	if !s.fileDAO.IsParentFolderExist(parentID) {
+		return nil, fmt.Errorf("Parent Folder Doesn't Exist!")
+	}
+
+	existingFiles := s.fileDAO.Query(name, parentID)
+	if len(existingFiles) > 0 {
+		return nil, fmt.Errorf("Duplicated folder name in the same folder.")
+	}
+
+	if fileType == "" {
+		fileType = FileTypeVirtual
+	}
+
+	if fileType == FileTypeFolder {
+		fileType = FileTypeFolder
+	} else {
+		fileType = FileTypeVirtual
+	}
+
+	folder, err := s.fileDAO.CreateFolder(parentID, tenantID, name, fileType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create folder: %w", err)
+	}
+
+	return s.toFileResponse(folder), nil
 }

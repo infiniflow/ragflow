@@ -215,13 +215,29 @@ func (r *Router) Setup(engine *gin.Engine) {
 				skills.POST("/reindex", r.skillSearchHandler.Reindex)
 			}
 
+			// File routes
+			file := v1.Group("/files")
+			{
+				file.POST("", r.fileHandler.UploadFile)
+			}
+
 			// provider pool route group
 			provider := v1.Group("/providers")
 			{
 				provider.GET("/", r.providerHandler.ListProviders)
+				provider.POST("/", r.providerHandler.AddProvider)
 				provider.GET("/:provider_name", r.providerHandler.ShowProvider)
+				provider.DELETE("/:provider_name", r.providerHandler.DeleteProvider)
 				provider.GET("/:provider_name/models", r.providerHandler.ListModels)
 				provider.GET("/:provider_name/models/:model_name", r.providerHandler.ShowModel)
+				provider.POST("/:provider_name/instances", r.providerHandler.CreateProviderInstance)
+				provider.GET("/:provider_name/instances", r.providerHandler.ListProviderInstances)
+				provider.GET("/:provider_name/instances/:instance_name", r.providerHandler.ShowProviderInstance)
+				provider.PUT("/:provider_name/instances/:instance_name", r.providerHandler.AlterProviderInstance)
+				provider.DELETE("/:provider_name/instances/:instance_name", r.providerHandler.DropProviderInstance)
+				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
+				provider.PUT("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.EnableOrDisableModel)
+				provider.POST("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.ChatToModel)
 			}
 		}
 

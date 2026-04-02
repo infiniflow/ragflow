@@ -148,6 +148,11 @@ func InitDB() error {
 		&entity.TimeRecord{},
 		&entity.License{},
 		&entity.SkillSearchConfig{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+		&entity.TenantModelGroupMapping{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelGroup{},
 	}
 
 	for _, m := range models {
