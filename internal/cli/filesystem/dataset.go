@@ -17,6 +17,7 @@
 package filesystem
 
 import (
+	"io"
 	stdctx "context"
 	"encoding/json"
 	"fmt"
@@ -36,6 +37,7 @@ type HTTPResponse struct {
 // HTTPClientInterface defines the interface needed from HTTPClient
 type HTTPClientInterface interface {
 	Request(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*HTTPResponse, error)
+	UploadMultipart(path string, contentType string, body io.Reader) error
 }
 
 // DatasetProvider handles datasets and their documents

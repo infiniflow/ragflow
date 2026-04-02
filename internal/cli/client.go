@@ -18,6 +18,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 
 	ce "ragflow/internal/cli/filesystem"
 )
@@ -68,6 +69,7 @@ func (c *RAGFlowClient) initContextEngine() {
 
 	// Register providers
 	engine.RegisterProvider(ce.NewDatasetProvider(&httpClientAdapter{c.HTTPClient}))
+	engine.RegisterProvider(ce.NewSkillProvider(&httpClientAdapter{c.HTTPClient}))
 
 	c.ContextEngine = engine
 }
@@ -99,6 +101,10 @@ func (a *httpClientAdapter) Request(method, path string, useAPIBase bool, authKi
 		Headers:    resp.Headers,
 		Duration:   resp.Duration,
 	}, nil
+}
+
+func (a *httpClientAdapter) UploadMultipart(path string, contentType string, body io.Reader) error {
+	return a.client.UploadMultipart(path, contentType, body)
 }
 
 // ExecuteCommand executes a parsed command

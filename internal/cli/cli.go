@@ -400,13 +400,13 @@ const historyFileName = ".ragflow_cli_history"
 
 // CLI represents the command line interface
 type CLI struct {
-	client           *RAGFlowClient
-	filesystemEngine *filesystem.Engine
-	prompt           string
-	running          bool
-	line             *liner.State
-	args             *ConnectionArgs
-	outputFormat     OutputFormat // Output format
+	client         *RAGFlowClient
+	contextEngine  *filesystem.Engine
+	prompt         string
+	running        bool
+	line           *liner.State
+	args           *ConnectionArgs
+	outputFormat   OutputFormat // Output format
 }
 
 // NewCLI creates a new CLI instance
@@ -469,11 +469,12 @@ func NewCLIWithArgs(args *ConnectionArgs) (*CLI, error) {
 	engine := filesystem.NewEngine()
 	engine.RegisterProvider(filesystem.NewDatasetProvider(&httpClientAdapter{client: client.HTTPClient}))
 	engine.RegisterProvider(filesystem.NewFileProvider(&httpClientAdapter{client: client.HTTPClient}))
+	engine.RegisterProvider(filesystem.NewSkillProvider(&httpClientAdapter{client: client.HTTPClient}))
 
 	return &CLI{
 		prompt:        prompt,
 		client:        client,
-		filesystemEngine: engine,
+		contextEngine: engine,
 		line:          line,
 		args:          args,
 		outputFormat:  args.OutputFormat,
@@ -644,7 +645,7 @@ func (c *CLI) executeFilesystem(input string) error {
 	}
 
 	// Check if we have a filesystem engine
-	if c.filesystemEngine == nil {
+	if c.contextEngine == nil {
 		return fmt.Errorf("filesystem engine not available")
 	}
 
@@ -690,8 +691,6 @@ func (c *CLI) executeFilesystem(input string) error {
 		}
 		// Check if searching skills (supports: "skills" or "skills/hub1")
 		if searchPath == "skills" || strings.HasPrefix(searchPath, "skills/") {
-			searchCmd := NewSearchSkillsCommand(c.client)
-			searchCmd.SetOutputFormat(c.outputFormat)
 			// Parse hub ID from path (e.g., "skills/hub1" -> "hub1")
 			hubID := "default"
 			if strings.HasPrefix(searchPath, "skills/") {
@@ -700,17 +699,32 @@ func (c *CLI) executeFilesystem(input string) error {
 					hubID = "default"
 				}
 			}
-			// Convert searchOpts to search args
-			args := &SearchSkillsArgs{
-				Query:    searchOpts.Query,
-				HubID:    hubID,
-				Page:     1,
-				PageSize: searchOpts.TopK,
+			// Get skill provider and perform search
+			provider := c.contextEngine.GetProvider("skills")
+			if provider == nil {
+				return fmt.Errorf("skill provider not available")
 			}
-			if args.PageSize <= 0 {
-				args.PageSize = 10
+			skillProvider, ok := provider.(*filesystem.SkillProvider)
+			if !ok {
+				return fmt.Errorf("invalid skill provider type")
 			}
-			return searchCmd.searchSkills(args)
+			pageSize := searchOpts.TopK
+			if pageSize <= 0 {
+				pageSize = 10
+			}
+			searchOptions := &filesystem.SearchOptions{
+				Query:  searchOpts.Query,
+				Limit:  pageSize,
+				Offset: 0,
+				TopK:   pageSize,
+			}
+			result, err := skillProvider.Search(context.Background(), hubID, searchOptions)
+			if err != nil {
+				return err
+			}
+			// Print skill search results with full details
+			c.printSkillSearchResults(result, c.outputFormat)
+			return nil
 		}
 		ceCmd = &filesystem.Command{
 			Type: filesystem.CommandSearch,
@@ -727,7 +741,7 @@ func (c *CLI) executeFilesystem(input string) error {
 			return fmt.Errorf("cat requires a path argument")
 		}
 		// Handle cat command directly since it returns []byte, not *Result
-		content, err := c.filesystemEngine.Cat(context.Background(), cmdArgs[0])
+		content, err := c.contextEngine.Cat(context.Background(), cmdArgs[0])
 		if err != nil {
 			return err
 		}
@@ -740,27 +754,34 @@ func (c *CLI) executeFilesystem(input string) error {
 		}
 		return nil
 	case "add-skill":
-		// Get the file provider from the engine
-		fileProvider, ok := c.filesystemEngine.GetProvider("files").(*filesystem.FileProvider)
+		// Get the file provider and skill provider from the engine
+		fileProvider, ok := c.contextEngine.GetProvider("files").(*filesystem.FileProvider)
 		if !ok {
 			return fmt.Errorf("file provider not available")
 		}
-		cmd := NewAddSkillCommand(c.client, fileProvider)
+		skillProvider := c.contextEngine.GetProvider("skills")
+		if skillProvider == nil {
+			return fmt.Errorf("skill provider not available")
+		}
+		// Create adapter for HTTPClient
+		httpAdapter := &httpClientAdapter{client: c.client.HTTPClient}
+		cmd := filesystem.NewAddSkillCommand(httpAdapter, fileProvider, skillProvider)
 		return cmd.Execute(cmdArgs)
 	case "delete-skill":
-		// Get the file provider from the engine
-		fileProvider, ok := c.filesystemEngine.GetProvider("files").(*filesystem.FileProvider)
-		if !ok {
-			return fmt.Errorf("file provider not available")
+		skillProvider := c.contextEngine.GetProvider("skills")
+		if skillProvider == nil {
+			return fmt.Errorf("skill provider not available")
 		}
-		cmd := NewDeleteSkillCommand(c.client, fileProvider)
+		// Create adapter for HTTPClient
+		httpAdapter := &httpClientAdapter{client: c.client.HTTPClient}
+		cmd := filesystem.NewDeleteSkillCommand(httpAdapter, skillProvider)
 		return cmd.Execute(cmdArgs)
 	default:
 		return fmt.Errorf("unknown filesystem command: %s", cmdType)
 	}
 
 	// Execute the command
-	result, err := c.filesystemEngine.Execute(context.Background(), ceCmd)
+	result, err := c.contextEngine.Execute(context.Background(), ceCmd)
 	if err != nil {
 		return err
 	}
@@ -971,6 +992,96 @@ func (c *CLI) printFilesystemResult(result *filesystem.Result, cmdType filesyste
 		// Cat output is handled differently - it returns []byte, not *Result
 		// This case should not be reached in normal flow since Cat returns []byte directly
 		fmt.Println("Content retrieved")
+	}
+}
+
+// printSkillSearchResults prints skill search results with full details
+func (c *CLI) printSkillSearchResults(result *filesystem.Result, format OutputFormat) {
+	if result == nil || len(result.Nodes) == 0 {
+		if format == OutputFormatJSON {
+			fmt.Println("[]")
+		} else {
+			fmt.Println("No skills found")
+		}
+		return
+	}
+
+	// Skill search result structure
+	type skillSearchResult struct {
+		SkillID     string   `json:"skill_id"`
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		Tags        string   `json:"tags"`
+		Score       float64  `json:"score"`
+		BM25Score   float64  `json:"bm25_score"`
+		VectorScore float64  `json:"vector_score"`
+	}
+
+	results := make([]skillSearchResult, 0, len(result.Nodes))
+	for _, node := range result.Nodes {
+		// Extract metadata
+		skillID := ""
+		if id, ok := node.Metadata["skill_id"].(string); ok {
+			skillID = id
+		}
+		description := ""
+		if desc, ok := node.Metadata["description"].(string); ok {
+			description = desc
+		}
+		tags := ""
+		if t, ok := node.Metadata["tags"].([]string); ok {
+			tags = strings.Join(t, ", ")
+		}
+		var score, bm25Score, vectorScore float64
+		if s, ok := node.Metadata["score"].(float64); ok {
+			score = s
+		}
+		if b, ok := node.Metadata["bm25_score"].(float64); ok {
+			bm25Score = b
+		}
+		if v, ok := node.Metadata["vector_score"].(float64); ok {
+			vectorScore = v
+		}
+
+		results = append(results, skillSearchResult{
+			SkillID:     skillID,
+			Name:        node.Name,
+			Description: description,
+			Tags:        tags,
+			Score:       score,
+			BM25Score:   bm25Score,
+			VectorScore: vectorScore,
+		})
+	}
+
+	if format == OutputFormatJSON {
+		jsonData, err := json.MarshalIndent(results, "", "  ")
+		if err != nil {
+			fmt.Printf("Error marshaling JSON: %v\n", err)
+			return
+		}
+		fmt.Println(string(jsonData))
+	} else if format == OutputFormatPlain {
+		fmt.Printf("Found %d skill(s):\n", len(results))
+		for _, sr := range results {
+			fmt.Printf("\nName: %s\n", sr.Name)
+			fmt.Printf("Skill ID: %s\n", sr.SkillID)
+			fmt.Printf("Description: %s\n", sr.Description)
+			fmt.Printf("Tags: %s\n", sr.Tags)
+			fmt.Printf("Score: %.6f (BM25: %.6f, Vector: %.6f)\n", sr.Score, sr.BM25Score, sr.VectorScore)
+		}
+	} else {
+		// Table format
+		fmt.Printf("Found %d skill(s):\n", len(results))
+		fmt.Println()
+		for _, sr := range results {
+			fmt.Printf("Name:        %s\n", sr.Name)
+			fmt.Printf("Skill ID:    %s\n", sr.SkillID)
+			fmt.Printf("Description: %s\n", sr.Description)
+			fmt.Printf("Tags:        %s\n", sr.Tags)
+			fmt.Printf("Score:       %.6f (BM25: %.6f, Vector: %.6f)\n", sr.Score, sr.BM25Score, sr.VectorScore)
+			fmt.Println()
+		}
 	}
 }
 
