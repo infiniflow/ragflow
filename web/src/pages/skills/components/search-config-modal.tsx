@@ -20,40 +20,15 @@ import { useSelectLlmOptionsByModelType } from '@/hooks/use-llm-request';
 import { message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import type {
+  FieldConfig,
+  FieldWeight,
+  SearchConfigModalProps,
+  SkillSearchConfig,
+} from '../types';
 
-// Field weight configuration
-interface FieldWeight {
-  enabled: boolean;
-  weight: number;
-}
-
-interface FieldConfig {
-  name: FieldWeight;
-  tags: FieldWeight;
-  description: FieldWeight;
-  content: FieldWeight;
-}
-
-// Search configuration
-interface SearchConfig {
-  id?: string;
-  tenant_id?: string;
-  embd_id: string;
-  vector_similarity_weight: number;
-  similarity_threshold: number;
-  field_config: FieldConfig;
-  rerank_id?: string;
-  top_k: number;
-}
-
-interface SearchConfigModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  config?: SearchConfig;
-  onSave: (config: SearchConfig) => Promise<boolean>;
-  onReindex?: () => Promise<boolean>;
-  loading?: boolean;
-}
+// Use SearchConfig as alias for SkillSearchConfig for backward compatibility
+type SearchConfig = SkillSearchConfig;
 
 const defaultFieldConfig: FieldConfig = {
   name: { enabled: true, weight: 3.0 },

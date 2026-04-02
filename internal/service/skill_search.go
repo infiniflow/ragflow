@@ -24,9 +24,9 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/entity"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	"ragflow/internal/logger"
 	"strings"
 
@@ -56,20 +56,23 @@ func (s *SkillSearchService) SetModelProvider(provider ModelProvider) {
 // GetConfigRequest represents the request to get skill search config
 type GetConfigRequest struct {
 	TenantID string `json:"tenant_id" binding:"required"`
+	HubID    string `json:"hub_id"`
 }
 
 // GetConfig retrieves the search configuration for a tenant
-func (s *SkillSearchService) GetConfig(tenantID, embdID string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *SkillSearchService) GetConfig(tenantID, hubID, embdID string) (map[string]interface{}, common.ErrorCode, error) {
+	hubID = normalizeHubID(hubID)
 	var config *entity.SkillSearchConfig
 	var err error
 
 	if embdID == "" {
 		// If embd_id is not provided, get the latest config for the tenant
-		config, err = s.configDAO.GetLatestByTenantID(tenantID)
+		config, err = s.configDAO.GetLatestByTenantID(tenantID, hubID)
 		if err != nil {
 			// No config found, return default config
 			config = &entity.SkillSearchConfig{
 				TenantID:               tenantID,
+				HubID:                  hubID,
 				EmbdID:                 "",
 				VectorSimilarityWeight: 0.3,
 				SimilarityThreshold:    0.2,
@@ -83,10 +86,10 @@ func (s *SkillSearchService) GetConfig(tenantID, embdID string) (map[string]inte
 			}
 		}
 	} else {
-		config, err = s.configDAO.GetByTenantAndEmbdID(tenantID, embdID)
+		config, err = s.configDAO.GetByTenantAndEmbdID(tenantID, hubID, embdID)
 		if err != nil {
 			// Config not found, create default one
-			config, err = s.configDAO.GetOrCreate(tenantID, embdID)
+			config, err = s.configDAO.GetOrCreate(tenantID, hubID, embdID)
 			if err != nil {
 				return nil, common.CodeOperatingError, fmt.Errorf("failed to get or create config: %w", err)
 			}
@@ -99,6 +102,7 @@ func (s *SkillSearchService) GetConfig(tenantID, embdID string) (map[string]inte
 // UpdateConfigRequest represents the request to update skill search config
 type UpdateConfigRequest struct {
 	TenantID               string             `json:"tenant_id"`
+	HubID                  string             `json:"hub_id"`
 	EmbdID                 string             `json:"embd_id" binding:"required"`
 	VectorSimilarityWeight float64            `json:"vector_similarity_weight"`
 	SimilarityThreshold    float64            `json:"similarity_threshold"`
@@ -109,6 +113,7 @@ type UpdateConfigRequest struct {
 
 // UpdateConfig updates the search configuration for a tenant
 func (s *SkillSearchService) UpdateConfig(req *UpdateConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
+	req.HubID = normalizeHubID(req.HubID)
 	// Validate vector_similarity_weight
 	if req.VectorSimilarityWeight < 0 || req.VectorSimilarityWeight > 1 {
 		return nil, common.CodeDataError, errors.New("vector_similarity_weight must be between 0 and 1")
@@ -124,7 +129,7 @@ func (s *SkillSearchService) UpdateConfig(req *UpdateConfigRequest) (map[string]
 		return nil, common.CodeDataError, errors.New("top_k must be positive")
 	}
 
-	config, err := s.configDAO.GetOrCreate(req.TenantID, req.EmbdID)
+	config, err := s.configDAO.GetOrCreate(req.TenantID, req.HubID, req.EmbdID)
 	if err != nil {
 		return nil, common.CodeOperatingError, fmt.Errorf("failed to get config: %w", err)
 	}
@@ -159,12 +164,12 @@ func (s *SkillSearchService) UpdateConfig(req *UpdateConfigRequest) (map[string]
 		updates["rerank_id"] = req.RerankID
 	}
 
-	if err := s.configDAO.UpdateByTenantAndEmbdID(req.TenantID, req.EmbdID, updates); err != nil {
+	if err := s.configDAO.UpdateByTenantAndEmbdID(req.TenantID, req.HubID, req.EmbdID, updates); err != nil {
 		return nil, common.CodeOperatingError, fmt.Errorf("failed to update config: %w", err)
 	}
 
 	// Refresh config
-	config, err = s.configDAO.GetByTenantAndEmbdID(req.TenantID, req.EmbdID)
+	config, err = s.configDAO.GetByTenantAndEmbdID(req.TenantID, req.HubID, req.EmbdID)
 	if err != nil {
 		return nil, common.CodeOperatingError, fmt.Errorf("failed to refresh config: %w", err)
 	}
@@ -175,6 +180,7 @@ func (s *SkillSearchService) UpdateConfig(req *UpdateConfigRequest) (map[string]
 // SearchRequest represents the skill search request
 type SearchRequest struct {
 	TenantID string `json:"tenant_id"` // Set from user context, not from request body
+	HubID    string `json:"hub_id"`
 	Query    string `json:"query" binding:"required"`
 	Page     int    `json:"page"`
 	PageSize int    `json:"page_size"`
@@ -182,7 +188,7 @@ type SearchRequest struct {
 
 // SearchResponse represents the skill search response
 type SearchResponse struct {
-	Skills     []entity.SkillSearchResult `json:"skills"`      // Changed from "results" to match frontend
+	Skills     []entity.SkillSearchResult `json:"skills"` // Changed from "results" to match frontend
 	Total      int64                      `json:"total"`
 	Query      string                     `json:"query"`
 	SearchType string                     `json:"search_type"` // "keyword", "vector", "hybrid"
@@ -190,6 +196,7 @@ type SearchResponse struct {
 
 // Search performs skill search with the configured strategy
 func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, docEngine engine.DocEngine) (*SearchResponse, common.ErrorCode, error) {
+	req.HubID = normalizeHubID(req.HubID)
 	if req.Page <= 0 {
 		req.Page = 1
 	}
@@ -197,11 +204,28 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 		req.PageSize = 10
 	}
 
+	// Check if index exists before searching
+	indexName := getSkillIndexName(req.TenantID, req.HubID)
+
+	indexExists, err := docEngine.IndexExists(ctx, indexName)
+	if err != nil {
+		logger.Error("Failed to check index existence", err)
+		return nil, common.CodeOperatingError, fmt.Errorf("failed to check index existence: %w", err)
+	}
+	if !indexExists {
+		return nil, common.CodeOperatingError, fmt.Errorf("search index '%s' for hub '%s' does not exist. This usually means:\n\n"+
+			"1. No skills have been uploaded to this hub yet\n"+
+			"2. The skill was uploaded by a different user (index is per-user)\n"+
+			"3. The index was deleted\n\n"+
+			"Please upload at least one skill to this hub using the same user account.", indexName, req.HubID)
+	}
+
 	// Get config for search strategy
-	config, err := s.configDAO.GetByTenantID(req.TenantID)
+	config, err := s.configDAO.GetByTenantID(req.TenantID, req.HubID)
 	if err != nil {
 		// Use default config if not found
 		config = &entity.SkillSearchConfig{
+			HubID:                  req.HubID,
 			VectorSimilarityWeight: 0.3,
 			SimilarityThreshold:    0.2,
 			FieldConfig: map[string]interface{}{
@@ -214,7 +238,6 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 		}
 	}
 
-	indexName := getSkillIndexName(req.TenantID)
 	var results []entity.SkillSearchResult
 	searchType := "hybrid"
 
@@ -473,8 +496,20 @@ func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, ten
 }
 
 // Helper functions
-func getSkillIndexName(tenantID string) string {
-	return fmt.Sprintf("skill_%s", tenantID)
+func getSkillIndexName(tenantID, hubID string) string {
+	hubID = normalizeHubID(hubID)
+	hubID = strings.ToLower(hubID)
+	replacer := strings.NewReplacer("-", "_", "/", "_", "\\", "_", " ", "_", ".", "_", ":", "_")
+	sanitizedHubID := replacer.Replace(hubID)
+	return fmt.Sprintf("skill_%s_%s", tenantID, sanitizedHubID)
+}
+
+func normalizeHubID(hubID string) string {
+	hubID = strings.TrimSpace(hubID)
+	if hubID == "" {
+		return "default"
+	}
+	return hubID
 }
 
 func getEmbeddingDimension(embdID string) int {

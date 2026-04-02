@@ -21,6 +21,10 @@
         "type": "keyword",
         "store": true
       },
+      "hub_id": {
+        "type": "keyword",
+        "store": true
+      },
       "folder_id": {
         "type": "keyword",
         "store": true

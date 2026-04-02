@@ -147,7 +147,7 @@ export function FilesTable({
 
         const handleNameClick = () => {
           if (isSkillsFolder) {
-            navigate('/skills');
+            navigate('/files/skills');
           } else if (isFolder) {
             navigateToOtherFolder(id);
           }

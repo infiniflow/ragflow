@@ -27,6 +27,16 @@ import (
 // SkillSearchConfigDAO data access object for skill search config
 type SkillSearchConfigDAO struct{}
 
+const defaultSkillHubID = "default"
+
+func normalizeHubID(hubID string) string {
+	hubID = strings.TrimSpace(hubID)
+	if hubID == "" {
+		return defaultSkillHubID
+	}
+	return hubID
+}
+
 // NewSkillSearchConfigDAO creates a new SkillSearchConfigDAO
 func NewSkillSearchConfigDAO() *SkillSearchConfigDAO {
 	return &SkillSearchConfigDAO{}
@@ -38,9 +48,9 @@ func (dao *SkillSearchConfigDAO) Create(config *entity.SkillSearchConfig) error 
 }
 
 // GetByTenantID retrieves a skill search config by tenant ID
-func (dao *SkillSearchConfigDAO) GetByTenantID(tenantID string) (*entity.SkillSearchConfig, error) {
+func (dao *SkillSearchConfigDAO) GetByTenantID(tenantID, hubID string) (*entity.SkillSearchConfig, error) {
 	var config entity.SkillSearchConfig
-	err := DB.Where("tenant_id = ? AND status = ?", tenantID, "1").First(&config).Error
+	err := DB.Where("tenant_id = ? AND hub_id = ? AND status = ?", tenantID, normalizeHubID(hubID), "1").First(&config).Error
 	if err != nil {
 		return nil, err
 	}
@@ -48,9 +58,9 @@ func (dao *SkillSearchConfigDAO) GetByTenantID(tenantID string) (*entity.SkillSe
 }
 
 // GetLatestByTenantID retrieves the latest skill search config by tenant ID (ordered by update_time desc)
-func (dao *SkillSearchConfigDAO) GetLatestByTenantID(tenantID string) (*entity.SkillSearchConfig, error) {
+func (dao *SkillSearchConfigDAO) GetLatestByTenantID(tenantID, hubID string) (*entity.SkillSearchConfig, error) {
 	var config entity.SkillSearchConfig
-	err := DB.Where("tenant_id = ? AND status = ?", tenantID, "1").Order("update_time desc").First(&config).Error
+	err := DB.Where("tenant_id = ? AND hub_id = ? AND status = ?", tenantID, normalizeHubID(hubID), "1").Order("update_time desc").First(&config).Error
 	if err != nil {
 		return nil, err
 	}
@@ -58,9 +68,9 @@ func (dao *SkillSearchConfigDAO) GetLatestByTenantID(tenantID string) (*entity.S
 }
 
 // GetByTenantAndEmbdID retrieves a skill search config by tenant ID and embedding ID
-func (dao *SkillSearchConfigDAO) GetByTenantAndEmbdID(tenantID, embdID string) (*entity.SkillSearchConfig, error) {
+func (dao *SkillSearchConfigDAO) GetByTenantAndEmbdID(tenantID, hubID, embdID string) (*entity.SkillSearchConfig, error) {
 	var config entity.SkillSearchConfig
-	err := DB.Where("tenant_id = ? AND embd_id = ? AND status = ?", tenantID, embdID, "1").First(&config).Error
+	err := DB.Where("tenant_id = ? AND hub_id = ? AND embd_id = ? AND status = ?", tenantID, normalizeHubID(hubID), embdID, "1").First(&config).Error
 	if err != nil {
 		return nil, err
 	}
@@ -68,8 +78,9 @@ func (dao *SkillSearchConfigDAO) GetByTenantAndEmbdID(tenantID, embdID string) (
 }
 
 // GetOrCreate retrieves existing config or creates default one
-func (dao *SkillSearchConfigDAO) GetOrCreate(tenantID, embdID string) (*entity.SkillSearchConfig, error) {
-	config, err := dao.GetByTenantAndEmbdID(tenantID, embdID)
+func (dao *SkillSearchConfigDAO) GetOrCreate(tenantID, hubID, embdID string) (*entity.SkillSearchConfig, error) {
+	hubID = normalizeHubID(hubID)
+	config, err := dao.GetByTenantAndEmbdID(tenantID, hubID, embdID)
 	if err == nil {
 		return config, nil
 	}
@@ -99,6 +110,7 @@ func (dao *SkillSearchConfigDAO) GetOrCreate(tenantID, embdID string) (*entity.S
 	defaultConfig := &entity.SkillSearchConfig{
 		ID:                     generateID(),
 		TenantID:               tenantID,
+		HubID:                  hubID,
 		EmbdID:                 embdID,
 		VectorSimilarityWeight: 0.3,
 		SimilarityThreshold:    0.2,
@@ -120,16 +132,16 @@ func (dao *SkillSearchConfigDAO) Update(config *entity.SkillSearchConfig) error 
 }
 
 // UpdateByTenantID updates config by tenant ID
-func (dao *SkillSearchConfigDAO) UpdateByTenantID(tenantID string, updates map[string]interface{}) error {
+func (dao *SkillSearchConfigDAO) UpdateByTenantID(tenantID, hubID string, updates map[string]interface{}) error {
 	updates["update_time"] = time.Now()
-	result := DB.Model(&entity.SkillSearchConfig{}).Where("tenant_id = ? AND status = ?", tenantID, "1").Updates(updates)
+	result := DB.Model(&entity.SkillSearchConfig{}).Where("tenant_id = ? AND hub_id = ? AND status = ?", tenantID, normalizeHubID(hubID), "1").Updates(updates)
 	return result.Error
 }
 
 // UpdateByTenantAndEmbdID updates config by tenant ID and embedding ID
-func (dao *SkillSearchConfigDAO) UpdateByTenantAndEmbdID(tenantID, embdID string, updates map[string]interface{}) error {
+func (dao *SkillSearchConfigDAO) UpdateByTenantAndEmbdID(tenantID, hubID, embdID string, updates map[string]interface{}) error {
 	updates["update_time"] = time.Now()
-	result := DB.Model(&entity.SkillSearchConfig{}).Where("tenant_id = ? AND embd_id = ? AND status = ?", tenantID, embdID, "1").Updates(updates)
+	result := DB.Model(&entity.SkillSearchConfig{}).Where("tenant_id = ? AND hub_id = ? AND embd_id = ? AND status = ?", tenantID, normalizeHubID(hubID), embdID, "1").Updates(updates)
 	return result.Error
 }
 

@@ -387,7 +387,7 @@ Commands:
   Skill commands: 
     add-skill <path> [--version 1.0.0]
     delete-skill <skill-name>
-    search -d skills -q <query> [-k top-k]
+    search skills -q <query> [--hub hub1]
   If no command is provided, CLI runs in interactive mode.`)
 }
 
@@ -688,13 +688,22 @@ func (c *CLI) executeFilesystem(input string) error {
 		if len(searchOpts.Dirs) > 0 {
 			searchPath = searchOpts.Dirs[0]
 		}
-		// Check if searching skills
-		if searchPath == "skills" {
+		// Check if searching skills (supports: "skills" or "skills/hub1")
+		if searchPath == "skills" || strings.HasPrefix(searchPath, "skills/") {
 			searchCmd := NewSearchSkillsCommand(c.client)
 			searchCmd.SetOutputFormat(c.outputFormat)
+			// Parse hub ID from path (e.g., "skills/hub1" -> "hub1")
+			hubID := "default"
+			if strings.HasPrefix(searchPath, "skills/") {
+				hubID = strings.TrimPrefix(searchPath, "skills/")
+				if hubID == "" {
+					hubID = "default"
+				}
+			}
 			// Convert searchOpts to search args
 			args := &SearchSkillsArgs{
 				Query:    searchOpts.Query,
+				HubID:    hubID,
 				Page:     1,
 				PageSize: searchOpts.TopK,
 			}
@@ -1278,8 +1287,13 @@ Search for content in datasets or skills.
 
 Options:
   -d, --dir <path>       Directory to search in (can be specified multiple times)
-                         Supports: 'datasets', 'datasets/kb1', 'skills'
+                         Supports: 
+                           - 'datasets' (all datasets)
+                           - 'datasets/<kb_name>' (specific dataset)
+                           - 'skills' (default skills hub)
+                           - 'skills/<hub_name>' (specific skills hub)
                          Example: -d datasets/kb1 -d datasets/kb2
+                         Example: -d skills/hub1
   -q, --query <query>    Search query (required)
                          Example: -q "machine learning"
   -k, --top-k <number>   Number of top results to return (default: 10)
@@ -1296,7 +1310,8 @@ Examples:
   search -d datasets/kb1 -q "AI" --output plain     # Search with plain text output
   search -q "data mining"                           # Search all datasets
   search -q "RAG" -k 20 -t 0.5                      # Return 20 results with threshold 0.5
-  search -d skills -q "data processing"             # Search skills using semantic search
+  search -d skills -q "data processing"             # Search skills (default hub)
+  search -d skills/hub1 -q "API"                    # Search skills in hub1
 `
 	fmt.Println(help)
 }

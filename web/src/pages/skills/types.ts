@@ -19,6 +19,11 @@ export interface Skill {
   _folderId?: string; // Internal: file system folder ID for file operations
 }
 
+export interface SkillsHub {
+  id: string;
+  name: string;
+}
+
 export interface SkillFileEntry {
   name: string;
   path: string;

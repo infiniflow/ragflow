@@ -57,6 +57,11 @@ func RunMigrations(db *gorm.DB) error {
 		return fmt.Errorf("failed to migrate skill search tables: %w", err)
 	}
 
+	// Create skills hub tables
+	if err := migrateSkillsHubTables(db); err != nil {
+		return fmt.Errorf("failed to migrate skills hub tables: %w", err)
+	}
+
 	logger.Info("All manual migrations completed successfully")
 	return nil
 }
@@ -329,6 +334,7 @@ func migrateSkillSearchTables(db *gorm.DB) error {
 		CREATE TABLE IF NOT EXISTS skill_search_configs (
 			id VARCHAR(32) PRIMARY KEY,
 			tenant_id VARCHAR(32) NOT NULL,
+			hub_id VARCHAR(128) NOT NULL DEFAULT 'default',
 			embd_id VARCHAR(128) NOT NULL,
 			vector_similarity_weight FLOAT DEFAULT 0.3,
 			similarity_threshold FLOAT DEFAULT 0.2,
@@ -341,7 +347,8 @@ func migrateSkillSearchTables(db *gorm.DB) error {
 			create_time BIGINT,
 			update_time DATETIME,
 			INDEX idx_tenant_id (tenant_id),
-			UNIQUE INDEX idx_tenant_embd (tenant_id, embd_id)
+			INDEX idx_hub_id (hub_id),
+			UNIQUE INDEX idx_tenant_hub_embd (tenant_id, hub_id, embd_id)
 		)
 		`
 		if err := db.Exec(sql).Error; err != nil {
@@ -352,18 +359,97 @@ func migrateSkillSearchTables(db *gorm.DB) error {
 			}
 		}
 	} else {
+		// Add hub_id for existing installations.
+		if err := addColumnIfNotExists(db, "skill_search_configs", "hub_id", "VARCHAR(128) NOT NULL DEFAULT 'default'"); err != nil {
+			logger.Warn("Failed to add hub_id column to skill_search_configs", zap.Error(err))
+		}
+
+		// Drop legacy unique index (tenant_id, embd_id) to allow per-hub configs.
+		var legacyIndexExists int64
+		db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+			WHERE TABLE_NAME = 'skill_search_configs' AND INDEX_NAME = 'idx_tenant_embd'`).Scan(&legacyIndexExists)
+		if legacyIndexExists > 0 {
+			logger.Info("Dropping legacy unique index idx_tenant_embd from skill_search_configs...")
+			if err := db.Exec(`ALTER TABLE skill_search_configs DROP INDEX idx_tenant_embd`).Error; err != nil {
+				logger.Warn("Failed to drop legacy unique index idx_tenant_embd", zap.Error(err))
+			}
+		}
+
 		// Table exists, check if unique index exists
 		var indexExists int64
 		db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
-			WHERE TABLE_NAME = 'skill_search_configs' AND INDEX_NAME = 'idx_tenant_embd'`).Scan(&indexExists)
+			WHERE TABLE_NAME = 'skill_search_configs' AND INDEX_NAME = 'idx_tenant_hub_embd'`).Scan(&indexExists)
 		if indexExists == 0 {
-			logger.Info("Adding unique index idx_tenant_embd to skill_search_configs...")
+			logger.Info("Adding unique index idx_tenant_hub_embd to skill_search_configs...")
 			if err := db.Exec(`ALTER TABLE skill_search_configs 
-				ADD UNIQUE INDEX idx_tenant_embd (tenant_id, embd_id)`).Error; err != nil {
-				logger.Warn("Failed to add unique index idx_tenant_embd", zap.Error(err))
+				ADD UNIQUE INDEX idx_tenant_hub_embd (tenant_id, hub_id, embd_id)`).Error; err != nil {
+				logger.Warn("Failed to add unique index idx_tenant_hub_embd", zap.Error(err))
 			}
 		}
 	}
 
 	return nil
+}
+
+// migrateSkillsHubTables creates skills hub related tables
+func migrateSkillsHubTables(db *gorm.DB) error {
+	if !db.Migrator().HasTable("skills_hubs") {
+		logger.Info("Creating skills_hubs table...")
+		sql := `
+		CREATE TABLE IF NOT EXISTS skills_hubs (
+			id VARCHAR(32) PRIMARY KEY,
+			tenant_id VARCHAR(32) NOT NULL,
+			name VARCHAR(128) NOT NULL,
+			folder_id VARCHAR(32) NOT NULL,
+			description TEXT,
+			embd_id VARCHAR(128),
+			rerank_id VARCHAR(128),
+			top_k INT DEFAULT 10,
+			status VARCHAR(1) DEFAULT '1',
+			create_time BIGINT,
+			update_time DATETIME,
+			INDEX idx_tenant_id (tenant_id),
+			UNIQUE INDEX idx_tenant_name_status (tenant_id, name, status)
+		)
+		`
+		if err := db.Exec(sql).Error; err != nil {
+			logger.Warn("Failed to create skills_hubs table with MySQL dialect, trying generic", zap.Error(err))
+			// Try with AutoMigrate as fallback
+			if err := db.AutoMigrate(&entity.SkillsHub{}); err != nil {
+				return err
+			}
+		}
+	} else {
+		// Migrate existing table: drop old unique index and create new one with status
+		migrateSkillsHubIndex(db)
+	}
+
+	return nil
+}
+
+// migrateSkillsHubIndex migrates the unique index to include status
+func migrateSkillsHubIndex(db *gorm.DB) {
+	// Check if old index exists and drop it
+	var oldIndexExists int64
+	db.Raw(`
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+		WHERE TABLE_NAME = 'skills_hubs' AND INDEX_NAME = 'idx_tenant_name'
+	`).Scan(&oldIndexExists)
+	
+	if oldIndexExists > 0 {
+		logger.Info("Dropping old idx_tenant_name index from skills_hubs...")
+		db.Exec(`DROP INDEX idx_tenant_name ON skills_hubs`)
+	}
+	
+	// Check if new index exists
+	var newIndexExists int64
+	db.Raw(`
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+		WHERE TABLE_NAME = 'skills_hubs' AND INDEX_NAME = 'idx_tenant_name_status'
+	`).Scan(&newIndexExists)
+	
+	if newIndexExists == 0 {
+		logger.Info("Creating new idx_tenant_name_status index on skills_hubs...")
+		db.Exec(`CREATE UNIQUE INDEX idx_tenant_name_status ON skills_hubs(tenant_id, name, status)`)
+	}
 }

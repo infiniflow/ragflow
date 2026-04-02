@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"mime/multipart"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -39,6 +40,7 @@ import (
 const (
 	MaxTotalSize = 50 * 1024 * 1024 // 50MB
 	MaxFileSize  = 5 * 1024 * 1024  // 5MB per file
+	DefaultHubID = "default"
 )
 
 // Text file extensions allowed in skills
@@ -502,8 +504,36 @@ func NewSkillUploader(client *RAGFlowClient, fileProvider *filesystem.FileProvid
 	}
 }
 
+func normalizeHubID(hubID string) string {
+	hubID = strings.TrimSpace(hubID)
+	if hubID == "" {
+		return DefaultHubID
+	}
+	return hubID
+}
+
+// parseHubFromPath extracts hub ID from a path like "skills/hub1" or "skills"
+// Returns "default" for "skills" (no hub specified)
+func parseHubFromPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" || path == "skills" {
+		return DefaultHubID
+	}
+	// Handle paths like "skills/hub1" or "hub1"
+	if strings.HasPrefix(path, "skills/") {
+		path = strings.TrimPrefix(path, "skills/")
+	}
+	if path == "" {
+		return DefaultHubID
+	}
+	return normalizeHubID(path)
+}
+
 // UploadSkill uploads a skill directory to the server
-func (u *SkillUploader) UploadSkill(ctx stdctx.Context, skillPath string, versionOverride string) error {
+// The skill is uploaded to skills/<hub>/<skill_name> based on the current path context
+func (u *SkillUploader) UploadSkill(ctx stdctx.Context, skillPath string, versionOverride string, hubPath string) error {
+	// Parse hub from path (e.g., "skills/hub1" -> hub="hub1", "skills" -> hub="default")
+	hubID := parseHubFromPath(hubPath)
 	validator := NewSkillValidator()
 
 	// 1. Validate the skill directory
@@ -529,23 +559,23 @@ func (u *SkillUploader) UploadSkill(ctx stdctx.Context, skillPath string, versio
 
 	fmt.Printf("✓ Skill '%s' (v%s) is valid\n", skillName, version)
 
-	// 2. Ensure skills folder exists
-	fmt.Println("Checking skills folder...")
-	skillsFolderID, err := u.ensureSkillsFolder(ctx)
+	// 2. Ensure skills hub exists
+	fmt.Printf("Checking skills hub '%s'...\n", hubID)
+	hubFolderID, err := u.ensureSkillsHubFolder(ctx, hubID)
 	if err != nil {
-		return fmt.Errorf("failed to ensure skills folder: %w", err)
+		return fmt.Errorf("failed to ensure skills hub: %w", err)
 	}
 
 	// 3. Get or create skill folder
 	fmt.Printf("Checking skill '%s'...\n", skillName)
-	skillFolderID, err := u.getOrCreateSkillFolder(ctx, skillsFolderID, skillName)
+	skillFolderID, err := u.getOrCreateSkillFolder(ctx, hubID, hubFolderID, skillName)
 	if err != nil {
 		return err
 	}
 
 	// 4. Check if version already exists
 	fmt.Printf("Checking version '%s'...\n", version)
-	exists, err := u.versionExists(ctx, skillFolderID, skillName, version)
+	exists, err := u.versionExists(ctx, hubID, skillName, version)
 	if err != nil {
 		return fmt.Errorf("failed to check version: %w", err)
 	}
@@ -579,7 +609,7 @@ func (u *SkillUploader) UploadSkill(ctx stdctx.Context, skillPath string, versio
 
 	// 7. Index the skill for search
 	fmt.Println("Indexing skill for search...")
-	if err := u.indexSkill(ctx, result, files); err != nil {
+	if err := u.indexSkill(ctx, result, files, hubID, skillFolderID); err != nil {
 		// Log warning but don't fail the upload
 		fmt.Printf("⚠ Warning: Failed to index skill for search: %v\n", err)
 	} else {
@@ -587,6 +617,27 @@ func (u *SkillUploader) UploadSkill(ctx stdctx.Context, skillPath string, versio
 	}
 
 	return nil
+}
+
+// ensureSkillsHubFolder ensures the 'skills/<hub>' folder exists in file manager
+func (u *SkillUploader) ensureSkillsHubFolder(ctx stdctx.Context, hubID string) (string, error) {
+	skillsFolderID, err := u.ensureSkillsFolder(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	result, err := u.fileProvider.List(ctx, "skills", nil)
+	if err != nil {
+		return "", err
+	}
+
+	for _, node := range result.Nodes {
+		if node.Type == filesystem.NodeTypeDirectory && node.Name == hubID {
+			return getString(node.Metadata["id"]), nil
+		}
+	}
+
+	return u.createFolder(ctx, skillsFolderID, hubID)
 }
 
 // ensureSkillsFolder ensures the 'skills' folder exists in file manager
@@ -609,8 +660,8 @@ func (u *SkillUploader) ensureSkillsFolder(ctx stdctx.Context) (string, error) {
 
 // getOrCreateSkillFolder gets existing skill folder or creates new one
 // Allows same skill name with different versions
-func (u *SkillUploader) getOrCreateSkillFolder(ctx stdctx.Context, parentID, skillName string) (string, error) {
-	result, err := u.fileProvider.List(ctx, "skills", nil)
+func (u *SkillUploader) getOrCreateSkillFolder(ctx stdctx.Context, hubID, parentID, skillName string) (string, error) {
+	result, err := u.fileProvider.List(ctx, fmt.Sprintf("skills/%s", hubID), nil)
 	if err != nil {
 		return "", err
 	}
@@ -627,9 +678,9 @@ func (u *SkillUploader) getOrCreateSkillFolder(ctx stdctx.Context, parentID, ski
 }
 
 // versionExists checks if a version already exists
-func (u *SkillUploader) versionExists(ctx stdctx.Context, skillFolderID, skillName, version string) (bool, error) {
-	// List skill folder contents using path "skills/{skillName}"
-	result, err := u.fileProvider.List(ctx, fmt.Sprintf("skills/%s", skillName), nil)
+func (u *SkillUploader) versionExists(ctx stdctx.Context, hubID, skillName, version string) (bool, error) {
+	// List skill folder contents using path "skills/{hubID}/{skillName}"
+	result, err := u.fileProvider.List(ctx, fmt.Sprintf("skills/%s/%s", hubID, skillName), nil)
 	if err != nil {
 		return false, err
 	}
@@ -700,10 +751,53 @@ func (u *SkillUploader) uploadFile(ctx stdctx.Context, file *SkillFile, parentID
 	return u.client.HTTPClient.UploadMultipart("/files", writer.FormDataContentType(), &buf)
 }
 
+// getHubUUIDByName gets hub UUID by its name (folder name)
+func (u *SkillUploader) getHubUUIDByName(hubName string) (string, error) {
+	// Call ListHubs API to get all hubs
+	resp, err := u.client.HTTPClient.Request("GET", "/skills/hubs", true, "web", nil, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to list hubs: %w", err)
+	}
+
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"message"`
+		Data struct {
+			Hubs []struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"hubs"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &result); err != nil {
+		return "", fmt.Errorf("failed to parse hubs response: %w", err)
+	}
+
+	if result.Code != 0 {
+		return "", fmt.Errorf("failed to list hubs: %s", result.Msg)
+	}
+
+	// Find hub by name
+	for _, hub := range result.Data.Hubs {
+		if hub.Name == hubName {
+			return hub.ID, nil
+		}
+	}
+
+	return "", fmt.Errorf("hub with name '%s' not found", hubName)
+}
+
 // indexSkill indexes the skill for search
-func (u *SkillUploader) indexSkill(ctx stdctx.Context, result *SkillValidationResult, files []*SkillFile) error {
-	// Get default embedding model from config
-	embdID, err := u.getDefaultEmbdID()
+func (u *SkillUploader) indexSkill(ctx stdctx.Context, result *SkillValidationResult, files []*SkillFile, hubID, skillFolderID string) error {
+	// Convert hub name to UUID
+	hubUUID, err := u.getHubUUIDByName(hubID)
+	if err != nil {
+		return fmt.Errorf("failed to get hub UUID: %w", err)
+	}
+
+	// Get default embedding model from config using UUID
+	embdID, err := u.getDefaultEmbdID(hubUUID)
 	if err != nil {
 		return fmt.Errorf("failed to get default embedding model: %w", err)
 	}
@@ -731,20 +825,22 @@ func (u *SkillUploader) indexSkill(ctx stdctx.Context, result *SkillValidationRe
 	// Build skill info for indexing
 	skillInfo := map[string]interface{}{
 		"id":          result.Name, // Use skill name as ID
+		"folder_id":   skillFolderID,
 		"name":        result.Name,
 		"description": result.Description,
 		"tags":        result.Tags,
 		"content":     content,
 	}
 
-	// Build index request
+	// Build index request (use UUID, not folder name)
 	payload := map[string]interface{}{
 		"skills":  []interface{}{skillInfo},
+		"hub_id":  hubUUID,
 		"embd_id": embdID,
 	}
 
 	// Call index API
-	resp, err := u.client.HTTPClient.Request("POST", "/skills/index", true, "json", nil, payload)
+	resp, err := u.client.HTTPClient.Request("POST", "/skills/index", true, "web", nil, payload)
 	if err != nil {
 		return fmt.Errorf("index request failed: %w", err)
 	}
@@ -769,9 +865,9 @@ func (u *SkillUploader) indexSkill(ctx stdctx.Context, result *SkillValidationRe
 }
 
 // getDefaultEmbdID gets the default embedding model ID from skill search config
-func (u *SkillUploader) getDefaultEmbdID() (string, error) {
+func (u *SkillUploader) getDefaultEmbdID(hubID string) (string, error) {
 	// Try to get config from API
-	resp, err := u.client.HTTPClient.Request("GET", "/skills/config?embd_id=", true, "json", nil, nil)
+	resp, err := u.client.HTTPClient.Request("GET", fmt.Sprintf("/skills/config?embd_id=&hub_id=%s", url.QueryEscape(hubID)), true, "web", nil, nil)
 	if err != nil {
 		// If API fails, return empty string (server will handle it)
 		return "", nil
@@ -779,7 +875,7 @@ func (u *SkillUploader) getDefaultEmbdID() (string, error) {
 
 	var result struct {
 		Code int    `json:"code"`
-		Msg  string `json:"msg"`
+		Msg  string `json:"message"`
 		Data struct {
 			EmbdID string `json:"embd_id"`
 		} `json:"data"`
@@ -849,15 +945,18 @@ func (c *SearchSkillsCommand) SetOutputFormat(format OutputFormat) {
 
 // SearchSkillsArgs holds the parsed arguments for search-skills command
 type SearchSkillsArgs struct {
-	Query      string
-	Page       int
-	PageSize   int
-	ShowHelp   bool
+	Query    string
+	HubID    string
+	Page     int
+	PageSize int
+	ShowHelp bool
 }
 
 // ParseSearchSkillsArgs parses the search-skills command arguments
+// Note: HubID is set from the -d path by the caller (cli.go), not parsed from args
 func ParseSearchSkillsArgs(args []string) (*SearchSkillsArgs, error) {
 	result := &SearchSkillsArgs{
+		HubID:    DefaultHubID,
 		Page:     1,
 		PageSize: 10,
 	}
@@ -916,25 +1015,71 @@ func (c *SearchSkillsCommand) Execute(args []string) error {
 	return c.searchSkills(parsedArgs)
 }
 
+// getHubIDByName gets hub UUID by its name (folder name)
+func (c *SearchSkillsCommand) getHubIDByName(hubName string) (string, error) {
+	// Call ListHubs API to get all hubs
+	resp, err := c.client.HTTPClient.Request("GET", "/skills/hubs", true, "web", nil, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to list hubs: %w", err)
+	}
+
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"message"`
+		Data struct {
+			Hubs []struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"hubs"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &result); err != nil {
+		return "", fmt.Errorf("failed to parse hubs response: %w", err)
+	}
+
+	if result.Code != 0 {
+		return "", fmt.Errorf("failed to list hubs: %s", result.Msg)
+	}
+
+	// Find hub by name
+	for _, hub := range result.Data.Hubs {
+		if hub.Name == hubName {
+			return hub.ID, nil
+		}
+	}
+
+	return "", fmt.Errorf("hub with name '%s' not found. Please check the hub name or create it first", hubName)
+}
+
 // searchSkills performs the actual search
 func (c *SearchSkillsCommand) searchSkills(args *SearchSkillsArgs) error {
+	// Convert hub name to UUID
+	hubID := args.HubID
+	if hubID != "" && hubID != "default" {
+		uuid, err := c.getHubIDByName(hubID)
+		if err != nil {
+			return err
+		}
+		hubID = uuid
+	}
+
 	payload := map[string]interface{}{
 		"query":     args.Query,
+		"hub_id":    hubID,
 		"page":      args.Page,
 		"page_size": args.PageSize,
 	}
 
 	// Call skill search API
-	resp, err := c.client.HTTPClient.Request("POST", "/skills/search", true, "json", nil, payload)
+	resp, err := c.client.HTTPClient.Request("POST", "/skills/search", true, "web", nil, payload)
 	if err != nil {
 		return fmt.Errorf("search request failed: %w", err)
 	}
 
-
-
 	var result struct {
 		Code int    `json:"code"`
-		Msg  string `json:"msg"`
+		Msg  string `json:"message"`
 		Data struct {
 			Skills []struct {
 				SkillID     string   `json:"skill_id"`
@@ -957,7 +1102,7 @@ func (c *SearchSkillsCommand) searchSkills(args *SearchSkillsArgs) error {
 		if result.Msg != "" {
 			return fmt.Errorf("search failed: %s", result.Msg)
 		}
-		return fmt.Errorf("search failed with code: %d", result.Code)
+		return fmt.Errorf("search failed: %s (code: %d)", getErrorMessage(result.Code), result.Code)
 	}
 
 	if len(result.Data.Skills) == 0 {
@@ -1020,12 +1165,18 @@ Options:
   -q, --query string     Search query (required if not provided as argument)
   -p, --page int         Page number (default: 1)
   -n, --page-size int    Number of results per page (default: 10)
-  -h, --help            Show this help message
+  -h, --help             Show this help message
 
 Examples:
   search skills "data processing"
   search skills -q "machine learning"
-  search skills -q "api" -p 1 -n 20`)
+  search skills -q "api" -p 1 -n 20
+
+Notes:
+  - Use -d skills/<hub_name> to specify which skills hub to search
+    Example: search -d skills/hub1 -q "API"
+  - The default hub is "default" if -d is not specified
+  - Each hub has its own isolated search index`)
 }
 
 // ============================================================================
@@ -1048,9 +1199,9 @@ func NewAddSkillCommand(client *RAGFlowClient, fileProvider *filesystem.FileProv
 
 // AddSkillArgs holds the parsed arguments for add-skill command
 type AddSkillArgs struct {
-	SkillPath      string
-	Version        string
-	ShowHelp       bool
+	SkillPath string
+	Version   string
+	ShowHelp  bool
 }
 
 // ParseAddSkillArgs parses the add-skill command arguments
@@ -1109,9 +1260,9 @@ func (c *AddSkillCommand) Execute(args []string) error {
 		return fmt.Errorf("%s is not a directory", skillPath)
 	}
 
-	// Upload skill
+	// Upload skill to default hub (for now, can be extended to use current directory context)
 	uploader := NewSkillUploader(c.client, c.fileProvider)
-	err = uploader.UploadSkill(stdctx.Background(), skillPath, parsedArgs.Version)
+	err = uploader.UploadSkill(stdctx.Background(), skillPath, parsedArgs.Version, "")
 	if err != nil {
 		// Handle version conflict error
 		if conflictErr, ok := err.(*SkillConflictError); ok {
@@ -1128,13 +1279,14 @@ func (c *AddSkillCommand) PrintHelp() {
 	fmt.Println(`Usage: add-skill <path> [options]
 
 Upload a skill directory to RAGFlow.
+The skill is uploaded to the current skills hub (based on your current directory context).
 
 Arguments:
   <path>                 Path to the skill directory
 
 Options:
   -v, --version string   Specify the skill version (default: from SKILL.md or 1.0.0)
-  -h, --help            Show this help message
+  -h, --help             Show this help message
 
 Examples:
   add-skill /path/to/my-skill
@@ -1167,6 +1319,50 @@ func getString(v interface{}) string {
 	}
 }
 
+// getErrorMessage returns a human-readable error message for error codes
+func getErrorMessage(code int) string {
+	switch code {
+	case 0:
+		return "Success"
+	case 10:
+		return "Not effective"
+	case 100:
+		return "System exception"
+	case 101:
+		return "Invalid argument"
+	case 102:
+		return "Data error"
+	case 103:
+		return "Operation error"
+	case 104:
+		return "Timeout"
+	case 105:
+		return "Connection error"
+	case 106:
+		return "System running"
+	case 107:
+		return "Resource exhausted"
+	case 108:
+		return "Permission denied"
+	case 109:
+		return "Authentication failed"
+	case 400:
+		return "Bad request"
+	case 401:
+		return "Unauthorized"
+	case 403:
+		return "Forbidden"
+	case 404:
+		return "Resource not found"
+	case 409:
+		return "Resource conflict"
+	case 500:
+		return "Internal server error"
+	default:
+		return "Unknown error"
+	}
+}
+
 // ============================================================================
 // Delete Skill Command Handler
 // ============================================================================
@@ -1188,12 +1384,13 @@ func NewDeleteSkillCommand(client *RAGFlowClient, fileProvider *filesystem.FileP
 // DeleteSkillArgs holds the parsed arguments for delete-skill command
 type DeleteSkillArgs struct {
 	SkillName string
+	HubID     string
 	ShowHelp  bool
 }
 
 // ParseDeleteSkillArgs parses the delete-skill command arguments
 func ParseDeleteSkillArgs(args []string) (*DeleteSkillArgs, error) {
-	result := &DeleteSkillArgs{}
+	result := &DeleteSkillArgs{HubID: DefaultHubID}
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -1202,6 +1399,13 @@ func ParseDeleteSkillArgs(args []string) (*DeleteSkillArgs, error) {
 		case "-h", "--help":
 			result.ShowHelp = true
 			return result, nil
+		case "--hub":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				result.HubID = normalizeHubID(args[i+1])
+				i++
+			} else {
+				return nil, fmt.Errorf("hub flag requires a value")
+			}
 		default:
 			// Non-flag argument is the skill name
 			if !strings.HasPrefix(arg, "-") && result.SkillName == "" {
@@ -1229,11 +1433,11 @@ func (c *DeleteSkillCommand) Execute(args []string) error {
 		return nil
 	}
 
-	return c.deleteSkill(stdctx.Background(), parsedArgs.SkillName)
+	return c.deleteSkill(stdctx.Background(), parsedArgs.SkillName, parsedArgs.HubID)
 }
 
 // deleteSkill deletes a skill and its index
-func (c *DeleteSkillCommand) deleteSkill(ctx stdctx.Context, skillName string) error {
+func (c *DeleteSkillCommand) deleteSkill(ctx stdctx.Context, skillName, hubID string) error {
 	// 1. Find skill folder
 	skillsFolderID, err := c.getSkillsFolderID(ctx)
 	if err != nil {
@@ -1241,14 +1445,14 @@ func (c *DeleteSkillCommand) deleteSkill(ctx stdctx.Context, skillName string) e
 	}
 
 	// 2. Find skill folder by name
-	skillFolderID, err := c.getSkillFolderID(ctx, skillsFolderID, skillName)
+	skillFolderID, err := c.getSkillFolderID(ctx, skillsFolderID, hubID, skillName)
 	if err != nil {
 		return fmt.Errorf("skill '%s' not found: %w", skillName, err)
 	}
 
 	// 3. Delete index first
 	fmt.Printf("Deleting search index for skill '%s'...\n", skillName)
-	if err := c.deleteSkillIndex(skillName); err != nil {
+	if err := c.deleteSkillIndex(skillName, hubID); err != nil {
 		fmt.Printf("⚠ Warning: Failed to delete search index: %v\n", err)
 	} else {
 		fmt.Printf("✓ Search index deleted\n")
@@ -1265,9 +1469,9 @@ func (c *DeleteSkillCommand) deleteSkill(ctx stdctx.Context, skillName string) e
 }
 
 // deleteSkillIndex deletes the skill from search index
-func (c *DeleteSkillCommand) deleteSkillIndex(skillName string) error {
+func (c *DeleteSkillCommand) deleteSkillIndex(skillName, hubID string) error {
 	// Call delete skill index API
-	resp, err := c.client.HTTPClient.Request("DELETE", "/skills/index/"+skillName, true, "json", nil, nil)
+	resp, err := c.client.HTTPClient.Request("DELETE", fmt.Sprintf("/skills/index/%s?hub_id=%s", url.PathEscape(skillName), url.QueryEscape(hubID)), true, "web", nil, nil)
 	if err != nil {
 		return fmt.Errorf("delete index request failed: %w", err)
 	}
@@ -1305,8 +1509,8 @@ func (c *DeleteSkillCommand) getSkillsFolderID(ctx stdctx.Context) (string, erro
 }
 
 // getSkillFolderID finds a skill folder ID by name
-func (c *DeleteSkillCommand) getSkillFolderID(ctx stdctx.Context, parentID, skillName string) (string, error) {
-	result, err := c.fileProvider.List(ctx, "skills", nil)
+func (c *DeleteSkillCommand) getSkillFolderID(ctx stdctx.Context, parentID, hubID, skillName string) (string, error) {
+	result, err := c.fileProvider.List(ctx, fmt.Sprintf("skills/%s", hubID), nil)
 	if err != nil {
 		return "", err
 	}
@@ -1326,7 +1530,7 @@ func (c *DeleteSkillCommand) deleteFolder(ctx stdctx.Context, folderID string) e
 		"file_ids": []string{folderID},
 	}
 
-	resp, err := c.client.HTTPClient.Request("DELETE", "/files", true, "json", nil, payload)
+	resp, err := c.client.HTTPClient.Request("DELETE", "/files", true, "web", nil, payload)
 	if err != nil {
 		return err
 	}
@@ -1348,7 +1552,7 @@ func (c *DeleteSkillCommand) deleteFolder(ctx stdctx.Context, folderID string) e
 
 // PrintHelp prints the help message for delete-skill command
 func (c *DeleteSkillCommand) PrintHelp() {
-	fmt.Println(`Usage: delete-skill <skill-name>
+	fmt.Println(`Usage: delete-skill <skill-name> [options]
 
 Delete a skill from RAGFlow and remove its search index.
 
@@ -1356,9 +1560,11 @@ Arguments:
   <skill-name>           Name of the skill to delete
 
 Options:
+	--hub string           Skills Hub ID (default: default)
   -h, --help            Show this help message
 
 Examples:
   delete-skill my-skill
+	delete-skill my-skill --hub hub1
   delete-skill my-awesome-skill`)
 }

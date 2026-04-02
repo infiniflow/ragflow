@@ -20,6 +20,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/service"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -28,6 +29,7 @@ import (
 type SkillSearchHandler struct {
 	searchService  *service.SkillSearchService
 	indexerService *service.SkillIndexerService
+	hubService     *service.SkillsHubService
 	docEngine      engine.DocEngine
 }
 
@@ -36,6 +38,7 @@ func NewSkillSearchHandler(docEngine engine.DocEngine) *SkillSearchHandler {
 	return &SkillSearchHandler{
 		searchService:  service.NewSkillSearchService(),
 		indexerService: service.NewSkillIndexerService(),
+		hubService:     service.NewSkillsHubService(),
 		docEngine:      docEngine,
 	}
 }
@@ -48,6 +51,7 @@ func NewSkillSearchHandler(docEngine engine.DocEngine) *SkillSearchHandler {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param embd_id query string true "Embedding Model ID"
+// @Param hub_id query string false "Skills Hub ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/skills/config [get]
 func (h *SkillSearchHandler) GetConfig(c *gin.Context) {
@@ -58,8 +62,9 @@ func (h *SkillSearchHandler) GetConfig(c *gin.Context) {
 	}
 
 	embdID := c.Query("embd_id")
+	hubID := c.Query("hub_id")
 
-	result, code, err := h.searchService.GetConfig(user.ID, embdID)
+	result, code, err := h.searchService.GetConfig(user.ID, hubID, embdID)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return
@@ -139,6 +144,7 @@ func (h *SkillSearchHandler) Search(c *gin.Context) {
 // IndexSkillsRequest represents the request to index skills
 type IndexSkillsRequest struct {
 	Skills []service.SkillInfo `json:"skills" binding:"required"`
+	HubID  string              `json:"hub_id"`
 	EmbdID string              `json:"embd_id"` // Optional, will use config's embd_id if empty
 }
 
@@ -168,7 +174,7 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 	// If embd_id not provided, get from skill search config
 	embdID := req.EmbdID
 	if embdID == "" {
-		config, code, err := h.searchService.GetConfig(user.ID, "")
+		config, code, err := h.searchService.GetConfig(user.ID, req.HubID, "")
 		if err != nil {
 			jsonError(c, code, "failed to get skill search config: "+err.Error())
 			return
@@ -181,12 +187,12 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 	}
 
 	// Ensure index exists
-	if err := h.indexerService.EnsureIndex(c.Request.Context(), user.ID, h.docEngine, embdID); err != nil {
+	if err := h.indexerService.EnsureIndex(c.Request.Context(), user.ID, req.HubID, h.docEngine, embdID); err != nil {
 		jsonError(c, common.CodeOperatingError, err.Error())
 		return
 	}
 
-	if err := h.indexerService.BatchIndexSkills(c.Request.Context(), user.ID, req.Skills, h.docEngine, embdID); err != nil {
+	if err := h.indexerService.BatchIndexSkills(c.Request.Context(), user.ID, req.HubID, req.Skills, h.docEngine, embdID); err != nil {
 		jsonError(c, common.CodeOperatingError, err.Error())
 		return
 	}
@@ -199,6 +205,7 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 // ReindexRequest represents the request to reindex skills
 type ReindexRequest struct {
 	Skills []service.SkillInfo `json:"skills" binding:"required"`
+	HubID  string              `json:"hub_id"`
 	EmbdID string              `json:"embd_id"` // Optional, will use config's embd_id if empty
 }
 
@@ -228,7 +235,7 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 	// If embd_id not provided, get from skill search config
 	embdID := req.EmbdID
 	if embdID == "" {
-		config, code, err := h.searchService.GetConfig(user.ID, "")
+		config, code, err := h.searchService.GetConfig(user.ID, req.HubID, "")
 		if err != nil {
 			jsonError(c, code, "failed to get skill search config: "+err.Error())
 			return
@@ -240,7 +247,7 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 		}
 	}
 
-	result, err := h.indexerService.ReindexAll(c.Request.Context(), user.ID, req.Skills, h.docEngine, embdID)
+	result, err := h.indexerService.ReindexAll(c.Request.Context(), user.ID, req.HubID, req.Skills, h.docEngine, embdID)
 	if err != nil {
 		jsonError(c, common.CodeOperatingError, err.Error())
 		return
@@ -267,12 +274,15 @@ func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
 	}
 
 	skillID := c.Param("skill_id")
+	// Wildcard parameter includes leading "/", remove it
+	skillID = strings.TrimPrefix(skillID, "/")
+	hubID := c.Query("hub_id")
 	if skillID == "" {
 		jsonError(c, common.CodeDataError, "skill_id is required")
 		return
 	}
 
-	err := h.indexerService.DeleteSkillIndex(c.Request.Context(), user.ID, skillID, h.docEngine)
+	err := h.indexerService.DeleteSkillIndex(c.Request.Context(), user.ID, hubID, skillID, h.docEngine)
 	if err != nil {
 		jsonError(c, common.CodeOperatingError, "failed to delete skill index")
 		return
@@ -289,6 +299,7 @@ func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param embd_id query string true "Embedding Model ID"
+// @Param hub_id query string false "Skills Hub ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/skill/search/init [post]
 func (h *SkillSearchHandler) InitializeIndex(c *gin.Context) {
@@ -299,15 +310,239 @@ func (h *SkillSearchHandler) InitializeIndex(c *gin.Context) {
 	}
 
 	embdID := c.Query("embd_id")
+	hubID := c.Query("hub_id")
 	if embdID == "" {
 		jsonError(c, common.CodeDataError, "embd_id is required")
 		return
 	}
 
-	if err := h.indexerService.InitializeIndex(c.Request.Context(), user.ID, h.docEngine, embdID); err != nil {
+	if err := h.indexerService.InitializeIndex(c.Request.Context(), user.ID, hubID, h.docEngine, embdID); err != nil {
 		jsonError(c, common.CodeOperatingError, err.Error())
 		return
 	}
 
 	jsonResponse(c, common.CodeSuccess, gin.H{"initialized": true}, "success")
+}
+
+// ==================== Skills Hub Management ====================
+
+// ListHubs handles the list skills hubs request
+// @Summary List Skills Hubs
+// @Description List all skills hubs for the current tenant
+// @Tags skills-hub
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/skills/hubs [get]
+func (h *SkillSearchHandler) ListHubs(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	result, code, err := h.hubService.ListHubs(user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+// CreateHubRequest represents the request to create a skills hub
+type CreateHubRequest struct {
+	Name        string `json:"name" binding:"required"`
+	Description string `json:"description"`
+	EmbdID      string `json:"embd_id"`
+	RerankID    string `json:"rerank_id"`
+}
+
+// CreateHub handles the create skills hub request
+// @Summary Create Skills Hub
+// @Description Create a new skills hub with associated folder
+// @Tags skills-hub
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body CreateHubRequest true "hub info"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/skills/hubs [post]
+func (h *SkillSearchHandler) CreateHub(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req CreateHubRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	result, code, err := h.hubService.CreateHub(&service.CreateHubRequest{
+		TenantID:    user.ID,
+		Name:        req.Name,
+		Description: req.Description,
+		EmbdID:      req.EmbdID,
+		RerankID:    req.RerankID,
+	})
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+// GetHub handles the get skills hub request
+// @Summary Get Skills Hub
+// @Description Get a skills hub by ID
+// @Tags skills-hub
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param hub_id path string true "Hub ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/skills/hubs/{hub_id} [get]
+func (h *SkillSearchHandler) GetHub(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	hubID := c.Param("hub_id")
+	if hubID == "" {
+		jsonError(c, common.CodeDataError, "hub_id is required")
+		return
+	}
+
+	result, code, err := h.hubService.GetHub(hubID, user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+// UpdateHubRequest represents the request to update a skills hub
+type UpdateHubRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	EmbdID      string `json:"embd_id"`
+	RerankID    string `json:"rerank_id"`
+	TopK        int    `json:"top_k"`
+}
+
+// UpdateHub handles the update skills hub request
+// @Summary Update Skills Hub
+// @Description Update a skills hub
+// @Tags skills-hub
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param hub_id path string true "Hub ID"
+// @Param request body UpdateHubRequest true "hub updates"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/skills/hubs/{hub_id} [put]
+func (h *SkillSearchHandler) UpdateHub(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	hubID := c.Param("hub_id")
+	if hubID == "" {
+		jsonError(c, common.CodeDataError, "hub_id is required")
+		return
+	}
+
+	var req UpdateHubRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	result, code, err := h.hubService.UpdateHub(hubID, user.ID, &service.UpdateHubRequest{
+		Name:        req.Name,
+		Description: req.Description,
+		EmbdID:      req.EmbdID,
+		RerankID:    req.RerankID,
+		TopK:        req.TopK,
+	})
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+// DeleteHub handles the delete skills hub request
+// @Summary Delete Skills Hub
+// @Description Delete a skills hub and its associated folder
+// @Tags skills-hub
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param hub_id path string true "Hub ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/skills/hubs/{hub_id} [delete]
+func (h *SkillSearchHandler) DeleteHub(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	hubID := c.Param("hub_id")
+	if hubID == "" {
+		jsonError(c, common.CodeDataError, "hub_id is required")
+		return
+	}
+
+	code, err := h.hubService.DeleteHub(hubID, user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, gin.H{"deleted": true}, "success")
+}
+
+// GetHubByFolder handles the get skills hub by folder ID request
+// @Summary Get Skills Hub by Folder
+// @Description Get a skills hub by its folder ID
+// @Tags skills-hub
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param folder_id query string true "Folder ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/skills/hub/by-folder [get]
+func (h *SkillSearchHandler) GetHubByFolder(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	folderID := c.Query("folder_id")
+	if folderID == "" {
+		jsonError(c, common.CodeDataError, "folder_id is required")
+		return
+	}
+
+	result, code, err := h.hubService.GetHubByFolderID(folderID, user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
 }

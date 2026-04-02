@@ -33,7 +33,7 @@ export enum Routes {
   Chats = '/chats',
   Chat = '/chat',
   Files = '/files',
-  Skills = '/skills',
+  Skills = '/files/skills',
   ProfileSetting = '/profile-setting',
   Profile = '/profile',
   Api = '/api',
