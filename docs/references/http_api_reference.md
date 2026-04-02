@@ -3456,7 +3456,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Name cannot be empty."
+    "message": "`name` can not be empty."
 }
 ```
 
@@ -3531,7 +3531,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Name cannot be empty."
+    "message": "`name` can not be empty."
 }
 ```
 
@@ -3565,7 +3565,7 @@ curl --request GET \
 - `page`: (*Filter parameter*), `integer`  
   Specifies the page on which the sessions will be displayed. Defaults to `1`.
 - `page_size`: (*Filter parameter*), `integer`  
-  The number of sessions on each page. Defaults to `30`.
+  The number of sessions on each page. Defaults to `30`. If set to `0`, an empty list is returned.
 - `orderby`: (*Filter parameter*), `string`  
   The field by which sessions should be sorted. Available options:  
   - `create_time` (default)

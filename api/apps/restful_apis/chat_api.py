@@ -626,15 +626,11 @@ async def create_session(chat_id):
 @login_required
 def list_sessions(chat_id):
     try:
-        tenants = UserTenantService.query(user_id=current_user.id)
-        for tenant in tenants:
-            if DialogService.query(tenant_id=tenant.tenant_id, id=chat_id, status=StatusEnum.VALID.value):
-                break
-        else:
+        if not _ensure_owned_chat(chat_id):
             return get_json_result(
                 data=False,
-                message="Only owner of chat authorized for this operation.",
-                code=RetCode.OPERATING_ERROR,
+                message="No authorization.",
+                code=RetCode.AUTHENTICATION_ERROR,
             )
         page_number = int(request.args.get("page", 1))
         items_per_page = int(request.args.get("page_size", 30))
@@ -646,6 +642,8 @@ def list_sessions(chat_id):
         convs = ConversationService.get_list(
             chat_id, page_number, items_per_page, orderby, desc, session_id, name, user_id
         )
+        if items_per_page == 0:
+            convs = []
         return get_json_result(data=[_build_session_response(c) for c in convs])
     except Exception as ex:
         return server_error_response(ex)
@@ -654,24 +652,16 @@ def list_sessions(chat_id):
 @manager.route("/chats/<chat_id>/sessions/<session_id>", methods=["GET"])  # noqa: F821
 @login_required
 async def get_session(chat_id, session_id):
+    if not _ensure_owned_chat(chat_id):
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
         ok, conv = ConversationService.get_by_id(session_id)
         if not ok:
             return get_data_error_result(message="Session not found!")
         if conv.dialog_id != chat_id:
             return get_data_error_result(message="Session does not belong to this chat!")
-        tenants = UserTenantService.query(user_id=current_user.id)
-        for tenant in tenants:
-            dialog = DialogService.query(tenant_id=tenant.tenant_id, id=chat_id)
-            if dialog:
-                avatar = dialog[0].icon
-                break
-        else:
-            return get_json_result(
-                data=False,
-                message="Only owner of session authorized for this operation.",
-                code=RetCode.OPERATING_ERROR,
-            )
+        dialog = _ensure_owned_chat(chat_id)
+        avatar = dialog[0].icon if dialog else ""
         for ref in conv.reference:
             if isinstance(ref, list):
                 continue
@@ -735,7 +725,7 @@ async def delete_sessions(chat_id):
         success_count = 0
         for sid in unique_ids:
             if not ConversationService.query(id=sid, dialog_id=chat_id):
-                errors.append(f"Session {sid} not found.")
+                errors.append(f"The chat doesn't own the session {sid}")
                 continue
             ConversationService.delete_by_id(sid)
             success_count += 1

@@ -50,12 +50,10 @@ class Chat(Base):
             return Session(self.rag, res["data"])
         raise Exception(res.get("message"))
 
-    def list_sessions(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True, id: str = None, name: str = None) -> list[Session]:
-        res = self.get(f"/chats/{self.id}/sessions", {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name})
+    def list_sessions(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True, id: str = None, name: str = None, user_id: str = None) -> list[Session]:
+        res = self.get(f"/chats/{self.id}/sessions", {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name, "user_id": user_id})
         res = res.json()
         if res.get("code") == 0:
-            if page_size == 0:
-                return []
             result_list = []
             for data in res["data"]:
                 result_list.append(Session(self.rag, data))
