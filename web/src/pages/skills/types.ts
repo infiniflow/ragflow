@@ -8,7 +8,7 @@ export interface Skill {
   id: string; // Skill name (used as identifier, consistent with search results)
   name: string;
   description: string;
-  source_type: 'local' | 'git' | 'central';
+  source_type: 'local' | 'git' | 'central' | 'search';
   source_ref?: string;
   central_path?: string;
   created_at: number;

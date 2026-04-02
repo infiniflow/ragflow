@@ -120,18 +120,35 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
       // Reset when closed
       setSelectedVersion('');
       setVersionFiles([]);
+      setVersionLoading(false);
       setSelectedFile(null);
       setFileContent('');
     }
-  }, [open, skill?.id, hasVersions]);
+  }, [
+    open,
+    skill?.id,
+    hasVersions,
+    skill?.metadata?.version,
+    availableVersions,
+  ]);
+
+  const resolvedVersion = useMemo(() => {
+    if (!skill) return '';
+    return (
+      selectedVersion || skill.metadata?.version || skill.versions?.[0] || ''
+    );
+  }, [selectedVersion, skill?.id, skill?.metadata?.version, skill?.versions]);
 
   // Load files when version or skill changes
   useEffect(() => {
-    let isMounted = true;
+    let isActive = true;
 
     const loadVersionFiles = async () => {
       if (!skill || !getVersionFiles) {
-        if (isMounted) setVersionFiles([]);
+        if (isActive) {
+          setVersionFiles([]);
+          setVersionLoading(false);
+        }
         return;
       }
 
@@ -141,42 +158,58 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
           `[Skill Detail] Skill "${skill.name}" has no folder_id. ` +
             'Please reindex skills in settings to fix this issue.',
         );
-        if (isMounted) setVersionFiles([]);
+        if (isActive) {
+          setVersionFiles([]);
+          setVersionLoading(false);
+        }
         return;
       }
 
       // If it's the default version and skill.files is not empty, use skill.files
       // Only for local skills (not search results which have empty files array)
       if (
-        selectedVersion === skill.metadata?.version &&
+        resolvedVersion ===
+          (skill.metadata?.version || skill.versions?.[0] || '') &&
         skill.files.length > 0 &&
         skill.source_type !== 'search'
       ) {
-        if (isMounted) setVersionFiles(skill.files);
+        if (isActive) {
+          setVersionFiles(skill.files);
+          setVersionLoading(false);
+        }
         return;
       }
 
       // Load files for the selected version
-      if (isMounted) setVersionLoading(true);
+      if (isActive) setVersionLoading(true);
       try {
-        const versionToLoad = selectedVersion || skill.metadata?.version || '';
+        const versionToLoad = resolvedVersion;
         // Pass skill object to handle search results not in skills state
         const files = await getVersionFiles(skill.id, versionToLoad, skill);
-        if (isMounted) setVersionFiles(files);
+        if (isActive) setVersionFiles(files);
       } catch (error) {
         console.error('Failed to load version files:', error);
-        if (isMounted) setVersionFiles([]);
+        if (isActive) setVersionFiles([]);
       } finally {
-        if (isMounted) setVersionLoading(false);
+        if (isActive) setVersionLoading(false);
       }
     };
 
     loadVersionFiles();
 
     return () => {
-      isMounted = false;
+      isActive = false;
     };
-  }, [skill, selectedVersion]);
+  }, [
+    skill?.id,
+    skill?.source_type,
+    skill?.metadata?.version,
+    skill?.versions,
+    (skill as any)?._folderId,
+    skill?.files,
+    resolvedVersion,
+    getVersionFiles,
+  ]);
 
   // Use version files if available, otherwise use skill.files
   const currentFiles = useMemo(() => {

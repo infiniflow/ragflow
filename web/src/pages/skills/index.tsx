@@ -29,7 +29,15 @@ import type { Skill } from './types';
 
 // Format relative time
 const formatRelative = (timestamp: number): string => {
-  const diff = Date.now() - timestamp;
+  let normalized = timestamp;
+  // Defensive normalization for mixed epoch units.
+  if (normalized > 1e17)
+    normalized = normalized / 1e6; // ns -> ms
+  else if (normalized > 1e14)
+    normalized = normalized / 1e3; // us -> ms
+  else if (normalized > 0 && normalized < 1e11) normalized = normalized * 1e3; // s -> ms
+
+  const diff = Date.now() - normalized;
   if (diff < 0) return 'just now';
 
   const minutes = Math.floor(diff / 60000);
@@ -52,6 +60,7 @@ const formatRelative = (timestamp: number): string => {
 const SkillsPage: React.FC = () => {
   const { t } = useTranslation();
   const {
+    skills,
     filteredSkills,
     loading,
     searchQuery,
@@ -147,7 +156,25 @@ const SkillsPage: React.FC = () => {
       try {
         const results = await searchSkills(query, 1, 20);
         if (results?.skills) {
-          setSearchResults(results.skills);
+          const localSkillMap = new Map(skills.map((s) => [s.id, s]));
+          const localSkillNameMap = new Map(
+            skills.map((s) => [s.name.toLowerCase(), s]),
+          );
+          const mergedResults = results.skills.map((skill) => {
+            const localSkill =
+              localSkillMap.get(skill.id) ||
+              localSkillNameMap.get(skill.name.toLowerCase());
+            if (!localSkill) return skill;
+
+            return {
+              ...skill,
+              created_at: localSkill.created_at,
+              updated_at: localSkill.updated_at,
+              _folderId:
+                (skill as any)._folderId || (localSkill as any)._folderId,
+            };
+          });
+          setSearchResults(mergedResults);
         } else {
           setSearchResults([]);
         }
@@ -158,7 +185,7 @@ const SkillsPage: React.FC = () => {
         setIsSearching(false);
       }
     },
-    [searchSkills, setSearchQuery],
+    [searchSkills, setSearchQuery, skills],
   );
 
   // Handle search input change (for controlled input)

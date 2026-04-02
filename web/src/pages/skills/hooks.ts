@@ -33,6 +33,90 @@ export const parseMetadata = (
   return { metadata, body };
 };
 
+// Normalize timestamp-like values from backend to milliseconds.
+// Supports epoch seconds, epoch milliseconds and ISO datetime strings.
+const toTimestampMs = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+
+  const normalizeEpoch = (raw: number): number | null => {
+    if (!Number.isFinite(raw)) return null;
+
+    let n = raw;
+    // Convert unit by magnitude: ns -> us -> ms -> s.
+    // Current epoch in ms is around 1e12.
+    if (n > 1e17)
+      n = n / 1e6; // nanoseconds
+    else if (n > 1e14)
+      n = n / 1e3; // microseconds
+    else if (n < 1e11) n = n * 1e3; // seconds
+
+    return Math.round(n);
+  };
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return normalizeEpoch(value);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    const numeric = Number(trimmed);
+    if (!Number.isNaN(numeric)) {
+      return normalizeEpoch(numeric);
+    }
+
+    const parsed = Date.parse(trimmed);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+
+  return null;
+};
+
+const pickSkillTimestamp = (result: any): number => {
+  const candidates = [
+    result?.updated_at,
+    result?.updatedAt,
+    result?.update_time,
+    result?.updateTime,
+    result?.update_date,
+    result?.modified_at,
+    result?.modifiedAt,
+    result?.metadata?.updated_at,
+    result?.metadata?.updatedAt,
+    result?.metadata?.update_time,
+    result?.metadata?.updateTime,
+    result?.metadata?.update_date,
+    result?.skill?.updated_at,
+    result?.skill?.updatedAt,
+    result?.skill?.update_time,
+    result?.skill?.updateTime,
+    result?.skill?.update_date,
+    result?.created_at,
+    result?.createdAt,
+    result?.create_time,
+    result?.createTime,
+    result?.create_date,
+    result?.metadata?.created_at,
+    result?.metadata?.createdAt,
+    result?.metadata?.create_time,
+    result?.metadata?.createTime,
+    result?.metadata?.create_date,
+    result?.skill?.created_at,
+    result?.skill?.createdAt,
+    result?.skill?.create_time,
+    result?.skill?.createTime,
+    result?.skill?.create_date,
+  ];
+
+  for (const candidate of candidates) {
+    const ts = toTimestampMs(candidate);
+    if (ts !== null) return ts;
+  }
+
+  return Date.now();
+};
+
 // Export validation function from validation module
 export { validateSkillFormatImpl as validateSkillFormat };
 
@@ -1092,22 +1176,28 @@ export const useSkillSearchConfig = () => {
           // Transform backend results to Skill[] format
           // Use folder_id if available (for file operations), otherwise skill_id
           const skills: Skill[] = (data.data.skills || []).map(
-            (result: any) => ({
-              id: result.skill_id, // Use skill name as ID (consistent with list view)
-              name: result.name,
-              description: result.description,
-              source_type: 'search',
-              created_at: Date.now(),
-              updated_at: Date.now(),
-              metadata: {
-                tags: result.tags || [],
-                score: result.score,
-                bm25_score: result.bm25_score,
-                vector_score: result.vector_score,
-              },
-              files: [],
-              _folderId: result.folder_id, // Store folder_id for file operations if needed
-            }),
+            (result: any) => {
+              // Prefer backend timestamp to avoid all cards showing "just now".
+              // Fallback to now only when backend doesn't provide time fields.
+              const timestamp = pickSkillTimestamp(result);
+
+              return {
+                id: result.skill_id, // Use skill name as ID (consistent with list view)
+                name: result.name,
+                description: result.description,
+                source_type: 'search',
+                created_at: timestamp,
+                updated_at: timestamp,
+                metadata: {
+                  tags: result.tags || [],
+                  score: result.score,
+                  bm25_score: result.bm25_score,
+                  vector_score: result.vector_score,
+                },
+                files: [],
+                _folderId: result.folder_id, // Store folder_id for file operations if needed
+              };
+            },
           );
           return {
             skills,
