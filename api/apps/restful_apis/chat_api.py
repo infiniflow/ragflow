@@ -603,7 +603,7 @@ async def create_session(chat_id):
             return get_data_error_result(message="Chat not found!")
         name = req.get("name", "New session")
         if not isinstance(name, str) or not name.strip():
-            return get_data_error_result(message="`name` cannot be empty.")
+            return get_data_error_result(message="`name` can not be empty.")
         name = name.strip()[:255]
         conv = {
             "id": get_uuid(),
@@ -699,7 +699,7 @@ async def update_session(chat_id, session_id):
         name = req.get("name")
         if name is not None:
             if not isinstance(name, str) or not name.strip():
-                return get_data_error_result(message="`name` cannot be empty.")
+                return get_data_error_result(message="`name` can not be empty.")
             req["name"] = name.strip()[:255]
         update_fields = {k: v for k, v in req.items() if k not in {"id", "dialog_id", "chat_id", "user_id"}}
         if not ConversationService.update_by_id(session_id, update_fields):
