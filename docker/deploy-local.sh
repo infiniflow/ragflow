@@ -7,7 +7,7 @@ BASE="/home/oussama_raji/ragflow"
 
 echo "Restarting $CONTAINER..."
 docker restart $CONTAINER
-sleep 30
+sleep 45
 # Verify container is using correct image
 IMAGE=$(docker inspect $CONTAINER --format "{{.Config.Image}}")
 echo "Running image: $IMAGE"
@@ -23,4 +23,5 @@ docker cp $BASE/api/utils/validation_utils.py  $CONTAINER:/ragflow/api/utils/val
 docker cp $BASE/api/utils/api_utils.py         $CONTAINER:/ragflow/api/utils/api_utils.py
 docker cp $BASE/api/db/init_data.py            $CONTAINER:/ragflow/api/db/init_data.py
 docker cp $BASE/conf/infinity_mapping.json     $CONTAINER:/ragflow/conf/infinity_mapping.json
+docker cp $BASE/tests/test_ragflow_pipeline.py  $CONTAINER:/ragflow/tests/test_ragflow_pipeline.py
 echo "All files deployed. Container is ready."
