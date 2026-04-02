@@ -30,12 +30,13 @@ encoder = tiktoken.get_encoding("cl100k_base")
 
 @dataclass
 class LLMUsage:
-    """LLM 调用的 token 消耗与计费信息。
+    """Token usage and billing information for LLM calls.
 
-    用于替代各处裸 int total_tokens，统一携带输入/输出 token 明细和 cost。
-    - Chat 模式：prompt_tokens / completion_tokens / cost 均有值
-    - Embedding / Rerank 模式：completion_tokens=0，cost 暂为 0
-    - 原生 SDK 模式（Mistral、百度等）：仅 total_tokens 有值，其余为 0
+    Replaces bare int total_tokens across the codebase, carrying prompt/completion token
+    breakdown and cost in a unified structure.
+    - Chat mode: prompt_tokens / completion_tokens / cost are all populated.
+    - Embedding / Rerank mode: completion_tokens=0, cost defaults to 0.
+    - Native SDK mode (Mistral, Baidu, etc.): only total_tokens is set, others default to 0.
     """
     prompt_tokens: int = 0
     completion_tokens: int = 0
