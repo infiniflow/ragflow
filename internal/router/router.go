@@ -195,6 +195,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("", r.memoryHandler.GetMessages)
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
+
+			file := v1.Group("/files")
+			{
+				file.POST("", r.fileHandler.UploadFile)
+			}
 		}
 
 		// Knowledge base routes
