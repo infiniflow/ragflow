@@ -691,6 +691,7 @@ func (c *CLI) executeFilesystem(input string) error {
 		// Check if searching skills
 		if searchPath == "skills" {
 			searchCmd := NewSearchSkillsCommand(c.client)
+			searchCmd.SetOutputFormat(c.outputFormat)
 			// Convert searchOpts to search args
 			args := &SearchSkillsArgs{
 				Query:    searchOpts.Query,

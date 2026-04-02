@@ -833,12 +833,18 @@ func (e *SkillConflictError) Error() string {
 
 // SearchSkillsCommand handles the search-skills command
 type SearchSkillsCommand struct {
-	client *RAGFlowClient
+	client       *RAGFlowClient
+	outputFormat OutputFormat
 }
 
 // NewSearchSkillsCommand creates a new search command handler
 func NewSearchSkillsCommand(client *RAGFlowClient) *SearchSkillsCommand {
-	return &SearchSkillsCommand{client: client}
+	return &SearchSkillsCommand{client: client, outputFormat: OutputFormatPlain}
+}
+
+// SetOutputFormat sets the output format for search results.
+func (c *SearchSkillsCommand) SetOutputFormat(format OutputFormat) {
+	c.outputFormat = format
 }
 
 // SearchSkillsArgs holds the parsed arguments for search-skills command
@@ -954,27 +960,49 @@ func (c *SearchSkillsCommand) searchSkills(args *SearchSkillsArgs) error {
 		return fmt.Errorf("search failed with code: %d", result.Code)
 	}
 
-	// Print results
 	if len(result.Data.Skills) == 0 {
-		fmt.Println("No skills found matching your query.")
+		if c.outputFormat == OutputFormatJSON {
+			fmt.Println("[]")
+		} else {
+			fmt.Println("No skills found matching your query.")
+		}
 		return nil
 	}
 
-	fmt.Printf("Found %d skill(s) matching '%s':\n\n", result.Data.Total, args.Query)
-
-	for i, skill := range result.Data.Skills {
-		fmt.Printf("%d. %s (score: %.3f)\n", i+1, skill.Name, skill.Score)
-		if skill.Description != "" {
-			fmt.Printf("   %s\n", skill.Description)
+	// Keep legacy plain output for compatibility; add table/json rendering.
+	if c.outputFormat == OutputFormatPlain {
+		fmt.Printf("Found %d skill(s) matching '%s':\n\n", result.Data.Total, args.Query)
+		for i, skill := range result.Data.Skills {
+			fmt.Printf("%d. %s (score: %.3f)\n", i+1, skill.Name, skill.Score)
+			if skill.Description != "" {
+				fmt.Printf("   %s\n", skill.Description)
+			}
+			if len(skill.Tags) > 0 {
+				fmt.Printf("   Tags: %s\n", strings.Join(skill.Tags, ", "))
+			}
+			if skill.BM25Score > 0 || skill.VectorScore > 0 {
+				fmt.Printf("   [BM25: %.3f, Vector: %.3f]\n", skill.BM25Score, skill.VectorScore)
+			}
+			fmt.Println()
 		}
-		if len(skill.Tags) > 0 {
-			fmt.Printf("   Tags: %s\n", strings.Join(skill.Tags, ", "))
-		}
-		if skill.BM25Score > 0 || skill.VectorScore > 0 {
-			fmt.Printf("   [BM25: %.3f, Vector: %.3f]\n", skill.BM25Score, skill.VectorScore)
-		}
-		fmt.Println()
+		return nil
 	}
+
+	rows := make([]map[string]interface{}, 0, len(result.Data.Skills))
+	for _, skill := range result.Data.Skills {
+		rows = append(rows, map[string]interface{}{
+			"name":         skill.Name,
+			"skill_id":     skill.SkillID,
+			"score":        skill.Score,
+			"bm25_score":   skill.BM25Score,
+			"vector_score": skill.VectorScore,
+			"description":  skill.Description,
+			"tags":         strings.Join(skill.Tags, ", "),
+		})
+	}
+
+	fmt.Printf("Found %d skill(s) matching '%s':\n", result.Data.Total, args.Query)
+	PrintTableSimpleByFormat(rows, c.outputFormat)
 
 	return nil
 }
