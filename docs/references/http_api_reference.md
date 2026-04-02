@@ -2782,11 +2782,11 @@ curl --request POST \
 - `"icon"`: (*Body parameter*), `string`  
   Base64 encoding of the avatar.
 - `"dataset_ids"`: (*Body parameter*), `list[string]`
-  The IDs of the associated datasets. If omitted or set to `[]`, an empty chat assistant is created and datasets can be attached later.
-- `"llm_id"`: (*Body parameter*), `string`  
-  The chat model name. If not set, the user's default chat model will be used.
-- `"llm_setting"`: (*Body parameter*), `object`  
-  The LLM settings for the chat assistant to create. An `llm_setting` object may contain the following attributes:  
+  The unique identifiers for the associated datasets. If omitted or set to `[]`, an empty chat assistant is created; datasets can be attached at a later time.
+- `"llm_id"`: (*Body parameter*), `string`
+  The identifier of the chat model. If not specified, the system defaults to the user's pre-configured chat model.
+- `"llm_setting"`: (*Body parameter*), `object`
+  A configuration object defining the LLM parameters for the assistant. The `llm_setting` object may contain the following attributes:
   - `"model_type"`: `string`  
     A model type specifier. Only `"chat"` and `"image2text"` are recognized; any other inputs, or when omitted, are treated as `"chat"`.
   - `"temperature"`: `float`  
@@ -2805,7 +2805,7 @@ curl --request POST \
     - `"knowledge"` is a reserved variable, which represents the retrieved chunks.
     - All the variables in `"system"` should be curly bracketed.
   - `"empty_response"`: `string` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank.
-  - `"quote"`: `boolean` Indicates whether the source of text should be displayed. Defaults to `true`.
+  - `"quote"`: `boolean` Whether the source of text should be displayed. Defaults to `true`.
   - `"tts"`: `boolean`
   - `"refine_multiturn"`: `boolean`
   - `"use_kg"`: `boolean`
@@ -2888,9 +2888,9 @@ Failure:
 
 **PUT** `/api/v1/chats/{chat_id}`
 
-Replaces the persisted configuration of a specified chat assistant.
+Overwrites the existing configuration for a specified chat assistant.
 
-Use this endpoint only when you intend to send the full configuration to keep. Omitted fields are reset to server defaults. For partial updates, use `PATCH /api/v1/chats/{chat_id}` instead.
+Use this endpoint only when providing a complete configuration. Any fields omitted from the request will be reset to their server-side default values. For partial updates, use `PATCH /api/v1/chats/{chat_id}` instead.
 
 #### Request
 
@@ -2947,11 +2947,11 @@ curl --request PUT \
 - `"dataset_ids"`: (*Body parameter*), `list[string]`
   The IDs of the associated datasets.
 - `"llm_id"`: (*Body parameter*), `string`  
-  The chat model name. If not set, the user's default chat model will be used.  
+  The chat model name. If not set, the user's default chat model is used.  
 - `"llm_setting"`: (*Body parameter*), `object`  
   The LLM settings for the chat assistant. An `llm_setting` object contains the following attributes:  
   - `"model_type"`: `string`
-    A model type specifier. Only `"chat"` and `"image2text"` are recognized; any other inputs, or when omitted, are treated as `"chat"`.
+    A model type specifier. Supported values are `"chat"` and `"image2text"`. If the field is omitted or an unrecognized value is provided, it defaults to `"chat"`.
   - `"temperature"`: `float`  
     Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
   - `"top_p"`: `float`  
@@ -2967,7 +2967,7 @@ curl --request PUT \
 - `"top_k"`: (*Body parameter*), `int`
 - `"rerank_id"`: (*Body parameter*), `string`
 
-Any field omitted from the request body is reset to the server-side default value for `PUT`.
+For `PUT` requests, any fields omitted from the request body are reset to their server-side default values.
 
 #### Response
 
@@ -3103,9 +3103,9 @@ Failure:
 
 **PATCH** `/api/v1/chats/{chat_id}`
 
-Partially updates a specified chat assistant.
+Performs a partial update on a specified chat assistant.
 
-This endpoint preserves unspecified fields. Nested `llm_setting` and `prompt_config` objects are deep-merged with the existing configuration, so it is the recommended endpoint for renaming a chat assistant or updating only a subset of settings.
+Unspecified fields are preserved, while nested objects, such as `llm_setting` and `prompt_config`, are deep-merged with the existing configuration. This is the recommended endpoint for renaming an assistant or modifying a specific subset of settings.
 
 #### Request
 
@@ -3160,7 +3160,7 @@ Failure:
 
 **DELETE** `/api/v1/chats/{chat_id}`
 
-Deletes a single chat assistant by ID.
+Deletes a chat assistant by ID.
 
 #### Request
 
