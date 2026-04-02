@@ -1021,8 +1021,11 @@ Commands (User Mode):
   USE MODEL 'provider/instance/model';                   - Set current model for chat
   CHAT 'message';                                        - Chat using current model
   CHAT 'provider/instance/model' 'message';              - Chat with specified model
+<<<<<<< HEAD
   ASYNC CHAT 'message';                                  - Async chat using current model
   ASYNC CHAT 'provider/instance/model' 'message';        - Async chat with specified model
+=======
+>>>>>>> upstream/main
 
 Context Engine Commands (no quotes):
   ls [path]                    - List resources

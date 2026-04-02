@@ -189,6 +189,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("", r.memoryHandler.GetMessages)
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
+
+			file := v1.Group("/files")
+			{
+				file.POST("", r.fileHandler.UploadFile)
+			}
+
 			// provider pool route group
 			provider := v1.Group("/providers")
 			{
@@ -203,111 +209,110 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances/:instance_name", r.providerHandler.ShowProviderInstance)
 				provider.PUT("/:provider_name/instances/:instance_name", r.providerHandler.AlterProviderInstance)
 				provider.DELETE("/:provider_name/instances/:instance_name", r.providerHandler.DropProviderInstance)
-			provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
-			provider.PUT("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.EnableOrDisableModel)
-			provider.POST("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.ChatToModel)
-			provider.POST("/:provider_name/instances/:instance_name/models/:model_name/async", r.providerHandler.AsyncChatToModel)
+				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
+				provider.PUT("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.EnableOrDisableModel)
+				provider.POST("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.ChatToModel)
+				provider.POST("/:provider_name/instances/:instance_name/models/:model_name/async", r.providerHandler.AsyncChatToModel)
+			}
 		}
 	}
 
-		// Knowledge base routes
-		kb := authorized.Group("/v1/kb")
+	// Knowledge base routes
+	kb := authorized.Group("/v1/kb")
+	{
+		kb.POST("/create", r.knowledgebaseHandler.CreateKB)
+		kb.POST("/update", r.knowledgebaseHandler.UpdateKB)
+		kb.POST("/update_metadata_setting", r.knowledgebaseHandler.UpdateMetadataSetting)
+		kb.GET("/detail", r.knowledgebaseHandler.GetDetail)
+		kb.POST("/list", r.knowledgebaseHandler.ListKbs)
+		kb.POST("/rm", r.knowledgebaseHandler.DeleteKB)
+		kb.GET("/tags", r.knowledgebaseHandler.ListTagsFromKbs)
+		kb.GET("/get_meta", r.knowledgebaseHandler.GetMeta)
+		kb.GET("/basic_info", r.knowledgebaseHandler.GetBasicInfo)
+		kb.POST("/index", r.knowledgebaseHandler.CreateIndex)
+		kb.DELETE("/index", r.knowledgebaseHandler.DeleteIndex)
+		kb.POST("/insert_from_file", r.knowledgebaseHandler.InsertDatasetFromFile)
+
+		// KB ID specific routes
+		kbByID := kb.Group("/:kb_id")
 		{
-			kb.POST("/create", r.knowledgebaseHandler.CreateKB)
-			kb.POST("/update", r.knowledgebaseHandler.UpdateKB)
-			kb.POST("/update_metadata_setting", r.knowledgebaseHandler.UpdateMetadataSetting)
-			kb.GET("/detail", r.knowledgebaseHandler.GetDetail)
-			kb.POST("/list", r.knowledgebaseHandler.ListKbs)
-			kb.POST("/rm", r.knowledgebaseHandler.DeleteKB)
-			kb.GET("/tags", r.knowledgebaseHandler.ListTagsFromKbs)
-			kb.GET("/get_meta", r.knowledgebaseHandler.GetMeta)
-			kb.GET("/basic_info", r.knowledgebaseHandler.GetBasicInfo)
-			kb.POST("/index", r.knowledgebaseHandler.CreateIndex)
-			kb.DELETE("/index", r.knowledgebaseHandler.DeleteIndex)
-			kb.POST("/insert_from_file", r.knowledgebaseHandler.InsertDatasetFromFile)
-
-			// KB ID specific routes
-			kbByID := kb.Group("/:kb_id")
-			{
-				kbByID.GET("/tags", r.knowledgebaseHandler.ListTags)
-				kbByID.POST("/rm_tags", r.knowledgebaseHandler.RemoveTags)
-				kbByID.POST("/rename_tag", r.knowledgebaseHandler.RenameTag)
-				kbByID.GET("/knowledge_graph", r.knowledgebaseHandler.KnowledgeGraph)
-				kbByID.DELETE("/knowledge_graph", r.knowledgebaseHandler.DeleteKnowledgeGraph)
-			}
+			kbByID.GET("/tags", r.knowledgebaseHandler.ListTags)
+			kbByID.POST("/rm_tags", r.knowledgebaseHandler.RemoveTags)
+			kbByID.POST("/rename_tag", r.knowledgebaseHandler.RenameTag)
+			kbByID.GET("/knowledge_graph", r.knowledgebaseHandler.KnowledgeGraph)
+			kbByID.DELETE("/knowledge_graph", r.knowledgebaseHandler.DeleteKnowledgeGraph)
 		}
+	}
 
-		// Tenant routes (per-tenant resources)
-		tenant := authorized.Group("/v1/tenant")
-		{
-			tenant.POST("/doc_meta_index", r.tenantHandler.CreateDocMetaIndex)
-			tenant.DELETE("/doc_meta_index", r.tenantHandler.DeleteDocMetaIndex)
-			tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile)
-		}
+	// Tenant routes (per-tenant resources)
+	tenant := authorized.Group("/v1/tenant")
+	{
+		tenant.POST("/doc_meta_index", r.tenantHandler.CreateDocMetaIndex)
+		tenant.DELETE("/doc_meta_index", r.tenantHandler.DeleteDocMetaIndex)
+		tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile)
+	}
 
-		// Document routes
-		doc := authorized.Group("/v1/document")
-		{
-			doc.POST("/list", r.documentHandler.ListDocuments)
-			doc.POST("/metadata/summary", r.documentHandler.MetadataSummary)
-		}
+	// Document routes
+	doc := authorized.Group("/v1/document")
+	{
+		doc.POST("/list", r.documentHandler.ListDocuments)
+		doc.POST("/metadata/summary", r.documentHandler.MetadataSummary)
+	}
 
-		// Chunk routes
-		chunk := authorized.Group("/v1/chunk")
-		{
-			chunk.POST("/retrieval_test", r.chunkHandler.RetrievalTest)
-			chunk.GET("/get", r.chunkHandler.Get)
-			chunk.POST("/list", r.chunkHandler.List)
-		}
+	// Chunk routes
+	chunk := authorized.Group("/v1/chunk")
+	{
+		chunk.POST("/retrieval_test", r.chunkHandler.RetrievalTest)
+		chunk.GET("/get", r.chunkHandler.Get)
+		chunk.POST("/list", r.chunkHandler.List)
+	}
 
-		// LLM routes
-		llm := authorized.Group("/v1/llm")
-		{
-			llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
-			llm.GET("/factories", r.llmHandler.Factories)
-			llm.GET("/list", r.llmHandler.ListApp)
-			llm.POST("/set_api_key", r.llmHandler.SetAPIKey)
-		}
+	// LLM routes
+	llm := authorized.Group("/v1/llm")
+	{
+		llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
+		llm.GET("/factories", r.llmHandler.Factories)
+		llm.GET("/list", r.llmHandler.ListApp)
+		llm.POST("/set_api_key", r.llmHandler.SetAPIKey)
+	}
 
-		// Chat routes
-		chat := authorized.Group("/v1/dialog")
-		{
-			chat.GET("/list", r.chatHandler.ListChats)
-			chat.POST("/next", r.chatHandler.ListChatsNext)
-			chat.POST("/set", r.chatHandler.SetDialog)
-			chat.POST("/rm", r.chatHandler.RemoveChats)
-		}
+	// Chat routes
+	chat := authorized.Group("/v1/dialog")
+	{
+		chat.GET("/list", r.chatHandler.ListChats)
+		chat.POST("/next", r.chatHandler.ListChatsNext)
+		chat.POST("/set", r.chatHandler.SetDialog)
+		chat.POST("/rm", r.chatHandler.RemoveChats)
+	}
 
-		// Chat session (conversation) routes
-		session := authorized.Group("/v1/conversation")
-		{
-			session.POST("/set", r.chatSessionHandler.SetChatSession)
-			session.POST("/rm", r.chatSessionHandler.RemoveChatSessions)
-			session.GET("/list", r.chatSessionHandler.ListChatSessions)
-			session.POST("/completion", r.chatSessionHandler.Completion)
-		}
+	// Chat session (conversation) routes
+	session := authorized.Group("/v1/conversation")
+	{
+		session.POST("/set", r.chatSessionHandler.SetChatSession)
+		session.POST("/rm", r.chatSessionHandler.RemoveChatSessions)
+		session.GET("/list", r.chatSessionHandler.ListChatSessions)
+		session.POST("/completion", r.chatSessionHandler.Completion)
+	}
 
-		// Connector routes
-		connector := authorized.Group("/v1/connector")
-		{
-			connector.GET("/list", r.connectorHandler.ListConnectors)
-		}
+	// Connector routes
+	connector := authorized.Group("/v1/connector")
+	{
+		connector.GET("/list", r.connectorHandler.ListConnectors)
+	}
 
-		// Search routes
-		search := authorized.Group("/v1/search")
-		{
-			search.POST("/list", r.searchHandler.ListSearchApps)
-		}
+	// Search routes
+	search := authorized.Group("/v1/search")
+	{
+		search.POST("/list", r.searchHandler.ListSearchApps)
+	}
 
-		// File routes
-		file := authorized.Group("/v1/file")
-		{
-			file.GET("/list", r.fileHandler.ListFiles)
-			file.GET("/root_folder", r.fileHandler.GetRootFolder)
-			file.GET("/parent_folder", r.fileHandler.GetParentFolder)
-			file.GET("/all_parent_folder", r.fileHandler.GetAllParentFolders)
-		}
-
+	// File routes
+	file := authorized.Group("/v1/file")
+	{
+		file.GET("/list", r.fileHandler.ListFiles)
+		file.GET("/root_folder", r.fileHandler.GetRootFolder)
+		file.GET("/parent_folder", r.fileHandler.GetParentFolder)
+		file.GET("/all_parent_folder", r.fileHandler.GetAllParentFolders)
 	}
 
 	// Handle undefined routes
