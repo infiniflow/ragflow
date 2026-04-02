@@ -113,6 +113,34 @@ func (r *SimpleResponse) PrintOut() {
 	}
 }
 
+type MessageResponse struct {
+	Code         int    `json:"code"`
+	Message      string `json:"message"`
+	Duration     float64
+	outputFormat OutputFormat
+}
+
+func (r *MessageResponse) Type() string {
+	return "message"
+}
+
+func (r *MessageResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *MessageResponse) SetOutputFormat(format OutputFormat) {
+	r.outputFormat = format
+}
+
+func (r *MessageResponse) PrintOut() {
+	if r.Code == 0 {
+		fmt.Println(r.Message)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
 type RegisterResponse struct {
 	Code         int    `json:"code"`
 	Message      string `json:"message"`

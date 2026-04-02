@@ -275,30 +275,6 @@ func (p *Parser) parseAdminListDefaultModels() (*Command, error) {
 	return NewCommand("list_user_default_models"), nil
 }
 
-func (p *Parser) parseListModelsOfProvider() (*Command, error) {
-	if p.curToken.Type != TokenModels {
-		return nil, fmt.Errorf("expected MODELS")
-	}
-
-	p.nextToken()
-	if p.curToken.Type != TokenFrom {
-		return nil, fmt.Errorf("expected FROM")
-	}
-	p.nextToken()
-	providerName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-	cmd := NewCommand("list_provider_models")
-	cmd.Params["provider_name"] = providerName
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
 func (p *Parser) parseCommonListProviders() (*Command, error) {
 	p.nextToken() // consume AVAILABLE
 
