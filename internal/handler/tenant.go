@@ -17,11 +17,14 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine"
 	"ragflow/internal/service"
 )
 
@@ -175,5 +178,95 @@ func (h *TenantHandler) DeleteDocMetaIndex(c *gin.Context) {
 		"code":    common.CodeSuccess,
 		"message": "success",
 		"data":    nil,
+	})
+}
+
+// InsertMetadataFromFileRequest request for inserting metadata from file
+type InsertMetadataFromFileRequest struct {
+	FilePath string `json:"file_path" binding:"required"`
+}
+
+// @Summary Insert document metadata from JSON file
+// @Description Internal: Insert metadata into tenant's metadata table from a JSON file
+// @Tags tenants
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body InsertMetadataFromFileRequest true "insert metadata request"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/tenant/insert_metadata_from_file [post]
+func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req InsertMetadataFromFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if req.FilePath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "file_path is required",
+		})
+		return
+	}
+
+	// Read the JSON file
+	data, err := os.ReadFile(req.FilePath)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "failed to read file: " + err.Error(),
+		})
+		return
+	}
+
+	// Parse JSON - format: {"chunks": [...]}
+	var inputFormat struct {
+		Chunks []map[string]interface{} `json:"chunks"`
+	}
+
+	if err := json.Unmarshal(data, &inputFormat); err != nil || inputFormat.Chunks == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "invalid JSON format: expected {\"chunks\": [...]}",
+		})
+		return
+	}
+
+	if len(inputFormat.Chunks) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "no chunks found in file",
+		})
+		return
+	}
+
+	// Use user.ID as tenant ID (user IS the tenant in user mode)
+	tenantID := user.ID
+
+	// Get the document engine and insert
+	docEngine := engine.Get()
+	result, err := docEngine.InsertMetadata(c.Request.Context(), inputFormat.Chunks, tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "failed to insert metadata: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    result,
+		"message": "success",
 	})
 }

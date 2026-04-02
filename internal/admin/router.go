@@ -122,6 +122,17 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.POST("/license", r.handler.SetLicense)
 			protected.POST("/license/config", r.handler.UpdateLicenseConfig)
 			protected.GET("/license", r.handler.ShowLicense)
+			// Log level
+			protected.GET("/log_level", r.handler.GetLogLevel)
+			protected.PUT("/log_level", r.handler.SetLogLevel)
+
+			provider := protected.Group("/providers")
+			{
+				provider.GET("/", r.handler.ListProviders)
+				provider.GET("/:provider_name", r.handler.ShowProvider)
+				provider.GET("/:provider_name/models", r.handler.ListModels)
+				provider.GET("/:provider_name/models/:model_name", r.handler.ShowModel)
+			}
 		}
 	}
 

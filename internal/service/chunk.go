@@ -532,6 +532,9 @@ func buildRetrievalTestResults(filteredChunks []map[string]interface{}) []map[st
 		} else if v, ok := chunk["important_keywords"]; ok {
 			result["important_kwd"] = v
 		}
+		if v, ok := chunk["tag_kwd"]; ok {
+			result["tag_kwd"] = v
+		}
 		if v, ok := chunk["similarity"]; ok {
 			result["similarity"] = v
 		}

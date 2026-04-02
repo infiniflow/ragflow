@@ -76,10 +76,11 @@ const ExcludedNodes = [Operator.Note, Operator.Placeholder, Operator.File];
 export function useShowDrawer({
   drawerVisible,
   hideDrawer,
+  setCurrentMessageId,
 }: {
   drawerVisible: boolean;
   hideDrawer(): void;
-}) {
+} & Pick<ReturnType<typeof useCacheChatLog>, 'setCurrentMessageId'>) {
   const {
     visible: runVisible,
     showModal: showRunModal,
@@ -98,6 +99,9 @@ export function useShowDrawer({
   const { formDrawerVisible, hideFormDrawer, showFormDrawer, clickedNode } =
     useShowFormDrawer();
   const inputs = useGetBeginNodeDataInputs();
+  const { showLogSheet, logSheetVisible, hideLogSheet } = useShowLogSheet({
+    setCurrentMessageId,
+  });
 
   useEffect(() => {
     if (drawerVisible) {
@@ -133,6 +137,7 @@ export function useShowDrawer({
       if (!ExcludedNodes.some((x) => x === node.data.label)) {
         hideSingleDebugDrawer();
         // hideRunOrChatDrawer();
+        hideLogSheet();
         showFormDrawer(e, node.id);
       }
       // handle single debug icon click
@@ -143,7 +148,20 @@ export function useShowDrawer({
         showSingleDebugDrawer();
       }
     },
-    [hideSingleDebugDrawer, showFormDrawer, showSingleDebugDrawer],
+    [
+      hideLogSheet,
+      hideSingleDebugDrawer,
+      showFormDrawer,
+      showSingleDebugDrawer,
+    ],
+  );
+
+  const showLogSheetExclusive = useCallback(
+    (messageId: string) => {
+      hideFormDrawer();
+      showLogSheet(messageId);
+    },
+    [hideFormDrawer, showLogSheet],
   );
 
   return {
@@ -160,6 +178,9 @@ export function useShowDrawer({
     hideFormDrawer,
     hideRunOrChatDrawer,
     showChatModal,
+    showLogSheet: showLogSheetExclusive,
+    logSheetVisible,
+    hideLogSheet,
   };
 }
 
