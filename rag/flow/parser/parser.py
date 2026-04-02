@@ -43,8 +43,9 @@ from rag.nlp import BULLET_PATTERN, bullets_category, docx_question_level, not_b
 from rag.utils.base64_image import image2id
 
 
-from common.misc_utils import thread_pool_exec
 
+
+from common.misc_utils import thread_pool_exec
 
 class ParserParam(ProcessParamBase):
     def __init__(self):
@@ -81,10 +82,6 @@ class ParserParam(ProcessParamBase):
                 "json",
             ],
             "video": [],
-            "epub": [
-                "text",
-                "json",
-            ],
         }
 
         self.setups = {
@@ -169,12 +166,6 @@ class ParserParam(ProcessParamBase):
                 "output_format": "text",
                 "prompt": "",
             },
-            "epub": {
-                "suffix": [
-                    "epub",
-                ],
-                "output_format": "json",
-            },
         }
 
     def check(self):
@@ -227,11 +218,6 @@ class ParserParam(ProcessParamBase):
         if email_config:
             email_output_format = email_config.get("output_format", "")
             self.check_valid_value(email_output_format, "Email output format abnormal.", self.allowed_output_format["email"])
-
-        epub_config = self.setups.get("epub", "")
-        if epub_config:
-            epub_output_format = epub_config.get("output_format", "")
-            self.check_valid_value(epub_output_format, "EPUB output format abnormal.", self.allowed_output_format["epub"])
 
     def get_input_form(self) -> dict[str, dict]:
         return {}
@@ -371,21 +357,14 @@ class Parser(ProcessBase):
             ocr_model = LLMBundle(tenant_id, ocr_model_config, lang=conf.get("lang", "Chinese"))
             pdf_parser = ocr_model.mdl
 
-            lines, _ = pdf_parser.parse_pdf(
+            # MinerU now exposes DeepDOC-style structured bboxes so Flow can reuse the existing output logic.
+            bboxes = pdf_parser.parse_into_bboxes(
                 filepath=name,
                 binary=blob,
                 callback=self.callback,
                 parse_method=conf.get("mineru_parse_method", "raw"),
                 lang=conf.get("lang", "Chinese"),
             )
-            bboxes = []
-            for t, poss in lines:
-                box = {
-                    "image": pdf_parser.crop(poss, 1),
-                    "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)],
-                    "text": t,
-                }
-                bboxes.append(box)
         elif parse_method.lower() == "docling":
             pdf_parser = DoclingParser(docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""))
             lines, _ = pdf_parser.parse_pdf(
@@ -404,7 +383,9 @@ class Parser(ProcessBase):
                 box = {
                     "text": text,
                     "image": pdf_parser.crop(poss, 1) if isinstance(poss, str) and poss else None,
-                    "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)] if isinstance(poss, str) and poss else [],
+                    "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
+                    if isinstance(poss, str) and poss
+                    else [],
                 }
                 bboxes.append(box)
         elif parse_method.lower() == "tcadp parser":
@@ -710,6 +691,7 @@ class Parser(ProcessBase):
             markdown_text = docx_parser.to_markdown(name, binary=blob)
             self.set_output("markdown", markdown_text)
 
+
     def _slides(self, name, blob, **kwargs):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PowerPoint Document")
 
@@ -778,7 +760,7 @@ class Parser(ProcessBase):
     def _markdown(self, name, blob, **kwargs):
         from functools import reduce
 
-        from rag.app.naive import Markdown as naive_markdown_parser
+        from rag.app.naive import Markdown as naive_markdown_parser, enhance_markdown_sections_with_vision
         from rag.nlp import concat_img
 
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a markdown.")
@@ -786,12 +768,28 @@ class Parser(ProcessBase):
         self.set_output("output_format", conf["output_format"])
 
         markdown_parser = naive_markdown_parser()
+        file_info = kwargs.get("file") or {}
+        storage_bucket = kwargs.get("storage_bucket")
+        source_location = kwargs.get("source_location")
+        if isinstance(file_info, dict):
+            storage_bucket = storage_bucket or file_info.get("parent_id")
+            if not storage_bucket and file_info.get("created_by"):
+                storage_bucket = f"{file_info['created_by']}-downloads"
+            source_location = source_location or file_info.get("location") or file_info.get("id")
+        markdown_parser._storage_bucket_hint = storage_bucket
+        markdown_parser._source_location_hint = source_location
         sections, tables, section_images = markdown_parser(
             name,
             blob,
-            separate_tables=False,
+            separate_tables=True,
             delimiter=conf.get("delimiter"),
             return_section_images=True,
+        )
+        sections, section_images = enhance_markdown_sections_with_vision(
+            sections,
+            section_images,
+            callback=self.callback,
+            tenant_id=self._canvas.get_tenant_id(),
         )
 
         if conf.get("output_format") == "json":
@@ -817,9 +815,15 @@ class Parser(ProcessBase):
 
                 json_results.append(json_result)
 
+            for table in tables:
+                table_text = table[0][1] if table and table[0] else ""
+                if table_text:
+                    json_results.append({"text": table_text, "doc_type_kwd": "table"})
+
             self.set_output("json", json_results)
         else:
-            self.set_output("text", "\n".join([section_text for section_text, _ in sections]))
+            table_texts = [table[0][1] for table in tables if table and table[0] and table[0][1]]
+            self.set_output("text", "\n".join([section_text for section_text, _ in sections] + table_texts))
 
     def _image(self, name, blob, **kwargs):
         from deepdoc.vision import OCR
@@ -850,13 +854,11 @@ class Parser(ProcessBase):
             else:
                 txt = cv_model.describe(img_binary.read())
 
-        json_result = [
-            {
-                "text": txt,
-                "image": img,
-                "doc_type_kwd": "image",
-            }
-        ]
+        json_result = [{
+            "text": txt,
+            "image": img,
+            "doc_type_kwd": "image",
+        }]
         self.set_output("json", json_result)
 
     def _audio(self, name, blob, **kwargs):
@@ -1026,22 +1028,6 @@ class Parser(ProcessBase):
                             content_txt += fb
             self.set_output("text", content_txt)
 
-    def _epub(self, name, blob, **kwargs):
-        from deepdoc.parser import EpubParser
-
-        self.callback(random.randint(1, 5) / 100.0, "Start to work on an EPUB.")
-        conf = self._param.setups["epub"]
-        self.set_output("output_format", conf["output_format"])
-
-        epub_parser = EpubParser()
-        sections = epub_parser(name, binary=blob)
-
-        if conf.get("output_format") == "json":
-            json_results = [{"text": s} for s in sections if s]
-            self.set_output("json", json_results)
-        else:
-            self.set_output("text", "\n".join(s for s in sections if s))
-
     async def _invoke(self, **kwargs):
         function_map = {
             "pdf": self._pdf,
@@ -1053,7 +1039,6 @@ class Parser(ProcessBase):
             "audio": self._audio,
             "video": self._video,
             "email": self._email,
-            "epub": self._epub,
         }
 
         try:
@@ -1063,11 +1048,18 @@ class Parser(ProcessBase):
             return
 
         name = from_upstream.name
+        storage_bucket = None
+        source_location = None
         if self._canvas._doc_id:
-            b, n = File2DocumentService.get_storage_address(doc_id=self._canvas._doc_id)
-            blob = settings.STORAGE_IMPL.get(b, n)
+            storage_bucket, source_location = File2DocumentService.get_storage_address(doc_id=self._canvas._doc_id)
+            blob = settings.STORAGE_IMPL.get(storage_bucket, source_location)
         else:
             blob = FileService.get_blob(from_upstream.file["created_by"], from_upstream.file["id"])
+            if from_upstream.file:
+                storage_bucket = from_upstream.file.get("parent_id")
+                if not storage_bucket and from_upstream.file.get("created_by"):
+                    storage_bucket = f"{from_upstream.file['created_by']}-downloads"
+                source_location = from_upstream.file.get("location") or from_upstream.file.get("id")
 
         done = False
         for p_type, conf in self._param.setups.items():
@@ -1076,6 +1068,8 @@ class Parser(ProcessBase):
             call_kwargs = dict(kwargs)
             call_kwargs.pop("name", None)
             call_kwargs.pop("blob", None)
+            call_kwargs["storage_bucket"] = storage_bucket
+            call_kwargs["source_location"] = source_location
 
             await thread_pool_exec(function_map[p_type], name, blob, **call_kwargs)
             done = True
