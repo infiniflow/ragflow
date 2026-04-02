@@ -363,14 +363,7 @@ class ParserConfig(Base):
     whisper_model: Annotated[str | None, Field(default=None)]
     openai_api_key: Annotated[str | None, Field(default=None)]
     video_title: Annotated[str | None, Field(default=None)]
-    # Car metadata fields
-    brand: Annotated[str | None, Field(default=None)]
-    car_model: Annotated[str | None, Field(default=None)]
-    year: Annotated[str | None, Field(default=None)]
-    market: Annotated[str | None, Field(default=None)]
-    trim: Annotated[str | None, Field(default=None)]
-    source_type: Annotated[str | None, Field(default=None)]
-    retrieval_date: Annotated[str | None, Field(default=None)]
+    # Car metadata fields are stored in DocMetadataService, not in ParserConfig
 
 
 class CreateDatasetReq(Base):

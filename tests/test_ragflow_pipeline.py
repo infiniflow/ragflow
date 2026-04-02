@@ -178,16 +178,11 @@ def create_video_dataset(
     name = _build_dataset_name(brand, car_model, year, market_iso, trim, "Video")
     retrieval_date = date.today().isoformat()
 
+    # business fields (brand, car_model etc.) are stored in DocMetadataService
+    # via the /videos endpoint — they do not belong in ParserConfig (Fix 5)
     parser_config = {
         "whisper_backend":  whisper_backend,
         "whisper_model":    whisper_model,
-        "brand":            brand,
-        "car_model":        car_model,
-        "year":             year,
-        "market":           market_iso,
-        "trim":             trim,
-        "source_type":      "Video",
-        "retrieval_date":   retrieval_date,
     }
     if openai_api_key and whisper_backend == "openai-api":
         parser_config["openai_api_key"] = openai_api_key
