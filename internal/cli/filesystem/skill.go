@@ -756,8 +756,14 @@ func (p *SkillProvider) indexSkillFromUpload(ctx stdctx.Context, result *SkillVa
 	}
 	content := contentBuilder.String()
 
+	// Include version in ID to match delete format (skillname/version)
+	skillID := result.Name
+	if result.Version != "" {
+		skillID = result.Name + "/" + result.Version
+	}
+
 	skillInfo := map[string]interface{}{
-		"id":          result.Name,
+		"id":          skillID,
 		"name":        result.Name,
 		"description": result.Description,
 		"tags":        result.Tags,
@@ -1674,8 +1680,14 @@ func (u *SkillUploader) indexSkill(ctx stdctx.Context, result *SkillValidationRe
 	}
 	content := contentBuilder.String()
 
+	// Include version in ID to match delete format (skillname/version)
+	skillID := result.Name
+	if result.Version != "" {
+		skillID = result.Name + "/" + result.Version
+	}
+
 	skillInfo := map[string]interface{}{
-		"id":          result.Name,
+		"id":          skillID,
 		"folder_id":   skillFolderID,
 		"name":        result.Name,
 		"description": result.Description,

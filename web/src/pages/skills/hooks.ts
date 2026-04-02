@@ -879,16 +879,48 @@ export const useSkills = () => {
           }
         }
 
-        // Delete search index for all versions (best effort, don't block on failure)
+        // Delete search index for all versions
+        // Backend uses skillName_version as doc_id (replacing '/' with '_')
+        // We need to delete each version's index separately
+        console.log(
+          `[deleteSkill] Starting index deletion for skillId: ${skillId}, hubId: ${normalizedHubId}`,
+        );
+        console.log(`[deleteSkill] versionsToDelete:`, versionsToDelete);
+
         for (const version of versionsToDelete) {
+          const indexId =
+            version === 'latest' ? skillId : `${skillId}/${version}`;
           try {
-            const indexId = `${skillId}/${version}`;
-            await skillsHubService.deleteSkillIndex(indexId, normalizedHubId);
-          } catch (indexError) {
-            console.warn(
-              `Error deleting skill index for version ${version}:`,
-              indexError,
+            console.log(
+              `[deleteSkill] Deleting index: ${indexId} for hub: ${normalizedHubId}`,
             );
+            await skillsHubService.deleteSkillIndex(indexId, normalizedHubId);
+            console.log(`[deleteSkill] Successfully deleted index: ${indexId}`);
+          } catch (indexError: any) {
+            console.warn(
+              `[deleteSkill] Error deleting skill index for ${indexId}:`,
+              indexError?.message || indexError,
+            );
+          }
+        }
+
+        // If we couldn't determine versions from filesystem, try common version formats
+        if (versionsToDelete.length === 1 && versionsToDelete[0] === 'latest') {
+          // Try to delete the skill with version suffixes
+          const commonVersions = ['1.0.0', '0.1.0', '0.0.1', 'latest'];
+          for (const version of commonVersions) {
+            const indexId = `${skillId}/${version}`;
+            try {
+              console.log(
+                `[deleteSkill] Trying to delete index with version: ${indexId}`,
+              );
+              await skillsHubService.deleteSkillIndex(indexId, normalizedHubId);
+              console.log(
+                `[deleteSkill] Successfully deleted index: ${indexId}`,
+              );
+            } catch (e) {
+              // Ignore errors for versions that don't exist
+            }
           }
         }
 
@@ -1263,8 +1295,14 @@ export const useSkillSearchConfig = (hubId?: string) => {
           // Fallback to now only when backend doesn't provide time fields.
           const timestamp = pickSkillTimestamp(result);
 
+          // Remove version suffix from skill_id to match list view format
+          // skill_id from backend is like "my-skill/1.0.0", but we need "my-skill"
+          const skillId = result.skill_id
+            ? result.skill_id.split('/')[0]
+            : result.skill_id;
+
           return {
-            id: result.skill_id, // Use skill name as ID (consistent with list view)
+            id: skillId, // Use skill name without version as ID (consistent with list view)
             name: result.name,
             description: result.description,
             source_type: 'search',
