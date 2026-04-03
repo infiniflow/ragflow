@@ -15,7 +15,8 @@
 #
 import logging
 
-from quart import jsonify
+from quart import jsonify, Blueprint
+from quart_schema import security_scheme_blueprint
 
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
@@ -27,6 +28,8 @@ from api.utils.api_utils import apikey_required, build_error_result, get_request
 from rag.app.tag import label_question
 from common.constants import RetCode, LLMType
 from common import settings
+
+manager: Blueprint
 
 @manager.route('/dify/retrieval', methods=['POST'])  # noqa: F821
 @apikey_required
@@ -189,3 +192,5 @@ async def retrieval(tenant_id):
             )
         logging.exception(e)
         return build_error_result(message=str(e), code=RetCode.SERVER_ERROR)
+
+security_scheme_blueprint(manager, [{"BearerAuth": []}])

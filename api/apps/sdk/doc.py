@@ -23,7 +23,8 @@ from io import BytesIO
 import xxhash
 from peewee import OperationalError
 from pydantic import BaseModel, Field, validator
-from quart import request, send_file
+from quart import request, send_file, Blueprint
+from quart_schema import security_scheme_blueprint
 
 from api.constants import FILE_NAME_LEN_LIMIT
 from api.db import FileType
@@ -72,6 +73,7 @@ class Chunk(BaseModel):
                 raise ValueError("Each sublist in positions must have a length of 5")
         return value
 
+manager: Blueprint
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["POST"])  # noqa: F821
 @token_required
@@ -1846,3 +1848,5 @@ async def retrieval_test(tenant_id):
                 code=RetCode.DATA_ERROR,
             )
         return server_error_response(e)
+
+security_scheme_blueprint(manager, [{"BearerAuth": []}])
