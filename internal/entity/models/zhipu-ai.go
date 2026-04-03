@@ -361,7 +361,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithChannel(modelName, apiKey, message *strin
 }
 
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string, modelConfig *ChatConfig, sender func(string) error) error {
+func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string, modelConfig *ChatConfig, sender func(*string, *string) error) error {
 	url := fmt.Sprintf("%s/chat/completions", z.BaseURL)
 
 	// Build request body with streaming enabled
@@ -440,6 +440,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
+		logger.Info(line)
 
 		// SSE data line starts with "data:"
 		if !strings.HasPrefix(line, "data:") {
@@ -477,7 +478,14 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
-			if err := sender(content); err != nil {
+			if err := sender(&content, nil); err != nil {
+				return err
+			}
+		}
+
+		reasoningContent, ok := delta["reasoning_content"].(string)
+		if ok && reasoningContent != "" {
+			if err := sender(nil, &reasoningContent); err != nil {
 				return err
 			}
 		}
@@ -489,7 +497,8 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string
 	}
 
 	// Send [DONE] marker for OpenAI compatibility
-	if err := sender("[DONE]"); err != nil {
+	endOfStream := "[DONE]"
+	if err := sender(&endOfStream, nil); err != nil {
 		return err
 	}
 

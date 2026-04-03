@@ -616,7 +616,7 @@ func (m *ModelProviderService) ChatToModelStream(providerName, instanceName, mod
 }
 
 // ChatToModelStreamWithSender streams chat response directly via sender function (best performance, no channel)
-func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, message string, modelConfig *model.ChatConfig, sender func(string) error) common.ErrorCode {
+func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, message string, modelConfig *model.ChatConfig, sender func(*string, *string) error) common.ErrorCode {
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {

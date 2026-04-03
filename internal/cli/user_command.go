@@ -1210,18 +1210,38 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	scanner := bufio.NewScanner(reader)
 	var fullMessage strings.Builder
 
+	reasoningPrint := true
+	messagePrint := true
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "data:") {
 			data := strings.TrimPrefix(line, "data:")
 			data = strings.TrimSpace(data)
-			if data == "[DONE]" {
-				// done event, stream ended
-				break
+
+			if strings.HasPrefix(data, "[REASONING]") {
+				data = strings.TrimPrefix(data, "[REASONING]")
+				if reasoningPrint {
+					fmt.Print("Thinking: ")
+					reasoningPrint = false
+				} else {
+					fmt.Print(data)
+				}
+				os.Stdout.Sync()
 			}
-			fmt.Print(data)
-			os.Stdout.Sync()
-			fullMessage.WriteString(data)
+			if strings.HasPrefix(data, "[MESSAGE]") {
+				data = strings.TrimPrefix(data, "[MESSAGE]")
+				if messagePrint {
+					if reasoning {
+						fmt.Println()
+					}
+					fmt.Print("Answer: ")
+					messagePrint = false
+				} else {
+					fmt.Print(data)
+					os.Stdout.Sync()
+					fullMessage.WriteString(data)
+				}
+			}
 		} else if strings.HasPrefix(line, "event:error") {
 			// error event
 			if scanner.Scan() {

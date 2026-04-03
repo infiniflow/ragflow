@@ -50,7 +50,7 @@ func (z *DummyModel) ChatStreamlyWithChannel(modelName, apiKey, message *string,
 }
 
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (z *DummyModel) ChatStreamlyWithSender(modelName, apiKey, message *string, modelConfig *ChatConfig, sender func(string) error) error {
+func (z *DummyModel) ChatStreamlyWithSender(modelName, apiKey, message *string, modelConfig *ChatConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("not implemented")
 }
 

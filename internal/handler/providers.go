@@ -17,11 +17,11 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/logger"
 	"ragflow/internal/service"
 	"strings"
 
@@ -581,16 +581,29 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
+		c.Writer.WriteHeader(http.StatusOK)
+		c.Writer.Flush()
 
 		// Create sender function that writes directly to response
-		sender := func(data string) error {
+		sender := func(content, reasoningContent *string) error {
 			// Check for [DONE] marker (OpenAI compatible)
-			if data == "[DONE]" {
-				c.SSEvent("done", "[DONE]")
-				return nil
+			if content != nil {
+				if *content == "[DONE]" {
+					c.SSEvent("done", "[DONE]")
+					return nil
+				}
+				message := fmt.Sprintf("[MESSAGE]%s", *content)
+				c.SSEvent("message", message)
+				c.Writer.Flush()
 			}
-			c.SSEvent("message", data)
-			logger.Info(data)
+
+			if reasoningContent != nil {
+				message := fmt.Sprintf("[REASONING]%s", *reasoningContent)
+				c.SSEvent("message", message)
+				c.Writer.Flush()
+			}
+
+			//logger.Info(data)
 			return nil
 		}
 
