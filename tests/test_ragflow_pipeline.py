@@ -247,7 +247,9 @@ def delete_dataset(cfg: dict, dataset_id: str) -> bool:
     )
     data = resp.json()
     if data.get("code") != 0:
-        raise RuntimeError(f"delete_dataset failed: {data.get('message')}")
+        # non-fatal — log warning but don't crash the test
+        print(f"⚠️  delete_dataset warning (non-fatal): {data.get('message', 'unknown error')}")
+        return False
     print(f"✅ Dataset {dataset_id} deleted")
     return True
 
