@@ -174,32 +174,37 @@ def init_llm_factory():
         return
 
     logging.info("LLM factory data changed (stored=%s, current=%s), rebuilding...", stored_hash, current_hash)
-    LLMFactoriesService.filter_delete([1 == 1])
-    factory_llm_infos = settings.FACTORY_LLM_INFOS
-    for factory_llm_info in factory_llm_infos:
-        info = deepcopy(factory_llm_info)
-        llm_infos = info.pop("llm")
-        try:
-            LLMFactoriesService.save(**info)
-        except Exception:
-            pass
-        LLMService.filter_delete([LLM.fid == factory_llm_info["name"]])
-        for llm_info in llm_infos:
-            llm_info["fid"] = factory_llm_info["name"]
-            try:
-                LLMService.save(**llm_info)
-            except Exception:
-                pass
+    from api.db.db_models import DB
+    with DB.connection_context():
+        with DB.atomic():
+            LLMFactories.delete().where(1 == 1).execute()
+            factory_llm_infos = settings.FACTORY_LLM_INFOS
+            for factory_llm_info in factory_llm_infos:
+                info = deepcopy(factory_llm_info)
+                llm_infos = info.pop("llm")
+                try:
+                    LLMFactoriesService.model.create(**info)
+                except Exception:
+                    pass
+                LLM.delete().where(LLM.fid == factory_llm_info["name"]).execute()
+                for llm_info in llm_infos:
+                    llm_info["fid"] = factory_llm_info["name"]
+                    try:
+                        LLMService.model.create(**llm_info)
+                    except Exception:
+                        pass
 
-    LLMFactoriesService.filter_delete([(LLMFactories.name == "Local") | (LLMFactories.name == "novita.ai")])
-    LLMService.filter_delete([LLM.fid == "Local"])
-    LLMService.filter_delete([LLM.llm_name == "qwen-vl-max"])
-    LLMService.filter_delete([LLM.fid == "Moonshot", LLM.llm_name == "flag-embedding"])
-    TenantLLMService.filter_delete([TenantLLM.llm_factory == "Moonshot", TenantLLM.llm_name == "flag-embedding"])
-    LLMFactoriesService.filter_delete([LLMFactoriesService.model.name == "QAnything"])
-    LLMService.filter_delete([LLMService.model.fid == "QAnything"])
-    TenantLLMService.filter_update([TenantLLMService.model.llm_factory == "QAnything"], {"llm_factory": "Youdao"})
-    TenantLLMService.filter_update([TenantLLMService.model.llm_factory == "cohere"], {"llm_factory": "Cohere"})
+            LLMFactories.delete().where((LLMFactories.name == "Local") | (LLMFactories.name == "novita.ai")).execute()
+            LLM.delete().where(LLM.fid == "Local").execute()
+            LLM.delete().where(LLM.llm_name == "qwen-vl-max").execute()
+            LLM.delete().where(LLM.fid == "Moonshot", LLM.llm_name == "flag-embedding").execute()
+            TenantLLM.delete().where(TenantLLM.llm_factory == "Moonshot", TenantLLM.llm_name == "flag-embedding").execute()
+            LLMFactories.delete().where(LLMFactoriesService.model.name == "QAnything").execute()
+            LLM.delete().where(LLMService.model.fid == "QAnything").execute()
+            TenantLLM.update({"llm_factory": "Youdao"}).where(TenantLLMService.model.llm_factory == "QAnything").execute()
+            TenantLLM.update({"llm_factory": "Cohere"}).where(TenantLLMService.model.llm_factory == "cohere").execute()
+
+    # operations below use their own connection_context, run after the main transaction commits
     TenantService.filter_update([1 == 1], {
         "parser_ids": "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag"})
     ## insert openai two embedding models to the current openai user.

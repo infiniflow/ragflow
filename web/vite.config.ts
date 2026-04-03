@@ -138,6 +138,7 @@ export default defineConfig(({ mode }) => {
       preprocessorOptions: {
         less: {
           javascriptEnabled: true,
+          timeout: 60000,
           additionalData: `
             @import "@/less/variable.less";
             @import "@/less/mixins.less";
