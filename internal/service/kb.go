@@ -184,7 +184,7 @@ func (s *KnowledgebaseService) CreateKB(req *CreateKBRequest, tenantID string) (
 	}
 
 	// Create in database
-	if err := s.kbDAO.Create(kb); err != nil {
+	if err = s.kbDAO.Create(kb); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to create knowledge base: %w", err)
 	}
 

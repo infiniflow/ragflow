@@ -97,6 +97,8 @@ sql_command: login_user
            | search_on_datasets
            | get_chunk
            | list_chunks
+           | insert_dataset_from_file
+           | insert_metadata_from_file
            | create_chat_session
            | drop_chat_session
            | list_chat_sessions
@@ -207,10 +209,12 @@ DOC_META: "DOC_META"i
 CHUNK: "CHUNK"i
 CHUNKS: "CHUNKS"i
 GET: "GET"i
+INSERT: "INSERT"i
 PAGE: "PAGE"i
 SIZE: "SIZE"i
 KEYWORDS: "KEYWORDS"i
 AVAILABLE: "AVAILABLE"i
+FILE: "FILE"i
 
 login_user: LOGIN USER quoted_string ";"
 list_services: LIST SERVICES ";"
@@ -348,6 +352,10 @@ list_chunks: LIST CHUNKS OF DOCUMENT quoted_string ("PAGE" NUMBER)? ("SIZE" NUMB
 parse_dataset_docs: PARSE quoted_string OF DATASET quoted_string ";"
 parse_dataset_sync: PARSE DATASET quoted_string SYNC ";"
 parse_dataset_async: PARSE DATASET quoted_string ASYNC ";"
+
+// Internal CLI for GO
+insert_dataset_from_file: INSERT DATASET FROM FILE quoted_string ";"
+insert_metadata_from_file: INSERT METADATA FROM FILE quoted_string ";"
 
 identifier_list: identifier ("," identifier)*
 
@@ -749,6 +757,14 @@ class RAGFlowCLITransformer(Transformer):
     def get_chunk(self, items):
         chunk_id = items[2].children[0].strip("'\"")
         return {"type": "get_chunk", "chunk_id": chunk_id}
+
+    def insert_dataset_from_file(self, items):
+        file_path = items[4].children[0].strip("'\"")
+        return {"type": "insert_dataset_from_file", "file_path": file_path}
+
+    def insert_metadata_from_file(self, items):
+        file_path = items[4].children[0].strip("'\"")
+        return {"type": "insert_metadata_from_file", "file_path": file_path}
 
     def list_chunks(self, items):
         doc_id = items[4].children[0].strip("'\"")

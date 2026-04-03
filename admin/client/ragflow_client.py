@@ -15,7 +15,6 @@
 #
 import json
 import time
-import uuid
 from typing import Any, List, Optional
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -977,76 +976,13 @@ class RAGFlowClient:
     def create_user_chat(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
-        '''
-        description
-        : 
-        ""
-        icon
-        : 
-        ""
-        language
-        : 
-        "English"
-        llm_id
-        : 
-        "glm-4-flash@ZHIPU-AI"
-        llm_setting
-        : 
-        {}
-        name
-        : 
-        "xx"
-        prompt_config
-        : 
-        {empty_response: "", prologue: "Hi! I'm your assistant. What can I do for you?", quote: true,…}
-        empty_response
-        : 
-        ""
-        keyword
-        : 
-        false
-        parameters
-        : 
-        [{key: "knowledge", optional: false}]
-        prologue
-        : 
-        "Hi! I'm your assistant. What can I do for you?"
-        quote
-        : 
-        true
-        reasoning
-        : 
-        false
-        refine_multiturn
-        : 
-        false
-        system
-        : 
-        "You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.\n\n      **Essential Rules:**\n        - Your answer must be derived **solely** from this knowledge base: `{knowledge}`.\n        - **When information is available**: Summarize the content to give a detailed answer.\n        - **When information is unavailable**: Your response must contain this exact sentence: \"The answer you are looking for is not found in the knowledge base!\"\n        - **Always consider** the entire conversation history."
-        toc_enhance
-        : 
-        false
-        tts
-        : 
-        false
-        use_kg
-        : 
-        false
-        similarity_threshold
-        : 
-        0.2
-        top_n
-        : 
-        8
-        vector_similarity_weight
-        : 
-        0.3
-        '''
         chat_name = command["chat_name"]
+        default_models = self._get_default_models() or {}
         payload = {
+            "name": chat_name,
             "description": "",
             "icon": "",
-            "language": "English",
+            "dataset_ids": [],
             "llm_setting": {},
             "prompt_config": {
                 "empty_response": "",
@@ -1064,16 +1000,24 @@ class RAGFlowClient:
                         "optional": False
                     }
                 ],
-                "toc_enhance": False
+                "toc_enhance": False,
             },
             "similarity_threshold": 0.2,
             "top_n": 8,
-            "vector_similarity_weight": 0.3
+            "top_k": 1024,
+            "vector_similarity_weight": 0.3,
+            "rerank_id": default_models.get("rerank_id", ""),
         }
+        if default_models.get("llm_id"):
+            payload["llm_id"] = default_models["llm_id"]
 
-        payload.update({"name": chat_name})
-        response = self.http_client.request("POST", "/dialog/set", json_body=payload, use_api_base=False,
-                                            auth_kind="web")
+        response = self.http_client.request(
+            "POST",
+            "/chats",
+            json_body=payload,
+            use_api_base=True,
+            auth_kind="web",
+        )
         res_json = response.json()
         if response.status_code == 200 and res_json["code"] == 0:
             print(f"Success to create chat: {chat_name}")
@@ -1158,9 +1102,14 @@ class RAGFlowClient:
         for elem in res_json:
             if elem["name"] == chat_name:
                 to_drop_chat_ids.append(elem["id"])
-        payload = {"dialog_ids": to_drop_chat_ids}
-        response = self.http_client.request("POST", "/dialog/rm", json_body=payload, use_api_base=False,
-                                            auth_kind="web")
+        payload = {"ids": to_drop_chat_ids}
+        response = self.http_client.request(
+            "DELETE",
+            "/chats",
+            json_body=payload,
+            use_api_base=True,
+            auth_kind="web",
+        )
         res_json = response.json()
         if response.status_code == 200 and res_json["code"] == 0:
             print(f"Success to drop chat: {chat_name}")
@@ -1180,7 +1129,7 @@ class RAGFlowClient:
 
     def _list_chat_sessions(self, dialog_id):
         """List all sessions (conversations) for a given dialog."""
-        response = self.http_client.request("GET", f"/conversation/list?dialog_id={dialog_id}", use_api_base=False,
+        response = self.http_client.request("GET", f"/chats/{dialog_id}/conversations", use_api_base=True,
                                             auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json["code"] == 0:
@@ -1196,14 +1145,9 @@ class RAGFlowClient:
         dialog_id = self._get_chat_id_by_name(chat_name)
         if dialog_id is None:
             return
-        conversation_id = str(uuid.uuid4()).replace("-", "")
-        payload = {
-            "conversation_id": conversation_id,
-            "is_new": True,
-            "dialog_id": dialog_id
-        }
-        response = self.http_client.request("POST", "/conversation/set", json_body=payload, use_api_base=False,
-                                            auth_kind="web")
+        payload = {"name": "New conversation"}
+        response = self.http_client.request("POST", f"/chats/{dialog_id}/conversations", json_body=payload,
+                                            use_api_base=True, auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json["code"] == 0:
             print(f"Success to create chat session for chat: {chat_name}")
@@ -1229,9 +1173,9 @@ class RAGFlowClient:
         if not to_drop_session_ids:
             print(f"Chat session '{session_id}' not found in chat '{chat_name}'")
             return
-        payload = {"conversation_ids": to_drop_session_ids}
-        response = self.http_client.request("POST", "/conversation/rm", json_body=payload, use_api_base=False,
-                                            auth_kind="web")
+        payload = {"ids": to_drop_session_ids}
+        response = self.http_client.request("DELETE", f"/chats/{dialog_id}/conversations", json_body=payload,
+                                            use_api_base=True, auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json["code"] == 0:
             print(f"Success to drop chat session '{session_id}' from chat: {chat_name}")
@@ -1520,6 +1464,48 @@ class RAGFlowClient:
         else:
             print(f"Fail to get chunk, code: {res_json['code']}, message: {res_json['message']}")
 
+    # Internal
+    def insert_dataset_from_file(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+            return
+
+        file_path = command_dict["file_path"]
+        payload = {"file_path": file_path}
+        response = self.http_client.request("POST", "/kb/insert_from_file", json_body=payload,
+                                            use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200:
+            if res_json["code"] == 0:
+                print(f"Success to insert dataset from file: {file_path}")
+                if res_json.get("data"):
+                    self._print_key_value(res_json["data"])
+            else:
+                print(f"Fail to insert dataset from file, code: {res_json['code']}, message: {res_json['message']}")
+        else:
+            print(f"Fail to insert dataset from file, code: {res_json['code']}, message: {res_json['message']}")
+
+    # Internal
+    def insert_metadata_from_file(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+            return
+
+        file_path = command_dict["file_path"]
+        payload = {"file_path": file_path}
+        response = self.http_client.request("POST", "/tenant/insert_metadata_from_file", json_body=payload,
+                                            use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200:
+            if res_json["code"] == 0:
+                print(f"Success to insert metadata from file: {file_path}")
+                if res_json.get("data"):
+                    self._print_key_value(res_json["data"])
+            else:
+                print(f"Fail to insert metadata from file, code: {res_json['code']}, message: {res_json['message']}")
+        else:
+            print(f"Fail to insert metadata from file, code: {res_json['code']}, message: {res_json['message']}")
+
     def list_chunks(self, command_dict):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
@@ -1622,17 +1608,27 @@ class RAGFlowClient:
     def _list_chats(self, command):
         iterations = command.get("iterations", 1)
         if iterations > 1:
-            response = self.http_client.request("POST", "/dialog/next", use_api_base=False, auth_kind="web",
-                                                iterations=iterations)
+            response = self.http_client.request(
+                "GET",
+                "/chats",
+                use_api_base=True,
+                auth_kind="web",
+                iterations=iterations,
+            )
             return response
         else:
-            response = self.http_client.request("POST", "/dialog/next", use_api_base=False, auth_kind="web",
-                                                iterations=iterations)
+            response = self.http_client.request(
+                "GET",
+                "/chats",
+                use_api_base=True,
+                auth_kind="web",
+                iterations=iterations,
+            )
             res_json = response.json()
             if response.status_code == 200 and res_json["code"] == 0:
-                return res_json["data"]["dialogs"]
+                return res_json["data"]["chats"]
             else:
-                print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
+                print(f"Fail to list chats, code: {res_json['code']}, message: {res_json['message']}")
                 return None
 
     def _get_default_models(self):
@@ -1903,6 +1899,10 @@ def run_command(client: RAGFlowClient, command_dict: dict):
             return client.search_on_datasets(command_dict)
         case "get_chunk":
             return client.get_chunk(command_dict)
+        case "insert_dataset_from_file":
+            return client.insert_dataset_from_file(command_dict)
+        case "insert_metadata_from_file":
+            return client.insert_metadata_from_file(command_dict)
         case "list_chunks":
             return client.list_chunks(command_dict)
         case "meta":

@@ -221,8 +221,220 @@ func (dao *FileDAO) GetAllIDsByTenantID(tenantID string) ([]string, error) {
 	return ids, err
 }
 
+// GetByParentIDAndName gets file by parent folder ID and name
+func (dao *FileDAO) GetByParentIDAndName(parentID, name string) (*entity.File, error) {
+	var file entity.File
+	err := DB.Where("parent_id = ? AND name = ?", parentID, name).First(&file).Error
+	if err != nil {
+		return nil, err
+	}
+	return &file, nil
+}
+
+// GetIDListByID recursively gets list of file IDs by traversing folder structure
+func (dao *FileDAO) GetIDListByID(id string, names []string, count int, res []string) ([]string, error) {
+	if count < len(names) {
+		file, err := dao.GetByParentIDAndName(id, names[count])
+		if err != nil {
+			return res, nil
+		}
+		res = append(res, file.ID)
+		return dao.GetIDListByID(file.ID, names, count+1, res)
+	}
+	return res, nil
+}
+
+// CreateFolder creates a folder in the database
+func (dao *FileDAO) CreateFolder(parentID, tenantID, name, fileType string) (*entity.File, error) {
+	file := &entity.File{
+		ID:         generateUUID(),
+		ParentID:   parentID,
+		TenantID:   tenantID,
+		CreatedBy:  tenantID,
+		Name:       name,
+		Type:       fileType,
+		Size:       0,
+		SourceType: "",
+	}
+	if err := DB.Create(file).Error; err != nil {
+		return nil, err
+	}
+	return file, nil
+}
+
+// Insert inserts a new file record
+func (dao *FileDAO) Insert(file *entity.File) error {
+	return DB.Create(file).Error
+}
+
+// IsParentFolderExist checks if parent folder exists
+func (dao *FileDAO) IsParentFolderExist(parentID string) bool {
+	var count int64
+	err := DB.Model(&entity.File{}).Where("id = ?", parentID).Count(&count).Error
+	if err != nil || count == 0 {
+		return false
+	}
+	return true
+}
+
+// Query retrieves files by conditions
+func (dao *FileDAO) Query(name string, parentID string) []*entity.File {
+	var files []*entity.File
+	query := DB.Model(&entity.File{})
+	if name != "" {
+		query = query.Where("name = ?", name)
+	}
+	if parentID != "" {
+		query = query.Where("parent_id = ?", parentID)
+	}
+	query.Find(&files)
+	return files
+}
+
+// UpdateByID updates file by ID
+func (dao *FileDAO) UpdateByID(id string, updates map[string]interface{}) bool {
+	result := DB.Model(&entity.File{}).Where("id = ?", id).Updates(updates)
+	return result.RowsAffected > 0
+}
+
 // generateUUID generates a UUID
 func generateUUID() string {
 	id := uuid.New().String()
 	return strings.ReplaceAll(id, "-", "")
+}
+
+// KnowledgebaseFolderName is the folder name for knowledgebase
+const KnowledgebaseFolderName = ".knowledgebase"
+
+// InitKnowledgebaseDocs initializes knowledgebase documents for tenant
+// This matches Python's FileService.init_knowledgebase_docs method
+func (dao *FileDAO) InitKnowledgebaseDocs(rootID, tenantID string, file2DocumentDAO *File2DocumentDAO) error {
+	var count int64
+	err := DB.Model(&entity.File{}).
+		Where("name = ? AND parent_id = ?", KnowledgebaseFolderName, rootID).
+		Count(&count).Error
+	if err != nil {
+		return err
+	}
+
+	if count > 0 {
+		return nil
+	}
+
+	kbFolder, err := dao.newAFileFromKB(tenantID, KnowledgebaseFolderName, rootID)
+	if err != nil {
+		return err
+	}
+
+	var knowledgebases []entity.Knowledgebase
+	err = DB.Select("id", "name").
+		Where("tenant_id = ?", tenantID).
+		Find(&knowledgebases).Error
+	if err != nil {
+		return err
+	}
+
+	for _, kb := range knowledgebases {
+		kbFolderForKB, err := dao.newAFileFromKB(tenantID, kb.Name, kbFolder.ID)
+		if err != nil {
+			continue
+		}
+
+		var documents []entity.Document
+		err = DB.Where("kb_id = ?", kb.ID).Find(&documents).Error
+		if err != nil {
+			continue
+		}
+
+		for _, doc := range documents {
+			dao.addFileFromKB(&doc, kbFolderForKB.ID, tenantID, file2DocumentDAO)
+		}
+	}
+
+	return nil
+}
+
+// newAFileFromKB creates a new file from knowledgebase
+func (dao *FileDAO) newAFileFromKB(tenantID, name, parentID string) (*entity.File, error) {
+	var existingFiles []*entity.File
+	err := DB.Where("tenant_id = ? AND parent_id = ? AND name = ?", tenantID, parentID, name).Find(&existingFiles).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if len(existingFiles) > 0 {
+		return existingFiles[0], nil
+	}
+
+	fileID := generateUUID()
+	file := &entity.File{
+		ID:         fileID,
+		ParentID:   parentID,
+		TenantID:   tenantID,
+		CreatedBy:  tenantID,
+		Name:       name,
+		Type:       "folder",
+		Size:       0,
+		SourceType: "knowledgebase",
+	}
+
+	if err := DB.Create(file).Error; err != nil {
+		return nil, err
+	}
+	return file, nil
+}
+
+// addFileFromKB adds a file record from knowledgebase document
+func (dao *FileDAO) addFileFromKB(doc *entity.Document, kbFolderID, tenantID string, file2DocumentDAO *File2DocumentDAO) error {
+	var f2dCount int64
+	err := DB.Model(&entity.File2Document{}).
+		Where("document_id = ?", doc.ID).
+		Count(&f2dCount).Error
+	if err != nil {
+		return err
+	}
+
+	if f2dCount > 0 {
+		return nil
+	}
+
+	docName := ""
+	if doc.Name != nil {
+		docName = *doc.Name
+	}
+
+	docLocation := ""
+	if doc.Location != nil {
+		docLocation = *doc.Location
+	}
+
+	fileID := generateUUID()
+	file := &entity.File{
+		ID:         fileID,
+		ParentID:   kbFolderID,
+		TenantID:   tenantID,
+		CreatedBy:  tenantID,
+		Name:       docName,
+		Type:       doc.Type,
+		Size:       doc.Size,
+		Location:   &docLocation,
+		SourceType: "knowledgebase",
+	}
+
+	if err := DB.Create(file).Error; err != nil {
+		return err
+	}
+
+	f2dID := generateUUID()
+	f2d := &entity.File2Document{
+		ID:         f2dID,
+		FileID:     &fileID,
+		DocumentID: &doc.ID,
+	}
+
+	if err := DB.Create(f2d).Error; err != nil {
+		return err
+	}
+
+	return nil
 }

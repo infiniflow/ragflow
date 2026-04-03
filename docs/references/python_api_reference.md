@@ -46,7 +46,7 @@ Creates a model response for the given historical chat conversation via OpenAI's
 
 #### Parameters
 
-##### model: `str`, *Required*
+##### model: `string`, *Required*
 
 The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
 
@@ -143,18 +143,18 @@ Creates a dataset.
 
 #### Parameters
 
-##### name: `str`, *Required*
+##### name: `string`, *Required*
 
 The unique name of the dataset to create. It must adhere to the following requirements:
 
 - Maximum 128 characters.
 - Case-insensitive.
 
-##### avatar: `str`
+##### avatar: `string`
 
 Base64 encoding of the avatar. Defaults to `None`
 
-##### description: `str`
+##### description: `string`
 
 A brief description of the dataset to create. Defaults to `None`.
 
@@ -166,7 +166,7 @@ Specifies who can access the dataset to create. Available options:
 - `"me"`: (Default) Only you can manage the dataset.
 - `"team"`: All team members can manage the dataset.
 
-##### chunk_method, `str`
+##### chunk_method, `string`
 
 The chunking method of the dataset to create. Available options:
 
@@ -288,7 +288,7 @@ Specifies the page on which the datasets will be displayed. Defaults to `1`.
 
 The number of datasets on each page. Defaults to `30`.
 
-##### orderby: `str`
+##### orderby: `string`
 
 The field by which datasets should be sorted. Available options:
 
@@ -299,11 +299,11 @@ The field by which datasets should be sorted. Available options:
 
 Indicates whether the retrieved datasets should be sorted in descending order. Defaults to `True`.
 
-##### id: `str`
+##### id: `string`
 
 The ID of the dataset to retrieve. Defaults to `None`.
 
-##### name: `str`
+##### name: `string`
 
 The name of the dataset to retrieve. Defaults to `None`.
 
@@ -361,7 +361,7 @@ Updates configurations for the current dataset.
 
 A dictionary representing the attributes to update, with the following keys:
 
-- `"name"`: `str` The revised name of the dataset.
+- `"name"`: `string` The revised name of the dataset.
   - Basic Multilingual Plane (BMP) only
   - Maximum 128 characters
   - Case-insensitive
@@ -464,9 +464,9 @@ Updates configurations for the current document.
 
 A dictionary representing the attributes to update, with the following keys:
 
-- `"display_name"`: `str` The name of the document to update.
+- `"display_name"`: `string` The name of the document to update.
 - `"meta_fields"`: `dict[str, Any]` The meta fields of the document.
-- `"chunk_method"`: `str` The parsing method to apply to the document.
+- `"chunk_method"`: `string` The parsing method to apply to the document.
   - `"naive"`: General
   - `"manual`: Manual
   - `"qa"`: Q&A
@@ -571,11 +571,11 @@ Lists documents in the current dataset.
 
 #### Parameters
 
-##### id: `str`
+##### id: `string`
 
 The ID of the document to retrieve. Defaults to `None`.
 
-##### keywords: `str`
+##### keywords: `string`
 
 The keywords used to match document titles. Defaults to `None`.
 
@@ -587,7 +587,7 @@ Specifies the page on which the documents will be displayed. Defaults to `1`.
 
 The maximum number of documents on each page. Defaults to `30`.
 
-##### orderby: `str`
+##### orderby: `string`
 
 The field by which documents should be sorted. Available options:
 
@@ -618,21 +618,21 @@ A `Document` object contains the following attributes:
 - `chunk_method` The chunking method name. Defaults to `"naive"`.
 - `source_type`: The source type of the document. Defaults to `"local"`.
 - `type`: Type or category of the document. Defaults to `""`. Reserved for future use.
-- `created_by`: `str` The creator of the document. Defaults to `""`.
+- `created_by`: `string` The creator of the document. Defaults to `""`.
 - `size`: `int` The document size in bytes. Defaults to `0`.
 - `token_count`: `int` The number of tokens in the document. Defaults to `0`.
 - `chunk_count`: `int` The number of chunks in the document. Defaults to `0`.
 - `progress`: `float` The current processing progress as a percentage. Defaults to `0.0`.
-- `progress_msg`: `str` A message indicating the current progress status. Defaults to `""`.
+- `progress_msg`: `string` A message indicating the current progress status. Defaults to `""`.
 - `process_begin_at`: `datetime` The start time of document processing. Defaults to `None`.
 - `process_duration`: `float` Duration of the processing in seconds. Defaults to `0.0`.
-- `run`: `str` The document's processing status:
+- `run`: `string` The document's processing status:
   - `"UNSTART"`  (default)
   - `"RUNNING"`
   - `"CANCEL"`
   - `"DONE"`
   - `"FAIL"`
-- `status`: `str` Reserved for future use.
+- `status`: `string` Reserved for future use.
 - `parser_config`: `ParserConfig` Configuration object for the parser. Its attributes vary based on the selected `chunk_method`:
   - `chunk_method`=`"naive"`:  
     `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False}}`.
@@ -862,7 +862,7 @@ Adds a chunk to the current document.
 
 #### Parameters
 
-##### content: `str`, *Required*
+##### content: `string`, *Required*
 
 The text content of the chunk.
 
@@ -870,7 +870,7 @@ The text content of the chunk.
 
 The key terms or phrases to tag with the chunk.
 
-##### image_base64: `str`
+##### image_base64: `string`
 
 A base64-encoded image to associate with the chunk. If the chunk already has an image, the new image will be vertically concatenated below the existing one.
 
@@ -885,16 +885,16 @@ Tag keywords to associate with the chunk.
 
 A `Chunk` object contains the following attributes:
 
-- `id`: `str`: The chunk ID.
-- `content`: `str` The text content of the chunk.
+- `id`: `string`: The chunk ID.
+- `content`: `string` The text content of the chunk.
 - `important_keywords`: `list[str]` A list of key terms or phrases tagged with the chunk.
 - `tag_kwd`: `list[str]` A list of tag keywords associated with the chunk.
-- `image_id`: `str` The image ID associated with the chunk (empty string if no image).
-- `create_time`: `str` The time when the chunk was created (added to the document).
+- `image_id`: `string` The image ID associated with the chunk (empty string if no image).
+- `create_time`: `string` The time when the chunk was created (added to the document).
 - `create_timestamp`: `float` The timestamp representing the creation time of the chunk, expressed in seconds since January 1, 1970.
-- `dataset_id`: `str` The ID of the associated dataset.
-- `document_name`: `str` The name of the associated document.
-- `document_id`: `str` The ID of the associated document.
+- `dataset_id`: `string` The ID of the associated dataset.
+- `document_name`: `string` The name of the associated document.
+- `document_id`: `string` The ID of the associated document.
 - `available`: `bool` The chunk's availability status in the dataset. Value options:
   - `False`: Unavailable
   - `True`: Available (default)
@@ -934,7 +934,7 @@ Lists chunks in the current document.
 
 #### Parameters
 
-##### keywords: `str`
+##### keywords: `string`
 
 The keywords used to match chunk content. Defaults to `None`
 
@@ -946,7 +946,7 @@ Specifies the page on which the chunks will be displayed. Defaults to `1`.
 
 The maximum number of chunks on each page. Defaults to `30`.
 
-##### id: `str`
+##### id: `string`
 
 The ID of the chunk to retrieve. Default: `None`
 
@@ -1027,7 +1027,7 @@ Updates content or configurations for the current chunk.
 
 A dictionary representing the attributes to update, with the following keys:
 
-- `"content"`: `str` The text content of the chunk.
+- `"content"`: `string` The text content of the chunk.
 - `"important_keywords"`: `list[str]` A list of key terms or phrases to tag with the chunk.
 - `"tag_kwd"`: `list[str]` A list of tag keywords to associate with the chunk.
 - `"available"`: `bool` The chunk's availability status in the dataset. Value options:
@@ -1065,7 +1065,7 @@ Retrieves chunks from specified datasets.
 
 #### Parameters
 
-##### question: `str`, *Required*
+##### question: `string`, *Required*
 
 The user query or query keywords. Defaults to `""`.
 
@@ -1097,7 +1097,7 @@ The weight of vector cosine similarity. Defaults to `0.3`. If x represents the v
 
 The number of chunks engaged in vector cosine computation. Defaults to `1024`.
 
-##### rerank_id: `str`
+##### rerank_id: `string`
 
 The ID of the rerank model. Defaults to `None`.
 
@@ -1149,11 +1149,13 @@ for c in rag_object.retrieve(dataset_ids=[dataset.id],document_ids=[doc.id]):
 
 ```python
 RAGFlow.create_chat(
-    name: str, 
-    avatar: str = "", 
-    dataset_ids: list[str] = [], 
-    llm: Chat.LLM = None, 
-    prompt: Chat.Prompt = None
+    name: str,
+    icon: str = "",
+    dataset_ids: list[str] | None = None,
+    llm_id: str | None = None,
+    llm_setting: dict | None = None,
+    prompt_config: dict | None = None,
+    **kwargs
 ) -> Chat
 ```
 
@@ -1161,50 +1163,41 @@ Creates a chat assistant.
 
 #### Parameters
 
-##### name: `str`, *Required*
+##### name: `string`, *Required*
 
 The name of the chat assistant.
 
-##### avatar: `str`
+##### icon: `string`
 
 Base64 encoding of the avatar. Defaults to `""`.
 
 ##### dataset_ids: `list[str]`
 
-The IDs of the associated datasets. Defaults to `[""]`.
+The IDs of the associated datasets. Defaults to `[]`. When omitted or empty, the SDK creates an empty chat assistant and you can attach datasets later.
 
-##### llm: `Chat.LLM`
+##### llm_id: `str | None`
 
-The LLM settings for the chat assistant to create. Defaults to `None`. When the value is `None`, a dictionary with the following values will be generated as the default. An `LLM` object contains the following attributes:
+The LLM model name/ID to use. If `None`, the user’s default chat model is used. Defaults to `None`.
 
-- `model_name`: `str`  
-  The chat model name. If it is `None`, the user's default chat model will be used.  
-- `temperature`: `float`  
-  Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
-- `top_p`: `float`  
-  Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
-- `presence_penalty`: `float`  
-  This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.2`.
-- `frequency penalty`: `float`  
-  Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
+##### llm_setting: `dict | None`
 
-##### prompt: `Chat.Prompt`
+Configuration for LLM generation parameters. Defaults to `None` (server-side defaults apply). Supported keys:
 
-Instructions for the LLM to follow.  A `Prompt` object contains the following attributes:
+- `"temperature"`: `float` Controls the randomness of the model's output. Higher values increase creativity, while lower values make responses more deterministic. Defaults to `0.1`.
+- `"top_p"`: `float` Sets the nucleus sampling threshold. The model considers only the results of the tokens with `top_p` probability mass. Defaults to `0.3`.
+- `"presence_penalty"`: `float` Penalizes tokens based on whether they have appeared in the text so far, increasing the likelihood of the model talking about new topics. Defaults to `0.4`.
+- `"frequency_penalty"`: `float` Penalizes tokens based on their existing frequency in the text, decreasing the likelihood of repeating the same lines. Defaults to `0.7`.
+- `"max_token"`: `int` The maximum number of tokens to generate in the response. Defaults to `512`.
 
-- `similarity_threshold`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
-- `keywords_similarity_weight`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
-- `top_n`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
-- `variables`: `list[dict[]]` This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:
-  - `knowledge` is a reserved variable, which represents the retrieved chunks.
-  - All the variables in 'System' should be curly bracketed.
-  - The default value is `[{"key": "knowledge", "optional": True}]`.
-- `rerank_model`: `str` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
-- `top_k`: `int` Refers to the process of reordering or selecting the top-k items from a list or set based on a specific ranking criterion. Default to 1024.
-- `empty_response`: `str` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank. Defaults to `None`.
-- `opener`: `str` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
-- `show_quote`: `bool` Indicates whether the source of text should be displayed. Defaults to `True`.
-- `prompt`: `str` The prompt content.
+##### prompt_config: `dict | None`
+
+Instructions and behavioral settings for the LLM. Defaults to `None` (server-side defaults apply). Supported keys:
+
+- `"system"`: `string` The core system prompt or instructions defining the assistant's persona.
+- `"empty_response"`: `string` The specific message returned when no relevant information is retrieved. If left blank, the LLM will generate its own response. Defaults to `None`.
+- `"prologue"`: `string` The initial greeting displayed to the user. Defaults to `"Hi! I’m your assistant. What can I do for you?"`.
+- `"quote"`: `boolean` Determines whether the assistant should include citations or source references in its responses. Defaults to `True`.
+- `"parameters"`: `list[dict]` A list of variables utilized within the system prompt. Each entry must include a `"key"` (`string`) and an `"optional"` (`boolean`) status. The `knowledge` key is reserved for retrieved context chunks. Default: `[{"key": "knowledge", "optional": true}]`.
 
 #### Returns
 
@@ -1232,36 +1225,37 @@ assistant = rag_object.create_chat("Miss R", dataset_ids=dataset_ids)
 Chat.update(update_message: dict)
 ```
 
-Updates configurations for the current chat assistant.
+Performs a partial update to the configuration settings for the current chat assistant.
+
+`Chat.update()` utilizes the `PATCH /api/v1/chats/{chat_id}` endpoint. Only the specified keys are modified, while all other existing fields are preserved.
 
 #### Parameters
 
-##### update_message: `dict[str, str|list[str]|dict[]]`, *Required*
+##### update_message: `dict`, *Required*
 
-A dictionary representing the attributes to update, with the following keys:
+A dictionary containing the attributes to be updated. Supported keys include:
 
-- `"name"`: `str` The revised name of the chat assistant.
-- `"avatar"`: `str` Base64 encoding of the avatar. Defaults to `""`
-- `"dataset_ids"`: `list[str]` The datasets to update.
-- `"llm"`: `dict` The LLM settings:
-  - `"model_name"`, `str` The chat model name.
-  - `"temperature"`, `float` Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses.  
-  - `"top_p"`, `float` Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from.  
-  - `"presence_penalty"`, `float` This discourages the model from repeating the same information by penalizing words that have appeared in the conversation.
-  - `"frequency penalty"`, `float` Similar to presence penalty, this reduces the model’s tendency to repeat the same words.
-- `"prompt"` : Instructions for the LLM to follow.
-  - `"similarity_threshold"`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted rerank score during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
-  - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
-  - `"top_n"`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
-  - `"variables"`: `list[dict[]]`  This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:
-    - `knowledge` is a reserved variable, which represents the retrieved chunks.
-    - All the variables in 'System' should be curly bracketed.
-    - The default value is `[{"key": "knowledge", "optional": True}]`.
-  - `"rerank_model"`: `str` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
-  - `"empty_response"`: `str` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is retrieved, leave this blank. Defaults to `None`.
-  - `"opener"`: `str` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
-  - `"show_quote`: `bool` Indicates whether the source of text should be displayed Defaults to `True`.
-  - `"prompt"`: `str` The prompt content.
+- `"name"`: `string` The updated name of the chat assistant.
+- `"icon"`: `string` A Base64-encoded string representing the assistant's avatar.
+- `"dataset_ids"`: `list[string]` A list of unique identifiers for the datasets associated with the assistant.
+- `"llm_id"`: `string` The unique identifier or name of the LLM to be used.
+- `"llm_setting"`: `dict` Configuration for LLM generation parameters:
+  - `"temperature"`: `float` Controls the randomness of the model's output. 
+  - `"top_p"`: `float` Sets the nucleus sampling threshold.
+  - `"presence_penalty"`: `float` Penalizes tokens based on whether they have already appeared in the text.
+  - `"frequency_penalty"`: `float` Penalizes tokens based on their existing frequency in the text.
+  - `"max_token"`: `int` The maximum number of tokens to generate in the response.
+- `"prompt_config"`: `dict` Instructions and behavioral settings for the LLM:
+  - `"system"`: `string` The core system prompt or instructions defining the assistant's persona.
+  - `"empty_response"`: `string` The message returned when no relevant information is retrieved. Leave blank to allow the LLM to improvise.
+  - `"prologue"`: `string` The initial greeting displayed to the user.
+  - `"quote"`: `boolean` Determines whether the assistant should include citations or source references.
+  - `"parameters"`: `list[dict]` Variables used within the system prompt (e.g., the reserved `knowledge` key).
+- `"similarity_threshold"`: `float` The minimum similarity score required for retrieved context chunks. Defaults to `0.2`.
+- `"vector_similarity_weight"`: `float` The weight assigned to vector cosine similarity within the hybrid search score. Defaults to `0.3`.
+- `"top_n"`: `int` The number of top-ranked chunks provided to the LLM as context. Defaults to `6`.
+- `"top_k"`: `int` The size of the initial candidate pool retrieved for reranking. Defaults to `1024`.
+- `"rerank_id"`: `string` The unique identifier for the reranking model. If left empty, standard vector cosine similarity is used for ranking.
 
 #### Returns
 
@@ -1277,7 +1271,7 @@ rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:
 datasets = rag_object.list_datasets(name="kb_1")
 dataset_id = datasets[0].id
 assistant = rag_object.create_chat("Miss R", dataset_ids=[dataset_id])
-assistant.update({"name": "Stefan", "llm": {"temperature": 0.8}, "prompt": {"top_n": 8}})
+assistant.update({"name": "Stefan", "llm_setting": {"temperature": 0.8}, "top_n": 8})
 ```
 
 ---
@@ -1328,8 +1322,11 @@ RAGFlow.list_chats(
     page_size: int = 30, 
     orderby: str = "create_time", 
     desc: bool = True,
-    id: str = None,
-    name: str = None
+    id: str | None = None,
+    name: str | None = None,
+    keywords: str | None = None,
+    owner_ids: str | list[str] | None = None,
+    parser_id: str | None = None
 ) -> list[Chat]
 ```
 
@@ -1345,7 +1342,7 @@ Specifies the page on which the chat assistants will be displayed. Defaults to `
 
 The number of chat assistants on each page. Defaults to `30`.
 
-##### orderby: `str`
+##### orderby: `string`
 
 The attribute by which the results are sorted. Available options:
 
@@ -1356,13 +1353,25 @@ The attribute by which the results are sorted. Available options:
 
 Indicates whether the retrieved chat assistants should be sorted in descending order. Defaults to `True`.
 
-##### id: `str`  
+##### id: `string | None`
 
-The ID of the chat assistant to retrieve. Defaults to `None`.
+Exact match on chat assistant ID. Defaults to `None`.
 
-##### name: `str`  
+Filters results by the exact name of the chat assistant. Defaults to `None`.
 
-The name of the chat assistant to retrieve. Defaults to `None`.
+##### keywords: `string | None`
+
+Performs a case-insensitive fuzzy search against chat assistant names. Defaults to `None`.
+
+##### owner_ids: `string | list[string] | None`
+
+Filters results by one or more owner tenant IDs. Defaults to `None`.
+
+##### parser_id: `string | None`
+
+Filters results by a specific parser type identifier. Defaults to `None`.
+
+If `id` or `name` is specified, exact filtering takes precedence over the fuzzy matching provided by `keywords`.
 
 #### Returns
 
@@ -1395,17 +1404,17 @@ Creates a session with the current chat assistant.
 
 #### Parameters
 
-##### name: `str`
+##### name: `string`
 
 The name of the chat session to create.
 
 #### Returns
 
 - Success: A `Session` object containing the following attributes:
-  - `id`: `str` The auto-generated unique identifier of the created session.
-  - `name`: `str` The name of the created session.
+  - `id`: `string` The auto-generated unique identifier of the created session.
+  - `name`: `string` The name of the created session.
   - `message`: `list[Message]` The opening message of the created session. Default: `[{"role": "assistant", "content": "Hi! I am your assistant, can I help you?"}]`
-  - `chat_id`: `str` The ID of the associated chat assistant.
+  - `chat_id`: `string` The ID of the associated chat assistant.
 - Failure: `Exception`
 
 #### Examples
@@ -1435,7 +1444,7 @@ Updates the current session of the current chat assistant.
 
 A dictionary representing the attributes to update, with only one key:
 
-- `"name"`: `str` The revised name of the session.
+- `"name"`: `string` The revised name of the session.
 
 #### Returns
 
@@ -1460,12 +1469,13 @@ session.update({"name": "updated_name"})
 
 ```python
 Chat.list_sessions(
-    page: int = 1, 
-    page_size: int = 30, 
-    orderby: str = "create_time", 
+    page: int = 1,
+    page_size: int = 30,
+    orderby: str = "create_time",
     desc: bool = True,
     id: str = None,
-    name: str = None
+    name: str = None,
+    user_id: str = None
 ) -> list[Session]
 ```
 
@@ -1481,7 +1491,7 @@ Specifies the page on which the sessions will be displayed. Defaults to `1`.
 
 The number of sessions on each page. Defaults to `30`.
 
-##### orderby: `str`
+##### orderby: `string`
 
 The field by which sessions should be sorted. Available options:
 
@@ -1492,13 +1502,17 @@ The field by which sessions should be sorted. Available options:
 
 Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `True`.
 
-##### id: `str`
+##### id: `string`
 
 The ID of the chat session to retrieve. Defaults to `None`.
 
-##### name: `str`
+##### name: `string`
 
 The name of the chat session to retrieve. Defaults to `None`.
+
+##### user_id: `str`
+
+The optional user-defined ID to filter sessions by. Defaults to `None`.
 
 #### Returns
 
@@ -1573,7 +1587,7 @@ In streaming mode, not all responses include a reference, as this depends on the
 
 #### Parameters
 
-##### question: `str`, *Required*
+##### question: `string`, *Required*
 
 The question to start an AI-powered conversation. Default to `""`
 
@@ -1595,11 +1609,11 @@ The parameters in prompt(system).
 
 The following shows the attributes of a `Message` object:
 
-##### id: `str`
+##### id: `string`
 
 The auto-generated message ID.
 
-##### content: `str`
+##### content: `string`
 
 The content of the message. Defaults to `"Hi! I am your assistant, can I help you?"`.
 
@@ -1607,21 +1621,21 @@ The content of the message. Defaults to `"Hi! I am your assistant, can I help yo
 
 A list of `Chunk` objects representing references to the message, each containing the following attributes:
 
-- `id` `str`  
+- `id` `string`  
   The chunk ID.
-- `content` `str`  
+- `content` `string`  
   The content of the chunk.
-- `img_id` `str`  
+- `img_id` `string`  
   The ID of the snapshot of the chunk. Applicable only when the source of the chunk is an image, PPT, PPTX, or PDF file.
-- `document_id` `str`  
+- `document_id` `string`  
   The ID of the referenced document.
-- `document_name` `str`  
+- `document_name` `string`  
   The name of the referenced document.
 - `document_metadata` `dict`  
   Optional document metadata, returned only when `extra_body.reference_metadata.include` is `true`.
 - `position` `list[str]`  
   The location information of the chunk within the referenced document.
-- `dataset_id` `str`  
+- `dataset_id` `string`  
   The ID of the dataset to which the referenced document belongs.
 - `similarity` `float`  
   A composite similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity. It is the weighted sum of `vector_similarity` and `term_similarity`.
@@ -1676,9 +1690,9 @@ Also supports:
 #### Returns
 
 - Success: A `Session` object containing the following attributes:
-  - `id`: `str` The auto-generated unique identifier of the created session.
+  - `id`: `string` The auto-generated unique identifier of the created session.
   - `message`: `list[Message]` The messages of the created session assistant. Default: `[{"role": "assistant", "content": "Hi! I am your assistant, can I help you?"}]`
-  - `agent_id`: `str` The ID of the associated agent.
+  - `agent_id`: `string` The ID of the associated agent.
 - Failure: `Exception`
 
 #### Examples
@@ -1710,7 +1724,7 @@ In streaming mode, not all responses include a reference, as this depends on the
 
 #### Parameters
 
-##### question: `str`
+##### question: `string`
 
 The question to start an AI-powered conversation. If the **Begin** component takes parameters, a question is not required.
 
@@ -1728,11 +1742,11 @@ Indicates whether to output responses in a streaming way:
 
 The following shows the attributes of a `Message` object:
 
-##### id: `str`
+##### id: `string`
 
 The auto-generated message ID.
 
-##### content: `str`
+##### content: `string`
 
 The content of the message. Defaults to `"Hi! I am your assistant, can I help you?"`.
 
@@ -1740,21 +1754,21 @@ The content of the message. Defaults to `"Hi! I am your assistant, can I help yo
 
 A list of `Chunk` objects representing references to the message, each containing the following attributes:
 
-- `id` `str`  
+- `id` `string`  
   The chunk ID.
-- `content` `str`  
+- `content` `string`  
   The content of the chunk.
-- `image_id` `str`  
+- `image_id` `string`  
   The ID of the snapshot of the chunk. Applicable only when the source of the chunk is an image, PPT, PPTX, or PDF file.
-- `document_id` `str`  
+- `document_id` `string`  
   The ID of the referenced document.
-- `document_name` `str`  
+- `document_name` `string`  
   The name of the referenced document.
 - `document_metadata` `dict`  
   Optional document metadata, returned only when `extra_body.reference_metadata.include` is `true`.
 - `position` `list[str]`  
   The location information of the chunk within the referenced document.
-- `dataset_id` `str`  
+- `dataset_id` `string`  
   The ID of the dataset to which the referenced document belongs.
 - `similarity` `float`  
   A composite similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity. It is the weighted sum of `vector_similarity` and `term_similarity`.
@@ -1812,7 +1826,7 @@ Specifies the page on which the sessions will be displayed. Defaults to `1`.
 
 The number of sessions on each page. Defaults to `30`.
 
-##### orderby: `str`
+##### orderby: `string`
 
 The field by which sessions should be sorted. Available options:
 
@@ -1823,7 +1837,7 @@ The field by which sessions should be sorted. Available options:
 
 Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `True`.
 
-##### id: `str`
+##### id: `string`
 
 The ID of the agent session to retrieve. Defaults to `None`.
 
@@ -1914,7 +1928,7 @@ Specifies the page on which the agents will be displayed. Defaults to `1`.
 
 The number of agents on each page. Defaults to `30`.
 
-##### orderby: `str`
+##### orderby: `string`
 
 The attribute by which the results are sorted. Available options:
 
@@ -1925,11 +1939,11 @@ The attribute by which the results are sorted. Available options:
 
 Indicates whether the retrieved agents should be sorted in descending order. Defaults to `True`.
 
-##### id: `str`  
+##### id: `string`  
 
 The ID of the agent to retrieve. Defaults to `None`.
 
-##### name: `str`  
+##### name: `string`  
 
 The name of the agent to retrieve. Defaults to `None`.
 
@@ -1963,7 +1977,7 @@ Create an agent.
 
 #### Parameters
 
-##### title: `str`
+##### title: `string`
 
 Specifies the title of the agent.
 
@@ -1971,7 +1985,7 @@ Specifies the title of the agent.
 
 Specifies the canvas DSL of the agent.
 
-##### description: `str`
+##### description: `string`
 
 The description of the agent. Defaults to `None`.
 
@@ -2011,11 +2025,11 @@ Update an agent.
 
 #### Parameters
 
-##### agent_id: `str`
+##### agent_id: `string`
 
 Specifies the id of the agent to be updated.
 
-##### title: `str`
+##### title: `string`
 
 Specifies the new title of the agent. `None` if you do not want to update this.
 
@@ -2023,7 +2037,7 @@ Specifies the new title of the agent. `None` if you do not want to update this.
 
 Specifies the new canvas DSL of the agent. `None` if you do not want to update this.
 
-##### description: `str`
+##### description: `string`
 
 The new description of the agent. `None` if you do not want to update this.
 
@@ -2061,7 +2075,7 @@ Delete an agent.
 
 #### Parameters
 
-##### agent_id: `str`
+##### agent_id: `string`
 
 Specifies the id of the agent to be deleted.
 
@@ -2099,7 +2113,7 @@ Create a new memory.
 
 #### Parameters
 
-##### name: `str`, *Required*
+##### name: `string`, *Required*
 
 The unique name of the memory to create. It must adhere to the following requirements:
 
@@ -2115,14 +2129,14 @@ Specifies the types of memory to extract. Available options:
 - `episodic`: Time-stamped records of specific events and experiences.
 - `procedural`: Learned skills, habits, and automated procedures.
 
-##### embd_id: `str`, *Required*
+##### embd_id: `string`, *Required*
 
 The name of the embedding model to use. For example: `"BAAI/bge-large-zh-v1.5@BAAI"`
 
 - Maximum 255 characters
 - Must follow `model_name@model_factory` format
 
-##### llm_id: `str`, *Required*
+##### llm_id: `string`, *Required*
 
 The name of the chat model to use. For example: `"glm-4-flash@ZHIPU-AI"`
 
@@ -2265,11 +2279,11 @@ Specifies the page on which the datasets will be displayed. Defaults to `1`
 
 The number of memories on each page. Defaults to `50`.
 
-##### tenant_id: `str` or `list[str]`, *Optional*
+##### tenant_id: `string` or `list[str]`, *Optional*
 
 The owner's ID, supports search multiple IDs.
 
-##### memory_type: `str` or `list[str]`, *Optional*
+##### memory_type: `string` or `list[str]`, *Optional*
 
 The type of memory (as set during creation). A memory matches if its type is **included in** the provided value(s). Available options:
 
@@ -2278,13 +2292,13 @@ The type of memory (as set during creation). A memory matches if its type is **i
 - `episodic`
 - `procedural`
 
-##### storage_type: `str`, *Optional*
+##### storage_type: `string`, *Optional*
 
 The storage format of messages. Available options:
 
 - `table`: (Default)
 
-##### keywords: `str`, *Optional*
+##### keywords: `string`, *Optional*
 
 The name of memory to retrieve, supports fuzzy search.
 
@@ -2353,7 +2367,7 @@ Delete a specified memory.
 
 #### Parameters
 
-##### memory_id: `str`, *Required*
+##### memory_id: `string`, *Required*
 
 The ID of the memory.
 
@@ -2390,11 +2404,11 @@ List the messages of a specified memory.
 
 #### Parameters
 
-##### agent_id: `str` or `list[str]`, *Optional*
+##### agent_id: `string` or `list[str]`, *Optional*
 
 Filters messages by the ID of their source agent. Supports multiple values.
 
-##### keywords: `str`, *Optional*
+##### keywords: `string`, *Optional*
 
 Filters messages by their session ID. This field supports fuzzy search.
 
@@ -2450,23 +2464,23 @@ Add a message to specified memories.
 
 The IDs of the memories to save messages.
 
-##### agent_id: `str`, *Required*
+##### agent_id: `string`, *Required*
 
 The ID of the message's source agent.
 
-##### session_id: `str`, *Required*
+##### session_id: `string`, *Required*
 
 The ID of the message's session.
 
-##### user_input: `str`, *Required*
+##### user_input: `string`, *Required*
 
 The text input provided by the user.
 
-##### agent_response: `str`, *Required*
+##### agent_response: `string`, *Required*
 
 The text response generated by the AI agent.
 
-##### user_id: `str`, *Optional*
+##### user_id: `string`, *Optional*
 
 The user participating in the conversation with the agent. Defaults to `""`.
 
@@ -2586,7 +2600,7 @@ Searches and retrieves messages from memory based on the provided `query` and ot
 
 #### Parameters
 
-##### query: `str`, *Required*
+##### query: `string`, *Required*
 
 The search term or natural language question used to find relevant messages.
 
@@ -2594,11 +2608,11 @@ The search term or natural language question used to find relevant messages.
 
 The IDs of the memories to search. Supports multiple values.
 
-##### agent_id: `str`, *Optional*
+##### agent_id: `string`, *Optional*
 
 The ID of the message's source agent. Defaults to `None`.
 
-##### session_id: `str`, *Optional*
+##### session_id: `string`, *Optional*
 
 The ID of the message's session. Defaults to `None`.
 
@@ -2655,11 +2669,11 @@ Retrieves the most recent messages from specified memories. Typically accepts a 
 
 The IDs of the memories to search. Supports multiple values.
 
-##### agent_id: `str`, *Optional*
+##### agent_id: `string`, *Optional*
 
 The ID of the message's source agent. Defaults to `None`.
 
-##### session_id: `str`, *Optional*
+##### session_id: `string`, *Optional*
 
 The ID of the message's session. Defaults to `None`.
 

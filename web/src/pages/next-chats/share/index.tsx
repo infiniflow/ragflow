@@ -6,13 +6,10 @@ import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { useSyncThemeFromParams } from '@/components/theme-provider';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import { useFetchFlowSSE } from '@/hooks/use-agent-request';
-import {
-  useFetchExternalChatInfo,
-  useFetchNextConversationSSE,
-} from '@/hooks/use-chat-request';
+import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
 import i18n, { changeLanguageAsync } from '@/locales/config';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import React, { forwardRef, useMemo } from 'react';
+import React, { forwardRef } from 'react';
 import { useSendButtonDisabled } from '../hooks/use-button-disabled';
 import {
   useGetSharedChatSearchParams,
@@ -47,18 +44,15 @@ const ChatContainer = () => {
   const sendDisabled = useSendButtonDisabled(value);
   const { data: chatInfo } = useFetchExternalChatInfo();
 
-  const useFetchAvatar = useMemo(() => {
-    return from === SharedFrom.Agent
-      ? useFetchFlowSSE
-      : useFetchNextConversationSSE;
-  }, [from]);
+  const { data: flowData } = useFetchFlowSSE();
   React.useEffect(() => {
     if (locale && i18n.language !== locale) {
       changeLanguageAsync(locale);
     }
   }, [locale, visibleAvatar]);
 
-  const { data: avatarData } = useFetchAvatar();
+  const avatarDialogSrc =
+    from === SharedFrom.Agent ? flowData?.avatar : chatInfo.avatar;
 
   if (!conversationId) {
     return <div>empty</div>;
@@ -84,12 +78,12 @@ const ChatContainer = () => {
                   <MessageItem
                     visibleAvatar={visibleAvatar}
                     key={buildMessageUuidWithRole(message)}
-                    avatarDialog={avatarData?.avatar}
+                    avatarDialog={avatarDialogSrc}
                     item={message}
                     nickname="You"
                     reference={buildMessageItemReference(
                       {
-                        message: derivedMessages,
+                        messages: derivedMessages,
                         reference: [],
                       },
                       message,

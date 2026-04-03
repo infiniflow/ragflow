@@ -79,7 +79,7 @@ const modelParamMap: ModelParamMap = {
 // API endpoint whitelist - only these endpoints will have tenant parameters added
 const API_WHITELIST = [
   '/v1/user/set_tenant_info',
-  '/v1/dialog/set',
+  '/api/v1/chats',
   '/v1/canvas/set',
   '/v1/canvas/setting',
   '/api/v1/searches/',

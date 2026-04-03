@@ -23,7 +23,7 @@ from common import (
     batch_create_datasets,
     bulk_upload_documents,
     delete_chunks,
-    delete_dialogs,
+    delete_chats,
     list_chunks,
     list_documents,
     list_datasets,
@@ -112,9 +112,9 @@ def clear_datasets(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth):
 
 
 @pytest.fixture(scope="function")
-def clear_dialogs(request, WebApiAuth):
+def clear_chats(request, WebApiAuth):
     def cleanup():
-        delete_dialogs(WebApiAuth)
+        delete_chats(WebApiAuth)
 
     request.addfinalizer(cleanup)
 

@@ -24,6 +24,13 @@ import (
 // PasswordPromptFunc is a function type for password input
 type PasswordPromptFunc func(prompt string) (string, error)
 
+// CurrentModel holds the current model configuration
+type CurrentModel struct {
+	Provider string
+	Instance string
+	Model    string
+}
+
 // RAGFlowClient handles API interactions with the RAGFlow server
 type RAGFlowClient struct {
 	HTTPClient     *HTTPClient
@@ -31,6 +38,7 @@ type RAGFlowClient struct {
 	PasswordPrompt PasswordPromptFunc // Function for password input
 	OutputFormat   OutputFormat       // Output format: table, plain, json
 	ContextEngine  *ce.Engine         // Context Engine for virtual filesystem
+	CurrentModel   *CurrentModel      // Current model configuration
 }
 
 // NewRAGFlowClient creates a new RAGFlow client
@@ -158,6 +166,8 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowProvider(cmd)
 	case "list_provider_models":
 		return c.ListModels(cmd)
+	case "list_instance_models":
+		return c.ListInstanceModels(cmd)
 	case "show_model":
 		return c.ShowModel(cmd)
 	// TODO: Implement other commands
@@ -203,26 +213,55 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CreateDocMetaIndex(cmd)
 	case "drop_doc_meta_index":
 		return c.DropDocMetaIndex(cmd)
-	case "list_pool_providers":
+	case "list_available_providers":
 		return c.ListAvailableProviders(cmd)
 	case "show_provider":
 		return c.ShowProvider(cmd)
 	case "list_provider_models":
 		return c.ListModels(cmd)
+	case "list_instance_models":
+		return c.ListInstanceModels(cmd)
 	case "show_model":
 		return c.ShowModel(cmd)
 	// Provider commands
-	case "create_provider":
-		return c.CreateProvider(cmd)
+	case "add_provider":
+		return c.AddProvider(cmd)
 	case "list_providers":
 		return c.ListProviders(cmd)
-	case "drop_provider":
-		return c.DropProvider(cmd)
+	case "delete_provider":
+		return c.DeleteProvider(cmd)
+	// Provider instance commands
+	case "create_provider_instance":
+		return c.CreateProviderInstance(cmd)
+	case "list_provider_instances":
+		return c.ListProviderInstances(cmd)
+	case "show_provider_instance":
+		return c.ShowProviderInstance(cmd)
+	case "alter_provider_instance":
+		return c.AlterProviderInstance(cmd)
+	case "drop_provider_instance":
+		return c.DropProviderInstance(cmd)
+	case "enable_model":
+		return c.EnableOrDisableModel(cmd, "enable")
+	case "disable_model":
+		return c.EnableOrDisableModel(cmd, "disable")
+	case "chat_to_model":
+		return c.ChatToModel(cmd)
+	case "think_chat_to_model":
+		return c.ChatToModel(cmd)
+	case "use_model":
+		return c.UseModel(cmd)
+	case "show_current_model":
+		return c.ShowCurrentModel(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)
 	case "ce_search":
 		return c.CESearch(cmd)
+	case "insert_dataset_from_file":
+		return c.InsertDatasetFromFile(cmd)
+	case "insert_metadata_from_file":
+		return c.InsertMetadataFromFile(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
