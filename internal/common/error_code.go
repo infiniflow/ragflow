@@ -31,6 +31,7 @@ const (
 	CodeResourceExhausted      ErrorCode = 107
 	CodePermissionError        ErrorCode = 108
 	CodeAuthenticationError    ErrorCode = 109
+	CodeParamError             ErrorCode = 110
 	CodeLicenseValid           ErrorCode = 320
 	CodeLicenseInactiveError   ErrorCode = 321
 	CodeLicenseExpiredError    ErrorCode = 322
@@ -59,6 +60,7 @@ var errorMessages = map[ErrorCode]string{
 	CodeResourceExhausted:      "Resource exhausted",
 	CodePermissionError:        "Permission denied",
 	CodeAuthenticationError:    "Authentication failed",
+	CodeParamError:             "Invalid parameters",
 	CodeLicenseValid:           "License valid",
 	CodeLicenseInactiveError:   "License inactive",
 	CodeLicenseExpiredError:    "License expired",
