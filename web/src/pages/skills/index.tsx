@@ -27,7 +27,10 @@ import fileManagerService from '@/services/file-manager-service';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
 import {
+  Eye,
+  FileText,
   FolderOpen,
+  GitBranch,
   LayoutGrid,
   List,
   Pencil,
@@ -502,7 +505,7 @@ const SkillsPage: React.FC = () => {
               searchString={hubSearchString}
               onSearchChange={handleHubSearchChange}
               showFilter={false}
-              icon="skills"
+              icon="file"
             >
               <div className="flex items-center gap-2">
                 <Segmented
@@ -594,9 +597,16 @@ const SkillsPage: React.FC = () => {
               ) : (
                 <div className="flex-1 overflow-auto border border-border rounded-lg">
                   <table className="w-full" style={{ tableLayout: 'fixed' }}>
+                    <colgroup>
+                      <col style={{ width: '50px' }} />
+                      <col style={{ width: '20vw' }} />
+                      <col style={{ width: '160px' }} />
+                      <col style={{ width: '96px' }} />
+                      <col style={{ width: '96px' }} />
+                    </colgroup>
                     <thead className="bg-bg-title sticky top-0">
                       <tr>
-                        <th className="px-4 py-3 w-10">
+                        <th className="px-3 py-3 text-center">
                           <Checkbox
                             checked={
                               filteredHubs.length > 0 &&
@@ -615,16 +625,16 @@ const SkillsPage: React.FC = () => {
                             }}
                           />
                         </th>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-text-title w-[20vw]">
+                        <th className="px-4 py-3 text-left text-sm font-medium text-text-title">
                           {t('skills.hubName') || 'Name'}
                         </th>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-text-title w-40">
+                        <th className="px-4 py-3 text-left text-sm font-medium text-text-title">
                           {t('fileManager.uploadDate') || 'Upload Date'}
                         </th>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-text-title w-24">
+                        <th className="px-4 py-3 text-left text-sm font-medium text-text-title">
                           {t('fileManager.size') || 'Size'}
                         </th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-text-title w-24">
+                        <th className="px-4 py-3 text-right text-sm font-medium text-text-title">
                           {t('common.action') || 'Action'}
                         </th>
                       </tr>
@@ -640,7 +650,7 @@ const SkillsPage: React.FC = () => {
                           }}
                         >
                           <td
-                            className="px-4 py-3"
+                            className="px-3 py-3 text-center"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <Checkbox
@@ -658,7 +668,7 @@ const SkillsPage: React.FC = () => {
                               }}
                             />
                           </td>
-                          <td className="px-4 py-3 w-[20vw]">
+                          <td className="px-4 py-3">
                             <div className="flex items-center gap-2 overflow-hidden">
                               <FolderOpen className="size-4 text-text-secondary flex-shrink-0" />
                               <span className="font-medium truncate">
@@ -909,7 +919,7 @@ const SkillsPage: React.FC = () => {
         <ListFilterBar
           leftPanel={skillsListBreadcrumb}
           showFilter={false}
-          icon="skills"
+          icon="file"
         >
           <div className="flex items-center gap-2">
             <TooltipProvider>
@@ -1007,7 +1017,7 @@ const SkillsPage: React.FC = () => {
               </div>
             )}
           </div>
-        ) : (
+        ) : viewMode === 'grid' ? (
           <CardContainer className="flex-1 overflow-auto">
             {displayedSkills.map((skill) => (
               <SkillCard
@@ -1019,6 +1029,99 @@ const SkillsPage: React.FC = () => {
               />
             ))}
           </CardContainer>
+        ) : (
+          <div className="flex-1 overflow-auto border border-border rounded-lg">
+            <table className="w-full" style={{ tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '20vw' }} />
+                <col style={{ width: '160px' }} />
+                <col style={{ width: '120px' }} />
+                <col style={{ width: '96px' }} />
+              </colgroup>
+              <thead className="bg-bg-title sticky top-0">
+                <tr>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-text-title">
+                    {t('skills.skillName') || 'Name'}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-text-title">
+                    {t('skills.source') || 'Source'}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-text-title">
+                    {t('skills.version') || 'Version'}
+                  </th>
+                  <th className="px-4 py-3 text-right text-sm font-medium text-text-title">
+                    {t('common.action') || 'Action'}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {displayedSkills.map((skill) => (
+                  <tr
+                    key={skill.id}
+                    className="hover:bg-bg-secondary/50 cursor-pointer transition-colors"
+                    onClick={() => handleViewSkill(skill)}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        {skill.source_type === 'git' ? (
+                          <GitBranch className="size-4 text-accent-primary flex-shrink-0" />
+                        ) : skill.source_type === 'local' ? (
+                          <FolderOpen className="size-4 text-state-success flex-shrink-0" />
+                        ) : (
+                          <FileText className="size-4 text-purple-500 flex-shrink-0" />
+                        )}
+                        <span className="font-medium truncate">
+                          {skill.name}
+                        </span>
+                      </div>
+                      {skill.description && (
+                        <p className="text-text-secondary text-xs mt-1 truncate">
+                          {skill.description}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-text-secondary capitalize">
+                      {skill.source_type}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-text-secondary">
+                      {skill.metadata?.version || '-'}
+                    </td>
+                    <td
+                      className="px-4 py-3 text-right"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-text-secondary hover:text-accent-primary"
+                        onClick={(e: React.MouseEvent) => {
+                          e.stopPropagation();
+                          handleViewSkill(skill);
+                        }}
+                      >
+                        <Eye className="size-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-text-secondary hover:text-red-500"
+                        onClick={(e: React.MouseEvent) => {
+                          e.stopPropagation();
+                          handleDelete(
+                            skill.id,
+                            skill.name,
+                            (skill as any)._folderId,
+                          );
+                        }}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
