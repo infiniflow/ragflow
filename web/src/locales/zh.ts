@@ -33,6 +33,8 @@ export default {
       languagePlaceholder: '请选择语言',
       copy: '复制',
       copied: '复制成功',
+      viewMore: '查看更多',
+      viewLess: '收起',
       comingSoon: '即将推出',
       download: '下载',
       close: '关闭',

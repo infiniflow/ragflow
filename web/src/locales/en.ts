@@ -43,6 +43,8 @@ export default {
       languagePlaceholder: 'select your language',
       copy: 'Copy',
       copied: 'Copied',
+      viewMore: 'View more',
+      viewLess: 'View less',
       comingSoon: 'Coming soon',
       download: 'Download',
       close: 'Close',
