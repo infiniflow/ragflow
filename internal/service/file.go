@@ -17,12 +17,15 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"mime/multipart"
 	"os"
 	"path/filepath"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/logger"
 	"ragflow/internal/storage"
 	"ragflow/internal/util"
 	"strings"
@@ -69,9 +72,9 @@ func (s *FileService) GetRootFolder(tenantID string) (map[string]interface{}, er
 }
 
 // ListFiles lists files by parent folder ID (matching Python /files endpoint)
-// This method includes init_knowledgebase_docs initialization when parent_id is empty
+// This method includes init_dataset_docs initialization when parent_id is empty
 func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, orderby string, desc bool, keywords string) (*ListFilesResponse, error) {
-	// If pfID is empty, get root folder and initialize knowledgebase docs
+	// If pfID is empty, get root folder and initialize dataset docs
 	if pfID == "" {
 		rootFolder, err := s.fileDAO.GetRootFolder(tenantID)
 		if err != nil {
@@ -79,9 +82,9 @@ func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, order
 		}
 		pfID = rootFolder.ID
 
-		// Initialize knowledgebase docs (matching Python init_knowledgebase_docs logic)
-		if err := s.initKnowledgebaseDocs(pfID, tenantID); err != nil {
-			return nil, fmt.Errorf("failed to initialize knowledgebase docs: %w", err)
+		// Initialize dataset docs (matching Python init_knowledgebase_docs logic)
+		if err := s.initDatasetDocs(pfID, tenantID); err != nil {
+			return nil, fmt.Errorf("failed to initialize dataset docs: %w", err)
 		}
 	}
 
@@ -137,17 +140,17 @@ func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, order
 	}, nil
 }
 
-// initKnowledgebaseDocs initializes knowledgebase documents for tenant
-// This matches Python's FileService.init_knowledgebase_docs method
-func (s *FileService) initKnowledgebaseDocs(rootID, tenantID string) error {
-	return s.fileDAO.InitKnowledgebaseDocs(rootID, tenantID, s.file2DocumentDAO)
+// initDatasetDocs initializes dataset documents for tenant
+// This matches Python's FileService.init_dataset_docs method
+func (s *FileService) initDatasetDocs(rootID, tenantID string) error {
+	return s.fileDAO.InitDatasetDocs(rootID, tenantID, s.file2DocumentDAO)
 }
 
-// KnowledgebaseFolderName is the folder name for knowledgebase
-const KnowledgebaseFolderName = ".knowledgebase"
+// DatasetFolderName is the folder name for dataset
+const DatasetFolderName = ".knowledgebase"
 
-// FileSourceKnowledgebase represents knowledgebase as file source
-const FileSourceKnowledgebase = "knowledgebase"
+// FileSourceDataset represents dataset as file source
+const FileSourceDataset = "knowledgebase"
 
 // toFileResponse converts file model to response format
 func (s *FileService) toFileResponse(file *entity.File) map[string]interface{} {
@@ -458,4 +461,211 @@ func (s *FileService) CreateFolder(tenantID, name, parentID, fileType string) (m
 	}
 
 	return s.toFileResponse(folder), nil
+}
+
+// DeleteFiles deletes files by IDs
+// Returns (success, message) where success is true if all files were deleted
+func (s *FileService) DeleteFiles(uid string, fileIDs []string) (bool, string) {
+	for _, fileID := range fileIDs {
+		// 1. Get file
+		file, err := s.fileDAO.GetByID(fileID)
+		if err != nil || file == nil {
+			return false, "File or Folder not found!"
+		}
+
+		// 2. Check tenant_id
+		if file.TenantID == "" {
+			return false, "Tenant not found!"
+		}
+
+		// 3. Permission check
+		if !s.checkFileTeamPermission(file, uid) {
+			return false, "No authorization."
+		}
+
+		// 4. Skip dataset source files
+		if file.SourceType == FileSourceDataset {
+			continue
+		}
+
+		// 5. Delete based on type
+		if file.Type == FileTypeFolder {
+			if err := s.deleteFolderRecursive(file, uid); err != nil {
+				return false, fmt.Sprintf("Failed to delete folder: %v", err)
+			}
+		} else {
+			if err := s.deleteSingleFile(file); err != nil {
+				return false, fmt.Sprintf("Failed to delete file: %v", err)
+			}
+		}
+	}
+
+	return true, ""
+}
+
+// checkFileTeamPermission checks if user has permission to access the file
+// Matches Python's check_file_team_permission function
+func (s *FileService) checkFileTeamPermission(file *entity.File, uid string) bool {
+	// File's tenant directly authorized
+	if file.TenantID == uid {
+		return true
+	}
+
+	// Check KB permissions
+	datasetIDs, err := s.fileDAO.GetDatasetIDByFileID(file.ID)
+	if err != nil || len(datasetIDs) == 0 {
+		return false
+	}
+
+	kbDAO := dao.NewKnowledgebaseDAO()
+	userTenantDAO := dao.NewUserTenantDAO()
+
+	for _, datasetID := range datasetIDs {
+		ds, err := kbDAO.GetByID(datasetID)
+		if err != nil || ds == nil {
+			continue
+		}
+
+		// Check KB tenant permission
+		if s.checkDatasetTeamPermission(ds, uid, userTenantDAO) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// checkDatasetTeamPermission checks if user has permission to access the dataset
+// Matches Python's check_kb_team_permission function
+func (s *FileService) checkDatasetTeamPermission(ds *entity.Knowledgebase, uid string, userTenantDAO *dao.UserTenantDAO) bool {
+	// KB's tenant directly authorized
+	if ds.TenantID == uid {
+		return true
+	}
+
+	// Check permission type
+	permission := ds.Permission
+	if permission != string(entity.TenantPermissionTeam) {
+		return false
+	}
+
+	// Check if user joined the tenant
+	joinedTenantIDs, err := userTenantDAO.GetTenantIDsByUserID(uid)
+	if err != nil || len(joinedTenantIDs) == 0 {
+		return false
+	}
+
+	for _, tenantID := range joinedTenantIDs {
+		if tenantID == ds.TenantID {
+			return true
+		}
+	}
+
+	return false
+}
+
+// deleteSingleFile deletes a single file (not folder)
+// Matches Python's _delete_single_file function
+func (s *FileService) deleteSingleFile(file *entity.File) error {
+	// 1. Delete storage object
+	if file.Location != nil && *file.Location != "" {
+		storageImpl := storage.GetStorageFactory().GetStorage()
+		if storageImpl != nil {
+			if err := storageImpl.Remove(file.ParentID, *file.Location); err != nil {
+				logger.Logger.Error(fmt.Sprintf("Fail to remove object: %s/%s, error: %v", file.ParentID, *file.Location, err))
+			}
+		}
+	}
+
+	// 2. Handle associated documents
+	informs, err := s.file2DocumentDAO.GetByFileID(file.ID)
+	if err == nil && len(informs) > 0 {
+		documentDAO := dao.NewDocumentDAO()
+		datasetDAO := dao.NewKnowledgebaseDAO()
+
+		for _, inform := range informs {
+			if inform.DocumentID == nil {
+				continue
+			}
+			docID := *inform.DocumentID
+
+			doc, err := documentDAO.GetByID(docID)
+			if err == nil && doc != nil {
+				// Get tenant ID from KB
+				ds, err := datasetDAO.GetByID(doc.KbID)
+				if err == nil && ds != nil {
+					tenantID := ds.TenantID
+					if tenantID != "" {
+						// Delete from document engine
+						s.deleteDocumentFromEngine(doc, tenantID)
+					}
+				}
+
+				// Delete document record
+				if err := documentDAO.Delete(docID); err != nil {
+					logger.Logger.Error(fmt.Sprintf("Fail to delete document: %s, error: %v", docID, err))
+				}
+			}
+
+		}
+
+		// Delete file2document mapping (outside the loop, called once - matching Python behavior)
+		s.file2DocumentDAO.DeleteByFileID(file.ID)
+	}
+
+	// 3. Delete file record (unconditional, matching Python)
+	if err := s.fileDAO.Delete(file.ID); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// deleteDocumentFromEngine deletes a document from the document engine
+func (s *FileService) deleteDocumentFromEngine(doc *entity.Document, tenantID string) {
+	// Get document engine
+	docEngine := engine.Get()
+	if docEngine == nil {
+		return
+	}
+
+	// Build index name: ragflow_<tenant_id>_<kb_id>
+	indexName := fmt.Sprintf("ragflow_%s_%s", tenantID, doc.KbID)
+
+	// Delete document from engine
+	ctx := context.Background()
+	if err := docEngine.DeleteDocument(ctx, indexName, doc.ID); err != nil {
+		logger.Logger.Error(fmt.Sprintf("Fail to delete document from engine: %s, index: %s, error: %v", doc.ID, indexName, err))
+	}
+}
+
+// deleteFolderRecursive recursively deletes a folder and its contents
+// Matches Python's _delete_folder_recursive function
+func (s *FileService) deleteFolderRecursive(folder *entity.File, uid string) error {
+	// Get all sub-files
+	subFiles, err := s.fileDAO.ListByParentID(folder.ID)
+	if err != nil {
+		return err
+	}
+
+	for _, subFile := range subFiles {
+		if subFile.Type == FileTypeFolder {
+			// Recursively delete subfolder
+			if err := s.deleteFolderRecursive(subFile, uid); err != nil {
+				return err
+			}
+		} else {
+			// Delete single file
+			if err := s.deleteSingleFile(subFile); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Delete the folder itself
+	if err := s.fileDAO.Delete(folder.ID); err != nil {
+		return err
+	}
+
+	return nil
 }
