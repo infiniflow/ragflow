@@ -213,7 +213,7 @@ const SkillsPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!selectedHubId) return;
+    if (!selectedHubId || !selectedHubName) return;
     // Clear search results when switching hubs
     setSearchResults([]);
     setHasSearched(false);
@@ -481,6 +481,7 @@ const SkillsPage: React.FC = () => {
           setSearchResults([]);
           setHasSearched(false);
           setSearchQuery('');
+          fetchSkills(''); // Clear skills data
         }}
       >
         {t('skills.title')}
@@ -927,9 +928,38 @@ const SkillsPage: React.FC = () => {
         <ListFilterBar
           leftPanel={skillsListBreadcrumb}
           showFilter={false}
+          showSearch={false}
           icon="file"
         >
           <div className="flex items-center gap-2">
+            {/* Search skills */}
+            <div className="relative">
+              <Input
+                placeholder={
+                  t('skills.searchPlaceholder') || 'Search skills...'
+                }
+                value={searchQuery}
+                onChange={handleSearchInputChange}
+                onKeyDown={handleSearchKeyDown}
+                className="w-[200px] pr-10"
+              />
+              <button
+                onClick={handleSearchClick}
+                disabled={isSearching}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Search className="size-4" />
+              </button>
+            </div>
+            {/* Grid/List toggle */}
+            <Segmented
+              value={viewMode}
+              onChange={(v) => setViewMode(v as 'grid' | 'list')}
+              options={[
+                { value: 'grid', label: <LayoutGrid className="size-4" /> },
+                { value: 'list', label: <List className="size-4" /> },
+              ]}
+            />
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -967,34 +997,6 @@ const SkillsPage: React.FC = () => {
       </header>
 
       <div className="flex-1 px-5 flex flex-col overflow-hidden">
-        {/* Search and View Controls */}
-        <div className="flex justify-between items-center mb-4">
-          <div className="relative">
-            <Input
-              placeholder={t('skills.searchPlaceholder') || 'Search skills...'}
-              value={searchQuery}
-              onChange={handleSearchInputChange}
-              onKeyDown={handleSearchKeyDown}
-              className="w-[300px] pr-10"
-            />
-            <button
-              onClick={handleSearchClick}
-              disabled={isSearching}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Search className="size-4" />
-            </button>
-          </div>
-          <Segmented
-            value={viewMode}
-            onChange={(v) => setViewMode(v as 'grid' | 'list')}
-            options={[
-              { value: 'grid', label: <LayoutGrid className="size-4" /> },
-              { value: 'list', label: <List className="size-4" /> },
-            ]}
-          />
-        </div>
-
         {/* Skills List */}
         {isLoading ? (
           <div className="flex-1 flex items-center justify-center">

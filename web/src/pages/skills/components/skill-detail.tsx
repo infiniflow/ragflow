@@ -305,8 +305,8 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-bg-base">
-      {/* Page Header with Back Button - 在边框之上 */}
-      <header className="flex items-center justify-between px-5 py-4 bg-bg-base">
+      {/* Page Header with Back Button - 与下方容器对齐 */}
+      <header className="flex items-center justify-between px-6 py-4 bg-bg-base">
         <Button variant="outline" onClick={onClose}>
           <ArrowBigLeft />
           {t('common.back') || 'Back'}
@@ -341,11 +341,11 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
       </header>
 
       {/* Main Content Area with Border */}
-      <div className="flex-1 mx-4 mb-4 border border-border rounded-lg overflow-hidden bg-bg-base">
+      <div className="flex-1 mx-6 mb-4 border-0.5 border-border-button rounded-lg overflow-hidden bg-bg-base">
         <div className="flex h-full">
           {/* Sidebar - File Tree */}
-          <div className="w-80 border-r border-border flex flex-col bg-bg-base">
-            <div className="p-4 border-b border-border bg-bg-base">
+          <div className="w-80 border-r border-r-0.5 border-border-button flex flex-col bg-bg-base">
+            <div className="p-4 border-b border-b-0.5 border-border-button bg-bg-base">
               <h2 className="font-semibold text-lg truncate">{skill.name}</h2>
               {skill.metadata?.description && (
                 <p className="text-text-secondary text-xs mt-2">

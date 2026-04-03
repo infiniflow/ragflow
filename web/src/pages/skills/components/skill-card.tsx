@@ -46,7 +46,7 @@ const SkillCard: React.FC<SkillCardProps> = ({
   return (
     <TooltipProvider>
       <Card
-        className="cursor-pointer hover:shadow-md transition-shadow bg-bg-input"
+        className="cursor-pointer hover:shadow-md transition-all bg-bg-card border border-border rounded-xl p-4"
         onClick={() => onView(skill)}
       >
         <div className="flex gap-4">
