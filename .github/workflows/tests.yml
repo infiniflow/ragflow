@@ -162,7 +162,7 @@ jobs:
           source .venv/bin/activate
           which pytest || echo "pytest not in PATH"
           echo "Start to run unit test"
-          python3 run_tests.py
+          python3 run_tests.py -i
 
       - name: Prepare function test environment
         working-directory: docker
