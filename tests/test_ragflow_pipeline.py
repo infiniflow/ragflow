@@ -30,8 +30,9 @@ Model sizes (faster-whisper / openai-whisper):
   large  : best accuracy            — recommended for GCP GPU (~8s/video)
 
 Dataset naming convention:
-  {Brand}_{Model}_{Year}_{Market}_{Trim}_{SourceType}_{YYYYMMDD}_{HHMM}
-  Example: Opel_Corsa_2023_UK_All_Video_20260327_2005
+  {Brand}_{Model}_{Year}_{Market}_{Trim}_{YYYYMMDD}_{HHMM}
+  Example: Opel_Corsa_2023_UK_All_20260403_1143
+  All source types (video, PDF, web, images) share one dataset per analysis run.
 """
 
 import os
@@ -121,68 +122,62 @@ def _normalize_market(market: str) -> str:
 
 
 def _build_dataset_name(brand: str, car_model: str, year: str,
-                         market: str, trim: str, source_type: str) -> str:
+                         market: str, trim: str, source_type: str = "") -> str:
     """
     Build standardized dataset name:
-    {Brand}_{Model}_{Year}_{Market}_{Trim}_{SourceType}_{YYYYMMDD}_{HHMM}
-    Example: Opel_Corsa_2023_UK_All_Video_20260327_1445
+    {Brand}_{Model}_{Year}_{Market}_{Trim}_{YYYYMMDD}_{HHMM}
+    Example: Opel_Corsa_2023_UK_All_20260403_1143
+    source_type is no longer in the name — all source types share one dataset.
+    source_type param kept for backward compatibility but ignored.
     """
     from datetime import datetime
     now = datetime.now()
-    return f"{brand}_{car_model}_{year}_{market}_{trim}_{source_type}_{now.strftime('%Y%m%d')}_{now.strftime('%H%M')}"
+    return f"{brand}_{car_model}_{year}_{market}_{trim}_{now.strftime('%Y%m%d')}_{now.strftime('%H%M')}"
 
 
-def create_video_dataset(
+def create_analysis_dataset(
     cfg: dict,
     brand: str,
     car_model: str,
     year: str,
     market: str,
+    trim: str = "All",
     whisper_backend: str = "youtube-transcript-api",
     whisper_model: str = "base",
-    trim: str = "All",
     openai_api_key: str = "",
 ) -> dict:
     """
-    MCP tool: create_video_dataset
-    Create a RagFlow dataset for YouTube video ingestion.
-    Dataset name is auto-generated: {Brand}_{Model}_{Year}_{Market}_{Trim}_Video_{YYYYMMDD}_{HHMM}
+    MCP tool: create_analysis_dataset
+    Create a single RagFlow dataset for one analysis run.
+    All source types (video, PDF, web, images) share this dataset.
+    Dataset name: {Brand}_{Model}_{Year}_{Market}_{Trim}_{YYYYMMDD}_{HHMM}
+    chunk_method is "naive" by default — video documents override per-document
+    via parser_id="video" set in the ingest_video endpoint.
 
     Args:
         cfg             : config dict from load_config()
-        brand           : car brand e.g. "Opel", "Peugeot", "Fiat"
-        car_model       : car model e.g. "Corsa", "208", "500"
-        year            : model year e.g. "2023", "2024", "2025"
-        market          : target market — ISO code or full name:
-                            "UK" or "United Kingdom"
-                            "IE" or "Ireland"
-                            "FR" or "France"
-                            "DE" or "Germany"
-        whisper_backend : transcription backend:
-                            "youtube-transcript-api"  — fast, captions only (default)
-                            "faster-whisper"          — local CPU/GPU
-                            "openai-whisper"          — local CPU/GPU (original)
-                            "openai-api"              — cloud (needs key)
-        whisper_model   : "tiny" | "base" | "small" | "medium" | "large"
-        trim            : car trim level e.g. "GS", "Elegance", "All" (default: "All")
-        openai_api_key  : only for "openai-api" backend
+        brand           : car brand e.g. "Opel", "Peugeot"
+        car_model       : car model e.g. "Corsa", "208"
+        year            : model year e.g. "2023", "2025"
+        market          : target market ISO code or full name
+        trim            : car trim level (default: "All")
+        whisper_backend : default Whisper backend for video docs in this dataset
+        whisper_model   : Whisper model size for local backends
+        openai_api_key  : OpenAI key for "openai-api" backend
 
     Returns:
         dict with dataset metadata including "id" and "name"
     """
     from datetime import date
-    if not openai_api_key:
-        openai_api_key = cfg.get("openai_api_key", "")
-
     market_iso = _normalize_market(market)
-    name = _build_dataset_name(brand, car_model, year, market_iso, trim, "Video")
+    name = _build_dataset_name(brand, car_model, year, market_iso, trim)
     retrieval_date = date.today().isoformat()
 
-    # business fields (brand, car_model etc.) are stored in DocMetadataService
-    # via the /videos endpoint — they do not belong in ParserConfig (Fix 5)
+    # dataset-level parser_config: only technical Whisper defaults
+    # business fields are stored per-document in DocMetadataService
     parser_config = {
-        "whisper_backend":  whisper_backend,
-        "whisper_model":    whisper_model,
+        "whisper_backend": whisper_backend,
+        "whisper_model":   whisper_model,
     }
     if openai_api_key and whisper_backend == "openai-api":
         parser_config["openai_api_key"] = openai_api_key
@@ -192,199 +187,45 @@ def create_video_dataset(
         headers=_headers(cfg),
         json={
             "name":            name,
-            "chunk_method":    "video",
+            "chunk_method":    "naive",
             "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
             "parser_config":   parser_config,
         },
     )
     data = resp.json()
     if data.get("code") != 0:
-        raise RuntimeError(f"create_video_dataset failed: {data.get('message')}")
-    print(f"✅ Video Dataset created: {data['data']['name']}")
+        raise RuntimeError(f"create_analysis_dataset failed: {data.get('message')}")
+    print(f"✅ Analysis Dataset created: {data['data']['name']}")
     print(f"   id={data['data']['id']}")
     print(f"   brand={brand}, car_model={car_model}, year={year}, market={market_iso}, trim={trim}")
     print(f"   whisper_backend={whisper_backend}, retrieval_date={retrieval_date}")
     return data["data"]
 
 
-def create_pdf_dataset(
-    cfg: dict,
-    brand: str,
-    car_model: str,
-    year: str,
-    market: str,
-    trim: str = "All",
-) -> dict:
-    """
-    MCP tool: create_pdf_dataset
-    Create a RagFlow dataset for PDF/HTML/Image/Excel ingestion (DeepDoc parser).
-    Dataset name is auto-generated: {Brand}_{Model}_{Year}_{Market}_{Trim}_Docs_{YYYYMMDD}_{HHMM}
-
-    Args:
-        cfg       : config dict from load_config()
-        brand     : car brand e.g. "Opel", "Peugeot"
-        car_model : car model e.g. "Corsa", "208"
-        year      : model year e.g. "2023", "2025"
-        market    : target market — ISO code or full name
-        trim      : car trim level (default: "All")
-
-    Returns:
-        dict with dataset metadata including "id" and "name"
-    """
-    from datetime import date
-    market_iso = _normalize_market(market)
-    name = _build_dataset_name(brand, car_model, year, market_iso, trim, "Docs")
-    retrieval_date = date.today().isoformat()
-
-    resp = requests.post(
-        f"{cfg['base_url']}/api/v1/datasets",
-        headers=_headers(cfg),
-        json={
-            "name":            name,
-            "chunk_method":    "naive",
-            "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
-            "parser_config": {
-                "brand":          brand,
-                "car_model":      car_model,
-                "year":           year,
-                "market":         market_iso,
-                "trim":           trim,
-                "source_type":    "Docs",
-                "retrieval_date": retrieval_date,
-            },
-        },
-    )
-    data = resp.json()
-    if data.get("code") != 0:
-        raise RuntimeError(f"create_pdf_dataset failed: {data.get('message')}")
-    print(f"✅ Docs Dataset created: {data['data']['name']}")
-    print(f"   id={data['data']['id']}")
-    print(f"   brand={brand}, car_model={car_model}, year={year}, market={market_iso}, trim={trim}")
-    print(f"   retrieval_date={retrieval_date}")
-    return data["data"]
+# kept for backward compatibility
+def create_video_dataset(cfg, brand, car_model, year, market,
+                         whisper_backend="youtube-transcript-api",
+                         whisper_model="base", trim="All", openai_api_key=""):
+    """Backward-compatible wrapper — use create_analysis_dataset() instead."""
+    return create_analysis_dataset(cfg, brand, car_model, year, market,
+                                   trim=trim, whisper_backend=whisper_backend,
+                                   whisper_model=whisper_model,
+                                   openai_api_key=openai_api_key)
 
 
-def create_web_dataset(
-    cfg: dict,
-    brand: str,
-    car_model: str,
-    year: str,
-    market: str,
-    trim: str = "All",
-) -> dict:
-    """
-    MCP tool: create_web_dataset
-    Create a RagFlow dataset for HTML/web page ingestion (DeepDoc naive parser).
-    Dataset name is auto-generated:
-        {Brand}_{Model}_{Year}_{Market}_{Trim}_Web_{YYYYMMDD}_{HHMM}
-
-    chunk_method is "naive" — DeepDoc handles HTML structure automatically,
-    stripping tags and chunking by semantic paragraph boundaries.
-
-    Args:
-        cfg       : config dict from load_config()
-        brand     : car brand e.g. "Opel", "Peugeot"
-        car_model : car model e.g. "Corsa", "208"
-        year      : model year e.g. "2023", "2025"
-        market    : target market — ISO code or full name
-        trim      : car trim level (default: "All")
-
-    Returns:
-        dict with dataset metadata including "id" and "name"
-    """
-    from datetime import date
-    market_iso = _normalize_market(market)
-    name = _build_dataset_name(brand, car_model, year, market_iso, trim, "Web")
-    retrieval_date = date.today().isoformat()
-
-    resp = requests.post(
-        f"{cfg['base_url']}/api/v1/datasets",
-        headers=_headers(cfg),
-        json={
-            "name":            name,
-            "chunk_method":    "naive",
-            "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
-            "parser_config": {
-                "brand":          brand,
-                "car_model":      car_model,
-                "year":           year,
-                "market":         market_iso,
-                "trim":           trim,
-                "source_type":    "Web",
-                "retrieval_date": retrieval_date,
-            },
-        },
-    )
-    data = resp.json()
-    if data.get("code") != 0:
-        raise RuntimeError(f"create_web_dataset failed: {data.get('message')}")
-    print(f"✅ Web Dataset created: {data['data']['name']}")
-    print(f"   id={data['data']['id']}")
-    print(f"   brand={brand}, car_model={car_model}, year={year}, market={market_iso}, trim={trim}")
-    print(f"   retrieval_date={retrieval_date}")
-    return data["data"]
+def create_pdf_dataset(cfg, brand, car_model, year, market, trim="All"):
+    """Backward-compatible wrapper — use create_analysis_dataset() instead."""
+    return create_analysis_dataset(cfg, brand, car_model, year, market, trim=trim)
 
 
-def create_image_dataset(
-    cfg: dict,
-    brand: str,
-    car_model: str,
-    year: str,
-    market: str,
-    trim: str = "All",
-) -> dict:
-    """
-    MCP tool: create_image_dataset
-    Create a RagFlow dataset for image ingestion (DeepDoc picture parser).
-    Dataset name is auto-generated:
-        {Brand}_{Model}_{Year}_{Market}_{Trim}_Images_{YYYYMMDD}_{HHMM}
+def create_web_dataset(cfg, brand, car_model, year, market, trim="All"):
+    """Backward-compatible wrapper — use create_analysis_dataset() instead."""
+    return create_analysis_dataset(cfg, brand, car_model, year, market, trim=trim)
 
-    chunk_method is "picture" — DeepDoc vision parser extracts text via OCR
-    and generates semantic descriptions of visual content (specs, diagrams,
-    brochure images, badge/logo photos).
 
-    Args:
-        cfg       : config dict from load_config()
-        brand     : car brand e.g. "Opel", "Peugeot"
-        car_model : car model e.g. "Corsa", "208"
-        year      : model year e.g. "2023", "2025"
-        market    : target market — ISO code or full name
-        trim      : car trim level (default: "All")
-
-    Returns:
-        dict with dataset metadata including "id" and "name"
-    """
-    from datetime import date
-    market_iso = _normalize_market(market)
-    name = _build_dataset_name(brand, car_model, year, market_iso, trim, "Images")
-    retrieval_date = date.today().isoformat()
-
-    resp = requests.post(
-        f"{cfg['base_url']}/api/v1/datasets",
-        headers=_headers(cfg),
-        json={
-            "name":            name,
-            "chunk_method":    "picture",
-            "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
-            "parser_config": {
-                "brand":          brand,
-                "car_model":      car_model,
-                "year":           year,
-                "market":         market_iso,
-                "trim":           trim,
-                "source_type":    "Images",
-                "retrieval_date": retrieval_date,
-            },
-        },
-    )
-    data = resp.json()
-    if data.get("code") != 0:
-        raise RuntimeError(f"create_image_dataset failed: {data.get('message')}")
-    print(f"✅ Images Dataset created: {data['data']['name']}")
-    print(f"   id={data['data']['id']}")
-    print(f"   brand={brand}, car_model={car_model}, year={year}, market={market_iso}, trim={trim}")
-    print(f"   retrieval_date={retrieval_date}")
-    return data["data"]
+def create_image_dataset(cfg, brand, car_model, year, market, trim="All"):
+    """Backward-compatible wrapper — use create_analysis_dataset() instead."""
+    return create_analysis_dataset(cfg, brand, car_model, year, market, trim=trim)
 
 
 def delete_dataset(cfg: dict, dataset_id: str) -> bool:
@@ -1035,12 +876,12 @@ def run_video_pipeline(
 
     start = time.time()
 
-    # Step 1 — Create dataset
-    dataset = create_video_dataset(
+    # Step 1 — Create analysis dataset (all source types share one dataset)
+    dataset = create_analysis_dataset(
         cfg, brand, car_model, year, market,
+        trim=trim,
         whisper_backend=whisper_backend,
         whisper_model=whisper_model,
-        trim=trim,
         openai_api_key=openai_api_key,
     )
     dataset_id = dataset["id"]
@@ -1129,7 +970,7 @@ def run_pdf_pipeline(
     start = time.time()
 
     # Step 1 — Create dataset
-    dataset = create_pdf_dataset(cfg, brand, car_model, year, market, trim)
+    dataset = create_analysis_dataset(cfg, brand, car_model, year, market, trim=trim)
     dataset_id = dataset["id"]
 
     # Step 2 — Upload PDF

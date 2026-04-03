@@ -765,11 +765,8 @@ async def ingest_video(tenant_id, dataset_id):
     if not ok:
         return get_error_data_result(message="Invalid dataset ID")
 
-    if kb.parser_id != "video":
-        return get_error_data_result(
-            message=f"Dataset chunk_method is '{kb.parser_id}', expected 'video'. "
-                    "Create the dataset with chunk_method='video' first."
-        )
+    # parser_id check removed — video documents can be ingested into any dataset
+    # (one dataset per analysis run architecture — all source types share one dataset)
 
     # Build the document record — no file binary, no MinIO upload
     doc_id = get_uuid()
