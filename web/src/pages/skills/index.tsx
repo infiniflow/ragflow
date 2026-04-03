@@ -3,6 +3,7 @@ import { CardContainer } from '@/components/card-container';
 import { EmptyCardType } from '@/components/empty/constant';
 import { EmptyAppCard } from '@/components/empty/empty';
 import ListFilterBar from '@/components/list-filter-bar';
+import SvgIcon from '@/components/svg-icon';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -28,9 +29,7 @@ import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
 import {
   Eye,
-  FileText,
   FolderOpen,
-  GitBranch,
   LayoutGrid,
   List,
   Pencil,
@@ -558,7 +557,12 @@ const SkillsPage: React.FC = () => {
                       }}
                     >
                       <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1 min-w-0">
+                        <div className="flex-1 min-w-0 flex items-center gap-2">
+                          <SvgIcon
+                            name="home-icon/skills-hub"
+                            width={20}
+                            height={20}
+                          />
                           <h3 className="font-semibold text-lg truncate">
                             {hub.name}
                           </h3>
@@ -670,7 +674,11 @@ const SkillsPage: React.FC = () => {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2 overflow-hidden">
-                              <FolderOpen className="size-4 text-text-secondary flex-shrink-0" />
+                              <SvgIcon
+                                name="home-icon/skills-hub"
+                                width={16}
+                                height={16}
+                              />
                               <span className="font-medium truncate">
                                 {hub.name}
                               </span>
@@ -1063,13 +1071,11 @@ const SkillsPage: React.FC = () => {
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 overflow-hidden">
-                        {skill.source_type === 'git' ? (
-                          <GitBranch className="size-4 text-accent-primary flex-shrink-0" />
-                        ) : skill.source_type === 'local' ? (
-                          <FolderOpen className="size-4 text-state-success flex-shrink-0" />
-                        ) : (
-                          <FileText className="size-4 text-purple-500 flex-shrink-0" />
-                        )}
+                        <SvgIcon
+                          name="home-icon/skill-folder"
+                          width={16}
+                          height={16}
+                        />
                         <span className="font-medium truncate">
                           {skill.name}
                         </span>

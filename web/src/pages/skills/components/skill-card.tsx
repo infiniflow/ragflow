@@ -1,3 +1,4 @@
+import SvgIcon from '@/components/svg-icon';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,14 +19,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-  Eye,
-  FileText,
-  FolderOpen,
-  GitBranch,
-  Tag,
-  Trash2,
-} from 'lucide-react';
+import { Eye, Tag, Trash2 } from 'lucide-react';
 import React, { memo } from 'react';
 import type { Skill } from '../types';
 
@@ -43,14 +37,7 @@ const SkillCard: React.FC<SkillCardProps> = ({
   formatRelative,
 }) => {
   const getIcon = () => {
-    switch (skill.source_type) {
-      case 'git':
-        return <GitBranch className="size-6 text-accent-primary" />;
-      case 'local':
-        return <FolderOpen className="size-6 text-state-success" />;
-      default:
-        return <FileText className="size-6 text-purple-500" />;
-    }
+    return <SvgIcon name="home-icon/skill-folder" width={24} height={24} />;
   };
 
   const fileCount = skill.files.filter((f) => !f.is_dir).length;

@@ -305,8 +305,8 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-bg-base">
-      {/* Page Header with Back Button */}
-      <header className="flex items-center justify-between px-5 py-4 border-b border-border bg-bg-base">
+      {/* Page Header with Back Button - 在边框之上 */}
+      <header className="flex items-center justify-between px-5 py-4 bg-bg-base">
         <Button variant="outline" onClick={onClose}>
           <ArrowBigLeft />
           {t('common.back') || 'Back'}
@@ -340,67 +340,70 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <div className="flex flex-1 overflow-hidden bg-bg-base">
-        {/* Sidebar - File Tree */}
-        <div className="w-80 border-r border-border flex flex-col bg-bg-base">
-          <div className="p-4 border-b border-border bg-bg-base">
-            <h2 className="font-semibold text-lg truncate">{skill.name}</h2>
-            {skill.metadata?.description && (
-              <p className="text-text-secondary text-xs mt-2">
-                {skill.metadata.description}
-              </p>
-            )}
-            <div className="flex flex-wrap gap-1 mt-2">
-              {skill.metadata?.tags?.map((tag) => (
-                <Badge key={tag} variant="secondary">
-                  {tag}
-                </Badge>
-              ))}
+      {/* Main Content Area with Border */}
+      <div className="flex-1 mx-4 mb-4 border border-border rounded-lg overflow-hidden bg-bg-base">
+        <div className="flex h-full">
+          {/* Sidebar - File Tree */}
+          <div className="w-80 border-r border-border flex flex-col bg-bg-base">
+            <div className="p-4 border-b border-border bg-bg-base">
+              <h2 className="font-semibold text-lg truncate">{skill.name}</h2>
+              {skill.metadata?.description && (
+                <p className="text-text-secondary text-xs mt-2">
+                  {skill.metadata.description}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-1 mt-2">
+                {skill.metadata?.tags?.map((tag) => (
+                  <Badge key={tag} variant="secondary">
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto p-2">
+              {/* File Tree */}
+              {versionLoading ? (
+                <div className="flex justify-center py-10">
+                  <Spin size="default" />
+                </div>
+              ) : currentFiles.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-text-secondary">
+                  <FolderOpen className="size-8 mb-2 opacity-50" />
+                  <p className="text-sm">
+                    {skill?.source_type === 'search' &&
+                    !(skill as any)._folderId
+                      ? 'Please reindex skills in settings to view files'
+                      : t('skills.noFiles') || 'No files'}
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-text-secondary text-xs pl-2 mb-2">
+                    {t('skills.files') || 'Files'}
+                    {currentFiles.length > 0 && (
+                      <span className="ml-1 text-text-tertiary">
+                        ({currentFiles.filter((f) => !f.is_dir).length} files)
+                      </span>
+                    )}
+                  </p>
+                  <TreeView
+                    data={treeData}
+                    initialSelectedItemId={selectedFile || undefined}
+                    onSelectChange={handleSelect}
+                    expandAll
+                    defaultNodeIcon={FolderOpen}
+                    defaultLeafIcon={FileText}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="flex-1 overflow-auto p-2">
-            {/* File Tree */}
-            {versionLoading ? (
-              <div className="flex justify-center py-10">
-                <Spin size="default" />
-              </div>
-            ) : currentFiles.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 text-text-secondary">
-                <FolderOpen className="size-8 mb-2 opacity-50" />
-                <p className="text-sm">
-                  {skill?.source_type === 'search' && !(skill as any)._folderId
-                    ? 'Please reindex skills in settings to view files'
-                    : t('skills.noFiles') || 'No files'}
-                </p>
-              </div>
-            ) : (
-              <div>
-                <p className="text-text-secondary text-xs pl-2 mb-2">
-                  {t('skills.files') || 'Files'}
-                  {currentFiles.length > 0 && (
-                    <span className="ml-1 text-text-tertiary">
-                      ({currentFiles.filter((f) => !f.is_dir).length} files)
-                    </span>
-                  )}
-                </p>
-                <TreeView
-                  data={treeData}
-                  initialSelectedItemId={selectedFile || undefined}
-                  onSelectChange={handleSelect}
-                  expandAll
-                  defaultNodeIcon={FolderOpen}
-                  defaultLeafIcon={FileText}
-                />
-              </div>
-            )}
+          {/* Main Content */}
+          <div className="flex-1 overflow-auto p-6 bg-bg-base">
+            {renderFileContent()}
           </div>
-        </div>
-
-        {/* Main Content */}
-        <div className="flex-1 overflow-auto p-6 bg-bg-base">
-          {renderFileContent()}
         </div>
       </div>
     </div>

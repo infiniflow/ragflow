@@ -1,8 +1,8 @@
 import { FileIconMap } from '@/constants/file';
 import { cn } from '@/lib/utils';
 import { getExtension } from '@/utils/document-util';
-import { Settings } from 'lucide-react';
 import { CSSProperties } from 'react';
+import SvgIcon from './svg-icon';
 
 type IconFontType = {
   name: string;
@@ -41,7 +41,7 @@ export function FileIcon({
   if (isSkills) {
     return (
       <span className={cn('size-4', className)}>
-        <Settings className="size-4" />
+        <SvgIcon name="home-icon/skills" width={16} height={16} />
       </span>
     );
   }

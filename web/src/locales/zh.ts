@@ -136,6 +136,8 @@ export default {
       skillName: '技能名称',
       skillNamePlaceholder: '例如：my-awesome-skill',
       skillNameHelp: '只允许字母、数字、连字符和下划线',
+      source: '来源',
+      version: '版本',
       skillVersion: '版本号',
       skillVersionPlaceholder: '例如：1.0.0',
       versionFormatHelp: '版本号必须符合语义化版本格式（例如：1.0.0）',

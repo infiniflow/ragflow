@@ -154,6 +154,8 @@ export default {
       skillName: 'Skill Name',
       skillNamePlaceholder: 'e.g., my-awesome-skill',
       skillNameHelp: 'Only letters, numbers, hyphens and underscores allowed',
+      source: 'Source',
+      version: 'Version',
       skillVersion: 'Version',
       skillVersionPlaceholder: 'e.g., 1.0.0',
       versionFormatHelp: 'Version must be in semver format (e.g., 1.0.0)',
