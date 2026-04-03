@@ -313,6 +313,13 @@ def ingest_pdf(
     cfg: dict,
     dataset_id: str,
     file_path: str,
+    brand: str = "",
+    car_model: str = "",
+    year: str = "",
+    market: str = "",
+    trim: str = "All",
+    source_type: str = "Docs",
+    retrieval_date: str = "",
 ) -> dict:
     """
     MCP tool: ingest_pdf
@@ -348,6 +355,26 @@ def ingest_pdf(
         raise RuntimeError(f"ingest_pdf failed: {data.get('message')}")
     doc = data["data"][0]
     print(f"✅ PDF uploaded: {path.name} (doc_id={doc['id']})")
+    # store business metadata via DocMetadataService
+    if any([brand, car_model, year, market]):
+        from datetime import date as _date
+        import requests as _req
+        _headers = {"Authorization": f"Bearer {cfg['ragflow_api_key']}", "Content-Type": "application/json"}
+        _meta = {
+            "brand":          brand,
+            "car_model":      car_model,
+            "year":           year,
+            "market":         _normalize_market(market) if market else "",
+            "trim":           trim,
+            "source_type":    source_type,
+            "retrieval_date": retrieval_date or _date.today().isoformat(),
+        }
+        _req.post(
+            f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/metadata/update",
+            headers=_headers,
+            json={"selector": {"document_ids": [doc['id']]},
+                  "updates": [{"key": k, "value": v} for k, v in _meta.items() if v]},
+        )
     return doc
 
 
@@ -412,6 +439,13 @@ def ingest_image(
     cfg: dict,
     dataset_id: str,
     source: str,
+    brand: str = "",
+    car_model: str = "",
+    year: str = "",
+    market: str = "",
+    trim: str = "All",
+    source_type: str = "Images",
+    retrieval_date: str = "",
 ) -> dict:
     """
     MCP tool: ingest_image
@@ -478,6 +512,26 @@ def ingest_image(
         raise RuntimeError(f"ingest_image failed: {data.get('message')}")
     doc = data["data"][0]
     print(f"✅ Image uploaded: {local_path.name} (doc_id={doc['id']}, mime={mime})")
+    # store business metadata via DocMetadataService
+    if any([brand, car_model, year, market]):
+        from datetime import date as _date
+        import requests as _req
+        _headers = {"Authorization": f"Bearer {cfg['ragflow_api_key']}", "Content-Type": "application/json"}
+        _meta = {
+            "brand":          brand,
+            "car_model":      car_model,
+            "year":           year,
+            "market":         _normalize_market(market) if market else "",
+            "trim":           trim,
+            "source_type":    source_type,
+            "retrieval_date": retrieval_date or _date.today().isoformat(),
+        }
+        _req.post(
+            f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/metadata/update",
+            headers=_headers,
+            json={"selector": {"document_ids": [doc['id']]},
+                  "updates": [{"key": k, "value": v} for k, v in _meta.items() if v]},
+        )
     return doc
 
 
@@ -707,8 +761,7 @@ def get_datasets_by_brand_model(
     if trim is not None:
         matched = [d for d in matched if f"_{trim}_" in d["name"]]
 
-    if source_type is not None:
-        matched = [d for d in matched if f"_{source_type}_" in d["name"]]
+    # source_type filter removed from dataset name — handled via metadata_condition on documents
 
     print(f"🔎 Found {len(matched)} dataset(s) for {brand} {model}"
           + (f" {year}" if year else "")
@@ -774,19 +827,19 @@ def retrieve_by_brand_model(
 
     # ── metadata-driven doc_id filtering ─────────────────────────────────────
     _conditions = [
-        {"key": "brand",     "value": brand, "operator": "eq"},
-        {"key": "car_model", "value": model, "operator": "eq"},
+        {"name": "brand",     "value": brand, "comparison_operator": "="},
+        {"name": "car_model", "value": model, "comparison_operator": "="},
     ]
     if year:
         years = [year] if isinstance(year, str) else year
         for y in years:
-            _conditions.append({"key": "year", "value": y, "operator": "eq"})
+            _conditions.append({"name": "year", "value": y, "comparison_operator": "="})
     if market:
-        _conditions.append({"key": "market", "value": _normalize_market(market), "operator": "eq"})
+        _conditions.append({"name": "market", "value": _normalize_market(market), "comparison_operator": "="})
     if trim:
-        _conditions.append({"key": "trim", "value": trim, "operator": "eq"})
+        _conditions.append({"name": "trim", "value": trim, "comparison_operator": "="})
     if source_type:
-        _conditions.append({"key": "source_type", "value": source_type, "operator": "eq"})
+        _conditions.append({"name": "source_type", "value": source_type, "comparison_operator": "="})
 
     import json as _json
     _meta_condition = {"conditions": _conditions, "logic": "and"}
