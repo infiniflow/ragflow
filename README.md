@@ -88,7 +88,7 @@ Try our demo at [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 ## 🔥 Latest Updates
 
-- 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — An official skill for managing RAGFlow datasets, documents, parsing, and retrieval via OpenClaw integration.
+- 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — Provides an official skill to manage RAGFlow datasets via OpenClaw.
 - 2025-12-26 Supports 'Memory' for AI agent.
 - 2025-11-19 Supports Gemini 3 Pro.
 - 2025-11-12 Supports data synchronization from Confluence, S3, Notion, Discord, Google Drive.

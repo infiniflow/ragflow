@@ -69,7 +69,7 @@
 
 ## 🔥 最新情報
 
-- 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — OpenClaw 統合による RAGFlow データセット、ドキュメント、解析、検索を管理する公式スキル。
+- 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — OpenClaw経由でRAGFlowデータセットを管理する公式スキルを提供。
 - 2025-12-26 AIエージェントの「メモリ」機能をサポート。
 - 2025-11-19 Gemini 3 Proをサポートしています。
 - 2025-11-12 Confluence、S3、Notion、Discord、Google Drive からのデータ同期をサポートします。
