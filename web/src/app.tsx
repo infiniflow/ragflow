@@ -41,17 +41,22 @@ dayjs.extend(weekOfYear);
 dayjs.extend(weekYear);
 
 if (process.env.NODE_ENV === 'development') {
-  import('@welldone-software/why-did-you-render').then(
-    (whyDidYouRenderModule) => {
-      const whyDidYouRender = whyDidYouRenderModule.default;
-      whyDidYouRender(React, {
-        trackAllPureComponents: true,
-        trackExtraHooks: [],
-        logOnDifferentValues: true,
-        exclude: [/^RouterProvider$/],
-      });
-    },
-  );
+  const enableWhyDidYouRender =
+    import.meta.env.VITE_ENABLE_WHY_DID_YOU_RENDER === 'true';
+
+  if (enableWhyDidYouRender) {
+    import('@welldone-software/why-did-you-render').then(
+      (whyDidYouRenderModule) => {
+        const whyDidYouRender = whyDidYouRenderModule.default;
+        whyDidYouRender(React, {
+          trackAllPureComponents: true,
+          trackExtraHooks: [],
+          logOnDifferentValues: true,
+          exclude: [/^RouterProvider$/],
+        });
+      },
+    );
+  }
 }
 
 const queryClient = new QueryClient({

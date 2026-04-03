@@ -17,6 +17,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import message from '@/components/ui/message';
 import { FormLayout } from '@/constants/form';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { IModalProps } from '@/interfaces/common';
@@ -65,7 +66,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: t('knowledgeList.parserRequired'),
-          path: ['parser_id'],
+          path: ['chunk_method'],
         });
       }
       // When parseType === 1, pipline_id required
@@ -94,20 +95,28 @@ export function InputForm({ onOk }: IModalProps<any>) {
   });
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
-    const nextData = parseType === 1 ? data : omit(data, 'chunk_method');
+    const nextData =
+      parseType === 1 ? omit(data, 'pipeline_id') : omit(data, 'chunk_method');
     onOk?.(nextData);
+  }
+
+  function onInvalid(errors: Record<string, { message?: string }>) {
+    const firstError = Object.values(errors).find((item) => item?.message);
+    if (firstError?.message) {
+      message.error(firstError.message);
+    }
   }
 
   useEffect(() => {
     if (parseType === 1) {
-      form.setValue('pipeline_id', '');
+      form.setValue('pipeline_id', undefined);
     }
   }, [parseType, form]);
 
   return (
     <Form {...form}>
       <form
-        onSubmit={form.handleSubmit(onSubmit)}
+        onSubmit={form.handleSubmit(onSubmit, onInvalid)}
         className="space-y-6"
         id={FormId}
       >

@@ -13,6 +13,14 @@ import { setCachedLlmList } from './llm-cache';
 import { addTenantParams } from './llm-util';
 
 const FAILED_TO_FETCH = 'Failed to fetch';
+const unsupportedFeaturePaths = ['/api/v1/searches', '/api/v1/files'];
+
+const shouldSuppressUnsupportedFeature404 = (
+  status?: number,
+  url?: string,
+): boolean =>
+  status === 404 &&
+  unsupportedFeaturePaths.some((path) => (url || '').includes(path));
 
 export const RetcodeMessage = {
   200: i18n.t('message.200'),
@@ -55,6 +63,17 @@ const errorHandler = (error: {
   message: string;
 }): Response => {
   const { response } = error;
+  const responseUrl = (response as unknown as { url?: string })?.url;
+
+  if (
+    shouldSuppressUnsupportedFeature404(
+      response?.status,
+      typeof responseUrl === 'string' ? responseUrl : undefined,
+    )
+  ) {
+    return response ?? { data: { code: 1999 } };
+  }
+
   if (error.message === FAILED_TO_FETCH) {
     notification.error({
       description: i18n.t('message.networkAnomalyDescription'),

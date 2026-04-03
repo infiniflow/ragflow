@@ -50,10 +50,47 @@ export const enum KnowledgeApiAction {
   RemoveKnowledgeGraph = 'removeKnowledgeGraph',
 }
 
+const normalizeKnowledgeList = (payload: any): IKnowledge[] => {
+  const normalizeKnowledgeItem = (item: any): IKnowledge => {
+    const id = item?.id ?? item?.kb_id ?? item?.dataset_id ?? '';
+
+    return {
+      ...item,
+      id,
+      chunk_count: item?.chunk_count ?? item?.chunk_num ?? 0,
+      document_count: item?.document_count ?? item?.doc_num ?? 0,
+      chunk_method: item?.chunk_method ?? item?.parser_id ?? '',
+      embedding_model: item?.embedding_model ?? item?.embd_id ?? '',
+    } as IKnowledge;
+  };
+
+  if (Array.isArray(payload)) {
+    return payload.map(normalizeKnowledgeItem);
+  }
+
+  if (Array.isArray(payload?.kbs)) {
+    return payload.kbs.map(normalizeKnowledgeItem);
+  }
+
+  if (Array.isArray(payload?.data)) {
+    return payload.data.map(normalizeKnowledgeItem);
+  }
+
+  return [];
+};
+
+export const getKnowledgeId = (payload: any): string => {
+  if (typeof payload === 'string') {
+    return payload;
+  }
+
+  return payload?.id ?? payload?.kb_id ?? payload?.dataset_id ?? '';
+};
+
 export const useKnowledgeBaseId = (): string => {
   const { id } = useParams();
 
-  return (id as string) || '';
+  return getKnowledgeId(id);
 };
 
 export const useTestRetrieval = () => {
@@ -171,7 +208,14 @@ export const useFetchNextKnowledgeListByPage = () => {
         },
       });
 
-      return { kbs: data?.data, total_datasets: data?.total_datasets };
+      const kbs = normalizeKnowledgeList(data?.data);
+      const totalDatasets =
+        data?.total_datasets ??
+        data?.data?.total_datasets ??
+        data?.data?.total ??
+        kbs.length;
+
+      return { kbs, total_datasets: totalDatasets };
     },
   });
 
@@ -220,7 +264,12 @@ export const useCreateKnowledge = () => {
         message.success(
           i18n.t(`message.${params?.id ? 'modified' : 'created'}`),
         );
-        queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeList'] });
+        queryClient.invalidateQueries({
+          queryKey: [KnowledgeApiAction.FetchKnowledgeList],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [KnowledgeApiAction.FetchKnowledgeListByPage],
+        });
       }
       return data;
     },
@@ -408,7 +457,11 @@ export const useFetchKnowledgeBaseConfiguration = (props?: {
         const { data } = await kbService.get_kb_detail({
           kb_id: knowledgeBaseId,
         });
-        return data?.data ?? {};
+        const nextData = data?.data ?? {};
+        return {
+          ...nextData,
+          id: getKnowledgeId(nextData),
+        };
       } else {
         return {};
       }
@@ -489,7 +542,7 @@ export const useFetchKnowledgeList = (
     gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
     queryFn: async () => {
       const { data } = await listDataset();
-      const list = data?.data ?? [];
+      const list = normalizeKnowledgeList(data?.data);
       return shouldFilterListWithoutDocument
         ? list.filter((x: IKnowledge) => x.chunk_count > 0)
         : list;
@@ -504,7 +557,7 @@ export const useSelectKnowledgeOptions = () => {
 
   const options = list?.map((item) => ({
     label: item.name,
-    value: item.id,
+    value: getKnowledgeId(item),
   }));
 
   return options;

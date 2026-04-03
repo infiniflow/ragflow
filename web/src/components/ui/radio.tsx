@@ -35,18 +35,14 @@ function Radio({
   const isChecked = isControlled ? checked : groupContext?.value === value;
   const mergedDisabled = disabled || groupContext?.disabled;
 
-  const handleClick = () => {
+  const handleChange = (nextChecked: boolean) => {
     if (mergedDisabled) return;
 
-    // if (!isControlled) {
-    //   setInternalChecked(!isChecked);
-    // }
-
     if (onChange) {
-      onChange(!isChecked);
+      onChange(nextChecked);
     }
 
-    if (groupContext && !groupContext.disabled) {
+    if (nextChecked && groupContext && !groupContext.disabled) {
       groupContext.onChange(value);
     }
   };
@@ -62,7 +58,7 @@ function Radio({
         type="radio"
         value={value}
         checked={isChecked}
-        onClick={handleClick}
+        onChange={(e) => handleChange(e.target.checked)}
         disabled={mergedDisabled}
         className={cn('peer absolute size-[1px] opacity-0', className)}
         {...props}

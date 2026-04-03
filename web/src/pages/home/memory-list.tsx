@@ -16,6 +16,7 @@ export function MemoryList({
 }) {
   const { data, refetch: refetchList, isLoading } = useFetchMemoryList();
   const { navigateToMemory } = useNavigatePage();
+  const memoryList = data?.data?.memory_list ?? [];
   // const {
   //   openCreateModal,
   //   showSearchRenameModal,
@@ -39,12 +40,12 @@ export function MemoryList({
   };
 
   useEffect(() => {
-    setListLength(data?.data?.memory_list?.length || 0);
+    setListLength(memoryList.length);
     setLoading?.(isLoading || false);
-  }, [data, setListLength, isLoading, setLoading]);
+  }, [memoryList.length, setListLength, isLoading, setLoading]);
   return (
     <>
-      {data?.data.memory_list.slice(0, 10).map((x) => (
+      {memoryList.slice(0, 10).map((x) => (
         <HomeCard
           key={x.id}
           data={{

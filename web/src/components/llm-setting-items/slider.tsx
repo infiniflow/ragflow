@@ -79,19 +79,18 @@ export const SliderInputSwitchFormField = forwardRef<
                   </FormItem>
                 )}
               />
-              <FormControl>
-                <SingleFormSlider
-                  {...field}
-                  onChange={(value: number) => {
-                    onChange?.(value);
-                    field.onChange(value);
-                  }}
-                  max={max}
-                  min={min}
-                  step={step}
-                  disabled={disabled}
-                ></SingleFormSlider>
-              </FormControl>
+              <SingleFormSlider
+                {...field}
+                onChange={(value: number) => {
+                  onChange?.(value);
+                  field.onChange(value);
+                }}
+                max={max}
+                min={min}
+                step={step}
+                disabled={disabled}
+                aria-label={t(label)}
+              ></SingleFormSlider>
               <FormControl>
                 <NumberInput
                   disabled={disabled}

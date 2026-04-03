@@ -95,25 +95,44 @@ const FormLabel = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root> & {
     tooltip?: React.ReactNode;
     required?: boolean;
+    /** When false, omit htmlFor (e.g. label text next to a Switch/Checkbox that owns the id via a sibling FormControl). */
+    associateControl?: boolean;
   }
->(({ className, tooltip, required = false, ...props }, ref) => {
-  const { formItemId } = useFormField();
+>(
+  (
+    {
+      className,
+      tooltip,
+      required = false,
+      associateControl = true,
+      htmlFor: htmlForProp,
+      children,
+      ...props
+    },
+    ref,
+  ) => {
+    const { formItemId } = useFormField();
 
-  return (
-    <Label
-      ref={ref}
-      className={cn(
-        className,
-        required && 'before:content-["*"] before:text-state-error',
-      )}
-      htmlFor={formItemId}
-      {...props}
-    >
-      <span>{props.children}</span>
-      {tooltip && <FormTooltip tooltip={tooltip}></FormTooltip>}
-    </Label>
-  );
-});
+    const htmlFor = associateControl
+      ? (htmlForProp ?? formItemId)
+      : htmlForProp;
+
+    return (
+      <Label
+        ref={ref}
+        className={cn(
+          className,
+          required && 'before:content-["*"] before:text-state-error',
+        )}
+        {...(htmlFor !== undefined ? { htmlFor } : {})}
+        {...props}
+      >
+        <span>{children}</span>
+        {tooltip && <FormTooltip tooltip={tooltip}></FormTooltip>}
+      </Label>
+    );
+  },
+);
 FormLabel.displayName = 'FormLabel';
 
 const FormControl = React.forwardRef<

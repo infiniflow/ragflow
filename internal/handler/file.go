@@ -40,6 +40,14 @@ func NewFileHandler(fileService *service.FileService, userService *service.UserS
 	}
 }
 
+func getFileIDFromRequest(c *gin.Context) string {
+	if fileID := c.Param("file_id"); fileID != "" {
+		return fileID
+	}
+
+	return c.Query("file_id")
+}
+
 // ListFiles list files
 // @Summary List Files
 // @Description Get list of files for the current user with filtering, pagination and sorting
@@ -157,8 +165,7 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 		return
 	}
 
-	// Get file_id from query
-	fileID := c.Query("file_id")
+	fileID := getFileIDFromRequest(c)
 	if fileID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
@@ -200,8 +207,7 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 		return
 	}
 
-	// Get file_id from query
-	fileID := c.Query("file_id")
+	fileID := getFileIDFromRequest(c)
 	if fileID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,

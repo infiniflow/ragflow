@@ -171,6 +171,15 @@ export default {
   connectFileToKnowledge: `${api_host}/file2document/convert`,
   getFile: `${ExternalApi}${api_host}/files`,
   moveFile: `${ExternalApi}${api_host}/files/move`,
+  legacyListFile: `${api_host}/file/list`,
+  legacyUploadFile: `${api_host}/file/upload`,
+  legacyRemoveFile: `${api_host}/file/rm`,
+  legacyGetAllParentFolder: `${api_host}/file/all_parent_folder`,
+  legacyGetParentFolder: `${api_host}/file/parent_folder`,
+  legacyCreateFolder: `${api_host}/file/create`,
+  legacyGetFile: (fileId: string) => `${api_host}/file/get/${fileId}`,
+  legacyMoveFile: `${api_host}/file/mv`,
+  legacyRenameFile: `${api_host}/file/rename`,
 
   // system
   getSystemVersion: `${api_host}/system/version`,
@@ -252,6 +261,7 @@ export default {
   mindmapShare: `${ExternalApi}${api_host}/searchbots/mindmap`,
   getRelatedQuestionsShare: `${ExternalApi}${api_host}/searchbots/related_questions`,
   retrievalTestShare: `${ExternalApi}${api_host}/searchbots/retrieval_test`,
+  legacySearchList: `${api_host}/search/list`,
 
   // memory
   createMemory: `${ExternalApi}${api_host}/memories`,

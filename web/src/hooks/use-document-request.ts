@@ -24,7 +24,7 @@ import { useDebounce } from 'ahooks';
 import { get } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
-import { useParams } from 'react-router';
+import { useParams, useSearchParams } from 'react-router';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
@@ -53,6 +53,8 @@ export const enum DocumentApiAction {
 export const useUploadNextDocument = () => {
   const queryClient = useQueryClient();
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const knowledgeBaseId = searchParams.get('id') || id;
 
   const {
     data,
@@ -62,7 +64,14 @@ export const useUploadNextDocument = () => {
     mutationKey: [DocumentApiAction.UploadDocument],
     mutationFn: async (fileList) => {
       const formData = new FormData();
-      formData.append('kb_id', id!);
+      if (!knowledgeBaseId) {
+        return {
+          code: 500,
+          message: 'Dataset id is missing.',
+        };
+      }
+
+      formData.append('kb_id', knowledgeBaseId);
       fileList.forEach((file: any) => {
         formData.append('file', file);
       });
@@ -421,7 +430,7 @@ export const useSetDocumentMeta = () => {
           message.success(i18n.t('message.modified'));
         }
         return data?.code;
-      } catch (error) {
+      } catch {
         message.error('error');
       }
     },
@@ -563,7 +572,7 @@ export const useParseDocument = () => {
           message.success(i18n.t('message.uploaded'));
         }
         return data;
-      } catch (error) {
+      } catch {
         message.error('error');
       }
     },

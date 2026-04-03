@@ -87,34 +87,44 @@ export function SimilaritySliderFormField({
               )}
             </FormLabel>
             <div className={cn('flex items-end gap-4 justify-between')}>
-              <FormControl>
-                <div className="flex flex-col flex-1 gap-2">
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-1">
-                      <label className="italic text-xs text-text-secondary">
-                        vector
-                      </label>
-                      <span className="bg-bg-card rounded-md p-1 w-10 text-center text-xs">
-                        {field.value.toFixed(2)}
-                      </span>
-                    </div>
-                    <div className="flex  items-center gap-1">
-                      <label className="italic text-xs text-text-secondary">
-                        full-text
-                      </label>
-                      <span className="bg-bg-card rounded-md p-1 w-10 text-center text-xs">
-                        {(1 - field.value).toFixed(2)}
-                      </span>
-                    </div>
+              <div
+                className="flex flex-col flex-1 gap-2"
+                aria-label={t(
+                  isVector
+                    ? 'vectorSimilarityWeight'
+                    : 'keywordSimilarityWeight',
+                )}
+              >
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-1">
+                    <span className="italic text-xs text-text-secondary">
+                      vector
+                    </span>
+                    <span className="bg-bg-card rounded-md p-1 w-10 text-center text-xs">
+                      {field.value.toFixed(2)}
+                    </span>
                   </div>
-                  <SingleFormSlider
-                    {...field}
-                    max={1}
-                    step={0.01}
-                    min={0}
-                  ></SingleFormSlider>
+                  <div className="flex  items-center gap-1">
+                    <span className="italic text-xs text-text-secondary">
+                      full-text
+                    </span>
+                    <span className="bg-bg-card rounded-md p-1 w-10 text-center text-xs">
+                      {(1 - field.value).toFixed(2)}
+                    </span>
+                  </div>
                 </div>
-              </FormControl>
+                <SingleFormSlider
+                  {...field}
+                  max={1}
+                  step={0.01}
+                  min={0}
+                  aria-label={t(
+                    isVector
+                      ? 'vectorSimilarityWeight'
+                      : 'keywordSimilarityWeight',
+                  )}
+                ></SingleFormSlider>
+              </div>
               <FormControl>
                 <NumberInput
                   className={cn(

@@ -63,7 +63,11 @@ export function Header({
           to={Routes.Root}
           aria-current={pathname === Routes.Root ? 'page' : undefined}
         >
-          <img src={'/logo.svg'} alt="RAGFlow logo" className="size-10" />
+          <img
+            src="/solu-tech-logo.png"
+            alt="SoluTech"
+            className="h-9 w-auto max-w-[200px] object-contain object-left"
+          />
         </Link>
       </div>
 

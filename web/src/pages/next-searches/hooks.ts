@@ -4,7 +4,7 @@ import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import searchService from '@/services/search-service';
+import searchService, { getSearchListCompat } from '@/services/search-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { useCallback, useState } from 'react';
@@ -84,6 +84,7 @@ interface SearchListResponse {
     total: number;
   };
   message: string;
+  unsupported?: boolean;
 }
 
 export const useFetchSearchList = () => {
@@ -103,20 +104,30 @@ export const useFetchSearchList = () => {
       },
     ],
     queryFn: async () => {
-      const { data: response } = await searchService.getSearchList(
-        {
-          params: {
-            keywords: debouncedSearchString,
-            page_size: pagination.pageSize,
-            page: pagination.current,
-          },
-        },
-        true,
-      );
-      if (response.code !== 0) {
-        throw new Error(response.message || 'Failed to fetch search list');
+      try {
+        const { data: response } = await getSearchListCompat({
+          keywords: debouncedSearchString,
+          page_size: pagination.pageSize,
+          page: pagination.current,
+        });
+        if (response.code !== 0) {
+          throw new Error(response.message || 'Failed to fetch search list');
+        }
+        return response;
+      } catch (error: any) {
+        if (error?.response?.status === 404) {
+          return {
+            code: 0,
+            data: {
+              search_apps: [],
+              total: 0,
+            },
+            message: '',
+            unsupported: true,
+          };
+        }
+        throw error;
       }
-      return response;
     },
   });
 
@@ -124,6 +135,7 @@ export const useFetchSearchList = () => {
     data,
     isLoading,
     isError,
+    unsupported: Boolean(data?.unsupported),
     pagination,
     searchString,
     handleInputChange,
@@ -207,20 +219,31 @@ export const useFetchSearchDetail = (tenantId?: string) => {
     queryKey: ['searchDetail', searchId],
     enabled: !shared_id || !!tenantId,
     queryFn: async () => {
-      let res;
-      if (shared_id) {
-        res = await searchService.getSearchDetailShare(
-          { params: { search_id: searchId, tenant_id: tenantId } },
-          true,
-        );
-      } else {
-        res = await searchService.getSearchDetail({ search_id: searchId });
+      try {
+        let res;
+        if (shared_id) {
+          res = await searchService.getSearchDetailShare(
+            { params: { search_id: searchId, tenant_id: tenantId } },
+            true,
+          );
+        } else {
+          res = await searchService.getSearchDetail({ search_id: searchId });
+        }
+        const response = res.data;
+        if (response.code !== 0) {
+          throw new Error(response.message || 'Failed to fetch search detail');
+        }
+        return response;
+      } catch (error: any) {
+        if (error?.response?.status === 404) {
+          return {
+            code: 0,
+            data: {} as ISearchAppDetailProps,
+            message: '',
+          };
+        }
+        throw error;
       }
-      const response = res.data;
-      if (response.code !== 0) {
-        throw new Error(response.message || 'Failed to fetch search detail');
-      }
-      return response;
     },
   });
 

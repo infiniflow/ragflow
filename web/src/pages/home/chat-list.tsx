@@ -18,6 +18,7 @@ export function ChatList({
   const { t } = useTranslation();
   const { data, loading } = useFetchChatList();
   const { navigateToChat } = useNavigatePage();
+  const chats = data?.chats ?? [];
 
   const {
     initialChatName,
@@ -28,12 +29,12 @@ export function ChatList({
     chatRenameLoading,
   } = useRenameChat();
   useEffect(() => {
-    setListLength(data?.chats?.length || 0);
+    setListLength(chats.length);
     setLoading?.(loading || false);
-  }, [data, setListLength, loading, setLoading]);
+  }, [chats.length, setListLength, loading, setLoading]);
   return (
     <>
-      {data.chats.slice(0, 10).map((x) => (
+      {chats.slice(0, 10).map((x) => (
         <HomeCard
           key={x.id}
           data={{

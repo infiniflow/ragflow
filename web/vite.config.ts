@@ -99,9 +99,26 @@ export default defineConfig(({ mode }) => {
   const proxy =
     proxySchemes[env.API_PROXY_SCHEME || 'python'] || proxySchemes.python;
 
+  const isProd = mode === 'production';
+  const enableDevInspector = env.VITE_ENABLE_DEV_INSPECTOR === 'true';
+  const cspHeader = [
+    "default-src 'self'",
+    "connect-src 'self' blob: data: https: wss: ws: http:",
+    "font-src 'self' data:",
+    "img-src 'self' data: blob: https:",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
+    "style-src 'self' 'unsafe-inline'",
+    "worker-src 'self' blob:",
+    "frame-ancestors 'self'",
+    "base-uri 'self'",
+  ].join('; ');
+
   return {
+    define: {
+      __API_PROXY_SCHEME__: JSON.stringify(env.API_PROXY_SCHEME || 'python'),
+    },
     plugins: [
-      inspectorBabelPlugin(),
+      ...(!isProd && enableDevInspector ? [inspectorBabelPlugin()] : []),
       react(),
       viteStaticCopy({
         targets: [
@@ -122,7 +139,7 @@ export default defineConfig(({ mode }) => {
           },
         },
       }),
-      inspectorServer(),
+      ...(!isProd && enableDevInspector ? [inspectorServer()] : []),
     ],
     resolve: {
       alias: {
@@ -151,10 +168,18 @@ export default defineConfig(({ mode }) => {
     server: {
       port: Number(env.PORT) || 9222,
       strictPort: false,
+      headers: {
+        'Content-Security-Policy': cspHeader,
+      },
       hmr: {
         overlay: false,
       },
       proxy,
+    },
+    preview: {
+      headers: {
+        'Content-Security-Policy': cspHeader,
+      },
     },
     assetsInclude: ['**/*.md'],
     base: env.VITE_BASE_URL,

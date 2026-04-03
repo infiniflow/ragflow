@@ -1,5 +1,6 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useConnectToKnowledge, useRenameFile } from '@/hooks/use-file-request';
+import { getKnowledgeId } from '@/hooks/use-knowledge-request';
 import { TableRowSelection } from '@/interfaces/antd-compat';
 import { IFile } from '@/interfaces/database/file-manager';
 import { useCallback, useMemo, useState } from 'react';
@@ -85,15 +86,18 @@ export const useHandleConnectToKnowledge = () => {
 
   const initialValue = useMemo(() => {
     return Array.isArray(record?.kbs_info)
-      ? record?.kbs_info?.map((x) => x.kb_id)
+      ? record?.kbs_info
+          ?.map((x) => getKnowledgeId(x))
+          .filter((id): id is string => Boolean(id))
       : [];
   }, [record?.kbs_info]);
 
   const onConnectToKnowledgeOk = useCallback(
     async (knowledgeIds: string[]) => {
+      const normalizedKnowledgeIds = knowledgeIds.filter(Boolean);
       const ret = await connectToKnowledge({
         fileIds: [record.id],
-        kbIds: knowledgeIds,
+        kbIds: normalizedKnowledgeIds,
       });
 
       if (ret === 0) {

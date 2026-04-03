@@ -136,8 +136,12 @@ function AdminLogin() {
 
         <div className="absolute top-3 left-0 w-full">
           <div className="absolute mt-12 ml-12 flex items-center">
-            <img className="size-8 mr-5" src="/logo.svg" alt="logo" />
-            <span className="text-xl font-bold">RAGFlow</span>
+            <img
+              className="h-9 w-auto max-w-[200px] object-contain mr-5"
+              src="/solu-tech-logo.png"
+              alt="SoluTech"
+            />
+            <span className="text-xl font-bold">SoluTech</span>
           </div>
 
           <h1 className="mt-[6.5rem] text-4xl font-medium text-center mb-12">
@@ -204,23 +208,22 @@ function AdminLogin() {
                       control={form.control}
                       name="remember"
                       render={({ field }) => (
-                        <FormItem className="!mt-5">
+                        <FormItem className="!mt-5 flex flex-row items-center space-x-2 space-y-0">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
                           <FormLabel
                             className={cn(
-                              'transition-colors',
+                              '!mt-0 transition-colors cursor-pointer',
                               field.value
                                 ? 'text-text-primary'
                                 : 'text-text-secondary',
                             )}
                           >
-                            <FormControl>
-                              <Checkbox
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                              />
-                            </FormControl>
-
-                            <span className="ml-2">{t('rememberMe')}</span>
+                            {t('rememberMe')}
                           </FormLabel>
                         </FormItem>
                       )}

@@ -35,6 +35,11 @@ export function SideBar({ refreshCount }: PropType) {
   const { data } = useFetchKnowledgeBaseConfiguration({ refreshCount });
   const { data: routerData } = useFetchKnowledgeGraph();
   const { t } = useTranslation();
+  const datasetName = data?.name || '';
+  const datasetAvatar = data?.avatar;
+  const datasetDocNum = data?.doc_num ?? data?.document_count ?? 0;
+  const datasetSize = data?.size ?? 0;
+  const datasetCreateTime = data?.create_time;
 
   const items = useMemo(() => {
     const list = [
@@ -80,8 +85,8 @@ export function SideBar({ refreshCount }: PropType) {
         }}
       >
         <RAGFlowAvatar
-          avatar={data.avatar}
-          name={data.name}
+          avatar={datasetAvatar}
+          name={datasetName}
           className="size-16"
           style={{ gridArea: 'avatar' }}
         />
@@ -90,7 +95,7 @@ export function SideBar({ refreshCount }: PropType) {
           className="text-lg font-semibold line-clamp-1 text-text-primary text-ellipsis overflow-hidden"
           style={{ gridArea: 'title' }}
         >
-          {data.name}
+          {datasetName}
         </h3>
 
         <div
@@ -99,13 +104,13 @@ export function SideBar({ refreshCount }: PropType) {
         >
           <div className="flex justify-between">
             <span>
-              {data.doc_num} {t('knowledgeDetails.files')}
+              {datasetDocNum} {t('knowledgeDetails.files')}
             </span>
-            <span>{formatBytes(data.size)}</span>
+            <span>{formatBytes(datasetSize)}</span>
           </div>
 
           <div className="mt-0.5">
-            {t('knowledgeDetails.created')} {formatPureDate(data.create_time)}
+            {t('knowledgeDetails.created')} {formatPureDate(datasetCreateTime)}
           </div>
         </div>
       </header>

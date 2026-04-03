@@ -49,6 +49,7 @@ export default function Files() {
     setPagination,
     searchString,
     handleInputChange,
+    unsupported,
   } = useFetchFileList();
 
   const {
@@ -88,72 +89,89 @@ export default function Files() {
 
   return (
     <article className="size-full flex flex-col" data-testid="files-list">
-      <header className="px-5 pt-8 mb-4">
-        <ListFilterBar
-          leftPanel={leftPanel}
-          searchString={searchString}
-          onSearchChange={handleInputChange}
-          showFilter={false}
-          icon={'file'}
-        >
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button>
-                <LucidePlus />
-                {t('knowledgeDetails.addFile')}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56">
-              <DropdownMenuItem onClick={showFileUploadModal}>
-                {t('fileManager.uploadFile')}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={showFolderCreateModal}>
-                {t('fileManager.newFolder')}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </ListFilterBar>
+      {unsupported ? (
+        <div className="flex-1 flex items-center justify-center px-5">
+          <div className="max-w-xl text-center space-y-2">
+            <h2 className="text-xl font-semibold">{t('fileManager.files')}</h2>
+            <p className="text-text-secondary">
+              The current backend does not support the File REST API yet.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <>
+          <header className="px-5 pt-8 mb-4">
+            <ListFilterBar
+              leftPanel={leftPanel}
+              searchString={searchString}
+              onSearchChange={handleInputChange}
+              showFilter={false}
+              icon={'file'}
+            >
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button>
+                    <LucidePlus />
+                    {t('knowledgeDetails.addFile')}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-56">
+                  <DropdownMenuItem onClick={showFileUploadModal}>
+                    {t('fileManager.uploadFile')}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={showFolderCreateModal}>
+                    {t('fileManager.newFolder')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </ListFilterBar>
 
-        {!rowSelectionIsEmpty && (
-          <BulkOperateBar className="mt-4" list={list} count={selectedCount} />
-        )}
-      </header>
+            {!rowSelectionIsEmpty && (
+              <BulkOperateBar
+                className="mt-4"
+                list={list}
+                count={selectedCount}
+              />
+            )}
+          </header>
 
-      <div className="flex-1 px-5 flex flex-col overflow-hidden">
-        <FilesTable
-          files={files}
-          total={total}
-          pagination={pagination}
-          setPagination={setPagination}
-          loading={loading}
-          rowSelection={rowSelection}
-          setRowSelection={setRowSelection}
-          showMoveFileModal={showMoveFileModal}
-        />
-      </div>
+          <div className="flex-1 px-5 flex flex-col overflow-hidden">
+            <FilesTable
+              files={files}
+              total={total}
+              pagination={pagination}
+              setPagination={setPagination}
+              loading={loading}
+              rowSelection={rowSelection}
+              setRowSelection={setRowSelection}
+              showMoveFileModal={showMoveFileModal}
+            />
+          </div>
 
-      {fileUploadVisible && (
-        <FileUploadDialog
-          hideModal={hideFileUploadModal}
-          onOk={onFileUploadOk}
-          loading={fileUploadLoading}
-        ></FileUploadDialog>
-      )}
-      {folderCreateModalVisible && (
-        <CreateFolderDialog
-          loading={folderCreateLoading}
-          visible={folderCreateModalVisible}
-          hideModal={hideFolderCreateModal}
-          onOk={onFolderCreateOk}
-        ></CreateFolderDialog>
-      )}
-      {moveFileVisible && (
-        <MoveDialog
-          hideModal={hideMoveFileModal}
-          onOk={onMoveFileOk}
-          loading={moveFileLoading}
-        ></MoveDialog>
+          {fileUploadVisible && (
+            <FileUploadDialog
+              hideModal={hideFileUploadModal}
+              onOk={onFileUploadOk}
+              loading={fileUploadLoading}
+            ></FileUploadDialog>
+          )}
+          {folderCreateModalVisible && (
+            <CreateFolderDialog
+              loading={folderCreateLoading}
+              visible={folderCreateModalVisible}
+              hideModal={hideFolderCreateModal}
+              onOk={onFolderCreateOk}
+            ></CreateFolderDialog>
+          )}
+          {moveFileVisible && (
+            <MoveDialog
+              hideModal={hideMoveFileModal}
+              onOk={onMoveFileOk}
+              loading={moveFileLoading}
+            ></MoveDialog>
+          )}
+        </>
       )}
     </article>
   );

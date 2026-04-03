@@ -89,19 +89,18 @@ export const SliderInputFormField = forwardRef<
                 className,
               )}
             >
-              <FormControl>
-                <SingleFormSlider
-                  {...field}
-                  value={percentage ? field.value * 100 : field.value}
-                  onChange={(value) =>
-                    field.onChange(percentage ? value / 100 : value)
-                  }
-                  max={displayMax}
-                  min={displayMin}
-                  step={displayStep}
-                  data-testid={sliderTestId}
-                ></SingleFormSlider>
-              </FormControl>
+              <SingleFormSlider
+                {...field}
+                value={percentage ? field.value * 100 : field.value}
+                onChange={(value) =>
+                  field.onChange(percentage ? value / 100 : value)
+                }
+                max={displayMax}
+                min={displayMin}
+                step={displayStep}
+                data-testid={sliderTestId}
+                aria-label={label}
+              ></SingleFormSlider>
               <FormControl>
                 <NumberInput
                   className={cn(

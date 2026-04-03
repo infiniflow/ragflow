@@ -148,25 +148,23 @@ function LoginFormContent({
                   control={form.control}
                   name="remember"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="flex flex-row items-center space-x-2 space-y-0">
                       <FormControl>
-                        <div className="flex gap-2">
-                          <Checkbox
-                            checked={field.value}
-                            onCheckedChange={(checked) => {
-                              field.onChange(checked);
-                            }}
-                          />
-                          <FormLabel
-                            className={cn(' hover:text-text-primary', {
-                              'text-text-disabled': !field.value,
-                              'text-text-primary': field.value,
-                            })}
-                          >
-                            {t('rememberMe')}
-                          </FormLabel>
-                        </div>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={(checked) => {
+                            field.onChange(checked);
+                          }}
+                        />
                       </FormControl>
+                      <FormLabel
+                        className={cn('hover:text-text-primary !mt-0', {
+                          'text-text-disabled': !field.value,
+                          'text-text-primary': field.value,
+                        })}
+                      >
+                        {t('rememberMe')}
+                      </FormLabel>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -363,14 +361,13 @@ const Login = () => {
 
         <div className="z-20 absolute top-3 flex flex-col items-center mb-12 w-full text-text-primary">
           <div className="flex items-center mb-4 w-full pl-10 pt-10 ">
-            <div className="w-12 h-12 p-2 rounded-lg flex items-center justify-center mr-3">
+            <div className="flex items-center justify-center py-1">
               <img
-                src={'/logo.svg'}
-                alt="logo"
-                className="size-8 mr-[12] cursor-pointer"
+                src="/solu-tech-logo.png"
+                alt="SoluTech"
+                className="h-11 w-auto max-w-[240px] object-contain cursor-pointer"
               />
             </div>
-            <div className="text-xl font-bold self-center">RAGFlow</div>
           </div>
           <h1 className="text-[36px] font-medium  text-center mb-2">
             {t('title')}

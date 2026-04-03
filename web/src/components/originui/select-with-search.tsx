@@ -153,6 +153,7 @@ export const SelectWithSearch = forwardRef<
         <PopoverTrigger asChild>
           <Button
             id={id}
+            type="button"
             variant="outline"
             role="combobox"
             aria-expanded={open}
@@ -207,10 +208,15 @@ export const SelectWithSearch = forwardRef<
               <CommandEmpty>
                 <div dangerouslySetInnerHTML={{ __html: emptyData }}></div>
               </CommandEmpty>
-              {options.map((group) => {
+              {options.map((group, index) => {
                 if (group.options) {
+                  const groupKey =
+                    (typeof group.value === 'string' && group.value) ||
+                    (typeof group.label === 'string' && group.label) ||
+                    `group-${index}`;
+
                   return (
-                    <Fragment key={group.value}>
+                    <Fragment key={groupKey}>
                       <CommandGroup heading={group.label} className="mb-1">
                         {group.options.map((option) => (
                           <CommandItem

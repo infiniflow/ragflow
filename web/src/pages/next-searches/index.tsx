@@ -24,6 +24,7 @@ export default function SearchList() {
     handleInputChange,
     setPagination,
     refetch: refetchList,
+    unsupported,
   } = useFetchSearchList();
 
   const {
@@ -66,86 +67,105 @@ export default function SearchList() {
 
   return (
     <>
-      {list?.data?.search_apps?.length || searchString ? (
-        <article className="size-full flex flex-col" data-testid="search-list">
-          <header className="px-5 pt-8 mb-4">
-            <ListFilterBar
-              icon="searches"
-              title={t('searchApps')}
-              showFilter={false}
-              searchString={searchString}
-              onSearchChange={handleInputChange}
+      {unsupported ? (
+        <article
+          className="size-full flex items-center justify-center px-5"
+          data-testid="search-list"
+        >
+          <div className="max-w-xl text-center space-y-2">
+            <h2 className="text-xl font-semibold">{t('searchApps')}</h2>
+            <p className="text-text-secondary">
+              The current backend does not support the Search REST API yet.
+            </p>
+          </div>
+        </article>
+      ) : (
+        <>
+          {list?.data?.search_apps?.length || searchString ? (
+            <article
+              className="size-full flex flex-col"
+              data-testid="search-list"
             >
-              <Button
-                data-testid="create-search"
-                onClick={() => openCreateModalFun()}
-              >
-                <Plus className="size-[1em]" />
-                {t('createSearch')}
-              </Button>
-            </ListFilterBar>
-          </header>
+              <header className="px-5 pt-8 mb-4">
+                <ListFilterBar
+                  icon="searches"
+                  title={t('searchApps')}
+                  showFilter={false}
+                  searchString={searchString}
+                  onSearchChange={handleInputChange}
+                >
+                  <Button
+                    data-testid="create-search"
+                    onClick={() => openCreateModalFun()}
+                  >
+                    <Plus className="size-[1em]" />
+                    {t('createSearch')}
+                  </Button>
+                </ListFilterBar>
+              </header>
 
-          {list?.data?.search_apps?.length ? (
-            <>
-              <CardContainer className="flex-1 overflow-auto px-5">
-                {list?.data.search_apps.map((x) => {
-                  return (
-                    <SearchCard
-                      key={x.id}
-                      data={x}
-                      showSearchRenameModal={() => {
-                        showSearchRenameModal(x);
-                      }}
+              {list?.data?.search_apps?.length ? (
+                <>
+                  <CardContainer className="flex-1 overflow-auto px-5">
+                    {list?.data.search_apps.map((x) => {
+                      return (
+                        <SearchCard
+                          key={x.id}
+                          data={x}
+                          showSearchRenameModal={() => {
+                            showSearchRenameModal(x);
+                          }}
+                        />
+                      );
+                    })}
+                  </CardContainer>
+
+                  <footer className="mt-4 px-5 pb-5">
+                    <RAGFlowPagination
+                      {...pick(pagination, 'current', 'pageSize')}
+                      total={list?.data.total}
+                      onChange={handlePageChange}
                     />
-                  );
-                })}
-              </CardContainer>
-
-              <footer className="mt-4 px-5 pb-5">
-                <RAGFlowPagination
-                  {...pick(pagination, 'current', 'pageSize')}
-                  total={list?.data.total}
-                  onChange={handlePageChange}
-                />
-              </footer>
-            </>
+                  </footer>
+                </>
+              ) : (
+                <div className="flex-1 flex items-center justify-center">
+                  <EmptyAppCard
+                    showIcon
+                    size="large"
+                    className="w-[480px] p-14"
+                    isSearch
+                    type={EmptyCardType.Search}
+                    testId="search-empty-create"
+                  />
+                </div>
+              )}
+            </article>
           ) : (
-            <div className="flex-1 flex items-center justify-center">
+            <article
+              className="size-full flex items-center justify-center"
+              data-testid="search-list"
+            >
               <EmptyAppCard
                 showIcon
                 size="large"
                 className="w-[480px] p-14"
-                isSearch
                 type={EmptyCardType.Search}
+                onClick={() => openCreateModalFun()}
                 testId="search-empty-create"
               />
-            </div>
+            </article>
           )}
-        </article>
-      ) : (
-        <article
-          className="size-full flex items-center justify-center"
-          data-testid="search-list"
-        >
-          <EmptyAppCard
-            showIcon
-            size="large"
-            className="w-[480px] p-14"
-            type={EmptyCardType.Search}
-            onClick={() => openCreateModalFun()}
-            testId="search-empty-create"
-          />
-        </article>
-      )}
-      {openCreateModal && (
-        <RenameDialog
-          hideModal={hideSearchRenameModal}
-          onOk={onSearchRenameConfirm}
-          initialName={initialSearchName}
-          loading={searchRenameLoading}
-          title={initialSearchName || t('createSearch')}
-        ></RenameDialog>
+          {openCreateModal && (
+            <RenameDialog
+              hideModal={hideSearchRenameModal}
+              onOk={onSearchRenameConfirm}
+              initialName={initialSearchName}
+              loading={searchRenameLoading}
+              title={initialSearchName || t('createSearch')}
+            ></RenameDialog>
+          )}
+        </>
       )}
     </>
   );

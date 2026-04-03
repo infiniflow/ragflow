@@ -16,6 +16,7 @@ export function Agents({
 }) {
   const { data, loading } = useFetchAgentListByPage();
   const { navigateToAgent } = useNavigatePage();
+  const agents = data ?? [];
   const {
     agentRenameLoading,
     initialAgentName,
@@ -26,13 +27,13 @@ export function Agents({
   } = useRenameAgent();
 
   useEffect(() => {
-    setListLength(data?.length || 0);
+    setListLength(agents.length);
     setLoading?.(loading || false);
-  }, [data, setListLength, loading, setLoading]);
+  }, [agents.length, setListLength, loading, setLoading]);
 
   return (
     <>
-      {data.slice(0, 10).map((x) => (
+      {agents.slice(0, 10).map((x) => (
         <HomeCard
           key={x.id}
           data={{ name: x.title, ...x } as any}

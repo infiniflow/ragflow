@@ -16,6 +16,7 @@ export function SearchList({
 }) {
   const { data, refetch: refetchList, isLoading } = useFetchSearchList();
   const { navigateToSearch } = useNavigatePage();
+  const searchApps = data?.data?.search_apps ?? [];
   const {
     openCreateModal,
     showSearchRenameModal,
@@ -31,12 +32,12 @@ export function SearchList({
   };
 
   useEffect(() => {
-    setListLength(data?.data?.search_apps?.length || 0);
+    setListLength(searchApps.length);
     setLoading?.(isLoading || false);
-  }, [data, setListLength, isLoading, setLoading]);
+  }, [searchApps.length, setListLength, isLoading, setLoading]);
   return (
     <>
-      {data?.data.search_apps.slice(0, 10).map((x) => (
+      {searchApps.slice(0, 10).map((x) => (
         <HomeCard
           key={x.id}
           data={x}

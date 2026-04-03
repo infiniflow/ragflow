@@ -92,13 +92,13 @@ export default function SearchingView({
       >
         <h1
           className={cn(
-            'text-4xl font-bold bg-gradient-to-l from-[#40EBE3] to-[#4A51FF] bg-clip-text cursor-pointer',
+            'text-4xl font-bold bg-gradient-to-l from-[#8CC63F] to-[#FBB03B] bg-clip-text cursor-pointer',
           )}
           onClick={() => {
             setIsSearching?.(false);
           }}
         >
-          RAGFlow
+          SoluTech
         </h1>
         <div
           className={cn(

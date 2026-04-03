@@ -162,6 +162,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 			}
 
+			// RESTful file routes for frontend compatibility
+			files := v1.Group("/files")
+			{
+				files.GET("", r.fileHandler.ListFiles)
+				files.GET("/:file_id/parent", r.fileHandler.GetParentFolder)
+				files.GET("/:file_id/ancestors", r.fileHandler.GetAllParentFolders)
+			}
+
 			// Author routes
 			authors := v1.Group("/authors")
 			{

@@ -401,14 +401,13 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                           className,
                         )}
                       >
-                        <FormControl>
-                          <SingleFormSlider
-                            {...field}
-                            max={2048}
-                            min={0}
-                            step={1}
-                          ></SingleFormSlider>
-                        </FormControl>
+                        <SingleFormSlider
+                          {...field}
+                          max={2048}
+                          min={0}
+                          step={1}
+                          aria-label="Top K"
+                        ></SingleFormSlider>
                         <FormControl>
                           <Input
                             type={'number'}

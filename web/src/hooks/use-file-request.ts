@@ -5,7 +5,15 @@ import {
   IFolder,
 } from '@/interfaces/database/file-manager';
 import { IConnectRequestBody } from '@/interfaces/request/file-manager';
-import fileManagerService from '@/services/file-manager-service';
+import fileManagerService, {
+  createFolderCompat,
+  getAllParentFolderCompat,
+  getFileCompat,
+  listFileCompat,
+  moveFileCompat,
+  removeFileCompat,
+  uploadFileCompat,
+} from '@/services/file-manager-service';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
@@ -59,17 +67,15 @@ export const useUploadFile = () => {
         formData.append('file', file);
         formData.append('path', pathList[index]);
       });
-      try {
-        const ret = await fileManagerService.uploadFile(formData);
-        if (ret?.data.code === 0) {
-          message.success(t('message.uploaded'));
-          setPaginationParams(1);
-          queryClient.invalidateQueries({
-            queryKey: [FileApiAction.FetchFileList],
-          });
-        }
-        return ret?.data?.code;
-      } catch (error) {}
+      const ret = await uploadFileCompat(formData);
+      if (ret?.data.code === 0) {
+        message.success(t('message.uploaded'));
+        setPaginationParams(1);
+        queryClient.invalidateQueries({
+          queryKey: [FileApiAction.FetchFileList],
+        });
+      }
+      return ret?.data?.code;
     },
   });
 
@@ -93,7 +99,7 @@ export const useMoveFile = () => {
   } = useMutation({
     mutationKey: [FileApiAction.MoveFile],
     mutationFn: async (params: IMoveFileBody) => {
-      const { data } = await fileManagerService.moveFile(params);
+      const { data } = await moveFileCompat(params);
       if (data.code === 0) {
         message.success(t('message.operated'));
         queryClient.invalidateQueries({
@@ -119,7 +125,7 @@ export const useCreateFolder = () => {
   } = useMutation({
     mutationKey: [FileApiAction.CreateFolder],
     mutationFn: async (params: { parentId: string; name: string }) => {
-      const { data } = await fileManagerService.createFolder({
+      const { data } = await createFolderCompat({
         name: params.name,
         parent_id: params.parentId,
         type: 'folder',
@@ -145,12 +151,16 @@ export const useFetchParentFolderList = () => {
     initialData: [],
     enabled: !!id,
     queryFn: async () => {
-      const { data } = await fileManagerService.getAllParentFolder(
-        {},
-        `${id}/ancestors`,
-      );
+      try {
+        const { data } = await getAllParentFolderCompat(id);
 
-      return data?.data?.parent_folders?.toReversed() ?? [];
+        return data?.data?.parent_folders?.toReversed() ?? [];
+      } catch (error: any) {
+        if (error?.response?.status === 404) {
+          return [];
+        }
+        throw error;
+      }
     },
   });
 
@@ -171,7 +181,9 @@ export const useFetchFileList = () => {
   const id = useGetFolderId();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
-  const { data, isFetching: loading } = useQuery<IFetchFileListResult>({
+  const { data, isFetching: loading } = useQuery<
+    IFetchFileListResult & { unsupported?: boolean }
+  >({
     queryKey: [
       FileApiAction.FetchFileList,
       {
@@ -183,14 +195,26 @@ export const useFetchFileList = () => {
     initialData: { files: [], parent_folder: {} as IFolder, total: 0 },
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await fileManagerService.listFile({
-        parent_id: id,
-        keywords: debouncedSearchString,
-        page_size: pagination.pageSize,
-        page: pagination.current,
-      });
+      try {
+        const { data } = await listFileCompat({
+          parent_id: id,
+          keywords: debouncedSearchString,
+          page_size: pagination.pageSize,
+          page: pagination.current,
+        });
 
-      return data?.data;
+        return data?.data;
+      } catch (error: any) {
+        if (error?.response?.status === 404) {
+          return {
+            files: [],
+            parent_folder: {} as IFolder,
+            total: 0,
+            unsupported: true,
+          };
+        }
+        throw error;
+      }
     },
   });
 
@@ -209,6 +233,7 @@ export const useFetchFileList = () => {
     pagination: { ...pagination, total: data?.total },
     setPagination,
     loading,
+    unsupported: Boolean(data?.unsupported),
   };
 };
 
@@ -224,9 +249,7 @@ export const useDeleteFile = () => {
   } = useMutation({
     mutationKey: [FileApiAction.DeleteFile],
     mutationFn: async (params: { fileIds: string[]; parentId: string }) => {
-      const { data } = await fileManagerService.removeFile({
-        ids: params.fileIds,
-      });
+      const { data } = await removeFileCompat(params.fileIds);
       if (data.code === 0) {
         message.success(t('message.deleted'));
         setPaginationParams(1); // TODO: There should be a better way to paginate the request list
@@ -249,7 +272,7 @@ export const useDownloadFile = () => {
   } = useMutation({
     mutationKey: [FileApiAction.DownloadFile],
     mutationFn: async (params: { id: string; filename?: string }) => {
-      const response = await fileManagerService.getFile({}, params.id);
+      const response = await getFileCompat(params.id);
       const blob = new Blob([response.data], { type: response.data.type });
       downloadFileFromBlob(blob, params.filename);
     },
@@ -267,7 +290,7 @@ export const useRenameFile = () => {
   } = useMutation({
     mutationKey: [FileApiAction.RenameFile],
     mutationFn: async (params: { fileId: string; name: string }) => {
-      const { data } = await fileManagerService.moveFile({
+      const { data } = await moveFileCompat({
         src_file_ids: [params.fileId],
         new_name: params.name,
       });
@@ -315,7 +338,7 @@ export const useFetchPureFileList = () => {
     gcTime: 0,
 
     mutationFn: async (parentId: string) => {
-      const { data } = await fileManagerService.listFile({
+      const { data } = await listFileCompat({
         parent_id: parentId,
       });
 
