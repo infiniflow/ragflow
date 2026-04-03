@@ -24,9 +24,7 @@ from peewee import OperationalError
 from pydantic import BaseModel, Field, validator, ValidationError
 from quart import request, send_file
 
-from api.apps.sdk import doc_validation
 from api.constants import FILE_NAME_LEN_LIMIT
-from api.db import FileType
 from api.db.db_models import APIToken, Document, File, Task
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from api.db.services.doc_metadata_service import DocMetadataService
@@ -37,6 +35,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
 from api.db.services.tenant_llm_service import TenantLLMService
+from api.utils import validation_utils
 from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_request_json, get_result, server_error_response, token_required
 from api.utils.image_utils import store_chunk_image
 from api.utils.validation_utils import format_validation_error_message, UpdateDocumentReq
@@ -228,9 +227,9 @@ def _update_chunk_method_only(req, doc, dataset_id, tenant_id):
         settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), dataset_id)
     return None
 
-def _update_document_status_only(status:str, doc, kb):
+def _update_document_status_only(status:int, doc, kb):
     """Update document status only (without validation)."""
-    if doc.status != status:
+    if doc.status is None or (int(doc.status) != status):
         try:
             if not DocumentService.update_by_id(doc.id, {"status": str(status)}):
                 return get_error_data_result(message="Database error (Document update)!")
@@ -311,9 +310,10 @@ async def update_doc(tenant_id, dataset_id, document_id):
     except ValidationError as e:
         return get_error_data_result(message=format_validation_error_message(e), code=RetCode.DATA_ERROR)
 
-    doc, req_doc_name = docs[0], req.get("name", None)
+    doc = docs[0]
+
     # further check with inner status (from DB)
-    error_msg, error_code = _validate_document_update_fields(update_doc_req, doc, req_doc_name)
+    error_msg, error_code = _validate_document_update_fields(update_doc_req, doc, req)
     if error_msg:
         return get_error_data_result(message=error_msg, code=error_code)
 
@@ -323,8 +323,8 @@ async def update_doc(tenant_id, dataset_id, document_id):
         if not DocMetadataService.update_document_metadata(document_id, update_doc_req.meta_fields):
             return get_error_data_result(message="Failed to update metadata")
     # doc name provided from request and diff with existing value, update
-    if req_doc_name and req_doc_name != doc.name:
-        if error := _update_document_name_only(document_id, req_doc_name):
+    if "name" in req and req["name"] != doc.name:
+        if error := _update_document_name_only(document_id, req["name"]):
             return error
 
     # parser config provided (already validated in UpdateDocumentReq), update it
@@ -336,9 +336,9 @@ async def update_doc(tenant_id, dataset_id, document_id):
         if error := _update_chunk_method_only(req, doc, dataset_id, tenant_id):
             return error
 
-    if update_doc_req.enabled:
-        # "enabled" flag provided, the update method will check if it's changed
-        if error := _update_document_status_only(update_doc_req.enabled, doc, kb):
+    if "enabled" in req: # already checked in UpdateDocumentReq - it's int if it's present
+        # "enabled" flag provided, the update method will check if it's changed and then update if so
+        if error := _update_document_status_only(int(req["enabled"]), doc, kb):
             return error
 
     try:
@@ -371,23 +371,23 @@ async def update_doc(tenant_id, dataset_id, document_id):
 
     return get_result(data=renamed_doc)
 
-def _validate_document_update_fields(update_doc_req:UpdateDocumentReq, doc, req_doc_name:str):
+def _validate_document_update_fields(update_doc_req:UpdateDocumentReq, doc, req):
     """Validate document update fields in a single method."""
     # Validate immutable fields
-    error_msg, error_code = doc_validation.validate_immutable_fields(update_doc_req, doc)
+    error_msg, error_code = validation_utils.validate_immutable_fields(update_doc_req, doc)
     if error_msg:
         return error_msg, error_code
 
     # Validate document name if present
-    if req_doc_name and req_doc_name != doc.name:
-        docs_from_name = DocumentService.query(name=req_doc_name, kb_id=doc.kb_id)
-        error_msg, error_code = doc_validation.validate_document_name(req_doc_name, doc, docs_from_name)
+    if "name" in req and req["name"] != doc.name:
+        docs_from_name = DocumentService.query(name=req["name"], kb_id=doc.kb_id)
+        error_msg, error_code = validation_utils.validate_document_name(req["name"], doc, docs_from_name)
         if error_msg:
             return error_msg, error_code
 
     # Validate chunk method if present
-    if update_doc_req.chunk_method:
-        error_msg, error_code = doc_validation.validate_chunk_method(doc)
+    if "chunk_method" in req:
+        error_msg, error_code = validation_utils.validate_chunk_method(doc, req["chunk_method"])
         if error_msg:
             return error_msg, error_code
 

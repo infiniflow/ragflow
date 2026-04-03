@@ -74,7 +74,7 @@ dependencies = [
     "opensearch-py==2.7.1",
     "ormsgpack==1.5.0",
     "pdfplumber==0.10.4",
-    "pluginlib==0.9.4",
+    "pluginlib==0.10.0",
     "psycopg2-binary>=2.9.11,<3.0.0",
     "pyclipper>=1.4.0,<2.0.0",
     # "pywencai>=0.13.1,<1.0.0",  # Temporarily disabled: conflicts with agentrun-sdk (pydash>=8), needed for agent/tools/wencai.py
@@ -115,7 +115,7 @@ dependencies = [
     "webdriver-manager==4.0.1",
     "wikipedia==1.4.0",
     "word2number==1.1",
-    "xgboost==1.6.0",
+    "xgboost==3.2.0",
     "xpinyin==0.7.6",
     "yfinance==0.2.65",
     "zhipuai==2.0.1",
@@ -176,6 +176,7 @@ test = [
     "pycryptodomex==3.20.0",
     "pytest-playwright>=0.7.2",
     "codecov>=2.1.13",
+    "tensorflow-cpu>=2.17.0",
 ]
 
 [tool.uv]

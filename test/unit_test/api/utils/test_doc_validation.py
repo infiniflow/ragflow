@@ -16,9 +16,8 @@
 
 """Unit tests for api.apps.sdk.doc_validation module."""
 
-import warnings
 from unittest.mock import Mock
-from api.apps.sdk.doc_validation import (
+from api.utils.validation_utils import (
     validate_immutable_fields,
     validate_document_name,
     validate_chunk_method
@@ -103,7 +102,7 @@ def test_validate_immutable_fields_token_count_mismatch():
     doc.progress = 0.5
     
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `token_num`."
+    assert error_msg == "Can't change `token_count`."
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -163,12 +162,24 @@ def test_validate_document_name_valid():
     req_doc_name = "new_document.pdf"
     doc = Mock()
     doc.name = "old_document.pdf"
-    
+
     docs_from_name = []
-    
+
     error_msg, error_code = validate_document_name(req_doc_name, doc, docs_from_name)
     assert error_msg is None
     assert error_code is None
+
+def test_validate_document_name_attr_error():
+    """Test valid document name update."""
+    req_doc_name = 0
+    doc = Mock()
+    doc.name = "old_document.pdf"
+
+    docs_from_name = []
+
+    error_msg, error_code = validate_document_name(req_doc_name, doc, docs_from_name)
+    assert error_msg == f"AttributeError('{type(req_doc_name).__name__}' object has no attribute 'encode')"
+    assert error_code == RetCode.EXCEPTION_ERROR
 
 
 def test_validate_document_name_exceeds_byte_limit():
@@ -176,9 +187,9 @@ def test_validate_document_name_exceeds_byte_limit():
     long_name = "a" * (FILE_NAME_LEN_LIMIT + 1)
     doc = Mock()
     doc.name = "old_document.pdf"
-    
+
     docs_from_name = []
-    
+
     error_msg, error_code = validate_document_name(long_name, doc, docs_from_name)
     assert f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less." in error_msg
     assert error_code == RetCode.ARGUMENT_ERROR
@@ -189,9 +200,9 @@ def test_validate_document_name_different_extension():
     req_doc_name = "new_document.docx"
     doc = Mock()
     doc.name = "old_document.pdf"
-    
+
     docs_from_name = []
-    
+
     error_msg, error_code = validate_document_name(req_doc_name, doc, docs_from_name)
     assert "The extension of file can't be changed" in error_msg
     assert error_code == RetCode.ARGUMENT_ERROR
@@ -202,11 +213,11 @@ def test_validate_document_name_duplicate():
     req_doc_name = "duplicate.pdf"
     doc = Mock()
     doc.name = "original.pdf"
-    
+
     duplicate_doc = Mock()
     duplicate_doc.name = "duplicate.pdf"
     docs_from_name = [duplicate_doc]
-    
+
     error_msg, error_code = validate_document_name(req_doc_name, doc, docs_from_name)
     assert "Duplicated document name in the same dataset." in error_msg
     assert error_code == RetCode.DATA_ERROR
@@ -217,9 +228,9 @@ def test_validate_document_name_case_insensitive_extension():
     req_doc_name = "new_document.PDF"
     doc = Mock()
     doc.name = "old_document.pdf"
-    
+
     docs_from_name = []
-    
+
     error_msg, error_code = validate_document_name(req_doc_name, doc, docs_from_name)
     assert error_msg is None
     assert error_code is None
