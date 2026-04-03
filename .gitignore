@@ -232,3 +232,9 @@ internal/cpp/cmake-build-debug/
 bin/*
 !bin/.gitkeep
 tests/.env.test
+tests/*.pdf
+tests/*.jpg
+tests/*.jpeg
+tests/*.png
+tests/*.html
+tests/__pycache__/
