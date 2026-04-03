@@ -1441,7 +1441,6 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     full_answer = last_state.full_text if last_state else ""
     final = decorate_answer(full_answer)
     final["final"] = True
-    final["answer"] = ""
     yield final
 
 
