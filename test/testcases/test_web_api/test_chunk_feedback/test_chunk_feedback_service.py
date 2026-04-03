@@ -273,11 +273,13 @@ class TestUpdateChunkWeight:
             mod.MAX_PAGERANK_WEIGHT,
         )
 
-    def test_update_weight_infinity_skips_until_row_id_support(self, feedback_env):
-        """Infinity is intentionally skipped until safe single-row update is available."""
+    def test_update_weight_infinity_uses_adjust_with_row_id(self, feedback_env):
+        """Infinity path passes row_id to adjust_chunk_pagerank_fea."""
         mod, settings_mod = feedback_env
         settings_mod.DOC_ENGINE = "infinity"
         mock_doc_store = MagicMock()
+        mock_adjust = MagicMock(return_value=True)
+        mock_doc_store.adjust_chunk_pagerank_fea = mock_adjust
         settings_mod.docStoreConn = mock_doc_store
 
         ok = mod.ChunkFeedbackService.update_chunk_weight(
@@ -285,10 +287,18 @@ class TestUpdateChunkWeight:
             chunk_id="chunk1",
             kb_id="kb1",
             delta=1,
+            row_id=42,
         )
-        assert ok is False
-        mock_doc_store.get.assert_not_called()
-        mock_doc_store.update.assert_not_called()
+        assert ok is True
+        mock_adjust.assert_called_once_with(
+            "chunk1",
+            "idx-tenant1",
+            "kb1",
+            1,
+            mod.MIN_PAGERANK_WEIGHT,
+            mod.MAX_PAGERANK_WEIGHT,
+            row_id=42,
+        )
 
 
 class TestApplyFeedback:
@@ -333,8 +343,7 @@ class TestApplyFeedback:
         assert result["success_count"] == 1
         assert result["fail_count"] == 0
         assert mock_update.call_count == 1
-        # One integer unit split across two chunks (largest remainder → first chunk gets +1)
-        mock_update.assert_called_once_with("tenant1", "chunk1", "kb1", 1)
+        mock_update.assert_called_once_with("tenant1", "chunk1", "kb1", 1, row_id=None)
 
     def test_apply_negative_feedback(self, feedback_env, monkeypatch):
         """Should apply negative feedback with full budget when only one chunk."""
@@ -353,7 +362,7 @@ class TestApplyFeedback:
         )
 
         assert result["success_count"] == 1
-        mock_update.assert_called_with("tenant1", "chunk1", "kb1", -1)
+        mock_update.assert_called_with("tenant1", "chunk1", "kb1", -1, row_id=None)
 
     def test_apply_feedback_no_chunks(self, feedback_env, monkeypatch):
         """Should handle empty chunk list gracefully."""
@@ -413,8 +422,8 @@ class TestApplyFeedback:
         mod.ChunkFeedbackService.apply_feedback(
             tenant_id="tenant1", reference=reference, is_positive=True
         )
-        mock_update.assert_any_call("tenant1", "chunk1", "kb1", mod.UPVOTE_WEIGHT_INCREMENT)
-        mock_update.assert_any_call("tenant1", "chunk2", "kb1", mod.UPVOTE_WEIGHT_INCREMENT)
+        mock_update.assert_any_call("tenant1", "chunk1", "kb1", mod.UPVOTE_WEIGHT_INCREMENT, row_id=None)
+        mock_update.assert_any_call("tenant1", "chunk2", "kb1", mod.UPVOTE_WEIGHT_INCREMENT, row_id=None)
 
     def test_apply_positive_feedback_relevance_weighted(self, feedback_env, monkeypatch):
         """Higher retrieval similarity receives a larger share of the budget."""
@@ -434,4 +443,23 @@ class TestApplyFeedback:
         mod.ChunkFeedbackService.apply_feedback(
             tenant_id="tenant1", reference=reference, is_positive=True
         )
-        mock_update.assert_called_once_with("tenant1", "a", "kb1", 1)
+        mock_update.assert_called_once_with("tenant1", "a", "kb1", 1, row_id=None)
+
+    def test_apply_feedback_passes_row_id_from_reference(self, feedback_env, monkeypatch):
+        """row_id from retrieval results flows through to update_chunk_weight."""
+        mod, _ = feedback_env
+        monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
+        monkeypatch.setattr(mod, "CHUNK_FEEDBACK_WEIGHTING", "relevance")
+        mock_update = MagicMock(return_value=True)
+        monkeypatch.setattr(
+            mod.ChunkFeedbackService, "update_chunk_weight", mock_update
+        )
+        reference = {
+            "chunks": [
+                {"id": "c1", "dataset_id": "kb1", "similarity": 0.8, "row_id": 99},
+            ]
+        }
+        mod.ChunkFeedbackService.apply_feedback(
+            tenant_id="tenant1", reference=reference, is_positive=True
+        )
+        mock_update.assert_called_once_with("tenant1", "c1", "kb1", 1, row_id=99)

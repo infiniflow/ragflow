@@ -31,9 +31,13 @@ Weighting modes (CHUNK_FEEDBACK_WEIGHTING):
   decrement (stronger total effect when many chunks are cited).
 
 Budget per feedback event is a small integer (1) applied to pagerank_fea
-(0–100, integer in OB/ES mappings). Relevance mode splits that unit across
-cited chunks; uniform mode applies one unit per chunk (legacy, stronger when
-many chunks are cited).
+(0–100, integer in Infinity/OB/ES mappings). Relevance mode splits that unit
+across cited chunks; uniform mode applies one unit per chunk (legacy, stronger
+when many chunks are cited).
+
+Infinity uses row_id (returned by search results since PR #13901) for targeted
+single-row updates. If a concurrent update changes the row_id, the Infinity
+connector retries with a fresh row_id lookup.
 """
 import logging
 import math
@@ -141,7 +145,10 @@ class ChunkFeedbackService:
 
     @staticmethod
     def _feedback_rows_from_reference(reference: dict) -> List[Tuple[str, str, dict]]:
-        """(chunk_id, kb_id, raw_chunk) for chunks that can be updated (single pass)."""
+        """(chunk_id, kb_id, raw_chunk) for chunks that can be updated (single pass).
+
+        raw_chunk is kept for retrieval-signal weighting and optional row_id.
+        """
         if not reference:
             return []
         rows: List[Tuple[str, str, dict]] = []
@@ -158,15 +165,14 @@ class ChunkFeedbackService:
         chunk_id: str,
         kb_id: str,
         delta: int,
+        row_id: int | None = None,
     ) -> bool:
         """
         Update the pagerank weight of a single chunk.
 
-        Elasticsearch, OpenSearch, and OceanBase/SeekDB use an atomic adjust on
-        the doc store when supported.
-
-        Infinity path is intentionally skipped for now until Infinity exposes
-        internal row id required for safe single-row updates.
+        Elasticsearch, OpenSearch, OceanBase/SeekDB, and Infinity use an
+        atomic adjust on the doc store when supported. Infinity passes
+        row_id (from retrieval results) for targeted single-row updates.
 
         Args:
             tenant_id: The tenant ID for index naming
@@ -180,15 +186,11 @@ class ChunkFeedbackService:
         try:
             idx_name = index_name(tenant_id)
             conn = settings.docStoreConn
-            engine = settings.DOC_ENGINE.lower()
-            if engine == "infinity":
-                logging.info(
-                    "Skip chunk feedback update for Infinity backend (chunk=%s) until row-id support lands.",
-                    chunk_id,
-                )
-                return False
             adjust = getattr(conn, "adjust_chunk_pagerank_fea", None)
             if callable(adjust):
+                kwargs: dict = {}
+                if row_id is not None:
+                    kwargs["row_id"] = row_id
                 success = adjust(
                     chunk_id,
                     idx_name,
@@ -196,6 +198,7 @@ class ChunkFeedbackService:
                     int(delta),
                     MIN_PAGERANK_WEIGHT,
                     MAX_PAGERANK_WEIGHT,
+                    **kwargs,
                 )
                 if success:
                     logging.info(
@@ -217,7 +220,8 @@ class ChunkFeedbackService:
             new_weight = max(MIN_PAGERANK_WEIGHT, min(MAX_PAGERANK_WEIGHT, new_weight))
 
             condition = {"id": chunk_id}
-            if new_weight == 0 and engine in ("elasticsearch", "opensearch"):
+            doc_engine = settings.DOC_ENGINE.lower()
+            if new_weight == 0 and doc_engine in ("elasticsearch", "opensearch"):
                 new_value = {"remove": PAGERANK_FLD}
             else:
                 new_value = {PAGERANK_FLD: int(new_weight)}
@@ -286,10 +290,18 @@ class ChunkFeedbackService:
         success_count = 0
         fail_count = 0
 
+        row_by_chunk = {r[0]: r[2].get("row_id") for r in rows}
         for chunk_id, kb_id, delta in deltas:
             if delta == 0:
                 continue
-            if cls.update_chunk_weight(tenant_id, chunk_id, kb_id, delta):
+            rid = row_by_chunk.get(chunk_id)
+            rid_int = None
+            if rid is not None:
+                try:
+                    rid_int = int(rid)
+                except (TypeError, ValueError):
+                    pass
+            if cls.update_chunk_weight(tenant_id, chunk_id, kb_id, delta, row_id=rid_int):
                 success_count += 1
             else:
                 fail_count += 1
