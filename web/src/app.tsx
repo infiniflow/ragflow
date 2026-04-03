@@ -1,6 +1,6 @@
 import { Toaster as Sonner } from '@/components/ui/sonner';
 import { Toaster } from '@/components/ui/toaster';
-import i18n, { changeLanguageAsync } from '@/locales/config';
+import { changeLanguageAsync } from '@/locales/config';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { configResponsive } from 'ahooks';
 import dayjs from 'dayjs';
@@ -64,25 +64,6 @@ const queryClient = new QueryClient({
 });
 
 function Root({ children }: React.PropsWithChildren) {
-  const updateDocumentLocale = (lng: string) => {
-    document.documentElement.lang = lng;
-    document.documentElement.dir = 'ltr';
-    dayjs.locale(lng === 'zh' ? 'zh-cn' : lng);
-  };
-
-  useEffect(() => {
-    const handleLanguageChanged = (lng: string) => {
-      storage.setLanguage(lng);
-      updateDocumentLocale(lng);
-    };
-
-    updateDocumentLocale(storage.getLanguage() || i18n.language || 'en');
-    i18n.on('languageChanged', handleLanguageChanged);
-
-    return () => {
-      i18n.off('languageChanged', handleLanguageChanged);
-    };
-  }, []);
   return (
     <>
       {children}
