@@ -472,6 +472,8 @@ def test_list_chunk_exception_branches_unit(monkeypatch):
     assert res["code"] == 0, res
     assert res["data"]["total"] == 1, res
     assert res["data"]["chunks"][0]["available_int"] == 1, res
+    assert res["data"]["chunks"][0]["content_with_weight"] == "chunk content", res
+    assert res["data"]["chunks"][0]["highlight"] == "highlighted content", res
 
     monkeypatch.setattr(module.DocumentService, "get_tenant_id", lambda _doc_id: "")
     _set_request_json(monkeypatch, module, {"doc_id": "doc-1"})
