@@ -1,13 +1,13 @@
 {
     "id": 13,
     "title": {
-        "en": "ImageLingo",
-        "de": "ImageLingo",
-        "zh": "图片解析"},
+        "en": "Photo text translator",
+        "de": "Bild-Dolmetscher",
+        "zh": "图片文字快译"},
     "description": {
-        "en": "ImageLingo lets you snap any photo containing text—menus, signs, or documents—and instantly recognize and translate it into your language of choice using advanced AI-powered translation technology.",
-        "de": "ImageLingo ermöglicht es Ihnen, jedes Foto mit Text – Menüs, Schilder oder Dokumente – zu fotografieren und es sofort in Ihre gewünschte Sprache zu erkennen und zu übersetzen, unter Verwendung fortschrittlicher KI-gestützter Übersetzungstechnologie.",
-        "zh": "多模态大模型允许您拍摄任何包含文本的照片——菜单、标志或文档——立即识别并转换成您选择的语言。"},
+        "en": "Photo text translator lets you snap any photo containing text—menus, signs, or documents—and instantly recognize and translate it into your language of choice using advanced AI-powered translation technology.",
+        "de": "Bild-Dolmetscher ermöglicht es Ihnen, jedes Foto mit Text – Menüs, Schilder oder Dokumente – zu fotografieren und es sofort in Ihre gewünschte Sprache zu erkennen und zu übersetzen, unter Verwendung fortschrittlicher KI-gestützter Übersetzungstechnologie.",
+        "zh": "图片文字快译允许您拍摄任何包含文本的照片——菜单、标志或文档——立即识别并转换成您选择的语言。"},
     "canvas_type": "Consumer App",
 	"dsl": {
 		"components": {
