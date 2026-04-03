@@ -115,6 +115,11 @@ const (
 	TokenInsert
 	TokenFile
 	TokenMetadata
+	TokenUpdate
+	TokenRemove
+	TokenChunk
+	TokenDocument
+	TokenTag
 
 	// Literals
 	TokenIdentifier
