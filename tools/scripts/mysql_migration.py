@@ -40,7 +40,7 @@ from peewee import (
     PrimaryKeyField,
     TextField,
 )
-from playhouse.migrate import MySQLMigrator, migrate
+from playhouse.migrate import MySQLMigrator
 
 # Add project root to path for imports
 PROJECT_BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -410,7 +410,7 @@ def run_migration(config: MigrationConfig, stages: list, dry_run: bool = True,
             
             # For create_table_only mode, skip check and directly execute
             if create_table_only:
-                logger.info(f"[CREATE TABLE ONLY] Skipping check, will create/verify target table")
+                logger.info("[CREATE TABLE ONLY] Skipping check, will create/verify target table")
                 rows, tables = stage.execute()
             else:
                 # Check if migration is needed
