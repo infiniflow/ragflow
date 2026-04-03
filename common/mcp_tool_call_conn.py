@@ -57,6 +57,17 @@ class MCPToolCallSession(ToolCallSession):
 
         asyncio.run_coroutine_threadsafe(self._mcp_server_loop(), self._event_loop)
 
+    @staticmethod
+    def _is_valid_header_value(header_name: str, header_value: str) -> bool:
+        name = (header_name or "").strip()
+        value = (header_value or "").strip()
+        if not name or not value:
+            return False
+        if name.lower() == "authorization" and value.lower().startswith("bearer"):
+            parts = value.split(None, 1)
+            return len(parts) == 2 and bool(parts[1].strip())
+        return True
+
     async def _mcp_server_loop(self) -> None:
         url = self._mcp_server.url.strip()
         raw_headers: dict[str, str] = self._mcp_server.headers or {}
@@ -66,13 +77,14 @@ class MCPToolCallSession(ToolCallSession):
         for h, v in raw_headers.items():
             nh = Template(h).safe_substitute(self._server_variables)
             nv = Template(v).safe_substitute(self._server_variables)
-            if nh.strip() and nv.strip().strip("Bearer"):
+            if self._is_valid_header_value(nh, nv):
                 headers[nh] = nv
 
         for h, v in custom_header.items():
             nh = Template(h).safe_substitute(custom_header)
             nv = Template(v).safe_substitute(custom_header)
-            headers[nh] = nv
+            if self._is_valid_header_value(nh, nv):
+                headers[nh] = nv
 
         if self._mcp_server.server_type == MCPServerType.SSE:
             # SSE transport
