@@ -16,12 +16,13 @@ export function GeneralSavingButton() {
     () => form.formState.defaultValues ?? {},
     [form.formState.defaultValues],
   );
-  const parser_id = defaultValues['parser_id'];
+  const chunk_method = defaultValues['chunk_method'];
 
   return (
     <ButtonLoading
       type="button"
       loading={submitLoading}
+      data-testid="ds-settings-basic-save-btn"
       onClick={() => {
         (async () => {
           let isValidate = await form.trigger('name');
@@ -30,7 +31,7 @@ export function GeneralSavingButton() {
           if (isValidate) {
             saveKnowledgeConfiguration({
               kb_id,
-              parser_id,
+              chunk_method,
               name,
               description,
               avatar,
@@ -55,6 +56,7 @@ export function SavingButton() {
   return (
     <ButtonLoading
       loading={submitLoading}
+      data-testid="ds-settings-page-save-btn"
       onClick={() => {
         (async () => {
           try {

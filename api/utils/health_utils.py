@@ -233,14 +233,40 @@ def get_mysql_status():
         }
 
 
+def _minio_scheme_and_verify():
+    """
+    Determine URL scheme (http/https) and SSL verify flag for MinIO health check.
+    Uses MINIO.secure for scheme and MINIO.verify for certificate verification
+    (e.g. self-signed certs when verify is False).
+    """
+    secure = settings.MINIO.get("secure", False)
+    if isinstance(secure, str):
+        secure = secure.lower() in ("true", "1", "yes")
+    scheme = "https" if secure else "http"
+    verify = settings.MINIO.get("verify", True)
+    if isinstance(verify, str):
+        verify = verify.lower() not in ("false", "0", "no")
+    elif isinstance(verify, bool):
+        pass
+    else:
+        verify = bool(verify)
+    return scheme, verify
+
+
 def check_minio_alive():
+    """
+    Check MinIO service liveness via /minio/health/live.
+    Uses http or https and optional certificate verification based on
+    MINIO.secure and MINIO.verify configuration.
+    """
     start_time = timer()
     try:
-        response = requests.get(f'http://{settings.MINIO["host"]}/minio/health/live')
+        scheme, verify = _minio_scheme_and_verify()
+        url = f"{scheme}://{settings.MINIO['host']}/minio/health/live"
+        response = requests.get(url, timeout=10, verify=verify)
         if response.status_code == 200:
             return {"status": "alive", "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
-        else:
-            return {"status": "timeout", "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
+        return {"status": "timeout", "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
     except Exception as e:
         return {
             "status": "timeout",

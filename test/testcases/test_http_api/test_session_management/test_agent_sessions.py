@@ -14,14 +14,17 @@
 #  limitations under the License.
 #
 import pytest
+import requests
 from common import (
     create_agent,
     create_agent_session,
     delete_agent,
+    delete_all_agent_sessions,
     delete_agent_sessions,
     list_agent_sessions,
     list_agents,
 )
+from configs import HOST_ADDRESS, VERSION
 
 AGENT_TITLE = "test_agent_http"
 MINIMAL_DSL = {
@@ -65,7 +68,7 @@ def agent_id(HttpApiAuth, request):
     agent_id = res["data"][0]["id"]
 
     def cleanup():
-        delete_agent_sessions(HttpApiAuth, agent_id)
+        delete_all_agent_sessions(HttpApiAuth, agent_id)
         delete_agent(HttpApiAuth, agent_id)
 
     request.addfinalizer(cleanup)
@@ -73,6 +76,19 @@ def agent_id(HttpApiAuth, request):
 
 
 class TestAgentSessions:
+    @pytest.mark.p2
+    def test_delete_agent_sessions_empty_ids_noop(self, HttpApiAuth, agent_id):
+        res = create_agent_session(HttpApiAuth, agent_id, payload={})
+        assert res["code"] == 0, res
+        session_id = res["data"]["id"]
+
+        res = delete_agent_sessions(HttpApiAuth, agent_id, {"ids": []})
+        assert res["code"] == 0, res
+
+        res = list_agent_sessions(HttpApiAuth, agent_id, params={"id": session_id})
+        assert res["code"] == 0, res
+        assert len(res["data"]) == 1, res
+
     @pytest.mark.p2
     def test_create_list_delete_agent_sessions(self, HttpApiAuth, agent_id):
         res = create_agent_session(HttpApiAuth, agent_id, payload={})
@@ -87,3 +103,33 @@ class TestAgentSessions:
 
         res = delete_agent_sessions(HttpApiAuth, agent_id, {"ids": [session_id]})
         assert res["code"] == 0, res
+
+    @pytest.mark.p2
+    def test_agent_crud_validation_contract(self, HttpApiAuth, agent_id):
+        res = list_agents(HttpApiAuth, {"id": "missing-agent-id", "title": "missing-agent-title"})
+        assert res["code"] == 102, res
+        assert "doesn't exist" in res["message"], res
+
+        res = list_agents(HttpApiAuth, {"title": AGENT_TITLE, "desc": "true", "page_size": 1})
+        assert res["code"] == 0, res
+
+        res = create_agent(HttpApiAuth, {"title": "missing-dsl-agent"})
+        assert res["code"] == 101, res
+        assert "No DSL data in request" in res["message"], res
+
+        res = create_agent(HttpApiAuth, {"dsl": MINIMAL_DSL})
+        assert res["code"] == 101, res
+        assert "No title in request" in res["message"], res
+
+        res = create_agent(HttpApiAuth, {"title": AGENT_TITLE, "dsl": MINIMAL_DSL})
+        assert res["code"] == 102, res
+        assert "already exists" in res["message"], res
+
+        update_url = f"{HOST_ADDRESS}/api/{VERSION}/agents/invalid-agent-id"
+        res = requests.put(update_url, auth=HttpApiAuth, json={"title": "updated", "dsl": MINIMAL_DSL}).json()
+        assert res["code"] == 103, res
+        assert "Only owner of canvas authorized" in res["message"], res
+
+        res = delete_agent(HttpApiAuth, "invalid-agent-id")
+        assert res["code"] == 103, res
+        assert "Only owner of canvas authorized" in res["message"], res

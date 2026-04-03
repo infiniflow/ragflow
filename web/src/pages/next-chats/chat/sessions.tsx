@@ -1,20 +1,36 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
+import EmbedDialog from '@/components/embed-dialog';
+import { useShowEmbedModal } from '@/components/embed-dialog/use-show-embed-dialog';
 import { MoreButton } from '@/components/more-button';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SearchInput } from '@/components/ui/input';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useFetchDialog,
   useGetChatSearchParams,
   useRemoveConversation,
 } from '@/hooks/use-chat-request';
-import { cn } from '@/lib/utils';
-import { Check, PanelLeftClose, Plus, Trash2 } from 'lucide-react';
+import {
+  LucideCopyX,
+  LucideListChecks,
+  LucidePanelLeftClose,
+  LucidePlus,
+  LucideSend,
+  LucideTrash2,
+  LucideUndo2,
+} from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
+import { useChatUrlParams } from '../hooks/use-chat-url';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { useSelectDerivedConversationList } from '../hooks/use-select-conversation-list';
 import { ConversationDropdown } from './conversation-dropdown';
@@ -35,6 +51,8 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
   const { data } = useFetchDialog();
   const { visible, switchVisible } = useSetModalState(true);
   const { removeConversation } = useRemoveConversation();
+  const { setConversationBoth } = useChatUrlParams();
+  const { conversationId } = useGetChatSearchParams();
 
   // Selection mode state
   const [selectionMode, setSelectionMode] = useState(false);
@@ -77,79 +95,163 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
 
   // Batch delete
   const handleBatchDelete = useCallback(async () => {
-    if (selectedIds.size > 0) {
-      await removeConversation(Array.from(selectedIds));
-      exitSelectionMode();
+    if (selectedIds.size === 0) {
+      return;
     }
-  }, [selectedIds, removeConversation, exitSelectionMode]);
+
+    const selectedIdList = Array.from(selectedIds);
+    const currentConversationDeleted = conversationId
+      ? selectedIdList.includes(conversationId)
+      : false;
+    const temporaryIdSet = new Set(
+      conversationList.filter((item) => item.is_new).map((item) => item.id),
+    );
+    const persistedIds: string[] = [];
+
+    selectedIdList.forEach((id) => {
+      if (temporaryIdSet.has(id)) {
+        removeTemporaryConversation(id);
+      } else {
+        persistedIds.push(id);
+      }
+    });
+
+    let removeCode = -1;
+    if (persistedIds.length > 0) {
+      removeCode = await removeConversation(persistedIds);
+    }
+
+    if (currentConversationDeleted && conversationId) {
+      const currentIsTemporary = temporaryIdSet.has(conversationId);
+      const currentPersistedDeleted =
+        persistedIds.includes(conversationId) && removeCode === 0;
+      if (currentIsTemporary || currentPersistedDeleted) {
+        setConversationBoth('', '');
+      }
+    }
+    exitSelectionMode();
+  }, [
+    selectedIds,
+    conversationId,
+    conversationList,
+    setConversationBoth,
+    removeTemporaryConversation,
+    removeConversation,
+    exitSelectionMode,
+  ]);
 
   const selectedCount = useMemo(() => selectedIds.size, [selectedIds]);
-  const allSelected = useMemo(
-    () =>
-      selectedCount === conversationList.length && conversationList.length > 0,
-    [selectedCount, conversationList.length],
-  );
 
-  const handleCardClick = useCallback(
-    (conversationId: string, isNew: boolean) => () => {
-      if (selectionMode) {
-        toggleSelection(conversationId);
-      } else {
-        handleConversationCardClick(conversationId, isNew);
-      }
-    },
-    [handleConversationCardClick, selectionMode, toggleSelection],
-  );
-
-  const { conversationId } = useGetChatSearchParams();
+  const { id } = useParams();
+  const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
+    useShowEmbedModal();
 
   if (!visible) {
     return (
       <div className="p-5">
-        <RAGFlowAvatar
-          avatar={data.icon}
-          name={data.name}
-          className="size-8 cursor-pointer"
+        <Button
+          variant="transparent"
+          size="icon-sm"
+          className="border-0"
           onClick={switchVisible}
-        ></RAGFlowAvatar>
+          data-testid="chat-detail-sessions-open"
+        >
+          <RAGFlowAvatar
+            avatar={data.icon}
+            name={data.name}
+            className="size-8 cursor-pointer"
+          />
+        </Button>
       </div>
     );
   }
 
   return (
-    <section className="p-5 w-[296px] flex flex-col">
-      <section className="flex items-center text-base justify-between gap-2">
+    <aside
+      className="p-5 w-[296px] flex flex-col"
+      role="complementary"
+      data-testid="chat-detail-sessions"
+    >
+      <header className="flex items-center text-base justify-between gap-4">
         <div className="flex gap-3 items-center min-w-0">
           <RAGFlowAvatar
             avatar={data.icon}
             name={data.name}
             className="size-8"
-          ></RAGFlowAvatar>
+          />
+
           <span className="flex-1 truncate">{data.name}</span>
         </div>
-        <PanelLeftClose
-          className="cursor-pointer size-4"
-          onClick={switchVisible}
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              onClick={showEmbedModal}
+              size="icon-xs"
+              data-testid="chat-detail-embed-open"
+            >
+              <LucideSend />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('common.embedIntoSite')}</TooltipContent>
+        </Tooltip>
+
+        <EmbedDialog
+          visible={embedVisible}
+          hideModal={hideEmbedModal}
+          token={id!}
+          from={SharedFrom.Chat}
+          beta={beta}
+          isAgent={false}
         />
-      </section>
+
+        <Button
+          variant="transparent"
+          size="icon-sm"
+          className="border-0 ml-auto"
+          onClick={switchVisible}
+          data-testid="chat-detail-sessions-close"
+        >
+          <LucidePanelLeftClose />
+        </Button>
+      </header>
+
       <div className="flex justify-between items-center mb-4 pt-10">
         <div className="flex items-center gap-3">
           <span className="text-base font-bold">{t('chat.conversations')}</span>
-          <span className="text-text-secondary text-xs">
+          <data
+            className="text-text-secondary text-xs"
+            value={conversationList.length}
+          >
             {conversationList.length}
-          </span>
+          </data>
         </div>
-        {selectionMode && selectedCount > 0 ? (
-          // Selection mode with items selected: show return and delete
-          <div className="flex items-center gap-1">
+
+        <div className="flex items-center gap-2">
+          {selectionMode ? (
+            // Exit selection mode
             <Button
               variant="ghost"
-              size="icon"
-              className="size-6"
+              size="icon-xs"
               onClick={exitSelectionMode}
+              data-testid="chat-detail-session-selection-exit"
             >
-              <img src="/return2.png" alt="返回" className="h-4 w-4" />
+              <LucideUndo2 size={16} />
             </Button>
+          ) : (
+            // New conversation
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={addTemporaryConversation}
+              data-testid="chat-detail-session-new"
+            >
+              <LucidePlus className="h-4 w-4" />
+            </Button>
+          )}
+
+          {selectionMode && selectedCount > 0 ? (
+            // Delete selected items
             <ConfirmDeleteDialog
               onOk={handleBatchDelete}
               title={t('chat.batchDeleteSessions')}
@@ -158,89 +260,104 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
                   count: selectedCount,
                 }),
               }}
+              testId="chat-detail-session-batch-delete-dialog"
+              confirmButtonTestId="chat-detail-session-batch-delete-confirm"
+              cancelButtonTestId="chat-detail-session-batch-delete-cancel"
             >
               <Button
-                variant="ghost"
-                size="icon"
-                className="size-6 text-state-error"
+                variant="delete"
+                size="icon-xs"
+                data-testid="chat-detail-session-batch-delete"
               >
-                <Trash2 className="h-4 w-4" />
+                <LucideTrash2 />
               </Button>
             </ConfirmDeleteDialog>
-          </div>
-        ) : (
-          // Default or selection mode without selection: show plus and batch delete
-          <div className="flex items-center gap-1">
+          ) : (
             <Button
               variant="ghost"
-              size="icon"
-              className="size-6"
-              onClick={addTemporaryConversation}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-6"
+              size="icon-xs"
               onClick={selectionMode ? toggleSelectAll : toggleSelectionMode}
+              data-testid={
+                selectionMode
+                  ? 'chat-detail-session-select-all'
+                  : 'chat-detail-session-selection-enable'
+              }
             >
-              {selectionMode && allSelected ? (
-                <Check className="h-4 w-4" />
-              ) : (
-                <img
-                  src="/batch_delete2.png"
-                  alt="批量删除"
-                  className="h-4 w-4"
-                />
-              )}
+              {selectionMode ? <LucideListChecks /> : <LucideCopyX />}
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-      <div className="pb-4">
+
+      <div className="pb-4" role="search">
         <SearchInput
           onChange={handleInputChange}
           value={searchString}
+          data-testid="chat-detail-session-search"
         ></SearchInput>
       </div>
-      <div className="space-y-4 flex-1 overflow-auto">
-        {conversationList.map((x) => (
-          <Card
-            key={x.id}
-            onClick={handleCardClick(x.id, x.is_new)}
-            className={cn('cursor-pointer bg-transparent relative', {
-              'bg-bg-card': conversationId === x.id && !selectionMode,
-            })}
-          >
-            <CardContent className="px-3 py-2 flex justify-between items-center group gap-1">
-              <div className="flex items-center gap-2 flex-1 min-w-0">
-                {selectionMode && (
-                  <span
-                    className="flex-shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    <Checkbox
-                      checked={selectedIds.has(x.id)}
-                      onCheckedChange={() => toggleSelection(x.id)}
-                    />
-                  </span>
-                )}
-                <div className="truncate">{x.name}</div>
-              </div>
-              {!selectionMode && (
-                <ConversationDropdown
-                  conversation={x}
-                  removeTemporaryConversation={removeTemporaryConversation}
+
+      <div className="flex-1 overflow-auto">
+        {selectionMode ? (
+          <ul className="space-y-2" role="listbox" aria-multiselectable>
+            {conversationList.map((x) => (
+              <li
+                key={x.id}
+                className="py-2"
+                role="option"
+                aria-selected={selectedIds.has(x.id)}
+                data-session-id={x.id}
+              >
+                <label className="flex items-center gap-2">
+                  <Checkbox
+                    checked={selectedIds.has(x.id)}
+                    onCheckedChange={() => toggleSelection(x.id)}
+                    data-testid="chat-detail-session-checkbox"
+                    data-session-id={x.id}
+                  />
+
+                  <span className="truncate">{x.name}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <nav aria-label={t('chat.conversations')}>
+            <ul className="space-y-2">
+              {conversationList.map((x) => (
+                <li
+                  key={x.id}
+                  className="
+                      group pr-3 flex items-center gap-1 rounded-lg
+                      aria-selected:bg-bg-card has-[>button:focus-visible]:bg-bg-card
+                    "
+                  aria-selected={conversationId === x.id}
                 >
-                  <MoreButton></MoreButton>
-                </ConversationDropdown>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+                  <button
+                    type="button"
+                    className="focus-visible:outline-none px-3 py-2 text-left flex-1 truncate"
+                    onClick={() => handleConversationCardClick(x.id, x.is_new)}
+                    data-testid="chat-detail-session-item"
+                    data-session-id={x.id}
+                  >
+                    {x.name}
+                  </button>
+
+                  <ConversationDropdown
+                    conversation={x}
+                    removeTemporaryConversation={removeTemporaryConversation}
+                  >
+                    <MoreButton
+                      data-testid="chat-detail-session-actions"
+                      data-session-id={x.id}
+                    ></MoreButton>
+                  </ConversationDropdown>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
       </div>
-    </section>
+    </aside>
   );
 }

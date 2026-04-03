@@ -77,6 +77,9 @@ sql_command: login_user
            | drop_user_dataset
            | list_user_datasets
            | list_user_dataset_files
+           | list_user_dataset_documents
+           | list_user_datasets_metadata
+           | list_user_documents_metadata_summary
            | list_user_agents
            | list_user_chats
            | create_user_chat
@@ -88,6 +91,16 @@ sql_command: login_user
            | parse_dataset_async
            | import_docs_into_dataset
            | search_on_datasets
+           | create_chat_session
+           | drop_chat_session
+           | list_chat_sessions
+           | chat_on_session
+           | list_server_configs
+           | show_fingerprint
+           | set_license
+           | set_license_config
+           | show_license
+           | check_license
            | benchmark
 
 // meta command definition
@@ -151,10 +164,14 @@ DEFAULT: "DEFAULT"i
 CHATS: "CHATS"i
 CHAT: "CHAT"i
 FILES: "FILES"i
+DOCUMENTS: "DOCUMENTS"i
+METADATA: "METADATA"i
+SUMMARY: "SUMMARY"i
 AS: "AS"i
 PARSE: "PARSE"i
 IMPORT: "IMPORT"i
 INTO: "INTO"i
+IN: "IN"i
 WITH: "WITH"i
 PARSER: "PARSER"i
 PIPELINE: "PIPELINE"i
@@ -170,6 +187,13 @@ ASYNC: "ASYNC"i
 SYNC: "SYNC"i
 BENCHMARK: "BENCHMARK"i
 PING: "PING"i
+SESSION: "SESSION"i
+SESSIONS: "SESSIONS"i
+SERVER: "SERVER"i
+FINGERPRINT: "FINGERPRINT"i
+LICENSE: "LICENSE"i
+CHECK: "CHECK"i
+CONFIG: "CONFIG"i
 
 login_user: LOGIN USER quoted_string ";"
 list_services: LIST SERVICES ";"
@@ -215,6 +239,14 @@ list_variables: LIST VARS ";"
 list_configs: LIST CONFIGS ";"
 list_environments: LIST ENVS ";"
 
+show_fingerprint: SHOW FINGERPRINT ";"
+set_license: SET LICENSE quoted_string ";"
+set_license_config: SET LICENSE CONFIG NUMBER NUMBER ";"
+show_license: SHOW LICENSE ";"
+check_license: CHECK LICENSE ";"
+
+list_server_configs: LIST SERVER CONFIGS ";"
+
 benchmark: BENCHMARK NUMBER NUMBER user_statement
 
 user_statement: ping_server
@@ -246,6 +278,10 @@ user_statement: ping_server
                 | list_user_default_models
                 | import_docs_into_dataset
                 | search_on_datasets
+                | create_chat_session
+                | drop_chat_session
+                | list_chat_sessions
+                | chat_on_session
 
 ping_server: PING ";"
 show_current_user: SHOW CURRENT USER ";"
@@ -270,10 +306,17 @@ create_user_dataset_with_parser: CREATE DATASET quoted_string WITH EMBEDDING quo
 create_user_dataset_with_pipeline: CREATE DATASET quoted_string WITH EMBEDDING quoted_string PIPELINE quoted_string ";" 
 drop_user_dataset: DROP DATASET quoted_string ";"
 list_user_dataset_files: LIST FILES OF DATASET quoted_string ";"
+list_user_dataset_documents: LIST DOCUMENTS OF DATASET quoted_string ";"
+list_user_datasets_metadata: LIST METADATA OF DATASETS quoted_string ("," quoted_string)* ";"
+list_user_documents_metadata_summary: LIST METADATA SUMMARY OF DATASET quoted_string (DOCUMENTS quoted_string ("," quoted_string)*)? ";"
 list_user_agents: LIST AGENTS ";"
 list_user_chats: LIST CHATS ";"
 create_user_chat: CREATE CHAT quoted_string ";"
 drop_user_chat: DROP CHAT quoted_string ";"
+create_chat_session: CREATE CHAT quoted_string SESSION ";"
+drop_chat_session: DROP CHAT quoted_string SESSION quoted_string ";"
+list_chat_sessions: LIST CHAT quoted_string SESSIONS ";"
+chat_on_session: CHAT quoted_string ON quoted_string SESSION quoted_string ";"
 list_user_model_providers: LIST MODEL PROVIDERS ";"
 list_user_default_models: LIST DEFAULT MODELS ";"
 import_docs_into_dataset: IMPORT quoted_string INTO DATASET quoted_string ";"
@@ -287,7 +330,7 @@ identifier_list: identifier ("," identifier)*
 
 identifier: WORD
 quoted_string: QUOTED_STRING
-status: WORD
+status: ON | WORD
 
 QUOTED_STRING: /'[^']+'/ | /"[^"]+"/
 WORD: /[a-zA-Z0-9_\-\.]+/
@@ -459,6 +502,27 @@ class RAGFlowCLITransformer(Transformer):
     def list_environments(self, items):
         return {"type": "list_environments"}
 
+    def show_fingerprint(self, items):
+        return {"type": "show_fingerprint"}
+
+    def set_license(self, items):
+        license = items[2].children[0].strip("'\"")
+        return {"type": "set_license", "license": license}
+
+    def set_license_config(self, items):
+        value1: int = int(items[3])
+        value2: int = int(items[4])
+        return {"type": "set_license_config", "value1": value1, "value2": value2}
+
+    def show_license(self, items):
+        return {"type": "show_license"}
+
+    def check_license(self, items):
+        return {"type": "check_license"}
+
+    def list_server_configs(self, items):
+        return {"type": "list_server_configs"}
+
     def create_model_provider(self, items):
         provider_name = items[3].children[0].strip("'\"")
         provider_key = items[4].children[0].strip("'\"")
@@ -538,6 +602,28 @@ class RAGFlowCLITransformer(Transformer):
         dataset_name = items[4].children[0].strip("'\"")
         return {"type": "list_user_dataset_files", "dataset_name": dataset_name}
 
+    def list_user_dataset_documents(self, items):
+        dataset_name = items[4].children[0].strip("'\"")
+        return {"type": "list_user_dataset_documents", "dataset_name": dataset_name}
+
+    def list_user_datasets_metadata(self, items):
+        dataset_names = []
+        dataset_names.append(items[4].children[0].strip("'\""))
+        for i in range(5, len(items)):
+            if items[i] and hasattr(items[i], 'children') and items[i].children:
+                dataset_names.append(items[i].children[0].strip("'\""))
+        return {"type": "list_user_datasets_metadata", "dataset_names": dataset_names}
+
+    def list_user_documents_metadata_summary(self, items):
+        dataset_name = items[5].children[0].strip("'\"")
+        doc_ids = []
+        if len(items) > 6 and items[6] == "DOCUMENTS":
+            for i in range(7, len(items)):
+                if items[i] and hasattr(items[i], 'children') and items[i].children:
+                    doc_id = items[i].children[0].strip("'\"")
+                    doc_ids.append(doc_id)
+        return {"type": "list_user_documents_metadata_summary", "dataset_name": dataset_name, "document_ids": doc_ids}
+
     def list_user_agents(self, items):
         return {"type": "list_user_agents"}
 
@@ -574,6 +660,25 @@ class RAGFlowCLITransformer(Transformer):
     def parse_dataset_async(self, items):
         dataset_name = items[2].children[0].strip("'\"")
         return {"type": "parse_dataset", "dataset_name": dataset_name, "method": "async"}
+
+    def create_chat_session(self, items):
+        chat_name = items[2].children[0].strip("'\"")
+        return {"type": "create_chat_session", "chat_name": chat_name}
+
+    def drop_chat_session(self, items):
+        chat_name = items[2].children[0].strip("'\"")
+        session_id = items[4].children[0].strip("'\"")
+        return {"type": "drop_chat_session", "chat_name": chat_name, "session_id": session_id}
+
+    def list_chat_sessions(self, items):
+        chat_name = items[2].children[0].strip("'\"")
+        return {"type": "list_chat_sessions", "chat_name": chat_name}
+
+    def chat_on_session(self, items):
+        message = items[1].children[0].strip("'\"")
+        chat_name = items[3].children[0].strip("'\"")
+        session_id = items[5].children[0].strip("'\"")
+        return {"type": "chat_on_session", "message": message, "chat_name": chat_name, "session_id": session_id}
 
     def import_docs_into_dataset(self, items):
         document_list_str = items[1].children[0].strip("'\"")

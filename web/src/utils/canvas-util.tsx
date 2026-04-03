@@ -61,13 +61,28 @@ export function buildSecondaryOutputOptions(
   }));
 }
 
+function getNodeOutputs(x: BaseNode) {
+  const outputs = x.data.form?.outputs ?? {};
+  if (x.data.label !== Operator.Code) {
+    return outputs;
+  }
+
+  return {
+    ...outputs,
+    content: outputs.content ?? {
+      type: JsonSchemaDataType.String,
+      value: '',
+    },
+  };
+}
+
 export function buildOutputOptions(x: BaseNode) {
   return {
     label: x.data.name,
     value: x.id,
     title: x.data.name,
     options: buildSecondaryOutputOptions(
-      x.data.form.outputs,
+      getNodeOutputs(x),
       x.id,
       x.data.name,
       <OperatorIcon name={x.data.label as Operator} />,
@@ -83,7 +98,7 @@ export function buildNodeOutputOptions({
   nodeIds: string[];
 }) {
   const nodeWithOutputList = nodes.filter(
-    (x) => nodeIds.some((y) => y === x.id) && !isEmpty(x.data?.form?.outputs),
+    (x) => nodeIds.some((y) => y === x.id) && !isEmpty(getNodeOutputs(x)),
   );
 
   return nodeWithOutputList.map((x) => buildOutputOptions(x));
@@ -114,7 +129,7 @@ export function buildChildOutputOptions({
   nodeId?: string;
 }) {
   const nodeWithOutputList = nodes.filter(
-    (x) => x.parentId === nodeId && !isEmpty(x.data?.form?.outputs),
+    (x) => x.parentId === nodeId && !isEmpty(getNodeOutputs(x)),
   );
 
   return nodeWithOutputList.map((x) => buildOutputOptions(x));
