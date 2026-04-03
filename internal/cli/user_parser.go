@@ -2025,14 +2025,14 @@ func (p *Parser) parseChatCommand() (*Command, error) {
 	// Format: 'provider/instance/model' or just 'message'
 	if p.curToken.Type == TokenQuotedString {
 		firstArg := p.curToken.Value
-		
+
 		// Check if it looks like a model identifier (contains exactly 2 slashes)
 		slashCount := strings.Count(firstArg, "/")
 		if slashCount == 2 {
 			// This is likely a model identifier, expect another quoted string for message
 			modelName = firstArg
 			p.nextToken()
-			
+
 			// After model name, expect message
 			if p.curToken.Type != TokenQuotedString {
 				return nil, fmt.Errorf("expected message after model name")
@@ -2062,7 +2062,20 @@ func (p *Parser) parseChatCommand() (*Command, error) {
 		cmd.Params["model_name"] = modelName
 	}
 	cmd.Params["message"] = message
+	cmd.Params["reasoning"] = false
 	return cmd, nil
+}
+
+func (p *Parser) parseThinkCommand() (*Command, error) {
+
+	p.nextToken() // consume THINK
+	command, err := p.parseChatCommand()
+	if err != nil {
+		return nil, err
+	}
+	command.Type = "think_chat_to_model"
+	command.Params["reasoning"] = true
+	return command, nil
 }
 
 func (p *Parser) parseUseCommand() (*Command, error) {
