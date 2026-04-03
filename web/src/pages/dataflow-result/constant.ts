@@ -7,8 +7,8 @@ export enum TimelineNodeType {
   begin = 'file',
   parser = 'parser',
   contextGenerator = 'extractor',
-  titleSplitter = 'hierarchicalMerger',
-  characterSplitter = 'splitter',
+  titleChunker = 'titleChunker',
+  tokenChunker = 'tokenChunker',
   tokenizer = 'tokenizer',
   end = 'end',
 }

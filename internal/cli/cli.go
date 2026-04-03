@@ -332,7 +332,7 @@ func looksLikeSQL(s string) bool {
 		"LIST ", "SHOW ", "CREATE ", "DROP ", "ALTER ",
 		"LOGIN ", "REGISTER ", "PING", "GRANT ", "REVOKE ",
 		"SET ", "UNSET ", "UPDATE ", "DELETE ", "INSERT ",
-		"SELECT ", "DESCRIBE ", "EXPLAIN ", "ADD ", "ENABLE ", "DISABLE ", "CHAT ", "USE",
+		"SELECT ", "DESCRIBE ", "EXPLAIN ", "ADD ", "ENABLE ", "DISABLE ", "CHAT ", "USE", "THINK",
 	}
 	for _, prefix := range sqlPrefixes {
 		if strings.HasPrefix(s, prefix) {
@@ -485,26 +485,19 @@ func NewCLIWithArgs(args *ConnectionArgs) (*CLI, error) {
 func (c *CLI) Run() error {
 	// If username is provided without password, prompt for password
 	if c.args != nil && c.args.UserName != "" && c.args.Password == "" && c.args.APIToken == "" {
-		// Allow 3 attempts for password verification
 		maxAttempts := 3
 		for attempt := 1; attempt <= maxAttempts; attempt++ {
-			var input string
-			var err error
+			fmt.Print("Please input your password: ")
 
-			// Check if terminal supports password masking
-			if term.IsTerminal(int(os.Stdin.Fd())) {
-				input, err = c.line.PasswordPrompt("Please input your password: ")
-			} else {
-				// Terminal doesn't support password masking, use regular prompt
-				fmt.Println("Warning: This terminal does not support secure password input")
-				input, err = c.line.Prompt("Please input your password (will be visible): ")
-			}
+			passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
+			fmt.Println()
+
 			if err != nil {
-				fmt.Printf("Error reading input: %v\n", err)
+				fmt.Printf("Error reading password: %v\n", err)
 				return err
 			}
 
-			input = strings.TrimSpace(input)
+			input := strings.TrimSpace(string(passwordBytes))
 
 			if input == "" {
 				if attempt < maxAttempts {
@@ -514,7 +507,6 @@ func (c *CLI) Run() error {
 				return errors.New("no password provided after 3 attempts")
 			}
 
-			// Set the password for verification
 			c.args.Password = input
 
 			if err = c.VerifyAuth(); err != nil {
@@ -525,7 +517,6 @@ func (c *CLI) Run() error {
 				return fmt.Errorf("authentication failed after %d attempts: %v", maxAttempts, err)
 			}
 
-			// Authentication successful
 			break
 		}
 	}

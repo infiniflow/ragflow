@@ -219,6 +219,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			file := v1.Group("/files")
 			{
 				file.POST("", r.fileHandler.UploadFile)
+				file.GET("", r.fileHandler.ListFiles)
 			}
 
 			// provider pool route group
@@ -333,7 +334,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// File routes
 		file := authorized.Group("/v1/file")
 		{
-			file.GET("/list", r.fileHandler.ListFiles)
 			file.GET("/root_folder", r.fileHandler.GetRootFolder)
 			file.GET("/parent_folder", r.fileHandler.GetParentFolder)
 			file.GET("/all_parent_folder", r.fileHandler.GetAllParentFolders)

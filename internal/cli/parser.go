@@ -192,6 +192,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseDisableCommand()
 	case TokenChat:
 		return p.parseChatCommand()
+	case TokenThink:
+		return p.parseThinkCommand()
 	case TokenUse:
 		return p.parseUseCommand()
 	default:

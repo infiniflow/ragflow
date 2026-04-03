@@ -301,3 +301,139 @@ func generateUUID() string {
 	id := uuid.New().String()
 	return strings.ReplaceAll(id, "-", "")
 }
+
+// KnowledgebaseFolderName is the folder name for knowledgebase
+const KnowledgebaseFolderName = ".knowledgebase"
+
+// InitKnowledgebaseDocs initializes knowledgebase documents for tenant
+// This matches Python's FileService.init_knowledgebase_docs method
+func (dao *FileDAO) InitKnowledgebaseDocs(rootID, tenantID string, file2DocumentDAO *File2DocumentDAO) error {
+	var count int64
+	err := DB.Model(&entity.File{}).
+		Where("name = ? AND parent_id = ?", KnowledgebaseFolderName, rootID).
+		Count(&count).Error
+	if err != nil {
+		return err
+	}
+
+	if count > 0 {
+		return nil
+	}
+
+	kbFolder, err := dao.newAFileFromKB(tenantID, KnowledgebaseFolderName, rootID)
+	if err != nil {
+		return err
+	}
+
+	var knowledgebases []entity.Knowledgebase
+	err = DB.Select("id", "name").
+		Where("tenant_id = ?", tenantID).
+		Find(&knowledgebases).Error
+	if err != nil {
+		return err
+	}
+
+	for _, kb := range knowledgebases {
+		kbFolderForKB, err := dao.newAFileFromKB(tenantID, kb.Name, kbFolder.ID)
+		if err != nil {
+			continue
+		}
+
+		var documents []entity.Document
+		err = DB.Where("kb_id = ?", kb.ID).Find(&documents).Error
+		if err != nil {
+			continue
+		}
+
+		for _, doc := range documents {
+			dao.addFileFromKB(&doc, kbFolderForKB.ID, tenantID, file2DocumentDAO)
+		}
+	}
+
+	return nil
+}
+
+// newAFileFromKB creates a new file from knowledgebase
+func (dao *FileDAO) newAFileFromKB(tenantID, name, parentID string) (*entity.File, error) {
+	var existingFiles []*entity.File
+	err := DB.Where("tenant_id = ? AND parent_id = ? AND name = ?", tenantID, parentID, name).Find(&existingFiles).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if len(existingFiles) > 0 {
+		return existingFiles[0], nil
+	}
+
+	fileID := generateUUID()
+	file := &entity.File{
+		ID:         fileID,
+		ParentID:   parentID,
+		TenantID:   tenantID,
+		CreatedBy:  tenantID,
+		Name:       name,
+		Type:       "folder",
+		Size:       0,
+		SourceType: "knowledgebase",
+	}
+
+	if err := DB.Create(file).Error; err != nil {
+		return nil, err
+	}
+	return file, nil
+}
+
+// addFileFromKB adds a file record from knowledgebase document
+func (dao *FileDAO) addFileFromKB(doc *entity.Document, kbFolderID, tenantID string, file2DocumentDAO *File2DocumentDAO) error {
+	var f2dCount int64
+	err := DB.Model(&entity.File2Document{}).
+		Where("document_id = ?", doc.ID).
+		Count(&f2dCount).Error
+	if err != nil {
+		return err
+	}
+
+	if f2dCount > 0 {
+		return nil
+	}
+
+	docName := ""
+	if doc.Name != nil {
+		docName = *doc.Name
+	}
+
+	docLocation := ""
+	if doc.Location != nil {
+		docLocation = *doc.Location
+	}
+
+	fileID := generateUUID()
+	file := &entity.File{
+		ID:         fileID,
+		ParentID:   kbFolderID,
+		TenantID:   tenantID,
+		CreatedBy:  tenantID,
+		Name:       docName,
+		Type:       doc.Type,
+		Size:       doc.Size,
+		Location:   &docLocation,
+		SourceType: "knowledgebase",
+	}
+
+	if err := DB.Create(file).Error; err != nil {
+		return err
+	}
+
+	f2dID := generateUUID()
+	f2d := &entity.File2Document{
+		ID:         f2dID,
+		FileID:     &fileID,
+		DocumentID: &doc.ID,
+	}
+
+	if err := DB.Create(f2d).Error; err != nil {
+		return err
+	}
+
+	return nil
+}

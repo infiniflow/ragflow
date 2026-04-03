@@ -2385,12 +2385,12 @@ This process aggregates variables from multiple branches into a single variable 
       tokenizerRequired: 'Please add the Indexer node first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
-      splitter: 'Token',
-      splitterDescription:
+      tokenChunker: 'Token Chunker',
+      tokenChunkerDescription:
         'Split text into chunks by token length with optional delimiters and overlap.',
-      hierarchicalMergerDescription:
+      titleChunkerDescription:
         'Split documents into sections by title hierarchy with regex rules for finer control.',
-      hierarchicalMerger: 'Title',
+      titleChunker: 'Title Chunker',
       extractor: 'Transformer',
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
@@ -2402,6 +2402,8 @@ This process aggregates variables from multiple branches into a single variable 
         image: 'Image',
         email: 'Email',
         'text&markdown': 'Text & Markup',
+        code: 'Code',
+        html: 'HTML',
         word: 'Word',
         slides: 'PPTX',
         audio: 'Audio',
