@@ -207,9 +207,8 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 
 // ReindexRequest represents the request to reindex skills
 type ReindexRequest struct {
-	Skills []service.SkillInfo `json:"skills" binding:"required"`
-	HubID  string              `json:"hub_id"`
-	EmbdID string              `json:"embd_id"` // Optional, will use config's embd_id if empty
+	HubID  string `json:"hub_id" binding:"required"`
+	EmbdID string `json:"embd_id"` // Optional, will use config's embd_id if empty
 }
 
 // Reindex handles the reindex all skills request
@@ -250,7 +249,7 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 		}
 	}
 
-	result, err := h.indexerService.ReindexAll(c.Request.Context(), user.ID, req.HubID, req.Skills, h.docEngine, embdID)
+	result, err := h.indexerService.ReindexAll(c.Request.Context(), user.ID, req.HubID, h.docEngine, embdID)
 	if err != nil {
 		jsonError(c, common.CodeOperatingError, err.Error())
 		return

@@ -28,7 +28,6 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/logger"
-	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -223,7 +222,8 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 	}
 
 	// Get config for search strategy
-	config, err := s.configDAO.GetByTenantID(req.TenantID, req.HubID)
+	// Use GetLatestByTenantID to prioritize configs with non-empty embd_id
+	config, err := s.configDAO.GetLatestByTenantID(req.TenantID, req.HubID)
 	if err != nil {
 		// Use default config if not found
 		config = &entity.SkillSearchConfig{
@@ -243,15 +243,24 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 	var results []entity.SkillSearchResult
 	searchType := "hybrid"
 
+	// Check if embedding model is configured
+	hasEmbdConfig := config.EmbdID != ""
+
 	switch {
-	case config.VectorSimilarityWeight == 0:
+	case config.VectorSimilarityWeight == 0 || !hasEmbdConfig:
 		// Pure keyword search (BM25)
+		// Also fallback to keyword search if no embedding model configured
 		searchType = "keyword"
 		results, err = s.keywordSearch(ctx, docEngine, indexName, req.Query, config)
 	case config.VectorSimilarityWeight == 1:
 		// Pure vector search
 		searchType = "vector"
 		results, err = s.vectorSearch(ctx, docEngine, indexName, req.Query, config, req.TenantID)
+		if err != nil {
+			logger.Warn("Vector search failed, falling back to keyword search", zap.Error(err))
+			searchType = "keyword"
+			results, err = s.keywordSearch(ctx, docEngine, indexName, req.Query, config)
+		}
 	default:
 		// Hybrid search
 		results, err = s.hybridSearch(ctx, docEngine, indexName, req.Query, config, req.TenantID)
@@ -320,8 +329,14 @@ func (s *SkillSearchService) vectorSearch(ctx context.Context, docEngine engine.
 	// Get embedding for query
 	vector, err := s.getEmbedding(ctx, query, config.EmbdID, tenantID)
 	if err != nil {
+		logger.Warn("Vector search: failed to get embedding, will fallback to keyword search",
+			zap.String("embdID", config.EmbdID),
+			zap.Error(err))
 		return nil, fmt.Errorf("failed to get embedding: %w", err)
 	}
+	logger.Debug("Vector search: successfully got embedding",
+		zap.String("embdID", config.EmbdID),
+		zap.Int("dimension", len(vector)))
 
 	// Analyze query for potential keyword filtering
 	matchText, keywords := s.analyzeQuery(query)
@@ -343,6 +358,9 @@ func (s *SkillSearchService) vectorSearch(ctx context.Context, docEngine engine.
 
 	resp, err := docEngine.Search(ctx, searchReq)
 	if err != nil {
+		logger.Warn("Vector search: search execution failed",
+			zap.String("indexName", indexName),
+			zap.Error(err))
 		return nil, err
 	}
 
@@ -352,8 +370,20 @@ func (s *SkillSearchService) vectorSearch(ctx context.Context, docEngine engine.
 		return nil, fmt.Errorf("invalid search response type: %T", resp)
 	}
 
-	// Convert chunks to SkillSearchResult with vector scores
-	return s.convertChunksToResults(searchResp.Chunks, config.SimilarityThreshold), nil
+	results := s.convertChunksToResults(searchResp.Chunks, config.SimilarityThreshold)
+	logger.Debug("Vector search: completed",
+		zap.Int("totalChunks", len(searchResp.Chunks)),
+		zap.Int("filteredResults", len(results)))
+
+	// If no results, return error to trigger fallback
+	if len(results) == 0 {
+		logger.Info("Vector search: no results found, will fallback to keyword search",
+			zap.String("indexName", indexName),
+			zap.String("query", query))
+		return nil, fmt.Errorf("vector search returned no results")
+	}
+
+	return results, nil
 }
 
 // hybridSearch performs hybrid search combining BM25 and vector search
@@ -364,31 +394,15 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 	// Get embedding for query
 	vector, err := s.getEmbedding(ctx, query, config.EmbdID, tenantID)
 	if err != nil {
-		logger.Warn("Failed to get embedding for hybrid search, falling back to keyword search", zap.Error(err))
+		logger.Warn("Hybrid search: failed to get embedding, falling back to keyword search",
+			zap.String("embdID", config.EmbdID),
+			zap.Error(err))
 		// Fallback to keyword search with analyzed query
-		searchReq := &types.SearchRequest{
-			IndexNames:          []string{indexName},
-			Question:            query,
-			MatchText:           matchText,
-			Keywords:            keywords,
-			KeywordOnly:         true,
-			Page:                1,
-			Size:                100,
-			TopK:                100,
-			SimilarityThreshold: config.SimilarityThreshold,
-		}
-
-		resp, searchErr := docEngine.Search(ctx, searchReq)
-		if searchErr != nil {
-			return nil, searchErr
-		}
-
-		searchResp, ok := resp.(*types.SearchResponse)
-		if !ok {
-			return nil, fmt.Errorf("invalid search response type: %T", resp)
-		}
-		return s.convertChunksToResults(searchResp.Chunks, config.SimilarityThreshold), nil
+		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchText, keywords, config)
 	}
+	logger.Debug("Hybrid search: successfully got embedding",
+		zap.String("embdID", config.EmbdID),
+		zap.Int("dimension", len(vector)))
 
 	// Use unified search request for hybrid search with analyzed query
 	searchReq := &types.SearchRequest{
@@ -407,7 +421,10 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 
 	resp, err := docEngine.Search(ctx, searchReq)
 	if err != nil {
-		return nil, err
+		logger.Warn("Hybrid search: search execution failed, falling back to keyword search",
+			zap.String("indexName", indexName),
+			zap.Error(err))
+		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchText, keywords, config)
 	}
 
 	// Parse response
@@ -416,8 +433,57 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 		return nil, fmt.Errorf("invalid search response type: %T", resp)
 	}
 
-	// Convert chunks to SkillSearchResult
-	return s.convertChunksToResults(searchResp.Chunks, config.SimilarityThreshold), nil
+	results := s.convertChunksToResults(searchResp.Chunks, config.SimilarityThreshold)
+	logger.Debug("Hybrid search: completed",
+		zap.Int("totalChunks", len(searchResp.Chunks)),
+		zap.Int("filteredResults", len(results)))
+
+	// If no results, fallback to keyword search
+	if len(results) == 0 {
+		logger.Info("Hybrid search: no results found, falling back to keyword search",
+			zap.String("indexName", indexName),
+			zap.String("query", query))
+		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchText, keywords, config)
+	}
+
+	return results, nil
+}
+
+// executeKeywordSearch executes a keyword search (used for fallback)
+func (s *SkillSearchService) executeKeywordSearch(ctx context.Context, docEngine engine.DocEngine, indexName, query, matchText string, keywords []string, config *entity.SkillSearchConfig) ([]entity.SkillSearchResult, error) {
+	logger.Info("Executing fallback keyword search",
+		zap.String("indexName", indexName),
+		zap.String("query", query))
+
+	searchReq := &types.SearchRequest{
+		IndexNames:          []string{indexName},
+		Question:            query,
+		MatchText:           matchText,
+		Keywords:            keywords,
+		KeywordOnly:         true,
+		Page:                1,
+		Size:                100,
+		TopK:                100,
+		SimilarityThreshold: config.SimilarityThreshold,
+	}
+
+	resp, err := docEngine.Search(ctx, searchReq)
+	if err != nil {
+		logger.Error("Keyword search fallback failed", err)
+		return nil, err
+	}
+
+	searchResp, ok := resp.(*types.SearchResponse)
+	if !ok {
+		return nil, fmt.Errorf("invalid search response type: %T", resp)
+	}
+
+	results := s.convertChunksToResults(searchResp.Chunks, config.SimilarityThreshold)
+	logger.Info("Keyword search fallback completed",
+		zap.Int("totalChunks", len(searchResp.Chunks)),
+		zap.Int("results", len(results)))
+
+	return results, nil
 }
 
 // convertChunksToResults converts search chunks to SkillSearchResult
@@ -524,42 +590,7 @@ func normalizeHubID(hubID string) string {
 	return hubID
 }
 
-func getEmbeddingDimension(embdID string) int {
-	// Map common embedding models to their dimensions
-	// This should be synchronized with the model configuration
-	dimensionMap := map[string]int{
-		"bge-m3":            1024,
-		"bge-large-zh":      1024,
-		"bge-large-en":      1024,
-		"bce-embedding-base_v1": 768,
-		"text-embedding-3-small": 1536,
-		"text-embedding-3-large": 3072,
-		"text-embedding-ada-002": 1536,
-		"embed-english-v3.0": 1024,
-		"embed-multilingual-v3.0": 1024,
-	}
 
-	// Check for partial matches (e.g., "bce-embedding-base_v1@SILICONFLOW" should match "bce-embedding-base_v1")
-	for modelKey, dim := range dimensionMap {
-		if strings.Contains(embdID, modelKey) {
-			return dim
-		}
-	}
-
-	// Try to parse dimension from embdID pattern like "model-name-768" or "bge-m3-1024"
-	parts := strings.Split(embdID, "-")
-	for _, part := range parts {
-		if dim, err := strconv.Atoi(part); err == nil {
-			if dim > 0 && dim < 10000 {
-				return dim
-			}
-		}
-	}
-
-	// Default to 1024 for unknown models
-	logger.Info(fmt.Sprintf("Unknown embedding model '%s', defaulting to 1024 dimensions", embdID))
-	return 1024
-}
 
 func getString(m map[string]interface{}, key string) string {
 	if v, ok := m[key].(string); ok {
@@ -764,7 +795,7 @@ type IndexSkillsRequest struct {
 
 // ReindexRequest represents the request to reindex all skills
 type ReindexRequest struct {
-	TenantID string      `json:"tenant_id" binding:"required"`
-	Skills   []SkillInfo `json:"skills" binding:"required"`
-	EmbdID   string      `json:"embd_id" binding:"required"`
+	TenantID string `json:"tenant_id" binding:"required"`
+	HubID    string `json:"hub_id" binding:"required"`
+	EmbdID   string `json:"embd_id"` // Optional, will use config's embd_id if empty
 }

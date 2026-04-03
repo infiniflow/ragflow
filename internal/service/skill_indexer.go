@@ -20,10 +20,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/logger"
+	"ragflow/internal/storage"
 	"ragflow/internal/tokenizer"
 	"strings"
 	"time"
@@ -49,6 +51,8 @@ type FileSystemClient interface {
 // SkillIndexerService handles skill indexing operations
 type SkillIndexerService struct {
 	configDAO     *dao.SkillSearchConfigDAO
+	fileDAO       *dao.FileDAO
+	hubDAO        *dao.SkillsHubDAO
 	modelProvider ModelProvider
 }
 
@@ -56,6 +60,8 @@ type SkillIndexerService struct {
 func NewSkillIndexerService() *SkillIndexerService {
 	return &SkillIndexerService{
 		configDAO:     dao.NewSkillSearchConfigDAO(),
+		fileDAO:       dao.NewFileDAO(),
+		hubDAO:        dao.NewSkillsHubDAO(),
 		modelProvider: NewModelProvider(),
 	}
 }
@@ -98,10 +104,11 @@ func (s *SkillIndexerService) IndexSkill(ctx context.Context, tenantID, hubID st
 	now := time.Now()
 	timestamp := now.UnixMilli()
 
-	// Use actual vector dimension or default
-	dimension := getEmbeddingDimension(embdID)
-	if vector != nil {
-		dimension = len(vector)
+	// Get embedding dimension by calling embedding API with test text
+	// This follows Python's approach: get dimension from actual embedding result
+	dimension, err := s.getEmbeddingDimension(ctx, tenantID, embdID)
+	if err != nil {
+		return fmt.Errorf("failed to get embedding dimension: %w", err)
 	}
 	vectorField := fmt.Sprintf("q_%d_vec", dimension)
 
@@ -203,7 +210,16 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, hu
 		vectorTexts[i] = BuildVectorText(skill.Name, skill.Description, skill.Tags, skill.Content, fieldConfig)
 	}
 
-	// Generate embeddings in batch FIRST to get actual dimension
+	// Get embedding dimension FIRST by calling embedding API with test text
+	// This follows Python's approach: must get dimension before creating table
+	dimension, err := s.getEmbeddingDimension(ctx, tenantID, embdID)
+	if err != nil {
+		return fmt.Errorf("failed to get embedding dimension: %w", err)
+	}
+	logger.Info(fmt.Sprintf("Using embedding dimension: %d", dimension))
+	vectorField := fmt.Sprintf("q_%d_vec", dimension)
+
+	// Generate embeddings in batch
 	logger.Info(fmt.Sprintf("Generating embeddings for %d skills with embdID=%s", len(skills), embdID))
 	vectors, err := s.generateEmbeddings(ctx, vectorTexts, embdID, tenantID)
 	if err != nil {
@@ -212,16 +228,6 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, hu
 	} else {
 		logger.Info(fmt.Sprintf("Generated %d vectors", len(vectors)))
 	}
-
-	// Get actual vector dimension from generated embeddings
-	dimension := getEmbeddingDimension(embdID) // default from config
-	if len(vectors) > 0 && len(vectors[0]) > 0 {
-		dimension = len(vectors[0])
-		logger.Info(fmt.Sprintf("ACTUAL EMBEDDING DIMENSION: %d", dimension))
-	} else {
-		logger.Info(fmt.Sprintf("Using default dimension: %d (no embeddings generated)", dimension))
-	}
-	vectorField := fmt.Sprintf("q_%d_vec", dimension)
 
 	// Ensure index exists with correct dimension
 	indexName := getSkillIndexName(tenantID, hubID)
@@ -234,30 +240,15 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, hu
 		}
 		logger.Info(fmt.Sprintf("Index exists: %v", exists))
 
-		needsCreate := true
-		if exists {
-			// Check if we can get the table's vector column dimension
-			// If dimension mismatch, delete and recreate
-			predictedDim := getEmbeddingDimension(embdID)
-			if predictedDim != dimension {
-				logger.Info(fmt.Sprintf("Dimension mismatch: predicted=%d, actual=%d. Recreating table.", predictedDim, dimension))
-				if err := docEngine.DeleteIndex(ctx, indexName); err != nil {
-					logger.Warn(fmt.Sprintf("Failed to delete existing index: %v", err))
-				}
-			} else {
-				needsCreate = false
-				logger.Info("Table exists with correct dimension")
-			}
-		}
-
-		if needsCreate {
+		if !exists {
+			// Only create if table doesn't exist
 			logger.Info(fmt.Sprintf("Creating index with actual dimension %d", dimension))
 			if err := s.createIndexWithDimension(ctx, tenantID, hubID, docEngine, embdID, dimension); err != nil {
 				return fmt.Errorf("failed to create index with dimension %d: %w", dimension, err)
 			}
 			logger.Info("Index created successfully")
 		} else {
-			logger.Info("Skipping index creation, already exists with correct dimension")
+			logger.Info("Index already exists, skipping creation")
 		}
 	} else {
 		// For ES: just ensure index exists
@@ -375,8 +366,14 @@ func (s *SkillIndexerService) UpdateSkillVersion(ctx context.Context, tenantID, 
 }
 
 // ReindexAll reindexes all skills for a tenant
-// Increments semantic version, deletes each skill's old version document, and indexes new version
-func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, hubID string, skills []SkillInfo, docEngine engine.DocEngine, embdID string) (map[string]interface{}, error) {
+// Increments semantic version, deletes old table, and reindexes all skills from file system
+// For Infinity: if embedding model changed (different dimension), recreates the table
+// Behavior:
+//   1. Delete the existing table
+//   2. Traverse all skill folders under the hub
+//   3. For each skill, get the latest version
+//   4. Reindex all skills
+func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, hubID string, docEngine engine.DocEngine, embdID string) (map[string]interface{}, error) {
 	hubID = normalizeHubID(hubID)
 	// Get current config and increment semantic version
 	config, err := s.configDAO.GetOrCreate(tenantID, hubID, embdID)
@@ -392,18 +389,53 @@ func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, hubID st
 		return nil, fmt.Errorf("failed to update version: %w", err)
 	}
 
-	// Index all skills with new version (upsert behavior)
-	// Each skill_id will be overwritten with new version data
-	successCount := 0
-	failedSkills := []string{}
+	// Get new embedding dimension first (needed for index creation)
+	newDimension, err := s.getEmbeddingDimension(ctx, tenantID, embdID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get new embedding dimension: %w", err)
+	}
+	logger.Info(fmt.Sprintf("ReindexAll: new embedding dimension is %d", newDimension))
 
-	for _, skill := range skills {
-		if err := s.IndexSkill(ctx, tenantID, hubID, skill, docEngine, embdID); err != nil {
-			logger.Error(fmt.Sprintf("Failed to index skill %s", skill.ID), err)
-			failedSkills = append(failedSkills, skill.ID)
-			continue
+	// Delete existing index and recreate with new dimension (for both ES and Infinity)
+	indexName := getSkillIndexName(tenantID, hubID)
+	exists, _ := docEngine.IndexExists(ctx, indexName)
+	if exists {
+		logger.Info(fmt.Sprintf("ReindexAll: deleting existing index %s", indexName))
+		if err := docEngine.DeleteIndex(ctx, indexName); err != nil {
+			logger.Warn(fmt.Sprintf("ReindexAll: failed to delete existing index: %v", err))
 		}
-		successCount++
+	}
+
+	// Create new index with correct dimension
+	logger.Info(fmt.Sprintf("ReindexAll: creating new index %s with dimension %d", indexName, newDimension))
+	if err := s.createIndexWithDimension(ctx, tenantID, hubID, docEngine, embdID, newDimension); err != nil {
+		return nil, fmt.Errorf("failed to create index with dimension %d: %w", newDimension, err)
+	}
+
+	// Get hub info to find folder ID
+	hub, err := s.hubDAO.GetByID(hubID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get hub: %w", err)
+	}
+	if hub.TenantID != tenantID {
+		return nil, fmt.Errorf("hub not found")
+	}
+
+	// Traverse all skill folders under the hub
+	skills, err := s.getSkillsFromFileSystem(ctx, tenantID, hub.FolderID, hubID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get skills from file system: %w", err)
+	}
+
+	logger.Info(fmt.Sprintf("ReindexAll: found %d skills to index", len(skills)))
+
+	// Index all skills with new version using batch indexing for better performance
+	if len(skills) > 0 {
+		logger.Info(fmt.Sprintf("ReindexAll: batch indexing %d skills", len(skills)))
+		if err := s.BatchIndexSkills(ctx, tenantID, hubID, skills, docEngine, embdID); err != nil {
+			logger.Error("ReindexAll: batch indexing failed", err)
+			return nil, fmt.Errorf("failed to batch index skills: %w", err)
+		}
 	}
 
 	// Clean up old version documents
@@ -412,17 +444,254 @@ func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, hubID st
 	}
 
 	result := map[string]interface{}{
-		"indexed_count": successCount,
+		"indexed_count": len(skills),
 		"total_skills":  len(skills),
 		"version":       newVersion,
-		"failed_count":  len(failedSkills),
-	}
-
-	if len(failedSkills) > 0 {
-		result["failed_skills"] = failedSkills
+		"failed_count":  0,
 	}
 
 	return result, nil
+}
+
+// getSkillsFromFileSystem traverses the hub folder and gets all skills with their latest version
+func (s *SkillIndexerService) getSkillsFromFileSystem(ctx context.Context, tenantID, hubFolderID, hubID string) ([]SkillInfo, error) {
+	var skills []SkillInfo
+
+	// Get all skill folders under the hub
+	skillFolders, err := s.fileDAO.ListByParentID(hubFolderID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list skill folders: %w", err)
+	}
+
+	logger.Info(fmt.Sprintf("getSkillsFromFileSystem: found %d skill folders in hub %s", len(skillFolders), hubID))
+
+	for _, skillFolder := range skillFolders {
+		if skillFolder.Type != "folder" {
+			continue
+		}
+
+		// Get all versions of this skill
+		versions, err := s.fileDAO.ListByParentID(skillFolder.ID)
+		if err != nil {
+			logger.Warn(fmt.Sprintf("failed to list versions for skill %s: %v", skillFolder.Name, err))
+			continue
+		}
+
+		if len(versions) == 0 {
+			logger.Info(fmt.Sprintf("no versions found for skill %s", skillFolder.Name))
+			continue
+		}
+
+		// Find the latest version (highest semantic version)
+		latestVersion := s.findLatestVersion(versions)
+		if latestVersion == nil {
+			logger.Warn(fmt.Sprintf("no valid version found for skill %s", skillFolder.Name))
+			continue
+		}
+
+		// Get skill content from the latest version folder
+		skillInfo, err := s.getSkillContentFromFolder(ctx, tenantID, skillFolder, latestVersion, hubID)
+		if err != nil {
+			logger.Warn(fmt.Sprintf("failed to get skill content for %s: %v", skillFolder.Name, err))
+			continue
+		}
+
+		skills = append(skills, *skillInfo)
+		logger.Info(fmt.Sprintf("added skill %s version %s for indexing", skillFolder.Name, latestVersion.Name))
+	}
+
+	return skills, nil
+}
+
+// findLatestVersion finds the latest semantic version from a list of version folders
+func (s *SkillIndexerService) findLatestVersion(versions []*entity.File) *entity.File {
+	if len(versions) == 0 {
+		return nil
+	}
+
+	var latest *entity.File
+	latestVersionNum := []int{-1, -1, -1} // major, minor, patch
+
+	for _, v := range versions {
+		if v.Type != "folder" {
+			continue
+		}
+
+		// Parse semantic version (e.g., "1.0.0")
+		parts := strings.Split(v.Name, ".")
+		if len(parts) != 3 {
+			// Not a valid semver, skip
+			continue
+		}
+
+		var major, minor, patch int
+		fmt.Sscanf(parts[0], "%d", &major)
+		fmt.Sscanf(parts[1], "%d", &minor)
+		fmt.Sscanf(parts[2], "%d", &patch)
+
+		// Compare versions
+		if major > latestVersionNum[0] ||
+			(major == latestVersionNum[0] && minor > latestVersionNum[1]) ||
+			(major == latestVersionNum[0] && minor == latestVersionNum[1] && patch > latestVersionNum[2]) {
+			latest = v
+			latestVersionNum = []int{major, minor, patch}
+		}
+	}
+
+	return latest
+}
+
+// getSkillContentFromFolder reads skill content from the version folder
+func (s *SkillIndexerService) getSkillContentFromFolder(ctx context.Context, tenantID string, skillFolder, versionFolder *entity.File, hubID string) (*SkillInfo, error) {
+	// Get all files in the version folder
+	files, err := s.fileDAO.ListByParentID(versionFolder.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list files in version folder: %w", err)
+	}
+
+	var contentBuilder strings.Builder
+	var skillMdContent string
+
+	for _, file := range files {
+		if file.Type == "folder" {
+			continue
+		}
+
+		// Check if it's a text file
+		if !isTextFileForSkill(file.Name) {
+			continue
+		}
+
+		// Get file content (this might need to be implemented based on your storage system)
+		fileContent, err := s.getFileContent(ctx, tenantID, file)
+		if err != nil {
+			logger.Warn(fmt.Sprintf("failed to get content for file %s: %v", file.Name, err))
+			continue
+		}
+
+		if len(fileContent) == 0 {
+			continue
+		}
+
+		// Check if this is SKILL.md
+		if strings.ToLower(file.Name) == "skill.md" {
+			skillMdContent = string(fileContent)
+		}
+
+		contentBuilder.WriteString(fmt.Sprintf("\n=== %s ===\n", file.Name))
+		contentBuilder.Write(fileContent)
+	}
+
+	// Parse SKILL.md for metadata
+	name, description, tags := s.parseSkillMetadata(skillMdContent, skillFolder.Name)
+
+	skillID := fmt.Sprintf("%s/%s", skillFolder.Name, versionFolder.Name)
+
+	skillInfo := &SkillInfo{
+		ID:          skillID,
+		Name:        name,
+		Description: description,
+		Tags:        tags,
+		Content:     contentBuilder.String(),
+		FolderID:    skillFolder.ID,
+	}
+
+	return skillInfo, nil
+}
+
+// isTextFileForSkill checks if a file is a text file that should be indexed
+func isTextFileForSkill(fileName string) bool {
+	ext := strings.ToLower(filepath.Ext(fileName))
+	if ext != "" {
+		ext = ext[1:] // Remove leading dot
+	}
+
+	textFileExtensions := map[string]bool{
+		"md": true, "mdx": true, "txt": true, "json": true, "json5": true,
+		"yaml": true, "yml": true, "toml": true, "js": true, "cjs": true, "mjs": true,
+		"ts": true, "tsx": true, "jsx": true, "py": true, "sh": true, "rb": true,
+		"go": true, "rs": true, "swift": true, "kt": true, "java": true, "cs": true,
+		"cpp": true, "c": true, "h": true, "hpp": true, "sql": true, "csv": true,
+		"ini": true, "cfg": true, "env": true, "xml": true, "html": true,
+		"css": true, "scss": true, "sass": true, "svg": true,
+	}
+
+	return textFileExtensions[ext]
+}
+
+// parseSkillMetadata parses SKILL.md content to extract metadata
+func (s *SkillIndexerService) parseSkillMetadata(content, defaultName string) (name, description string, tags []string) {
+	name = defaultName
+
+	if content == "" {
+		return name, "", nil
+	}
+
+	// Parse YAML frontmatter
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return name, "", nil
+	}
+
+	var endIndex int
+	found := false
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			endIndex = i
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return name, "", nil
+	}
+
+	// Parse frontmatter lines
+	for i := 1; i < endIndex; i++ {
+		line := lines[i]
+		if strings.HasPrefix(line, "name:") {
+			name = strings.TrimSpace(strings.TrimPrefix(line, "name:"))
+		} else if strings.HasPrefix(line, "description:") {
+			description = strings.TrimSpace(strings.TrimPrefix(line, "description:"))
+		} else if strings.HasPrefix(line, "tags:") {
+			// Parse tags array
+			tagsLine := strings.TrimSpace(strings.TrimPrefix(line, "tags:"))
+			if strings.HasPrefix(tagsLine, "[") && strings.HasSuffix(tagsLine, "]") {
+				// Array format: [tag1, tag2]
+				tagsStr := strings.Trim(tagsLine, "[]")
+				tags = strings.Split(tagsStr, ",")
+				for i, tag := range tags {
+					tags[i] = strings.TrimSpace(tag)
+				}
+			} else if tagsLine != "" {
+				// Single tag or dash list
+				tags = []string{tagsLine}
+			}
+		}
+	}
+
+	return name, description, tags
+}
+
+// getFileContent retrieves the content of a file from storage
+func (s *SkillIndexerService) getFileContent(ctx context.Context, tenantID string, file *entity.File) ([]byte, error) {
+	if file.Location == nil || *file.Location == "" {
+		return nil, fmt.Errorf("file location is empty")
+	}
+
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	// Get file content from storage using tenantID as bucket and Location as path
+	content, err := storageImpl.Get(tenantID, *file.Location)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file from storage: %w", err)
+	}
+
+	return content, nil
 }
 
 // incrementSemanticVersion increments the patch version of a semantic version string
@@ -494,7 +763,11 @@ func (s *SkillIndexerService) InitializeIndex(ctx context.Context, tenantID, hub
 
 // createIndex creates the skill index using mapping files
 func (s *SkillIndexerService) createIndex(ctx context.Context, tenantID, hubID string, docEngine engine.DocEngine, embdID string) error {
-	dimension := getEmbeddingDimension(embdID)
+	// Get embedding dimension by calling embedding API with test text
+	dimension, err := s.getEmbeddingDimension(ctx, tenantID, embdID)
+	if err != nil {
+		return fmt.Errorf("failed to get embedding dimension: %w", err)
+	}
 	return s.createIndexWithDimension(ctx, tenantID, hubID, docEngine, embdID, dimension)
 }
 
@@ -621,4 +894,37 @@ func truncate(text string, maxLen int) string {
 		return text
 	}
 	return string(runes[:maxLen])
+}
+
+// getEmbeddingDimension gets the embedding dimension by calling the embedding API with test text
+// This follows Python's approach: use actual embedding result to determine dimension
+// If embedding API fails, returns error (cannot create table without knowing dimension)
+func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantID, embdID string) (int, error) {
+	if s.modelProvider == nil {
+		return 0, fmt.Errorf("model provider not set")
+	}
+
+	if embdID == "" {
+		return 0, fmt.Errorf("embedding model ID not configured")
+	}
+
+	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get embedding model: %w", err)
+	}
+
+	// Use simple test text like Python does: embedding_model.encode(["ok"])
+	testText := "ok"
+	vector, err := embeddingModel.EncodeQuery(testText)
+	if err != nil {
+		return 0, fmt.Errorf("failed to encode test text: %w", err)
+	}
+
+	if len(vector) == 0 {
+		return 0, fmt.Errorf("embedding returned empty vector")
+	}
+
+	dimension := len(vector)
+	logger.Info(fmt.Sprintf("Got embedding dimension from API: %d", dimension))
+	return dimension, nil
 }
