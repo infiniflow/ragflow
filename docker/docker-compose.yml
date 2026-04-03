@@ -42,7 +42,7 @@ services:
       # - ./nginx/proxy.conf:/etc/nginx/proxy.conf
       # - ./nginx/nginx.conf:/etc/nginx/nginx.conf
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
-      - ./entrypoint.sh:/ragflow/entrypoint.sh
+      # - ./entrypoint.sh:/ragflow/entrypoint.sh  # disabled: repo entrypoint is newer than v0.24.0 image
     env_file: .env
     networks:
       - ragflow
@@ -90,7 +90,7 @@ services:
       # - ./nginx/proxy.conf:/etc/nginx/proxy.conf
       # - ./nginx/nginx.conf:/etc/nginx/nginx.conf
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
-      - ./entrypoint.sh:/ragflow/entrypoint.sh
+      # - ./entrypoint.sh:/ragflow/entrypoint.sh  # disabled: repo entrypoint is newer than v0.24.0 image
     env_file: .env
     networks:
       - ragflow

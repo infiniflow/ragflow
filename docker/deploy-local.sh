@@ -13,6 +13,7 @@ IMAGE=$(docker inspect $CONTAINER --format "{{.Config.Image}}")
 echo "Running image: $IMAGE"
 
 echo "Copying files..."
+docker exec $CONTAINER mkdir -p /ragflow/tests
 docker cp $BASE/common/constants.py            $CONTAINER:/ragflow/common/constants.py
 docker cp $BASE/rag/app/video.py               $CONTAINER:/ragflow/rag/app/video.py
 docker cp $BASE/rag/svr/task_executor.py       $CONTAINER:/ragflow/rag/svr/task_executor.py
