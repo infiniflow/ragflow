@@ -624,6 +624,7 @@ async def run():
                     info["progress_msg"] = ""
                     info["chunk_num"] = 0
                     info["token_num"] = 0
+                    info["llm_token_num"] = 0
 
                 tenant_id = DocumentService.get_tenant_id(id)
                 if not tenant_id:
