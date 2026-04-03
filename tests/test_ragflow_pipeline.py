@@ -418,6 +418,13 @@ def ingest_video(
     dataset_id: str,
     url: str,
     title: str = "",
+    brand: str = "",
+    car_model: str = "",
+    year: str = "",
+    market: str = "",
+    trim: str = "",
+    source_type: str = "Video",
+    retrieval_date: str = "",
 ) -> dict:
     """
     MCP tool: ingest_video
@@ -433,10 +440,22 @@ def ingest_video(
     Returns:
         dict with document metadata including "id" field
     """
+    from datetime import date as _date
+    _payload = {
+        "url":            url,
+        "title":          title,
+        "brand":          brand,
+        "car_model":      car_model,
+        "year":           year,
+        "market":         market,
+        "trim":           trim,
+        "source_type":    source_type,
+        "retrieval_date": retrieval_date or _date.today().isoformat(),
+    }
     resp = requests.post(
         f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/videos",
         headers=_headers(cfg),
-        json={"url": url, "title": title},
+        json=_payload,
     )
     data = resp.json()
     if data.get("code") != 0:
@@ -910,12 +929,45 @@ def retrieve_by_brand_model(
 
     dataset_ids = [d["id"] for d in datasets]
 
+    # ── metadata-driven doc_id filtering ─────────────────────────────────────
+    _conditions = [
+        {"key": "brand",     "value": brand, "operator": "eq"},
+        {"key": "car_model", "value": model, "operator": "eq"},
+    ]
+    if year:
+        years = [year] if isinstance(year, str) else year
+        for y in years:
+            _conditions.append({"key": "year", "value": y, "operator": "eq"})
+    if market:
+        _conditions.append({"key": "market", "value": _normalize_market(market), "operator": "eq"})
+    if trim:
+        _conditions.append({"key": "trim", "value": trim, "operator": "eq"})
+    if source_type:
+        _conditions.append({"key": "source_type", "value": source_type, "operator": "eq"})
+
+    import json as _json
+    _meta_condition = {"conditions": _conditions, "logic": "and"}
+    _doc_ids = []
+    for _ds_id in dataset_ids:
+        _dresp = requests.get(
+            f"{cfg['base_url']}/api/v1/datasets/{_ds_id}/documents",
+            headers=_headers(cfg),
+            params={"metadata_condition": _json.dumps(_meta_condition), "page_size": 1000},
+        )
+        for _doc in _dresp.json().get("data", {}).get("docs", []):
+            _doc_ids.append(_doc["id"])
+
+    if not _doc_ids:
+        print(f"⚠️  No documents matched metadata filters for {brand} {model}")
+        return []
+
     resp = requests.post(
         f"{cfg['base_url']}/api/v1/retrieval",
         headers=_headers(cfg),
         json={
             "question":             question,
             "dataset_ids":          dataset_ids,
+            "doc_ids":              _doc_ids,
             "similarity_threshold": similarity_threshold,
             "top_n":                top_n,
         },
@@ -925,7 +977,7 @@ def retrieve_by_brand_model(
         raise RuntimeError(f"retrieve_by_brand_model failed: {data.get('message')}")
 
     chunks = data.get("data", {}).get("chunks", [])
-    print(f"🔍 Query: '{question}' → {len(chunks)} chunks from {len(dataset_ids)} dataset(s)")
+    print(f"🔍 Query: '{question}' → {len(chunks)} chunks from {len(_doc_ids)} doc(s) in {len(dataset_ids)} dataset(s)")
     return chunks
 
 
@@ -994,7 +1046,11 @@ def run_video_pipeline(
     dataset_id = dataset["id"]
 
     # Step 2 — Ingest video
-    doc = ingest_video(cfg, dataset_id, url, title)
+    doc = ingest_video(
+        cfg, dataset_id, url, title,
+        brand=brand, car_model=car_model, year=year,
+        market=market, trim=trim, source_type="Video",
+    )
     doc_id = doc["id"]
 
     # Step 3 — Trigger parsing
