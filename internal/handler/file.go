@@ -329,3 +329,42 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 	jsonError(c, common.CodeBadRequest, "Unsupported content type")
 	return
 }
+
+type DeleteFileRequest struct {
+	IDs []string `json:"ids" binding:"required,min=1"`
+}
+
+// DeleteFiles deletes files
+// @Summary Delete Files
+// @Description Delete files by IDs
+// @Tags file
+// @Accept json
+// @Produce json
+// @Param ids body DeleteFileRequest true "file IDs to delete"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/files [delete]
+func (h *FileHandler) DeleteFiles(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req DeleteFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeBadRequest, err.Error())
+		return
+	}
+
+	success, message := h.fileService.DeleteFiles(user.ID, req.IDs)
+	if !success {
+		jsonError(c, common.CodeBadRequest, message)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    true,
+		"message": common.CodeSuccess.Message(),
+	})
+}
