@@ -1,3 +1,4 @@
+import { FormContainer } from '@/components/form-container';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -197,7 +198,7 @@ function SwitchForm({ node }: IOperatorForm) {
           const conditions: Array<any> = form.getValues(`${name}.${ItemKey}`);
           const conditionLength = conditions.length;
           return (
-            <section key={field.id} className="space-y-5">
+            <FormContainer key={field.id} className="">
               <div className="flex justify-between items-center">
                 <section>
                   <span>{index === 0 ? 'IF' : 'ELSEIF'}</span>
@@ -242,8 +243,7 @@ function SwitchForm({ node }: IOperatorForm) {
                   parentLength={fields.length}
                 ></ConditionCards>
               </section>
-              <Separator />
-            </section>
+            </FormContainer>
           );
         })}
         <BlockButton

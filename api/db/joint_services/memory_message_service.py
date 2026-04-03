@@ -25,8 +25,8 @@ from api.db.db_utils import bulk_insert_into_db
 from api.db.db_models import Task
 from api.db.services.task_service import TaskService
 from api.db.services.memory_service import MemoryService
+from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name
 from api.utils.memory_utils import get_memory_type_human
 from memory.services.messages import MessageService
 from memory.services.query import MsgTextQuery, get_vector
@@ -53,12 +53,11 @@ async def save_to_memory(memory_id: str, message_dict: dict):
     tenant_id = memory.tenant_id
     extracted_content = await extract_by_llm(
         tenant_id,
-        memory.tenant_llm_id,
+        memory.llm_id,
         {"temperature": memory.temperature},
         get_memory_type_human(memory.memory_type),
         message_dict.get("user_input", ""),
-        message_dict.get("agent_response", ""),
-        llm_id=memory.llm_id
+        message_dict.get("agent_response", "")
     ) if memory.memory_type != MemoryType.RAW.value else []  # if only RAW, no need to extract
     raw_message_id = REDIS_CONN.generate_auto_increment_id(namespace="memory")
     message_list = [{
@@ -66,7 +65,7 @@ async def save_to_memory(memory_id: str, message_dict: dict):
         "message_type": MemoryType.RAW.name.lower(),
         "source_id": 0,
         "memory_id": memory_id,
-        "user_id": message_dict.get("user_id", ""),
+        "user_id": "",
         "agent_id": message_dict["agent_id"],
         "session_id": message_dict["session_id"],
         "content": f"User Input: {message_dict.get('user_input')}\nAgent Response: {message_dict.get('agent_response')}",
@@ -79,7 +78,7 @@ async def save_to_memory(memory_id: str, message_dict: dict):
         "message_type": content["message_type"],
         "source_id": raw_message_id,
         "memory_id": memory_id,
-        "user_id": message_dict.get("user_id", ""),
+        "user_id": "",
         "agent_id": message_dict["agent_id"],
         "session_id": message_dict["session_id"],
         "content": content["content"],
@@ -108,20 +107,19 @@ async def save_extracted_to_memory_only(memory_id: str, message_dict, source_mes
     tenant_id = memory.tenant_id
     extracted_content = await extract_by_llm(
         tenant_id,
-        memory.tenant_llm_id,
+        memory.llm_id,
         {"temperature": memory.temperature},
         get_memory_type_human(memory.memory_type),
         message_dict.get("user_input", ""),
         message_dict.get("agent_response", ""),
-        task_id=task_id,
-        llm_id=memory.llm_id
+        task_id=task_id
     )
     message_list = [{
         "message_id": REDIS_CONN.generate_auto_increment_id(namespace="memory"),
         "message_type": content["message_type"],
         "source_id": source_message_id,
         "memory_id": memory_id,
-        "user_id": message_dict.get("user_id", ""),
+        "user_id": "",
         "agent_id": message_dict["agent_id"],
         "session_id": message_dict["session_id"],
         "content": content["content"],
@@ -141,8 +139,11 @@ async def save_extracted_to_memory_only(memory_id: str, message_dict, source_mes
     return await embed_and_save(memory, message_list, task_id)
 
 
-async def extract_by_llm(tenant_id: str, tenant_llm_id: int, extract_conf: dict, memory_type: List[str], user_input: str,
-                         agent_response: str, system_prompt: str = "", user_prompt: str="", task_id: str=None, llm_id: str = "") -> List[dict]:
+async def extract_by_llm(tenant_id: str, llm_id: str, extract_conf: dict, memory_type: List[str], user_input: str,
+                         agent_response: str, system_prompt: str = "", user_prompt: str="", task_id: str=None) -> List[dict]:
+    llm_type = TenantLLMService.llm_id2llm_type(llm_id)
+    if not llm_type:
+        raise RuntimeError(f"Unknown type of LLM '{llm_id}'")
     if not system_prompt:
         system_prompt = PromptAssembler.assemble_system_prompt({"memory_type": memory_type})
     conversation_content = f"User Input: {user_input}\nAgent Response: {agent_response}"
@@ -153,11 +154,7 @@ async def extract_by_llm(tenant_id: str, tenant_llm_id: int, extract_conf: dict,
         user_prompts.append({"role": "user", "content": f"Conversation: {conversation_content}\nConversation Time: {conversation_time}\nCurrent Time: {conversation_time}"})
     else:
         user_prompts.append({"role": "user", "content": PromptAssembler.assemble_user_prompt(conversation_content, conversation_time, conversation_time)})
-    if tenant_llm_id:
-        llm_config = get_model_config_by_id(tenant_llm_id)
-    else:
-        llm_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, llm_id)
-    llm = LLMBundle(tenant_id, llm_config)
+    llm = LLMBundle(tenant_id, llm_type, llm_id)
     if task_id:
         TaskService.update_progress(task_id, {"progress": 0.15, "progress_msg": timestamp_to_date(current_timestamp())+ " " + "Prepared prompts and LLM."})
     res = await llm.async_chat(system_prompt, user_prompts, extract_conf)
@@ -173,11 +170,7 @@ async def extract_by_llm(tenant_id: str, tenant_llm_id: int, extract_conf: dict,
 
 
 async def embed_and_save(memory, message_list: list[dict], task_id: str=None):
-    if memory.tenant_embd_id:
-        embd_model_config = get_model_config_by_id(memory.tenant_embd_id)
-    else:
-        embd_model_config = get_model_config_by_type_and_name(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
-    embedding_model = LLMBundle(memory.tenant_id, embd_model_config)
+    embedding_model = LLMBundle(memory.tenant_id, llm_type=LLMType.EMBEDDING, llm_name=memory.embd_id)
     if task_id:
         TaskService.update_progress(task_id, {"progress": 0.65, "progress_msg": timestamp_to_date(current_timestamp())+ " " + "Prepared embedding model."})
     vector_list, _ = embedding_model.encode([msg["content"] for msg in message_list])
@@ -227,7 +220,6 @@ def query_message(filter_dict: dict, params: dict):
         "memory_id": List[str],
         "agent_id": optional
         "session_id": optional
-        "user_id": optional
     }
     :param params: {
         "query": question str,
@@ -247,11 +239,7 @@ def query_message(filter_dict: dict, params: dict):
     question = params["query"]
     question = question.strip()
     memory = memory_list[0]
-    if memory.tenant_embd_id:
-        embd_model_config = get_model_config_by_id(memory.tenant_embd_id)
-    else:
-        embd_model_config = get_model_config_by_type_and_name(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
-    embd_model = LLMBundle(memory.tenant_id, embd_model_config)
+    embd_model = LLMBundle(memory.tenant_id, llm_type=LLMType.EMBEDDING, llm_name=memory.embd_id)
     match_dense = get_vector(question, embd_model, similarity=params["similarity_threshold"])
     match_text, _ = MsgTextQuery().question(question, min_match=params["similarity_threshold"])
     keywords_similarity_weight = params.get("keywords_similarity_weight", 0.7)
@@ -375,7 +363,7 @@ async def queue_save_to_memory_task(memory_ids: list[str], message_dict: dict):
             "message_type": MemoryType.RAW.name.lower(),
             "source_id": 0,
             "memory_id": memory_id,
-            "user_id": message_dict.get("user_id", ""),
+            "user_id": "",
             "agent_id": message_dict["agent_id"],
             "session_id": message_dict["session_id"],
             "content": f"User Input: {message_dict.get('user_input')}\nAgent Response: {message_dict.get('agent_response')}",

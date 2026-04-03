@@ -654,7 +654,7 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
                 "type": "string",
                 "required": True,
                 "label": "Account ID",
-                "description": "Aliyun primary account ID, required for API calls"
+                "description": "Aliyun primary account ID (主账号ID), required for API calls"
             },
             "region": {
                 "type": "string",

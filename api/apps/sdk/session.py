@@ -32,7 +32,6 @@ from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import UserCanvasService, completion_openai
 from api.db.services.canvas_service import completion as agent_completion
 from api.db.services.conversation_service import ConversationService
-from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.db.services.conversation_service import async_iframe_completion as iframe_completion
 from api.db.services.conversation_service import async_completion as rag_completion
 from api.db.services.dialog_service import DialogService, async_ask, async_chat, gen_mindmap
@@ -41,9 +40,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter, convert_conditions, meta_filter
 from api.db.services.search_service import SearchService
-from api.db.services.user_service import UserTenantService
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_by_id, \
-    get_model_config_by_type_and_name
+from api.db.services.user_service import TenantService,UserTenantService
 from common.misc_utils import get_uuid
 from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_json_result, \
     get_result, get_request_json, server_error_response, token_required, validate_request
@@ -86,36 +83,22 @@ async def create(tenant_id, chat_id):
 @manager.route("/agents/<agent_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required
 async def create_agent_session(tenant_id, agent_id):
-    req = await get_request_json()
-    user_id = req.get("user_id") or request.args.get("user_id", tenant_id)
-    release_mode = bool(req.get("release", request.args.get("release", False)))
-
+    user_id = request.args.get("user_id", tenant_id)
+    e, cvs = UserCanvasService.get_by_id(agent_id)
+    if not e:
+        return get_error_data_result("Agent not found.")
     if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
         return get_error_data_result("You cannot access the agent.")
-
-    try:
-        cvs, dsl = UserCanvasService.get_agent_dsl_with_release(agent_id, release_mode, tenant_id)
-    except LookupError:
-        return get_error_data_result("Agent not found.")
-    except PermissionError as e:
-        return get_error_data_result(str(e))
+    if not isinstance(cvs.dsl, str):
+        cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
     session_id = get_uuid()
-    canvas = Canvas(dsl, tenant_id, agent_id, canvas_id=cvs.id)
+    canvas = Canvas(cvs.dsl, tenant_id, agent_id, canvas_id=cvs.id)
     canvas.reset()
 
     cvs.dsl = json.loads(str(canvas))
-    # Get the version title based on release_mode
-    version_title = UserCanvasVersionService.get_latest_version_title(cvs.id, release_mode=release_mode)
-    conv = {
-        "id": session_id,
-        "dialog_id": cvs.id,
-        "user_id": user_id,
-        "message": [{"role": "assistant", "content": canvas.get_prologue()}],
-        "source": "agent",
-        "dsl": cvs.dsl,
-        "version_title": version_title
-    }
+    conv = {"id": session_id, "dialog_id": cvs.id, "user_id": user_id,
+            "message": [{"role": "assistant", "content": canvas.get_prologue()}], "source": "agent", "dsl": cvs.dsl}
     API4ConversationService.save(**conv)
     conv["agent_id"] = conv.pop("dialog_id")
     return get_result(data=conv)
@@ -386,10 +369,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
                     if ans.get("final"):
                         if ans.get("answer"):
                             full_content = ans["answer"]
-                            response["choices"][0]["delta"]["content"] = full_content
-                            response["choices"][0]["delta"]["reasoning_content"] = None
-                            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
-                        final_answer = full_content
+                        final_answer = ans.get("answer") or full_content
                         final_reference = ans.get("reference", {})
                         continue
                     if ans.get("start_to_think"):
@@ -595,7 +575,6 @@ async def agent_completions(tenant_id, agent_id):
     reference = {}
     final_ans = ""
     trace_items = []
-    structured_output = {}
     async for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
         try:
             ans = json.loads(answer[5:])
@@ -606,27 +585,20 @@ async def agent_completions(tenant_id, agent_id):
             if ans.get("data", {}).get("reference", None):
                 reference.update(ans["data"]["reference"])
 
-            if ans.get("event") == "node_finished":
+            if return_trace and ans.get("event") == "node_finished":
                 data = ans.get("data", {})
-                node_out = data.get("outputs", {})
-                component_id = data.get("component_id")
-                if component_id is not None and "structured" in node_out:
-                    structured_output[component_id] = copy.deepcopy(node_out["structured"])
-                if return_trace:
-                    trace_items.append(
-                        {
-                            "component_id": data.get("component_id"),
-                            "trace": [copy.deepcopy(data)],
-                        }
-                    )
+                trace_items.append(
+                    {
+                        "component_id": data.get("component_id"),
+                        "trace": [copy.deepcopy(data)],
+                    }
+                )
 
             final_ans = ans
         except Exception as e:
             return get_result(data=f"**ERROR**: {str(e)}")
     final_ans["data"]["content"] = full_content
     final_ans["data"]["reference"] = reference
-    if structured_output:
-        final_ans["data"]["structured"] = structured_output
     if return_trace and final_ans:
         final_ans["data"]["trace"] = trace_items
     return get_result(data=final_ans)
@@ -758,19 +730,18 @@ async def delete(tenant_id, chat_id):
     errors = []
     success_count = 0
     req = await get_request_json()
+    convs = ConversationService.query(dialog_id=chat_id)
     if not req:
-        return get_result()
+        ids = None
+    else:
+        ids = req.get("ids")
 
-    ids = req.get("ids")
     if not ids:
-        if req.get("delete_all") is True:
-            ids = [conv.id for conv in ConversationService.query(dialog_id=chat_id)]
-            if not ids:
-                return get_result()
-        else:
-            return get_result()
-
-    conv_list = ids
+        conv_list = []
+        for conv in convs:
+            conv_list.append(conv.id)
+    else:
+        conv_list = ids
 
     unique_conv_ids, duplicate_messages = check_duplicate_ids(conv_list, "session")
     conv_list = unique_conv_ids
@@ -811,19 +782,21 @@ async def delete_agent_session(tenant_id, agent_id):
     if not cvs:
         return get_error_data_result(f"You don't own the agent {agent_id}")
 
+    convs = API4ConversationService.query(dialog_id=agent_id)
+    if not convs:
+        return get_error_data_result(f"Agent {agent_id} has no sessions")
+
     if not req:
-        return get_result()
+        ids = None
+    else:
+        ids = req.get("ids")
 
-    ids = req.get("ids")
     if not ids:
-        if req.get("delete_all") is True:
-            ids = [conv.id for conv in API4ConversationService.query(dialog_id=agent_id)]
-            if not ids:
-                return get_result()
-        else:
-            return get_result()
-
-    conv_list = ids
+        conv_list = []
+        for conv in convs:
+            conv_list.append(conv.id)
+    else:
+        conv_list = ids
 
     unique_conv_ids, duplicate_messages = check_duplicate_ids(conv_list, "session")
     conv_list = unique_conv_ids
@@ -901,8 +874,7 @@ async def related_questions(tenant_id):
         return get_error_data_result("`question` is required.")
     question = req["question"]
     industry = req.get("industry", "")
-    chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-    chat_mdl = LLMBundle(tenant_id, chat_model_config)
+    chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
     prompt = """
 Objective: To generate search terms related to the user's search keywords, helping users find more valuable information.
 Instructions:
@@ -952,7 +924,7 @@ async def chatbot_completions(dialog_id):
 
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!')
+        return get_error_data_result(message='Authorization is not valid!"')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -978,7 +950,7 @@ async def chatbot_completions(dialog_id):
 async def chatbots_inputs(dialog_id):
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!')
+        return get_error_data_result(message='Authorization is not valid!"')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -1004,42 +976,22 @@ async def agent_bot_completions(agent_id):
 
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!')
+        return get_error_data_result(message='Authorization is not valid!"')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
     if req.get("stream", True):
-        async def stream():
-            try:
-                async for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
-                    yield answer
-            except Exception as e:
-                logging.exception(e)
-                error_result = get_error_data_result(message=str(e) or "Unknown error")
-                yield "data:" + json.dumps(
-                    {
-                        "event": "message",
-                        "data": {"content": f"Error {error_result['code']}: {error_result['message']}\n\n"},
-                        **error_result,
-                    },
-                    ensure_ascii=False,
-                ) + "\n\n"
-
-        resp = Response(stream(), mimetype="text/event-stream")
+        resp = Response(agent_completion(objs[0].tenant_id, agent_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
         resp.headers.add_header("X-Accel-Buffering", "no")
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
 
-    try:
-        async for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
-            return get_result(data=answer)
-    except Exception as e:
-        logging.exception(e)
-        return get_error_data_result(message=str(e) or "Unknown error")
+    async for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
+        return get_result(data=answer)
 
     return None
 
@@ -1047,7 +999,7 @@ async def agent_bot_completions(agent_id):
 async def begin_inputs(agent_id):
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!')
+        return get_error_data_result(message='Authorization is not valid!"')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -1068,7 +1020,7 @@ async def begin_inputs(agent_id):
 async def ask_about_embedded():
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!')
+        return get_error_data_result(message='Authorization is not valid!"')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -1107,7 +1059,7 @@ async def ask_about_embedded():
 async def retrieval_test_embedded():
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!')
+        return get_error_data_result(message='Authorization is not valid!"')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -1130,7 +1082,6 @@ async def retrieval_test_embedded():
     top = int(req.get("top_k", 1024))
     langs = req.get("cross_languages", [])
     rerank_id = req.get("rerank_id", "")
-    tenant_rerank_id = req.get("tenant_rerank_id", "")
     tenant_id = objs[0].tenant_id
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
@@ -1147,12 +1098,7 @@ async def retrieval_test_embedded():
             search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
             meta_data_filter = search_config.get("meta_data_filter", {})
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
-                chat_id = search_config.get("chat_id", "")
-                if chat_id:
-                    chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_id)
-                else:
-                    chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-                chat_mdl = LLMBundle(tenant_id, chat_model_config)
+                chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
             # Apply search_config settings if not explicitly provided in request
             if not req.get("similarity_threshold"):
                 similarity_threshold = float(search_config.get("similarity_threshold", similarity_threshold))
@@ -1165,8 +1111,7 @@ async def retrieval_test_embedded():
         else:
             meta_data_filter = req.get("meta_data_filter") or {}
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
-                chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-                chat_mdl = LLMBundle(tenant_id, chat_model_config)
+                chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
 
         if meta_data_filter:
             metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
@@ -1188,23 +1133,15 @@ async def retrieval_test_embedded():
 
         if langs:
             _question = await cross_languages(kb.tenant_id, None, _question, langs)
-        if kb.tenant_embd_id:
-            embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
-        else:
-            embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
-        embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
+
+        embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
         rerank_mdl = None
-        if tenant_rerank_id:
-            rerank_model_config = get_model_config_by_id(tenant_rerank_id)
-            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
-        elif rerank_id:
-            rerank_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.RERANK, rerank_id)
-            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
+        if rerank_id:
+            rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK.value, llm_name=rerank_id)
 
         if req.get("keyword", False):
-            default_chat_model = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
-            chat_mdl = LLMBundle(kb.tenant_id, default_chat_model)
+            chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
             _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
@@ -1213,9 +1150,8 @@ async def retrieval_test_embedded():
             local_doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"), rank_feature=labels
         )
         if use_kg:
-            default_chat_model = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
             ck = await settings.kg_retriever.retrieval(_question, tenant_ids, kb_ids, embd_mdl,
-                                                 LLMBundle(kb.tenant_id, default_chat_model))
+                                                 LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
@@ -1239,7 +1175,7 @@ async def retrieval_test_embedded():
 async def related_questions_embedded():
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!')
+        return get_error_data_result(message='Authorization is not valid!"')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -1259,11 +1195,7 @@ async def related_questions_embedded():
     question = req["question"]
 
     chat_id = search_config.get("chat_id", "")
-    if chat_id:
-        chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_id)
-    else:
-        chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-    chat_mdl = LLMBundle(tenant_id, chat_model_config)
+    chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, chat_id)
 
     gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
     prompt = load_prompt("related_question")
@@ -1287,7 +1219,7 @@ Related search terms:
 async def detail_share_embedded():
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!')
+        return get_error_data_result(message='Authorization is not valid!"')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -1319,7 +1251,7 @@ async def detail_share_embedded():
 async def mindmap():
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_error_data_result(message='Authorization is not valid!')
+        return get_error_data_result(message='Authorization is not valid!"')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -1364,11 +1296,15 @@ async def sequence2txt(tenant_id):
     os.close(fd)
     await uploaded.save(temp_audio_path)
 
-    try:
-        default_asr_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.SPEECH2TEXT)
-    except Exception as e:
-        return get_error_data_result(message=str(e))
-    asr_mdl=LLMBundle(tenant_id, default_asr_model_config)
+    tenants = TenantService.get_info_by(tenant_id)
+    if not tenants:
+        return get_error_data_result(message="Tenant not found!")
+
+    asr_id = tenants[0]["asr_id"]
+    if not asr_id:
+        return get_error_data_result(message="No default ASR model is set")
+
+    asr_mdl=LLMBundle(tenants[0]["tenant_id"], LLMType.SPEECH2TEXT, asr_id)
     if not stream_mode:
         text = asr_mdl.transcription(temp_audio_path)
         try:
@@ -1397,11 +1333,15 @@ async def tts(tenant_id):
     req = await get_request_json()
     text = req["text"]
 
-    try:
-        default_tts_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.TTS)
-    except Exception as e:
-        return get_error_data_result(message=str(e))
-    tts_mdl = LLMBundle(tenant_id, default_tts_model_config)
+    tenants = TenantService.get_info_by(tenant_id)
+    if not tenants:
+        return get_error_data_result(message="Tenant not found!")
+
+    tts_id = tenants[0]["tts_id"]
+    if not tts_id:
+        return get_error_data_result(message="No default TTS model is set")
+
+    tts_mdl = LLMBundle(tenants[0]["tenant_id"], LLMType.TTS, tts_id)
 
     def stream_audio():
         try:

@@ -19,7 +19,7 @@ export default function MemoryMessage() {
   return (
     <div className="flex flex-col gap-2">
       <ListFilterBar
-        title={t('header.dataset')}
+        title="Dataset"
         onSearchChange={handleInputChange}
         searchString={searchString}
         // showFilter={false}

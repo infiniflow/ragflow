@@ -175,7 +175,7 @@ class TestChunksRetrieval:
         else:
             assert res["message"] == expected_message
 
-    @pytest.mark.p3
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "payload, expected_code, expected_page_size, expected_message",
         [

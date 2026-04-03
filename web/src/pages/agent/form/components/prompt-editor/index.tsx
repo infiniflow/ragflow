@@ -24,7 +24,7 @@ import { cn } from '@/lib/utils';
 import { JsonSchemaDataType } from '@/pages/agent/constant';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { Variable } from 'lucide-react';
-import { forwardRef, ReactNode, useCallback, useState } from 'react';
+import { ReactNode, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { EnterKeyPlugin } from './enter-key-plugin';
 import { PasteHandlerPlugin } from './paste-handler-plugin';
@@ -129,20 +129,17 @@ function PromptContent({
   );
 }
 
-export const PromptEditor = forwardRef(function PromptEditor(
-  {
-    value,
-    onChange,
-    onBlur,
-    placeholder,
-    showToolbar,
-    multiLine = true,
-    extraOptions,
-    baseOptions,
-    types,
-  }: IProps,
-  ref: React.Ref<HTMLDivElement>,
-) {
+export function PromptEditor({
+  value,
+  onChange,
+  onBlur,
+  placeholder,
+  showToolbar,
+  multiLine = true,
+  extraOptions,
+  baseOptions,
+  types,
+}: IProps) {
   const { t } = useTranslation();
   const initialConfig: InitialConfigType = {
     namespace: 'PromptEditor',
@@ -166,7 +163,7 @@ export const PromptEditor = forwardRef(function PromptEditor(
   );
 
   return (
-    <div ref={ref} className="relative">
+    <div className="relative">
       <LexicalComposer initialConfig={initialConfig}>
         <RichTextPlugin
           contentEditable={
@@ -179,10 +176,10 @@ export const PromptEditor = forwardRef(function PromptEditor(
           placeholder={
             <div
               className={cn(
-                '-z-10 absolute top-1 left-2 text-text-disabled pointer-events-none',
+                'absolute top-1 left-2 text-text-disabled pointer-events-none',
                 {
                   'truncate w-[90%]': !multiLine,
-                  'translate-y-9': multiLine,
+                  'translate-y-10': multiLine,
                 },
               )}
             >
@@ -205,4 +202,4 @@ export const PromptEditor = forwardRef(function PromptEditor(
       </LexicalComposer>
     </div>
   );
-});
+}

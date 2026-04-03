@@ -21,12 +21,14 @@ export function IconFontFill({
   isFill = true,
 }: IconFontType & { isFill?: boolean }) {
   return (
-    <svg
-      className={cn('size-4', className)}
-      style={{ fill: isFill ? 'currentColor' : '' }}
-    >
-      <use xlinkHref={`#icon-${name}`} />
-    </svg>
+    <span className={cn('size-4', className)}>
+      <svg
+        className={cn('size-4', className)}
+        style={{ fill: isFill ? 'currentColor' : '' }}
+      >
+        <use xlinkHref={`#icon-${name}`} />
+      </svg>
+    </span>
   );
 }
 

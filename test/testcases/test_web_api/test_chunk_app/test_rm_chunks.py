@@ -95,30 +95,6 @@ class TestChunksDeletion:
         assert len(res["data"]["chunks"]) == 0, res
         assert res["data"]["total"] == 0, res
 
-    @pytest.mark.p2
-    def test_delete_scalar_chunk_id_payload(self, WebApiAuth, add_chunks_func):
-        _, doc_id, chunk_ids = add_chunks_func
-        payload = {"chunk_ids": chunk_ids[0], "doc_id": doc_id}
-        res = delete_chunks(WebApiAuth, payload)
-        assert res["code"] == 0, res
-
-        res = list_chunks(WebApiAuth, {"doc_id": doc_id})
-        assert res["code"] == 0, res
-        assert len(res["data"]["chunks"]) == 3, res
-        assert res["data"]["total"] == 3, res
-
-    @pytest.mark.p2
-    def test_delete_duplicate_ids_dedup_behavior(self, WebApiAuth, add_chunks_func):
-        _, doc_id, chunk_ids = add_chunks_func
-        payload = {"chunk_ids": [chunk_ids[0], chunk_ids[0]], "doc_id": doc_id}
-        res = delete_chunks(WebApiAuth, payload)
-        assert res["code"] == 0, res
-
-        res = list_chunks(WebApiAuth, {"doc_id": doc_id})
-        assert res["code"] == 0, res
-        assert len(res["data"]["chunks"]) == 3, res
-        assert res["data"]["total"] == 3, res
-
     @pytest.mark.p3
     def test_concurrent_deletion(self, WebApiAuth, add_document):
         count = 100
@@ -165,7 +141,7 @@ class TestChunksDeletion:
             pytest.param("not json", 100, """UnboundLocalError("local variable \'duplicate_messages\' referenced before assignment")""", 5, marks=pytest.mark.skip(reason="pull/6376")),
             pytest.param(lambda r: {"chunk_ids": r[:1]}, 0, "", 3, marks=pytest.mark.p3),
             pytest.param(lambda r: {"chunk_ids": r}, 0, "", 0, marks=pytest.mark.p1),
-            pytest.param({"chunk_ids": []}, 0, "", 5, marks=pytest.mark.p3),
+            pytest.param({"chunk_ids": []}, 0, "", 0, marks=pytest.mark.p3),
         ],
     )
     def test_basic_scenarios(self, WebApiAuth, add_chunks_func, payload, expected_code, expected_message, remaining):

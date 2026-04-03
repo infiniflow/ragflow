@@ -27,6 +27,7 @@ from rag.nlp import is_english, random_choices, qbullets_category, add_positions
 from rag.nlp import rag_tokenizer, tokenize_table, concat_img
 from deepdoc.parser import PdfParser, ExcelParser, DocxParser
 from docx import Document
+from PIL import Image
 from markdown import markdown
 
 from common.float_utils import get_float
@@ -190,6 +191,17 @@ class Pdf(PdfParser):
 class Docx(DocxParser):
     def __init__(self):
         pass
+
+    def get_picture(self, document, paragraph):
+        img = paragraph._element.xpath('.//pic:pic')
+        if not img:
+            return None
+        img = img[0]
+        embed = img.xpath('.//a:blip/@r:embed')[0]
+        related_part = document.part.related_parts[embed]
+        image = related_part.image
+        image = Image.open(BytesIO(image.blob)).convert('RGB')
+        return image
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, callback=None):
         self.doc = Document(

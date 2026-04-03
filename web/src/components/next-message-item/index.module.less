@@ -27,11 +27,6 @@
     .chunkText();
     .messageTextBase();
     word-break: break-word;
-
-    // RTL Support
-    &[dir='rtl'] {
-      text-align: right;
-    }
   }
   .messageTextDark {
     .chunkText();
@@ -39,22 +34,7 @@
     word-break: break-word;
     :global(section.think) {
       color: rgb(166, 166, 166);
-      border-inline-start-color: rgb(78, 78, 86);
-    }
-
-    // RTL Support
-    &[dir='rtl'] {
-      text-align: right;
-
-      :global(section.think) {
-        border-inline-start-color: transparent;
-        border-inline-end-color: rgb(78, 78, 86);
-        border-inline-end-width: 2px;
-        border-inline-end-style: solid;
-        border-inline-start: none;
-        padding-inline-start: 0;
-        padding-inline-end: 10px;
-      }
+      border-left-color: rgb(78, 78, 86);
     }
   }
 
@@ -63,11 +43,6 @@
     .messageTextBase();
     word-break: break-word;
     text-align: justify;
-
-    // RTL Support
-    &[dir='rtl'] {
-      text-align: right;
-    }
   }
   .messageEmpty {
     width: 300px;
@@ -79,9 +54,9 @@
 }
 
 .messageItemLeft {
-  text-align: start;
+  text-align: left;
 }
 
 .messageItemRight {
-  text-align: end;
+  text-align: right;
 }

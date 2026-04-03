@@ -1,4 +1,4 @@
-import { ISwitchCondition, RAGFlowNodeType } from '@/interfaces/database/agent';
+import { ISwitchCondition, RAGFlowNodeType } from '@/interfaces/database/flow';
 import { useUpdateNodeInternals } from '@xyflow/react';
 import get from 'lodash/get';
 import { useEffect, useMemo } from 'react';

@@ -47,10 +47,10 @@ export function Applications() {
 
   const options = useMemo(
     () => [
-      { value: Routes.Chats, label: t('header.chat') },
-      { value: Routes.Searches, label: t('header.search') },
+      { value: Routes.Chats, label: t('chat.chatApps') },
+      { value: Routes.Searches, label: t('search.searchApps') },
       { value: Routes.Agents, label: t('header.flow') },
-      { value: Routes.Memories, label: t('header.memories') },
+      { value: Routes.Memories, label: t('memories.memory') },
     ],
     [t],
   );
@@ -63,57 +63,55 @@ export function Applications() {
 
   return (
     <section className="mt-12">
-      <header className="flex justify-between items-center mb-2.5">
-        <h2 className="text-2xl font-semibold">
+      <div className="flex justify-between items-center mb-5">
+        <h2 className="text-2xl font-semibold flex gap-2.5">
           <HomeIcon
-            imgClass="me-2.5"
             name={`${IconMap[val as keyof typeof IconMap]}`}
-            width={24}
+            width={'32'}
           />
           {options.find((x) => x.value === val)?.label}
         </h2>
-
         <Segmented
-          buttonSize="sm"
           options={options}
           value={val}
           onChange={handleChange}
+          buttonSize="xl"
           // className="bg-bg-card border border-border-button rounded-lg"
           // activeClassName="bg-text-primary border-none rounded-lg"
-        />
-      </header>
-
+        ></Segmented>
+      </div>
       {/* <div className="flex flex-wrap gap-4"> */}
       <CardSineLineContainer>
         {val === Routes.Agents && (
           <Agents
             setListLength={(length: number) => setListLength(length)}
             setLoading={(loading: boolean) => setLoading(loading)}
-          />
+          ></Agents>
         )}
         {val === Routes.Chats && (
           <ChatList
             setListLength={(length: number) => setListLength(length)}
             setLoading={(loading: boolean) => setLoading(loading)}
-          />
+          ></ChatList>
         )}
         {val === Routes.Searches && (
           <SearchList
             setListLength={(length: number) => setListLength(length)}
             setLoading={(loading: boolean) => setLoading(loading)}
-          />
+          ></SearchList>
         )}
         {val === Routes.Memories && (
           <MemoryList
             setListLength={(length: number) => setListLength(length)}
             setLoading={(loading: boolean) => setLoading(loading)}
-          />
+          ></MemoryList>
         )}
         {listLength > 0 && (
-          <SeeAllAppCard click={() => handleNavigate({ isCreate: false })} />
+          <SeeAllAppCard
+            click={() => handleNavigate({ isCreate: false })}
+          ></SeeAllAppCard>
         )}
       </CardSineLineContainer>
-
       {listLength <= 0 && !loading && (
         <EmptyAppCard
           type={EmptyTypeMap[val as keyof typeof EmptyTypeMap]}

@@ -9,11 +9,7 @@ export function SavingButton({ loading }: SaveButtonProps) {
   const { t } = useTranslation();
 
   return (
-    <ButtonLoading
-      data-testid="chat-settings-save"
-      type="submit"
-      loading={loading}
-    >
+    <ButtonLoading type="submit" loading={loading}>
       {t('common.save')}
     </ButtonLoading>
   );

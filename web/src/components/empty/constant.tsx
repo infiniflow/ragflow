@@ -1,3 +1,4 @@
+import { t } from 'i18next';
 import { HomeIcon } from '../svg-icon';
 
 export enum EmptyType {
@@ -16,27 +17,27 @@ export enum EmptyCardType {
 export const EmptyCardData = {
   [EmptyCardType.Agent]: {
     icon: <HomeIcon name="agents" width={'24'} />,
-    titleKey: 'empty.agentTitle',
-    notFoundKey: 'empty.notFoundAgent',
+    title: t('empty.agentTitle'),
+    notFound: t('empty.notFoundAgent'),
   },
   [EmptyCardType.Dataset]: {
     icon: <HomeIcon name="datasets" width={'24'} />,
-    titleKey: 'empty.datasetTitle',
-    notFoundKey: 'empty.notFoundDataset',
+    title: t('empty.datasetTitle'),
+    notFound: t('empty.notFoundDataset'),
   },
   [EmptyCardType.Chat]: {
     icon: <HomeIcon name="chats" width={'24'} />,
-    titleKey: 'empty.chatTitle',
-    notFoundKey: 'empty.notFoundChat',
+    title: t('empty.chatTitle'),
+    notFound: t('empty.notFoundChat'),
   },
   [EmptyCardType.Search]: {
     icon: <HomeIcon name="searches" width={'24'} />,
-    titleKey: 'empty.searchTitle',
-    notFoundKey: 'empty.notFoundSearch',
+    title: t('empty.searchTitle'),
+    notFound: t('empty.notFoundSearch'),
   },
   [EmptyCardType.Memory]: {
     icon: <HomeIcon name="memory" width={'24'} />,
-    titleKey: 'empty.memoryTitle',
-    notFoundKey: 'empty.notFoundMemory',
+    title: t('empty.memoryTitle'),
+    notFound: t('empty.notFoundMemory'),
   },
 };

@@ -15,7 +15,6 @@
 #
 import uuid
 import hashlib
-import pytest
 from common.misc_utils import get_uuid, download_img, hash_str2int, convert_bytes
 
 
@@ -92,16 +91,14 @@ class TestGetUuid:
 class TestDownloadImg:
     """Test cases for download_img function"""
 
-    @pytest.mark.asyncio
-    async def test_empty_url_returns_empty_string(self):
+    def test_empty_url_returns_empty_string(self):
         """Test that empty URL returns empty string"""
-        result = await download_img("")
+        result = download_img("")
         assert result == ""
 
-    @pytest.mark.asyncio
-    async def test_none_url_returns_empty_string(self):
+    def test_none_url_returns_empty_string(self):
         """Test that None URL returns empty string"""
-        result = await download_img(None)
+        result = download_img(None)
         assert result == ""
 
 

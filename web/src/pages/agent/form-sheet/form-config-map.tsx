@@ -181,10 +181,4 @@ export const FormConfigMap = {
   [Operator.ExitLoop]: {
     component: () => <></>,
   },
-  [Operator.LoopStart]: {
-    component: () => <></>,
-  },
-  [Operator.ExcelProcessor]: {
-    component: () => <></>,
-  },
 };

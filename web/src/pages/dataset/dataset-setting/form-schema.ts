@@ -7,16 +7,18 @@ export const formSchema = z
     name: z.string().min(1, {
       message: 'Username must be at least 2 characters.',
     }),
-    description: z.string().optional(),
+    description: z.string().min(2, {
+      message: 'Username must be at least 2 characters.',
+    }),
     // avatar: z.instanceof(File),
     avatar: z.any().nullish(),
     permission: z.string().optional(),
     language: z.string().optional(),
-    chunk_method: z.string(),
+    parser_id: z.string(),
     pipeline_id: z.string().optional(),
     pipeline_name: z.string().optional(),
     pipeline_avatar: z.string().optional(),
-    embedding_model: z.string(),
+    embd_id: z.string(),
     parser_config: z
       .object({
         layout_recognize: z.string(),

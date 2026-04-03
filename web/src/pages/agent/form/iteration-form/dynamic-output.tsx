@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
 import { Operator } from '@/constants/agent';
-import { RAGFlowNodeType } from '@/interfaces/database/agent';
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { t } from 'i18next';
 import { isEmpty } from 'lodash';
 import { X } from 'lucide-react';

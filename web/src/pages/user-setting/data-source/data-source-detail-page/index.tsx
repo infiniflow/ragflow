@@ -64,18 +64,11 @@ const SourceDetailPage = () => {
         type: FormFieldType.Number,
         required: false,
         render: (fieldProps: FormFieldConfig) => (
-          <div className="flex items-center gap-1 w-full relative">
-            <div className="flex-1">
-              <Input
-                {...fieldProps}
-                type={FormFieldType.Number}
-                suffix={
-                  <span className="px-2 text-text-secondary italic">
-                    {t('setting.minutes')}
-                  </span>
-                }
-              />
-            </div>
+          <div className="flex items-center  gap-1 w-full relative">
+            <Input {...fieldProps} type={FormFieldType.Number} />
+            <span className="absolute right-0 -translate-x-[58px] text-text-secondary italic ">
+              {t('setting.minutes')}
+            </span>
             <button
               type="button"
               className="text-text-secondary bg-bg-input rounded-sm text-xs h-full p-2 border border-border-button hover:bg-border-button hover:text-text-primary"
@@ -101,18 +94,11 @@ const SourceDetailPage = () => {
         hidden: true,
         render: (fieldProps: FormFieldConfig) => {
           return (
-            <div className="flex items-center gap-1 w-full relative">
-              <div className="flex-1">
-                <Input
-                  {...fieldProps}
-                  type={FormFieldType.Number}
-                  suffix={
-                    <span className="px-2 text-text-secondary italic">
-                      hours
-                    </span>
-                  }
-                />
-              </div>
+            <div className="flex items-center  gap-1 w-full relative">
+              <Input {...fieldProps} type={FormFieldType.Number} />
+              <span className="absolute right-0 -translate-x-6 text-text-secondary italic ">
+                hours
+              </span>
             </div>
           );
         },
@@ -123,18 +109,11 @@ const SourceDetailPage = () => {
         type: FormFieldType.Number,
         required: false,
         render: (fieldProps: FormFieldConfig) => (
-          <div className="flex items-center gap-1 w-full relative">
-            <div className="flex-1">
-              <Input
-                {...fieldProps}
-                type={FormFieldType.Number}
-                suffix={
-                  <span className="px-2 text-text-secondary italic">
-                    {t('setting.seconds')}
-                  </span>
-                }
-              />
-            </div>
+          <div className="flex items-center  gap-1 w-full relative">
+            <Input {...fieldProps} type={FormFieldType.Number} />
+            <span className="absolute right-0 -translate-x-6 text-text-secondary italic ">
+              {t('setting.seconds')}
+            </span>
           </div>
         ),
       },

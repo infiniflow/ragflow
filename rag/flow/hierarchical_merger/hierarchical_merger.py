@@ -69,23 +69,11 @@ class HierarchicalMerger(ProcessBase):
             lines = [ln for ln in payload.split("\n") if ln]
         else:
             arr = from_upstream.chunks if from_upstream.output_format == "chunks" else from_upstream.json_result
-            arr = arr or []
+            lines = [o.get("text", "") for o in arr]
             sections, section_images = [], []
-            lines = []
-            for o in arr:
-                if isinstance(o, dict):
-                    raw_text = o.get("text")
-                    position_tag = o.get("position_tag", "")
-                    img_id = o.get("img_id")
-                else:
-                    raw_text = o
-                    position_tag = ""
-                    img_id = None
-
-                txt = raw_text if isinstance(raw_text, str) else ("" if raw_text is None else str(raw_text))
-                lines.append(txt)
-                sections.append((txt, position_tag))
-                section_images.append(img_id)
+            for o in arr or []:
+                sections.append((o.get("text", ""), o.get("position_tag", "")))
+                section_images.append(o.get("img_id"))
 
         matches = []
         for txt in lines:

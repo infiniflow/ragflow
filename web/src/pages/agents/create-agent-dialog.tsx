@@ -22,7 +22,7 @@ export function CreateAgentDialog({
 
   return (
     <Dialog open onOpenChange={hideModal}>
-      <DialogContent data-testid="agent-create-modal">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('flow.createGraph')}</DialogTitle>
         </DialogHeader>
@@ -32,12 +32,7 @@ export function CreateAgentDialog({
           shouldChooseAgent={shouldChooseAgent}
         ></CreateAgentForm>
         <DialogFooter>
-          <ButtonLoading
-            data-testid="agent-save"
-            type="submit"
-            form={TagRenameId}
-            loading={loading}
-          >
+          <ButtonLoading type="submit" form={TagRenameId} loading={loading}>
             {t('common.save')}
           </ButtonLoading>
         </DialogFooter>

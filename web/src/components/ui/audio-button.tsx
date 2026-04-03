@@ -5,13 +5,11 @@ import { Authorization } from '@/constants/authorization';
 import { cn } from '@/lib/utils';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
-import { chain, sum } from 'lodash';
 import { Loader2, Mic, Square } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useIsDarkTheme } from '../theme-provider';
 import { Input } from './input';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
-
 const VoiceVisualizer = ({ isRecording }: { isRecording: boolean }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -20,79 +18,7 @@ const VoiceVisualizer = ({ isRecording }: { isRecording: boolean }) => {
   const streamRef = useRef<MediaStream | null>(null);
   const isDark = useIsDarkTheme();
 
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const analyser = analyserRef.current;
-    if (!analyser) return;
-
-    // Set canvas dimensions
-    const width = canvas.clientWidth * window.devicePixelRatio;
-    const height = canvas.clientHeight * window.devicePixelRatio;
-    const centerY = height / 2;
-
-    if (canvas.width !== width || canvas.height !== height) {
-      canvas.width = width;
-      canvas.height = height;
-    }
-
-    // Clear canvas
-    ctx.clearRect(0, 0, width, height);
-
-    // Get frequency data
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-
-    /**
-     * The frequencies are spread linearly from 0Hz to 1/2 of the sample rate
-     * @see https://developer.mozilla.org/en-US/docs/Web/API/AnalyserNode/getByteFrequencyData
-     */
-    analyser.getByteFrequencyData(dataArray);
-
-    const desiredBarCount = 6;
-    const freqSpanPerPole =
-      analyser.context.sampleRate / 2 / analyser.frequencyBinCount;
-    const freqMinIndex = Math.max(1, Math.floor(100 / freqSpanPerPole));
-    const freqMaxIndex =
-      Math.max(freqMinIndex, Math.ceil(3500 / freqSpanPerPole)) + 1;
-
-    const freqData = dataArray.slice(
-      freqMinIndex,
-      Math.max(freqMinIndex + desiredBarCount, freqMaxIndex),
-    );
-
-    const reducedFreqData = chain(freqData)
-      .chunk(Math.floor(freqData.length / desiredBarCount))
-      .take(desiredBarCount)
-      .map(sum)
-      .value();
-
-    // Draw waveform
-    const barGap = 1 * window.devicePixelRatio;
-    const barWidth = (width - barGap * (desiredBarCount - 1)) / desiredBarCount;
-
-    // Create gradient
-    const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, '#3ba05c'); // Blue
-    gradient.addColorStop(1, '#3ba05c'); // Light blue
-    // gradient.addColorStop(0, isDark ? '#fff' : '#000'); // Blue
-    // gradient.addColorStop(1, isDark ? '#eee' : '#eee'); // Light blue
-
-    for (let i = 0, x = 0; i < desiredBarCount; i++, x += barWidth + barGap) {
-      const barHeight = (reducedFreqData[i] / 255) * centerY;
-
-      ctx.fillStyle = gradient;
-      ctx.fillRect(x, centerY - barHeight, barWidth, barHeight * 2);
-    }
-
-    animationFrameRef.current = requestAnimationFrame(draw);
-  }, []);
-
-  const startVisualization = useCallback(async () => {
+  const startVisualization = async () => {
     try {
       // Check if the browser supports getUserMedia
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -104,14 +30,13 @@ const VoiceVisualizer = ({ isRecording }: { isRecording: boolean }) => {
       streamRef.current = stream;
 
       // Create audio context and analyzer
-      const audioContext = new (
-        window.AudioContext || (window as any).webkitAudioContext
-      )();
+      const audioContext = new (window.AudioContext ||
+        (window as any).webkitAudioContext)();
       audioContextRef.current = audioContext;
 
       const analyser = audioContext.createAnalyser();
       analyserRef.current = analyser;
-      analyser.fftSize = 256;
+      analyser.fftSize = 32;
 
       // Connect audio nodes
       const source = audioContext.createMediaStreamSource(stream);
@@ -125,9 +50,9 @@ const VoiceVisualizer = ({ isRecording }: { isRecording: boolean }) => {
         error,
       );
     }
-  }, [draw]);
+  };
 
-  const stopVisualization = useCallback(() => {
+  const stopVisualization = () => {
     // Stop animation frame
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
@@ -151,8 +76,7 @@ const VoiceVisualizer = ({ isRecording }: { isRecording: boolean }) => {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
       }
     }
-  }, []);
-
+  };
   useEffect(() => {
     if (isRecording) {
       startVisualization();
@@ -163,9 +87,68 @@ const VoiceVisualizer = ({ isRecording }: { isRecording: boolean }) => {
     return () => {
       stopVisualization();
     };
-  }, [isRecording, startVisualization, stopVisualization]);
+  }, [isRecording]);
+  const draw = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-  return <canvas ref={canvasRef} className="block size-full" />;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const analyser = analyserRef.current;
+    if (!analyser) return;
+
+    // Set canvas dimensions
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    const centerY = height / 2;
+
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+
+    // Clear canvas
+    ctx.clearRect(0, 0, width, height);
+
+    // Get frequency data
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    analyser.getByteFrequencyData(dataArray);
+
+    // Draw waveform
+    const barWidth = (width / bufferLength) * 1.5;
+    let x = 0;
+
+    for (let i = 0; i < bufferLength; i = i + 2) {
+      const barHeight = (dataArray[i] / 255) * centerY;
+
+      // Create gradient
+      const gradient = ctx.createLinearGradient(
+        0,
+        centerY - barHeight,
+        0,
+        centerY + barHeight,
+      );
+      gradient.addColorStop(0, '#3ba05c'); // Blue
+      gradient.addColorStop(1, '#3ba05c'); // Light blue
+      // gradient.addColorStop(0, isDark ? '#fff' : '#000'); // Blue
+      // gradient.addColorStop(1, isDark ? '#eee' : '#eee'); // Light blue
+
+      ctx.fillStyle = gradient;
+      ctx.fillRect(x, centerY - barHeight, barWidth, barHeight * 2);
+
+      x += barWidth + 2;
+    }
+
+    animationFrameRef.current = requestAnimationFrame(draw);
+  };
+
+  return (
+    <div className="w-full h-6 bg-transparent flex items-center justify-center overflow-hidden ">
+      <canvas ref={canvasRef} className="w-full h-full" />
+    </div>
+  );
 };
 
 const VoiceInputBox = ({
@@ -217,10 +200,8 @@ const VoiceInputBox = ({
 };
 export const AudioButton = ({
   onOk,
-  testId,
 }: {
   onOk?: (transcript: string) => void;
-  testId?: string;
 }) => {
   // const [showInputBox, setShowInputBox] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -382,22 +363,21 @@ export const AudioButton = ({
 
       <div className=" relative w-6 h-6 flex items-center justify-center">
         {isRecording && (
-          <div className="absolute inset-0 size-full overflow-hidden flex items-center justify-center p-1">
+          <div
+            className={cn(
+              'absolute inset-0 w-full h-6 rounded-full overflow-hidden flex items-center justify-center p-1',
+              { 'bg-state-success-5': isRecording },
+            )}
+          >
             <VoiceVisualizer isRecording={isRecording} />
           </div>
         )}
-
         {isRecording && (
-          <div
-            className="
-            absolute inset-0 rounded-full border-2 border-state-success
-            animate-ping opacity-75 pointer-events-none"
-          />
+          <div className="absolute inset-0 rounded-full border-2 border-state-success animate-ping opacity-75"></div>
         )}
-
         <Button
-          variant="transparent"
-          size="icon-xs"
+          variant="outline"
+          size="sm"
           // onMouseDown={() => {
           //   startRecording();
           // }}
@@ -411,13 +391,12 @@ export const AudioButton = ({
               startRecording();
             }
           }}
-          className={cn(
-            'border-0 p-2 rounded-md border-none bg-transparent hover:bg-state-success-5',
-            isRecording &&
-              'animate-pulse !bg-state-success/20 text-state-success rounded-full',
-          )}
+          className={`w-6 h-6 p-2 rounded-md border-none bg-transparent hover:bg-state-success-5 ${
+            isRecording
+              ? 'animate-pulse bg-state-success-5 text-state-success'
+              : ''
+          }`}
           disabled={isProcessing}
-          data-testid={testId}
         >
           {isProcessing ? (
             <Loader2 size={16} className=" animate-spin" />

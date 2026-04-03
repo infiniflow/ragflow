@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { PropsWithChildren } from 'react';
+import { isValidElement, PropsWithChildren, ReactNode } from 'react';
 import './index.less';
 
 type CardContainerProps = { className?: string } & PropsWithChildren;
@@ -8,6 +8,26 @@ export function CardSineLineContainer({
   children,
   className,
 }: CardContainerProps) {
+  const flattenChildren = (children: ReactNode): ReactNode[] => {
+    const result: ReactNode[] = [];
+
+    const traverse = (child: ReactNode) => {
+      if (Array.isArray(child)) {
+        child.forEach(traverse);
+      } else if (isValidElement(child) && child.props.children) {
+        result.push(child);
+      } else {
+        result.push(child);
+      }
+    };
+
+    traverse(children);
+    return result;
+  };
+  const childArray = flattenChildren(children);
+  const childCount = childArray.length;
+  console.log(childArray, childCount);
+
   return (
     <section
       className={cn(

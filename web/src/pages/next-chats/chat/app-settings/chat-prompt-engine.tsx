@@ -15,14 +15,12 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
 import { useTranslate } from '@/hooks/common-hooks';
-import { getDirAttribute } from '@/utils/text-direction';
 import { useFormContext } from 'react-hook-form';
 import { DynamicVariableForm } from './dynamic-variable';
 
 export function ChatPromptEngine() {
   const { t } = useTranslate('chat');
   const form = useFormContext();
-  const systemPromptValue = form.watch('prompt_config.system');
 
   return (
     <div className="space-y-8">
@@ -36,9 +34,8 @@ export function ChatPromptEngine() {
               <Textarea
                 {...field}
                 rows={8}
-                placeholder={t('systemPlaceholder')}
+                placeholder={t('messagePlaceholder')}
                 className="overflow-y-auto"
-                dir={getDirAttribute(systemPromptValue || '')}
               />
             </FormControl>
             <FormMessage />

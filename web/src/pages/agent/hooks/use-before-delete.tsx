@@ -1,4 +1,4 @@
-import { RAGFlowNodeType } from '@/interfaces/database/agent';
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { Node, OnBeforeDelete } from '@xyflow/react';
 import { Operator } from '../constant';
 import useGraphStore from '../store';

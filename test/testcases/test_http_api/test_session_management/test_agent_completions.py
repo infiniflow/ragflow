@@ -19,7 +19,7 @@ from common import (
     create_agent,
     create_agent_session,
     delete_agent,
-    delete_all_agent_sessions,
+    delete_agent_sessions,
     list_agents,
 )
 
@@ -65,7 +65,7 @@ def agent_id(HttpApiAuth, request):
     agent_id = res["data"][0]["id"]
 
     def cleanup():
-        delete_all_agent_sessions(HttpApiAuth, agent_id)
+        delete_agent_sessions(HttpApiAuth, agent_id)
         delete_agent(HttpApiAuth, agent_id)
 
     request.addfinalizer(cleanup)

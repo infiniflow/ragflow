@@ -1,19 +1,14 @@
 .markdownContentWrapper {
   :global(section.think) {
-    padding-inline-start: 10px;
+    padding-left: 10px;
     color: #8b8b8b;
-    border-inline-start: 2px solid #d5d3d3;
+    border-left: 2px solid #d5d3d3;
     margin-bottom: 10px;
     font-size: 12px;
   }
   :global(blockquote) {
-    padding-inline-start: 10px;
-    border-inline-start: 4px solid #ccc;
-  }
-
-  // RTL Support
-  &[dir='rtl'] {
-    text-align: start;
+    padding-left: 10px;
+    border-left: 4px solid #ccc;
   }
 }
 
@@ -41,11 +36,6 @@
   .chunkText;
   max-height: 45vh;
   overflow-y: auto;
-
-  // RTL Support
-  &[dir='rtl'] {
-    text-align: start;
-  }
 }
 .documentLink {
   padding: 0;
@@ -78,28 +68,4 @@
 .fileThumbnail {
   display: inline-block;
   max-width: 40px;
-}
-
-.artifactImageWrapper {
-  display: block;
-  margin: 8px 0;
-}
-
-.artifactImage {
-  max-width: 100%;
-  max-height: 60vh;
-  border-radius: 8px;
-  border: 1px solid #e5e7eb;
-  display: block;
-}
-
-.artifactDownload {
-  display: inline-block;
-  margin-top: 4px;
-  font-size: 12px;
-  color: #1677ff;
-  text-decoration: none;
-  &:hover {
-    text-decoration: underline;
-  }
 }

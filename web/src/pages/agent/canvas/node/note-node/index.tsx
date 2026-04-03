@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { INoteNode } from '@/interfaces/database/agent';
+import { INoteNode } from '@/interfaces/database/flow';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { NotebookPen } from 'lucide-react';
 import { memo } from 'react';
@@ -98,7 +98,7 @@ function NoteNode({
                 <FormControl>
                   <Textarea
                     placeholder={t('flow.notePlaceholder')}
-                    className="resize-none rounded-none p-1 py-0 overflow-auto bg-transparent focus-visible:ring-0 border-none text-text-secondary focus-visible:ring-offset-0 !text-xs h-full"
+                    className="resize-none rounded-none p-1 py-0 overflow-auto bg-transparent focus-visible:ring-0 border-none text-text-secondary focus-visible:ring-offset-0 !text-xs"
                     {...field}
                   />
                 </FormControl>

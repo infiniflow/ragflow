@@ -43,32 +43,11 @@ export const useSubmitApiKey = () => {
       if (!isVerify) {
         setSaveLoading(true);
       }
-      const payload: IApiKeySavingParams = {
+      const ret = await saveApiKey({
         ...savingParams,
         ...postBody,
         verify: isVerify,
-      };
-      if (savingParams.llm_factory === LLMFactory.SILICONFLOW) {
-        let sourceFid = LLMFactory.SILICONFLOW;
-        const baseUrl = postBody.base_url;
-        if (baseUrl) {
-          try {
-            const parsed = new URL(baseUrl);
-            const host = parsed.hostname.toLowerCase();
-            if (
-              host === 'api.siliconflow.com' ||
-              host.endsWith('.api.siliconflow.com')
-            ) {
-              sourceFid = 'siliconflow_intl';
-            }
-          } catch {
-            // ignore invalid URL and keep default sourceFid
-          }
-        }
-        payload.source_fid = sourceFid;
-      }
-
-      const ret = await saveApiKey(payload);
+      });
       if (!isVerify) {
         setSaveLoading(false);
         if (ret.code === 0) {

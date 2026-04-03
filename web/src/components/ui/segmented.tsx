@@ -1,8 +1,5 @@
 import { cn } from '@/lib/utils';
-import { supportsCssAnchor } from '@/utils/css-support';
 import * as React from 'react';
-import { useId } from 'react';
-import { Button, ButtonVariants } from './button';
 export declare type SegmentedValue = string | number;
 export declare type SegmentedRawOption = SegmentedValue;
 export interface SegmentedLabeledOption {
@@ -59,153 +56,66 @@ export interface SegmentedProps extends Omit<
   itemClassName?: string;
   rounded?: keyof typeof segmentedVariants.round;
   sizeType?: keyof typeof segmentedVariants.size;
-  buttonSize?: ButtonVariants['size'];
+  buttonSize?: keyof typeof segmentedVariants.buttonSize;
 }
 
-const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
-  supportsCssAnchor
-    ? (
-        {
-          options,
-          value,
-          onChange,
-          className,
-          activeClassName,
-          itemClassName,
-          rounded = 'default',
-          sizeType = 'default',
-          buttonSize = 'default',
-        },
-        ref,
-      ) => {
-        const anchorNamePrefix = useId().replace(/:/g, '');
-        const [selectedValue, setSelectedValue] = React.useState<
-          SegmentedValue | undefined
-        >(value);
-        React.useEffect(() => {
-          setSelectedValue(value);
-        }, [value]);
-        const handleOnChange = (e: SegmentedValue) => {
-          if (onChange) {
-            onChange(e);
-          }
-          setSelectedValue(e);
-        };
+export function Segmented({
+  options,
+  value,
+  onChange,
+  className,
+  activeClassName,
+  itemClassName,
+  rounded = 'default',
+  sizeType = 'default',
+  buttonSize = 'default',
+}: SegmentedProps) {
+  const [selectedValue, setSelectedValue] = React.useState<
+    SegmentedValue | undefined
+  >(value);
+  React.useEffect(() => {
+    setSelectedValue(value);
+  }, [value]);
+  const handleOnChange = (e: SegmentedValue) => {
+    if (onChange) {
+      onChange(e);
+    }
+    setSelectedValue(e);
+  };
+  return (
+    <div
+      className={cn(
+        'flex items-center p-1 gap-2 bg-bg-card',
+        segmentedVariants.round[rounded],
+        segmentedVariants.size[sizeType],
+        className,
+      )}
+    >
+      {options.map((option) => {
+        const isObject = typeof option === 'object';
+        const actualValue = isObject ? option.value : option;
+
         return (
           <div
-            ref={ref}
+            key={actualValue}
             className={cn(
-              'flex items-center p-1 gap-2 bg-bg-card',
+              'inline-flex items-center text-base font-normal cursor-pointer',
               segmentedVariants.round[rounded],
-              segmentedVariants.size[sizeType],
-              className,
+              segmentedVariants.buttonSize[buttonSize],
+              {
+                'text-text-primary bg-bg-base': selectedValue === actualValue,
+              },
+              itemClassName,
+              activeClassName && selectedValue === actualValue
+                ? activeClassName
+                : '',
             )}
+            onClick={() => handleOnChange(actualValue)}
           >
-            {options.map((option) => {
-              const isObject = typeof option === 'object';
-              const actualValue = isObject ? option.value : option;
-
-              return (
-                <Button
-                  key={actualValue}
-                  type="button"
-                  size={buttonSize}
-                  variant="static"
-                  className={cn(
-                    selectedValue === actualValue && 'text-text-primary',
-                    itemClassName,
-                    selectedValue === actualValue && activeClassName,
-                    'relative z-10',
-                  )}
-                  onClick={() => handleOnChange(actualValue)}
-                  style={{
-                    anchorName: `--${anchorNamePrefix}-${String(actualValue).replace('/', '')}`,
-                  }}
-                >
-                  {isObject ? option.label : option}
-                </Button>
-              );
-            })}
-
-            <div
-              className={cn(
-                itemClassName,
-                'absolute bg-bg-base rounded-sm transition-all',
-              )}
-              style={{
-                positionAnchor: `--${anchorNamePrefix}-${String(selectedValue).replace('/', '')}`,
-                width: 'anchor-size(width)',
-                height: 'anchor-size(height)',
-                top: 'anchor(top)',
-                left: 'anchor(left)',
-              }}
-            />
+            {isObject ? option.label : option}
           </div>
         );
-      }
-    : (
-        {
-          options,
-          value,
-          onChange,
-          className,
-          activeClassName,
-          itemClassName,
-          rounded = 'default',
-          sizeType = 'default',
-          buttonSize = 'default',
-        },
-        ref,
-      ) => {
-        const [selectedValue, setSelectedValue] = React.useState<
-          SegmentedValue | undefined
-        >(value);
-        React.useEffect(() => {
-          setSelectedValue(value);
-        }, [value]);
-        const handleOnChange = (e: SegmentedValue) => {
-          if (onChange) {
-            onChange(e);
-          }
-          setSelectedValue(e);
-        };
-        return (
-          <div
-            ref={ref}
-            className={cn(
-              'flex items-center p-1 gap-2 bg-bg-card',
-              segmentedVariants.round[rounded],
-              segmentedVariants.size[sizeType],
-              className,
-            )}
-          >
-            {options.map((option) => {
-              const isObject = typeof option === 'object';
-              const actualValue = isObject ? option.value : option;
-
-              return (
-                <Button
-                  key={actualValue}
-                  type="button"
-                  size={buttonSize}
-                  variant="static"
-                  className={cn(
-                    {
-                      'text-text-primary bg-bg-base':
-                        selectedValue === actualValue,
-                    },
-                    itemClassName,
-                    selectedValue === actualValue && activeClassName,
-                  )}
-                  onClick={() => handleOnChange(actualValue)}
-                >
-                  {isObject ? option.label : option}
-                </Button>
-              );
-            })}
-          </div>
-        );
-      },
-);
-
-export { Segmented };
+      })}
+    </div>
+  );
+}

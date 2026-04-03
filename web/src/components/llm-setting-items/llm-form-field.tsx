@@ -7,8 +7,6 @@ import { RAGFlowFormItem } from '../ragflow-form';
 export type LLMFormFieldProps = {
   options?: any[];
   name?: string;
-  testId?: string;
-  optionTestIdPrefix?: string;
 };
 
 export const useModelOptions = () => {
@@ -21,22 +19,13 @@ export const useModelOptions = () => {
   };
 };
 
-export function LLMFormField({
-  options,
-  name,
-  testId,
-  optionTestIdPrefix,
-}: LLMFormFieldProps) {
+export function LLMFormField({ options, name }: LLMFormFieldProps) {
   const { t } = useTranslation();
   const { modelOptions } = useModelOptions();
 
   return (
     <RAGFlowFormItem name={name || 'llm_id'} label={t('chat.model')}>
-      <SelectWithSearch
-        options={options || modelOptions}
-        testId={testId}
-        optionTestIdPrefix={optionTestIdPrefix}
-      ></SelectWithSearch>
+      <SelectWithSearch options={options || modelOptions}></SelectWithSearch>
     </RAGFlowFormItem>
   );
 }

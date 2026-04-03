@@ -5,8 +5,8 @@ import {
 import { DynamicForm, FormFieldType } from '@/components/dynamic-form';
 import EditTag from '@/components/edit-tag';
 import { Button } from '@/components/ui/button';
-import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
+import { DateInput } from '@/components/ui/input-date';
 import { Modal } from '@/components/ui/modal/modal';
 import { formatDate } from '@/utils/date';
 import dayjs from 'dayjs';
@@ -74,7 +74,7 @@ const ValueInputItem = memo(
       >
         <div className="flex-1 w-full">
           {type === 'time' && (
-            <DatePicker
+            <DateInput
               value={value as Date}
               onChange={(value) => {
                 onValueChange(
@@ -123,9 +123,6 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
     isVerticalShowValue,
     isShowType,
     type: metadataType,
-    testId,
-    okButtonTestId,
-    addValueButtonTestId,
   } = props;
   const {
     metaData,
@@ -254,8 +251,6 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
       onOk={() => formRef.current?.submit(handleSubmit)}
       maskClosable={false}
       footer={null}
-      testId={testId}
-      okButtonTestId={okButtonTestId}
     >
       <div className="flex flex-col gap-4">
         {!isEditField && (
@@ -283,10 +278,9 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
                 metaData.valueType === metadataValueTypeEnum['list'] && (
                   <div>
                     <Button
-                      variant="outline"
-                      size="icon"
+                      variant={'ghost'}
+                      className="border border-border-button"
                       onClick={handleAddValue}
-                      data-testid={addValueButtonTestId}
                     >
                       <Plus />
                     </Button>

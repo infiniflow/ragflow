@@ -46,12 +46,7 @@ export const BasicInfo = () => {
         // labelClassName={labelClassName || field.labelClassName}
       >
         {(field) => {
-          return (
-            <Input
-              {...field}
-              placeholder={t('memory.config.descriptionPlaceholder')}
-            ></Input>
-          );
+          return <Input {...field}></Input>;
         }}
       </RAGFlowFormItem>
     </>

@@ -1,7 +1,6 @@
 import { FormContainer } from '@/components/form-container';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { TopNFormField } from '@/components/top-n-item';
-import { DatePicker } from '@/components/ui/date-picker';
 import {
   Form,
   FormControl,
@@ -13,7 +12,9 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { useTranslate } from '@/hooks/common-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo, useCallback } from 'react';
+import { DatePicker, DatePickerProps } from 'antd';
+import dayjs from 'dayjs';
+import { memo, useCallback, useMemo } from 'react';
 import { useForm, useFormContext } from 'react-hook-form';
 import { z } from 'zod';
 import { initialGoogleScholarValues } from '../../constant';
@@ -26,6 +27,7 @@ import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 
+// TODO: To be replaced
 const YearPicker = ({
   onChange,
   value,
@@ -33,16 +35,22 @@ const YearPicker = ({
   onChange?: (val: number | undefined) => void;
   value?: number | undefined;
 }) => {
-  const handleChange = useCallback(
-    (date: Date | undefined) => {
-      onChange?.(date?.getFullYear());
+  const handleChange: DatePickerProps['onChange'] = useCallback(
+    (val: any) => {
+      const nextVal = val?.format('YYYY');
+      onChange?.(nextVal ? Number(nextVal) : undefined);
     },
     [onChange],
   );
+  // The year needs to be converted into a number and saved to the backend
+  const nextValue = useMemo(() => {
+    if (value) {
+      return dayjs(value.toString());
+    }
+    return undefined;
+  }, [value]);
 
-  const dateValue = value ? new Date(value, 0, 1) : undefined;
-
-  return <DatePicker picker="year" value={dateValue} onChange={handleChange} />;
+  return <DatePicker picker="year" onChange={handleChange} value={nextValue} />;
 };
 
 export function GoogleScholarFormWidgets() {

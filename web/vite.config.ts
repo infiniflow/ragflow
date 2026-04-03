@@ -6,135 +6,12 @@ import { createHtmlPlugin } from 'vite-plugin-html';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 import { appName } from './src/conf.json';
 
-// Inject code location data attributes for react-dev-inspector
-const inspectorBabelPlugin = (): import('vite').Plugin => ({
-  name: 'inspector-babel',
-  enforce: 'pre' as const,
-  async transform(code: string, id: string) {
-    if (id.includes('node_modules')) return;
-    if (!/\.[jt]sx$/.test(id)) return;
-
-    // Dynamically import babel transform to inject data attributes
-    const { transform } = await import('@react-dev-inspector/babel-plugin');
-    return {
-      code: transform({
-        filePath: id,
-        sourceCode: code,
-      }),
-      map: null,
-    };
-  },
-});
-
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, process.cwd(), '');
-
-  const proxySchemes = {
-    python: {
-      '/api/v1/admin': {
-        target: 'http://127.0.0.1:9381/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api': {
-        target: 'http://127.0.0.1:9380/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/v1': {
-        target: 'http://127.0.0.1:9380/',
-        changeOrigin: true,
-        ws: true,
-      },
-    },
-    hybrid: {
-      '/v1/system/config': {
-        target: 'http://127.0.0.1:9384/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/v1/user/login': {
-        target: 'http://127.0.0.1:9384/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/v1/user/logout': {
-        target: 'http://127.0.0.1:9384/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api/v1/admin/sandbox': {
-        target: 'http://127.0.0.1:9381/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api/v1/admin/roles': {
-        target: 'http://127.0.0.1:9381/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api/v1/admin/roles/owner/permission': {
-        target: 'http://127.0.0.1:9381/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api/v1/admin/roles_with_permission': {
-        target: 'http://127.0.0.1:9381/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api/v1/admin/whitelist': {
-        target: 'http://127.0.0.1:9381/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api/v1/admin/variables': {
-        target: 'http://127.0.0.1:9381/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api/v1/admin': {
-        target: 'http://127.0.0.1:9383/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api': {
-        target: 'http://127.0.0.1:9380/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/v1': {
-        target: 'http://127.0.0.1:9380/',
-        changeOrigin: true,
-        ws: true,
-      },
-    },
-    go: {
-      '/api/v1/admin': {
-        target: 'http://127.0.0.1:9383/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api': {
-        target: 'http://127.0.0.1:9384/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/v1': {
-        target: 'http://127.0.0.1:9384/',
-        changeOrigin: true,
-        ws: true,
-      },
-    },
-  };
-
-  const proxy =
-    proxySchemes[env.API_PROXY_SCHEME || 'python'] || proxySchemes.python;
 
   return {
     plugins: [
-      inspectorBabelPlugin(),
       react(),
       viteStaticCopy({
         targets: [
@@ -187,7 +64,18 @@ export default defineConfig(({ mode }) => {
       hmr: {
         overlay: false,
       },
-      proxy,
+      proxy: {
+        '/api/v1/admin': {
+          target: 'http://127.0.0.1:9381/',
+          changeOrigin: true,
+          ws: true,
+        },
+        '^/(api|v1)': {
+          target: 'http://127.0.0.1:9380/',
+          changeOrigin: true,
+          ws: true,
+        },
+      },
     },
     assetsInclude: ['**/*.md'],
     base: env.VITE_BASE_URL,
@@ -224,13 +112,6 @@ export default defineConfig(({ mode }) => {
             // if (id.includes('src/components')) {
             //   return 'components';
             // }
-
-            if (id.includes('src/locales/') && id.endsWith('.ts')) {
-              const match = id.match(/src\/locales\/([^/]+)\.ts$/);
-              if (match) {
-                return `locale-${match[1]}`;
-              }
-            }
 
             if (id.includes('node_modules')) {
               if (id.includes('node_modules/d3')) {

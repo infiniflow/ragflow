@@ -38,10 +38,9 @@ class BoxConnector(LoadConnector, PollConnector):
 
     def _yield_files_recursive(
             self,
-            folder_id: str,
+            folder_id,
             start: SecondsSinceUnixEpoch | None,
-            end: SecondsSinceUnixEpoch | None,
-            relative_folder_path: str = "",
+            end: SecondsSinceUnixEpoch | None
         ) -> GenerateDocumentsOutput:
 
         if self.box_client is None:
@@ -60,7 +59,6 @@ class BoxConnector(LoadConnector, PollConnector):
                     file = self.box_client.files.get_file_by_id(
                         entry.id
                     )
-                    modified_time: SecondsSinceUnixEpoch | None = None
                     raw_time = (
                         getattr(file, "created_at", None)
                         or getattr(file, "content_created_at", None)
@@ -74,18 +72,13 @@ class BoxConnector(LoadConnector, PollConnector):
                             continue
 
                     content_bytes = self.box_client.downloads.download_file(file.id)
-                    semantic_identifier = (
-                        f"{relative_folder_path} / {file.name}"
-                        if relative_folder_path
-                        else file.name
-                    )
 
                     batch.append(
                         Document(
                             id=f"box:{file.id}",
                             blob=content_bytes.read(),
                             source=DocumentSource.BOX,
-                            semantic_identifier=semantic_identifier,
+                            semantic_identifier=file.name,
                             extension=get_file_ext(file.name),
                             doc_updated_at=modified_time,
                             size_bytes=file.size,
@@ -93,17 +86,7 @@ class BoxConnector(LoadConnector, PollConnector):
                         )
                     )
                 elif entry.type == 'folder':
-                    child_relative_path = (
-                        f"{relative_folder_path} / {entry.name}"
-                        if relative_folder_path
-                        else entry.name
-                    )
-                    yield from self._yield_files_recursive(
-                        folder_id=entry.id,
-                        start=start,
-                        end=end,
-                        relative_folder_path=child_relative_path
-                    )
+                    yield from self._yield_files_recursive(folder_id=entry.id, start=start, end=end)
 
             if batch:
                 yield batch

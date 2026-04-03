@@ -277,7 +277,7 @@ class PDFGenerator(Message, ABC):
             print(f"Starting PDF generation for title: {title}, content length: {len(content)} chars")
             
             # Resolve variable references in content using canvas
-            if content and self._canvas.is_reff(content.strip()):
+            if content and self._canvas.is_reff(content):
                 # Extract the variable reference and get its value
                 import re
                 matches = re.findall(self.variable_ref_patt, content, flags=re.DOTALL)

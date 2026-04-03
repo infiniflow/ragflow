@@ -21,7 +21,6 @@ from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from common.metadata_utils import meta_filter, convert_conditions
 from api.utils.api_utils import apikey_required, build_error_result, get_request_json, validate_request
 from rag.app.tag import label_question
@@ -123,7 +122,7 @@ async def retrieval(tenant_id):
     similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
     top = int(retrieval_setting.get("top_k", 1024))
     metadata_condition = req.get("metadata_condition", {}) or {}
-    metas = DocMetadataService.get_flatted_meta_by_kbs([kb_id])
+    metas = DocMetadataService.get_meta_by_kbs([kb_id])
 
     doc_ids = []
     try:
@@ -131,11 +130,8 @@ async def retrieval(tenant_id):
         e, kb = KnowledgebaseService.get_by_id(kb_id)
         if not e:
             return build_error_result(message="Knowledgebase not found!", code=RetCode.NOT_FOUND)
-        if kb.tenant_embd_id:
-            model_config = get_model_config_by_id(kb.tenant_embd_id)
-        else:
-            model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
-        embd_mdl = LLMBundle(kb.tenant_id, model_config)
+
+        embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
         if metadata_condition:
             doc_ids.extend(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
         if not doc_ids and metadata_condition:
@@ -156,12 +152,11 @@ async def retrieval(tenant_id):
         ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], [tenant_id])
 
         if use_kg:
-            model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
             ck = await settings.kg_retriever.retrieval(question,
                                                  [tenant_id],
                                                  [kb_id],
                                                  embd_mdl,
-                                                 LLMBundle(kb.tenant_id, model_config))
+                                                 LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
@@ -171,8 +166,6 @@ async def retrieval(tenant_id):
             c.pop("vector", None)
             meta = getattr(doc, 'meta_fields', {})
             meta["doc_id"] = c["doc_id"]
-            # Dify expects metadata.document_id for external retrieval sources.
-            meta["document_id"] = c["doc_id"]
             records.append({
                 "content": c["content_with_weight"],
                 "score": c["similarity"],

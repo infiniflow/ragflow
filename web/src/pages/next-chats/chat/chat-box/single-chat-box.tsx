@@ -73,71 +73,67 @@ export function SingleChatBox({
   }, [conversationId, setDerivedMessages]);
 
   return (
-    <section className="flex flex-col h-full gap-4">
-      <div
-        ref={messageContainerRef}
-        className="p-5 flex-1 overflow-auto min-h-0 scrollbar-auto"
-      >
+    <section className="flex flex-col p-5 h-full">
+      <div ref={messageContainerRef} className="flex-1 overflow-auto min-h-0">
         <div className="w-full pr-5">
-          {derivedMessages?.map((message, i) => (
-            <MessageItem
-              loading={
-                message.role === MessageType.Assistant &&
-                sendLoading &&
-                derivedMessages.length - 1 === i
-              }
-              key={buildMessageUuidWithRole(message)}
-              item={message}
-              nickname={userInfo.nickname}
-              avatar={userInfo.avatar}
-              avatarDialog={currentDialog.icon}
-              reference={buildMessageItemReference(
-                {
-                  message: derivedMessages,
-                  reference: conversation.reference,
-                },
-                message,
-              )}
-              clickDocumentButton={clickDocumentButton}
-              index={i}
-              removeMessageById={removeMessageById}
-              regenerateMessage={regenerateMessage}
-              sendLoading={sendLoading}
-            />
-          ))}
+          {derivedMessages?.map((message, i) => {
+            return (
+              <MessageItem
+                loading={
+                  message.role === MessageType.Assistant &&
+                  sendLoading &&
+                  derivedMessages.length - 1 === i
+                }
+                key={buildMessageUuidWithRole(message)}
+                item={message}
+                nickname={userInfo.nickname}
+                avatar={userInfo.avatar}
+                avatarDialog={currentDialog.icon}
+                reference={buildMessageItemReference(
+                  {
+                    message: derivedMessages,
+                    reference: conversation.reference,
+                  },
+                  message,
+                )}
+                clickDocumentButton={clickDocumentButton}
+                index={i}
+                removeMessageById={removeMessageById}
+                regenerateMessage={regenerateMessage}
+                sendLoading={sendLoading}
+              ></MessageItem>
+            );
+          })}
         </div>
         <div ref={scrollRef} />
       </div>
-
-      <div className="p-5 pt-0">
-        <NextMessageInput
-          disabled={disabled}
-          sendDisabled={sendDisabled}
-          sendLoading={sendLoading}
-          value={value}
-          resize="vertical"
-          onInputChange={handleInputChange}
-          onPressEnter={handlePressEnter}
-          conversationId={conversationId}
-          createConversationBeforeUploadDocument={
-            createConversationBeforeUploadDocument
-          }
-          stopOutputMessage={stopOutputMessage}
-          onUpload={handleUploadFile}
-          isUploading={isUploading}
-          removeFile={removeFile}
-          showReasoning
-          showInternet={showInternet}
-        />
-        {visible && (
-          <PdfSheet
-            visible={visible}
-            hideModal={hideModal}
-            documentId={documentId}
-            chunk={selectedChunk}
-          ></PdfSheet>
-        )}
-      </div>
+      <NextMessageInput
+        disabled={disabled}
+        sendDisabled={sendDisabled}
+        sendLoading={sendLoading}
+        value={value}
+        resize="vertical"
+        onInputChange={handleInputChange}
+        onPressEnter={handlePressEnter}
+        conversationId={conversationId}
+        createConversationBeforeUploadDocument={
+          createConversationBeforeUploadDocument
+        }
+        stopOutputMessage={stopOutputMessage}
+        onUpload={handleUploadFile}
+        isUploading={isUploading}
+        removeFile={removeFile}
+        showReasoning
+        showInternet={showInternet}
+      />
+      {visible && (
+        <PdfSheet
+          visible={visible}
+          hideModal={hideModal}
+          documentId={documentId}
+          chunk={selectedChunk}
+        ></PdfSheet>
+      )}
     </section>
   );
 }

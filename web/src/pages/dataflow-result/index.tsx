@@ -19,21 +19,27 @@ import { useGetDocumentUrl } from '@/components/document-preview/hooks';
 import { TimelineNode } from '@/components/originui/timeline';
 import { PageHeader } from '@/components/page-header';
 import Spotlight from '@/components/spotlight';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
-import { AgentCategory, AgentQuery } from '@/constants/agent';
+import { AgentCategory } from '@/constants/agent';
 import { Images } from '@/constants/common';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
-import { Routes } from '@/routes';
-import { LucideArrowBigLeft } from 'lucide-react';
 import TimelineDataFlow from './components/time-line';
 import { TimelineNodeType } from './constant';
 import styles from './index.module.less';
 import { IDslComponent, IPipelineFileLogDetail } from './interface';
 import ParserContainer from './parser';
 
-const DataflowResult = () => {
+const Chunk = () => {
   const { isReadOnly, knowledgeId, agentId, agentTitle, documentExtension } =
     useGetPipelineResultSearchParams();
 
@@ -152,22 +158,46 @@ const DataflowResult = () => {
   return (
     <>
       <PageHeader>
-        <Button
-          asLink
-          variant="outline"
-          to={
-            knowledgeId
-              ? `${Routes.DatasetBase}${Routes.DataSetOverview}/${knowledgeId}`
-              : isAgent
-                ? `${Routes.Agent}/${agentId}?${AgentQuery.Category}=${AgentCategory.DataflowCanvas}`
-                : '#'
-          }
-        >
-          <LucideArrowBigLeft />
-          {t('common.back')}
-        </Button>
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink
+                onClick={() => {
+                  if (knowledgeId) {
+                    navigateToDatasetList();
+                  }
+                  if (agentId) {
+                    navigateToAgents();
+                  }
+                }}
+              >
+                {knowledgeId ? t('knowledgeDetails.dataset') : t('header.flow')}
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink
+                onClick={() => {
+                  if (knowledgeId) {
+                    navigateToDatasetOverview(knowledgeId)();
+                  }
+                  if (isAgent) {
+                    navigateToAgent(agentId, AgentCategory.DataflowCanvas)();
+                  }
+                }}
+              >
+                {knowledgeId ? t('knowledgeDetails.overview') : agentTitle}
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>
+                {knowledgeId ? documentInfo?.name : t('flow.viewResult')}
+              </BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
       </PageHeader>
-
       {type === 'dataflow' && (
         <div className=" absolute ml-[50%] translate-x-[-50%] top-4 flex justify-center">
           <TimelineDataFlow
@@ -234,4 +264,4 @@ const DataflowResult = () => {
   );
 };
 
-export default DataflowResult;
+export default Chunk;

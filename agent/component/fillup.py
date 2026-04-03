@@ -27,7 +27,6 @@ class UserFillUpParam(ComponentParamBase):
         super().__init__()
         self.enable_tips = True
         self.tips = "Please fill up the form"
-        self.layout_recognize = ""
 
     def check(self) -> bool:
         return True
@@ -62,7 +61,6 @@ class UserFillUp(ComponentBase):
                 content = re.sub(r"\{%s\}"%k, ans, content)
 
             self.set_output("tips", content)
-        layout_recognize = self._param.layout_recognize or None
         for k, v in kwargs.get("inputs", {}).items():
             if self.check_if_canceled("UserFillUp processing"):
                 return
@@ -73,7 +71,7 @@ class UserFillUp(ComponentBase):
                     file_value = v["value"]
                     # Support both single file (backward compatibility) and multiple files
                     files = file_value if isinstance(file_value, list) else [file_value]
-                    v = FileService.get_files(files, layout_recognize=layout_recognize)
+                    v = FileService.get_files(files)
             else:
                 v = v.get("value")
             self.set_output(k, v)

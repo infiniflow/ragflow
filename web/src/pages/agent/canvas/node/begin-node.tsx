@@ -1,4 +1,4 @@
-import { BaseNode } from '@/interfaces/database/agent';
+import { BaseNode } from '@/interfaces/database/flow';
 import { cn } from '@/lib/utils';
 import { NodeProps, Position } from '@xyflow/react';
 import get from 'lodash/get';

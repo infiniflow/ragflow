@@ -155,6 +155,10 @@ module.exports = {
           DEFAULT: 'var(--colors-background-inverse-standard)',
           foreground: 'var(--colors-background-inverse-standard-foreground)',
         },
+        'colors-background-inverse-standard': {
+          DEFAULT: 'var(--colors-background-inverse-standard)',
+          foreground: 'var(--background-inverse-standard-foreground)',
+        },
         'colors-background-inverse-strong': {
           DEFAULT: 'var(--colors-background-inverse-strong)',
           foreground: 'var(--background-inverse-standard-foreground)',
@@ -187,18 +191,9 @@ module.exports = {
           'linear-gradient(104deg, rgb(var(--text-primary)) 30%, var(--metallic) 50%, rgb(var(--text-primary)) 70%)',
       },
       borderRadius: {
-        px: '1px',
-
-        '4xl': '1rem' /* 16px */,
-        '3xl': '0.75rem' /* 12px */,
-        '2xl': '0.625rem' /* 10px */,
-        xl: '0.5rem' /* 8px */,
-        lg: '0.4375rem' /* 7px */,
-        DEFAULT: '0.375rem' /* 6px */,
-        sm: '0.3125rem' /* 5px */,
-        xs: '0.25rem' /* 4px */,
-        '2xs': '0.1875rem' /* 3px */,
-        '3xs': '0.125' /* 2px */,
+        lg: `var(--radius)`,
+        md: `calc(var(--radius) - 2px)`,
+        sm: 'calc(var(--radius) - 4px)',
       },
       fontFamily: {
         sans: ['var(--font-sans)', ...fontFamily.sans],
@@ -220,21 +215,12 @@ module.exports = {
           from: { transform: 'rotate(0deg)' },
           to: { transform: 'rotate(-360deg)' },
         },
-        'bell-shake': {
-          '0%,25%': { transform: 'rotate(0)', transformOrigin: 'center 25% ' },
-          '3.125%': { transform: 'rotate(-12.5deg)' },
-          '9.375%': { transform: 'rotate(11deg)' },
-          '15.625%': { transform: 'rotate(-9.5deg)' },
-          '21.875%': { transform: 'rotate(7.5deg)' },
-        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
         'caret-blink': 'caret-blink 1.25s ease-out infinite',
         'spin-reverse': 'spin-reverse 1s linear infinite',
-        'bell-shake':
-          'bell-shake 2s 1s cubic-bezier(0.33, 1, 0.68, 1) infinite',
       },
     },
   },

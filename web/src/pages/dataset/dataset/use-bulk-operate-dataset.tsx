@@ -10,12 +10,12 @@ import {
 } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import {
-  LucideCircleX,
-  LucideCylinder,
-  LucidePlayCircle,
-  LucideToggleLeft,
-  LucideToggleRight,
-  LucideTrash2,
+  Ban,
+  CircleCheck,
+  CircleX,
+  Cylinder,
+  Play,
+  Trash2,
 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -117,36 +117,36 @@ export function useBulkOperateDataset({
     {
       id: 'enabled',
       label: t('knowledgeDetails.enabled'),
-      icon: <LucideToggleRight />,
+      icon: <CircleCheck />,
       onClick: handleEnableClick,
     },
     {
       id: 'disabled',
       label: t('knowledgeDetails.disabled'),
-      icon: <LucideToggleLeft />,
+      icon: <Ban />,
       onClick: handleDisableClick,
     },
     {
       id: 'run',
       label: t('knowledgeDetails.run'),
-      icon: <LucidePlayCircle />,
+      icon: <Play />,
       onClick: () => showModal(),
     },
     {
       id: 'cancel',
       label: t('knowledgeDetails.cancel'),
-      icon: <LucideCircleX />,
+      icon: <CircleX />,
       onClick: handleCancelClick,
     },
     {
       id: 'batch-metadata',
       label: t('knowledgeDetails.metadata.metadata'),
-      icon: <LucideCylinder />,
+      icon: <Cylinder />,
     },
     {
       id: 'delete',
       label: t('common.delete'),
-      icon: <LucideTrash2 />,
+      icon: <Trash2 />,
       onClick: async () => {
         const code = await handleDelete();
         if (code === 0) {

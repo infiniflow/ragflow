@@ -88,8 +88,8 @@ class Chat(Base):
             return result_list
         raise Exception(res["message"])
 
-    def delete_sessions(self, ids: list[str] | None = None, delete_all: bool = False):
-        res = self.rm(f"/chats/{self.id}/sessions", {"ids": ids, "delete_all": delete_all})
+    def delete_sessions(self, ids: list[str] | None = None):
+        res = self.rm(f"/chats/{self.id}/sessions", {"ids": ids})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))

@@ -19,7 +19,7 @@ from rag.nlp import find_codec
 
 def get_text(fnm: str, binary=None) -> str:
     txt = ""
-    if binary is not None:
+    if binary:
         encoding = find_codec(binary)
         txt = binary.decode(encoding, errors="ignore")
     else:

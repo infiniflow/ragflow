@@ -16,13 +16,13 @@
 
 
 import pytest
-from common import batch_create_datasets, delete_all_datasets
+from common import batch_create_datasets, delete_datasets
 
 
 @pytest.fixture(scope="class")
 def add_datasets(HttpApiAuth, request):
     def cleanup():
-        delete_all_datasets(HttpApiAuth)
+        delete_datasets(HttpApiAuth, {"ids": None})
 
     request.addfinalizer(cleanup)
 
@@ -32,7 +32,7 @@ def add_datasets(HttpApiAuth, request):
 @pytest.fixture(scope="function")
 def add_datasets_func(HttpApiAuth, request):
     def cleanup():
-        delete_all_datasets(HttpApiAuth)
+        delete_datasets(HttpApiAuth, {"ids": None})
 
     request.addfinalizer(cleanup)
 

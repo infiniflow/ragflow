@@ -18,13 +18,7 @@ export function AgentCard({ data, showAgentRenameModal }: DatasetCardProps) {
 
   return (
     <HomeCard
-      testId="agent-card"
-      data={{
-        ...data,
-        name: data.title,
-        description: data.description || '',
-        release_time: data.release_time,
-      }}
+      data={{ ...data, name: data.title, description: data.description || '' }}
       moreDropdown={
         <AgentDropdown showAgentRenameModal={showAgentRenameModal} agent={data}>
           <MoreButton></MoreButton>
@@ -44,7 +38,6 @@ export function AgentCard({ data, showAgentRenameModal }: DatasetCardProps) {
           </Button>
         )
       }
-      showReleaseTime
     />
   );
 }

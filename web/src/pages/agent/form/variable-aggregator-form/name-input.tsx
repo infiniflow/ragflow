@@ -1,6 +1,6 @@
-import { Input, InputProps } from '@/components/ui/input';
+import { Input } from '@/components/ui/input';
 import { PenLine } from 'lucide-react';
-import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useHandleNameChange } from './use-handle-name-change';
 
 type NameInputProps = {
@@ -8,10 +8,7 @@ type NameInputProps = {
   onChange: (value: string) => void;
 };
 
-export const NameInput = forwardRef<
-  HTMLInputElement,
-  InputProps & NameInputProps
->(function NameInput({ value, onChange }, ref) {
+export function NameInput({ value, onChange }: NameInputProps) {
   const { name, handleNameBlur, handleNameChange } = useHandleNameChange(value);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -36,7 +33,7 @@ export const NameInput = forwardRef<
   }, [isEditingMode]);
 
   return (
-    <div className="flex items-center gap-1 flex-1" ref={ref}>
+    <div className="flex items-center gap-1 flex-1">
       {isEditingMode ? (
         <Input
           ref={inputRef}
@@ -55,4 +52,4 @@ export const NameInput = forwardRef<
       )}
     </div>
   );
-});
+}

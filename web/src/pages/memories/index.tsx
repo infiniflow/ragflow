@@ -69,10 +69,24 @@ export default function MemoryList() {
   }, [isCreate, openCreateModalFun, searchUrl, setMemoryUrl]);
 
   return (
-    <>
-      {list?.data?.memory_list?.length || searchString ? (
-        <article className="size-full flex flex-col" data-testid="memory-list">
-          <header className="px-5 pt-8 mb-4">
+    <section className="w-full h-full flex flex-col">
+      {(!list?.data?.memory_list?.length ||
+        list?.data?.memory_list?.length <= 0) &&
+        !searchString && (
+          <div className="flex w-full items-center justify-center h-[calc(100vh-164px)]">
+            <EmptyAppCard
+              showIcon
+              size="large"
+              className="w-[480px] p-14"
+              isSearch={!!searchString}
+              type={EmptyCardType.Memory}
+              onClick={() => openCreateModalFun()}
+            />
+          </div>
+        )}
+      {(!!list?.data?.memory_list?.length || searchString) && (
+        <>
+          <div className="px-8 pt-8">
             <ListFilterBar
               icon="memory"
               title={t('memory')}
@@ -82,17 +96,35 @@ export default function MemoryList() {
               onChange={handleFilterSubmit}
               value={filterValue}
             >
-              <Button onClick={() => openCreateModalFun()}>
-                <Plus className="size-[1em]" />
+              <Button
+                variant={'default'}
+                onClick={() => {
+                  openCreateModalFun();
+                }}
+              >
+                <Plus className=" h-4 w-4" />
                 {t('createMemory')}
               </Button>
             </ListFilterBar>
-          </header>
-
-          {list?.data?.memory_list?.length ? (
-            <>
-              <CardContainer className="flex-1 overflow-auto px-5">
-                {list?.data.memory_list.map((x) => (
+          </div>
+          {(!list?.data?.memory_list?.length ||
+            list?.data?.memory_list?.length <= 0) &&
+            searchString && (
+              <div className="flex w-full items-center justify-center h-[calc(100vh-164px)]">
+                <EmptyAppCard
+                  showIcon
+                  size="large"
+                  className="w-[480px] p-14"
+                  isSearch={!!searchString}
+                  type={EmptyCardType.Memory}
+                  onClick={() => openCreateModalFun()}
+                />
+              </div>
+            )}
+          <div className="flex-1">
+            <CardContainer className="max-h-[calc(100dvh-280px)] overflow-auto px-8">
+              {list?.data.memory_list.map((x) => {
+                return (
                   <MemoryCard
                     key={x.id}
                     data={x}
@@ -100,44 +132,22 @@ export default function MemoryList() {
                       setAddOrEditType('edit');
                       showMemoryRenameModal(x);
                     }}
-                  />
-                ))}
-              </CardContainer>
-
-              <footer className="mt-4 px-5 pb-5">
-                <RAGFlowPagination
-                  {...pick(pagination, 'current', 'pageSize')}
-                  total={list?.data.total_count}
-                  onChange={handlePageChange}
-                />
-              </footer>
-            </>
-          ) : (
-            <div className="flex-1 flex items-center justify-center">
-              <EmptyAppCard
-                showIcon
-                size="large"
-                className="w-[480px] p-14"
-                isSearch
-                type={EmptyCardType.Memory}
-                onClick={() => openCreateModalFun()}
+                  ></MemoryCard>
+                );
+              })}
+            </CardContainer>
+          </div>
+          {list?.data.total_count && list?.data.total_count > 0 && (
+            <div className="px-8 mb-4">
+              <RAGFlowPagination
+                {...pick(pagination, 'current', 'pageSize')}
+                // total={pagination.total}
+                total={list?.data.total_count}
+                onChange={handlePageChange}
               />
             </div>
           )}
-        </article>
-      ) : (
-        <article
-          className="size-full flex items-center justify-center"
-          data-testid="memory-list"
-        >
-          <EmptyAppCard
-            showIcon
-            size="large"
-            className="w-[480px] p-14"
-            type={EmptyCardType.Memory}
-            onClick={() => openCreateModalFun()}
-          />
-        </article>
+        </>
       )}
       {/* {openCreateModal && (
         <RenameDialog
@@ -158,6 +168,6 @@ export default function MemoryList() {
           onSubmit={onMemoryConfirm}
         />
       )}
-    </>
+    </section>
   );
 }

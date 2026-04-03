@@ -1,11 +1,11 @@
 import { CustomTimeline, TimelineNode } from '@/components/originui/timeline';
 import {
-  LucideBlocks,
-  LucideFile,
-  LucideFilePlay,
-  LucideFileStack,
-  LucideHeading,
-  LucideListPlus,
+  Blocks,
+  File,
+  FilePlay,
+  FileStack,
+  Heading,
+  ListPlus,
 } from 'lucide-react';
 import { useMemo } from 'react';
 import { TimelineNodeType } from '../../constant';
@@ -21,28 +21,28 @@ export type ITimelineNodeObj = {
 export const TimelineNodeObj = {
   [TimelineNodeType.begin]: {
     title: 'File',
-    icon: <LucideFile className="size-[1em]" />,
+    icon: <File size={13} />,
     clickable: false,
   },
   [TimelineNodeType.parser]: {
     title: 'Parser',
-    icon: <LucideFilePlay className="size-[1em]" />,
+    icon: <FilePlay size={13} />,
   },
   [TimelineNodeType.contextGenerator]: {
     title: 'Context Generator',
-    icon: <LucideFileStack className="size-[1em]" />,
+    icon: <FileStack size={13} />,
   },
   [TimelineNodeType.titleSplitter]: {
     title: 'Title Splitter',
-    icon: <LucideHeading className="size-[1em]" />,
+    icon: <Heading size={13} />,
   },
   [TimelineNodeType.characterSplitter]: {
     title: 'Character Splitter',
-    icon: <LucideBlocks className="size-[1em]" />,
+    icon: <Blocks size={13} />,
   },
   [TimelineNodeType.tokenizer]: {
     title: 'Tokenizer',
-    icon: <LucideListPlus className="size-[1em]" />,
+    icon: <ListPlus size={13} />,
     clickable: false,
   },
 };
@@ -80,7 +80,6 @@ const TimelineDataFlow = ({
           onStepChange={handleStepChange}
           orientation="horizontal"
           lineStyle="solid"
-          lineColor="rgb(var(--))"
           nodeSize={24}
           activeStyle={{
             nodeSize: 30,

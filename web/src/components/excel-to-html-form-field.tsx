@@ -37,7 +37,6 @@ export function ExcelToHtmlFormField() {
                   <Switch
                     checked={field.value}
                     onCheckedChange={field.onChange}
-                    data-testid="ds-settings-parser-excel-to-html-switch"
                   ></Switch>
                 </FormControl>
               </div>

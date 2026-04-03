@@ -1,12 +1,8 @@
-import {
-  useGetChunkHighlights,
-  useGetDocumentUrl,
-} from '@/hooks/use-document-request';
 import { IModalProps } from '@/interfaces/common';
 import { IReferenceChunk } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { cn } from '@/lib/utils';
-import PdfPreview from '../document-preview/pdf-preview';
+import DocumentPreviewer from '../pdf-previewer';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../ui/sheet';
 
 interface IProps extends IModalProps<any> {
@@ -17,15 +13,13 @@ interface IProps extends IModalProps<any> {
 }
 
 export const PdfSheet = ({
+  visible = false,
   hideModal,
   documentId,
   chunk,
   width = '50vw',
   height,
 }: IProps) => {
-  const getDocumentUrl = useGetDocumentUrl(documentId);
-  const url = getDocumentUrl(documentId);
-  const { highlights, setWidthAndHeight } = useGetChunkHighlights(chunk);
   return (
     <Sheet open onOpenChange={hideModal}>
       <SheetContent
@@ -38,14 +32,11 @@ export const PdfSheet = ({
         <SheetHeader>
           <SheetTitle>Document Previewer</SheetTitle>
         </SheetHeader>
-        {url && documentId && (
-          <PdfPreview
-            className={'p-0 !h-[calc(100vh-80px)] w-full'}
-            highlights={highlights}
-            setWidthAndHeight={setWidthAndHeight}
-            url={url}
-          ></PdfPreview>
-        )}
+        <DocumentPreviewer
+          documentId={documentId}
+          chunk={chunk}
+          visible={visible}
+        ></DocumentPreviewer>
       </SheetContent>
     </Sheet>
   );

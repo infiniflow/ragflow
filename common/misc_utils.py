@@ -27,16 +27,16 @@ import uuid
 
 from concurrent.futures import ThreadPoolExecutor
 
+import requests
 
 def get_uuid():
     return uuid.uuid1().hex
 
 
-async def download_img(url):
+def download_img(url):
     if not url:
         return ""
-    from common.http_client import async_request
-    response = await async_request("GET", url)
+    response = requests.get(url)
     return "data:" + \
         response.headers.get('Content-Type', 'image/jpg') + ";" + \
         "base64," + base64.b64encode(response.content).decode("utf-8")

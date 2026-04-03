@@ -1,9 +1,9 @@
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
+import { FormContainer } from '@/components/form-container';
 import { FilterButton } from '@/components/list-filter-bar';
 import { FilterPopover } from '@/components/list-filter-bar/filter-popover';
 import { FilterCollection } from '@/components/list-filter-bar/interface';
-import { Card } from '@/components/ui/card';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
@@ -21,12 +21,12 @@ const similarityList: Array<{ field: keyof ITestingChunk; label: string }> = [
 const ChunkTitle = ({ item }: { item: ITestingChunk }) => {
   const { t } = useTranslate('knowledgeDetails');
   return (
-    <div className="text-xs text-text-sub-title-invert italic space-x-4 rtl:space-x-reverse">
+    <div className="flex gap-3 text-xs text-text-sub-title-invert italic">
       {similarityList.map((x) => (
-        <p key={x.field} className="inline">
-          {((item[x.field] as number) * 100).toFixed(2)}{' '}
-          <dfn>{t(camelCase(x.field))}</dfn>
-        </p>
+        <div key={x.field} className="space-x-1">
+          <span>{((item[x.field] as number) * 100).toFixed(2)}</span>
+          <span>{t(camelCase(x.field))}</span>
+        </div>
       ))}
     </div>
   );
@@ -68,12 +68,11 @@ export function TestingResult({
   }, [data.doc_aggs]);
 
   return (
-    <article className="size-full flex flex-col">
-      <header className="flex-0 px-5 py-3 flex justify-between">
-        <h2 className="font-semibold text-base leading-8">
+    <div className="p-4 flex-1">
+      <div className="flex justify-between pb-2.5">
+        <span className="text-text-primary font-semibold text-2xl">
           {t('knowledgeDetails.testResults')}
-        </h2>
-
+        </span>
         <FilterPopover
           filters={filters}
           onChange={handleFilterSubmit}
@@ -81,45 +80,43 @@ export function TestingResult({
         >
           <FilterButton></FilterButton>
         </FilterPopover>
-      </header>
-
-      <div className="flex-1 h-0">
-        {data.chunks?.length > 0 && !loading && (
-          <>
-            <section className="px-5 pb-5 flex flex-col gap-5 overflow-auto h-full scrollbar-thin">
-              {data.chunks?.map((x) => (
-                <article key={x.chunk_id}>
-                  <Card className="px-5 py-2.5 bg-transparent shadow-none">
-                    <ChunkTitle item={x}></ChunkTitle>
-                    <p className="!mt-2.5"> {x.content_with_weight}</p>
-                  </Card>
-                </article>
-              ))}
-            </section>
-            <RAGFlowPagination
-              total={data.total}
-              onChange={onPaginationChange}
-              current={page}
-              pageSize={pageSize}
-            ></RAGFlowPagination>
-          </>
-        )}
-        {!data.chunks?.length && !loading && (
-          <div className="size-full p-5 flex justify-center items-center">
-            <div>
-              <Empty type={EmptyType.SearchData} iconWidth={80}>
-                <div className="text-text-secondary text-sm">
-                  {t(
-                    data.isRuned
-                      ? 'knowledgeDetails.noTestResultsForRuned'
-                      : 'knowledgeDetails.noTestResultsForNotRuned',
-                  )}
-                </div>
-              </Empty>
-            </div>
-          </div>
-        )}
       </div>
-    </article>
+      {data.chunks?.length > 0 && !loading && (
+        <>
+          <section className="flex flex-col gap-5 overflow-auto h-[calc(100vh-241px)] scrollbar-thin mb-5">
+            {data.chunks?.map((x) => (
+              <FormContainer key={x.chunk_id} className="px-5 py-2.5">
+                <ChunkTitle item={x}></ChunkTitle>
+                <p className="!mt-2.5"> {x.content_with_weight}</p>
+              </FormContainer>
+            ))}
+          </section>
+          <RAGFlowPagination
+            total={data.total}
+            onChange={onPaginationChange}
+            current={page}
+            pageSize={pageSize}
+          ></RAGFlowPagination>
+        </>
+      )}
+      {!data.chunks?.length && !loading && (
+        <div className="flex justify-center items-center w-full h-[calc(100vh-280px)]">
+          <div>
+            <Empty type={EmptyType.SearchData} iconWidth={80}>
+              {data.isRuned && (
+                <div className="text-text-secondary">
+                  {t('knowledgeDetails.noTestResultsForRuned')}
+                </div>
+              )}
+              {!data.isRuned && (
+                <div className="text-text-secondary">
+                  {t('knowledgeDetails.noTestResultsForNotRuned')}
+                </div>
+              )}
+            </Empty>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

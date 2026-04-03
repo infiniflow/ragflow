@@ -42,10 +42,7 @@ export function GeneralForm() {
                 {t('common.name')}
               </FormLabel>
               <FormControl className="w-3/4">
-                <Input
-                  {...field}
-                  data-testid="ds-settings-basic-name-input"
-                ></Input>
+                <Input {...field}></Input>
               </FormControl>
             </div>
             <div className="flex pt-1">
@@ -64,7 +61,6 @@ export function GeneralForm() {
           <SelectWithSearch
             options={languageOptions}
             triggerClassName="w-full"
-            testId="ds-settings-basic-language-select"
           ></SelectWithSearch>
         </RAGFlowFormItem>
       </div>
@@ -78,12 +74,7 @@ export function GeneralForm() {
                 {t('setting.avatar')}
               </FormLabel>
               <FormControl className="w-3/4">
-                <AvatarUpload
-                  {...field}
-                  uploadInputTestId="ds-settings-basic-avatar-upload"
-                  cropModalTestId="ds-settings-basic-avatar-crop-modal"
-                  cropModalOkButtonTestId="ds-settings-basic-avatar-crop-confirm-btn"
-                ></AvatarUpload>
+                <AvatarUpload {...field}></AvatarUpload>
               </FormControl>
             </div>
             <div className="flex pt-1">
@@ -99,7 +90,7 @@ export function GeneralForm() {
         render={({ field }) => {
           // null initialize empty string
           if (typeof field.value === 'object' && !field.value) {
-            form.setValue('description', '');
+            form.setValue('description', '  ');
           }
           return (
             <FormItem className="items-center space-y-0">
@@ -108,11 +99,7 @@ export function GeneralForm() {
                   {t('flow.description')}
                 </FormLabel>
                 <FormControl className="w-3/4">
-                  <Input
-                    {...field}
-                    placeholder={t('knowledgeConfiguration.datasetDescription')}
-                    data-testid="ds-settings-basic-description-input"
-                  ></Input>
+                  <Input {...field}></Input>
                 </FormControl>
               </div>
               <div className="flex pt-1">

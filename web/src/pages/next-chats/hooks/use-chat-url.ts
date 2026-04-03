@@ -95,11 +95,3 @@ export function useCreateConversationBeforeSendMessage() {
     createConversationBeforeSendMessage,
   };
 }
-
-export type CreateConversationBeforeSendMessageType = ReturnType<
-  typeof useCreateConversationBeforeSendMessage
->['createConversationBeforeSendMessage'];
-
-export type CreateConversationBeforeSendMessageReturnType = Awaited<
-  ReturnType<CreateConversationBeforeSendMessageType>
->;

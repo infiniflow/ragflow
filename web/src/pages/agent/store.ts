@@ -1,5 +1,5 @@
 import type { IAgentForm } from '@/interfaces/database/agent';
-import { RAGFlowNodeType } from '@/interfaces/database/agent';
+import { IAgentNode, RAGFlowNodeType } from '@/interfaces/database/flow';
 import type {} from '@redux-devtools/extension';
 import {
   Connection,
@@ -528,7 +528,9 @@ const useGraphStore = create<RFState>()(
         return generateNodeNamesWithIncreasingIndex(name, nodes);
       },
       generateAgentToolName: (id: string, name: string) => {
-        const node = get().nodes.find((x) => x.id === id) as RAGFlowNodeType;
+        const node = get().nodes.find(
+          (x) => x.id === id,
+        ) as IAgentNode<IAgentForm>;
 
         if (!node) {
           return '';

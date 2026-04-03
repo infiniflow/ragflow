@@ -6,7 +6,6 @@ import {
   buildRequestBody,
   useSendAgentMessage,
 } from '@/pages/agent/chat/use-send-agent-message';
-import { BeginQuery } from '@/pages/agent/interface';
 import { isEmpty } from 'lodash';
 import trim from 'lodash/trim';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -17,53 +16,36 @@ export const useSendButtonDisabled = (value: string) => {
   return trim(value) === '';
 };
 
-const DATA_PREFIX = 'data_';
-
-interface SharedChatSearchParams {
-  from: SharedFrom;
-  sharedId: string | null;
-  release: string | null;
-  locale: string | null;
-  theme: string | null;
-  data: Record<string, string>;
-  visibleAvatar: boolean;
-}
-
 export const useGetSharedChatSearchParams = () => {
   const [searchParams] = useSearchParams();
+  const data_prefix = 'data_';
   const data = Object.fromEntries(
-    Array.from(searchParams.entries())
-      .filter(([key]) => key.startsWith(DATA_PREFIX))
-      .map(([key, value]) => [key.replace(DATA_PREFIX, ''), value]),
+    searchParams
+      .entries()
+      .filter(([key]) => key.startsWith(data_prefix))
+      .map(([key, value]) => [key.replace(data_prefix, ''), value]),
   );
   return {
     from: searchParams.get('from') as SharedFrom,
     sharedId: searchParams.get('shared_id'),
-    release: searchParams.get('release'),
     locale: searchParams.get('locale'),
     theme: searchParams.get('theme'),
-    data,
+    data: data,
     visibleAvatar: searchParams.get('visible_avatar')
       ? searchParams.get('visible_avatar') !== '1'
       : true,
-  } as SharedChatSearchParams;
+  };
 };
 
 export const useSendNextSharedMessage = (
   addEventList: (data: IEventList, messageId: string) => void,
 ) => {
-  const {
-    from,
-    sharedId: conversationId,
-    release,
-  } = useGetSharedChatSearchParams();
-  const botType = from === SharedFrom.Agent ? 'agentbots' : 'chatbots';
-  const releaseQuery = release ? `?release=${encodeURIComponent(release)}` : '';
-  const url = `/api/v1/${botType}/${conversationId}/completions${releaseQuery}`;
+  const { from, sharedId: conversationId } = useGetSharedChatSearchParams();
+  const url = `/api/v1/${from === SharedFrom.Agent ? 'agentbots' : 'chatbots'}/${conversationId}/completions`;
   const { data: inputsData } = useFetchExternalAgentInputs();
 
-  const [params, setParams] = useState<BeginQuery[]>([]);
-  const sendedTaskMessage = useRef(false);
+  const [params, setParams] = useState<any[]>([]);
+  const sendedTaskMessage = useRef<boolean>(false);
 
   const isTaskMode = inputsData.mode === AgentDialogueMode.Task;
 
@@ -73,16 +55,16 @@ export const useSendNextSharedMessage = (
     showModal: showParameterDialog,
   } = useSetModalState();
 
-  const { handlePressEnter, ...ret } = useSendAgentMessage({
+  const ret = useSendAgentMessage({
     url,
     addEventList,
     beginParams: params,
     isShared: true,
     isTaskMode,
-    releaseMode: release,
   });
+
   const ok = useCallback(
-    (params: BeginQuery[]) => {
+    (params: any[]) => {
       if (isTaskMode) {
         const msgBody = buildRequestBody('');
 
@@ -98,10 +80,6 @@ export const useSendNextSharedMessage = (
     },
     [hideParameterDialog, isTaskMode, ret],
   );
-
-  const onPressEnter = useCallback(() => {
-    handlePressEnter();
-  }, [handlePressEnter]);
 
   const runTask = useCallback(() => {
     if (
@@ -127,6 +105,5 @@ export const useSendNextSharedMessage = (
     hideParameterDialog,
     showParameterDialog,
     ok,
-    handlePressEnter: onPressEnter,
   };
 };

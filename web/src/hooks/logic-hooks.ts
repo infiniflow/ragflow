@@ -1,7 +1,6 @@
-import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import { MessageType } from '@/constants/chat';
-import { FormInstance } from '@/interfaces/antd-compat';
+import { LanguageTranslationMap } from '@/constants/common';
 import { Pagination } from '@/interfaces/common';
 import { ResponseType } from '@/interfaces/database/base';
 import {
@@ -11,10 +10,11 @@ import {
   Message,
 } from '@/interfaces/database/chat';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
-import { changeLanguageAsync } from '@/locales/config';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import { buildMessageUuid } from '@/utils/chat';
+import { message } from 'antd';
+import { FormInstance } from 'antd/lib';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { has, isEmpty, omit } from 'lodash';
@@ -55,9 +55,9 @@ export const useChangeLanguage = () => {
   const { saveSetting } = useSaveSetting();
 
   const changeLanguage = (lng: string) => {
-    // const targetLng = LanguageTranslationMap[lng as keyof typeof LanguageTranslationMap];
-
-    changeLanguageAsync(lng);
+    i18n.changeLanguage(
+      LanguageTranslationMap[lng as keyof typeof LanguageTranslationMap],
+    );
     saveSetting({ language: lng });
   };
 

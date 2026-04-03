@@ -14,14 +14,14 @@
 #  limitations under the License.
 #
 import pytest
-from common import batch_add_sessions_with_chat_assistant, delete_all_sessions_with_chat_assistant
+from common import batch_add_sessions_with_chat_assistant, delete_session_with_chat_assistants
 
 
 @pytest.fixture(scope="class")
 def add_sessions_with_chat_assistant(request, HttpApiAuth, add_chat_assistants):
     def cleanup():
         for chat_assistant_id in chat_assistant_ids:
-            delete_all_sessions_with_chat_assistant(HttpApiAuth, chat_assistant_id)
+            delete_session_with_chat_assistants(HttpApiAuth, chat_assistant_id)
 
     request.addfinalizer(cleanup)
 
@@ -33,7 +33,7 @@ def add_sessions_with_chat_assistant(request, HttpApiAuth, add_chat_assistants):
 def add_sessions_with_chat_assistant_func(request, HttpApiAuth, add_chat_assistants):
     def cleanup():
         for chat_assistant_id in chat_assistant_ids:
-            delete_all_sessions_with_chat_assistant(HttpApiAuth, chat_assistant_id)
+            delete_session_with_chat_assistants(HttpApiAuth, chat_assistant_id)
 
     request.addfinalizer(cleanup)
 

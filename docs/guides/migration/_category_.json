@@ -1,0 +1,11 @@
+{
+  "label": "Migration",
+  "position": 5,
+  "link": {
+    "type": "generated-index",
+    "description": "RAGFlow migration guide"
+  },
+  "customProps": {
+    "categoryIcon": "LucideArrowRightLeft"
+  }
+}

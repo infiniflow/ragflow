@@ -99,15 +99,10 @@ class Pdf(PdfParser):
                     title = ""
                     break
                 for j in range(3):
-                    next_idx = i + j
-                    if next_idx >= len(self.boxes):
+                    if _begin(self.boxes[i + j]["text"]):
                         break
-                    candidate = self.boxes[next_idx]["text"]
-                    if _begin(candidate):
-                        break
-                    if "@" in candidate:
-                        break
-                    authors.append(candidate)
+                    authors.append(self.boxes[i + j]["text"])
+                    break
                 break
         # get abstract
         abstr = ""

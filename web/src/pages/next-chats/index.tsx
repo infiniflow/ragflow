@@ -49,72 +49,68 @@ export default function ChatList() {
   }, [isCreate, handleShowCreateModal, searchParams, setSearchParams]);
 
   return (
-    <>
-      {data.dialogs?.length || searchString ? (
-        <article className="size-full flex flex-col" data-testid="chats-list">
-          <header className="px-5 pt-8 mb-4">
+    <section className="flex flex-col w-full flex-1">
+      {data.dialogs?.length <= 0 && !searchString && (
+        <div className="flex w-full items-center justify-center h-[calc(100vh-164px)]">
+          <EmptyAppCard
+            showIcon
+            size="large"
+            className="w-[480px] p-14"
+            isSearch={!!searchString}
+            type={EmptyCardType.Chat}
+            onClick={() => handleShowCreateModal()}
+          />
+        </div>
+      )}
+      {(data.dialogs?.length > 0 || searchString) && (
+        <>
+          <div className="px-8 pt-8">
             <ListFilterBar
               title={t('chat.chatApps')}
               icon="chats"
               onSearchChange={handleInputChange}
               searchString={searchString}
             >
-              <Button data-testid="create-chat" onClick={handleShowCreateModal}>
-                <Plus className="size-[1em]" />
+              <Button onClick={handleShowCreateModal}>
+                <Plus className="h-4 w-4" />
                 {t('chat.createChat')}
               </Button>
             </ListFilterBar>
-          </header>
-
-          {data.dialogs?.length ? (
-            <>
-              <CardContainer className="flex-1 overflow-auto px-5">
-                {data.dialogs.map((x) => (
-                  <ChatCard
-                    key={x.id}
-                    data={x}
-                    showChatRenameModal={showChatRenameModal}
-                  />
-                ))}
-              </CardContainer>
-
-              <footer className="mt-4 px-5 pb-5">
-                <RAGFlowPagination
-                  {...pick(pagination, 'current', 'pageSize')}
-                  total={pagination.total}
-                  onChange={handlePageChange}
-                />
-              </footer>
-            </>
-          ) : (
-            <div className="flex-1 flex items-center justify-center">
+          </div>
+          {data.dialogs?.length <= 0 && searchString && (
+            <div className="flex w-full items-center justify-center h-[calc(100vh-164px)]">
               <EmptyAppCard
                 showIcon
                 size="large"
                 className="w-[480px] p-14"
-                isSearch
+                isSearch={!!searchString}
                 type={EmptyCardType.Chat}
-                testId="chats-empty-create"
+                onClick={() => handleShowCreateModal()}
               />
             </div>
           )}
-        </article>
-      ) : (
-        <article
-          className="size-full flex items-center justify-center"
-          data-testid="chats-list"
-        >
-          <EmptyAppCard
-            showIcon
-            size="large"
-            className="w-[480px] p-14"
-            type={EmptyCardType.Chat}
-            onClick={() => handleShowCreateModal()}
-            testId="chats-empty-create"
-          />
-        </article>
+          <div className="flex-1 overflow-auto">
+            <CardContainer className="max-h-[calc(100dvh-280px)] overflow-auto px-8">
+              {data.dialogs.map((x) => {
+                return (
+                  <ChatCard
+                    key={x.id}
+                    data={x}
+                    showChatRenameModal={showChatRenameModal}
+                  ></ChatCard>
+                );
+              })}
+            </CardContainer>
+          </div>
+          <div className="mt-8 px-8 pb-8">
+            <RAGFlowPagination
+              {...pick(pagination, 'current', 'pageSize')}
+              total={pagination.total}
+              onChange={handlePageChange}
+            ></RAGFlowPagination>
+          </div>
+        </>
       )}
-
       {chatRenameVisible && (
         <RenameDialog
           hideModal={hideChatRenameModal}
@@ -124,6 +120,6 @@ export default function ChatList() {
           title={initialChatName || t('chat.createChat')}
         ></RenameDialog>
       )}
-    </>
+    </section>
   );
 }

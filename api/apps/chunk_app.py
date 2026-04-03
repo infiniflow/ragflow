@@ -23,13 +23,11 @@ from quart import request
 
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
-from api.utils.image_utils import store_chunk_image
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
-from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_tenant_default_model_by_type, get_model_config_by_type_and_name
 from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
@@ -167,20 +165,12 @@ async def set():
             if not tenant_id:
                 return get_data_error_result(message="Tenant not found!")
 
+            embd_id = DocumentService.get_embd_id(req["doc_id"])
+            embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embd_id)
+
             e, doc = DocumentService.get_by_id(req["doc_id"])
             if not e:
                 return get_data_error_result(message="Document not found!")
-
-            tenant_embd_id = DocumentService.get_tenant_embd_id(req["doc_id"])
-            if tenant_embd_id:
-                embd_model_config = get_model_config_by_id(tenant_embd_id)
-            else:
-                embd_id = DocumentService.get_embd_id(req["doc_id"])
-                if embd_id:
-                    embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embd_id)
-                else:
-                    embd_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.EMBEDDING)
-            embd_mdl = LLMBundle(tenant_id, embd_model_config)
 
             _d = d
             if doc.parser_id == ParserType.QA:
@@ -236,39 +226,11 @@ async def switch():
 
 @manager.route('/rm', methods=['POST'])  # noqa: F821
 @login_required
-@validate_request("doc_id")
+@validate_request("chunk_ids", "doc_id")
 async def rm():
     req = await get_request_json()
     try:
         def _rm_sync():
-            deleted_chunk_ids = req.get("chunk_ids")
-            if isinstance(deleted_chunk_ids, list):
-                unique_chunk_ids = list(dict.fromkeys(deleted_chunk_ids))
-                has_ids = len(unique_chunk_ids) > 0
-            elif deleted_chunk_ids is not None:
-                unique_chunk_ids = [deleted_chunk_ids]
-                has_ids = deleted_chunk_ids not in (None, "")
-            else:
-                unique_chunk_ids = []
-                has_ids = False
-            if not has_ids:
-                if req.get("delete_all") is True:
-                    e, doc = DocumentService.get_by_id(req["doc_id"])
-                    if not e:
-                        return get_data_error_result(message="Document not found!")
-                    tenant_id = DocumentService.get_tenant_id(req["doc_id"])
-                    # Clean up storage assets while index rows still exist for discovery
-                    DocumentService.delete_chunk_images(doc, tenant_id)
-                    condition = {"doc_id": req["doc_id"]}
-                    try:
-                        deleted_count = settings.docStoreConn.delete(condition, search.index_name(tenant_id), doc.kb_id)
-                    except Exception:
-                        return get_data_error_result(message="Chunk deleting failure")
-                    if deleted_count > 0:
-                        DocumentService.decrement_chunk_num(doc.id, doc.kb_id, 1, deleted_count, 0)
-                    return get_json_result(data=True)
-                return get_json_result(data=True)
-
             e, doc = DocumentService.get_by_id(req["doc_id"])
             if not e:
                 return get_data_error_result(message="Document not found!")
@@ -279,6 +241,13 @@ async def rm():
                                                              doc.kb_id)
             except Exception:
                 return get_data_error_result(message="Chunk deleting failure")
+            deleted_chunk_ids = req["chunk_ids"]
+            if isinstance(deleted_chunk_ids, list):
+                unique_chunk_ids = list(dict.fromkeys(deleted_chunk_ids))
+                has_ids = len(unique_chunk_ids) > 0
+            else:
+                unique_chunk_ids = [deleted_chunk_ids]
+                has_ids = deleted_chunk_ids not in (None, "")
             if has_ids and deleted_count == 0:
                 return get_data_error_result(message="Index updating failure")
             if deleted_count > 0 and deleted_count < len(unique_chunk_ids):
@@ -319,7 +288,6 @@ async def create():
     d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
     if "tag_feas" in req:
         d["tag_feas"] = req["tag_feas"]
-    image_base64 = req.get("image_base64", None)
 
     try:
         def _log_response(resp, code, message):
@@ -356,32 +324,17 @@ async def create():
             if kb.pagerank:
                 d[PAGERANK_FLD] = kb.pagerank
 
-            tenant_embd_id = DocumentService.get_tenant_embd_id(req["doc_id"])
-            if tenant_embd_id:
-                embd_model_config = get_model_config_by_id(tenant_embd_id)
-            else:
-                embd_id = DocumentService.get_embd_id(req["doc_id"])
-                if embd_id:
-                    embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embd_id)
-                else:
-                    embd_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.EMBEDDING)
-            embd_mdl = LLMBundle(tenant_id, embd_model_config)
-
-            if image_base64:
-                d["img_id"] = "{}-{}".format(doc.kb_id, chunck_id)
-                d["doc_type_kwd"] = "image"
+            embd_id = DocumentService.get_embd_id(req["doc_id"])
+            embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING.value, embd_id)
 
             v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
             v = 0.1 * v[0] + 0.9 * v[1]
             d["q_%d_vec" % len(v)] = v.tolist()
             settings.docStoreConn.insert([d], search.index_name(tenant_id), doc.kb_id)
 
-            if image_base64:
-                store_chunk_image(doc.kb_id, chunck_id, base64.b64decode(image_base64))
-
             DocumentService.increment_chunk_num(
                 doc.id, doc.kb_id, c, 1, 0)
-            resp = get_json_result(data={"chunk_id": chunck_id, "image_id": d.get("img_id", "")})
+            resp = get_json_result(data={"chunk_id": chunck_id})
             _log_response(resp, RetCode.SUCCESS, "success")
             return resp
 
@@ -422,17 +375,11 @@ async def retrieval_test():
             search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
             meta_data_filter = search_config.get("meta_data_filter", {})
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
-                chat_id = search_config.get("chat_id", "")
-                if chat_id:
-                    chat_model_config = get_model_config_by_type_and_name(user_id, LLMType.CHAT, search_config["chat_id"])
-                else:
-                    chat_model_config = get_tenant_default_model_by_type(user_id, LLMType.CHAT)
-                chat_mdl = LLMBundle(user_id, chat_model_config)
+                chat_mdl = LLMBundle(user_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
         else:
             meta_data_filter = req.get("meta_data_filter") or {}
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
-                chat_model_config = get_tenant_default_model_by_type(user_id, LLMType.CHAT)
-                chat_mdl = LLMBundle(user_id, chat_model_config)
+                chat_mdl = LLMBundle(user_id, LLMType.CHAT)
 
         if meta_data_filter:
             metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
@@ -457,25 +404,15 @@ async def retrieval_test():
         _question = question
         if langs:
             _question = await cross_languages(kb.tenant_id, None, _question, langs)
-        if kb.tenant_embd_id:
-            embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
-        elif kb.embd_id:
-            embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
-        else:
-            embd_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.EMBEDDING)
-        embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
+
+        embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
         rerank_mdl = None
-        if req.get("tenant_rerank_id"):
-            rerank_model_config = get_model_config_by_id(req["tenant_rerank_id"])
-            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
-        elif req.get("rerank_id"):
-            rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK.value, req["rerank_id"])
-            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
+        if req.get("rerank_id"):
+            rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK.value, llm_name=req["rerank_id"])
 
         if req.get("keyword", False):
-            default_chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
-            chat_mdl = LLMBundle(kb.tenant_id, default_chat_model_config)
+            chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
             _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
@@ -495,12 +432,11 @@ async def retrieval_test():
                     )
 
         if use_kg:
-            default_chat_model_config = get_tenant_default_model_by_type(user_id, LLMType.CHAT)
             ck = await settings.kg_retriever.retrieval(_question,
                                                    tenant_ids,
                                                    kb_ids,
                                                    embd_mdl,
-                                                   LLMBundle(kb.tenant_id, default_chat_model_config))
+                                                   LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
         ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)

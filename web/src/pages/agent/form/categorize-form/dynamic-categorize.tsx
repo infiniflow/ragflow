@@ -11,19 +11,17 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Input, InputProps } from '@/components/ui/input';
-import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
 import { BlurTextarea } from '@/components/ui/textarea';
 import { useTranslate } from '@/hooks/common-hooks';
 import { PlusOutlined } from '@ant-design/icons';
 import { useUpdateNodeInternals } from '@xyflow/react';
 import humanId from 'human-id';
 import trim from 'lodash/trim';
-import { ChevronsUpDown, Trash2 } from 'lucide-react';
+import { ChevronsUpDown, X } from 'lucide-react';
 import {
   ChangeEventHandler,
   FocusEventHandler,
-  forwardRef,
   memo,
   useCallback,
   useEffect,
@@ -34,7 +32,7 @@ import { v4 as uuid } from 'uuid';
 import { z } from 'zod';
 import useGraphStore from '../../store';
 import DynamicExample from './dynamic-example';
-import { CreateCategorizeFormSchema } from './use-form-schema';
+import { useCreateCategorizeFormSchema } from './use-form-schema';
 
 interface IProps {
   nodeId?: string;
@@ -60,10 +58,12 @@ const getOtherFieldValues = (
         x !== form.getValues(`${formListName}.${index}.${latestField}`),
     );
 
-const InnerNameInput = forwardRef<
-  HTMLInputElement,
-  InputProps & INameInputProps
->(function InnerNameInput({ value, onChange, otherNames, validate }, ref) {
+const InnerNameInput = ({
+  value,
+  onChange,
+  otherNames,
+  validate,
+}: INameInputProps) => {
   const [name, setName] = useState<string | undefined>();
   const { t } = useTranslate('flow');
 
@@ -103,10 +103,9 @@ const InnerNameInput = forwardRef<
       value={name}
       onChange={handleNameChange}
       onBlur={handleNameBlur}
-      ref={ref}
     ></Input>
   );
-});
+};
 
 const NameInput = memo(InnerNameInput);
 
@@ -128,6 +127,7 @@ const InnerFormSet = ({ index }: IProps & { index: number }) => {
         name={buildFieldName('name')}
         render={({ field }) => (
           <FormItem>
+            <FormLabel>{t('categoryName')}</FormLabel>
             <FormControl>
               <NameInput
                 {...field}
@@ -174,11 +174,12 @@ const FormSet = memo(InnerFormSet);
 
 const DynamicCategorize = ({ nodeId }: IProps) => {
   const updateNodeInternals = useUpdateNodeInternals();
+  const FormSchema = useCreateCategorizeFormSchema();
 
   const deleteCategorizeCaseEdges = useGraphStore(
     (state) => state.deleteEdgesBySourceAndSourceHandle,
   );
-  const form = useFormContext<z.infer<CreateCategorizeFormSchema>>();
+  const form = useFormContext<z.infer<typeof FormSchema>>();
   const { t } = useTranslate('flow');
   const { fields, remove, append } = useFieldArray({
     name: 'items',
@@ -207,42 +208,41 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
   );
 
   return (
-    <section className="flex flex-col gap-4 ">
+    <div className="flex flex-col gap-4 ">
       {fields.map((field, index) => (
-        <div key={field.id}>
-          <Collapsible defaultOpen>
-            <div className="flex items-center justify-between space-x-4 pb-5">
-              <span>{form.getValues(`items.${index}.name`)}</span>
-              <CollapsibleTrigger asChild>
-                <div className="flex gap-4">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-9 p-0"
-                    onClick={handleRemove(index)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="sm" className="w-9 p-0">
-                    <ChevronsUpDown className="h-4 w-4" />
-                    <span className="sr-only">Toggle</span>
-                  </Button>
-                </div>
-              </CollapsibleTrigger>
-            </div>
-            <CollapsibleContent>
-              <FormSet nodeId={nodeId} index={index}></FormSet>
-            </CollapsibleContent>
-          </Collapsible>
-          <Separator />
-        </div>
+        <Collapsible key={field.id} defaultOpen>
+          <div className="flex items-center justify-between space-x-4">
+            <h4 className="font-bold">
+              {form.getValues(`items.${index}.name`)}
+            </h4>
+            <CollapsibleTrigger asChild>
+              <div className="flex gap-4">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-9 p-0"
+                  onClick={handleRemove(index)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="sm" className="w-9 p-0">
+                  <ChevronsUpDown className="h-4 w-4" />
+                  <span className="sr-only">Toggle</span>
+                </Button>
+              </div>
+            </CollapsibleTrigger>
+          </div>
+          <CollapsibleContent>
+            <FormSet nodeId={nodeId} index={index}></FormSet>
+          </CollapsibleContent>
+        </Collapsible>
       ))}
 
       <Button type={'button'} onClick={handleAdd}>
         <PlusOutlined />
         {t('addCategory')}
       </Button>
-    </section>
+    </div>
   );
 };
 

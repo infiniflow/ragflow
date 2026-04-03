@@ -46,15 +46,15 @@ UNAUTHORIZED_MESSAGE = "<Unauthorized '401: Unauthorized'>"
 def _unauthorized_message(error):
     if error is None:
         return UNAUTHORIZED_MESSAGE
-
-    description = getattr(error, "description", None)
-    if description:
-        return description
-
     try:
-        return repr(error)
+        msg = repr(error)
     except Exception:
         return UNAUTHORIZED_MESSAGE
+    if msg == UNAUTHORIZED_MESSAGE:
+        return msg
+    if "Unauthorized" in msg and "401" in msg:
+        return msg
+    return UNAUTHORIZED_MESSAGE
 
 app = Quart(__name__)
 app = cors(app, allow_origin="*")
@@ -244,10 +244,6 @@ def search_pages_path(page_path):
         path for path in page_path.glob("*sdk/*.py") if not path.name.startswith(".")
     ]
     app_path_list.extend(api_path_list)
-    restful_api_path_list = [
-        path for path in page_path.glob("*restful_apis/*.py") if not path.name.startswith(".")
-    ]
-    app_path_list.extend(restful_api_path_list)
     return app_path_list
 
 
@@ -267,9 +263,8 @@ def register_page(page_path):
     spec.loader.exec_module(page)
     page_name = getattr(page, "page_name", page_name)
     sdk_path = "\\sdk\\" if sys.platform.startswith("win") else "/sdk/"
-    restful_api_path = "\\restful_apis\\" if sys.platform.startswith("win") else "/restful_apis/"
     url_prefix = (
-        f"/api/{API_VERSION}" if sdk_path in path or restful_api_path in path else f"/{API_VERSION}/{page_name}"
+        f"/api/{API_VERSION}" if sdk_path in path else f"/{API_VERSION}/{page_name}"
     )
 
     app.register_blueprint(page.manager, url_prefix=url_prefix)
@@ -279,7 +274,6 @@ def register_page(page_path):
 pages_dir = [
     Path(__file__).parent,
     Path(__file__).parent.parent / "api" / "apps",
-    Path(__file__).parent.parent / "api" / "apps" / "restful_apis",
     Path(__file__).parent.parent / "api" / "apps" / "sdk",
 ]
 
@@ -316,7 +310,7 @@ async def unauthorized_quart_auth(error):
 @app.errorhandler(WerkzeugUnauthorized)
 async def unauthorized_werkzeug(error):
     logging.warning("Unauthorized request (werkzeug)")
-    return get_json_result(code=error.code, message=error.description), RetCode.UNAUTHORIZED
+    return get_json_result(code=RetCode.UNAUTHORIZED, message=_unauthorized_message(error)), RetCode.UNAUTHORIZED
 
 @app.teardown_request
 def _db_close(exception):

@@ -74,6 +74,7 @@ const CommandList = React.forwardRef<
       className,
     )}
     onWheel={(e) => e.stopPropagation()}
+    onMouseEnter={(e) => e.currentTarget.focus()}
     tabIndex={-1}
     {...props}
   />

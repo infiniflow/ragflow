@@ -57,19 +57,17 @@ class LLMToolPluginCallSession(ToolCallSession):
 
     async def tool_call_async(self, name: str, arguments: dict[str, Any]) -> Any:
         assert name in self.tools_map, f"LLM tool {name} does not exist"
-        logging.info(f"[ToolCall] invoke name={name} arguments={str(arguments)[:200]}")
         st = timer()
         tool_obj = self.tools_map[name]
         if isinstance(tool_obj, MCPToolCallSession):
             resp = await thread_pool_exec(tool_obj.tool_call, name, arguments, 60)
-        elif hasattr(tool_obj, "invoke_async") and asyncio.iscoroutinefunction(tool_obj.invoke_async):
-            resp = await tool_obj.invoke_async(**arguments)
         else:
-            resp = await thread_pool_exec(tool_obj.invoke, **arguments)
+            if hasattr(tool_obj, "invoke_async") and asyncio.iscoroutinefunction(tool_obj.invoke_async):
+                resp = await tool_obj.invoke_async(**arguments)
+            else:
+                resp = await thread_pool_exec(tool_obj.invoke, **arguments)
 
-        elapsed = timer() - st
-        logging.info(f"[ToolCall] done name={name} elapsed={elapsed:.2f}s result={str(resp)[:200]}")
-        self.callback(name, arguments, resp, elapsed_time=elapsed)
+        self.callback(name, arguments, resp, elapsed_time=timer()-st)
         return resp
 
     def get_tool_obj(self, name):
@@ -103,8 +101,13 @@ class ToolParamBase(ComponentParamBase):
             if "enum" in p:
                 params[k]["enum"] = p["enum"]
 
-        desc = getattr(self, "description", None) or self.meta["description"]
-        function_name = getattr(self, "function_name", self.meta["name"])
+        desc = self.meta["description"]
+        if hasattr(self, "description"):
+            desc = self.description
+
+        function_name = self.meta["name"]
+        if hasattr(self, "function_name"):
+            function_name = self.function_name
 
         return {
             "type": "function",

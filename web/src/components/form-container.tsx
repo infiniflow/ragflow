@@ -12,12 +12,7 @@ export function FormContainer({
   className,
 }: FormContainerProps) {
   return show ? (
-    <section
-      className={cn(
-        'border-0.5 border-border-button rounded-lg p-5 space-y-5',
-        className,
-      )}
-    >
+    <section className={cn('border rounded-lg p-5 space-y-5', className)}>
       {children}
     </section>
   ) : (

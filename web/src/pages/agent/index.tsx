@@ -39,7 +39,6 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import AgentCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
-import { PublishConfirmDialog } from './components/publish-confirm-dialog';
 import { Operator } from './constant';
 import { GlobalParamSheet } from './gobal-variable-sheet';
 import { useCancelCurrentDataflow } from './hooks/use-cancel-dataflow';
@@ -212,7 +211,7 @@ export default function Agent() {
   } = useRunDataflow({ showLogSheet: showPipelineLogSheet, setMessageId });
 
   return (
-    <section className="h-full" data-testid="agent-detail">
+    <section className="h-full">
       <PageHeader>
         <section>
           <Breadcrumb>
@@ -240,14 +239,30 @@ export default function Agent() {
           >
             <LaptopMinimalCheck /> {t('flow.save')}
           </ButtonLoading>
-          <Button
-            data-testid="agent-run"
+          <ButtonLoading
             variant={'secondary'}
-            onClick={handleButtonRunClick}
+            onClick={() => showGlobalParamSheet()}
+            loading={loading}
           >
+            <MessageSquareCode /> {t('flow.conversationVariable')}
+          </ButtonLoading>
+          <Button variant={'secondary'} onClick={handleButtonRunClick}>
             <CirclePlay />
             {t('flow.run')}
           </Button>
+          <Button variant={'secondary'} onClick={showVersionDialog}>
+            <History />
+            {t('flow.historyVersion')}
+          </Button>
+          {isPipeline || (
+            <Button
+              variant={'secondary'}
+              onClick={navigateToAgentLogs(id as string)}
+            >
+              <Logs />
+              {t('flow.log')}
+            </Button>
+          )}
           {isConversationMode && (
             <Button
               variant={'secondary'}
@@ -257,11 +272,6 @@ export default function Agent() {
               {t('explore.title')}
             </Button>
           )}
-          <PublishConfirmDialog
-            agentDetail={agentDetail}
-            loading={loading}
-            onPublish={() => saveGraph(undefined, undefined, true)}
-          />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant={'secondary'}>
@@ -269,25 +279,6 @@ export default function Agent() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <AgentDropdownMenuItem onClick={() => showGlobalParamSheet()}>
-                <MessageSquareCode />
-                {t('flow.conversationVariable')}
-              </AgentDropdownMenuItem>
-              <DropdownMenuSeparator />
-              <AgentDropdownMenuItem onClick={showVersionDialog}>
-                <History />
-                {t('flow.historyVersion')}
-              </AgentDropdownMenuItem>
-              <DropdownMenuSeparator />
-              {isPipeline || (
-                <AgentDropdownMenuItem
-                  onClick={() => navigateToAgentLogs(id as string)()}
-                >
-                  <Logs />
-                  {t('flow.log')}
-                </AgentDropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={handleExportJson}>
                 <Upload />
                 {t('flow.export')}
@@ -298,7 +289,7 @@ export default function Agent() {
                 {t('flow.setting')}
               </AgentDropdownMenuItem>
               {isPipeline ||
-                (location.hostname !== 'cloud.ragflow.io' && (
+                (location.hostname !== 'demo.ragflow.io' && (
                   <>
                     <DropdownMenuSeparator />
                     <AgentDropdownMenuItem onClick={showEmbedModal}>

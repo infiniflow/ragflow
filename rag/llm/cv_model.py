@@ -67,61 +67,6 @@ class Base(ABC):
             hist.append(h)
         return hist
 
-    @staticmethod
-    def _blob_to_data_url(blob, mime_type="image/png"):
-        if isinstance(blob, str):
-            blob = blob.strip()
-            if blob.startswith("data:") or blob.startswith("http://") or blob.startswith("https://") or blob.startswith("file://"):
-                return blob
-            return f"data:{mime_type};base64,{blob}"
-        if isinstance(blob, BytesIO):
-            blob = blob.getvalue()
-        if isinstance(blob, memoryview):
-            blob = blob.tobytes()
-        if isinstance(blob, bytearray):
-            blob = bytes(blob)
-        if isinstance(blob, bytes):
-            b64 = base64.b64encode(blob).decode("utf-8")
-            return f"data:{mime_type};base64,{b64}"
-        return None
-
-    def _normalize_image(self, image):
-        if isinstance(image, dict):
-            inline_data = image.get("inline_data")
-            if isinstance(inline_data, dict):
-                mime = inline_data.get("mime_type") or "image/png"
-                data_url = self._blob_to_data_url(inline_data.get("data"), mime)
-                if data_url:
-                    return data_url
-
-            image_url = image.get("image_url")
-            if isinstance(image_url, dict):
-                data_url = self._blob_to_data_url(image_url.get("url"), image.get("mime_type") or "image/png")
-                if data_url:
-                    return data_url
-            if isinstance(image_url, str):
-                data_url = self._blob_to_data_url(image_url, image.get("mime_type") or "image/png")
-                if data_url:
-                    return data_url
-
-            if "url" in image:
-                data_url = self._blob_to_data_url(image.get("url"), image.get("mime_type") or "image/png")
-                if data_url:
-                    return data_url
-
-            mime = image.get("mime_type") or image.get("media_type") or "image/png"
-            for key in ("blob", "data"):
-                if key in image:
-                    data_url = self._blob_to_data_url(image.get(key), mime)
-                    if data_url:
-                        return data_url
-
-        if isinstance(image, (bytes, bytearray, memoryview, BytesIO)):
-            return self.image2base64(image)
-        if isinstance(image, str):
-            return self._blob_to_data_url(image, "image/png")
-        return self.image2base64(image)
-
     def _image_prompt(self, text, images):
         if not images:
             return text
@@ -131,11 +76,7 @@ class Base(ABC):
 
         pmpt = [{"type": "text", "text": text}]
         for img in images:
-            try:
-                pmpt.append({"type": "image_url", "image_url": {"url": self._normalize_image(img)}})
-            except Exception:
-                logging.warning("[%s] Skip invalid image input in request payload.", self.__class__.__name__)
-                continue
+            pmpt.append({"type": "image_url", "image_url": {"url": img if isinstance(img, str) and img.startswith("data:") else f"data:image/png;base64,{img}"}})
         return pmpt
 
     async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
@@ -307,86 +248,51 @@ class QWenCV(GptV4):
             base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
 
-    @staticmethod
-    def _extract_text_from_content(content):
-        if isinstance(content, str):
-            return content.strip()
-        if isinstance(content, list):
-            texts = []
-            for blk in content:
-                if not isinstance(blk, dict):
-                    continue
-                if blk.get("type") in {"text", "input_text"} and blk.get("text"):
-                    texts.append(str(blk["text"]))
-                elif "text" in blk and isinstance(blk.get("text"), (str, int, float)):
-                    texts.append(str(blk["text"]))
-            return "\n".join(texts).strip()
-        return ""
-
-    def _resolve_video_prompt(self, system, history, **kwargs):
-        prompt = kwargs.get("video_prompt") or kwargs.get("prompt")
-        if isinstance(prompt, str) and prompt.strip():
-            return prompt.strip()
-
-        for h in reversed(history or []):
-            if h.get("role") != "user":
-                continue
-            txt = self._extract_text_from_content(h.get("content"))
-            if txt:
-                return txt
-
-        if isinstance(system, str) and system.strip():
-            return system.strip()
-
-        return "Please summarize this video in proper sentences."
-
     async def async_chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
         if video_bytes:
             try:
-                summary, summary_num_tokens = self._process_video(video_bytes, filename, self._resolve_video_prompt(system, history, **kwargs))
+                summary, summary_num_tokens = self._process_video(video_bytes, filename)
                 return summary, summary_num_tokens
             except Exception as e:
                 return "**ERROR**: " + str(e), 0
 
-        return await super().async_chat(system, history, gen_conf, images=images, **kwargs)
+        return "**ERROR**: Method chat not supported yet.", 0
 
-    def _process_video(self, video_bytes, filename, prompt):
+    def _process_video(self, video_bytes, filename):
         from dashscope import MultiModalConversation
 
         video_suffix = Path(filename).suffix or ".mp4"
-        tmp_path = None
         with tempfile.NamedTemporaryFile(delete=False, suffix=video_suffix) as tmp:
             tmp.write(video_bytes)
             tmp_path = tmp.name
 
-        video_path = f"file://{tmp_path}"
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "video": video_path,
-                        "fps": 2,
-                    },
-                    {
-                        "text": prompt,
-                    },
-                ],
-            }
-        ]
+            video_path = f"file://{tmp_path}"
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "video": video_path,
+                            "fps": 2,
+                        },
+                        {
+                            "text": "Please summarize this video in proper sentences.",
+                        },
+                    ],
+                }
+            ]
 
-        def call_api():
-            response = MultiModalConversation.call(
-                api_key=self.api_key,
-                model=self.model_name,
-                messages=messages,
-            )
-            if response.get("message"):
-                raise Exception(response["message"])
-            summary = response["output"]["choices"][0]["message"].content[0]["text"]
-            return summary, num_tokens_from_string(summary)
+            def call_api():
+                response = MultiModalConversation.call(
+                    api_key=self.api_key,
+                    model=self.model_name,
+                    messages=messages,
+                )
+                if response.get("message"):
+                    raise Exception(response["message"])
+                summary = response["output"]["choices"][0]["message"].content[0]["text"]
+                return summary, num_tokens_from_string(summary)
 
-        try:
             try:
                 return call_api()
             except Exception as e1:
@@ -397,12 +303,6 @@ class QWenCV(GptV4):
                     return call_api()
                 except Exception as e2:
                     raise RuntimeError(f"Both default and intl endpoint failed.\nFirst error: {e1}\nSecond error: {e2}")
-        finally:
-            if tmp_path and os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except Exception:
-                    logging.warning("[QWenCV] Failed to cleanup temp video file: %s", tmp_path)
 
 
 class HunyuanCV(GptV4):
@@ -1210,12 +1110,15 @@ class GoogleCV(AnthropicCV, GeminiCV):
             else:
                 self.client = AnthropicVertex(region=region, project_id=project_id)
         else:
-            from google import genai
+            import vertexai.generative_models as glm
+            from google.cloud import aiplatform
+
             if access_token:
-                credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
-                self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=credits)
+                credits = service_account.Credentials.from_service_account_info(access_token)
+                aiplatform.init(credentials=credits, project=project_id, location=region)
             else:
-                self.client = genai.Client(vertexai=True, project=project_id, location=region)
+                aiplatform.init(project=project_id, location=region)
+            self.client = glm.GenerativeModel(model_name=self.model_name)
         Base.__init__(self, **kwargs)
 
     def describe(self, image):
@@ -1252,26 +1155,3 @@ class MoonshotCV(GptV4):
         if not base_url:
             base_url = "https://api.moonshot.cn/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
-
-
-class RAGconCV(GptV4):
-    """
-    RAGcon CV Provider - routes through LiteLLM proxy
-    
-    Supports vision models through LiteLLM.
-    Default Base URL: https://connect.ragcon.ai/v1
-    """
-    _FACTORY_NAME = "RAGcon"
-    
-    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
-        
-        if not base_url:
-            base_url = "https://connect.ragcon.com/v1"
-        
-        # Initialize client
-        self.client = OpenAI(api_key=key, base_url=base_url)
-        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
-        self.model_name = model_name
-        self.lang = lang
-        
-        Base.__init__(self, **kwargs)

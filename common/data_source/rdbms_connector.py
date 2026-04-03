@@ -204,11 +204,11 @@ class RDBMSConnector(LoadConnector, PollConnector):
                 value = row_dict[col]
                 if isinstance(value, (dict, list)):
                     value = json.dumps(value, ensure_ascii=False)
-                # Use brackets around field name and put value on a new line
-                # so that TxtParser preserves field boundaries after chunking.
-                content_parts.append(f"【{col}】:\n{value}")
+                # Use brackets around field name to ensure it's distinguishable
+                # after chunking (TxtParser strips \n delimiters during merge)
+                content_parts.append(f"【{col}】: {value}")
         
-        content = "\n\n".join(content_parts)
+        content = "\n".join(content_parts)
         
         if self.id_column and self.id_column in row_dict:
             doc_id = f"{self.db_type}:{self.database}:{row_dict[self.id_column]}"
@@ -238,8 +238,7 @@ class RDBMSConnector(LoadConnector, PollConnector):
                     doc_updated_at = ts_value
         
         first_content_col = self.content_columns[0] if self.content_columns else "record"
-        semantic_id = str(row_dict.get(first_content_col, "database_record")).replace("\n", " ").replace("\r", " ").strip()[:100]
-
+        semantic_id = str(row_dict.get(first_content_col, "database_record"))[:100]
         
         return Document(
             id=doc_id,

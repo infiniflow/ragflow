@@ -1,4 +1,4 @@
-import { IRagNode } from '@/interfaces/database/agent';
+import { IRagNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
 import { PropsWithChildren, memo } from 'react';
 import { NodeHandleId } from '../../constant';

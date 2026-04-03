@@ -23,13 +23,6 @@ from nltk.corpus import wordnet
 from common.file_utils import get_project_base_directory
 
 
-# Forces NLTK to load the corpus synchronously once, preventing concurrent tasks
-# from triggering the lazy-loading race condition.
-try:
-    wordnet.ensure_loaded()
-except Exception:
-    logging.warning("Fail to load wordnet.ensure_loaded()")
-
 class Dealer:
     def __init__(self, redis=None):
 

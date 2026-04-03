@@ -8,7 +8,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import message from '@/components/ui/message';
 import { FileMimeType } from '@/constants/common';
 import {
@@ -48,58 +47,12 @@ const describeCredentials = (content?: string) => {
   }
 };
 
-const parseJsonObject = (content?: string): Record<string, any> | null => {
-  if (!content) return null;
-  try {
-    const parsed = JSON.parse(content);
-    return typeof parsed === 'object' && parsed !== null ? parsed : null;
-  } catch {
-    return null;
-  }
-};
-
-const extractRedirectUri = (content?: string): string => {
-  const parsed = parseJsonObject(content);
-  if (!parsed) return '';
-
-  if (typeof parsed.redirect_uri === 'string' && parsed.redirect_uri.trim()) {
-    return parsed.redirect_uri.trim();
-  }
-
-  const redirectUris =
-    parsed.web?.redirect_uris ?? parsed.installed?.redirect_uris;
-  if (Array.isArray(redirectUris)) {
-    const firstValidRedirect = redirectUris.find(
-      (item) => typeof item === 'string' && item.trim(),
-    );
-    if (firstValidRedirect) {
-      return firstValidRedirect.trim();
-    }
-  }
-
-  return '';
-};
-
-const withRedirectUri = (credentials: string, redirectUri: string): string => {
-  const trimmedRedirectUri = redirectUri.trim();
-  if (!trimmedRedirectUri) return credentials;
-
-  const parsed = parseJsonObject(credentials);
-  if (!parsed) return credentials;
-
-  return JSON.stringify({
-    ...parsed,
-    redirect_uri: trimmedRedirectUri,
-  });
-};
-
 const GoogleDriveTokenField = ({
   value,
   onChange,
 }: GoogleDriveTokenFieldProps) => {
   const [files, setFiles] = useState<File[]>([]);
   const [pendingCredentials, setPendingCredentials] = useState<string>('');
-  const [redirectUri, setRedirectUri] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [webAuthLoading, setWebAuthLoading] = useState(false);
   const [webFlowId, setWebFlowId] = useState<string | null>(null);
@@ -133,12 +86,6 @@ const GoogleDriveTokenField = ({
     webFlowIdRef.current = webFlowId;
   }, [webFlowId]);
 
-  useEffect(() => {
-    if (!dialogOpen) {
-      setRedirectUri(extractRedirectUri(value));
-    }
-  }, [dialogOpen, value]);
-
   const credentialSummary = useMemo(() => describeCredentials(value), [value]);
   const hasVerifiedTokens = useMemo(
     () => Boolean(value && credentialHasRefreshToken(value)),
@@ -168,11 +115,7 @@ const GoogleDriveTokenField = ({
           flow_id: flowId,
         });
         if (data.code === 0 && data.data?.credentials) {
-          const rawCredentials =
-            typeof data.data.credentials === 'string'
-              ? data.data.credentials
-              : JSON.stringify(data.data.credentials);
-          onChange(withRedirectUri(rawCredentials, redirectUri));
+          onChange(data.data.credentials);
           setPendingCredentials('');
           message.success('Google Drive credentials verified.');
           resetDialog(false);
@@ -197,7 +140,7 @@ const GoogleDriveTokenField = ({
         clearWebState();
       }
     },
-    [clearWebState, onChange, redirectUri, resetDialog],
+    [clearWebState, onChange, resetDialog],
   );
 
   useEffect(() => {
@@ -252,10 +195,8 @@ const GoogleDriveTokenField = ({
           }
           setFiles([file]);
           clearWebState();
-          const extractedRedirectUri = extractRedirectUri(text);
-          setRedirectUri(extractedRedirectUri);
           if (credentialHasRefreshToken(text)) {
-            onChange(withRedirectUri(text, extractedRedirectUri));
+            onChange(text);
             setPendingCredentials('');
             message.success('OAuth credentials uploaded.');
             return;
@@ -279,17 +220,11 @@ const GoogleDriveTokenField = ({
       message.error('No Google credential file detected.');
       return;
     }
-    if (!redirectUri.trim()) {
-      message.error('Please fill in Redirect URI.');
-      return;
-    }
-    const trimmedRedirectUri = redirectUri.trim();
     setWebAuthLoading(true);
     clearWebState();
     try {
       const { data } = await startGoogleDriveWebAuth({
         credentials: pendingCredentials,
-        redirect_uri: trimmedRedirectUri,
       });
       if (data.code === 0 && data.data?.authorization_url) {
         const flowId = data.data.flow_id;
@@ -317,7 +252,7 @@ const GoogleDriveTokenField = ({
     } finally {
       setWebAuthLoading(false);
     }
-  }, [clearWebState, pendingCredentials, redirectUri]);
+  }, [clearWebState, pendingCredentials]);
 
   const handleManualWebCheck = useCallback(() => {
     if (!webFlowId) {
@@ -395,14 +330,6 @@ const GoogleDriveTokenField = ({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Redirect URI</label>
-              <Input
-                value={redirectUri}
-                placeholder="https://example.com/google-drive/oauth/callback"
-                onChange={(e) => setRedirectUri(e.target.value)}
-              />
-            </div>
             <div className="rounded-md border border-dashed border-muted-foreground/40 bg-muted/10 px-4 py-4 text-sm text-muted-foreground">
               <div className="text-sm font-semibold text-foreground">
                 Authorize in browser

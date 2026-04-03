@@ -1,45 +1,45 @@
-# Aliyun OpenSandbox Provider - Quick Test Guide
+# Aliyun OpenSandbox Provider - 快速测试指南
 
-## Test Overview
+## 测试说明
 
-### 1. Unit Tests (No Credentials Required)
+### 1. 单元测试（不需要真实凭据）
 
-Unit tests use mocks and do **not** require real Aliyun credentials; they can be run at any time.
+单元测试使用 mock，**不需要**真实的 Aliyun 凭据，可以随时运行。
 
 ```bash
-# Run unit tests for the Aliyun provider
+# 运行 Aliyun 提供商的单元测试
 pytest agent/sandbox/tests/test_aliyun_provider.py -v
 
-# Expected output:
+# 预期输出：
 # test_aliyun_provider.py::TestAliyunOpenSandboxProvider::test_provider_initialization PASSED
 # test_aliyun_provider.py::TestAliyunOpenSandboxProvider::test_initialize_success PASSED
 # ...
 # ========================= 48 passed in 2.34s ==========================
 ```
 
-### 2. Integration Tests (Real Credentials Required)
+### 2. 集成测试（需要真实凭据）
 
-Integration tests call the real Aliyun API and require credentials to be configured.
+集成测试会调用真实的 Aliyun API，需要配置凭据。
 
-#### Step 1: Configure Environment Variables
+#### 步骤 1: 配置环境变量
 
 ```bash
-export ALIYUN_ACCESS_KEY_ID="LTAI5t..."  # Replace with your real Access Key ID
-export ALIYUN_ACCESS_KEY_SECRET="..."     # Replace with your real Access Key Secret
-export ALIYUN_REGION="cn-hangzhou"        # Optional, defaults to cn-hangzhou
+export ALIYUN_ACCESS_KEY_ID="LTAI5t..."  # 替换为真实的 Access Key ID
+export ALIYUN_ACCESS_KEY_SECRET="..."     # 替换为真实的 Access Key Secret
+export ALIYUN_REGION="cn-hangzhou"        # 可选，默认为 cn-hangzhou
 ```
 
-#### Step 2: Run Integration Tests
+#### 步骤 2: 运行集成测试
 
 ```bash
-# Run all integration tests
+# 运行所有集成测试
 pytest agent/sandbox/tests/test_aliyun_integration.py -v -m integration
 
-# Run a specific test
+# 运行特定测试
 pytest agent/sandbox/tests/test_aliyun_integration.py::TestAliyunOpenSandboxIntegration::test_health_check -v
 ```
 
-#### Step 3: Expected Output
+#### 步骤 3: 预期输出
 
 ```
 test_aliyun_integration.py::TestAliyunOpenSandboxIntegration::test_initialize_provider PASSED
@@ -49,130 +49,130 @@ test_aliyun_integration.py::TestAliyunOpenSandboxIntegration::test_execute_pytho
 ========================== 10 passed in 15.67s ==========================
 ```
 
-### 3. Test Scenarios
+### 3. 测试场景
 
-#### Basic Functionality Tests
+#### 基础功能测试
 
 ```bash
-# Health check
+# 健康检查
 pytest agent/sandbox/tests/test_aliyun_integration.py::TestAliyunOpenSandboxIntegration::test_health_check -v
 
-# Create instance
+# 创建实例
 pytest agent/sandbox/tests/test_aliyun_integration.py::TestAliyunOpenSandboxIntegration::test_create_python_instance -v
 
-# Execute code
+# 执行代码
 pytest agent/sandbox/tests/test_aliyun_integration.py::TestAliyunOpenSandboxIntegration::test_execute_python_code -v
 
-# Destroy instance
+# 销毁实例
 pytest agent/sandbox/tests/test_aliyun_integration.py::TestAliyunOpenSandboxIntegration::test_destroy_instance -v
 ```
 
-#### Error Handling Tests
+#### 错误处理测试
 
 ```bash
-# Code execution error
+# 代码执行错误
 pytest agent/sandbox/tests/test_aliyun_integration.py::TestAliyunOpenSandboxIntegration::test_execute_python_code_with_error -v
 
-# Timeout handling
+# 超时处理
 pytest agent/sandbox/tests/test_aliyun_integration.py::TestAliyunOpenSandboxIntegration::test_execute_python_code_timeout -v
 ```
 
-#### Real-World Scenario Tests
+#### 真实场景测试
 
 ```bash
-# Data processing workflow
+# 数据处理工作流
 pytest agent/sandbox/tests/test_aliyun_integration.py::TestAliyunRealWorldScenarios::test_data_processing_workflow -v
 
-# String manipulation
+# 字符串操作
 pytest agent/sandbox/tests/test_aliyun_integration.py::TestAliyunRealWorldScenarios::test_string_manipulation -v
 
-# Multiple executions
+# 多次执行
 pytest agent/sandbox/tests/test_aliyun_integration.py::TestAliyunRealWorldScenarios::test_multiple_executions_same_instance -v
 ```
 
-## FAQ
+## 常见问题
 
-### Q: What if I don't have credentials?
+### Q: 没有凭据怎么办？
 
-**A:** Just run the unit tests — no real credentials needed:
+**A:** 运行单元测试即可，不需要真实凭据：
 ```bash
 pytest agent/sandbox/tests/test_aliyun_provider.py -v
 ```
 
-### Q: How do I skip integration tests?
+### Q: 如何跳过集成测试？
 
-**A:** Use pytest markers to skip them:
+**A:** 使用 pytest 标记跳过：
 ```bash
-# Run only unit tests, skip integration tests
+# 只运行单元测试，跳过集成测试
 pytest agent/sandbox/tests/ -v -m "not integration"
 ```
 
-### Q: What should I do if integration tests fail?
+### Q: 集成测试失败怎么办？
 
-**A:** Check the following:
+**A:** 检查以下几点：
 
-1. **Are the credentials correct?**
+1. **凭据是否正确**
    ```bash
    echo $ALIYUN_ACCESS_KEY_ID
    echo $ALIYUN_ACCESS_KEY_SECRET
    ```
 
-2. **Is the network connection working?**
+2. **网络连接是否正常**
    ```bash
    curl -I https://opensandbox.cn-hangzhou.aliyuncs.com
    ```
 
-3. **Do you have OpenSandbox service permissions?**
-   - Log in to the Aliyun console
-   - Check if the OpenSandbox service is enabled
-   - Verify AccessKey permissions
+3. **是否有 OpenSandbox 服务权限**
+   - 登录阿里云控制台
+   - 检查是否已开通 OpenSandbox 服务
+   - 检查 AccessKey 权限
 
-4. **View detailed error messages:**
+4. **查看详细错误信息**
    ```bash
    pytest agent/sandbox/tests/test_aliyun_integration.py -v -s
    ```
 
-### Q: What should I do if tests time out?
+### Q: 测试超时怎么办？
 
-**A:** Increase the timeout or check network connectivity:
+**A:** 增加超时时间或检查网络：
 ```bash
-# Use a longer timeout
+# 使用更长的超时
 pytest agent/sandbox/tests/test_aliyun_integration.py -v --timeout=60
 ```
 
-## Quick Reference: Test Commands
+## 测试命令速查表
 
-| Command | Description | Credentials Required |
+| 命令 | 说明 | 需要凭据 |
 |------|------|---------|
-| `pytest agent/sandbox/tests/test_aliyun_provider.py -v` | Unit tests | ❌ |
-| `pytest agent/sandbox/tests/test_aliyun_integration.py -v` | Integration tests | ✅ |
-| `pytest agent/sandbox/tests/ -v -m "not integration"` | Unit tests only | ❌ |
-| `pytest agent/sandbox/tests/ -v -m integration` | Integration tests only | ✅ |
-| `pytest agent/sandbox/tests/ -v` | All tests | Partially required |
+| `pytest agent/sandbox/tests/test_aliyun_provider.py -v` | 单元测试 | ❌ |
+| `pytest agent/sandbox/tests/test_aliyun_integration.py -v` | 集成测试 | ✅ |
+| `pytest agent/sandbox/tests/ -v -m "not integration"` | 仅单元测试 | ❌ |
+| `pytest agent/sandbox/tests/ -v -m integration` | 仅集成测试 | ✅ |
+| `pytest agent/sandbox/tests/ -v` | 所有测试 | 部分需要 |
 
-## Getting Aliyun Credentials
+## 获取 Aliyun 凭据
 
-1. Visit the [Aliyun Console](https://ram.console.aliyun.com/manage/ak)
-2. Create an AccessKey
-3. Save your AccessKey ID and AccessKey Secret
-4. Set the environment variables
+1. 访问 [阿里云控制台](https://ram.console.aliyun.com/manage/ak)
+2. 创建 AccessKey
+3. 保存 AccessKey ID 和 AccessKey Secret
+4. 设置环境变量
 
-⚠️ **Security Tips:**
-- Do not hardcode credentials in your code
-- Use environment variables or configuration files
-- Rotate AccessKeys regularly
-- Restrict AccessKey permissions
+⚠️ **安全提示：**
+- 不要在代码中硬编码凭据
+- 使用环境变量或配置文件
+- 定期轮换 AccessKey
+- 限制 AccessKey 权限
 
-## Next Steps
+## 下一步
 
-1. ✅ **Run unit tests** - Verify code logic
-2. 🔧 **Configure credentials** - Set environment variables
-3. 🚀 **Run integration tests** - Test the real API
-4. 📊 **Review results** - Ensure all tests pass
-5. 🎯 **Integrate into your system** - Configure the provider via the admin API
+1. ✅ **运行单元测试** - 验证代码逻辑
+2. 🔧 **配置凭据** - 设置环境变量
+3. 🚀 **运行集成测试** - 测试真实 API
+4. 📊 **查看结果** - 确保所有测试通过
+5. 🎯 **集成到系统** - 使用 admin API 配置提供商
 
-## Need Help?
+## 需要帮助？
 
-- See the [full documentation](README.md)
-- Check the [sandbox specification](../../../../../docs/develop/sandbox_spec.md)
-- Contact the RAGFlow team
+- 查看 [完整文档](README.md)
+- 检查 [sandbox 规范](../../../../../docs/develop/sandbox_spec.md)
+- 联系 RAGFlow 团队

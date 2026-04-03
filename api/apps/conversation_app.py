@@ -27,8 +27,7 @@ from api.db.services.dialog_service import DialogService, async_ask, async_chat,
 from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
 from api.db.services.tenant_llm_service import TenantLLMService
-from api.db.services.user_service import UserTenantService
-from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
+from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import chunks_format
@@ -112,7 +111,7 @@ async def get():
 def getsse(dialog_id):
     token = request.headers.get("Authorization").split()
     if len(token) != 2:
-        return get_data_error_result(message='Authorization is not valid!')
+        return get_data_error_result(message='Authorization is not valid!"')
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
@@ -219,8 +218,6 @@ async def completion():
             dia.llm_setting = chat_model_config
 
         is_embedded = bool(chat_model_id)
-        # Remove stream from req to avoid duplicate argument error
-        stream_mode = req.pop("stream", True)
         async def stream():
             nonlocal dia, msg, req, conv
             try:
@@ -234,7 +231,7 @@ async def completion():
                 yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
             yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
-        if stream_mode:
+        if req.get("stream", True):
             resp = Response(stream(), mimetype="text/event-stream")
             resp.headers.add_header("Cache-control", "no-cache")
             resp.headers.add_header("Connection", "keep-alive")
@@ -281,12 +278,15 @@ async def sequence2txt():
     os.close(fd)
     await uploaded.save(temp_audio_path)
 
-    try:
-        default_asr_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.SPEECH2TEXT)
-    except Exception as e:
-        return get_data_error_result(message=str(e))
+    tenants = TenantService.get_info_by(current_user.id)
+    if not tenants:
+        return get_data_error_result(message="Tenant not found!")
 
-    asr_mdl=LLMBundle(current_user.id, default_asr_model_config)
+    asr_id = tenants[0]["asr_id"]
+    if not asr_id:
+        return get_data_error_result(message="No default ASR model is set")
+
+    asr_mdl=LLMBundle(tenants[0]["tenant_id"], LLMType.SPEECH2TEXT, asr_id)
     if not stream_mode:
         text = asr_mdl.transcription(temp_audio_path)
         try:
@@ -315,12 +315,15 @@ async def tts():
     req = await get_request_json()
     text = req["text"]
 
-    try:
-        default_tts_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.TTS)
-    except Exception as e:
-        return get_data_error_result(message=str(e))
+    tenants = TenantService.get_info_by(current_user.id)
+    if not tenants:
+        return get_data_error_result(message="Tenant not found!")
 
-    tts_mdl = LLMBundle(current_user.id, default_tts_model_config)
+    tts_id = tenants[0]["tts_id"]
+    if not tts_id:
+        return get_data_error_result(message="No default TTS model is set")
+
+    tts_mdl = LLMBundle(tenants[0]["tenant_id"], LLMType.TTS, tts_id)
 
     def stream_audio():
         try:
@@ -453,11 +456,7 @@ async def related_questions():
     question = req["question"]
 
     chat_id = search_config.get("chat_id", "")
-    if chat_id:
-        chat_model_config = get_model_config_by_type_and_name(current_user.id, LLMType.CHAT, chat_id)
-    else:
-        chat_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.CHAT)
-    chat_mdl = LLMBundle(current_user.id, chat_model_config)
+    chat_mdl = LLMBundle(current_user.id, LLMType.CHAT, chat_id)
 
     gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
     if "parameter" in gen_conf:

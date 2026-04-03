@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { SwitchOperatorOptions } from '@/constants/agent';
 import { LogicalOperatorIcon } from '@/hooks/logic-hooks/use-build-operator-options';
-import { ISwitchCondition, ISwitchNode } from '@/interfaces/database/agent';
+import { ISwitchCondition, ISwitchNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
 import { memo, useCallback } from 'react';
 import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';

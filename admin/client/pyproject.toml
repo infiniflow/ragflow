@@ -11,17 +11,17 @@ dependencies = [
     "beartype>=0.20.0,<1.0.0",
     "pycryptodomex>=3.10.0",
     "lark>=1.1.0",
-    "requests-toolbelt>=1.0.0",
 ]
 
 [dependency-groups]
 test = [
     "pytest>=8.3.5",
     "requests>=2.32.3",
+    "requests-toolbelt>=1.0.0",
 ]
 
 [tool.setuptools]
-py-modules = ["ragflow_cli", "parser", "http_client", "ragflow_client", "user"]
+py-modules = ["ragflow_cli", "parser"]
 
 [project.scripts]
 ragflow-cli = "ragflow_cli:main"

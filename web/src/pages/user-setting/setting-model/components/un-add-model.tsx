@@ -79,97 +79,91 @@ export const AvailableModels: FC<{
   };
 
   return (
-    <aside
-      className="text-text-primary h-full flex flex-col"
-      data-testid="available-models-section"
-    >
-      <header className="p-4 space-y-3">
-        <h3 className="text-text-primary text-base">{t('availableModels')}</h3>
-        {/* Search Bar */}
-        <div>
-          {/* <div className="relative"> */}
-          <SearchInput
-            data-testid="model-providers-search"
-            type="text"
-            placeholder={t('search')}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-4 py-2 pl-10 bg-bg-input border border-border-default rounded-lg focus:outline-none focus:ring-1 focus:ring-border-button transition-colors"
-          />
-          {/* <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-text-secondary" /> */}
-          {/* </div> */}
-        </div>
+    <div className=" text-text-primary h-full p-4">
+      <div className="text-text-primary text-base mb-4">
+        {t('availableModels')}
+      </div>
+      {/* Search Bar */}
+      <div className="mb-6">
+        {/* <div className="relative"> */}
+        <SearchInput
+          type="text"
+          placeholder={t('search')}
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full px-4 py-2 pl-10 bg-bg-input border border-border-default rounded-lg focus:outline-none focus:ring-1 focus:ring-border-button transition-colors"
+        />
+        {/* <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-text-secondary" /> */}
+        {/* </div> */}
+      </div>
 
-        {/* Tags Filter */}
-        <div className="flex flex-wrap gap-2">
+      {/* Tags Filter */}
+      <div className="flex flex-wrap gap-2 mb-6">
+        <Button
+          variant={'secondary'}
+          onClick={() => setSelectedTag(null)}
+          className={`px-1 py-1 text-xs rounded-sm bg-bg-card h-5 transition-colors ${
+            selectedTag === null
+              ? ' text-bg-base bg-text-primary '
+              : 'text-text-secondary bg-bg-card border-none'
+          }`}
+        >
+          All
+        </Button>
+        {allTags.map((tag) => (
           <Button
-            variant={selectedTag === null ? 'default' : 'secondary'}
-            size="auto"
-            className="leading-none px-1 py-0.5 rounded-sm text-xs"
-            onClick={() => setSelectedTag(null)}
+            variant={'secondary'}
+            key={tag}
+            onClick={() => handleTagClick(tag)}
+            className={`px-1 py-1 text-xs rounded-sm bg-bg-card h-5 transition-colors ${
+              selectedTag === tag
+                ? ' text-bg-base bg-text-primary '
+                : 'text-text-secondary  border-none bg-bg-card'
+            }`}
           >
-            All
+            {mapModelKey[tag.trim() as keyof typeof mapModelKey] || tag.trim()}
           </Button>
-
-          {allTags.map((tag) => (
-            <Button
-              variant={selectedTag === tag ? 'default' : 'secondary'}
-              size="auto"
-              className="leading-none px-1 py-0.5 rounded-sm text-xs"
-              key={tag}
-              onClick={() => handleTagClick(tag)}
-            >
-              {mapModelKey[tag.trim() as keyof typeof mapModelKey] ||
-                tag.trim()}
-            </Button>
-          ))}
-        </div>
-      </header>
+        ))}
+      </div>
 
       {/* Models List */}
-      <div className="p-4 pt-0 flex flex-col gap-4 overflow-auto h-full scrollbar-auto">
+      <div className="flex flex-col gap-4 overflow-auto h-[calc(100vh-300px)] scrollbar-auto">
         {filteredModels.map((model) => (
           <div
             key={model.name}
-            data-testid="available-model-card"
-            data-provider={model.name}
-            className="group border border-border-button rounded-lg p-3 hover:bg-bg-input transition-colors"
+            className=" border border-border-button rounded-lg p-3 hover:bg-bg-input transition-colors group"
             onClick={() => handleAddModel(model.name)}
           >
             <div className="flex items-center space-x-3 mb-3">
               <LlmIcon name={model.name} imgClass="h-8 w-8 text-text-primary" />
-              <div className="flex flex-1 gap-1.5 items-center">
+              <div className="flex flex-1 gap-1 items-center">
                 <div className="font-normal text-base truncate">
                   {model.name}
                 </div>
                 {!!APIMapUrl[model.name as keyof typeof APIMapUrl] && (
                   <Button
-                    asLink
-                    variant="ghost"
-                    size="icon-xs"
-                    className="size-4"
-                    to={APIMapUrl[model.name as keyof typeof APIMapUrl]}
-                    target="_blank"
+                    variant={'ghost'}
+                    className=" bg-transparent w-4 h-5"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.open(
+                        APIMapUrl[model.name as keyof typeof APIMapUrl],
+                      );
+                    }}
+                    // target="_blank"
                     rel="noopener noreferrer"
-                    onClick={(e: React.MouseEvent<HTMLButtonElement>) =>
-                      e.stopPropagation()
-                    }
                   >
                     <ArrowUpRight size={16} />
                   </Button>
                 )}
               </div>
-
-              <Button
-                size="xs"
-                className="px-2 opacity-0 transition-all group-hover:opacity-100 group-focus-within:opacity-100"
-              >
+              <Button className=" px-2 items-center gap-0 text-xs h-6  rounded-md transition-colors hidden group-hover:flex">
                 <Plus size={12} />
                 {t('addTheModel')}
               </Button>
             </div>
 
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1 mb-3">
               {sortTags(model.tags).map((tag, index) => (
                 <span
                   key={index}
@@ -184,6 +178,6 @@ export const AvailableModels: FC<{
           </div>
         ))}
       </div>
-    </aside>
+    </div>
   );
 };

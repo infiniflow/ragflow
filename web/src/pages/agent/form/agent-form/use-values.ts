@@ -1,5 +1,5 @@
 import { useFetchModelId } from '@/hooks/logic-hooks';
-import { RAGFlowNodeType } from '@/interfaces/database/agent';
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { get, isEmpty, omit } from 'lodash';
 import { useMemo } from 'react';
 import { initialAgentValues } from '../../constant';

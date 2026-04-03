@@ -11,14 +11,15 @@ import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useSetDocumentStatus } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { cn } from '@/lib/utils';
+import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { formatDate } from '@/utils/date';
 import { ColumnDef } from '@tanstack/table-core';
-import { ArrowUpDown } from 'lucide-react';
+import { ArrowUpDown, MonitorUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { MetadataType } from '../components/metedata/constant';
 import { ShowManageMetadataModalProps } from '../components/metedata/interface';
 import { DatasetActionCell } from './dataset-action-cell';
-import { ParseDropdownButton, ParsingStatusCell } from './parsing-status-cell';
+import { ParsingStatusCell } from './parsing-status-cell';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { UseRenameDocumentShowType } from './use-rename-document';
 
@@ -37,7 +38,7 @@ export function useDatasetTableColumns({
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
   });
-  // const { dataSourceInfo } = useDataSourceInfo();
+  const { dataSourceInfo } = useDataSourceInfo();
   const { navigateToChunkParsedResult } = useNavigatePage();
   const { setDocumentStatus } = useSetDocumentStatus();
 
@@ -68,19 +69,14 @@ export function useDatasetTableColumns({
       accessorKey: 'name',
       header: ({ column }) => {
         return (
-          <div className="flex items-center gap-1">
+          <Button
+            variant="transparent"
+            className="border-none"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          >
             {t('name')}
-
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={() =>
-                column.toggleSorting(column.getIsSorted() === 'asc')
-              }
-            >
-              <ArrowUpDown />
-            </Button>
-          </div>
+            <ArrowUpDown />
+          </Button>
         );
       },
       meta: { cellClassName: 'max-w-[20vw]' },
@@ -91,7 +87,7 @@ export function useDatasetTableColumns({
           <Tooltip>
             <TooltipTrigger asChild>
               <div
-                className="flex items-center gap-2 cursor-pointer"
+                className="flex gap-2 cursor-pointer"
                 onClick={navigateToChunkParsedResult(
                   row.original.id,
                   row.original.kb_id,
@@ -112,31 +108,22 @@ export function useDatasetTableColumns({
       accessorKey: 'create_time',
       header: ({ column }) => {
         return (
-          <div className="flex items-center gap-1">
+          <Button
+            variant="transparent"
+            className="border-none"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          >
             {t('uploadDate')}
-
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={() =>
-                column.toggleSorting(column.getIsSorted() === 'asc')
-              }
-            >
-              <ArrowUpDown />
-            </Button>
-          </div>
+            <ArrowUpDown />
+          </Button>
         );
       },
       cell: ({ row }) => (
-        <time
-          className="lowercase"
-          dateTime={new Date(row.getValue('create_time')).toISOString()}
-        >
+        <div className="lowercase">
           {formatDate(row.getValue('create_time'))}
-        </time>
+        </div>
       ),
     },
-    /*
     {
       accessorKey: 'source_from',
       header: t('source'),
@@ -159,7 +146,6 @@ export function useDatasetTableColumns({
         </div>
       ),
     },
-    */
     {
       accessorKey: 'status',
       header: t('enabled'),
@@ -188,9 +174,8 @@ export function useDatasetTableColumns({
       cell: ({ row }) => {
         const length = Object.keys(row.getValue('meta_fields') || {}).length;
         return (
-          <Button
-            variant="static"
-            size="auto"
+          <div
+            className="capitalize cursor-pointer"
             onClick={() => {
               showManageMetadataModal({
                 // metadata: util.JSONToMetaDataTableData(
@@ -224,7 +209,7 @@ export function useDatasetTableColumns({
             }}
           >
             {length + ' fields'}
-          </Button>
+          </div>
         );
       },
     },
@@ -234,23 +219,11 @@ export function useDatasetTableColumns({
       // meta: { cellClassName: 'min-w-[20vw]' },
       cell: ({ row }) => {
         return (
-          <ParseDropdownButton
-            record={row.original}
-            showChangeParserModal={showChangeParserModal}
-          />
-        );
-      },
-    },
-    {
-      id: 'run-status',
-      header: '',
-      cell: ({ row }) => {
-        return (
           <ParsingStatusCell
             record={row.original}
             showChangeParserModal={showChangeParserModal}
             showLog={showLog}
-          />
+          ></ParsingStatusCell>
         );
       },
     },
@@ -265,7 +238,7 @@ export function useDatasetTableColumns({
           <DatasetActionCell
             record={record}
             showRenameModal={showRenameModal}
-          />
+          ></DatasetActionCell>
         );
       },
     },

@@ -1,4 +1,5 @@
-import { Segmented, SegmentedLabeledOption } from '@/components/ui/segmented';
+import { Segmented } from 'antd';
+import { SegmentedLabeledOption } from 'antd/es/segmented';
 import { upperFirst } from 'lodash';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -29,7 +30,6 @@ export function TagTabs() {
   return (
     <section className="mt-4">
       <Segmented
-        className="w-fit"
         value={value}
         options={options}
         onChange={(val) => setValue(val as TagType)}

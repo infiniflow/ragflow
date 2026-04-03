@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/sheet';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
-import { RAGFlowNodeType } from '@/interfaces/database/agent';
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { cn } from '@/lib/utils';
 import { lowerFirst } from 'lodash';
 import { CirclePlay, X } from 'lucide-react';

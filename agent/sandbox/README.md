@@ -189,11 +189,7 @@ Currently, the following languages are officially supported:
 
 ### 🐍 Python
 
-Pre-installed packages: `requests`, `numpy`, `pandas`, `matplotlib`.
-
-> `matplotlib` uses the `Agg` (non-interactive) backend by default in the sandbox (`MPLBACKEND=Agg`). No display server is available, so always save figures to files (e.g. `fig.savefig("artifacts/chart.png")`) rather than calling `plt.show()`.
-
-To add more dependencies, edit:
+To add Python dependencies, simply edit the following file:
 
 ```bash
 sandbox_base_image/python/requirements.txt
@@ -202,8 +198,6 @@ sandbox_base_image/python/requirements.txt
 Add any additional packages you need, one per line (just like a normal pip requirements file).
 
 ### 🟨 Node.js
-
-Pre-installed packages: `axios`.
 
 To add Node.js dependencies:
 

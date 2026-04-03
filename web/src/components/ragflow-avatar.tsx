@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import * as AvatarPrimitive from '@radix-ui/react-avatar';
-import { forwardRef, memo, useMemo } from 'react';
+import { forwardRef, memo, useEffect, useRef, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 
 const PREDEFINED_COLORS = [
@@ -26,15 +26,6 @@ const getStringHash = (str: string): number => {
   return Math.abs(hash);
 };
 
-const getInitials = (name?: string) => {
-  if (typeof name !== 'string' || !name) return '';
-  const parts = name?.trim().split(/\s+/);
-  if (parts.length === 1) {
-    return parts[0][0].toUpperCase();
-  }
-  return parts[0][0].toUpperCase();
-};
-
 const getColorForName = (name: string): { from: string; to: string } => {
   const hash = getStringHash(name);
   const index = hash % PREDEFINED_COLORS.length;
@@ -51,15 +42,50 @@ export const RAGFlowAvatar = memo(
     }
   >(({ name, avatar, isPerson = false, className, ...props }, ref) => {
     // Generate initial letter logic
-    const { initials, from, to } = useMemo(
-      () => ({
-        initials: getInitials(name),
-        from: 'hsl(0, 0%, 30%)',
-        to: 'hsl(0, 0%, 80%)',
-        ...(name ? getColorForName(name) : {}),
-      }),
-      [name],
-    );
+    const getInitials = (name?: string) => {
+      if (typeof name !== 'string' || !name) return '';
+      const parts = name?.trim().split(/\s+/);
+      if (parts.length === 1) {
+        return parts[0][0].toUpperCase();
+      }
+      return parts[0][0].toUpperCase();
+    };
+
+    const initials = getInitials(name);
+    const { from, to } = name
+      ? getColorForName(name)
+      : { from: 'hsl(0, 0%, 30%)', to: 'hsl(0, 0%, 80%)' };
+
+    const fallbackRef = useRef<HTMLElement>(null);
+    const [fontSize, setFontSize] = useState('0.875rem');
+
+    // Calculate font size
+    const calculateFontSize = () => {
+      if (fallbackRef.current) {
+        const containerWidth = fallbackRef.current.offsetWidth;
+        const newSize = containerWidth * 0.6;
+        setFontSize(`${newSize}px`);
+      }
+    };
+
+    useEffect(() => {
+      calculateFontSize();
+
+      if (fallbackRef.current) {
+        const resizeObserver = new ResizeObserver(() => {
+          calculateFontSize();
+        });
+
+        resizeObserver.observe(fallbackRef.current);
+
+        return () => {
+          if (fallbackRef.current) {
+            resizeObserver.unobserve(fallbackRef.current);
+          }
+          resizeObserver.disconnect();
+        };
+      }
+    }, []);
 
     return (
       <Avatar
@@ -69,27 +95,22 @@ export const RAGFlowAvatar = memo(
       >
         <AvatarImage src={avatar} />
         <AvatarFallback
-          className="flex items-center justify-center bg-gradient-to-b text-white"
+          ref={(node) => {
+            fallbackRef.current = node;
+            calculateFontSize();
+          }}
+          className={cn(
+            'bg-gradient-to-b',
+            'flex items-center justify-center',
+            'text-white ',
+            { 'rounded-md': !isPerson },
+          )}
           style={{
             backgroundImage: `linear-gradient(to bottom, ${from}, ${to})`,
+            fontSize: fontSize,
           }}
-          role="presentation"
-          aria-hidden="true"
         >
-          <svg
-            className="size-full block text-current select-none"
-            viewBox={`${-(50 + 22.5 * (initials.length - 1))} -50 ${100 + 45 * (initials.length - 1)} 100`}
-            preserveAspectRatio="xMinYMid meet"
-          >
-            <text
-              fontSize={55}
-              fill="currentColor"
-              textAnchor="middle"
-              dominantBaseline="central"
-            >
-              {initials}
-            </text>
-          </svg>
+          {initials}
         </AvatarFallback>
       </Avatar>
     );

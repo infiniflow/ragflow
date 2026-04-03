@@ -80,9 +80,8 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
             className,
           )}
           style={{
-            paddingInlineStart:
-              !!prefix && prefixWidth ? `${prefixWidth}px` : '',
-            paddingInlineEnd: isPasswordInput
+            paddingLeft: !!prefix && prefixWidth ? `${prefixWidth}px` : '',
+            paddingRight: isPasswordInput
               ? '40px'
               : !!suffix
                 ? `${suffixWidth}px`
@@ -110,7 +109,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           {prefix && (
             <span
               ref={prefixRef}
-              className="absolute start-0 top-[50%] translate-y-[-50%]"
+              className="absolute left-0 top-[50%] translate-y-[-50%]"
             >
               {prefix}
             </span>
@@ -119,8 +118,8 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           {suffix && (
             <span
               ref={suffixRef}
-              className={cn('absolute end-0 top-[50%] translate-y-[-50%]', {
-                'end-14': isPasswordInput,
+              className={cn('absolute right-0 top-[50%] translate-y-[-50%]', {
+                'right-14': isPasswordInput,
               })}
             >
               {suffix}
@@ -131,7 +130,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
               type="button"
               className="
                 p-2 text-text-secondary
-                absolute border-0 end-1 top-[50%] translate-y-[-50%]
+                absolute border-0 right-1 top-[50%] translate-y-[-50%]
                 dark:peer-autofill/input:text-text-secondary-inverse
                 dark:peer-autofill/input:hover:text-text-primary-inverse
                 dark:peer-autofill/input:focus-visible:text-text-primary-inverse
@@ -166,7 +165,7 @@ const SearchInput = (props: InputProps) => {
     <Input
       placeholder={t('common.search')}
       {...props}
-      prefix={<Search className="ms-2 me-1 size-[1em]" />}
+      prefix={<Search className="ml-2 mr-1 size-[1em]" />}
     />
   );
 };

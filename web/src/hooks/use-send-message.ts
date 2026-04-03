@@ -145,7 +145,7 @@ export const useSendMessageBySSE = (url: string = api.completeConversation) => {
                 const val = JSON.parse(value?.data || '');
 
                 console.info('data:', val);
-                if (typeof val?.code === 'number' && val.code !== 0) {
+                if (val.code === 500) {
                   message.error(val.message);
                 }
 

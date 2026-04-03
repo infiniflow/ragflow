@@ -183,11 +183,10 @@ class SyncLogsService(CommonService):
                 ConnectorService.update_by_id(connector_id, {"status": TaskStatus.SCHEDULE})
 
     @classmethod
-    def increase_docs(cls, id, max_update, doc_num, err_msg="", error_count=0):
-        # Keep sync monotonic.
+    def increase_docs(cls, id, min_update, max_update, doc_num, err_msg="", error_count=0):
         cls.model.update(new_docs_indexed=cls.model.new_docs_indexed + doc_num,
                          total_docs_indexed=cls.model.total_docs_indexed + doc_num,
-                         poll_range_start=fn.COALESCE(fn.GREATEST(cls.model.poll_range_start, max_update), max_update),
+                         poll_range_start=fn.COALESCE(fn.LEAST(cls.model.poll_range_start,min_update), min_update),
                          poll_range_end=fn.COALESCE(fn.GREATEST(cls.model.poll_range_end, max_update), max_update),
                          error_msg=cls.model.error_msg + err_msg,
                          error_count=cls.model.error_count + error_count,

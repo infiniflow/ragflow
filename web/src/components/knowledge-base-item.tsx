@@ -23,7 +23,7 @@ export function useDisableDifferenceEmbeddingDataset() {
 
   useEffect(() => {
     const datasetListMap = datasetListOrigin
-      .filter((x) => x.chunk_method !== DocumentParserType.Tag)
+      .filter((x) => x.parser_id !== DocumentParserType.Tag)
       .map((item: IKnowledge) => {
         return {
           label: item.name,
@@ -36,12 +36,12 @@ export function useDisableDifferenceEmbeddingDataset() {
           ),
           suffix: (
             <div className="text-xs px-4 p-1 bg-bg-card text-text-secondary rounded-lg border border-bg-card">
-              {item.embedding_model}
+              {item.embd_id}
             </div>
           ),
           value: item.id,
           disabled:
-            item.embedding_model !== datasetSelectEmbedId &&
+            item.embd_id !== datasetSelectEmbedId &&
             datasetSelectEmbedId !== '',
         };
       });
@@ -54,7 +54,7 @@ export function useDisableDifferenceEmbeddingDataset() {
   ) => {
     if (value.length) {
       const data = datasetListOrigin?.find((item) => item.id === value[0]);
-      setDatasetSelectEmbedId(data?.embedding_model ?? '');
+      setDatasetSelectEmbedId(data?.embd_id ?? '');
     } else {
       setDatasetSelectEmbedId('');
     }
@@ -122,18 +122,15 @@ export function KnowledgeBaseFormField({
           </FormLabel>
           <FormControl>
             <MultiSelect
-              data-testid="chat-datasets-combobox"
               options={options}
               onValueChange={(value) => {
                 handleDatasetSelectChange(value, field.onChange);
               }}
-              placeholder={t('chat.knowledgeBasesPlaceholder')}
+              placeholder={t('chat.knowledgeBasesMessage')}
               variant="inverted"
               maxCount={100}
               defaultValue={field.value}
               showSelectAll={false}
-              popoverTestId="datasets-options"
-              optionTestIdPrefix="datasets"
               {...field}
             />
           </FormControl>

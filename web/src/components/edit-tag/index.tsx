@@ -1,24 +1,22 @@
 import { PlusOutlined } from '@ant-design/icons';
 import React, { useEffect, useRef, useState } from 'react';
 
-import { cn } from '@/lib/utils';
 import { Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from '../ui/hover-card';
 import { Input } from '../ui/input';
-import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 interface EditTagsProps {
   value?: string[];
   onChange?: (tags: string[]) => void;
   disabled?: boolean;
-  addButtonTestId?: string;
-  inputTestId?: string;
 }
 
 const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
-  function EditTag(
-    { value = [], onChange, disabled, addButtonTestId, inputTestId },
-    ref,
-  ) {
+  ({ value = [], onChange, disabled }: EditTagsProps) => {
     const [inputVisible, setInputVisible] = useState(false);
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
@@ -56,42 +54,35 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
 
     const forMap = (tag: string) => {
       return (
-        <Tooltip key={tag}>
-          <TooltipContent side="top">{tag}</TooltipContent>
-          <TooltipTrigger asChild>
-            <div
-              className={cn(
-                'w-fit h-8 flex items-center justify-center gap-2 border border-border-button rounded-sm bg-bg-card',
-                disabled ? 'px-2' : 'ps-2 pe-1',
-              )}
-            >
+        <HoverCard key={tag}>
+          <HoverCardContent side="top">{tag}</HoverCardContent>
+          <HoverCardTrigger asChild>
+            <div className="w-fit flex items-center justify-center gap-2 border border-border-button px-2 py-1 rounded-sm bg-bg-card">
               <div className="flex gap-2 items-center">
                 <div className="max-w-80 overflow-hidden text-ellipsis">
                   {tag}
                 </div>
                 {!disabled && (
-                  <Button
-                    variant="delete"
-                    size="icon-xs"
+                  <Trash2
+                    size={14}
+                    className="text-text-secondary hover:text-state-error"
                     onClick={(e) => {
                       e.preventDefault();
                       handleClose(tag);
                     }}
-                  >
-                    <Trash2 className="size-[1em]" />
-                  </Button>
+                  />
                 )}
               </div>
             </div>
-          </TooltipTrigger>
-        </Tooltip>
+          </HoverCardTrigger>
+        </HoverCard>
       );
     };
 
     const tagChild = value?.map(forMap);
 
     return (
-      <div ref={ref}>
+      <div>
         {inputVisible && (
           <Input
             ref={inputRef}
@@ -101,7 +92,6 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
             onChange={handleInputChange}
             onBlur={handleInputConfirm}
             disabled={disabled}
-            data-testid={inputTestId}
             onKeyDown={(e) => {
               if (e?.key === 'Enter') {
                 handleInputConfirm();
@@ -111,14 +101,12 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
         )}
         <div className="flex gap-2 py-1 flex-wrap">
           {Array.isArray(tagChild) && tagChild.length > 0 && <>{tagChild}</>}
-
           {!inputVisible && !disabled && (
             <Button
-              variant="outline"
-              size="icon"
+              variant="ghost"
+              className="w-fit flex items-center justify-center gap-2 bg-bg-card border-border-button border"
               onClick={showInput}
               disabled={disabled}
-              data-testid={addButtonTestId}
             >
               <PlusOutlined />
             </Button>

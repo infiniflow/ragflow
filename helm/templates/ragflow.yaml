@@ -1,18 +1,21 @@
+{{/* ------------------------------------------------------------------ */}}
+{{/*  Webserver Deployment (nginx + ragflow_server)                       */}}
+{{/* ------------------------------------------------------------------ */}}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "ragflow.fullname" . }}
+  name: {{ include "ragflow.fullname" . }}-webserver
   labels:
     {{- include "ragflow.labels" . | nindent 4 }}
-    app.kubernetes.io/component: ragflow
+    app.kubernetes.io/component: ragflow-webserver
 spec:
-  replicas: 1
+  replicas: {{ .Values.ragflow.webserver.replicaCount }}
   selector:
     matchLabels:
       {{- include "ragflow.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: ragflow
-  {{- with .Values.ragflow.deployment.strategy }}
+      app.kubernetes.io/component: ragflow-webserver
+  {{- with .Values.ragflow.webserver.deployment.strategy }}
   strategy:
     {{- . | toYaml | nindent 4 }}
   {{- end }}
@@ -20,12 +23,12 @@ spec:
     metadata:
       labels:
         {{- include "ragflow.labels" . | nindent 8 }}
-        app.kubernetes.io/component: ragflow
+        app.kubernetes.io/component: ragflow-webserver
       annotations:
-        checksum/values: {{ .Values | toYaml | sha256sum }}
         checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
         checksum/config-ragflow: {{ include (print $.Template.BasePath "/ragflow_config.yaml") . | sha256sum }}
     spec:
+      serviceAccountName: {{ include "ragflow.serviceAccountName" . }}
       {{- if or .Values.global.imagePullSecrets .Values.ragflow.image.pullSecrets }}
       imagePullSecrets:
         {{- with .Values.global.imagePullSecrets }}
@@ -36,24 +39,17 @@ spec:
         {{- end }}
       {{- end }}
       containers:
-      - name: ragflow
+      - name: ragflow-webserver
         image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.ragflow.image.repository) }}:{{ .Values.ragflow.image.tag }}
         {{- with .Values.ragflow.image.pullPolicy }}
         imagePullPolicy: {{ . }}
         {{- end }}
-        {{- if .Values.ragflow.admin.enabled }}
-        args:
-          - "--enable-adminserver"
-        {{- end }}
+        args: {{ toYaml .Values.ragflow.webserver.args | nindent 10 }}
         ports:
           - containerPort: 80
             name: http
           - containerPort: 9380
             name: http-api
-          {{- if .Values.ragflow.admin.enabled }}
-          - containerPort: 9381
-            name: admin
-          {{- end }}
         volumeMounts:
           - mountPath: /etc/nginx/conf.d/ragflow.conf
             subPath: ragflow.conf
@@ -77,7 +73,7 @@ spec:
         envFrom:
           - secretRef:
               name: {{ include "ragflow.fullname" . }}-env-config
-        {{- with .Values.ragflow.deployment.resources }}
+        {{- with .Values.ragflow.webserver.deployment.resources }}
         resources:
           {{- . | toYaml | nindent 10 }}
         {{- end }}
@@ -95,39 +91,229 @@ metadata:
   name: {{ include "ragflow.fullname" . }}
   labels:
     {{- include "ragflow.labels" . | nindent 4 }}
-    app.kubernetes.io/component: ragflow
+    app.kubernetes.io/component: ragflow-webserver
 spec:
   selector:
     {{- include "ragflow.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: ragflow
+    app.kubernetes.io/component: ragflow-webserver
   ports:
     - protocol: TCP
       port: 80
       targetPort: http
       name: http
-  type: {{ .Values.ragflow.service.type }}
+  type: {{ .Values.ragflow.webserver.service.type }}
 ---
-{{- if .Values.ragflow.api.service.enabled }}
+{{- if .Values.ragflow.webserver.api.service.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
   name: {{ .Release.Name }}-api
   labels:
     {{- include "ragflow.labels" . | nindent 4 }}
-    app.kubernetes.io/component: ragflow
+    app.kubernetes.io/component: ragflow-webserver
 spec:
   selector:
     {{- include "ragflow.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: ragflow
+    app.kubernetes.io/component: ragflow-webserver
   ports:
     - protocol: TCP
       port: 80
       targetPort: http-api
       name: http-api
-  type: {{ .Values.ragflow.api.service.type }}
+  type: {{ .Values.ragflow.webserver.api.service.type }}
 {{- end }}
 
-{{- if .Values.ragflow.admin.enabled }}
+{{/* ------------------------------------------------------------------ */}}
+{{/*  Task Executor Deployment                                            */}}
+{{/* ------------------------------------------------------------------ */}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ragflow.fullname" . }}-taskexecutor
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ragflow-taskexecutor
+spec:
+  {{- if not (((.Values.ragflow.taskexecutor).autoscaling).enabled) }}
+  replicas: {{ .Values.ragflow.taskexecutor.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "ragflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: ragflow-taskexecutor
+  {{- with .Values.ragflow.taskexecutor.deployment.strategy }}
+  strategy:
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "ragflow.labels" . | nindent 8 }}
+        app.kubernetes.io/component: ragflow-taskexecutor
+      annotations:
+        checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
+        checksum/config-ragflow: {{ include (print $.Template.BasePath "/ragflow_config.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "ragflow.serviceAccountName" . }}
+      {{- if or .Values.ragflow.taskexecutor.spot .Values.ragflow.taskexecutor.gpu.enabled }}
+      nodeSelector:
+        {{- if .Values.ragflow.taskexecutor.spot }}
+        cloud.google.com/gke-spot: "true"
+        {{- end }}
+        {{- if .Values.ragflow.taskexecutor.gpu.enabled }}
+        cloud.google.com/gke-accelerator: {{ .Values.ragflow.taskexecutor.gpu.type }}
+        {{- end }}
+      tolerations:
+        {{- if .Values.ragflow.taskexecutor.spot }}
+        - key: cloud.google.com/gke-spot
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+        {{- end }}
+        {{- if .Values.ragflow.taskexecutor.gpu.enabled }}
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+        - key: kubernetes.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
+        - key: cloud.google.com/gke-accelerator
+          operator: Equal
+          value: {{ .Values.ragflow.taskexecutor.gpu.type }}
+          effect: NoSchedule
+        - key: cloud.google.com/machine-family
+          operator: Exists
+          effect: NoSchedule
+        {{- end }}
+      {{- end }}
+      {{- if or .Values.global.imagePullSecrets .Values.ragflow.image.pullSecrets }}
+      imagePullSecrets:
+        {{- with .Values.global.imagePullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.ragflow.image.pullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      containers:
+      - name: ragflow-taskexecutor
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.ragflow.image.repository) }}:{{ .Values.ragflow.image.tag }}
+        {{- with .Values.ragflow.image.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
+        args:
+          - "--disable-webserver"
+          - "--disable-datasync"
+          - "--workers={{ .Values.ragflow.taskexecutor.workers }}"
+        volumeMounts:
+          {{- with .Values.ragflow.service_conf }}
+          - mountPath: /ragflow/conf/local.service_conf.yaml
+            subPath: local.service_conf.yaml
+            name: service-conf-volume
+          {{- end }}
+          {{- with .Values.ragflow.llm_factories }}
+          - mountPath: /ragflow/conf/llm_factories.json
+            subPath: llm_factories.json
+            name: service-conf-volume
+          {{- end }}
+        envFrom:
+          - secretRef:
+              name: {{ include "ragflow.fullname" . }}-env-config
+        {{- if or .Values.ragflow.taskexecutor.deployment.resources .Values.ragflow.taskexecutor.gpu.enabled }}
+        resources:
+          {{- with .Values.ragflow.taskexecutor.deployment.resources }}
+          {{- . | toYaml | nindent 10 }}
+          {{- end }}
+          {{- if .Values.ragflow.taskexecutor.gpu.enabled }}
+          limits:
+            nvidia.com/gpu: {{ .Values.ragflow.taskexecutor.gpu.count | quote }}
+          {{- end }}
+        {{- end }}
+      volumes:
+        - name: service-conf-volume
+          configMap:
+            name: ragflow-service-config
+
+{{/* ------------------------------------------------------------------ */}}
+{{/*  Data Sync Deployment                                                */}}
+{{/* ------------------------------------------------------------------ */}}
+{{- if .Values.ragflow.datasync.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ragflow.fullname" . }}-datasync
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ragflow-datasync
+spec:
+  replicas: {{ .Values.ragflow.datasync.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ragflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: ragflow-datasync
+  {{- with .Values.ragflow.datasync.deployment.strategy }}
+  strategy:
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "ragflow.labels" . | nindent 8 }}
+        app.kubernetes.io/component: ragflow-datasync
+      annotations:
+        checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
+        checksum/config-ragflow: {{ include (print $.Template.BasePath "/ragflow_config.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "ragflow.serviceAccountName" . }}
+      {{- if or .Values.global.imagePullSecrets .Values.ragflow.image.pullSecrets }}
+      imagePullSecrets:
+        {{- with .Values.global.imagePullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.ragflow.image.pullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      containers:
+      - name: ragflow-datasync
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.ragflow.image.repository) }}:{{ .Values.ragflow.image.tag }}
+        {{- with .Values.ragflow.image.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
+        args:
+          - "--disable-webserver"
+          - "--disable-taskexecutor"
+        volumeMounts:
+          {{- with .Values.ragflow.service_conf }}
+          - mountPath: /ragflow/conf/local.service_conf.yaml
+            subPath: local.service_conf.yaml
+            name: service-conf-volume
+          {{- end }}
+          {{- with .Values.ragflow.llm_factories }}
+          - mountPath: /ragflow/conf/llm_factories.json
+            subPath: llm_factories.json
+            name: service-conf-volume
+          {{- end }}
+        envFrom:
+          - secretRef:
+              name: {{ include "ragflow.fullname" . }}-env-config
+        {{- with .Values.ragflow.datasync.deployment.resources }}
+        resources:
+          {{- . | toYaml | nindent 10 }}
+        {{- end }}
+      volumes:
+        - name: service-conf-volume
+          configMap:
+            name: ragflow-service-config
+{{- end }}
+
+{{/* ------------------------------------------------------------------ */}}
+{{/*  Admin Server Service (optional)                                     */}}
+{{/* ------------------------------------------------------------------ */}}
+{{- if ((.Values.ragflow.admin).enabled) }}
 ---
 apiVersion: v1
 kind: Service
@@ -135,11 +321,11 @@ metadata:
   name: {{ .Release.Name }}-admin
   labels:
     {{- include "ragflow.labels" . | nindent 4 }}
-    app.kubernetes.io/component: ragflow
+    app.kubernetes.io/component: ragflow-webserver
 spec:
   selector:
     {{- include "ragflow.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: ragflow
+    app.kubernetes.io/component: ragflow-webserver
   ports:
     - protocol: TCP
       port: {{ .Values.ragflow.admin.port }}

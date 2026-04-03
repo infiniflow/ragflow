@@ -40,7 +40,7 @@ class TestAuthorization:
     )
     def test_invalid_auth(self, invalid_auth, tmp_path, expected_code, expected_message):
         res = download_document(invalid_auth, "dataset_id", "document_id", tmp_path / "ragflow_tes.txt")
-        assert res.status_code == 401
+        assert res.status_code == codes.ok
         with (tmp_path / "ragflow_tes.txt").open("r") as f:
             response_json = json.load(f)
         assert response_json["code"] == expected_code

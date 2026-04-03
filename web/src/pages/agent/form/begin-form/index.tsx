@@ -1,5 +1,4 @@
 import { Collapse } from '@/components/collapse';
-import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -16,10 +15,10 @@ import { FormTooltip } from '@/components/ui/tooltip';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { Plus } from 'lucide-react';
-import { memo, useEffect, useMemo, useRef } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { AgentDialogueMode, BeginQueryType } from '../../constant';
+import { AgentDialogueMode } from '../../constant';
 import { INextOperatorForm } from '../../interface';
 import { ParameterDialog } from './parameter-dialog';
 import { QueryTable } from './query-table';
@@ -51,11 +50,6 @@ function BeginForm({ node }: INextOperatorForm) {
 
   const inputs = useWatch({ control: form.control, name: 'inputs' });
   const mode = useWatch({ control: form.control, name: 'mode' });
-
-  const hasFileInput = useMemo(
-    () => inputs?.some((x) => x.type === BeginQueryType.File),
-    [inputs],
-  );
 
   const enablePrologue = useWatch({
     control: form.control,
@@ -198,14 +192,6 @@ function BeginForm({ node }: INextOperatorForm) {
                 otherThanCurrentQuery={otherThanCurrentQuery}
                 submit={ok}
               ></ParameterDialog>
-            )}
-            {hasFileInput && (
-              <LayoutRecognizeFormField
-                name="layout_recognize"
-                horizontal={false}
-                showMineruOptions={false}
-                showPaddleocrOptions={false}
-              ></LayoutRecognizeFormField>
             )}
           </>
         )}

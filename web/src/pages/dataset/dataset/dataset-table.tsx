@@ -114,7 +114,6 @@ export function DatasetTable({
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
-    getRowId: (row) => row.id, // Use document ID instead of row index
     manualPagination: true, //we're doing manual "server-side" pagination
     state: {
       sorting,
@@ -152,8 +151,6 @@ export function DatasetTable({
             table.getRowModel().rows.map((row) => (
               <TableRow
                 key={row.id}
-                data-testid="document-row"
-                data-doc-name={row.original.name}
                 data-state={row.getIsSelected() && 'selected'}
                 className="group"
               >

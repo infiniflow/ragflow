@@ -20,7 +20,8 @@ import re
 from collections import defaultdict
 from io import BytesIO
 
-from pypdf import PdfReader as pdf2_read
+from PIL import Image
+from PyPDF2 import PdfReader as pdf2_read
 
 from deepdoc.parser import PdfParser, PlainParser
 from deepdoc.parser.ppt_parser import RAGFlowPptParser
@@ -28,7 +29,6 @@ from rag.app.naive import by_plaintext, PARSERS
 from common.parser_config_utils import normalize_layout_recognizer
 from rag.nlp import rag_tokenizer
 from rag.nlp import tokenize
-from rag.utils.lazy_image import ensure_pil_image, is_image_like
 
 
 class Pdf(PdfParser):
@@ -228,10 +228,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         for pn, (txt, img) in enumerate(sections):
             d = copy.deepcopy(doc)
             pn += from_page
-            if not is_image_like(img):
+            if not isinstance(img, Image.Image):
                 img = None
-            else:
-                img = ensure_pil_image(img)
             d["image"] = img
             d["page_num_int"] = [pn + 1]
             d["top_int"] = [0]

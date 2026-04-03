@@ -88,12 +88,12 @@ class TestChunksDeletion:
     @pytest.mark.parametrize(
         "payload, expected_message, remaining",
         [
-            pytest.param(None, "", 5, marks=pytest.mark.p3),
+            pytest.param(None, "TypeError", 5, marks=pytest.mark.skip),
             pytest.param({"ids": ["invalid_id"]}, "rm_chunk deleted chunks 0, expect 1", 5, marks=pytest.mark.p3),
             pytest.param("not json", "UnboundLocalError", 5, marks=pytest.mark.skip(reason="pull/6376")),
             pytest.param(lambda r: {"ids": r[:1]}, "", 4, marks=pytest.mark.p3),
             pytest.param(lambda r: {"ids": r}, "", 1, marks=pytest.mark.p1),
-            pytest.param({"ids": []}, "", 5, marks=pytest.mark.p3),
+            pytest.param({"ids": []}, "", 0, marks=pytest.mark.p3),
         ],
     )
     def test_basic_scenarios(self, add_chunks_func, payload, expected_message, remaining):
@@ -107,10 +107,7 @@ class TestChunksDeletion:
                 document.delete_chunks(**payload)
             assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
-            if payload is None:
-                document.delete_chunks()
-            else:
-                document.delete_chunks(**payload)
+            document.delete_chunks(**payload)
 
         remaining_chunks = document.list_chunks()
         assert len(remaining_chunks) == remaining, str(remaining_chunks)

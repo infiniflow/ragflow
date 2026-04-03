@@ -41,7 +41,6 @@ const modelsWithBaseUrl = [
   LLMFactory.AzureOpenAI,
   LLMFactory.TongYiQianWen,
   LLMFactory.MiniMax,
-  LLMFactory.SILICONFLOW,
 ];
 
 const ApiKeyModal = ({
@@ -87,8 +86,6 @@ const ApiKeyModal = ({
       okText={t('save')}
       cancelText={t('cancel')}
       className="!w-[600px]"
-      testId="apikey-modal"
-      okButtonTestId="apikey-save"
     >
       <Form {...form}>
         <div className="space-y-4 py-4">
@@ -106,7 +103,6 @@ const ApiKeyModal = ({
                 <FormControl>
                   <Input
                     {...field}
-                    data-testid="apikey-input"
                     onKeyDown={handleKeyDown}
                     className="w-full"
                   />
@@ -128,9 +124,7 @@ const ApiKeyModal = ({
                         ? t('minimaxBaseUrlTip')
                         : llmFactory === LLMFactory.TongYiQianWen
                           ? t('tongyiBaseUrlTip')
-                          : llmFactory === LLMFactory.SILICONFLOW
-                            ? t('siliconBaseUrlTip')
-                            : t('baseUrlTip')
+                          : t('baseUrlTip')
                     }
                   >
                     {t('baseUrl')}
@@ -143,9 +137,7 @@ const ApiKeyModal = ({
                           ? t('tongyiBaseUrlPlaceholder')
                           : llmFactory === LLMFactory.MiniMax
                             ? t('minimaxBaseUrlPlaceholder')
-                            : llmFactory === LLMFactory.SILICONFLOW
-                              ? 'https://api.siliconflow.cn/v1'
-                              : 'https://api.openai.com/v1'
+                            : 'https://api.openai.com/v1'
                       }
                       onKeyDown={handleKeyDown}
                       className="w-full"

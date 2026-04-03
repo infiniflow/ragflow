@@ -1,16 +1,15 @@
 import { ElementDatum, Graph, IElementEvent } from '@antv/g6';
 import isEmpty from 'lodash/isEmpty';
-import { useCallback, useEffect, useId, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { buildNodesAndCombos, defaultComboLabel } from './util';
 
 import { useIsDarkTheme } from '@/components/theme-provider';
-import { cn } from '@/lib/utils';
 import styles from './index.module.less';
 
 const TooltipColorMap = {
-  combo: 'text-red-600',
-  node: 'text-black',
-  edge: 'text-blue-600',
+  combo: 'red',
+  node: 'black',
+  edge: 'blue',
 };
 
 interface IProps {
@@ -19,7 +18,6 @@ interface IProps {
 }
 
 const ForceGraph = ({ data, show }: IProps) => {
-  const tooltipId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
   const isDark = useIsDarkTheme();
@@ -54,46 +52,23 @@ const ForceGraph = ({ data, show }: IProps) => {
           getContent: (e: IElementEvent, items: ElementDatum) => {
             if (Array.isArray(items)) {
               if (items.some((x) => x?.isCombo)) {
-                return `<p class="font-semibold text-red-600">${items?.[0]?.data?.label}</p>`;
+                return `<p style="font-weight:600;color:red">${items?.[0]?.data?.label}</p>`;
               }
-
-              return items
-                .flatMap((item) => {
-                  return [
-                    '<div ',
-                    `id="${tooltipId}"`,
-                    `aria-label="${item?.id}"`,
-                    `role="tooltip"`,
-                    `class="${TooltipColorMap[e['targetType'] as keyof typeof TooltipColorMap]}"`,
-                    '>',
-                    `<h3>${item?.id}</h3>`,
-                    '<dl class="mb-1 empty:hidden">',
-                    ...(item?.entity_type
-                      ? [
-                          '<div class="flex items-center gap-[.5ch]">',
-                          '<dt><b>Entity type: </b></dt>',
-                          `<dd>${item.entity_type}</dd>`,
-                          '</div>',
-                        ]
-                      : []),
-                    ...(item?.weight
-                      ? [
-                          '<div class="flex items-center gap-[.5ch]">',
-                          '<dt><b>Weight: </b></dt>',
-                          `<dd>${item.weight}</dd>`,
-                          '</div>',
-                        ]
-                      : []),
-                    '</dl>',
-                    item.description
-                      ? `<p class="text-xs">${item.description}</p>`
-                      : '',
-                    '</div>',
-                  ];
-                })
-                .join('');
+              let result = ``;
+              items.forEach((item) => {
+                result += `<section style="color:${TooltipColorMap[e['targetType'] as keyof typeof TooltipColorMap]};"><h3>${item?.id}</h3>`;
+                if (item?.entity_type) {
+                  result += `<div style="padding-bottom: 6px;"><b>Entity type: </b>${item?.entity_type}</div>`;
+                }
+                if (item?.weight) {
+                  result += `<div><b>Weight: </b>${item?.weight}</div>`;
+                }
+                if (item?.description) {
+                  result += `<p>${item?.description}</p>`;
+                }
+              });
+              return result + '</section>';
             }
-
             return undefined;
           },
         },
@@ -107,32 +82,34 @@ const ForceGraph = ({ data, show }: IProps) => {
       node: {
         style: {
           size: (d) => {
-            const size = 100 + ((d.rank as number) || 0) * 5;
-            return Math.min(size, 300);
+            let size = 100 + ((d.rank as number) || 0) * 5;
+            size = size > 300 ? 300 : size;
+            return size;
           },
-
           labelText: (d) => d.id,
           labelFill: isDark ? 'rgba(255,255,255,1)' : 'rgba(0,0,0,1)',
           // labelPadding: 30,
           labelFontSize: 40,
-          // labelOffsetX: 20,
+          //   labelOffsetX: 20,
           labelOffsetY: 20,
           labelPlacement: 'center',
           labelWordWrap: true,
         },
         palette: {
           type: 'group',
-          field: (d) => d?.entity_type as string,
+          field: (d) => {
+            return d?.entity_type as string;
+          },
         },
       },
       edge: {
         style: (model) => {
           const weight: number = Number(model?.weight) || 2;
-
+          const lineWeight = weight * 4;
           return {
             stroke: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
             lineDash: [10, 10],
-            lineWidth: Math.min(weight * 4, 8),
+            lineWidth: lineWeight > 8 ? 8 : lineWeight,
           };
         },
       },
@@ -172,9 +149,12 @@ const ForceGraph = ({ data, show }: IProps) => {
   return (
     <div
       ref={containerRef}
-      className={cn(styles.forceContainer, 'size-full', !show && 'hidden')}
-      aria-haspopup="true"
-      aria-describedby={tooltipId}
+      className={styles.forceContainer}
+      style={{
+        width: '100%',
+        height: '100%',
+        display: show ? 'block' : 'none',
+      }}
     />
   );
 };

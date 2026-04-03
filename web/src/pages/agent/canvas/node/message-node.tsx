@@ -1,5 +1,5 @@
 import { NodeCollapsible } from '@/components/collapse';
-import { IMessageNode } from '@/interfaces/database/agent';
+import { IMessageNode } from '@/interfaces/database/flow';
 import { cn } from '@/lib/utils';
 import { useGetVariableLabelOrTypeByValue } from '@/pages/agent/hooks/use-get-begin-query';
 import { NodeProps } from '@xyflow/react';

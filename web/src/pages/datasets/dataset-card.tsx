@@ -23,7 +23,7 @@ export function DatasetCard({
     <HomeCard
       data={{
         ...dataset,
-        description: `${dataset.document_count} ${t('knowledgeDetails.files')}`,
+        description: `${dataset.doc_num} ${t('knowledgeDetails.files')}`,
       }}
       moreDropdown={
         <DatasetDropdown
@@ -45,7 +45,7 @@ export function SeeAllCard() {
   return (
     <Card
       className="w-full flex-none h-full cursor-pointer"
-      onClick={() => navigateToDatasetList({ isCreate: false })}
+      onClick={navigateToDatasetList}
     >
       <CardContent className="p-2.5 pt-1 w-full h-full flex items-center justify-center gap-1.5 text-text-secondary">
         {t('common.seeAll')} <ChevronRight className="size-4" />

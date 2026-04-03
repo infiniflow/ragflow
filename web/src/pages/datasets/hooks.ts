@@ -16,14 +16,8 @@ export const useSearchKnowledge = () => {
 
 export interface Iknowledge {
   name: string;
-  embedding_model?: string;
-  chunk_method?: string;
-  parseType?: number;
-  pipeline_id?: string | null;
-  ext?: {
-    language?: string;
-    [key: string]: any;
-  };
+  embd_id: string;
+  parser_id: string;
 }
 export const useSaveKnowledge = () => {
   const { visible: visible, hideModal, showModal } = useSetModalState();
@@ -36,7 +30,7 @@ export const useSaveKnowledge = () => {
 
       if (ret?.code === 0) {
         hideModal();
-        navigateToDataset(ret.data.id)();
+        navigateToDataset(ret.data.kb_id)();
       }
     },
     [createKnowledge, hideModal, navigateToDataset],

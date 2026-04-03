@@ -33,7 +33,7 @@ class Chunk(Base):
         self.create_timestamp = 0.0
         self.dataset_id = None
         self.document_name = ""
-        self.document_keyword = ""
+        self.documnet_keyword = ""
         self.document_id = ""
         self.available = True
         # Additional fields for retrieval results
@@ -49,7 +49,7 @@ class Chunk(Base):
 
         #for backward compatibility
         if not self.document_name:
-            self.document_name = self.document_keyword
+            self.document_name = self.documnet_keyword
 
 
     def update(self, update_message: dict):

@@ -172,26 +172,14 @@ export const useSendMessage = (controller: AbortController) => {
             id,
             content: value.trim(),
             role: MessageType.User,
-            files,
+            files: files,
             conversationId: targetConversationId,
           },
           enableInternet,
           enableThinking,
         });
       }
-
       clearFiles();
-
-      // Auto scroll to bottom when sending new message
-      if (messageContainerRef.current) {
-        const el = messageContainerRef.current;
-
-        requestAnimationFrame(() => {
-          el.scrollTo({
-            top: el.scrollHeight,
-          });
-        });
-      }
     },
     [
       value,
@@ -202,7 +190,6 @@ export const useSendMessage = (controller: AbortController) => {
       clearFiles,
       setValue,
       sendMessage,
-      messageContainerRef,
     ],
   );
 

@@ -1,12 +1,14 @@
 import SvgIcon from '@/components/svg-icon';
-import Divider from '@/components/ui/divider';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useSelectParserList } from '@/hooks/use-user-setting-request';
+import { Col, Divider, Empty, Row, Typography } from 'antd';
 import DOMPurify from 'dompurify';
 import camelCase from 'lodash/camelCase';
 import { useMemo } from 'react';
 import { TagTabs } from './tag-tabs';
 import { ImageMap } from './utils';
+
+const { Text } = Typography;
 
 const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
   const parserList = useSelectParserList();
@@ -31,45 +33,39 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
   }, [chunkMethod]);
 
   return (
-    <div>
+    <section>
       {imageList.length > 0 ? (
         <>
           <h5 className="font-semibold text-base mt-0 mb-1">
             {`"${item.title}" ${t('methodTitle')}`}
           </h5>
           <p
-            className="[&_ul]:list-disc [&_ol]:list-decimal [&_:is(ul,ol)]:pl-8"
             dangerouslySetInnerHTML={{
               __html: DOMPurify.sanitize(item.description),
             }}
           ></p>
           <h5 className="font-semibold text-base mt-4 mb-1">{`"${item.title}" ${t('methodExamples')}`}</h5>
-          <span className="text-text-secondary">
-            {t('methodExamplesDescription')}
-          </span>
-          <div className="grid grid-cols-2 gap-2.5 mt-4">
+          <Text>{t('methodExamplesDescription')}</Text>
+          <Row gutter={[10, 10]} className="mt-4">
             {imageList.map((x) => (
-              <SvgIcon
-                name={x}
-                width={'100%'}
-                className="w-full"
-                key={x}
-              ></SvgIcon>
+              <Col span={12} key={x}>
+                <SvgIcon name={x} width={'100%'} className="w-full"></SvgIcon>
+              </Col>
             ))}
-          </div>
+          </Row>
           <h5 className="font-semibold text-base mt-4 mb-1">
             {item.title} {t('dialogueExamplesTitle')}
           </h5>
           <Divider></Divider>
         </>
       ) : (
-        <div className="flex flex-col items-center justify-center py-8">
-          <p className="text-text-secondary mb-4">{t('methodEmpty')}</p>
+        <Empty description={''} image={null}>
+          <p>{t('methodEmpty')}</p>
           <SvgIcon name={'chunk-method/chunk-empty'} width={'100%'}></SvgIcon>
-        </div>
+        </Empty>
       )}
       {chunkMethod === 'tag' && <TagTabs></TagTabs>}
-    </div>
+    </section>
   );
 };
 

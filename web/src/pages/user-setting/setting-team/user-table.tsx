@@ -71,11 +71,11 @@ const UserTable = ({ searchUser }: { searchUser: string }) => {
 
   const renderSortIcon = () => {
     if (sortOrder === 'asc') {
-      return <ArrowUp className="size-[1em] " />;
+      return <ArrowUp className="ml-1 h-4 w-4 " />;
     } else if (sortOrder === 'desc') {
-      return <ArrowDown className="size-[1em]" />;
+      return <ArrowDown className="ml-1 h-4 w-4" />;
     } else {
-      return <ArrowUpDown className="size-[1em]" />;
+      return <ArrowUpDown className="ml-1 h-4 w-4" />;
     }
   };
   return (
@@ -84,16 +84,13 @@ const UserTable = ({ searchUser }: { searchUser: string }) => {
         <TableHeader className="bg-bg-title">
           <TableRow className="hover:bg-bg-title">
             <TableHead className="h-12 px-4">{t('common.name')}</TableHead>
-            <TableHead className="h-12 px-4">
-              <div className="flex items-center gap-1">
+            <TableHead
+              className="h-12 px-4 cursor-pointer"
+              onClick={toggleSortOrder}
+            >
+              <div className="flex items-center">
                 {t('setting.updateDate')}
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={toggleSortOrder}
-                >
-                  {renderSortIcon()}
-                </Button>
+                {renderSortIcon()}
               </div>
             </TableHead>
             <TableHead className="h-12 px-4">{t('setting.email')}</TableHead>
@@ -113,7 +110,7 @@ const UserTable = ({ searchUser }: { searchUser: string }) => {
           ) : sortedData && sortedData.length > 0 ? (
             sortedData.map((record) => (
               <TableRow key={record.user_id} className="hover:bg-bg-card">
-                <TableCell className="p-4">
+                <TableCell className="p-4 ">
                   <div className="flex gap-1 items-center">
                     <RAGFlowAvatar
                       isPerson

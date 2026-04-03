@@ -35,7 +35,6 @@ export interface Variable {
   temperature?: number;
   top_p?: number;
   llm_id?: string;
-  tenant_llm_id?: string;
 }
 
 export interface IDialog {
@@ -49,7 +48,6 @@ export interface IDialog {
   kb_names: string[];
   language: string;
   llm_id: string;
-  tenant_llm_id?: string;
   llm_setting: Variable;
   llm_setting_type: string;
   name: string;

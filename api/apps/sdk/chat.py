@@ -235,18 +235,16 @@ async def delete_chats(tenant_id):
     success_count = 0
     req = await get_request_json()
     if not req:
-        return get_result()
-
-    ids = req.get("ids")
+        ids = None
+    else:
+        ids = req.get("ids")
     if not ids:
-        if req.get("delete_all") is True:
-            ids = [d.id for d in DialogService.query(tenant_id=tenant_id, status=StatusEnum.VALID.value)]
-            if not ids:
-                return get_result()
-        else:
-            return get_result()
-
-    id_list = ids
+        id_list = []
+        dias = DialogService.query(tenant_id=tenant_id, status=StatusEnum.VALID.value)
+        for dia in dias:
+            id_list.append(dia.id)
+    else:
+        id_list = ids
 
     unique_id_list, duplicate_messages = check_duplicate_ids(id_list, "assistant")
 

@@ -49,8 +49,6 @@ task_executor:
 user_default_llm:
   default_models:
     embedding_model:
-      name: 'bge-m3'
-      factory: 'xxxx'
       api_key: 'xxx'
       base_url: 'http://localhost:6380'
 # postgres:

@@ -68,23 +68,22 @@ class TestTimestampToDate:
         # Test with a specific timestamp
         timestamp = 1704067200000  # 2024-01-01 00:00:00 UTC
         result = timestamp_to_date(timestamp)
-        expected = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp / 1000))
+        expected = "2024-01-01 08:00:00"
         assert result == expected
 
     def test_custom_format_string(self):
         """Test conversion with custom format string"""
         timestamp = 1704067200000  # 2024-01-01 00:00:00 UTC
-        local = time.localtime(timestamp / 1000)
 
         # Test different format strings
         result1 = timestamp_to_date(timestamp, "%Y-%m-%d")
-        assert result1 == time.strftime("%Y-%m-%d", local)
+        assert result1 == "2024-01-01"
 
         result2 = timestamp_to_date(timestamp, "%H:%M:%S")
-        assert result2 == time.strftime("%H:%M:%S", local)
+        assert result2 == "08:00:00"
 
         result3 = timestamp_to_date(timestamp, "%Y/%m/%d %H:%M")
-        assert result3 == time.strftime("%Y/%m/%d %H:%M", local)
+        assert result3 == "2024/01/01 08:00"
 
     def test_zero_timestamp(self):
         """Test conversion with zero timestamp (epoch)"""
@@ -105,14 +104,14 @@ class TestTimestampToDate:
         """Test that string timestamp input is handled correctly"""
         timestamp_str = "1704067200000"
         result = timestamp_to_date(timestamp_str)
-        expected = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(int(timestamp_str) / 1000))
+        expected = "2024-01-01 08:00:00"
         assert result == expected
 
     def test_float_timestamp_input(self):
         """Test that float timestamp input is handled correctly"""
         timestamp_float = 1704067200000.0
         result = timestamp_to_date(timestamp_float)
-        expected = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(int(timestamp_float) / 1000))
+        expected = "2024-01-01 08:00:00"
         assert result == expected
 
     def test_different_timezones_handled(self):
@@ -131,18 +130,19 @@ class TestTimestampToDate:
         timestamp = 1704067200123  # 2024-01-01 00:00:00.123 UTC
         result = timestamp_to_date(timestamp)
 
-        # Milliseconds are truncated, so result should match the base timestamp
-        expected = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(int(timestamp) / 1000))
-        assert result == expected
+        # Should still return "08:00:00" since milliseconds are truncated
+        assert "08:00:00" in result
 
     def test_various_timestamps(self):
         """Test conversion with various timestamp values"""
-        test_cases = [1609459200000, 4102444800000]
+        test_cases = [
+            (1609459200000, "2021-01-01 08:00:00"),  # 2020-12-31 16:00:00 UTC
+            (4102444800000, "2100-01-01"),  # Future date
+        ]
 
-        for timestamp in test_cases:
+        for timestamp, expected_prefix in test_cases:
             result = timestamp_to_date(timestamp)
-            expected = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp / 1000))
-            assert result == expected
+            assert expected_prefix in result
 
     def test_return_type_always_string(self):
         """Test that return type is always string regardless of input"""
@@ -176,22 +176,21 @@ class TestDateStringToTimestamp:
         """Test basic date string to timestamp conversion with default format"""
         date_string = "2024-01-01 08:00:00"
         result = date_string_to_timestamp(date_string)
-        expected = int(time.mktime(time.strptime(date_string, "%Y-%m-%d %H:%M:%S")) * 1000)
+        expected = 1704067200000
         assert result == expected
 
     def test_custom_format_string(self):
         """Test conversion with custom format strings"""
         # Test different date formats
         test_cases = [
-            ("2024-01-01", "%Y-%m-%d"),
-            ("2024/01/01 12:30:45", "%Y/%m/%d %H:%M:%S"),
-            ("01-01-2024", "%m-%d-%Y"),
-            ("20240101", "%Y%m%d"),
+            ("2024-01-01", "%Y-%m-%d", 1704038400000),
+            ("2024/01/01 12:30:45", "%Y/%m/%d %H:%M:%S", 1704083445000),
+            ("01-01-2024", "%m-%d-%Y", 1704038400000),
+            ("20240101", "%Y%m%d", 1704038400000),
         ]
 
-        for date_string, format_string in test_cases:
+        for date_string, format_string, expected in test_cases:
             result = date_string_to_timestamp(date_string, format_string)
-            expected = int(time.mktime(time.strptime(date_string, format_string)) * 1000)
             assert result == expected
 
     def test_return_type_integer(self):
@@ -214,15 +213,14 @@ class TestDateStringToTimestamp:
     def test_different_dates(self):
         """Test conversion with various date strings"""
         test_cases = [
-            "2024-01-01    00:00:00",
-            "2020-12-31 16:00:00",
-            "2023-06-15 14:30:00",
-            "2025-12-25 23:59:59",
+            ("2024-01-01    00:00:00", 1704038400000),
+            ("2020-12-31 16:00:00", 1609401600000),
+            ("2023-06-15 14:30:00", 1686810600000),
+            ("2025-12-25 23:59:59", 1766678399000),
         ]
 
-        for date_string in test_cases:
+        for date_string, expected in test_cases:
             result = date_string_to_timestamp(date_string)
-            expected = int(time.mktime(time.strptime(date_string, "%Y-%m-%d %H:%M:%S")) * 1000)
             assert result == expected
 
     def test_epoch_date(self):
@@ -238,15 +236,15 @@ class TestDateStringToTimestamp:
         """Test conversion with leap year date"""
         date_string = "2024-02-29 12:00:00"  # Valid leap year date
         result = date_string_to_timestamp(date_string)
-        expected = int(time.mktime(time.strptime(date_string, "%Y-%m-%d %H:%M:%S")) * 1000)
+        expected = 1709179200000  # 2024-02-29 12:00:00 in milliseconds
         assert result == expected
 
     def test_date_only_string(self):
         """Test conversion with date-only format (assumes 00:00:00 time)"""
         date_string = "2024-01-01"
         result = date_string_to_timestamp(date_string, "%Y-%m-%d")
-        # Should be equivalent to "2024-01-01 00:00:00" in local timezone
-        expected = int(time.mktime(time.strptime(date_string, "%Y-%m-%d")) * 1000)
+        # Should be equivalent to "2024-01-01 00:00:00"
+        expected = 1704038400000
         assert result == expected
 
     def test_with_whitespace(self):

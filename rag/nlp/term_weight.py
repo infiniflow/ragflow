@@ -60,16 +60,16 @@ class Dealer:
 
         def load_dict(fnm):
             res = {}
-            with open(fnm, "r") as f:
-                while True:
-                    line = f.readline()
-                    if not line:
-                        break
-                    arr = line.replace("\n", "").split("\t")
-                    if len(arr) < 2:
-                        res[arr[0]] = 0
-                    else:
-                        res[arr[0]] = int(arr[1])
+            f = open(fnm, "r")
+            while True:
+                line = f.readline()
+                if not line:
+                    break
+                arr = line.replace("\n", "").split("\t")
+                if len(arr) < 2:
+                    res[arr[0]] = 0
+                else:
+                    res[arr[0]] = int(arr[1])
 
             c = 0
             for _, v in res.items():
@@ -81,8 +81,7 @@ class Dealer:
         fnm = os.path.join(get_project_base_directory(), "rag/res")
         self.ne, self.df = {}, {}
         try:
-            with open(os.path.join(fnm, "ner.json"), "r") as f:
-                self.ne = json.load(f)
+            self.ne = json.load(open(os.path.join(fnm, "ner.json"), "r"))
         except Exception:
             logging.warning("Load ner.json FAIL!")
         try:

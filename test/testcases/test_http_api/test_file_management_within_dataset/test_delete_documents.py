@@ -45,8 +45,8 @@ class TestDocumentsDeletion:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message, remaining",
         [
-            (None, 0, "", 3),
-            ({"ids": []}, 0, "", 3),
+            (None, 0, "", 0),
+            ({"ids": []}, 0, "", 0),
             ({"ids": ["invalid_id"]}, 102, "Documents not found: ['invalid_id']", 3),
             (
                 {"ids": ["\n!?。；！？\"'"]},

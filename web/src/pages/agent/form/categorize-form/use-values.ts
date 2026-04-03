@@ -1,5 +1,5 @@
 import { ModelVariableType } from '@/constants/knowledge';
-import { RAGFlowNodeType } from '@/interfaces/database/agent';
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { isEmpty, isPlainObject } from 'lodash';
 import { useMemo } from 'react';
 

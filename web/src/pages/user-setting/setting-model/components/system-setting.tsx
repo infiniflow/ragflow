@@ -73,7 +73,6 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
         value: formData.llm_id,
         options: modelOptions as SelectWithSearchFlagOptionType[],
         tooltip: t('chatModelTip'),
-        testId: 'default-llm-combobox',
       },
       {
         id: 'embd_id',
@@ -83,7 +82,6 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
           LlmModelType.Embedding
         ] as SelectWithSearchFlagOptionType[],
         tooltip: t('embeddingModelTip'),
-        testId: 'default-embedding-combobox',
       },
       {
         id: 'img2txt_id',
@@ -131,7 +129,6 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
     tooltip,
     id,
     isRequired,
-    testId,
   }: {
     id: string;
     label: string;
@@ -139,7 +136,6 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
     options: SelectWithSearchFlagOptionType[];
     tooltip?: string;
     isRequired?: boolean;
-    testId?: string;
   }) => {
     return (
       <div className="flex gap-3">
@@ -166,23 +162,19 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
           onChange={(value) => handleFieldChange(id, value)}
           placeholder={t('selectModelPlaceholder')}
           emptyData={t('modelEmptyTip')}
-          testId={testId}
         />
       </div>
     );
   };
 
   return (
-    <article className="rounded-lg w-full">
-      <header className="py-5">
-        <h2 className="text-2xl font-medium text-text-primary">
-          {t('systemModelSettings')}
-        </h2>
-        <p className="mt-1 text-sm text-text-secondary ">
+    <div className="rounded-lg w-full">
+      <div className="flex flex-col py-4">
+        <div className="text-2xl font-medium">{t('systemModelSettings')}</div>
+        <div className="text-sm text-text-secondary">
           {t('systemModelDescription')}
-        </p>
-      </header>
-
+        </div>
+      </div>
       <div className="px-7 py-6 space-y-6 max-h-[70vh] overflow-y-auto border border-border-button rounded-lg">
         {llmList.map((item) => (
           <Items key={item.id} {...item} />
@@ -197,7 +189,7 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
             {t('common:cancel')}
           </Button>
         </div> */}
-    </article>
+    </div>
   );
 };
 

@@ -108,15 +108,7 @@ export function LargeModelFormField({
   );
 }
 
-type LargeModelFormFieldWithoutFilterProps = Pick<
-  NextInnerLLMSelectProps,
-  'triggerTestId' | 'optionTestIdPrefix'
->;
-
-export function LargeModelFormFieldWithoutFilter({
-  triggerTestId,
-  optionTestIdPrefix,
-}: LargeModelFormFieldWithoutFilterProps = {}) {
+export function LargeModelFormFieldWithoutFilter() {
   const form = useFormContext();
 
   return (
@@ -126,11 +118,7 @@ export function LargeModelFormFieldWithoutFilter({
       render={({ field }) => (
         <FormItem>
           <FormControl>
-            <NextLLMSelect
-              {...field}
-              triggerTestId={triggerTestId}
-              optionTestIdPrefix={optionTestIdPrefix}
-            />
+            <NextLLMSelect {...field} />
           </FormControl>
           <FormMessage />
         </FormItem>

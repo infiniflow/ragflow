@@ -173,7 +173,7 @@ def delete_user_data(user_id: str) -> dict:
                 if doc_ids:
                     for doc in doc_ids:
                         try:
-                            DocMetadataService.delete_document_metadata(doc["id"], doc["kb_id"], tenant_id=None)
+                            DocMetadataService.delete_document_metadata(doc["id"], skip_empty_check=True)
                         except Exception as e:
                             logging.warning(f"Failed to delete metadata for document {doc['id']}: {e}")
 
@@ -290,7 +290,7 @@ def delete_user_data(user_id: str) -> dict:
                     done_msg += f"- Deleted {doc_delete_res} documents.\n"
                     for doc in created_documents:
                         try:
-                            DocMetadataService.delete_document_metadata(doc['id'], doc['kb_id'], doc['tenant_id'])
+                            DocMetadataService.delete_document_metadata(doc['id'])
                         except Exception as e:
                             logging.warning(f"Failed to delete metadata for document {doc['id']}: {e}")
                     # step2.1.6 update dataset doc&chunk&token cnt

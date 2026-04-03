@@ -73,11 +73,10 @@ const ChunkCard = ({
 
   return (
     <Card
-      as="article"
-      className={classNames(
-        'relative flex-none p-3 pt-6 shadow-none transition-colors',
-        selected && 'bg-text-primary/15',
-      )}
+      className={classNames('relative flex-none', styles.chunkCard, {
+        [`${theme === 'dark' ? styles.cardSelectedDark : styles.cardSelected}`]:
+          selected,
+      })}
     >
       <span
         className="
@@ -89,12 +88,8 @@ const ChunkCard = ({
         {t(`chunk.docType.${chunkType}`)}
       </span>
 
-      <div className="flex items-start justify-between gap-2.5">
-        <Checkbox
-          className="mt-1"
-          onCheckedChange={handleCheck}
-          checked={checked}
-        />
+      <div className="flex items-start justify-between gap-2">
+        <Checkbox onCheckedChange={handleCheck} checked={checked}></Checkbox>
 
         {/* Using <Tooltip> instead of <Popover> to avoid flickering when hovering over the image */}
         {item.image_id && (
@@ -103,44 +98,41 @@ const ChunkCard = ({
               <Image
                 t={imageCacheKey}
                 id={item.image_id}
-                className="mt-1 rounded !w-28 object-contain"
+                className={styles.image}
               />
             </TooltipTrigger>
-
             <TooltipContent
               className="p-0"
-              align="start"
-              side="left"
+              align={'start'}
+              side={'left'}
               sideOffset={-20}
               tabIndex={-1}
             >
               <Image
                 t={imageCacheKey}
                 id={item.image_id}
-                className="size-full max-w-[50vw] max-h-[50vh] object-contain"
+                className={styles.imagePreview}
               />
             </TooltipContent>
           </Tooltip>
         )}
 
         <section
-          className={cn(styles.content, 'flex-1')}
           onDoubleClick={handleContentDoubleClick}
           onClick={handleContentClick}
+          className={cn(styles.content, 'mt-2')}
         >
           <div
             dangerouslySetInnerHTML={{
-              __html: DOMPurify.sanitize(item.content_with_weight).trim(),
+              __html: DOMPurify.sanitize(item.content_with_weight),
             }}
-            className={classNames(
-              // Keep whitespaces?
-              'text-wrap break-words whitespace-pre',
-              textMode === ChunkTextMode.Ellipse && 'line-clamp-3',
-            )}
-          />
+            className={classNames(styles.contentText, {
+              [styles.contentEllipsis]: textMode === ChunkTextMode.Ellipse,
+            })}
+          ></div>
         </section>
 
-        <div>
+        <div className="mt-2">
           <Switch
             checked={enabled}
             onCheckedChange={onChange}

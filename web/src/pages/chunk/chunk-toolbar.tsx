@@ -12,7 +12,7 @@ export function ChunkToolbar({ text }: ChunkToolbarProps) {
         {text}
       </span>
       <div className="flex items-center gap-3">
-        <Button variant={'ghost'} size={'icon'}>
+        <Button variant={'icon'} size={'icon'}>
           <Copy />
         </Button>
         <Button variant={'outline'} size={'sm'}>

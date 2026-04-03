@@ -17,8 +17,8 @@
   caption {
     color: @blurBackground;
     font-size: 14px;
-    // height: 20px;
-    line-height: 1.25;
+    height: 20px;
+    line-height: 20px;
     font-weight: 600;
     margin-bottom: 6px;
   }
@@ -39,18 +39,6 @@
 
   tr:nth-child(even) {
     background-color: #f2f2f22a;
-  }
-
-  // RTL Support for tables
-  &[dir='rtl'] {
-    table {
-      direction: rtl;
-    }
-
-    th,
-    td {
-      text-align: right;
-    }
   }
 }
 

@@ -31,11 +31,11 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 401, "<Unauthorized '401: Unauthorized'>"),
+            (None, 0, "`Authorization` can't be empty"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                401,
-                "<Unauthorized '401: Unauthorized'>",
+                109,
+                "Authentication error: API key is invalid!",
             ),
         ],
     )
@@ -134,7 +134,7 @@ class TestDatasetsDelete:
         assert res["code"] == 0, res
 
         res = list_datasets(HttpApiAuth)
-        assert len(res["data"]) == 3, res
+        assert len(res["data"]) == 0, res
 
     @pytest.mark.p2
     @pytest.mark.usefixtures("add_dataset_func")
@@ -160,7 +160,7 @@ class TestDatasetsDelete:
     def test_id_wrong_uuid(self, HttpApiAuth):
         payload = {"ids": ["d94a8dc02c9711f0930f7fbc369eab6d"]}
         res = delete_datasets(HttpApiAuth, payload)
-        assert res["code"] == 102, res
+        assert res["code"] == 108, res
         assert "lacks permission for dataset" in res["message"], res
 
         res = list_datasets(HttpApiAuth)
@@ -180,7 +180,7 @@ class TestDatasetsDelete:
         if callable(func):
             payload = func(dataset_ids)
         res = delete_datasets(HttpApiAuth, payload)
-        assert res["code"] == 102, res
+        assert res["code"] == 108, res
         assert "lacks permission for dataset" in res["message"], res
 
         res = list_datasets(HttpApiAuth)
@@ -205,7 +205,7 @@ class TestDatasetsDelete:
         assert res["code"] == 0, res
 
         res = delete_datasets(HttpApiAuth, payload)
-        assert res["code"] == 102, res
+        assert res["code"] == 108, res
         assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p3

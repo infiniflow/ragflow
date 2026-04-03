@@ -9,7 +9,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-
+import { AlertDialogOverlay } from '@radix-ui/react-alert-dialog';
 import { DialogProps } from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -27,9 +27,6 @@ interface IProps {
   };
   okButtonText?: string;
   cancelButtonText?: string;
-  testId?: string;
-  confirmButtonTestId?: string;
-  cancelButtonTestId?: string;
 }
 
 export function ConfirmDeleteDialog({
@@ -44,9 +41,6 @@ export function ConfirmDeleteDialog({
   content,
   okButtonText,
   cancelButtonText,
-  testId,
-  confirmButtonTestId,
-  cancelButtonTestId,
 }: IProps & DialogProps) {
   const { t } = useTranslation();
 
@@ -61,57 +55,53 @@ export function ConfirmDeleteDialog({
       defaultOpen={defaultOpen}
     >
       {children && <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>}
-
-      <AlertDialogContent
-        onSelect={(e) => e.preventDefault()}
-        onClick={(e) => e.stopPropagation()}
-        className="bg-bg-base "
-        data-testid={testId ?? 'confirm-delete-dialog'}
+      <AlertDialogOverlay
+        onClick={(e) => {
+          e.stopPropagation();
+        }}
       >
-        <AlertDialogHeader className="space-y-5">
-          <AlertDialogTitle>
-            {title ?? t('common.deleteModalTitle')}
-            <AlertDialogCancel
-              onClick={onCancel}
-              className="border-none bg-transparent hover:border-none hover:bg-transparent absolute right-3 top-3 hover:text-text-primary"
-            >
-              <X size={16} />
-            </AlertDialogCancel>
-          </AlertDialogTitle>
-          {content && (
-            <>
-              <Separator className="w-[calc(100%+48px)] -translate-x-6"></Separator>
-              <AlertDialogDescription className="mt-5">
-                <div className="flex flex-col gap-5  text-base mb-10 px-5">
-                  <div className="text-text-primary">
-                    {content.title || t('common.deleteModalTitle')}
+        <AlertDialogContent
+          onSelect={(e) => e.preventDefault()}
+          onClick={(e) => e.stopPropagation()}
+          className="bg-bg-base "
+        >
+          <AlertDialogHeader className="space-y-5">
+            <AlertDialogTitle>
+              {title ?? t('common.deleteModalTitle')}
+              <AlertDialogCancel
+                onClick={onCancel}
+                className="border-none bg-transparent hover:border-none hover:bg-transparent absolute right-3 top-3 hover:text-text-primary"
+              >
+                <X size={16} />
+              </AlertDialogCancel>
+            </AlertDialogTitle>
+            {content && (
+              <>
+                <Separator className="w-[calc(100%+48px)] -translate-x-6"></Separator>
+                <AlertDialogDescription className="mt-5">
+                  <div className="flex flex-col gap-5  text-base mb-10 px-5">
+                    <div className="text-text-primary">
+                      {content.title || t('common.deleteModalTitle')}
+                    </div>
+                    {content.node}
                   </div>
-                  {content.node}
-                </div>
-              </AlertDialogDescription>
-            </>
-          )}
-        </AlertDialogHeader>
-        <AlertDialogFooter className="px-5 flex items-center gap-2">
-          <AlertDialogCancel
-            onClick={onCancel}
-            data-testid={
-              cancelButtonTestId ?? 'confirm-delete-dialog-cancel-btn'
-            }
-          >
-            {cancelButtonText || t('common.cancel')}
-          </AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-state-error text-text-primary hover:text-text-primary hover:bg-state-error"
-            onClick={onOk}
-            data-testid={
-              confirmButtonTestId ?? 'confirm-delete-dialog-confirm-btn'
-            }
-          >
-            {okButtonText || t('common.delete')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
+                </AlertDialogDescription>
+              </>
+            )}
+          </AlertDialogHeader>
+          <AlertDialogFooter className="px-5 flex items-center gap-2">
+            <AlertDialogCancel onClick={onCancel}>
+              {cancelButtonText || t('common.cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-state-error text-text-primary hover:text-text-primary hover:bg-state-error"
+              onClick={onOk}
+            >
+              {okButtonText || t('common.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialogOverlay>
     </AlertDialog>
   );
 }

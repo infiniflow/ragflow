@@ -1,5 +1,6 @@
 import { ProgrammingLanguage } from '@/constants/agent';
-import { ICodeForm, RAGFlowNodeType } from '@/interfaces/database/agent';
+import { ICodeForm } from '@/interfaces/database/agent';
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { isEmpty } from 'lodash';
 import { useMemo } from 'react';
 import { initialCodeValues } from '../../constant';

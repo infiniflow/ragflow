@@ -20,7 +20,7 @@ import { getSystemVersion, logout } from '@/services/admin-service';
 
 import authorizationUtil from '@/utils/authorization-util';
 
-import ThemeSwitch from '../../../components/theme-switch';
+import ThemeSwitch from '../components/theme-switch';
 import { IS_ENTERPRISE } from '../utils';
 import { CurrentUserInfoContext } from './root-layout';
 

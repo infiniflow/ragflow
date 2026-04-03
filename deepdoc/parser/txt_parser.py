@@ -40,10 +40,7 @@ class RAGFlowTxtParser:
                 cks.append(t)
                 tk_nums.append(tnum)
             else:
-                if cks[-1]:
-                    cks[-1] += "\n" + t
-                else:
-                    cks[-1] += t
+                cks[-1] += t
                 tk_nums[-1] += tnum
 
         dels = []

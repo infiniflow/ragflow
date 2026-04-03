@@ -36,6 +36,7 @@ import {
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
 import { IFile } from '@/interfaces/database/file-manager';
+import { cn } from '@/lib/utils';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
 import { pick } from 'lodash';
@@ -121,18 +122,13 @@ export function FilesTable({
       accessorKey: 'name',
       header: ({ column }) => {
         return (
-          <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          >
             {t('name')}
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              onClick={() =>
-                column.toggleSorting(column.getIsSorted() === 'asc')
-              }
-            >
-              <ArrowUpDown />
-            </Button>
-          </div>
+            <ArrowUpDown />
+          </Button>
         );
       },
       meta: { cellClassName: 'max-w-[20vw]' },
@@ -151,18 +147,21 @@ export function FilesTable({
         return (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="static"
-                onClick={handleNameClick}
-                className="max-w-full p-0 flex justify-start gap-2 text-text-primary"
-              >
-                <FileIcon name={name} type={type} />
-
-                <span className="truncate">{name}</span>
-              </Button>
+              <div className="flex gap-2">
+                <span className="size-4">
+                  <FileIcon name={name} type={type}></FileIcon>
+                </span>
+                <span
+                  className={cn('truncate', { ['cursor-pointer']: isFolder })}
+                  onClick={handleNameClick}
+                >
+                  {name}
+                </span>
+              </div>
             </TooltipTrigger>
-
-            <TooltipContent>{name}</TooltipContent>
+            <TooltipContent>
+              <p>{name}</p>
+            </TooltipContent>
           </Tooltip>
         );
       },
@@ -171,18 +170,13 @@ export function FilesTable({
       accessorKey: 'create_time',
       header: ({ column }) => {
         return (
-          <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          >
             {t('uploadDate')}
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={() =>
-                column.toggleSorting(column.getIsSorted() === 'asc')
-              }
-            >
-              <ArrowUpDown />
-            </Button>
-          </div>
+            <ArrowUpDown />
+          </Button>
         );
       },
       cell: ({ row }) => (
@@ -195,18 +189,13 @@ export function FilesTable({
       accessorKey: 'size',
       header: ({ column }) => {
         return (
-          <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          >
             {t('size')}
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={() =>
-                column.toggleSorting(column.getIsSorted() === 'asc')
-              }
-            >
-              <ArrowUpDown />
-            </Button>
-          </div>
+            <ArrowUpDown />
+          </Button>
         );
       },
       cell: ({ row }) => (
@@ -224,9 +213,6 @@ export function FilesTable({
     {
       id: 'actions',
       header: t('action'),
-      meta: {
-        headerCellClassName: 'w-0 whitespace-nowrap',
-      },
       enableHiding: false,
       enablePinning: true,
       cell: ({ row }) => {
@@ -236,7 +222,7 @@ export function FilesTable({
             showConnectToKnowledgeModal={showConnectToKnowledgeModal}
             showFileRenameModal={showFileRenameModal}
             showMoveFileModal={showMoveFileModal}
-          />
+          ></ActionCell>
         );
       },
     },
@@ -260,7 +246,7 @@ export function FilesTable({
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
-    getRowId: (row) => row.id, // Use file ID instead of row index
+
     manualPagination: true, //we're doing manual "server-side" pagination
     enableRowSelection(row) {
       return !isKnowledgeBaseType(row.original.source_type);
@@ -278,19 +264,14 @@ export function FilesTable({
 
   return (
     <>
-      <div className="flex-1 h-0 size-full">
-        <Table rootClassName="max-h-full overflow-auto">
+      <div className="w-full">
+        <Table rootClassName="max-h-[calc(100vh-242px)] overflow-auto">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
                   return (
-                    <TableHead
-                      key={header.id}
-                      className={
-                        header.column.columnDef.meta?.headerCellClassName
-                      }
-                    >
+                    <TableHead key={header.id}>
                       {header.isPlaceholder
                         ? null
                         : flexRender(
@@ -332,17 +313,17 @@ export function FilesTable({
           </TableBody>
         </Table>
       </div>
-
-      <footer className="flex items-center justify-end pb-5 mt-4">
-        <RAGFlowPagination
-          {...pick(pagination, 'current', 'pageSize')}
-          total={total}
-          onChange={(page, pageSize) => {
-            setPagination({ page, pageSize });
-          }}
-        />
-      </footer>
-
+      <div className="flex items-center justify-end py-4">
+        <div className="space-x-2">
+          <RAGFlowPagination
+            {...pick(pagination, 'current', 'pageSize')}
+            total={total}
+            onChange={(page, pageSize) => {
+              setPagination({ page, pageSize });
+            }}
+          ></RAGFlowPagination>
+        </div>
+      </div>
       {connectToKnowledgeVisible && (
         <LinkToDatasetDialog
           hideModal={hideConnectToKnowledgeModal}

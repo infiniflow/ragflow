@@ -99,7 +99,7 @@ const MessageItem = ({
         })}
       >
         <div
-          className={classNames(styles.messageItemContent, 'group', {
+          className={classNames(styles.messageItemContent, {
             [styles.messageItemContentReverse]: item.role === MessageType.User,
           })}
         >

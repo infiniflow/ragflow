@@ -17,11 +17,7 @@ export function NameFormField() {
   const { t } = useTranslation();
   return (
     <RAGFlowFormItem name="name" required label={t('common.name')}>
-      <Input
-        data-testid="agent-name-input"
-        placeholder={t('common.namePlaceholder')}
-        autoComplete="off"
-      />
+      <Input placeholder={t('common.namePlaceholder')} autoComplete="off" />
     </RAGFlowFormItem>
   );
 }

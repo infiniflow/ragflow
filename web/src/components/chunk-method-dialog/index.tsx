@@ -42,6 +42,7 @@ import { DataFlowSelect } from '../data-pipeline-select';
 import { DelimiterFormField } from '../delimiter-form-field';
 import { EntityTypesFormField } from '../entity-types-form-field';
 import { ExcelToHtmlFormField } from '../excel-to-html-form-field';
+import { FormContainer } from '../form-container';
 import { LayoutRecognizeFormField } from '../layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '../max-token-number-from-field';
 import { MinerUOptionsFormField } from '../mineru-options-form-field';
@@ -181,7 +182,7 @@ export function ChunkMethodDialog({
   });
 
   const selectedTag = useWatch({
-    name: 'chunk_method',
+    name: 'parser_id',
     control: form.control,
   });
   const isMineruSelected =
@@ -292,16 +293,22 @@ export function ChunkMethodDialog({
         <DialogHeader>
           <DialogTitle>{t('knowledgeDetails.chunkMethod')}</DialogTitle>
         </DialogHeader>
-
         <Form {...form}>
           <form
             onSubmit={form.handleSubmit(onSubmit)}
-            className="space-y-6 max-h-[70vh] overflow-auto -mx-6 px-10 py-5"
+            className="space-y-6 max-h-[70vh] overflow-auto"
             id={FormId}
           >
-            <div className="space-y-6">
+            <FormContainer>
               <ParseTypeItem />
-              {parseType === 1 && <ChunkMethodItem />}
+              {parseType === 1 && <ChunkMethodItem></ChunkMethodItem>}
+              {parseType === 2 && (
+                <DataFlowSelect
+                  isMult={false}
+                  // toDataPipeline={navigateToAgents}
+                  formFieldName="pipeline_id"
+                />
+              )}
 
               {/* <FormField
                 control={form.control}
@@ -319,9 +326,9 @@ export function ChunkMethodDialog({
                   </FormItem>
                 )}
               /> */}
-
-              {showPages && parseType === 1 && <DynamicPageRange />}
-
+              {showPages && parseType === 1 && (
+                <DynamicPageRange></DynamicPageRange>
+              )}
               {showPages && parseType === 1 && layoutRecognize && (
                 <FormField
                   control={form.control}
@@ -334,25 +341,31 @@ export function ChunkMethodDialog({
                         {t('knowledgeDetails.taskPageSize')}
                       </FormLabel>
                       <FormControl>
-                        <Input {...field} type={'number'} min={1} max={128} />
+                        <Input
+                          {...field}
+                          type={'number'}
+                          min={1}
+                          max={128}
+                        ></Input>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               )}
-            </div>
-
+            </FormContainer>
             {parseType === 1 && (
               <>
-                <div className="space-y-6 border-t-0.5 border-border-button pt-6 empty:hidden">
+                <FormContainer
+                  show={showOne || showMaxTokenNumber}
+                  className="space-y-3"
+                >
                   {showOne && (
                     <>
                       <LayoutRecognizeFormField showMineruOptions={false} />
                       {isMineruSelected && <MinerUOptionsFormField />}
                     </>
                   )}
-
                   {showMaxTokenNumber && (
                     <>
                       <MaxTokenNumberFormField
@@ -361,21 +374,26 @@ export function ChunkMethodDialog({
                             ? 8192 * 2
                             : 2048
                         }
-                      />
-                      <DelimiterFormField />
+                      ></MaxTokenNumberFormField>
+                      <DelimiterFormField></DelimiterFormField>
                       <ChildrenDelimiterForm />
                     </>
                   )}
-                </div>
-
-                <div className="space-y-6 border-t-0.5 border-border-button pt-6 empty:hidden">
+                </FormContainer>
+                <FormContainer
+                  show={
+                    isMineruSelected ||
+                    showAutoKeywords(selectedTag) ||
+                    showExcelToHtml
+                  }
+                  className="space-y-3"
+                >
                   {selectedTag === DocumentParserType.Naive && (
                     <>
                       <EnableTocToggle />
                       <ImageContextWindow />
                     </>
                   )}
-
                   {showAutoKeywords(selectedTag) && (
                     <>
                       <AutoMetadata
@@ -386,39 +404,28 @@ export function ChunkMethodDialog({
                       <AutoQuestionsFormField></AutoQuestionsFormField>
                     </>
                   )}
-
                   {showExcelToHtml && (
                     <ExcelToHtmlFormField></ExcelToHtmlFormField>
                   )}
-                </div>
+                </FormContainer>
                 {/* {showRaptorParseConfiguration(
-                    selectedTag as DocumentParserType,
-                  ) && (
+                  selectedTag as DocumentParserType,
+                ) && (
+                  <FormContainer>
+                    <RaptorFormFields></RaptorFormFields>
+                  </FormContainer>
+                )} */}
+                {/* {showGraphRagItems(selectedTag as DocumentParserType) &&
+                  useGraphRag && (
                     <FormContainer>
-                      <RaptorFormFields></RaptorFormFields>
+                      <UseGraphRagFormField></UseGraphRagFormField>
                     </FormContainer>
                   )} */}
-                {/* {showGraphRagItems(selectedTag as DocumentParserType) &&
-                    useGraphRag && (
-                      <FormContainer>
-                        <UseGraphRagFormField></UseGraphRagFormField>
-                      </FormContainer>
-                    )} */}
-                <div className="space-y-6 border-t-0.5 border-border-button pt-6 empty:hidden">
-                  {showEntityTypes && <EntityTypesFormField />}
-                </div>
+                {showEntityTypes && (
+                  <EntityTypesFormField></EntityTypesFormField>
+                )}
               </>
             )}
-
-            <div className="space-y-6 empty:hidden">
-              {parseType === 2 && (
-                <DataFlowSelect
-                  isMult={false}
-                  // toDataPipeline={navigateToAgents}
-                  formFieldName="pipeline_id"
-                />
-              )}
-            </div>
           </form>
         </Form>
         <DialogFooter>
