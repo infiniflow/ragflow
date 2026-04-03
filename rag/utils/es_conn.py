@@ -31,6 +31,32 @@ ATTEMPT_TIME = 2
 MAX_RESULT_WINDOW = 10000
 SEARCH_AFTER_BATCH_SIZE = 1000
 
+# Single-document atomic pagerank_fea adjust (chunk feedback). Clamps using params.min_w / max_w;
+# removes field at zero for rank_feature compatibility.
+_PAGERANK_FEA_ADJUST_SCRIPT = """
+int cur = 0;
+if (ctx._source.containsKey(params.pf)) {
+  Object v = ctx._source[params.pf];
+  if (v != null) {
+    if (v instanceof Number) {
+      cur = ((Number)v).intValue();
+    } else {
+      try { cur = Integer.parseInt(v.toString()); } catch (Exception e) { cur = 0; }
+    }
+  }
+}
+int nw = cur + params.delta;
+if (nw < params.min_w) { nw = params.min_w; }
+if (nw > params.max_w) { nw = params.max_w; }
+if (nw == 0) {
+  if (ctx._source.containsKey(params.pf)) {
+    ctx._source.remove(params.pf);
+  }
+} else {
+  ctx._source[params.pf] = nw;
+}
+"""
+
 
 @singleton
 class ESConnection(ESConnectionBase):
@@ -303,7 +329,9 @@ class ESConnection(ESConnectionBase):
             # update specific single document
             chunk_id = condition["id"]
             for i in range(ATTEMPT_TIME):
-                for k in doc.keys():
+                doc_part = copy.deepcopy(doc)
+                remove_field = doc_part.pop("remove", None) if isinstance(doc_part.get("remove"), str) else None
+                for k in doc_part.keys():
                     if "feas" != k.split("_")[-1]:
                         continue
                     try:
@@ -312,8 +340,16 @@ class ESConnection(ESConnectionBase):
                         self.logger.exception(
                             f"ESConnection.update(index={index_name}, id={chunk_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
                 try:
-                    self.es.update(index=index_name, id=chunk_id, doc=doc)
-                    return True
+                    if remove_field is not None:
+                        self.es.update(
+                            index=index_name,
+                            id=chunk_id,
+                            script=f"ctx._source.remove('{remove_field}');",
+                        )
+                    if doc_part:
+                        self.es.update(index=index_name, id=chunk_id, doc=doc_part)
+                    if remove_field is not None or doc_part:
+                        return True
                 except Exception as e:
                     self.logger.exception(
                         f"ESConnection.update(index={index_name}, id={chunk_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception: " + str(
@@ -386,6 +422,43 @@ class ESConnection(ESConnectionBase):
                 continue
             except Exception as e:
                 self.logger.error("ESConnection.update got exception: " + str(e) + "\n".join(scripts))
+                break
+        return False
+
+    def adjust_chunk_pagerank_fea(
+        self,
+        chunk_id: str,
+        index_name: str,
+        knowledgebase_id: str,
+        delta: int,
+        min_w: int = 0,
+        max_w: int = 100,
+    ) -> bool:
+        """Atomically adjust pagerank_fea on one chunk (painless script)."""
+        for _ in range(ATTEMPT_TIME):
+            try:
+                self.es.update(
+                    index=index_name,
+                    id=chunk_id,
+                    script={
+                        "source": _PAGERANK_FEA_ADJUST_SCRIPT.strip(),
+                        "lang": "painless",
+                        "params": {
+                            "pf": PAGERANK_FLD,
+                            "delta": int(delta),
+                            "min_w": int(min_w),
+                            "max_w": int(max_w),
+                        },
+                    },
+                )
+                return True
+            except Exception as e:
+                self.logger.exception(
+                    "ESConnection.adjust_chunk_pagerank_fea(index=%s, id=%s): %s",
+                    index_name,
+                    chunk_id,
+                    e,
+                )
                 break
         return False
 
