@@ -89,14 +89,28 @@ func (o *orderedFields) UnmarshalJSON(data []byte) error {
 // CreateIndex creates a table/index in Infinity
 // indexName is the table name prefix (e.g., "ragflow_<tenant_id>")
 // The full table name is built as "{indexName}_{datasetID}"
+// For skill index (datasetID="skill"), tableName is just indexName and uses skill_infinity_mapping.json
 func (e *infinityEngine) CreateIndex(ctx context.Context, indexName, datasetID string, vectorSize int, parserID string) error {
 	vecSize := vectorSize
 
-	// Build full table name: {indexName}_{datasetID}
-	tableName := fmt.Sprintf("%s_%s", indexName, datasetID)
+	// Determine table name and mapping file based on index type
+	var tableName string
+	var mappingFile string
+
+	if datasetID == "skill" {
+		// Skill index: table name is just indexName (e.g., "skill_abc123_def456")
+		tableName = indexName
+		mappingFile = "skill_infinity_mapping.json"
+		logger.Info("Creating skill index table", zap.String("tableName", tableName), zap.String("mappingFile", mappingFile))
+	} else {
+		// Regular document index: table name is {indexName}_{datasetID}
+		tableName = fmt.Sprintf("%s_%s", indexName, datasetID)
+		mappingFile = e.mappingFileName
+		logger.Info("Creating regular index table", zap.String("tableName", tableName), zap.String("mappingFile", mappingFile))
+	}
 
 	// Use configured schema
-	fpMapping := filepath.Join(utility.GetProjectRoot(), "conf", e.mappingFileName)
+	fpMapping := filepath.Join(utility.GetProjectRoot(), "conf", mappingFile)
 
 	schemaData, err := os.ReadFile(fpMapping)
 	if err != nil {
@@ -129,6 +143,7 @@ func (e *infinityEngine) CreateIndex(ctx context.Context, indexName, datasetID s
 
 	// Add vector column
 	vectorColName := fmt.Sprintf("q_%d_vec", vecSize)
+	logger.Info(fmt.Sprintf("Creating vector column: %s with dimension %d", vectorColName, vecSize))
 	columns = append(columns, &infinity.ColumnDefinition{
 		Name:     vectorColName,
 		DataType: fmt.Sprintf("vector,%d,float", vecSize),
@@ -264,14 +279,37 @@ func (e *infinityEngine) IndexExists(ctx context.Context, indexName string) (boo
 		return false, fmt.Errorf("Failed to get database: %w", err)
 	}
 
+	// Try to list all tables first for diagnostic purposes
+	tables, listErr := db.ListTables()
+	if listErr != nil {
+		logger.Warn("Failed to list tables", zap.Error(listErr))
+	} else {
+		if tablesStr, ok := tables.([]string); ok {
+			logger.Info("Infinity database tables", zap.Strings("tables", tablesStr), zap.String("checkingFor", indexName))
+		} else {
+			logger.Info("Infinity database tables", zap.Any("tables", tables), zap.String("checkingFor", indexName))
+		}
+	}
+
 	_, err = db.GetTable(indexName)
 	if err != nil {
 		// Check if error is "table not found"
-		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "NotFound") {
+		errStr := err.Error()
+		logger.Info("IndexExists GetTable error", zap.String("indexName", indexName), zap.String("error", errStr))
+		// Add more error patterns that Infinity might return
+		if strings.Contains(errStr, "not found") ||
+			strings.Contains(errStr, "NotFound") ||
+			strings.Contains(errStr, "doesn't exist") ||
+			strings.Contains(errStr, "does not exist") ||
+			strings.Contains(errStr, "not exist") ||
+			strings.Contains(errStr, "Not exist") ||
+			strings.Contains(errStr, "NOT_EXIST") ||
+			(strings.Contains(errStr, "Table") && strings.Contains(errStr, "exist")) {
 			return false, nil
 		}
 		return false, err
 	}
+	logger.Info("IndexExists: table found", zap.String("indexName", indexName))
 	return true, nil
 }
 

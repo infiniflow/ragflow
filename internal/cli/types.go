@@ -106,6 +106,7 @@ const (
 	TokenVectorSize
 	TokenDocMeta
 	TokenName // For ALTER PROVIDER <name> NAME <new_name>
+	TokenPool
 	TokenInstance
 	TokenInstances
 	TokenDisable

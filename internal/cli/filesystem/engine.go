@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package contextengine
+package filesystem
 
 import (
 	stdctx "context"
@@ -23,13 +23,13 @@ import (
 	"time"
 )
 
-// Engine is the core of the Context Engine
+// Engine is the core of the Virtual Filesystem
 // It manages providers and routes commands to the appropriate provider
 type Engine struct {
 	providers []Provider
 }
 
-// NewEngine creates a new Context Engine
+// NewEngine creates a new Virtual Filesystem Engine
 func NewEngine() *Engine {
 	return &Engine{
 		providers: make([]Provider, 0),
@@ -180,6 +180,16 @@ func (e *Engine) listRoot(ctx stdctx.Context, opts *ListOptions) (*Result, error
 func (e *Engine) getFileProvider() Provider {
 	for _, p := range e.providers {
 		if p.Name() == "files" {
+			return p
+		}
+	}
+	return nil
+}
+
+// GetProvider returns a provider by name
+func (e *Engine) GetProvider(name string) Provider {
+	for _, p := range e.providers {
+		if p.Name() == name {
 			return p
 		}
 	}

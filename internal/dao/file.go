@@ -199,6 +199,11 @@ func (dao *FileDAO) Create(file *entity.File) error {
 	return DB.Create(file).Error
 }
 
+// UpdateByID updates a file by ID
+func (dao *FileDAO) UpdateByID(id string, updates map[string]interface{}) error {
+	return DB.Model(&entity.File{}).Where("id = ?", id).Updates(updates).Error
+}
+
 // DeleteByTenantID deletes all files by tenant ID (hard delete)
 func (dao *FileDAO) DeleteByTenantID(tenantID string) (int64, error) {
 	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.File{})
@@ -289,12 +294,6 @@ func (dao *FileDAO) Query(name string, parentID string) []*entity.File {
 	}
 	query.Find(&files)
 	return files
-}
-
-// UpdateByID updates file by ID
-func (dao *FileDAO) UpdateByID(id string, updates map[string]interface{}) bool {
-	result := DB.Model(&entity.File{}).Where("id = ?", id).Updates(updates)
-	return result.RowsAffected > 0
 }
 
 // generateUUID generates a UUID

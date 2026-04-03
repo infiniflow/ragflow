@@ -55,7 +55,7 @@ func (p *Parser) Parse(adminCommand bool) (*Command, error) {
 		return p.parseMetaCommand()
 	}
 
-	// Check for ContextEngine commands (ls, cat, search)
+	// Check for Filesystem commands (ls, cat, search)
 	if p.curToken.Type == TokenIdentifier && isCECommand(p.curToken.Value) {
 		return p.parseCECommand()
 	}
@@ -236,7 +236,7 @@ func isKeyword(tokenType int) bool {
 	return tokenType >= TokenLogin && tokenType <= TokenMetadata
 }
 
-// isCECommand checks if the given string is a ContextEngine command
+// isCECommand checks if the given string is a Filesystem command
 func isCECommand(s string) bool {
 	upper := strings.ToUpper(s)
 	switch upper {
@@ -273,7 +273,7 @@ func tokenTypeToString(t int) string {
 	return fmt.Sprintf("token(%d)", t)
 }
 
-// parseCECommand parses ContextEngine commands (ls, search)
+// parseCECommand parses Filesystem commands (ls, search)
 func (p *Parser) parseCECommand() (*Command, error) {
 	cmdName := strings.ToUpper(p.curToken.Value)
 
@@ -283,7 +283,7 @@ func (p *Parser) parseCECommand() (*Command, error) {
 	case "SEARCH":
 		return p.parseCESearchCommand()
 	default:
-		return nil, fmt.Errorf("unknown ContextEngine command: %s", cmdName)
+		return nil, fmt.Errorf("unknown Filesystem command: %s", cmdName)
 	}
 }
 

@@ -1,0 +1,136 @@
+{
+  "settings": {
+    "index": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "refresh_interval": "1000ms"
+    },
+    "similarity": {
+      "scripted_sim": {
+        "type": "scripted",
+        "script": {
+          "source": "double idf = Math.log(1+(field.docCount-term.docFreq+0.5)/(term.docFreq + 0.5))/Math.log(1+((field.docCount-0.5)/1.5)); return query.boost * idf * Math.min(doc.freq, 1);"
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": false,
+    "properties": {
+      "skill_id": {
+        "type": "keyword",
+        "store": true
+      },
+      "hub_id": {
+        "type": "keyword",
+        "store": true
+      },
+      "folder_id": {
+        "type": "keyword",
+        "store": true
+      },
+      "name": {
+        "type": "text",
+        "index": false,
+        "store": true
+      },
+      "name_tks": {
+        "type": "text",
+        "similarity": "scripted_sim",
+        "analyzer": "whitespace",
+        "store": true
+      },
+      "tags": {
+        "type": "text",
+        "index": false,
+        "store": true
+      },
+      "tags_tks": {
+        "type": "text",
+        "similarity": "scripted_sim",
+        "analyzer": "whitespace",
+        "store": true
+      },
+      "description": {
+        "type": "text",
+        "index": false,
+        "store": true
+      },
+      "description_tks": {
+        "type": "text",
+        "similarity": "scripted_sim",
+        "analyzer": "whitespace",
+        "store": true
+      },
+      "content": {
+        "type": "text",
+        "index": false,
+        "store": true
+      },
+      "content_tks": {
+        "type": "text",
+        "similarity": "scripted_sim",
+        "analyzer": "whitespace",
+        "store": true
+      },
+      "q_3072_vec": {
+        "type": "dense_vector",
+        "dims": 3072,
+        "index": true,
+        "similarity": "cosine"
+      },
+      "q_2560_vec": {
+        "type": "dense_vector",
+        "dims": 2560,
+        "index": true,
+        "similarity": "cosine"
+      },
+      "q_1536_vec": {
+        "type": "dense_vector",
+        "dims": 1536,
+        "index": true,
+        "similarity": "cosine"
+      },
+      "q_1024_vec": {
+        "type": "dense_vector",
+        "dims": 1024,
+        "index": true,
+        "similarity": "cosine"
+      },
+      "q_768_vec": {
+        "type": "dense_vector",
+        "dims": 768,
+        "index": true,
+        "similarity": "cosine"
+      },
+      "q_512_vec": {
+        "type": "dense_vector",
+        "dims": 512,
+        "index": true,
+        "similarity": "cosine"
+      },
+      "q_256_vec": {
+        "type": "dense_vector",
+        "dims": 256,
+        "index": true,
+        "similarity": "cosine"
+      },
+      "version": {
+        "type": "keyword",
+        "store": true
+      },
+      "status": {
+        "type": "keyword",
+        "store": true
+      },
+      "create_time": {
+        "type": "long",
+        "store": true
+      },
+      "update_time": {
+        "type": "long",
+        "store": true
+      }
+    }
+  }
+}

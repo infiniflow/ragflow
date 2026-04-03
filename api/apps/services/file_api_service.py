@@ -67,14 +67,14 @@ async def upload_file(tenant_id: str, pf_id: str, file_objs: list):
             if not e:
                 return False, "Folder not found!"
             last_folder = await thread_pool_exec(
-                FileService.create_folder, file, file_id_list[len_id_list - 1], file_obj_names, len_id_list
+                FileService.create_folder, file, file_id_list[len_id_list - 1], file_obj_names, len_id_list, tenant_id, tenant_id
             )
         else:
             e, file = await thread_pool_exec(FileService.get_by_id, file_id_list[len_id_list - 2])
             if not e:
                 return False, "Folder not found!"
             last_folder = await thread_pool_exec(
-                FileService.create_folder, file, file_id_list[len_id_list - 2], file_obj_names, len_id_list
+                FileService.create_folder, file, file_id_list[len_id_list - 2], file_obj_names, len_id_list, tenant_id, tenant_id
             )
 
         filetype = filename_type(file_obj_names[file_len - 1])
@@ -158,6 +158,7 @@ def list_files(tenant_id: str, args: dict):
         root_folder = FileService.get_root_folder(tenant_id)
         pf_id = root_folder["id"]
         FileService.init_knowledgebase_docs(pf_id, tenant_id)
+        FileService.init_skills_folder(pf_id, tenant_id)
 
     e, file = FileService.get_by_id(pf_id)
     if not e:

@@ -22,7 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	ce "ragflow/internal/cli/contextengine"
+	ce "ragflow/internal/cli/filesystem"
 	"strings"
 )
 
@@ -1343,7 +1343,7 @@ func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
 		opts.Offset = offset
 	}
 
-	// Execute list command through Context Engine
+	// Execute list command through Filesystem Engine
 	ctx := context.Background()
 	result, err := c.ContextEngine.List(ctx, path, opts)
 	if err != nil {
@@ -1382,7 +1382,7 @@ func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
 		opts.Recursive = recursive
 	}
 
-	// Execute search command through Context Engine
+	// Execute search command through Filesystem Engine
 	ctx := context.Background()
 	result, err := c.ContextEngine.Search(ctx, path, opts)
 	if err != nil {

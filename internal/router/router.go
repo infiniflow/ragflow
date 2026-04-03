@@ -39,6 +39,7 @@ type Router struct {
 	searchHandler        *handler.SearchHandler
 	fileHandler          *handler.FileHandler
 	memoryHandler        *handler.MemoryHandler
+	skillSearchHandler   *handler.SkillSearchHandler
 	providerHandler      *handler.ProviderHandler
 }
 
@@ -59,6 +60,7 @@ func NewRouter(
 	searchHandler *handler.SearchHandler,
 	fileHandler *handler.FileHandler,
 	memoryHandler *handler.MemoryHandler,
+	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
 ) *Router {
 	return &Router{
@@ -77,6 +79,7 @@ func NewRouter(
 		searchHandler:        searchHandler,
 		fileHandler:          fileHandler,
 		memoryHandler:        memoryHandler,
+		skillSearchHandler:   skillSearchHandler,
 		providerHandler:      providerHandler,
 	}
 }
@@ -190,6 +193,29 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
 
+			// Skill search routes
+			skills := v1.Group("/skills")
+			{
+				// Skills Hub management
+				skills.GET("/hubs", r.skillSearchHandler.ListHubs)
+				skills.POST("/hubs", r.skillSearchHandler.CreateHub)
+				skills.GET("/hubs/:hub_id", r.skillSearchHandler.GetHub)
+				skills.PUT("/hubs/:hub_id", r.skillSearchHandler.UpdateHub)
+				skills.DELETE("/hubs/:hub_id", r.skillSearchHandler.DeleteHub)
+				skills.GET("/hub/by-folder", r.skillSearchHandler.GetHubByFolder)
+
+				// Skill search config
+				skills.GET("/config", r.skillSearchHandler.GetConfig)
+				skills.POST("/config", r.skillSearchHandler.UpdateConfig)
+
+				// Skill search and indexing
+				skills.POST("/search", r.skillSearchHandler.Search)
+				skills.POST("/index", r.skillSearchHandler.IndexSkills)
+				skills.DELETE("/index/*skill_id", r.skillSearchHandler.DeleteSkillIndex)
+				skills.POST("/reindex", r.skillSearchHandler.Reindex)
+			}
+
+			// File routes
 			file := v1.Group("/files")
 			{
 				file.POST("", r.fileHandler.UploadFile)

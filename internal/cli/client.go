@@ -18,7 +18,9 @@ package cli
 
 import (
 	"fmt"
-	ce "ragflow/internal/cli/contextengine"
+	"io"
+
+	ce "ragflow/internal/cli/filesystem"
 )
 
 // PasswordPromptFunc is a function type for password input
@@ -41,7 +43,6 @@ type RAGFlowClient struct {
 	CurrentModel   *CurrentModel      // Current model configuration
 }
 
-// NewRAGFlowClient creates a new RAGFlow client
 func NewRAGFlowClient(serverType string) *RAGFlowClient {
 	httpClient := NewHTTPClient()
 	// Set port from configuration file based on server type
@@ -68,6 +69,7 @@ func (c *RAGFlowClient) initContextEngine() {
 
 	// Register providers
 	engine.RegisterProvider(ce.NewDatasetProvider(&httpClientAdapter{c.HTTPClient}))
+	engine.RegisterProvider(ce.NewSkillProvider(&httpClientAdapter{c.HTTPClient}))
 
 	c.ContextEngine = engine
 }
@@ -99,6 +101,10 @@ func (a *httpClientAdapter) Request(method, path string, useAPIBase bool, authKi
 		Headers:    resp.Headers,
 		Duration:   resp.Duration,
 	}, nil
+}
+
+func (a *httpClientAdapter) UploadMultipart(path string, contentType string, body io.Reader) error {
+	return a.client.UploadMultipart(path, contentType, body)
 }
 
 // ExecuteCommand executes a parsed command

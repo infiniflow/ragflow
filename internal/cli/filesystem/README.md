@@ -1,6 +1,6 @@
-# ContextFS - Context Engine File System
+# ContextEngine Filesystem
 
-ContextFS is a context engine interface for RAGFlow, providing users with a Unix-like file system interface to manage datasets, tools, skills, and memories.
+The ContextEngine Filesystem is a filesystem interface for RAGFlow, providing users with a Unix-like file system interface to manage datasets, tools, skills, and memories.
 
 ## Directory Structure
 
