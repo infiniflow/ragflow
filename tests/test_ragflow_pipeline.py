@@ -843,18 +843,35 @@ def retrieve_by_brand_model(
 
     import json as _json
     _meta_condition = {"conditions": _conditions, "logic": "and"}
+
+    import json as _json
     _doc_ids = []
     for _ds_id in dataset_ids:
         _dresp = requests.get(
             f"{cfg['base_url']}/api/v1/datasets/{_ds_id}/documents",
             headers=_headers(cfg),
-            params={"metadata_condition": _json.dumps(_meta_condition), "page_size": 1000},
+            params={"page_size": 1000},
         )
         for _doc in _dresp.json().get("data", {}).get("docs", []):
-            _doc_ids.append(_doc["id"])
+            _meta = _doc.get("meta_fields", {})
+            _match = (
+                _meta.get("brand") == brand and
+                _meta.get("car_model") == model and
+                (not year or _meta.get("year") == (year if isinstance(year, str) else year[0])) and
+                (not market or _meta.get("market") == _normalize_market(market)) and
+                (not trim or _meta.get("trim") == trim) and
+                (not source_type or _meta.get("source_type") == source_type)
+            )
+            if _match:
+                _doc_ids.append(_doc["id"])
 
-    if not _doc_ids:
-        print(f"⚠️  No documents matched metadata filters for {brand} {model}")
+    # video docs (size=0) are excluded from documents API — handle separately
+    # if filtering by Video or no source_type filter, run without doc_ids
+    # so video chunks are included in results
+    _use_doc_filter = bool(_doc_ids) and source_type != "Video"
+
+    if source_type and source_type != "Video" and not _doc_ids:
+        print(f"⚠️  No {source_type} documents matched filters for {brand} {model}")
         return []
 
     resp = requests.post(
@@ -863,7 +880,7 @@ def retrieve_by_brand_model(
         json={
             "question":             question,
             "dataset_ids":          dataset_ids,
-            "doc_ids":              _doc_ids,
+            **({"doc_ids": _doc_ids} if _use_doc_filter else {}),
             "similarity_threshold": similarity_threshold,
             "top_n":                top_n,
         },
@@ -873,7 +890,8 @@ def retrieve_by_brand_model(
         raise RuntimeError(f"retrieve_by_brand_model failed: {data.get('message')}")
 
     chunks = data.get("data", {}).get("chunks", [])
-    print(f"🔍 Query: '{question}' → {len(chunks)} chunks from {len(_doc_ids)} doc(s) in {len(dataset_ids)} dataset(s)")
+    _filter_desc = f"brand={brand} model={model}" + (f" source={source_type}" if source_type else "")
+    print(f"🔍 Query: '{question}' → {len(chunks)} chunks [{_filter_desc}] from {len(dataset_ids)} dataset(s)")
     return chunks
 
 

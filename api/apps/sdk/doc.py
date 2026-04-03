@@ -1113,6 +1113,8 @@ async def list_chunks(tenant_id, dataset_id, document_id):
                 k: chunk[k] for k in ("timestamp_seconds", "transcript_segment")
                 if k in chunk
             },
+            "tag_kwd": chunk.get("tag_kwd", []),
+            "tag_feas": chunk.get("tag_feas", {}),
         }
         res["chunks"].append(final_chunk)
         _ = Chunk(**final_chunk)
