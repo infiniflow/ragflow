@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	ce "ragflow/internal/cli/contextengine"
 	"strings"
 )
@@ -1217,6 +1218,7 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 				break
 			}
 			fmt.Print(data)
+			os.Stdout.Sync()
 			fullMessage.WriteString(data)
 		} else if strings.HasPrefix(line, "event:error") {
 			// error event

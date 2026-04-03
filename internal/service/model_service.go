@@ -613,3 +613,52 @@ func (m *ModelProviderService) ChatToModelStream(providerName, instanceName, mod
 	close(errChan)
 	return streamChan, errChan, common.CodeServerError, errors.New("model is disabled")
 }
+
+// ChatToModelStreamWithSender streams chat response directly via sender function (best performance, no channel)
+func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, message string, sender func(string) error) common.ErrorCode {
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return common.CodeServerError
+	}
+
+	if len(tenants) == 0 {
+		return common.CodeNotFound
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return common.CodeServerError
+	}
+
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return common.CodeServerError
+	}
+
+	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+	if err != nil {
+		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+		if providerInfo == nil {
+			return common.CodeNotFound
+		}
+
+		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		if err != nil {
+			return common.CodeNotFound
+		}
+
+		// Direct call with sender function
+		err := providerInfo.ModelDriver.ChatStreamlyWithSender(&modelName, &instance.APIKey, &message, nil, sender)
+		if err != nil {
+			return common.CodeServerError
+		}
+
+		return common.CodeSuccess
+	}
+
+	return common.CodeServerError
+}

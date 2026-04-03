@@ -49,6 +49,11 @@ func (z *DummyModel) ChatStreamlyWithChannel(modelName, apiKey, message *string,
 	return fmt.Errorf("not implemented")
 }
 
+// ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
+func (z *DummyModel) ChatStreamlyWithSender(modelName, apiKey, message *string, genConf map[string]interface{}, sender func(string) error) error {
+	return fmt.Errorf("not implemented")
+}
+
 // EncodeToEmbedding encodes a list of texts into embeddings
 func (z *DummyModel) EncodeToEmbedding(modelName, apiKey *string, texts []string) ([][]float64, error) {
 	return nil, fmt.Errorf("not implemented")

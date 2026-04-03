@@ -17,7 +17,6 @@
 package handler
 
 import (
-	"io"
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -575,42 +574,29 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 
 	// Check if it's a stream request
 	if req.Stream {
-		// Stream response
-		streamChan, errChan, _, err := h.modelProviderService.ChatToModelStream(providerName, instanceName, modelName, userID, req.Message)
-
 		// Set SSE headers
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
 
-		if err != nil {
-			c.Stream(func(w io.Writer) bool {
-				c.SSEvent("error", err.Error())
-				return false
-			})
-			return
+		// Create sender function that writes directly to response
+		sender := func(data string) error {
+			// Check for [DONE] marker (OpenAI compatible)
+			if data == "[DONE]" {
+				c.SSEvent("done", "[DONE]")
+				return nil
+			}
+			c.SSEvent("message", data)
+			return nil
 		}
 
-		c.Stream(func(w io.Writer) bool {
-			select {
-			case data, ok := <-streamChan:
-				if !ok {
-					return false
-				}
-				// Check for [DONE] marker (OpenAI compatible)
-				if data == "[DONE]" {
-					c.SSEvent("done", "[DONE]")
-					return false
-				}
-				c.SSEvent("message", data)
-				return true
-			case err := <-errChan:
-				if err != nil {
-					c.SSEvent("error", err.Error())
-				}
-				return false
-			}
-		})
+		// Stream response using sender function (best performance, no channel)
+		errorCode := h.modelProviderService.ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, req.Message, sender)
+
+		if errorCode != common.CodeSuccess {
+			c.SSEvent("error", "stream failed")
+		}
+		return
 	} else {
 		// Non-stream response
 		response, errorCode, err := h.modelProviderService.ChatToModel(providerName, instanceName, modelName, userID, req.Message)
