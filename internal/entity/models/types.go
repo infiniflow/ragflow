@@ -6,6 +6,8 @@ type ModelDriver interface {
 	Chat(modelName, apiKey, message *string, genConf map[string]interface{}) (string, error)
 	// ChatStreamly sends a message and streams response
 	ChatStreamly(modelName, apiKey, message *string, genConf map[string]interface{}) (<-chan string, error)
+	// ChatStreamlyWithChannel sends a message and streams response to channel (better performance)
+	ChatStreamlyWithChannel(modelName, apiKey, message *string, genConf map[string]interface{}, resultChan chan<- string) error
 	// Encode encodes a list of texts into embeddings
 	EncodeToEmbedding(modelName, apiKey *string, texts []string) ([][]float64, error)
 }

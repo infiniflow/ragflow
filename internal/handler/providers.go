@@ -595,7 +595,11 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 			select {
 			case data, ok := <-streamChan:
 				if !ok {
-					c.SSEvent("done", "")
+					return false
+				}
+				// Check for [DONE] marker (OpenAI compatible)
+				if data == "[DONE]" {
+					c.SSEvent("done", "[DONE]")
 					return false
 				}
 				c.SSEvent("message", data)

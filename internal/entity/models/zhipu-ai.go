@@ -242,6 +242,114 @@ func (z *ZhipuAIModel) ChatStreamly(modelName, apiKey, message *string, genConf 
 	return resultChan, nil
 }
 
+// ChatStreamlyWithChannel sends a message and streams response to channel (better performance)
+func (z *ZhipuAIModel) ChatStreamlyWithChannel(modelName, apiKey, message *string, genConf map[string]interface{}, resultChan chan<- string) error {
+	url := fmt.Sprintf("%s/chat/completions", z.BaseURL)
+
+	// Build request body with streaming enabled
+	reqBody := map[string]interface{}{
+		"model": modelName,
+		"messages": []map[string]string{
+			{"role": "user", "content": *message},
+		},
+		"stream":      true,
+		"temperature": 1,
+	}
+
+	// Add generation config if provided
+	if genConf != nil {
+		if maxTokens, ok := genConf["max_tokens"]; ok {
+			reqBody["max_tokens"] = maxTokens
+		}
+		if temperature, ok := genConf["temperature"]; ok {
+			reqBody["temperature"] = temperature
+		}
+		if topP, ok := genConf["top_p"]; ok {
+			reqBody["top_p"] = topP
+		}
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// SSE parsing: read line by line
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// SSE data line starts with "data:"
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+
+		// Extract JSON after "data:"
+		data := strings.TrimSpace(line[5:])
+
+		// [DONE] marks the end of stream
+		if data == "[DONE]" {
+			break
+		}
+
+		// Parse the JSON event
+		var event map[string]interface{}
+		if err := json.Unmarshal([]byte(data), &event); err != nil {
+			continue
+		}
+
+		choices, ok := event["choices"].([]interface{})
+		if !ok || len(choices) == 0 {
+			continue
+		}
+
+		firstChoice, ok := choices[0].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		delta, ok := firstChoice["delta"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		content, ok := delta["content"].(string)
+		if ok && content != "" {
+			resultChan <- content
+		}
+
+		finishReason, ok := firstChoice["finish_reason"].(string)
+		if ok && finishReason != "" {
+			break
+		}
+	}
+
+	// Send [DONE] marker for OpenAI compatibility
+	resultChan <- "[DONE]"
+
+	return scanner.Err()
+}
+
 // EncodeToEmbedding encodes a list of texts into embeddings
 func (z *ZhipuAIModel) EncodeToEmbedding(modelName, apiKey *string, texts []string) ([][]float64, error) {
 	url := fmt.Sprintf("%s/embedding", z.BaseURL)

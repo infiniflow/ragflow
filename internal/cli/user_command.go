@@ -1212,7 +1212,7 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 		if strings.HasPrefix(line, "data:") {
 			data := strings.TrimPrefix(line, "data:")
 			data = strings.TrimSpace(data)
-			if data == "" {
+			if data == "[DONE]" {
 				// done event, stream ended
 				break
 			}

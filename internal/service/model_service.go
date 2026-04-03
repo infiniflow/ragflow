@@ -595,19 +595,14 @@ func (m *ModelProviderService) ChatToModelStream(providerName, instanceName, mod
 			return streamChan, errChan, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
 		}
 
-		// Async call stream interface
+		// Async call stream interface using channel for better performance
 		go func() {
 			defer close(streamChan)
 			defer close(errChan)
 
-			ch, err := providerInfo.ModelDriver.ChatStreamly(&modelName, &instance.APIKey, &message, nil)
+			err := providerInfo.ModelDriver.ChatStreamlyWithChannel(&modelName, &instance.APIKey, &message, nil, streamChan)
 			if err != nil {
 				errChan <- err
-				return
-			}
-
-			for data := range ch {
-				streamChan <- data
 			}
 		}()
 
