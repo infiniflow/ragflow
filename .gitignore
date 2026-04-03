@@ -231,3 +231,4 @@ internal/cpp/cmake-build-debug/
 # Go server build output
 bin/*
 !bin/.gitkeep
+tests/.env.test
