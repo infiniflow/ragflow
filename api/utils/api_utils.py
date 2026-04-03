@@ -386,6 +386,7 @@ def get_parser_config(chunk_method, parser_config):
     base_defaults = {
         "table_context_size": 0,
         "image_context_size": 0,
+        "chunk_method": chunk_method,  # Always include chunk_method in base defaults
     }
     key_mapping = {
         "naive": {
