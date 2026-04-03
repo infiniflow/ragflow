@@ -88,6 +88,7 @@ Demomuzu [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyeb
 
 ## 🔥 Son Güncellemeler
 
+- 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — OpenClaw entegrasyonu ile RAGFlow veri setleri, dokümanlar, ayrıştırma ve erişim yönetimi için resmi bir skill.
 - 2025-12-26 Yapay zeka ajanı için 'Bellek' desteği eklendi.
 - 2025-11-19 Gemini 3 Pro desteği eklendi.
 - 2025-11-12 Confluence, S3, Notion, Discord, Google Drive'dan veri senkronizasyonu desteği eklendi.
