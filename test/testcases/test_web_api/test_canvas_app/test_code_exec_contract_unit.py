@@ -23,12 +23,6 @@ from unittest.mock import patch
 import pytest
 
 
-MODULE_PATH = next(
-    parent / "agent" / "tools" / "code_exec_contract.py"
-    for parent in Path(__file__).resolve().parents
-    if (parent / "agent" / "tools" / "code_exec_contract.py").exists()
-)
-
 CODE_EXEC_MODULE_PATH = next(
     parent / "agent" / "tools" / "code_exec.py"
     for parent in Path(__file__).resolve().parents
@@ -37,11 +31,7 @@ CODE_EXEC_MODULE_PATH = next(
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("code_exec_contract", MODULE_PATH)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+    return _load_code_exec_runtime_module()
 
 
 def _build_code_exec(output_type: str):
@@ -49,7 +39,7 @@ def _build_code_exec(output_type: str):
 
 
 def _build_code_exec_with_outputs(outputs: dict[str, dict]):
-    module = _load_code_exec_runtime_module()
+    module = _load_module()
     tool = module.CodeExec.__new__(module.CodeExec)
     tool._param = types.SimpleNamespace(outputs=outputs)
     tool._canvas = types.SimpleNamespace(get_tenant_id=lambda: "tenant-1")
@@ -57,8 +47,6 @@ def _build_code_exec_with_outputs(outputs: dict[str, dict]):
 
 
 def _load_code_exec_runtime_module():
-    contract_module = _load_module()
-
     agent_module = types.ModuleType("agent")
     tools_module = types.ModuleType("agent.tools")
     base_module = types.ModuleType("agent.tools.base")
@@ -118,7 +106,6 @@ def _load_code_exec_runtime_module():
 
     agent_module.tools = tools_module
     tools_module.base = base_module
-    tools_module.code_exec_contract = contract_module
     api_module.db = api_db_module
     api_db_module.services = api_db_services_module
     api_db_services_module.file_service = file_service_module
@@ -128,7 +115,6 @@ def _load_code_exec_runtime_module():
         "agent": agent_module,
         "agent.tools": tools_module,
         "agent.tools.base": base_module,
-        "agent.tools.code_exec_contract": contract_module,
         "api": api_module,
         "api.db": api_db_module,
         "api.db.services": api_db_services_module,
