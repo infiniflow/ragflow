@@ -207,7 +207,8 @@ func (e *infinityEngine) Search(ctx context.Context, req interface{}) (interface
 }
 
 // convertSelectFields converts field names to Infinity format
-func convertSelectFields(output []string) []string {
+// isSkillIndex indicates if this is a skill index (uses skill_id instead of id)
+func convertSelectFields(output []string, isSkillIndex ...bool) []string {
 	fieldMapping := map[string]string{
 		"docnm_kwd":           "docnm",
 		"title_tks":           "docnm",
@@ -221,6 +222,11 @@ func convertSelectFields(output []string) []string {
 		"content_sm_ltks":     "content",
 		"authors_tks":         "authors",
 		"authors_sm_tks":      "authors",
+	}
+
+	skillIndex := false
+	if len(isSkillIndex) > 0 {
+		skillIndex = isSkillIndex[0]
 	}
 
 	needEmptyCount := false
@@ -244,15 +250,20 @@ func convertSelectFields(output []string) []string {
 	}
 
 	// Add id and empty count if needed
+	// For skill index, use skill_id instead of id
 	hasID := false
+	idField := "id"
+	if skillIndex {
+		idField = "skill_id"
+	}
 	for _, f := range result {
-		if f == "id" {
+		if f == idField {
 			hasID = true
 			break
 		}
 	}
 	if !hasID {
-		result = append([]string{"id"}, result...)
+		result = append([]string{idField}, result...)
 	}
 
 	if needEmptyCount {
@@ -310,27 +321,23 @@ func hasSubTokens(s string) bool {
 func formatQuestion(question string) string {
 	// Trim whitespace
 	question = strings.TrimSpace(question)
-	fmt.Printf("[DEBUG formatQuestion] input: %q, len: %d, hasSubTokens: %v\n", question, len(question), hasSubTokens(question))
 
 	// If no sub-tokens, use simple format
 	if !hasSubTokens(question) {
-		result := fmt.Sprintf("((%s)^1.0)", question)
-		fmt.Printf("[DEBUG formatQuestion] simple: %s\n", result)
-		return result
+		return fmt.Sprintf("((%s)^1.0)", question)
 	}
 
-	result := fmt.Sprintf("((%s OR \"%s\" OR (\"%s\"~2)^0.5)^1.0)", question, question, question)
-	fmt.Printf("[DEBUG formatQuestion] fuzzy: %s\n", result)
-	return result
+	return fmt.Sprintf("((%s OR \"%s\" OR (\"%s\"~2)^0.5)^1.0)", question, question, question)
 }
 
-// convertMatchingField converts field names for matching
+// convertMatchingField converts field names for matching (for regular document indices only)
+// For skill indices, use original field names directly as they have built-in analyzers
 func convertMatchingField(fieldWeightStr string) string {
 	// Split on ^ to get field name
 	parts := strings.Split(fieldWeightStr, "^")
 	field := parts[0]
 
-	// Field name conversion
+	// Field name conversion for regular document indices only
 	fieldMapping := map[string]string{
 		"docnm_kwd":           "docnm@ft_docnm_rag_coarse",
 		"title_tks":           "docnm@ft_docnm_rag_coarse",
@@ -345,6 +352,9 @@ func convertMatchingField(fieldWeightStr string) string {
 		"authors_tks":         "authors@ft_authors_rag_coarse",
 		"authors_sm_tks":      "authors@ft_authors_rag_fine",
 	}
+
+	// Note: Skill index fields (name, tags, description, content) should NOT be converted
+	// They use original field names with built-in analyzers as defined in skill_infinity_mapping.json
 
 	if newField, ok := fieldMapping[field]; ok {
 		parts[0] = newField
@@ -390,12 +400,38 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 		}
 	}
 
+	// Determine if this is a skill index
+	isSkillIndex := false
+	for _, idx := range req.IndexNames {
+		if strings.HasPrefix(idx, "skill_") {
+			isSkillIndex = true
+			break
+		}
+	}
+
 	// Build output columns
 	// For metadata tables, only use: id, kb_id, meta_fields
+	// For skill tables, use skill-specific fields
 	// For chunk tables, use all the standard fields
 	var outputColumns []string
 	if isMetadataTable {
 		outputColumns = []string{"id", "kb_id", "meta_fields"}
+	} else if isSkillIndex {
+		// Skill index uses different field names
+		// Note: schema has skill_id as primary identifier, no 'id' column
+		outputColumns = []string{
+			"skill_id",
+			"hub_id",
+			"folder_id",
+			"name",
+			"tags",
+			"description",
+			"content",
+			"version",
+			"status",
+			"create_time",
+			"update_time",
+		}
 	} else {
 		outputColumns = []string{
 			"id",
@@ -416,7 +452,7 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 			"question_tks",
 		}
 	}
-	outputColumns = convertSelectFields(outputColumns)
+	outputColumns = convertSelectFields(outputColumns, isSkillIndex)
 
 	// Determine if text or vector search
 	hasTextMatch := req.Question != ""
@@ -437,12 +473,14 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 		} else if hasVectorMatch {
 			outputColumns = append(outputColumns, "similarity()")
 		}
-		// Add pagerank field
-		outputColumns = append(outputColumns, PAGERANK_FLD)
+		// Add pagerank field (only for regular document indices, not skill index)
+		if !isSkillIndex {
+			outputColumns = append(outputColumns, PAGERANK_FLD)
+		}
 	}
 
 	// Remove duplicates
-	outputColumns = convertSelectFields(outputColumns)
+	outputColumns = convertSelectFields(outputColumns, isSkillIndex)
 
 	// Build filter string
 	var filterParts []string
@@ -469,13 +507,22 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 		}
 	}
 
-	// Only add available_int filter when there's text/vector match or AvailableInt is explicitly set
+	// Only add available_int/status filter when there's text/vector match or AvailableInt is explicitly set
 	// This matches Python's behavior where chunk_list doesn't filter by available_int
 	if !isMetadataTable && (hasTextMatch || hasVectorMatch || req.AvailableInt != nil) {
-		if req.AvailableInt != nil {
-			filterParts = append(filterParts, fmt.Sprintf("available_int=%d", *req.AvailableInt))
+		if isSkillIndex {
+			// Skill index uses 'status' field instead of 'available_int'
+			if req.AvailableInt != nil {
+				filterParts = append(filterParts, fmt.Sprintf("status='%d'", *req.AvailableInt))
+			} else {
+				filterParts = append(filterParts, "status='1'")
+			}
 		} else {
-			filterParts = append(filterParts, "available_int=1")
+			if req.AvailableInt != nil {
+				filterParts = append(filterParts, fmt.Sprintf("available_int=%d", *req.AvailableInt))
+			} else {
+				filterParts = append(filterParts, "available_int=1")
+			}
 		}
 	}
 
@@ -513,7 +560,8 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 	for _, indexName := range req.IndexNames {
 		// Determine table names to search
 		var tableNames []string
-		if strings.HasPrefix(indexName, "ragflow_doc_meta_") {
+		if strings.HasPrefix(indexName, "ragflow_doc_meta_") || strings.HasPrefix(indexName, "skill_") {
+			// Metadata tables and skill tables use index name directly (no kbID suffix)
 			tableNames = []string{indexName}
 		} else {
 			// For each KB ID, create a table name
@@ -539,7 +587,6 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 		hasDocIDFilter := len(req.DocIDs) > 0
 
 		for _, tableName := range tableNames {
-			fmt.Printf("[DEBUG] Searching table: %s\n", tableName)
 			// Try to get table
 			_, err := db.GetTable(tableName)
 			if err != nil {
@@ -547,12 +594,12 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 				continue
 			}
 
-			// Build query for this table
-			result, err := e.executeTableSearch(db, tableName, outputColumns, req.Question, req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, req.SimilarityThreshold, minMatch, req.VectorSimilarityWeight)
-			if err != nil {
-				// Skip this table on error
-				continue
-			}
+		// Build query for this table
+		result, err := e.executeTableSearch(db, tableName, outputColumns, req.Question, req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, req.SimilarityThreshold, minMatch, req.VectorSimilarityWeight)
+		if err != nil {
+			// Skip this table on error
+			continue
+		}
 
 			allResults = append(allResults, result.Chunks...)
 			totalHits += result.Total
@@ -560,39 +607,36 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 
 		// If no results, try fallback strategies
 		if totalHits == 0 && (hasTextMatch || hasVectorMatch) {
-			fmt.Printf("[DEBUG] No results, trying fallback strategies\n")
 			allResults = nil
 			totalHits = 0
 
 			if hasDocIDFilter {
 				// If has doc_id filter, search without match
-				fmt.Printf("[DEBUG] Retry with no match (has doc_id filter)\n")
 				for _, tableName := range tableNames {
 					_, err := db.GetTable(tableName)
 					if err != nil {
 						continue
 					}
-					// Search without match - pass empty question
-					result, err := e.executeTableSearch(db, tableName, outputColumns, "", req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, req.SimilarityThreshold, 0.0, req.VectorSimilarityWeight)
-					if err != nil {
-						continue
-					}
+				// Search without match - pass empty question
+				result, err := e.executeTableSearch(db, tableName, outputColumns, "", req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, req.SimilarityThreshold, 0.0, req.VectorSimilarityWeight)
+				if err != nil {
+					continue
+				}
 					allResults = append(allResults, result.Chunks...)
 					totalHits += result.Total
 				}
 			} else {
 				// Retry with lower min_match and similarity
-				fmt.Printf("[DEBUG] Retry with min_match=0.1, similarity=0.17\n")
 				lowerThreshold := 0.17
 				for _, tableName := range tableNames {
 					_, err := db.GetTable(tableName)
 					if err != nil {
 						continue
 					}
-					result, err := e.executeTableSearch(db, tableName, outputColumns, req.Question, req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, lowerThreshold, 0.1, req.VectorSimilarityWeight)
-					if err != nil {
-						continue
-					}
+				result, err := e.executeTableSearch(db, tableName, outputColumns, req.Question, req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, lowerThreshold, 0.1, req.VectorSimilarityWeight)
+				if err != nil {
+					continue
+				}
 					allResults = append(allResults, result.Chunks...)
 					totalHits += result.Total
 				}
@@ -601,7 +645,12 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 	}
 
 	if hasTextMatch || hasVectorMatch {
-		allResults = calculateScores(allResults, scoreColumn, PAGERANK_FLD)
+		// For skill index, don't use pagerank field (it doesn't exist)
+		pagerankField := PAGERANK_FLD
+		if isSkillIndex {
+			pagerankField = ""
+		}
+		allResults = calculateScores(allResults, scoreColumn, pagerankField)
 	}
 
 	if hasTextMatch || hasVectorMatch {
@@ -609,21 +658,14 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 	}
 
 	// Apply threshold filter to combined results
-	fmt.Printf("[DEBUG] Threshold check: SimilarityThreshold=%f, hasVectorMatch=%v, hasTextMatch=%v\n", req.SimilarityThreshold, hasVectorMatch, hasTextMatch)
 	if req.SimilarityThreshold > 0 && hasVectorMatch {
 		var filteredResults []map[string]interface{}
 		for _, chunk := range allResults {
 			score := getScore(chunk)
-			chunkID := ""
-			if id, ok := chunk["id"]; ok {
-				chunkID = fmt.Sprintf("%v", id)
-			}
-			fmt.Printf("[DEBUG] Threshold filter: id=%s, score=%f, threshold=%f, pass=%v\n", chunkID, score, req.SimilarityThreshold, score >= req.SimilarityThreshold)
 			if score >= req.SimilarityThreshold {
 				filteredResults = append(filteredResults, chunk)
 			}
 		}
-		fmt.Printf("[DEBUG] After threshold filter (combined): %d -> %d chunks\n", len(allResults), len(filteredResults))
 		allResults = filteredResults
 	}
 
@@ -640,13 +682,11 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 
 // calculateScores calculates _score = score_column + pagerank
 func calculateScores(chunks []map[string]interface{}, scoreColumn, pagerankField string) []map[string]interface{} {
-	fmt.Printf("[DEBUG] calculateScores: scoreColumn=%s, pagerankField=%s\n", scoreColumn, pagerankField)
 	for i := range chunks {
 		score := 0.0
 		if scoreVal, ok := chunks[i][scoreColumn]; ok {
 			if f, ok := utility.ToFloat64(scoreVal); ok {
 				score += f
-				fmt.Printf("[DEBUG]   chunk[%d]: %s=%f\n", i, scoreColumn, f)
 			}
 		}
 		if pagerankVal, ok := chunks[i][pagerankField]; ok {
@@ -655,7 +695,6 @@ func calculateScores(chunks []map[string]interface{}, scoreColumn, pagerankField
 			}
 		}
 		chunks[i]["_score"] = score
-		fmt.Printf("[DEBUG]   chunk[%d]: _score=%f\n", i, score)
 	}
 	return chunks
 }
@@ -708,8 +747,6 @@ func getScore(chunk map[string]interface{}) float64 {
 
 // executeTableSearch executes search on a single table
 func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName string, outputColumns []string, question string, vector []float64, filterStr string, topK, pageSize, offset int, orderBy *OrderByExpr, rankFeature map[string]float64, similarityThreshold float64, minMatch float64, vectorSimilarityWeight float64) (*types.SearchResponse, error) {
-	// Debug logging
-	fmt.Printf("[DEBUG] executeTableSearch: question=%s, topK=%d, pageSize=%d, similarityThreshold=%f, filterStr=%s\n", question, topK, pageSize, similarityThreshold, filterStr)
 
 	// Get table
 	table, err := db.GetTable(tableName)
@@ -721,35 +758,52 @@ func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName str
 	hasTextMatch := question != ""
 	hasVectorMatch := len(vector) > 0
 
+	// Determine if this is a skill index (starts with "skill_")
+	isSkillIndex := strings.HasPrefix(tableName, "skill_")
+
 	table = table.Output(outputColumns)
 
-	// Define text fields
-	textFields := []string{
-		"title_tks^10",
-		"title_sm_tks^5",
-		"important_kwd^30",
-		"important_tks^20",
-		"question_tks^20",
-		"content_ltks^2",
-		"content_sm_ltks",
+	// Define text fields based on index type
+	// Note: SQL query uses format 'name^10,tags^5,description^3,content^1'
+	// Both MatchText and filter_fulltext use the same format
+	var textFields []string
+	if isSkillIndex {
+		// Skill index uses original field names
+		textFields = []string{
+			"name^10",
+			"tags^5",
+			"description^3",
+			"content^1",
+		}
+	} else {
+		// Regular document index uses _tks fields with Infinity's internal format
+		textFields = []string{
+			"title_tks^10",
+			"title_sm_tks^5",
+			"important_kwd^30",
+			"important_tks^20",
+			"question_tks^20",
+			"content_ltks^2",
+			"content_sm_ltks",
+		}
 	}
 
 	// Convert field names for Infinity
 	var convertedFields []string
 	for _, f := range textFields {
-		cf := convertMatchingField(f)
-		convertedFields = append(convertedFields, cf)
+		if isSkillIndex {
+			// Skill index: use original field names (same as SQL)
+			convertedFields = append(convertedFields, f)
+		} else {
+			// Regular index: convert to Infinity's internal format
+			cf := convertMatchingField(f)
+			convertedFields = append(convertedFields, cf)
+		}
 	}
 	fields := strings.Join(convertedFields, ",")
 
 	// Format question
 	formattedQuestion := formatQuestion(question)
-
-	// Compute full filter with filter_fulltext for MatchDense extra_options
-	var fullFilterWithFulltext string
-	if filterStr != "" && fields != "" {
-		fullFilterWithFulltext = fmt.Sprintf("(%s) AND FILTER_FULLTEXT('%s', '%s')", filterStr, fields, formattedQuestion)
-	}
 
 	// Add text match if question is provided
 	if hasTextMatch {
@@ -769,8 +823,12 @@ func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName str
 			}
 		}
 
+		// Add filter to extraOptions if present (for skill index status filter, etc.)
+		if filterStr != "" {
+			extraOptions["filter"] = filterStr
+		}
+
 		table = table.MatchText(fields, formattedQuestion, topK, extraOptions)
-		fmt.Printf("[DEBUG] MatchTextExpr: fields=%s, matching_text=%s, topn=%d, extra_options=%v\n", fields, formattedQuestion, topK, extraOptions)
 	}
 
 	// Add vector match if provided
@@ -786,14 +844,12 @@ func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName str
 			"threshold": fmt.Sprintf("%f", threshold),
 		}
 
-		// Add filter with filter_fulltext, add to MatchDense extra_options
-		// This is the full filter that includes both available_int=1 AND filter_fulltext
-		if fullFilterWithFulltext != "" {
-			extraOptions["filter"] = fullFilterWithFulltext
-			fmt.Printf("[DEBUG] filterStr=%s, fullFilterWithFulltext=%s\n", filterStr, fullFilterWithFulltext)
+		// Add filter to MatchDense extra_options
+		// Note: Only use basic filter (status='1'), NOT filter_fulltext
+		// filter_fulltext is only used in fusion text search, not vector search filter
+		if filterStr != "" {
+			extraOptions["filter"] = filterStr
 		}
-
-		fmt.Printf("[DEBUG] MatchDenseExpr: field=%s, topn=%d, extra_options=%v\n", fieldName, topK, extraOptions)
 
 		table = table.MatchDense(fieldName, vector, "float", "cosine", topK, extraOptions)
 	}
@@ -813,8 +869,6 @@ func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName str
 			"normalize": "atan",
 			"weights":   fmt.Sprintf("%.2f,%.2f", textWeight, vectorWeight),
 		}
-		fmt.Printf("[DEBUG] FusionExpr: method=weighted_sum, topn=%d, fusion_params=%v\n", topK, fusionParams)
-		fmt.Printf("[DEBUG] Before Fusion - table has MatchText=%v, MatchDense=%v\n", hasTextMatch, hasVectorMatch)
 		table = table.Fusion("weighted_sum", topK, fusionParams)
 	}
 
@@ -833,7 +887,6 @@ func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName str
 
 	// Add filter when there's no text/vector match (like metadata queries)
 	if !hasTextMatch && !hasVectorMatch && filterStr != "" {
-		fmt.Printf("[DEBUG] Adding filter for no-match query: %s\n", filterStr)
 		table = table.Filter(filterStr)
 	}
 
@@ -850,24 +903,18 @@ func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName str
 		return nil, err
 	}
 
-	// Debug logging - show returned chunks
+	// Calculate scores
 	scoreColumn := "SIMILARITY"
 	if hasTextMatch {
 		scoreColumn = "SCORE"
 	}
-	fmt.Printf("[DEBUG] executeTableSearch returned %d chunks\n", len(result.Chunks))
 
-	result.Chunks = calculateScores(result.Chunks, scoreColumn, PAGERANK_FLD)
-
-	// Debug after calculateScores
-	for i, chunk := range result.Chunks {
-		chunkID := ""
-		if id, ok := chunk["id"]; ok {
-			chunkID = fmt.Sprintf("%v", id)
-		}
-		score := getScore(chunk)
-		fmt.Printf("[DEBUG]   chunk[%d]: id=%s, _score=%f\n", i, chunkID, score)
+	// For skill index, don't use pagerank field (it doesn't exist)
+	pagerankField := PAGERANK_FLD
+	if isSkillIndex {
+		pagerankField = ""
 	}
+	result.Chunks = calculateScores(result.Chunks, scoreColumn, pagerankField)
 
 	// Sort by score
 	result.Chunks = sortByScore(result.Chunks, len(result.Chunks))
@@ -887,9 +934,6 @@ func (e *infinityEngine) executeQuery(table *infinity.Table) (*types.SearchRespo
 	if err != nil {
 		return nil, fmt.Errorf("Infinity query failed: %w", err)
 	}
-
-	// Debug: print raw result info
-	// fmt.Printf("[DEBUG] Infinity raw result: %+v\n", result)
 
 	// Convert result to SearchResponse format
 	// The SDK returns QueryResult with Data as map[string][]interface{}
@@ -961,3 +1005,5 @@ func contains(slice []string, item string) bool {
 	}
 	return false
 }
+
+

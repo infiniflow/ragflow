@@ -186,10 +186,13 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 		}
 	}
 
-	// Ensure index exists
-	if err := h.indexerService.EnsureIndex(c.Request.Context(), user.ID, req.HubID, h.docEngine, embdID); err != nil {
-		jsonError(c, common.CodeOperatingError, err.Error())
-		return
+	// For Infinity: BatchIndexSkills will handle index creation with correct dimension
+	// For ES: need to ensure index exists first
+	if h.docEngine.GetType() == "elasticsearch" {
+		if err := h.indexerService.EnsureIndex(c.Request.Context(), user.ID, req.HubID, h.docEngine, embdID); err != nil {
+			jsonError(c, common.CodeOperatingError, err.Error())
+			return
+		}
 	}
 
 	if err := h.indexerService.BatchIndexSkills(c.Request.Context(), user.ID, req.HubID, req.Skills, h.docEngine, embdID); err != nil {

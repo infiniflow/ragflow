@@ -3,7 +3,7 @@
   "hub_id": {"type": "varchar", "default": "", "index_type": "secondary"},
   "folder_id": {"type": "varchar", "default": ""},
   "name": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"]},
-  "tags": {"type": "varchar", "default": ""},
+  "tags": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"]},
   "description": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"]},
   "content": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"]},
   "version": {"type": "varchar", "default": "1.0.0"},

@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/logger"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -524,7 +525,39 @@ func normalizeHubID(hubID string) string {
 }
 
 func getEmbeddingDimension(embdID string) int {
-	// Default to 1024, could be configurable based on model
+	// Map common embedding models to their dimensions
+	// This should be synchronized with the model configuration
+	dimensionMap := map[string]int{
+		"bge-m3":            1024,
+		"bge-large-zh":      1024,
+		"bge-large-en":      1024,
+		"bce-embedding-base_v1": 768,
+		"text-embedding-3-small": 1536,
+		"text-embedding-3-large": 3072,
+		"text-embedding-ada-002": 1536,
+		"embed-english-v3.0": 1024,
+		"embed-multilingual-v3.0": 1024,
+	}
+
+	// Check for partial matches (e.g., "bce-embedding-base_v1@SILICONFLOW" should match "bce-embedding-base_v1")
+	for modelKey, dim := range dimensionMap {
+		if strings.Contains(embdID, modelKey) {
+			return dim
+		}
+	}
+
+	// Try to parse dimension from embdID pattern like "model-name-768" or "bge-m3-1024"
+	parts := strings.Split(embdID, "-")
+	for _, part := range parts {
+		if dim, err := strconv.Atoi(part); err == nil {
+			if dim > 0 && dim < 10000 {
+				return dim
+			}
+		}
+	}
+
+	// Default to 1024 for unknown models
+	logger.Info(fmt.Sprintf("Unknown embedding model '%s', defaulting to 1024 dimensions", embdID))
 	return 1024
 }
 
