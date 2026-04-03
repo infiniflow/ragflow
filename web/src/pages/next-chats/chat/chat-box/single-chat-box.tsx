@@ -56,11 +56,11 @@ export function SingleChatBox({
   const showInternet = useShowInternet();
 
   useEffect(() => {
-    const messages = conversation?.message;
+    const messages = conversation?.messages;
     if (Array.isArray(messages)) {
       setDerivedMessages(messages);
     }
-  }, [conversation?.message, setDerivedMessages]);
+  }, [conversation?.messages, setDerivedMessages]);
 
   useEffect(() => {
     // Clear the message list after deleting the conversation.
@@ -90,7 +90,7 @@ export function SingleChatBox({
               avatarDialog={currentDialog.icon}
               reference={buildMessageItemReference(
                 {
-                  message: derivedMessages,
+                  messages: derivedMessages,
                   reference: conversation.reference,
                 },
                 message,

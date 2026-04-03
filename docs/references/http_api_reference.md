@@ -2782,11 +2782,11 @@ curl --request POST \
 - `"icon"`: (*Body parameter*), `string`  
   Base64 encoding of the avatar.
 - `"dataset_ids"`: (*Body parameter*), `list[string]`
-  The IDs of the associated datasets. If omitted or set to `[]`, an empty chat assistant is created and datasets can be attached later.
-- `"llm_id"`: (*Body parameter*), `string`  
-  The chat model name. If not set, the user's default chat model will be used.
-- `"llm_setting"`: (*Body parameter*), `object`  
-  The LLM settings for the chat assistant to create. An `llm_setting` object may contain the following attributes:  
+  The unique identifiers for the associated datasets. If omitted or set to `[]`, an empty chat assistant is created; datasets can be attached at a later time.
+- `"llm_id"`: (*Body parameter*), `string`
+  The identifier of the chat model. If not specified, the system defaults to the user's pre-configured chat model.
+- `"llm_setting"`: (*Body parameter*), `object`
+  A configuration object defining the LLM parameters for the assistant. The `llm_setting` object may contain the following attributes:
   - `"model_type"`: `string`  
     A model type specifier. Only `"chat"` and `"image2text"` are recognized; any other inputs, or when omitted, are treated as `"chat"`.
   - `"temperature"`: `float`  
@@ -2805,7 +2805,7 @@ curl --request POST \
     - `"knowledge"` is a reserved variable, which represents the retrieved chunks.
     - All the variables in `"system"` should be curly bracketed.
   - `"empty_response"`: `string` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank.
-  - `"quote"`: `boolean` Indicates whether the source of text should be displayed. Defaults to `true`.
+  - `"quote"`: `boolean` Whether the source of text should be displayed. Defaults to `true`.
   - `"tts"`: `boolean`
   - `"refine_multiturn"`: `boolean`
   - `"use_kg"`: `boolean`
@@ -2888,9 +2888,9 @@ Failure:
 
 **PUT** `/api/v1/chats/{chat_id}`
 
-Replaces the persisted configuration of a specified chat assistant.
+Overwrites the existing configuration for a specified chat assistant.
 
-Use this endpoint only when you intend to send the full configuration to keep. Omitted fields are reset to server defaults. For partial updates, use `PATCH /api/v1/chats/{chat_id}` instead.
+Use this endpoint only when providing a complete configuration. Any fields omitted from the request will be reset to their server-side default values. For partial updates, use `PATCH /api/v1/chats/{chat_id}` instead.
 
 #### Request
 
@@ -2947,11 +2947,11 @@ curl --request PUT \
 - `"dataset_ids"`: (*Body parameter*), `list[string]`
   The IDs of the associated datasets.
 - `"llm_id"`: (*Body parameter*), `string`  
-  The chat model name. If not set, the user's default chat model will be used.  
+  The chat model name. If not set, the user's default chat model is used.  
 - `"llm_setting"`: (*Body parameter*), `object`  
   The LLM settings for the chat assistant. An `llm_setting` object contains the following attributes:  
   - `"model_type"`: `string`
-    A model type specifier. Only `"chat"` and `"image2text"` are recognized; any other inputs, or when omitted, are treated as `"chat"`.
+    A model type specifier. Supported values are `"chat"` and `"image2text"`. If the field is omitted or an unrecognized value is provided, it defaults to `"chat"`.
   - `"temperature"`: `float`  
     Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
   - `"top_p"`: `float`  
@@ -2967,7 +2967,7 @@ curl --request PUT \
 - `"top_k"`: (*Body parameter*), `int`
 - `"rerank_id"`: (*Body parameter*), `string`
 
-Any field omitted from the request body is reset to the server-side default value for `PUT`.
+For `PUT` requests, any fields omitted from the request body are reset to their server-side default values.
 
 #### Response
 
@@ -3103,9 +3103,9 @@ Failure:
 
 **PATCH** `/api/v1/chats/{chat_id}`
 
-Partially updates a specified chat assistant.
+Performs a partial update on a specified chat assistant.
 
-This endpoint preserves unspecified fields. Nested `llm_setting` and `prompt_config` objects are deep-merged with the existing configuration, so it is the recommended endpoint for renaming a chat assistant or updating only a subset of settings.
+Unspecified fields are preserved, while nested objects, such as `llm_setting` and `prompt_config`, are deep-merged with the existing configuration. This is the recommended endpoint for renaming an assistant or modifying a specific subset of settings.
 
 #### Request
 
@@ -3160,7 +3160,7 @@ Failure:
 
 **DELETE** `/api/v1/chats/{chat_id}`
 
-Deletes a single chat assistant by ID.
+Deletes a chat assistant by ID.
 
 #### Request
 
@@ -3456,7 +3456,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Name cannot be empty."
+    "message": "`name` can not be empty."
 }
 ```
 
@@ -3476,8 +3476,7 @@ Updates a session of a specified chat assistant.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"name`: `string`
-  - `"user_id`: `string` (optional)
+  - `"name"`: `string`
 
 ##### Request example
 
@@ -3494,14 +3493,12 @@ curl --request PUT \
 
 ##### Request Parameter
 
-- `chat_id`: (*Path parameter*)  
+- `chat_id`: (*Path parameter*)
   The ID of the associated chat assistant.
-- `session_id`: (*Path parameter*)  
+- `session_id`: (*Path parameter*)
   The ID of the session to update.
-- `"name"`: (*Body Parameter*), `string`  
+- `"name"`: (*Body Parameter*), `string`
   The revised name of the session.
-- `"user_id"`: (*Body parameter*), `string`  
-  Optional user-defined ID.
 
 #### Response
 
@@ -3509,7 +3506,23 @@ Success:
 
 ```json
 {
-    "code": 0
+    "code": 0,
+    "data": {
+        "chat_id": "2ca4b22e878011ef88fe0242ac120005",
+        "create_date": "Fri, 11 Oct 2024 08:46:14 GMT",
+        "create_time": 1728636374571,
+        "id": "4606b4ec87ad11efbc4f0242ac120006",
+        "messages": [
+            {
+                "content": "Hi! I am your assistant, can I help you?",
+                "role": "assistant"
+            }
+        ],
+        "name": "updated session name",
+        "update_date": "Fri, 11 Oct 2024 08:46:14 GMT",
+        "update_time": 1728636374571,
+        "user_id": ""
+    }
 }
 ```
 
@@ -3518,7 +3531,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Name cannot be empty."
+    "message": "`name` can not be empty."
 }
 ```
 
@@ -3526,7 +3539,7 @@ Failure:
 
 ### List chat assistant's sessions
 
-**GET** `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}`
+**GET** `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}&user_id={user_id}`
 
 Lists sessions associated with a specified chat assistant.
 
@@ -3541,7 +3554,7 @@ Lists sessions associated with a specified chat assistant.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id} \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}&user_id={user_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -3552,7 +3565,7 @@ curl --request GET \
 - `page`: (*Filter parameter*), `integer`  
   Specifies the page on which the sessions will be displayed. Defaults to `1`.
 - `page_size`: (*Filter parameter*), `integer`  
-  The number of sessions on each page. Defaults to `30`.
+  The number of sessions on each page. Defaults to `30`. If set to `0`, an empty list is returned.
 - `orderby`: (*Filter parameter*), `string`  
   The field by which sessions should be sorted. Available options:  
   - `create_time` (default)
@@ -3575,7 +3588,7 @@ Success:
     "code": 0,
     "data": [
         {
-            "chat": "2ca4b22e878011ef88fe0242ac120005",
+            "chat_id": "2ca4b22e878011ef88fe0242ac120005",
             "create_date": "Fri, 11 Oct 2024 08:46:43 GMT",
             "create_time": 1728636403974,
             "id": "578d541e87ad11ef96b90242ac120006",
@@ -3586,8 +3599,10 @@ Success:
                 }
             ],
             "name": "new session",
+            "reference": [],
             "update_date": "Fri, 11 Oct 2024 08:46:43 GMT",
-            "update_time": 1728636403974
+            "update_time": 1728636403974,
+            "user_id": ""
         }
     ]
 }
@@ -3599,6 +3614,202 @@ Failure:
 {
     "code": 102,
     "message": "The session doesn't exist"
+}
+```
+
+---
+
+### Get chat assistant's session
+
+**GET** `/api/v1/chats/{chat_id}/sessions/{session_id}`
+
+Gets a specific session of a specified chat assistant, including its messages, references, and avatar.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/chats/{chat_id}/sessions/{session_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions/{session_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request Parameters
+
+- `chat_id`: (*Path parameter*)  
+  The ID of the associated chat assistant.
+- `session_id`: (*Path parameter*)  
+  The ID of the session to retrieve.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "chat_id": "2ca4b22e878011ef88fe0242ac120005",
+        "id": "4606b4ec87ad11efbc4f0242ac120006",
+        "name": "new session",
+        "avatar": "data:image/png;base64,...",
+        "messages": [
+            {
+                "content": "Hi! I am your assistant, can I help you?",
+                "role": "assistant"
+            }
+        ],
+        "reference": []
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Session not found!"
+}
+```
+
+---
+
+### Delete a message from a chat assistant's session
+
+**DELETE** `/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id}`
+
+Deletes a user message and its paired assistant reply from a specified chat assistant session.
+
+#### Request
+
+- Method: DELETE
+- URL: `/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request Parameters
+
+- `chat_id`: (*Path parameter*)  
+  The ID of the associated chat assistant.
+- `session_id`: (*Path parameter*)  
+  The ID of the session that owns the message.
+- `msg_id`: (*Path parameter*)  
+  The ID of the message to delete.
+
+#### Response
+
+Success: returns the updated session object.
+
+```json
+{
+    "code": 0,
+    "data": {
+        "chat_id": "2ca4b22e878011ef88fe0242ac120005",
+        "id": "4606b4ec87ad11efbc4f0242ac120006",
+        "messages": [],
+        "reference": []
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Session not found!"
+}
+```
+
+---
+
+### Update message feedback in a chat assistant's session
+
+**PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id}/feedback`
+
+Updates feedback for an assistant message in a specified chat assistant session.
+
+#### Request
+
+- Method: PUT
+- URL: `/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id}/feedback`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"thumbup"`: `boolean`
+  - `"feedback"`: `string` (optional)
+
+##### Request example
+
+```bash
+curl --request PUT \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id}/feedback \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "thumbup": false,
+          "feedback": "The answer missed the cited document."
+     }'
+```
+
+##### Request Parameters
+
+- `chat_id`: (*Path parameter*)  
+  The ID of the associated chat assistant.
+- `session_id`: (*Path parameter*)  
+  The ID of the session that owns the message.
+- `msg_id`: (*Path parameter*)  
+  The ID of the assistant message to update.
+- `"thumbup"`: (*Body parameter*), `boolean`  
+  Whether the assistant message is marked as positive feedback.
+- `"feedback"`: (*Body parameter*), `string`  
+  Optional feedback text, typically used when `"thumbup"` is `false`.
+
+#### Response
+
+Success: returns the updated session object.
+
+```json
+{
+    "code": 0,
+    "data": {
+        "chat_id": "2ca4b22e878011ef88fe0242ac120005",
+        "id": "4606b4ec87ad11efbc4f0242ac120006",
+        "messages": [
+            {
+                "id": "message-id",
+                "role": "assistant",
+                "content": "Here is the answer.",
+                "thumbup": false,
+                "feedback": "The answer missed the cited document."
+            }
+        ]
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Session not found!"
 }
 ```
 
@@ -5057,9 +5268,159 @@ Failure:
 
 ---
 
+### Text-to-speech
+
+**POST** `/api/v1/chats/tts`
+
+Converts text to speech audio using the tenant's default TTS model, returning a streaming audio response.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/chats/tts`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
+- Body:
+  - `"text"`: `string` *(Required)* The text to synthesize.
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/chats/tts \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
+     --output audio.mp3 \
+     --data '{"text": "Hello, how can I help you today?"}'
+```
+
+#### Response
+
+Success: binary `audio/mpeg` stream with headers `Cache-Control: no-cache`, `Connection: keep-alive`, `X-Accel-Buffering: no`.
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "No default TTS model is set"
+}
+```
+
+---
+
+### Speech-to-text
+
+**POST** `/api/v1/chats/transcriptions`
+
+Transcribes an audio file using the tenant's default ASR (automatic speech recognition) model.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/chats/transcriptions`
+- Headers:
+  - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
+- Body (multipart/form-data):
+  - `"file"`: audio file (`.wav`, `.mp3`, `.m4a`, `.aac`, `.flac`, `.ogg`, `.webm`, `.opus`, `.wma`)
+  - `"stream"`: `string` `"true"` for SSE streaming, `"false"` (default) for a single JSON response.
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/chats/transcriptions \
+     --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
+     --form file=@recording.wav \
+     --form stream=false
+```
+
+#### Response
+
+Success (non-streaming):
+
+```json
+{
+    "code": 0,
+    "data": {
+        "text": "Hello, how can I help you today?"
+    }
+}
+```
+
+Success (streaming): SSE events with `data: {"event": "partial", "text": "..."}`.
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Unsupported audio format: .mp4. Allowed: .aac, .flac, .m4a, .mp3, .ogg, .opus, .wav, .webm, .wma"
+}
+```
+
+---
+
+### Generate mind map
+
+**POST** `/api/v1/chats/mindmap`
+
+Generates a mind map from a question and a set of knowledge base IDs.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/chats/mindmap`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
+- Body:
+  - `"question"`: `string` *(Required)* The central question or topic.
+  - `"kb_ids"`: `list[string]` *(Required)* Knowledge base IDs to search.
+  - `"search_id"`: `string` *(Optional)* ID of a saved search configuration to merge additional `kb_ids` and settings.
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/chats/mindmap \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
+     --data '{
+         "question": "What is retrieval-augmented generation?",
+         "kb_ids": ["kb-abc123"]
+     }'
+```
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "name": "Retrieval-Augmented Generation",
+        "children": [...]
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 500,
+    "message": "..."
+}
+```
+
+---
+
 ### Generate related questions
 
-**POST** `/api/v1/sessions/related_questions`
+**POST** `/api/v1/chats/related_questions`
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
@@ -5074,25 +5435,23 @@ The chat model autonomously determines the number of questions to generate based
 #### Request
 
 - Method: POST
-- URL: `/api/v1/sessions/related_questions`
+- URL: `/api/v1/chats/related_questions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
 - Body:
-  - `"question"`: `string`
-  - `"industry"`: `string`
+  - `"question"`: `string` *(Required)* The original user question.
+  - `"search_id"`: `string` *(Optional)* ID of a saved search configuration to use custom LLM settings.
 
 ##### Request example
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/sessions/related_questions \
+     --url http://{address}/api/v1/chats/related_questions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
-     --data '
-     {
-          "question": "What are the key advantages of Neovim over Vim?",
-          "industry": "software_development"
+     --data '{
+          "question": "What are the key advantages of Neovim over Vim?"
      }'
 ```
 
@@ -5100,8 +5459,8 @@ curl --request POST \
 
 - `"question"`: (*Body Parameter*), `string`
   The original user question.
-- `"industry"`: (*Body Parameter*), `string`
-  Industry of the question.
+- `"search_id"`: (*Body Parameter*), `string`
+  ID of a saved search configuration to use custom LLM settings. If provided, the LLM model and generation settings from the search configuration will be used.
 
 #### Response
 

@@ -256,7 +256,7 @@ export const AudioButton = ({
       formData.append('file', audioFile);
       formData.append('stream', 'false');
 
-      const response = await fetch(api.sequence2txt, {
+      const response = await fetch(api.chatsTranscriptions, {
         method: 'POST',
         headers: {
           [Authorization]: getAuthorization(),

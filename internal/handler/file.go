@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -225,4 +226,148 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 		"data":    gin.H{"parent_folders": parentFolders},
 		"message": "success",
 	})
+}
+
+type CreateFolderRequest struct {
+	Name     string `json:"name" binding:"required"`
+	ParentID string `json:"parent_id"`
+	Type     string `json:"type"`
+}
+
+// UploadFile handles file upload and folder creation
+// @Summary Upload Files or Create Folder
+// @Description Upload files or create a folder based on content type
+// @Tags file
+// @Accept multipart/form-data, application/json
+// @Produce json
+// @Param parent_id query string false "parent folder ID (for multipart/form-data)"
+// @Param file formData file false "file to upload (for multipart/form-data)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Router /v1/file/upload [post]
+func (h *FileHandler) UploadFile(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    errorCode,
+			"message": errorMessage,
+		})
+		return
+	}
+
+	userID := user.ID
+
+	contentType := c.ContentType()
+
+	if strings.Contains(contentType, "multipart/form-data") {
+		if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Failed to parse multipart form: " + err.Error(),
+			})
+			return
+		}
+
+		form := c.Request.MultipartForm
+		if form == nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "No file part!",
+			})
+			return
+		}
+		parentID := c.PostForm("parent_id")
+		if parentID == "" {
+			rootFolder, err := h.fileService.GetRootFolder(userID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"code":    500,
+					"message": err.Error(),
+				})
+				return
+			}
+			parentID = rootFolder["id"].(string)
+		}
+
+		files := form.File["file"]
+		if len(files) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "No file selected!",
+			})
+			return
+		}
+
+		for _, fileHeader := range files {
+			if fileHeader.Filename == "" {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"code":    400,
+					"message": "No file selected!",
+				})
+				return
+			}
+		}
+
+		result, err := h.fileService.UploadFile(userID, parentID, files)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"data":    result,
+			"message": "success",
+		})
+		return
+	}
+
+	if strings.Contains(contentType, "application/json") {
+		var req CreateFolderRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": err.Error(),
+			})
+			return
+		}
+
+		parentID := req.ParentID
+		if parentID == "" {
+			rootFolder, err := h.fileService.GetRootFolder(userID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"code":    500,
+					"message": err.Error(),
+				})
+				return
+			}
+			parentID = rootFolder["id"].(string)
+		}
+
+		result, err := h.fileService.CreateFolder(userID, req.Name, parentID, req.Type)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"data":    result,
+			"message": "success",
+		})
+		return
+	}
+
+	c.JSON(http.StatusBadRequest, gin.H{
+		"code":    400,
+		"message": "Unsupported content type",
+	})
+	return
 }

@@ -747,14 +747,14 @@ class TestDocRoutesUnit:
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc(run=module.TaskStatus.RUNNING.value)])
         monkeypatch.setattr(
             module.DocumentService,
-            "update_by_id",
-            lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("update_by_id must not be called for running docs")),
+            "filter_update",
+            lambda *_args, **_kwargs: 0,
         )
         res = _run(module.parse.__wrapped__("tenant-1", "ds-1"))
         assert "currently being processed" in res["message"]
 
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc(progress=0)])
-        monkeypatch.setattr(module.DocumentService, "update_by_id", lambda *_args, **_kwargs: True)
+        monkeypatch.setattr(module.DocumentService, "filter_update", lambda *_args, **_kwargs: 1)
         monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _id: (True, _DummyDoc()))
         monkeypatch.setattr(module.File2DocumentService, "get_storage_address", lambda **_kwargs: ("b", "n"))
         _patch_docstore(monkeypatch, module, delete=lambda *_args, **_kwargs: None)

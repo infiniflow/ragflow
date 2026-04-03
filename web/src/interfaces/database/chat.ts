@@ -82,10 +82,10 @@ interface Manual {
 export interface IConversation {
   create_date: string;
   create_time: number;
-  dialog_id: string;
+  chat_id: string;
   id: string;
   avatar: string;
-  message: Message[];
+  messages: Message[];
   reference: IReference[];
   name: string;
   update_date: string;
@@ -197,7 +197,7 @@ export interface IMessage extends Message {
 }
 
 export interface IClientConversation extends IConversation {
-  message: IMessage[];
+  messages: IMessage[];
 }
 
 export interface UploadResponseDataType {

@@ -116,3 +116,10 @@ func (dao *DocumentDAO) GetAllDocIDsByKBIDs(kbIDs []string) ([]map[string]string
 	}
 	return result, nil
 }
+
+// CountByTenantID counts documents by tenant ID
+func (dao *DocumentDAO) CountByTenantID(tenantID string) (int64, error) {
+	var count int64
+	err := DB.Model(&entity.Document{}).Where("created_by = ?", tenantID).Count(&count).Error
+	return count, err
+}

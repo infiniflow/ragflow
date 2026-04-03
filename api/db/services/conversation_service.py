@@ -44,7 +44,8 @@ class ConversationService(CommonService):
         else:
             sessions = sessions.order_by(cls.model.getter_by(orderby).asc())
 
-        sessions = sessions.paginate(page_number, items_per_page)
+        if items_per_page > 0:
+            sessions = sessions.paginate(page_number, items_per_page)
 
         return list(sessions.dicts())
 

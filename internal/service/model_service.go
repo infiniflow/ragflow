@@ -18,8 +18,10 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"strings"
@@ -114,4 +116,429 @@ func (p *ModelProviderImpl) GetRerankModel(ctx context.Context, tenantID string,
 	}
 	// TODO: implement rerank model creation
 	return nil, fmt.Errorf("rerank model not implemented yet for model: %s", compositeModelName)
+}
+
+func NewModelProviderService() *ModelProviderService {
+	return &ModelProviderService{
+		modelProviderDAO:     dao.NewTenantModelProviderDAO(),
+		modelInstanceDAO:     dao.NewTenantModelInstanceDAO(),
+		modelDAO:             dao.NewTenantModelDAO(),
+		modelGroupDAO:        dao.NewTenantModelGroupDAO(),
+		modelGroupMappingDAO: dao.NewTenantModelGroupMappingDAO(),
+		userTenantDAO:        dao.NewUserTenantDAO(),
+	}
+}
+
+type ModelProviderService struct {
+	modelProviderDAO     *dao.TenantModelProviderDAO
+	modelInstanceDAO     *dao.TenantModelInstanceDAO
+	modelDAO             *dao.TenantModelDAO
+	modelGroupDAO        *dao.TenantModelGroupDAO
+	modelGroupMappingDAO *dao.TenantModelGroupMappingDAO
+	userTenantDAO        *dao.UserTenantDAO
+}
+
+func (m *ModelProviderService) AddModelProvider(providerName, userID string) (common.ErrorCode, error) {
+
+	_, err := dao.GetModelProviderManager().GetProviderByName(providerName)
+	if err != nil {
+		return common.CodeNotFound, err
+	}
+
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	providerID, err := generateUUID1Hex()
+	if err != nil {
+		return common.CodeServerError, errors.New("fail to get UUID")
+	}
+
+	now := time.Now().Unix()
+	nowDate := time.Now().Truncate(time.Second)
+	tenantModelProvider := &entity.TenantModelProvider{
+		ID:           providerID,
+		ProviderName: providerName,
+		TenantID:     tenantID,
+	}
+	tenantModelProvider.CreateTime = &now
+	tenantModelProvider.UpdateTime = &now
+	tenantModelProvider.CreateDate = &nowDate
+	tenantModelProvider.UpdateDate = &nowDate
+	err = m.modelProviderDAO.Create(tenantModelProvider)
+	if err != nil {
+		return common.CodeServerError, errors.New("fail to create model provider")
+	}
+	return common.CodeSuccess, nil
+}
+
+func (m *ModelProviderService) ListProvidersOfTenant(userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return nil, common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	providerNames, err := m.modelProviderDAO.ListByID(tenantID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	var result []map[string]interface{}
+	for _, providerName := range providerNames {
+		provider, err := dao.GetModelProviderManager().GetProviderByName(providerName)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		result = append(result, provider)
+	}
+
+	return result, common.CodeSuccess, nil
+}
+
+func (m *ModelProviderService) DeleteModelProvider(providerName, userID string) (common.ErrorCode, error) {
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	if len(tenants) == 0 {
+		return common.CodeNotFound, errors.New("user has no tenants")
+	}
+	tenantID := tenants[0].TenantID
+
+	_, err = m.modelProviderDAO.DeleteByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	return common.CodeSuccess, nil
+}
+
+func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName, apiKey, userID string) (common.ErrorCode, error) {
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	instanceID, err := generateUUID1Hex()
+	if err != nil {
+		return common.CodeServerError, errors.New("fail to get UUID")
+	}
+
+	now := time.Now().Unix()
+	nowDate := time.Now().Truncate(time.Second)
+	tenantModelProvider := &entity.TenantModelInstance{
+		ID:           instanceID,
+		InstanceName: instanceName,
+		ProviderID:   provider.ID,
+		APIKey:       apiKey,
+		Status:       "active",
+	}
+	tenantModelProvider.CreateTime = &now
+	tenantModelProvider.UpdateTime = &now
+	tenantModelProvider.CreateDate = &nowDate
+	tenantModelProvider.UpdateDate = &nowDate
+	err = m.modelInstanceDAO.Create(tenantModelProvider)
+
+	if err != nil {
+		return common.CodeServerError, errors.New("fail to create model provider")
+	}
+	return common.CodeSuccess, nil
+}
+
+func (m *ModelProviderService) ListProviderInstances(providerName, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return nil, common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	// Check if provider exists
+	instances, err := m.modelInstanceDAO.GetAllInstancesByProviderID(provider.ID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	var result []map[string]interface{}
+	for _, instance := range instances {
+		result = append(result, map[string]interface{}{
+			"id":           instance.ID,
+			"instanceName": instance.InstanceName,
+			"providerID":   instance.ProviderID,
+			"apiKey":       instance.APIKey,
+			"status":       instance.Status,
+		})
+	}
+
+	return result, common.CodeSuccess, nil
+}
+
+func (m *ModelProviderService) ShowProviderInstance(providerName, instanceName, userID string) (map[string]interface{}, common.ErrorCode, error) {
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return nil, common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	result := map[string]interface{}{
+		"id":           instance.ID,
+		"instanceName": instance.InstanceName,
+		"providerID":   instance.ProviderID,
+		"status":       instance.Status,
+	}
+
+	return result, common.CodeSuccess, nil
+}
+
+func (m *ModelProviderService) AlterProviderInstance(providerName, instanceName, newInstanceName, apiKey, userID string) (common.ErrorCode, error) {
+	return common.CodeSuccess, nil
+}
+func (m *ModelProviderService) DropProviderInstance(providerName, instanceName, userID string) (common.ErrorCode, error) {
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	count, err := m.modelInstanceDAO.DeleteByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	if count == 0 {
+		return common.CodeNotFound, errors.New("provider instance not found")
+	}
+
+	return common.CodeSuccess, nil
+}
+
+func (m *ModelProviderService) ListInstanceModels(providerName, instanceName, userID string) ([]map[string]interface{}, error) {
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return nil, err
+	}
+
+	if len(tenants) == 0 {
+		return nil, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get instance
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get all models for this instance
+	disabledModels, err := m.modelDAO.GetModelsByInstanceID(instance.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	// insert models name into a set
+	modelNames := make(map[string]bool)
+	for _, model := range disabledModels {
+		modelNames[model.ModelName] = true
+	}
+
+	allModels, err := dao.GetModelProviderManager().ListModels(providerName)
+
+	for _, model := range allModels {
+		// convert model["name"] to string
+		modelName := model["name"].(string)
+		if modelNames[modelName] {
+			model["status"] = "disabled"
+		} else {
+			model["status"] = "enabled"
+		}
+
+	}
+
+	return allModels, nil
+}
+
+func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, modelName, userID, status string) (common.ErrorCode, error) {
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	model, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+	if err != nil {
+		var modelID string
+		modelID, err = generateUUID1Hex()
+		if err != nil {
+			return common.CodeServerError, errors.New("fail to get UUID")
+		}
+		// Get model info from provider
+		model = &entity.TenantModel{
+			ID:         modelID,
+			ModelName:  modelName,
+			ModelType:  model.ModelType,
+			ProviderID: provider.ID,
+			InstanceID: instance.ID,
+			Status:     status,
+		}
+		err = m.modelDAO.Create(model)
+		if err != nil {
+			return common.CodeServerError, errors.New("fail to create model")
+		}
+		return common.CodeSuccess, nil
+	}
+
+	count, err := m.modelDAO.DeleteByModelID(model.ID)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	if count == 0 {
+		return common.CodeNotFound, errors.New("model not found")
+	}
+
+	return common.CodeSuccess, nil
+}
+
+func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName, userID, message string) (*string, common.ErrorCode, error) {
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return nil, common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+	if err != nil {
+		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+		if providerInfo == nil {
+			return nil, common.CodeNotFound, errors.New("provider not found")
+		}
+
+		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		if err != nil {
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
+		}
+
+		var response string
+		response, err = providerInfo.ModelDriver.Chat(&modelName, &instance.APIKey, &message, nil)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+
+		return &response, common.CodeSuccess, nil
+	}
+
+	return nil, common.CodeServerError, errors.New("model is disabled")
 }

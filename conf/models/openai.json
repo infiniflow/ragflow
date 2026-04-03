@@ -2,6 +2,9 @@
   "name": "OpenAI",
   "tags": "LLM,TEXT EMBEDDING,TTS,TEXT RE-RANK,SPEECH2TEXT,MODERATION",
   "url": "https://api.openai.com/v1",
+  "url_suffix": {
+    "chat": "chat/completions"
+  },
   "models": [
     {
       "name": "gpt-5.2-pro",

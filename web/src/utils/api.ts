@@ -52,7 +52,7 @@ export default {
   // plugin
   llm_tools: `${api_host}/plugin/llm_tools`,
 
-  sequence2txt: `${api_host}/conversation/sequence2txt`,
+  chatsTranscriptions: `${ExternalApi}${api_host}/chats/transcriptions`,
 
   // knowledge base
 
@@ -135,28 +135,31 @@ export default {
   patchChat: (chatId: string) => `${ExternalApi}${api_host}/chats/${chatId}`,
   deleteChat: (chatId: string) => `${ExternalApi}${api_host}/chats/${chatId}`,
   bulkDeleteChats: `${ExternalApi}${api_host}/chats`,
-  setConversation: `${api_host}/conversation/set`,
-  getConversation: `${api_host}/conversation/get`,
-  getConversationSSE: (dialogId: string) =>
-    `${api_host}/conversation/getsse/${dialogId}`,
-  listConversation: `${api_host}/conversation/list`,
-  removeConversation: `${api_host}/conversation/rm`,
-  completeConversation: `${api_host}/conversation/completion`,
-  deleteMessage: `${api_host}/conversation/delete_msg`,
-  thumbup: `${api_host}/conversation/thumbup`,
-  tts: `${api_host}/conversation/tts`,
-  ask: `${api_host}/conversation/ask`,
-  mindmap: `${api_host}/conversation/mindmap`,
-  getRelatedQuestions: `${api_host}/conversation/related_questions`,
+  createSession: (chatId: string) =>
+    `${ExternalApi}${api_host}/chats/${chatId}/sessions`,
+  listSessions: (chatId: string) =>
+    `${ExternalApi}${api_host}/chats/${chatId}/sessions`,
+  getSession: (chatId: string, sessionId: string) =>
+    `${ExternalApi}${api_host}/chats/${chatId}/sessions/${sessionId}`,
+  updateSession: (chatId: string, sessionId: string) =>
+    `${ExternalApi}${api_host}/chats/${chatId}/sessions/${sessionId}`,
+  removeSessions: (chatId: string) =>
+    `${ExternalApi}${api_host}/chats/${chatId}/sessions`,
+  deleteMessage: (chatId: string, sessionId: string, msgId: string) =>
+    `${ExternalApi}${api_host}/chats/${chatId}/sessions/${sessionId}/messages/${msgId}`,
+  thumbup: (chatId: string, sessionId: string, msgId: string) =>
+    `${ExternalApi}${api_host}/chats/${chatId}/sessions/${sessionId}/messages/${msgId}/feedback`,
+  completionUrl: (chatId: string, sessionId: string) =>
+    `${ExternalApi}${api_host}/chats/${chatId}/sessions/${sessionId}/completions`,
+  chatsTts: `${ExternalApi}${api_host}/chats/tts`,
+  ask: `${ExternalApi}${api_host}/chats/ask`,
+  chatsMindmap: `${ExternalApi}${api_host}/chats/mindmap`,
+  chatsRelatedQuestions: `${ExternalApi}${api_host}/chats/related_questions`,
   // chat for external
   createToken: `${api_host}/api/new_token`,
   listToken: `${api_host}/api/token_list`,
   removeToken: `${api_host}/api/rm`,
   getStats: `${api_host}/api/stats`,
-  createExternalConversation: `${api_host}/api/new_conversation`,
-  getExternalConversation: `${api_host}/api/conversation`,
-  completeExternalConversation: `${api_host}/api/completion`,
-  uploadAndParseExternal: `${api_host}/api/document/upload_and_parse`,
 
   // next chat
   fetchExternalChatInfo: (id: string) =>

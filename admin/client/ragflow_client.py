@@ -15,7 +15,6 @@
 #
 import json
 import time
-import uuid
 from typing import Any, List, Optional
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -1130,7 +1129,7 @@ class RAGFlowClient:
 
     def _list_chat_sessions(self, dialog_id):
         """List all sessions (conversations) for a given dialog."""
-        response = self.http_client.request("GET", f"/conversation/list?dialog_id={dialog_id}", use_api_base=False,
+        response = self.http_client.request("GET", f"/chats/{dialog_id}/conversations", use_api_base=True,
                                             auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json["code"] == 0:
@@ -1146,14 +1145,9 @@ class RAGFlowClient:
         dialog_id = self._get_chat_id_by_name(chat_name)
         if dialog_id is None:
             return
-        conversation_id = str(uuid.uuid4()).replace("-", "")
-        payload = {
-            "conversation_id": conversation_id,
-            "is_new": True,
-            "dialog_id": dialog_id
-        }
-        response = self.http_client.request("POST", "/conversation/set", json_body=payload, use_api_base=False,
-                                            auth_kind="web")
+        payload = {"name": "New conversation"}
+        response = self.http_client.request("POST", f"/chats/{dialog_id}/conversations", json_body=payload,
+                                            use_api_base=True, auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json["code"] == 0:
             print(f"Success to create chat session for chat: {chat_name}")
@@ -1179,9 +1173,9 @@ class RAGFlowClient:
         if not to_drop_session_ids:
             print(f"Chat session '{session_id}' not found in chat '{chat_name}'")
             return
-        payload = {"conversation_ids": to_drop_session_ids}
-        response = self.http_client.request("POST", "/conversation/rm", json_body=payload, use_api_base=False,
-                                            auth_kind="web")
+        payload = {"ids": to_drop_session_ids}
+        response = self.http_client.request("DELETE", f"/chats/{dialog_id}/conversations", json_body=payload,
+                                            use_api_base=True, auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json["code"] == 0:
             print(f"Success to drop chat session '{session_id}' from chat: {chat_name}")

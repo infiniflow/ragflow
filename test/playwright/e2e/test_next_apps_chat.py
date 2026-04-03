@@ -678,7 +678,9 @@ def mm_step_12_composer_and_single_send(ctx: FlowContext, step, snap):
     def _on_completion_request(req):
         if (
             req.method.upper() in MM_REQUEST_METHOD_WHITELIST
-            and "/conversation/completion" in req.url
+            and "/api/v1/chats/" in req.url
+            and "/sessions/" in req.url
+            and req.url.rstrip("/").endswith("/completions")
         ):
             completion_payloads.append(_mm_payload_from_request(req))
 
@@ -747,7 +749,7 @@ def mm_step_12_composer_and_single_send(ctx: FlowContext, step, snap):
             page.remove_listener("request", _on_completion_request)
             attach_path.unlink(missing_ok=True)
 
-        assert completion_payloads, "no /conversation/completion request was captured"
+        assert completion_payloads, "no chat session completion request was captured"
         payloads_with_messages = [p for p in completion_payloads if p.get("messages")]
         assert payloads_with_messages, "completion requests did not include messages"
 

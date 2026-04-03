@@ -16,7 +16,7 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useFetchChat,
   useGetChatSearchParams,
-  useRemoveConversation,
+  useRemoveSessions,
 } from '@/hooks/use-chat-request';
 import {
   LucideCopyX,
@@ -50,7 +50,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
   } = useSelectDerivedConversationList();
   const { data } = useFetchChat();
   const { visible, switchVisible } = useSetModalState(true);
-  const { removeConversation } = useRemoveConversation();
+  const { removeSessions } = useRemoveSessions();
   const { setConversationBoth } = useChatUrlParams();
   const { conversationId } = useGetChatSearchParams();
 
@@ -118,7 +118,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
 
     let removeCode = -1;
     if (persistedIds.length > 0) {
-      removeCode = await removeConversation(persistedIds);
+      removeCode = await removeSessions(persistedIds);
     }
 
     if (currentConversationDeleted && conversationId) {
@@ -136,7 +136,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
     conversationList,
     setConversationBoth,
     removeTemporaryConversation,
-    removeConversation,
+    removeSessions,
     exitSelectionMode,
   ]);
 

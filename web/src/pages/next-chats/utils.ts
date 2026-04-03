@@ -28,10 +28,10 @@ export const getDocumentIdsFromConversionReference = (data: IConversation) => {
 };
 
 export const buildMessageItemReference = (
-  conversation: { message: IMessage[]; reference: IReference[] },
+  conversation: { messages: IMessage[]; reference: IReference[] },
   message: IMessage,
 ) => {
-  const assistantMessages = conversation.message
+  const assistantMessages = conversation.messages
     ?.filter(
       (x) =>
         x.role === MessageType.Assistant && !x.content.startsWith('**ERROR**:'), // Exclude error messages

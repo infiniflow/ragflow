@@ -712,6 +712,7 @@ class WebDAV(SyncBase):
             base_url=self.conf["base_url"],
             remote_path=self.conf.get("remote_path", "/")
         )
+        self.connector.set_allow_images(self.conf.get("allow_images", False))
         self.connector.load_credentials(self.conf["credentials"])
 
         logging.info(f"Task info: reindex={task['reindex']}, poll_range_start={task['poll_range_start']}")

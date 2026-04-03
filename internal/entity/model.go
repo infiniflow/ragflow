@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"ragflow/internal/entity/models"
 	"strings"
 )
 
@@ -135,18 +136,21 @@ type Features struct {
 
 // Model represents a single LLM model
 type Model struct {
-	Name       string   `json:"name"`
-	MaxTokens  int      `json:"max_tokens"`
-	ModelTypes []string `json:"model_types"`
-	Features   Features `json:"features"`
+	Name         string   `json:"name"`
+	MaxTokens    int      `json:"max_tokens"`
+	ModelTypes   []string `json:"model_types"`
+	Features     Features `json:"features"`
+	ModelTypeMap map[string]bool
 }
 
 // Provider represents an LLM provider
 type Provider struct {
-	Name   string  `json:"name"`
-	Tags   string  `json:"tags"`
-	URL    string  `json:"url"`
-	Models []Model `json:"models"`
+	Name        string           `json:"name"`
+	Tags        string           `json:"tags"`
+	URL         string           `json:"url"`
+	URLSuffix   models.URLSuffix `json:"url_suffix"`
+	Models      []Model          `json:"models"`
+	ModelDriver models.ModelDriver
 }
 
 // ProviderManager manages provider and model operations
@@ -171,6 +175,8 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 		return nil, fmt.Errorf("error reading directory %s: %w", dirPath, err)
 	}
 
+	modelFactory := models.NewModelFactory()
+
 	// Iterate through all files
 	for _, file := range files {
 		// Skip directories
@@ -187,7 +193,8 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 		filePath := filepath.Join(dirPath, file.Name())
 
 		// Read the file
-		data, err := os.ReadFile(filePath)
+		var data []byte
+		data, err = os.ReadFile(filePath)
 		if err != nil {
 			return nil, fmt.Errorf("error reading file %s: %w", filePath, err)
 		}
@@ -196,6 +203,18 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 		var provider Provider
 		if err = json.Unmarshal(data, &provider); err != nil {
 			return nil, fmt.Errorf("error parsing JSON from file %s: %w", filePath, err)
+		}
+
+		for _, model := range provider.Models {
+			model.ModelTypeMap = make(map[string]bool)
+			for _, modelType := range model.ModelTypes {
+				model.ModelTypeMap[modelType] = true
+			}
+		}
+
+		provider.ModelDriver, err = modelFactory.CreateModelDriver(provider.Name, provider.URL, provider.URLSuffix)
+		if err != nil {
+			return nil, fmt.Errorf("error creating model driver for provider %s: %w", provider.Name, err)
 		}
 
 		// Add to providers list
@@ -218,9 +237,10 @@ func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 
 	for _, provider := range pm.Providers {
 		providerData := map[string]interface{}{
-			"name": provider.Name,
-			"tags": provider.Tags,
-			"url":  provider.URL,
+			"name":       provider.Name,
+			"tags":       provider.Tags,
+			"url":        provider.URL,
+			"url_suffix": provider.URLSuffix,
 		}
 		providers = append(providers, providerData)
 	}
@@ -235,7 +255,7 @@ func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 // 2. Show specific provider information (including base_url)
 func (pm *ProviderManager) GetProviderByName(providerName string) (map[string]interface{}, error) {
 
-	provider := pm.findProvider(providerName)
+	provider := pm.FindProvider(providerName)
 	if provider == nil {
 		return nil, fmt.Errorf("provider '%s' not found", providerName)
 	}
@@ -252,7 +272,7 @@ func (pm *ProviderManager) GetProviderByName(providerName string) (map[string]in
 
 // 3. List models under a specific provider
 func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interface{}, error) {
-	provider := pm.findProvider(providerName)
+	provider := pm.FindProvider(providerName)
 	if provider == nil {
 		return nil, fmt.Errorf("provider '%s' not found", providerName)
 	}
@@ -276,7 +296,7 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 }
 
 func (pm *ProviderManager) GetModelByName(providerName, modelName string) (*Model, error) {
-	provider := pm.findProvider(providerName)
+	provider := pm.FindProvider(providerName)
 	if provider == nil {
 		return nil, fmt.Errorf("provider '%s' not found", providerName)
 	}
@@ -287,6 +307,39 @@ func (pm *ProviderManager) GetModelByName(providerName, modelName string) (*Mode
 	return model, nil
 }
 
+func (pm *ProviderManager) GetModelUrl(providerName, modelName, modelType string) (*string, *string, error) {
+	provider := pm.FindProvider(providerName)
+	if provider == nil {
+		return nil, nil, fmt.Errorf("provider '%s' not found", providerName)
+	}
+	model := pm.findModel(provider, modelName)
+	if model == nil {
+		return nil, nil, fmt.Errorf("model '%s' not found", modelName)
+	}
+
+	if !model.ModelTypeMap[modelType] {
+		return nil, nil, fmt.Errorf("model '%s' does not support model type '%s'", modelName, modelType)
+	}
+
+	switch modelType {
+	case "chat":
+		url := fmt.Sprintf("%s%s", provider.URL, provider.URLSuffix.Chat)
+		return &url, nil, nil
+	case "async_chat":
+		chatUrl := fmt.Sprintf("%s%s", provider.URL, provider.URLSuffix.AsyncChat)
+		resultUrl := fmt.Sprintf("%s%s", provider.URL, provider.URLSuffix.AsyncResult)
+		return &chatUrl, &resultUrl, nil
+	case "embedding":
+		url := fmt.Sprintf("%s%s", provider.URL, provider.URLSuffix.Embedding)
+		return &url, nil, nil
+	case "rerank":
+		url := fmt.Sprintf("%s%s", provider.URL, provider.URLSuffix.Rerank)
+		return &url, nil, nil
+	default:
+		return nil, nil, fmt.Errorf("model '%s' does not support model type '%s'", modelName, modelType)
+	}
+}
+
 // 4. Search specific model information with filtering by max_tokens or type
 func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filterBy string, filterValue interface{}) ModelResponse {
 	resp := ModelResponse{
@@ -295,7 +348,7 @@ func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filte
 		Message: "success",
 	}
 
-	provider := pm.findProvider(providerName)
+	provider := pm.FindProvider(providerName)
 	if provider == nil {
 		resp.Code = 404
 		resp.Message = fmt.Sprintf("Provider '%s' not found", providerName)
@@ -481,7 +534,7 @@ func modelHasFeature(features Features, featureType string) bool {
 }
 
 // Helper: Find provider by name
-func (pm *ProviderManager) findProvider(name string) *Provider {
+func (pm *ProviderManager) FindProvider(name string) *Provider {
 	for i := range pm.Providers {
 		if strings.EqualFold(pm.Providers[i].Name, name) {
 			return &pm.Providers[i]

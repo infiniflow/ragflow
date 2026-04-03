@@ -201,9 +201,7 @@ function useSetDoneRecord() {
   };
 }
 
-export const useSendMessageWithSse = (
-  url: string = api.completeConversation,
-) => {
+export const useSendMessageWithSse = () => {
   const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
   const [done, setDone] = useState(true);
   const { doneRecord, clearDoneRecord, setDoneRecordById, allDone } =
@@ -238,6 +236,7 @@ export const useSendMessageWithSse = (
 
   const send = useCallback(
     async (
+      url: string,
       body: any,
       controller?: AbortController,
     ): Promise<{ response: Response; data: ResponseType } | undefined> => {
@@ -322,7 +321,7 @@ export const useSendMessageWithSse = (
         // Swallow fetch errors silently
       }
     },
-    [initializeSseRef, setDoneValue, url, resetAnswer],
+    [initializeSseRef, setDoneValue, resetAnswer],
   );
 
   const stopOutputMessage = useCallback(() => {
@@ -342,7 +341,7 @@ export const useSendMessageWithSse = (
   };
 };
 
-export const useSpeechWithSse = (url: string = api.tts) => {
+export const useSpeechWithSse = (url: string = api.chatsTts) => {
   const read = useCallback(
     async (body: any) => {
       const response = await fetch(url, {
