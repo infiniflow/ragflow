@@ -774,8 +774,11 @@ async def ingest_video(tenant_id, dataset_id):
     # Build the document record — no file binary, no MinIO upload
     doc_id = get_uuid()
     parser_config = dict(kb.parser_config or {})
-    # note: video_title and youtube_url are stored in DocMetadataService below,
-    # not in parser_config — keeps upstream ParserConfig schema clean
+    # allow per-document parser_config overrides (e.g. whisper_backend, chunk_by)
+    # business fields (brand, youtube_url etc.) go to DocMetadataService, not here
+    _doc_parser_config = req.get("parser_config", {})
+    if isinstance(_doc_parser_config, dict) and _doc_parser_config:
+        parser_config.update(_doc_parser_config)
 
     doc = {
         "id": doc_id,
