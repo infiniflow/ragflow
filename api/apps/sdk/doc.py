@@ -44,6 +44,7 @@ from common.constants import FileSource, LLMType, ParserType, RetCode, TaskStatu
 from common.metadata_utils import convert_conditions, meta_filter
 from common.misc_utils import thread_pool_exec
 from common.string_utils import remove_redundant_spaces
+from common.tag_feature_utils import validate_tag_features
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
@@ -1272,7 +1273,10 @@ async def add_chunk(tenant_id, dataset_id, document_id):
             return get_error_data_result("`tag_kwd` must be a list of strings")
         d["tag_kwd"] = req["tag_kwd"]
     if "tag_feas" in req:
-        d["tag_feas"] = req["tag_feas"]
+        try:
+            d["tag_feas"] = validate_tag_features(req["tag_feas"])
+        except ValueError as exc:
+            return get_error_data_result(f"`tag_feas` {exc}")
     import base64
 
     image_base64 = req.get("image_base64", None)
@@ -1511,7 +1515,10 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
             return get_error_data_result("`tag_kwd` must be a list of strings")
         d["tag_kwd"] = req["tag_kwd"]
     if "tag_feas" in req:
-        d["tag_feas"] = req["tag_feas"]
+        try:
+            d["tag_feas"] = validate_tag_features(req["tag_feas"])
+        except ValueError as exc:
+            return get_error_data_result(f"`tag_feas` {exc}")
     tenant_embd_id = DocumentService.get_tenant_embd_id(document_id)
     if tenant_embd_id:
         model_config = get_model_config_by_id(tenant_embd_id)
