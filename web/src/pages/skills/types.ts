@@ -22,6 +22,8 @@ export interface Skill {
 export interface SkillsHub {
   id: string;
   name: string;
+  folder_id?: string;
+  create_time?: number;
 }
 
 export interface SkillFileEntry {

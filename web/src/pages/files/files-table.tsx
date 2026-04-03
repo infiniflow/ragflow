@@ -95,6 +95,24 @@ export function FilesTable({
     fileRenameLoading,
   } = useRenameCurrentFile();
 
+  // Sort files with skills folder first, then by time
+  const sortedFiles = useMemo(() => {
+    if (!files) return [];
+    return [...files].sort((a, b) => {
+      const aIsSkills =
+        isFolderType(a.type) && a.name.toLowerCase() === 'skills';
+      const bIsSkills =
+        isFolderType(b.type) && b.name.toLowerCase() === 'skills';
+
+      // Skills folder always comes first
+      if (aIsSkills && !bIsSkills) return -1;
+      if (!aIsSkills && bIsSkills) return 1;
+
+      // Then sort by create_time desc (newest first)
+      return (b.create_time || 0) - (a.create_time || 0);
+    });
+  }, [files]);
+
   const columns: ColumnDef<IFile>[] = [
     {
       id: 'select',
@@ -255,7 +273,7 @@ export function FilesTable({
   }, [pagination]);
 
   const table = useReactTable({
-    data: files || [],
+    data: sortedFiles,
     columns,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,

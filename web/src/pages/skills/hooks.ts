@@ -441,7 +441,12 @@ export const useSkills = () => {
   const fetchHubs = useCallback(async (): Promise<SkillsHub[]> => {
     try {
       const result = await skillsHubService.listHubs();
-      return result.hubs.map((hub) => ({ id: hub.id, name: hub.name }));
+      return result.hubs.map((hub) => ({
+        id: hub.id,
+        name: hub.name,
+        create_time: hub.create_time,
+        folder_id: hub.folder_id,
+      }));
     } catch (error) {
       console.error('Error fetching skill hubs:', error);
       return [];
@@ -509,6 +514,24 @@ export const useSkills = () => {
         return true;
       } catch (error: any) {
         console.error('Error deleting skill hub:', error);
+        message.error(error.message || t('skills.fetchError'));
+        return false;
+      }
+    },
+    [t],
+  );
+
+  // Update a skills hub (rename)
+  const updateHub = useCallback(
+    async (hubId: string, hubName: string): Promise<boolean> => {
+      try {
+        await skillsHubService.updateHub(hubId, { name: hubName });
+        message.success(
+          t('skills.hubUpdated') || 'Skills Hub renamed successfully',
+        );
+        return true;
+      } catch (error: any) {
+        console.error('Error updating skill hub:', error);
         message.error(error.message || t('skills.fetchError'));
         return false;
       }
@@ -1188,6 +1211,7 @@ export const useSkills = () => {
     fetchHubs,
     createHub,
     deleteHub,
+    updateHub,
     fetchSkills,
     uploadSkill,
     deleteSkill,

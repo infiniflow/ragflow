@@ -1,8 +1,10 @@
+import { BulkOperateBar } from '@/components/bulk-operate-bar';
 import { CardContainer } from '@/components/card-container';
 import { EmptyCardType } from '@/components/empty/constant';
 import { EmptyAppCard } from '@/components/empty/empty';
 import ListFilterBar from '@/components/list-filter-bar';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -21,10 +23,14 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Routes } from '@/routes';
+import fileManagerService from '@/services/file-manager-service';
+import { formatFileSize } from '@/utils/common-util';
+import { formatDate } from '@/utils/date';
 import {
   FolderOpen,
   LayoutGrid,
   List,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -88,6 +94,7 @@ const SkillsPage: React.FC = () => {
     fetchHubs,
     createHub,
     deleteHub,
+    updateHub,
     fetchSkills,
     uploadSkill,
     deleteSkill,
@@ -116,9 +123,31 @@ const SkillsPage: React.FC = () => {
     id: string;
     name: string;
   } | null>(null);
+  const [renameHubModalOpen, setRenameHubModalOpen] = useState(false);
+  const [hubToRename, setHubToRename] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [renameHubInput, setRenameHubInput] = useState('');
+  const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
+  const [hubDetails, setHubDetails] = useState<
+    Record<string, { size: number; createTime: number }>
+  >({});
+  const [deleteHubsModalOpen, setDeleteHubsModalOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<Skill[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+
+  // Selection state derived values (must be declared before any functions that use them)
+  const selectedHubCount = useMemo(
+    () => Object.keys(rowSelection).length,
+    [rowSelection],
+  );
+  const selectedHubIds = useMemo(
+    () => Object.keys(rowSelection),
+    [rowSelection],
+  );
+  const hasSelectedHubs = selectedHubCount > 0;
 
   const clearModalLocks = useCallback(() => {
     setDetailOpen(false);
@@ -142,9 +171,35 @@ const SkillsPage: React.FC = () => {
 
   const loadHubs = useCallback(async () => {
     setHubLoading(true);
+    setRowSelection({}); // Clear selection when loading new data
     try {
       const nextHubs = await fetchHubs();
       setHubs(nextHubs);
+      // Fetch folder details for each hub
+      const details: Record<string, { size: number; createTime: number }> = {};
+      for (const hub of nextHubs) {
+        if (hub.folder_id) {
+          try {
+            const { data } = await fileManagerService.listFile({
+              parent_id: hub.folder_id,
+            });
+            if (data.code === 0) {
+              const files = data.data?.files || [];
+              const totalSize = files.reduce(
+                (sum: number, f: any) => sum + (f.size || 0),
+                0,
+              );
+              details[hub.id] = {
+                size: totalSize,
+                createTime: hub.create_time || Date.now(),
+              };
+            }
+          } catch (e) {
+            console.warn('Failed to fetch hub folder details:', e);
+          }
+        }
+      }
+      setHubDetails(details);
     } finally {
       setHubLoading(false);
     }
@@ -259,6 +314,48 @@ const SkillsPage: React.FC = () => {
     },
     [],
   );
+
+  const openRenameHubModal = useCallback(
+    (hub: { id: string; name: string }, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setHubToRename(hub);
+      setRenameHubInput(hub.name);
+      setRenameHubModalOpen(true);
+    },
+    [],
+  );
+
+  const handleRenameHub = useCallback(async () => {
+    if (!hubToRename || !renameHubInput.trim()) return;
+    const success = await updateHub(hubToRename.id, renameHubInput.trim());
+    if (success) {
+      setRenameHubModalOpen(false);
+      setHubToRename(null);
+      setRenameHubInput('');
+      await loadHubs();
+      // Update selected hub name if it's the current hub
+      if (selectedHubId === hubToRename.id) {
+        setSelectedHubName(renameHubInput.trim());
+      }
+    }
+  }, [hubToRename, renameHubInput, updateHub, loadHubs, selectedHubId]);
+
+  const handleDeleteSelectedHubs = useCallback(async () => {
+    let hasError = false;
+    for (const hubId of selectedHubIds) {
+      const success = await deleteHub(hubId);
+      if (!success) {
+        hasError = true;
+      }
+    }
+    setDeleteHubsModalOpen(false);
+    setRowSelection({});
+    await loadHubs();
+  }, [selectedHubIds, deleteHub, loadHubs]);
+
+  const handleOpenDeleteSelectedModal = useCallback(() => {
+    setDeleteHubsModalOpen(true);
+  }, []);
 
   const handleSearch = useCallback(
     async (query: string) => {
@@ -422,6 +519,22 @@ const SkillsPage: React.FC = () => {
                 </Button>
               </div>
             </ListFilterBar>
+
+            {hasSelectedHubs && hubViewMode === 'list' && (
+              <BulkOperateBar
+                className="mt-4"
+                count={selectedHubCount}
+                unit={t('skills.hub') || 'hubs'}
+                list={[
+                  {
+                    id: 'delete',
+                    label: t('common.delete'),
+                    icon: <Trash2 className="size-4" />,
+                    onClick: handleOpenDeleteSelectedModal,
+                  },
+                ]}
+              />
+            )}
           </header>
 
           <div className="flex-1 px-5 flex flex-col overflow-hidden">
@@ -447,16 +560,28 @@ const SkillsPage: React.FC = () => {
                             {hub.name}
                           </h3>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 text-text-secondary hover:text-red-500"
-                          onClick={(e: React.MouseEvent) =>
-                            openDeleteHubModal(hub, e)
-                          }
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
+                        <div className="flex opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-text-secondary hover:text-accent-primary"
+                            onClick={(e: React.MouseEvent) =>
+                              openRenameHubModal(hub, e)
+                            }
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-text-secondary hover:text-red-500"
+                            onClick={(e: React.MouseEvent) =>
+                              openDeleteHubModal(hub, e)
+                            }
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
                       </div>
                       <div className="mt-auto pt-2">
                         <span className="text-accent-primary text-sm">
@@ -468,13 +593,38 @@ const SkillsPage: React.FC = () => {
                 </CardContainer>
               ) : (
                 <div className="flex-1 overflow-auto border border-border rounded-lg">
-                  <table className="w-full">
-                    <thead className="bg-bg-secondary sticky top-0">
+                  <table className="w-full" style={{ tableLayout: 'fixed' }}>
+                    <thead className="bg-bg-title sticky top-0">
                       <tr>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-text-secondary">
+                        <th className="px-4 py-3 w-10">
+                          <Checkbox
+                            checked={
+                              filteredHubs.length > 0 &&
+                              filteredHubs.every((hub) => rowSelection[hub.id])
+                            }
+                            onCheckedChange={(checked) => {
+                              const newSelection = { ...rowSelection };
+                              filteredHubs.forEach((hub) => {
+                                if (checked) {
+                                  newSelection[hub.id] = true;
+                                } else {
+                                  delete newSelection[hub.id];
+                                }
+                              });
+                              setRowSelection(newSelection);
+                            }}
+                          />
+                        </th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-text-title w-[20vw]">
                           {t('skills.hubName') || 'Name'}
                         </th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-text-secondary w-24">
+                        <th className="px-4 py-3 text-left text-sm font-medium text-text-title w-40">
+                          {t('fileManager.uploadDate') || 'Upload Date'}
+                        </th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-text-title w-24">
+                          {t('fileManager.size') || 'Size'}
+                        </th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-text-title w-24">
                           {t('common.action') || 'Action'}
                         </th>
                       </tr>
@@ -489,13 +639,57 @@ const SkillsPage: React.FC = () => {
                             setSelectedHubName(hub.name);
                           }}
                         >
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <FolderOpen className="size-4 text-text-secondary" />
-                              <span className="font-medium">{hub.name}</span>
+                          <td
+                            className="px-4 py-3"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Checkbox
+                              checked={!!rowSelection[hub.id]}
+                              onCheckedChange={(checked) => {
+                                setRowSelection((prev) => {
+                                  const newSelection = { ...prev };
+                                  if (checked) {
+                                    newSelection[hub.id] = true;
+                                  } else {
+                                    delete newSelection[hub.id];
+                                  }
+                                  return newSelection;
+                                });
+                              }}
+                            />
+                          </td>
+                          <td className="px-4 py-3 w-[20vw]">
+                            <div className="flex items-center gap-2 overflow-hidden">
+                              <FolderOpen className="size-4 text-text-secondary flex-shrink-0" />
+                              <span className="font-medium truncate">
+                                {hub.name}
+                              </span>
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-right">
+                          <td className="px-4 py-3 text-sm text-text-secondary">
+                            {hubDetails[hub.id]?.createTime
+                              ? formatDate(hubDetails[hub.id].createTime)
+                              : '-'}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-text-secondary">
+                            {hubDetails[hub.id]?.size !== undefined
+                              ? formatFileSize(hubDetails[hub.id].size)
+                              : '-'}
+                          </td>
+                          <td
+                            className="px-4 py-3 text-right"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-text-secondary hover:text-accent-primary"
+                              onClick={(e: React.MouseEvent) =>
+                                openRenameHubModal(hub, e)
+                              }
+                            >
+                              <Pencil className="size-4" />
+                            </Button>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -610,6 +804,95 @@ const SkillsPage: React.FC = () => {
                 {t('common.cancel')}
               </Button>
               <Button variant="destructive" onClick={handleDeleteHub}>
+                {t('common.delete')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Rename Hub Modal */}
+        <Dialog open={renameHubModalOpen} onOpenChange={setRenameHubModalOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>
+                {t('skills.renameHubTitle') || 'Rename Skills Hub'}
+              </DialogTitle>
+              <DialogDescription>
+                {t('skills.renameHubDescription') ||
+                  'Enter a new name for this skills hub.'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <label className="text-sm font-medium mb-2 block">
+                {t('skills.hubName') || 'Hub Name'}
+              </label>
+              <Input
+                placeholder={t('skills.hubNamePlaceholder') || 'e.g., my-hub'}
+                value={renameHubInput}
+                onChange={(e) => setRenameHubInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && renameHubInput.trim()) {
+                    handleRenameHub();
+                  }
+                }}
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setRenameHubModalOpen(false);
+                  setHubToRename(null);
+                  setRenameHubInput('');
+                }}
+              >
+                {t('common.cancel')}
+              </Button>
+              <Button
+                onClick={handleRenameHub}
+                disabled={
+                  !renameHubInput.trim() ||
+                  renameHubInput.trim() === hubToRename?.name
+                }
+              >
+                {t('common.save') || 'Save'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Selected Hubs Modal */}
+        <Dialog
+          open={deleteHubsModalOpen}
+          onOpenChange={setDeleteHubsModalOpen}
+        >
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>
+                {t('skills.deleteSelectedHubsTitle') ||
+                  'Delete Selected Skills Hubs'}
+              </DialogTitle>
+              <DialogDescription>
+                {t('skills.deleteSelectedHubsDescription') ||
+                  'Are you sure you want to delete the selected skills hubs? This action cannot be undone and all skills in these hubs will be permanently deleted.'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <p className="text-sm text-text-secondary">
+                {t('skills.selectedHubsCount') || 'Selected hubs'}:{' '}
+                <strong>{selectedHubCount}</strong>
+              </p>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDeleteHubsModalOpen(false);
+                }}
+              >
+                {t('common.cancel')}
+              </Button>
+              <Button variant="destructive" onClick={handleDeleteSelectedHubs}>
                 {t('common.delete')}
               </Button>
             </DialogFooter>
