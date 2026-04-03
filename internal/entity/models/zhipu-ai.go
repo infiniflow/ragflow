@@ -361,7 +361,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithChannel(modelName, apiKey, message *strin
 }
 
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string, genConf map[string]interface{}, sender func(string) error) error {
+func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string, modelConfig *ChatConfig, sender func(string) error) error {
 	url := fmt.Sprintf("%s/chat/completions", z.BaseURL)
 
 	// Build request body with streaming enabled
@@ -370,20 +370,45 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string
 		"messages": []map[string]string{
 			{"role": "user", "content": *message},
 		},
-		"stream":      true,
+		"stream":      false,
 		"temperature": 1,
 	}
 
-	// Add generation config if provided
-	if genConf != nil {
-		if maxTokens, ok := genConf["max_tokens"]; ok {
-			reqBody["max_tokens"] = maxTokens
+	if modelConfig != nil {
+		if modelConfig.Stream != nil {
+			reqBody["stream"] = *modelConfig.Stream
 		}
-		if temperature, ok := genConf["temperature"]; ok {
-			reqBody["temperature"] = temperature
+
+		if modelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *modelConfig.MaxTokens
 		}
-		if topP, ok := genConf["top_p"]; ok {
-			reqBody["top_p"] = topP
+
+		if modelConfig.Temperature != nil {
+			reqBody["temperature"] = *modelConfig.Temperature
+		}
+
+		if modelConfig.DoSample != nil {
+			reqBody["do_sample"] = *modelConfig.DoSample
+		}
+
+		if modelConfig.TopP != nil {
+			reqBody["top_p"] = *modelConfig.TopP
+		}
+
+		if modelConfig.Stop != nil {
+			reqBody["stop"] = *modelConfig.Stop
+		}
+
+		if modelConfig.Reasoning != nil {
+			if *modelConfig.Reasoning {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "enabled",
+				}
+			} else {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "disabled",
+				}
+			}
 		}
 	}
 
@@ -415,7 +440,6 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		//logger.Info(line)
 
 		// SSE data line starts with "data:"
 		if !strings.HasPrefix(line, "data:") {

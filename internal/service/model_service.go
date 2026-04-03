@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	model "ragflow/internal/entity/models"
 	"ragflow/internal/service/models"
 )
 
@@ -615,7 +616,7 @@ func (m *ModelProviderService) ChatToModelStream(providerName, instanceName, mod
 }
 
 // ChatToModelStreamWithSender streams chat response directly via sender function (best performance, no channel)
-func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, message string, sender func(string) error) common.ErrorCode {
+func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, message string, modelConfig *model.ChatConfig, sender func(string) error) common.ErrorCode {
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -652,7 +653,7 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		}
 
 		// Direct call with sender function
-		err := providerInfo.ModelDriver.ChatStreamlyWithSender(&modelName, &instance.APIKey, &message, nil, sender)
+		err := providerInfo.ModelDriver.ChatStreamlyWithSender(&modelName, &instance.APIKey, &message, modelConfig, sender)
 		if err != nil {
 			return common.CodeServerError
 		}

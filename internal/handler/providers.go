@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/entity/models"
+	"ragflow/internal/logger"
 	"ragflow/internal/service"
 	"strings"
 
@@ -528,8 +530,9 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 }
 
 type ChatToModelRequest struct {
-	Message string `json:"message" binding:"required"`
-	Stream  bool   `json:"stream"`
+	Message   string `json:"message" binding:"required"`
+	Stream    bool   `json:"stream"`
+	Reasoning bool   `json:"reasoning"`
 }
 
 func (h *ProviderHandler) ChatToModel(c *gin.Context) {
@@ -587,30 +590,41 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 				return nil
 			}
 			c.SSEvent("message", data)
+			logger.Info(data)
 			return nil
 		}
 
+		chatConfig := models.ChatConfig{
+			Reasoning:   &req.Reasoning,
+			Stream:      &req.Stream,
+			Stop:        &[]string{},
+			DoSample:    nil,
+			MaxTokens:   nil,
+			Temperature: nil,
+			TopP:        nil,
+		}
+
 		// Stream response using sender function (best performance, no channel)
-		errorCode := h.modelProviderService.ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, req.Message, sender)
+		errorCode := h.modelProviderService.ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, req.Message, &chatConfig, sender)
 
 		if errorCode != common.CodeSuccess {
 			c.SSEvent("error", "stream failed")
 		}
 		return
-	} else {
-		// Non-stream response
-		response, errorCode, err := h.modelProviderService.ChatToModel(providerName, instanceName, modelName, userID, req.Message)
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    errorCode,
-				"message": err.Error(),
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"code":    0,
-			"message": response,
-		})
 	}
+
+	// Non-stream response
+	response, errorCode, err := h.modelProviderService.ChatToModel(providerName, instanceName, modelName, userID, req.Message)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    errorCode,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": response,
+	})
 }

@@ -1189,12 +1189,14 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	}
 
 	message := cmd.Params["message"].(string)
+	reasoning := cmd.Params["reasoning"].(bool)
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
 
 	payload := map[string]interface{}{
-		"message": message,
-		"stream":  true, // use stream API
+		"message":   message,
+		"stream":    true, // use stream API
+		"reasoning": reasoning,
 	}
 
 	// Call stream http api
