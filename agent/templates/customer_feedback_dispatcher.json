@@ -570,7 +570,7 @@
                             }
                         },
                         "label": "VariableAggregator",
-                        "name": "Variable aggregator_0"
+                        "name": "Variable aggregator"
                     },
                     "id": "VariableAggregator:FlatBerriesRest",
                     "measured": {
