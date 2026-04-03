@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"io"
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -529,6 +530,7 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 
 type ChatToModelRequest struct {
 	Message string `json:"message" binding:"required"`
+	Stream  bool   `json:"stream"`
 }
 
 func (h *ProviderHandler) ChatToModel(c *gin.Context) {
@@ -571,17 +573,54 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	response, errorCode, err := h.modelProviderService.ChatToModel(providerName, instanceName, modelName, userID, req.Message)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    errorCode,
-			"message": err.Error(),
-		})
-		return
-	}
+	// Check if it's a stream request
+	if req.Stream {
+		// Stream response
+		streamChan, errChan, _, err := h.modelProviderService.ChatToModelStream(providerName, instanceName, modelName, userID, req.Message)
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": response,
-	})
+		// Set SSE headers
+		c.Header("Content-Type", "text/event-stream")
+		c.Header("Cache-Control", "no-cache")
+		c.Header("Connection", "keep-alive")
+
+		if err != nil {
+			c.Stream(func(w io.Writer) bool {
+				c.SSEvent("error", err.Error())
+				return false
+			})
+			return
+		}
+
+		c.Stream(func(w io.Writer) bool {
+			select {
+			case data, ok := <-streamChan:
+				if !ok {
+					c.SSEvent("done", "")
+					return false
+				}
+				c.SSEvent("message", data)
+				return true
+			case err := <-errChan:
+				if err != nil {
+					c.SSEvent("error", err.Error())
+				}
+				return false
+			}
+		})
+	} else {
+		// Non-stream response
+		response, errorCode, err := h.modelProviderService.ChatToModel(providerName, instanceName, modelName, userID, req.Message)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    errorCode,
+				"message": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"message": response,
+		})
+	}
 }

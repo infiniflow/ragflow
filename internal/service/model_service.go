@@ -542,3 +542,79 @@ func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName
 
 	return nil, common.CodeServerError, errors.New("model is disabled")
 }
+
+// ChatToModelStream
+func (m *ModelProviderService) ChatToModelStream(providerName, instanceName, modelName, userID, message string) (<-chan string, <-chan error, common.ErrorCode, error) {
+	streamChan := make(chan string)
+	errChan := make(chan error, 1)
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		close(streamChan)
+		close(errChan)
+		return streamChan, errChan, common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		close(streamChan)
+		close(errChan)
+		return streamChan, errChan, common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		close(streamChan)
+		close(errChan)
+		return streamChan, errChan, common.CodeServerError, err
+	}
+
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		close(streamChan)
+		close(errChan)
+		return streamChan, errChan, common.CodeServerError, err
+	}
+
+	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+	if err != nil {
+		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+		if providerInfo == nil {
+			close(streamChan)
+			close(errChan)
+			return streamChan, errChan, common.CodeNotFound, errors.New("provider not found")
+		}
+
+		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		if err != nil {
+			close(streamChan)
+			close(errChan)
+			return streamChan, errChan, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
+		}
+
+		// Async call stream interface
+		go func() {
+			defer close(streamChan)
+			defer close(errChan)
+
+			ch, err := providerInfo.ModelDriver.ChatStreamly(&modelName, &instance.APIKey, &message, nil)
+			if err != nil {
+				errChan <- err
+				return
+			}
+
+			for data := range ch {
+				streamChan <- data
+			}
+		}()
+
+		return streamChan, errChan, common.CodeSuccess, nil
+	}
+
+	close(streamChan)
+	close(errChan)
+	return streamChan, errChan, common.CodeServerError, errors.New("model is disabled")
+}

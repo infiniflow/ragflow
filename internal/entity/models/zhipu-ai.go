@@ -17,11 +17,13 @@
 package models
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 // ZhipuAIModel implements ModelDriver for Zhipu AI (智谱 AI)
@@ -137,7 +139,8 @@ func (z *ZhipuAIModel) ChatStreamly(modelName, apiKey, message *string, genConf 
 		"messages": []map[string]string{
 			{"role": "user", "content": *message},
 		},
-		"stream": true,
+		"stream":      true,
+		"temperature": 1,
 	}
 
 	// Add generation config if provided
@@ -164,7 +167,7 @@ func (z *ZhipuAIModel) ChatStreamly(modelName, apiKey, message *string, genConf 
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -185,16 +188,30 @@ func (z *ZhipuAIModel) ChatStreamly(modelName, apiKey, message *string, genConf 
 		defer close(resultChan)
 		defer resp.Body.Close()
 
-		decoder := json.NewDecoder(resp.Body)
-		for {
-			var event map[string]interface{}
-			if err := decoder.Decode(&event); err != nil {
-				if err == io.EOF {
-					break
-				}
-				return
+		// SSE parsing: read line by line
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			line := scanner.Text()
+			
+			// SSE data line starts with "data:"
+			if !strings.HasPrefix(line, "data:") {
+				continue
 			}
-
+			
+			// Extract JSON after "data:"
+			data := strings.TrimSpace(line[5:])
+			
+			// [DONE] marks the end of stream
+			if data == "[DONE]" {
+				break
+			}
+			
+			// Parse the JSON event
+			var event map[string]interface{}
+			if err := json.Unmarshal([]byte(data), &event); err != nil {
+				continue
+			}
+			
 			choices, ok := event["choices"].([]interface{})
 			if !ok || len(choices) == 0 {
 				continue
@@ -248,7 +265,7 @@ func (z *ZhipuAIModel) EncodeToEmbedding(modelName, apiKey *string, texts []stri
 		}
 
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
 
 		client := &http.Client{}
 		resp, err := client.Do(req)

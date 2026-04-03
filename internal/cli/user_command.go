@@ -17,6 +17,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -1192,24 +1193,55 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 
 	payload := map[string]interface{}{
 		"message": message,
+		"stream":  true, // use stream API
 	}
 
-	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
+	// Call stream http api
+	reader, duration, err := c.HTTPClient.RequestStream("POST", url, true, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to chat model: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to chat model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	defer reader.Close()
+
+	// Parse SSE and output to console
+	scanner := bufio.NewScanner(reader)
+	var fullMessage strings.Builder
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "data:") {
+			data := strings.TrimPrefix(line, "data:")
+			data = strings.TrimSpace(data)
+			if data == "" {
+				// done event, stream ended
+				break
+			}
+			fmt.Print(data)
+			fullMessage.WriteString(data)
+		} else if strings.HasPrefix(line, "event:error") {
+			// error event
+			if scanner.Scan() {
+				errData := strings.TrimPrefix(scanner.Text(), "data:")
+				errData = strings.TrimSpace(errData)
+				return nil, fmt.Errorf("chat error: %s", errData)
+			}
+			// If there's an error, return a generic error
+			return nil, fmt.Errorf("chat error: received error event from server")
+		}
 	}
-	var result MessageResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("chat model failed: invalid JSON (%w)", err)
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading stream: %w", err)
 	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
+
+	fmt.Println()
+
+	result := &StreamMessageResponse{
+		Code:     0,
+		Message:  fullMessage.String(),
+		Duration: duration,
 	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return result, nil
 }
 
 // UseModel sets the current model for chat
