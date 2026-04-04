@@ -35,4 +35,8 @@ docker cp $BASE/docker/nginx/nginx.conf    $CONTAINER:/etc/nginx/nginx.conf
 # Copy test credentials
 docker cp $BASE/tests/.env.test            $CONTAINER:/ragflow/tests/.env.test
 
+# Remove default nginx conf that conflicts with ragflow.conf
+docker exec $CONTAINER rm -f /etc/nginx/conf.d/default.conf
+docker exec $CONTAINER nginx -s reload
+
 echo "All files deployed. Container is ready."
