@@ -115,15 +115,15 @@
                     }
                 },
                 "downstream": [
-                    "Splitter:KindDingosJam"
+                    "TokenChunker:KindDingosJam"
                 ],
                 "upstream": [
                     "File"
                 ]
             },
-            "Splitter:KindDingosJam": {
+            "TokenChunker:KindDingosJam": {
                 "obj": {
-                    "component_name": "Splitter",
+                    "component_name": "TokenChunker",
                     "params": {
                         "chunk_token_size": 512,
                         "delimiters": [
@@ -160,7 +160,7 @@
                         "presence_penalty": 0.4,
                         "prompts": [
                             {
-                                "content": "Text to Summarize:\n{Splitter:KindDingosJam@chunks}",
+                                "content": "Text to Summarize:\n{TokenChunker:KindDingosJam@chunks}",
                                 "role": "user"
                             }
                         ],
@@ -175,7 +175,7 @@
                     "Extractor:TastyPointsLay"
                 ],
                 "upstream": [
-                    "Splitter:KindDingosJam"
+                    "TokenChunker:KindDingosJam"
                 ]
             },
             "Extractor:TastyPointsLay": {
@@ -418,11 +418,11 @@
                             },
                             "overlapped_percent": 0.2
                         },
-                        "label": "Splitter",
+                        "label": "TokenChunker",
                         "name": "Token Chunker"
                     },
                     "dragging": false,
-                    "id": "Splitter:KindDingosJam",
+                    "id": "TokenChunker:KindDingosJam",
                     "measured": {
                         "height": 80,
                         "width": 200
@@ -434,7 +434,7 @@
                     "selected": false,
                     "sourcePosition": "right",
                     "targetPosition": "left",
-                    "type": "splitterNode"
+                    "type": "chunkerNode"
                 },
                 {
                     "data": {
@@ -448,7 +448,7 @@
                             "outputs": {},
                             "presencePenaltyEnabled": false,
                             "presence_penalty": 0.4,
-                            "prompts": "Text to Summarize:\n{Splitter:KindDingosJam@chunks}",
+                            "prompts": "Text to Summarize:\n{TokenChunker:KindDingosJam@chunks}",
                             "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
                             "temperature": 0.1,
                             "temperatureEnabled": false,
@@ -654,8 +654,8 @@
                     "data": {
                         "isHovered": false
                     },
-                    "id": "xy-edge__Splitter:KindDingosJamstart-Extractor:NineTiesSinend",
-                    "source": "Splitter:KindDingosJam",
+                    "id": "xy-edge__TokenChunker:KindDingosJamstart-Extractor:NineTiesSinend",
+                    "source": "TokenChunker:KindDingosJam",
                     "sourceHandle": "start",
                     "target": "Extractor:NineTiesSin",
                     "targetHandle": "end"
@@ -704,7 +704,7 @@
                     "data": {
                         "isHovered": false
                     },
-                    "id": "xy-edge__Parser:HipSignsRhymestart-Splitter:KindDingosJamend",
+                    "id": "xy-edge__Parser:HipSignsRhymestart-TokenChunker:KindDingosJamend",
                     "markerEnd": "logo",
                     "source": "Parser:HipSignsRhyme",
                     "sourceHandle": "start",
@@ -712,7 +712,7 @@
                         "stroke": "rgba(91, 93, 106, 1)",
                         "strokeWidth": 1
                     },
-                    "target": "Splitter:KindDingosJam",
+                    "target": "TokenChunker:KindDingosJam",
                     "targetHandle": "end",
                     "type": "buttonEdge",
                     "zIndex": 1001
