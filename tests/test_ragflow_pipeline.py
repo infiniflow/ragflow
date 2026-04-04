@@ -425,8 +425,11 @@ def ingest_html(
             safe_name += ".html"
         local_path = Path(f"/tmp/{safe_name}")
         print(f"🌐 Fetching HTML from URL: {source}")
-        urllib.request.urlretrieve(source, local_path)
-        print(f"   Saved to: {local_path}")
+        _r = requests.get(source, verify=False, timeout=30,
+                          headers={"User-Agent": "Mozilla/5.0"})
+        _r.raise_for_status()
+        local_path.write_bytes(_r.content)
+        print(f"   Saved to: {local_path} ({len(_r.content)} bytes)")
     else:
         local_path = Path(source)
 
@@ -522,8 +525,11 @@ def ingest_image(
             safe_name += ".jpg"
         local_path = Path(f"/tmp/{safe_name}")
         print(f"🌐 Fetching image from URL: {source}")
-        urllib.request.urlretrieve(source, local_path)
-        print(f"   Saved to: {local_path}")
+        _r = requests.get(source, verify=False, timeout=30,
+                          headers={"User-Agent": "Mozilla/5.0"})
+        _r.raise_for_status()
+        local_path.write_bytes(_r.content)
+        print(f"   Saved to: {local_path} ({len(_r.content)} bytes)")
     else:
         local_path = Path(source)
 
