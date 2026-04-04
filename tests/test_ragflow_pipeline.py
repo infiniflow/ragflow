@@ -382,6 +382,13 @@ def ingest_html(
     cfg: dict,
     dataset_id: str,
     source: str,
+    brand: str = "",
+    car_model: str = "",
+    year: str = "",
+    market: str = "",
+    trim: str = "All",
+    source_type: str = "Web",
+    retrieval_date: str = "",
 ) -> dict:
     """
     MCP tool: ingest_html
@@ -390,13 +397,20 @@ def ingest_html(
     The dataset must have been created with chunk_method="naive".
 
     Args:
-        cfg        : config dict from load_config()
-        dataset_id : target dataset ID (created with create_web_dataset())
-        source     : one of:
-                       - absolute/relative local path: "/ragflow/tests/corsa.html"
-                       - HTTP/HTTPS URL: "https://www.opel.ie/cars/corsa.html"
-                     If a URL is given, the page is fetched and saved to
-                     /tmp/<sanitised_filename>.html before upload.
+        cfg            : config dict from load_config()
+        dataset_id     : target dataset ID (created with create_web_dataset())
+        source         : one of:
+                           - absolute/relative local path: "/ragflow/tests/corsa.html"
+                           - HTTP/HTTPS URL: "https://www.opel.ie/cars/corsa.html"
+                         If a URL is given, the page is fetched and saved to
+                         /tmp/<sanitised_filename>.html before upload.
+        brand          : car brand e.g. "Opel", "Peugeot"
+        car_model      : car model e.g. "Corsa", "208"
+        year           : model year e.g. "2023", "2025"
+        market         : target market ISO code or full name
+        trim           : car trim level (default: "All")
+        source_type    : source type tag (default: "Web")
+        retrieval_date : ISO date string (default: today)
 
     Returns:
         dict with document metadata including "id" field
@@ -432,6 +446,26 @@ def ingest_html(
         raise RuntimeError(f"ingest_html failed: {data.get('message')}")
     doc = data["data"][0]
     print(f"✅ HTML uploaded: {local_path.name} (doc_id={doc['id']})")
+    # store business metadata via DocMetadataService
+    if any([brand, car_model, year, market]):
+        from datetime import date as _date
+        import requests as _req
+        _headers = {"Authorization": f"Bearer {cfg['ragflow_api_key']}", "Content-Type": "application/json"}
+        _meta = {
+            "brand":          brand,
+            "car_model":      car_model,
+            "year":           year,
+            "market":         _normalize_market(market) if market else "",
+            "trim":           trim,
+            "source_type":    source_type,
+            "retrieval_date": retrieval_date or _date.today().isoformat(),
+        }
+        _req.post(
+            f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/metadata/update",
+            headers=_headers,
+            json={"selector": {"document_ids": [doc['id']]},
+                  "updates": [{"key": k, "value": v} for k, v in _meta.items() if v]},
+        )
     return doc
 
 
