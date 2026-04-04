@@ -20,6 +20,7 @@
 	"position_int": {"type": "varchar", "default": ""},
 	"weight_int": {"type": "integer", "default": 0},
 	"weight_flt": {"type": "float", "default": 0.0},
+	"chunk_order_int": {"type": "integer", "default": 0},
 	"rank_int": {"type": "integer", "default": 0},
 	"rank_flt": {"type": "float", "default": 0},
 	"available_int": {"type": "integer", "default": 1, "index_type": {"type": "secondary", "cardinality": "low"}},

@@ -17,9 +17,11 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/service"
 	"strings"
 
@@ -528,7 +530,9 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 }
 
 type ChatToModelRequest struct {
-	Message string `json:"message" binding:"required"`
+	Message   string `json:"message" binding:"required"`
+	Stream    bool   `json:"stream"`
+	Reasoning bool   `json:"reasoning"`
 }
 
 func (h *ProviderHandler) ChatToModel(c *gin.Context) {
@@ -571,6 +575,58 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
+	// Check if it's a stream request
+	if req.Stream {
+		// Set SSE headers
+		c.Header("Content-Type", "text/event-stream")
+		c.Header("Cache-Control", "no-cache")
+		c.Header("Connection", "keep-alive")
+		c.Writer.WriteHeader(http.StatusOK)
+		c.Writer.Flush()
+
+		// Create sender function that writes directly to response
+		sender := func(content, reasoningContent *string) error {
+			// Check for [DONE] marker (OpenAI compatible)
+			if content != nil {
+				if *content == "[DONE]" {
+					c.SSEvent("done", "[DONE]")
+					return nil
+				}
+				message := fmt.Sprintf("[MESSAGE]%s", *content)
+				c.SSEvent("message", message)
+				c.Writer.Flush()
+			}
+
+			if reasoningContent != nil {
+				message := fmt.Sprintf("[REASONING]%s", *reasoningContent)
+				c.SSEvent("message", message)
+				c.Writer.Flush()
+			}
+
+			//logger.Info(data)
+			return nil
+		}
+
+		chatConfig := models.ChatConfig{
+			Reasoning:   &req.Reasoning,
+			Stream:      &req.Stream,
+			Stop:        &[]string{},
+			DoSample:    nil,
+			MaxTokens:   nil,
+			Temperature: nil,
+			TopP:        nil,
+		}
+
+		// Stream response using sender function (best performance, no channel)
+		errorCode := h.modelProviderService.ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, req.Message, &chatConfig, sender)
+
+		if errorCode != common.CodeSuccess {
+			c.SSEvent("error", "stream failed")
+		}
+		return
+	}
+
+	// Non-stream response
 	response, errorCode, err := h.modelProviderService.ChatToModel(providerName, instanceName, modelName, userID, req.Message)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{

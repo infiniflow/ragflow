@@ -225,6 +225,8 @@ class InfinityConnectionBase(DocStoreConnection):
                 schema.append("SCORE")
             elif field_name == "similarity()":  # Workaround: fix schema is changed to similarity()
                 schema.append("SIMILARITY")
+            elif field_name == "row_id()":  # Workaround: fix schema - Infinity returns "row_id" not "row_id()"
+                schema.append("row_id")
             else:
                 schema.append(field_name)
         return pd.DataFrame(columns=schema)

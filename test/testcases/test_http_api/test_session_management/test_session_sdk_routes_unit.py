@@ -469,6 +469,7 @@ def _load_session_module(monkeypatch):
     agent_pkg = ModuleType("agent")
     agent_pkg.__path__ = []
     agent_canvas_mod = ModuleType("agent.canvas")
+    agent_dsl_migration_mod = ModuleType("agent.dsl_migration")
 
     class _StubCanvas:
         def __init__(self, *_args, **_kwargs):
@@ -489,10 +490,13 @@ def _load_session_module(monkeypatch):
         def __str__(self):
             return self._dsl
 
+    agent_dsl_migration_mod.normalize_chunker_dsl = lambda dsl: dsl
     agent_canvas_mod.Canvas = _StubCanvas
     agent_pkg.canvas = agent_canvas_mod
+    agent_pkg.dsl_migration = agent_dsl_migration_mod
     monkeypatch.setitem(sys.modules, "agent", agent_pkg)
     monkeypatch.setitem(sys.modules, "agent.canvas", agent_canvas_mod)
+    monkeypatch.setitem(sys.modules, "agent.dsl_migration", agent_dsl_migration_mod)
 
     module_path = repo_root / "api" / "apps" / "sdk" / "session.py"
     spec = importlib.util.spec_from_file_location("test_session_sdk_routes_unit_module", module_path)

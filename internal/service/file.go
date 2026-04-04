@@ -68,20 +68,26 @@ func (s *FileService) GetRootFolder(tenantID string) (map[string]interface{}, er
 	return s.toFileResponse(file), nil
 }
 
-// ListFiles lists files by parent folder ID
+// ListFiles lists files by parent folder ID (matching Python /files endpoint)
+// This method includes init_knowledgebase_docs initialization when parent_id is empty
 func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, orderby string, desc bool, keywords string) (*ListFilesResponse, error) {
-	// If pfID is empty, get root folder
+	// If pfID is empty, get root folder and initialize knowledgebase docs
 	if pfID == "" {
 		rootFolder, err := s.fileDAO.GetRootFolder(tenantID)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to get root folder: %w", err)
 		}
 		pfID = rootFolder.ID
+
+		// Initialize knowledgebase docs (matching Python init_knowledgebase_docs logic)
+		if err := s.initKnowledgebaseDocs(pfID, tenantID); err != nil {
+			return nil, fmt.Errorf("failed to initialize knowledgebase docs: %w", err)
+		}
 	}
 
 	// Check if parent folder exists
 	if _, err := s.fileDAO.GetByID(pfID); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Folder not found!")
 	}
 
 	// Get files by parent folder ID
@@ -93,16 +99,16 @@ func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, order
 	// Get parent folder
 	parentFolder, err := s.fileDAO.GetParentFolder(pfID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("File not found!")
 	}
 
 	// Process files to add additional info
-	fileResponses := make([]map[string]interface{}, len(files))
-	for i, file := range files {
+	fileResponses := make([]map[string]interface{}, 0, len(files))
+	for _, file := range files {
 		fileInfo := s.toFileInfo(file)
 
 		// If folder, calculate size and check for child folders
-		if file.Type == "folder" {
+		if file.Type == FileTypeFolder {
 			folderSize, err := s.fileDAO.GetFolderSize(file.ID)
 			if err == nil {
 				fileInfo.Size = folderSize
@@ -121,7 +127,7 @@ func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, order
 			fileInfo.KbsInfo = kbsInfo
 		}
 
-		fileResponses[i] = s.fileInfoToResponse(fileInfo)
+		fileResponses = append(fileResponses, s.fileInfoToResponse(fileInfo))
 	}
 
 	return &ListFilesResponse{
@@ -130,6 +136,18 @@ func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, order
 		ParentFolder: s.toFileResponse(parentFolder),
 	}, nil
 }
+
+// initKnowledgebaseDocs initializes knowledgebase documents for tenant
+// This matches Python's FileService.init_knowledgebase_docs method
+func (s *FileService) initKnowledgebaseDocs(rootID, tenantID string) error {
+	return s.fileDAO.InitKnowledgebaseDocs(rootID, tenantID, s.file2DocumentDAO)
+}
+
+// KnowledgebaseFolderName is the folder name for knowledgebase
+const KnowledgebaseFolderName = ".knowledgebase"
+
+// FileSourceKnowledgebase represents knowledgebase as file source
+const FileSourceKnowledgebase = "knowledgebase"
 
 // toFileResponse converts file model to response format
 func (s *FileService) toFileResponse(file *entity.File) map[string]interface{} {

@@ -17,9 +17,11 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	ce "ragflow/internal/cli/contextengine"
 	"strings"
 )
@@ -1187,29 +1189,83 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	}
 
 	message := cmd.Params["message"].(string)
+	reasoning := cmd.Params["reasoning"].(bool)
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
 
 	payload := map[string]interface{}{
-		"message": message,
+		"message":   message,
+		"stream":    true, // use stream API
+		"reasoning": reasoning,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
+	// Call stream http api
+	reader, duration, err := c.HTTPClient.RequestStream("POST", url, true, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to chat model: %w", err)
 	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to chat model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	defer reader.Close()
+
+	// Parse SSE and output to console
+	scanner := bufio.NewScanner(reader)
+	var fullMessage strings.Builder
+
+	reasoningPrint := true
+	messagePrint := true
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "data:") {
+			data := strings.TrimPrefix(line, "data:")
+			data = strings.TrimSpace(data)
+
+			if strings.HasPrefix(data, "[REASONING]") {
+				data = strings.TrimPrefix(data, "[REASONING]")
+				if reasoningPrint {
+					fmt.Print("Thinking: ")
+					reasoningPrint = false
+				} else {
+					fmt.Print(data)
+				}
+				os.Stdout.Sync()
+			}
+			if strings.HasPrefix(data, "[MESSAGE]") {
+				data = strings.TrimPrefix(data, "[MESSAGE]")
+				if messagePrint {
+					if reasoning {
+						fmt.Println()
+					}
+					fmt.Print("Answer: ")
+					messagePrint = false
+				} else {
+					fmt.Print(data)
+					os.Stdout.Sync()
+					fullMessage.WriteString(data)
+				}
+			}
+		} else if strings.HasPrefix(line, "event:error") {
+			// error event
+			if scanner.Scan() {
+				errData := strings.TrimPrefix(scanner.Text(), "data:")
+				errData = strings.TrimSpace(errData)
+				return nil, fmt.Errorf("chat error: %s", errData)
+			}
+			// If there's an error, return a generic error
+			return nil, fmt.Errorf("chat error: received error event from server")
+		}
 	}
-	var result MessageResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("chat model failed: invalid JSON (%w)", err)
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading stream: %w", err)
 	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
+
+	fmt.Println()
+
+	result := &StreamMessageResponse{
+		Code:     0,
+		Message:  fullMessage.String(),
+		Duration: duration,
 	}
-	result.Duration = resp.Duration
-	return &result, nil
+	return result, nil
 }
 
 // UseModel sets the current model for chat

@@ -364,7 +364,7 @@ Released on August 8, 2025.
 
 ### New agent templates (both workflow and agentic)
 
-- SQL Assistant Workflow: Empowers non-technical teams (e.g., operations, product) to independently query business data.
+- Text-to-SQL data expert Workflow: Empowers non-technical teams (e.g., operations, product) to independently query business data.
 - Choose Your Knowledge Base Workflow: Lets users select a dataset to query during conversations. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
 - Choose Your Knowledge Base Agent: Delivers higher-quality responses with extended reasoning time, suited for complex queries. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
 
@@ -397,14 +397,14 @@ From v0.20.0 onwards, Agents are no longer compatible with earlier versions, and
 
 ### New agent templates introduced
 
-- Multi-Agent based Deep Research: Collaborative Agent teamwork led by a Lead Agent with multiple Subagents, distinct from traditional workflow orchestration.
+- Multi-Agent based Deep research: Collaborative Agent teamwork led by a Lead Agent with multiple Subagents, distinct from traditional workflow orchestration.
 - An intelligent Q&A chatbot leveraging internal datasets, designed for customer service and training scenarios.
 - A resume analysis template used by the RAGFlow team to screen, analyze, and record candidate information.
 - A blog generation workflow that transforms raw ideas into SEO-friendly blog content.
 - An intelligent customer service workflow.
 - A user feedback analysis template that directs user feedback to appropriate teams through semantic analysis.
-- Trip Planner: Uses web search and map MCP servers to assist with travel planning.
-- Image Lingo: Translates content from uploaded photos.
+- Trip planner: Uses web search and map MCP servers to assist with travel planning.
+- Photo text translator: Translates content from uploaded photos.
 - An information search assistant that retrieves answers from both internal datasets and the web.
 
 ## v0.19.1
@@ -551,7 +551,7 @@ Released on March 3, 2025.
 
 ### New features
 
-- AI chat: Implements Deep Research for agentic reasoning. To activate this, enable the **Reasoning** toggle under the **Prompt engine** tab of your chat assistant dialogue.
+- AI chat: Implements Deep research for agentic reasoning. To activate this, enable the **Reasoning** toggle under the **Prompt engine** tab of your chat assistant dialogue.
 - AI chat: Leverages Tavily-based web search to enhance contexts in agentic reasoning. To activate this, enter the correct Tavily API key under the **Assistant settings** tab of your chat assistant dialogue.
 - AI chat: Supports starting a chat without specifying datasets.
 - AI chat: HTML files can also be previewed and referenced, in addition to PDF files.
@@ -561,11 +561,11 @@ Released on March 3, 2025.
 - Models: Updates the supported model list for Tongyi-Qianwen (Qwen), adding DeepSeek-specific models; adds ModelScope as a model provider.
 - APIs: Document metadata can be updated through an API.
 
-The following diagram illustrates the workflow of RAGFlow's Deep Research:
+The following diagram illustrates the workflow of RAGFlow's Deep research:
 
 ![Image](https://github.com/user-attachments/assets/f65d4759-4f09-4d9d-9549-c0e1fe907525)
 
-The following is a screenshot of a conversation that integrates Deep Research:
+The following is a screenshot of a conversation that integrates Deep research:
 
 ![Image](https://github.com/user-attachments/assets/165b88ff-1f5d-4fb8-90e2-c836b25e32e9)
 

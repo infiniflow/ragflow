@@ -20,6 +20,7 @@ import random
 import time
 
 from api.db import CanvasCategory
+from agent.dsl_migration import normalize_chunker_dsl
 from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 
 
@@ -56,7 +57,7 @@ class CanvasReplicaService:
             raise ValueError("DSL must be a JSON object.")
 
         try:
-            return json.loads(json.dumps(normalized, ensure_ascii=False))
+            return json.loads(json.dumps(normalize_chunker_dsl(normalized), ensure_ascii=False))
         except Exception as e:
             raise ValueError("DSL is not JSON-serializable.") from e
 

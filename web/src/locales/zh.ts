@@ -1927,17 +1927,30 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tokenizerRequired: '请先添加Tokenizer节点',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的向量嵌入）。',
-      splitter: '按字符分割',
-      splitterDescription:
+      tokenChunker: '按 Token 分块',
+      tokenChunkerDescription:
         '根据分词器长度将文本拆分成块，并带有可选的分隔符和重叠。',
-      hierarchicalMergerDescription:
+      titleChunkerDescription:
         '使用正则表达式规则按标题层次结构将文档拆分成多个部分，以实现更精细的控制。',
-      hierarchicalMerger: '按标题分割',
+      titleChunker: '按标题分块',
       extractor: '提取器',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
       outputFormat: '输出格式',
       fileFormats: '文件类型',
+      fileFormatOptions: {
+        pdf: 'PDF',
+        spreadsheet: '表格',
+        image: '图片',
+        email: '邮件',
+        'text&markdown': '文本与标记',
+        code: '代码',
+        html: 'HTML',
+        word: 'Word',
+        slides: 'PPTX',
+        audio: '音频',
+        video: '视频',
+      },
       fields: '字段',
       addParser: '增加解析器',
       hierarchy: '层次结构',

@@ -205,8 +205,8 @@ const DataflowResult = () => {
             )} */}
             {/* {currentTimeNode?.type === TimelineNodeType.parser && ( */}
             {(currentTimeNode?.type === TimelineNodeType.parser ||
-              currentTimeNode?.type === TimelineNodeType.characterSplitter ||
-              currentTimeNode?.type === TimelineNodeType.titleSplitter ||
+              currentTimeNode?.type === TimelineNodeType.tokenChunker ||
+              currentTimeNode?.type === TimelineNodeType.titleChunker ||
               currentTimeNode?.type === TimelineNodeType.contextGenerator) && (
               <ParserContainer
                 isReadonly={isReadOnly}

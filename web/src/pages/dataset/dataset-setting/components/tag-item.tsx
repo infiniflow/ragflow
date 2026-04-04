@@ -21,7 +21,7 @@ export const TagSetItem = () => {
   const { list: knowledgeList } = useFetchKnowledgeList(true);
 
   const knowledgeOptions = knowledgeList
-    .filter((x) => x.parser_id === 'tag')
+    .filter((x) => x.chunk_method === 'tag')
     .map((x) => ({
       label: x.name,
       value: x.id,

@@ -684,8 +684,8 @@ export const RestrictedUpstreamMap = {
   [Operator.VariableAssigner]: [Operator.Begin],
   [Operator.VariableAggregator]: [Operator.Begin],
   [Operator.Parser]: [Operator.Begin], // pipeline
-  [Operator.Splitter]: [Operator.Begin],
-  [Operator.HierarchicalMerger]: [Operator.Begin],
+  [Operator.TokenChunker]: [Operator.Begin],
+  [Operator.TitleChunker]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
   [Operator.Extractor]: [Operator.Begin],
   [Operator.File]: [Operator.Begin],
@@ -732,8 +732,8 @@ export const NodeMap = {
   [Operator.File]: 'fileNode',
   [Operator.Parser]: 'parserNode',
   [Operator.Tokenizer]: 'tokenizerNode',
-  [Operator.Splitter]: 'splitterNode',
-  [Operator.HierarchicalMerger]: 'splitterNode',
+  [Operator.TokenChunker]: 'chunkerNode',
+  [Operator.TitleChunker]: 'chunkerNode',
   [Operator.Extractor]: 'contextNode',
   [Operator.DataOperations]: 'dataOperationsNode',
   [Operator.ListOperations]: 'listOperationsNode',
@@ -775,8 +775,8 @@ export const NoDebugOperatorsList = [
   Operator.File,
   Operator.Parser,
   Operator.Tokenizer,
-  Operator.Splitter,
-  Operator.HierarchicalMerger,
+  Operator.TokenChunker,
+  Operator.TitleChunker,
   Operator.Extractor,
   Operator.Tool,
 ];
@@ -785,8 +785,8 @@ export const NoCopyOperatorsList = [
   Operator.File,
   Operator.Parser,
   Operator.Tokenizer,
-  Operator.Splitter,
-  Operator.HierarchicalMerger,
+  Operator.TokenChunker,
+  Operator.TitleChunker,
   Operator.Extractor,
 ];
 

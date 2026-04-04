@@ -29,6 +29,7 @@ from typing import Any, Union, Tuple
 
 from agent.component import component_class
 from agent.component.base import ComponentBase
+from agent.dsl_migration import normalize_chunker_dsl
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import has_canceled
@@ -84,7 +85,8 @@ class Graph:
         self.path = []
         self.components = {}
         self.error = ""
-        self.dsl = json.loads(dsl)
+        # Accept legacy DSL on read, but keep the in-memory canvas in the latest schema.
+        self.dsl = normalize_chunker_dsl(json.loads(dsl))
         self._tenant_id = tenant_id
         self.task_id = task_id if task_id else get_uuid()
         self.custom_header = custom_header
