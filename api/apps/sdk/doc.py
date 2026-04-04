@@ -37,11 +37,13 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
 from api.db.services.tenant_llm_service import TenantLLMService
-from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_request_json, get_result, server_error_response, token_required
+from common.metadata_utils import meta_filter, convert_conditions
+from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_result, server_error_response, token_required, \
+    get_request_json
+from api.utils.doc_index_utils import build_docstore_rename_fields
 from api.utils.image_utils import store_chunk_image
 from common import settings
 from common.constants import FileSource, LLMType, ParserType, RetCode, TaskStatus
-from common.metadata_utils import convert_conditions, meta_filter
 from common.misc_utils import thread_pool_exec
 from common.string_utils import remove_redundant_spaces
 from rag.app.qa import beAdoc, rmPrefix
@@ -285,6 +287,15 @@ async def update_doc(tenant_id, dataset_id, document_id):
         if informs:
             e, file = FileService.get_by_id(informs[0].file_id)
             FileService.update_by_id(file.id, {"name": req["name"]})
+
+        es_body = build_docstore_rename_fields(req["name"])
+        if settings.docStoreConn.index_exist(search.index_name(tenant_id), dataset_id):
+            settings.docStoreConn.update(
+                {"doc_id": document_id},
+                es_body,
+                search.index_name(tenant_id),
+                dataset_id,
+            )
 
     if "parser_config" in req:
         DocumentService.update_parser_config(doc.id, req["parser_config"])
