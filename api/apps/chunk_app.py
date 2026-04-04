@@ -416,14 +416,14 @@ async def retrieval_test():
         return get_json_result(data=False, message='Please specify dataset firstly.',
                                code=RetCode.DATA_ERROR)
 
-    doc_ids = req.get("doc_ids", [])
+    doc_ids = req.get("doc_ids")
     use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
     langs = req.get("cross_languages", [])
     user_id = current_user.id
 
     async def _retrieval():
-        local_doc_ids = list(doc_ids) if doc_ids else []
+        local_doc_ids = [doc_id for doc_id in doc_ids if doc_id] if doc_ids else None
         tenant_ids = []
 
         meta_data_filter = {}
