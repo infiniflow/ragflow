@@ -608,13 +608,17 @@ async def list_agent_session(tenant_id, agent_id):
             if "prompt" in info:
                 info.pop("prompt")
         conv["agent_id"] = conv.pop("dialog_id")
-        # Fix for session listing endpoint
         if conv["reference"]:
             messages = conv["messages"]
             message_num = 0
             chunk_num = 0
-            # Ensure reference is a list type to prevent KeyError
-            if not isinstance(conv["reference"], list):
+            # canvas.get_reference() stores a dict {"chunks": ..., "doc_aggs": ...};
+            # wrap it in a list so the per-message loop below works uniformly.
+            # Previously this branch set conv["reference"] = [] when it was a dict,
+            # silently discarding all retrieval results (fixes #13541).
+            if isinstance(conv["reference"], dict):
+                conv["reference"] = [conv["reference"]]
+            elif not isinstance(conv["reference"], list):
                 conv["reference"] = []
             while message_num < len(messages):
                 if message_num != 0 and messages[message_num]["role"] != "user":
