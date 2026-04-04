@@ -27,6 +27,11 @@ docker cp $BASE/api/utils/api_utils.py         $CONTAINER:/ragflow/api/utils/api
 docker cp $BASE/api/db/init_data.py            $CONTAINER:/ragflow/api/db/init_data.py
 docker cp $BASE/conf/infinity_mapping.json     $CONTAINER:/ragflow/conf/infinity_mapping.json
 docker cp $BASE/tests/test_ragflow_pipeline.py  $CONTAINER:/ragflow/tests/test_ragflow_pipeline.py
+docker cp $BASE/tests/208_Image.jpg            $CONTAINER:/ragflow/tests/208_Image.jpg
+docker cp $BASE/tests/Corsa_Image.jpg          $CONTAINER:/ragflow/tests/Corsa_Image.jpg
+docker cp $BASE/tests/208_PDF.pdf             $CONTAINER:/ragflow/tests/208_PDF.pdf
+docker cp $BASE/tests/Corsa_PDF.pdf           $CONTAINER:/ragflow/tests/Corsa_PDF.pdf
+docker cp $BASE/tests/corsa_ie.html           $CONTAINER:/ragflow/tests/corsa_ie.html
 # Copy nginx conf files (not bind-mounted — entrypoint.sh needs to mv them freely)
 docker cp $BASE/docker/nginx/ragflow.conf  $CONTAINER:/etc/nginx/conf.d/ragflow.conf
 docker cp $BASE/docker/nginx/proxy.conf    $CONTAINER:/etc/nginx/proxy.conf
