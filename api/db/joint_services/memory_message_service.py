@@ -157,7 +157,7 @@ async def extract_by_llm(tenant_id: str, tenant_llm_id: int, extract_conf: dict,
         llm_config = get_model_config_by_id(tenant_llm_id)
     else:
         llm_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, llm_id)
-    llm = LLMBundle(tenant_id, llm_config)
+    llm = LLMBundle(tenant_id, llm_config, biz_type="memory", biz_id=task_id)
     if task_id:
         TaskService.update_progress(task_id, {"progress": 0.15, "progress_msg": timestamp_to_date(current_timestamp())+ " " + "Prepared prompts and LLM."})
     res = await llm.async_chat(system_prompt, user_prompts, extract_conf)
@@ -177,7 +177,7 @@ async def embed_and_save(memory, message_list: list[dict], task_id: str=None):
         embd_model_config = get_model_config_by_id(memory.tenant_embd_id)
     else:
         embd_model_config = get_model_config_by_type_and_name(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
-    embedding_model = LLMBundle(memory.tenant_id, embd_model_config)
+    embedding_model = LLMBundle(memory.tenant_id, embd_model_config, biz_type="memory", biz_id=memory.id)
     if task_id:
         TaskService.update_progress(task_id, {"progress": 0.65, "progress_msg": timestamp_to_date(current_timestamp())+ " " + "Prepared embedding model."})
     vector_list, _ = embedding_model.encode([msg["content"] for msg in message_list])
@@ -251,7 +251,7 @@ def query_message(filter_dict: dict, params: dict):
         embd_model_config = get_model_config_by_id(memory.tenant_embd_id)
     else:
         embd_model_config = get_model_config_by_type_and_name(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
-    embd_model = LLMBundle(memory.tenant_id, embd_model_config)
+    embd_model = LLMBundle(memory.tenant_id, embd_model_config, biz_type="memory", biz_id=memory.id)
     match_dense = get_vector(question, embd_model, similarity=params["similarity_threshold"])
     match_text, _ = MsgTextQuery().question(question, min_match=params["similarity_threshold"])
     keywords_similarity_weight = params.get("keywords_similarity_weight", 0.7)

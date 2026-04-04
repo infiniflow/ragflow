@@ -720,7 +720,7 @@ async def ask_about(tenant_id):
     async def stream():
         nonlocal req, uid
         try:
-            async for ans in async_ask(req["question"], req["kb_ids"], uid):
+            async for ans in async_ask(req["question"], req["kb_ids"], uid, biz_type="dialog"):
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
         except Exception as e:
             yield "data:" + json.dumps(
@@ -745,7 +745,7 @@ async def related_questions(tenant_id):
     question = req["question"]
     industry = req.get("industry", "")
     chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-    chat_mdl = LLMBundle(tenant_id, chat_model_config)
+    chat_mdl = LLMBundle(tenant_id, chat_model_config, biz_type="dialog")
     prompt = """
 Objective: To generate search terms related to the user's search keywords, helping users find more valuable information.
 Instructions:
@@ -929,7 +929,8 @@ async def ask_about_embedded():
     async def stream():
         nonlocal req, uid
         try:
-            async for ans in async_ask(req["question"], req["kb_ids"], uid, search_config=search_config):
+            async for ans in async_ask(req["question"], req["kb_ids"], uid, search_config=search_config,
+                                       biz_type="search" if search_id else "dialog", biz_id=search_id or None):
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
         except Exception as e:
             yield "data:" + json.dumps(
@@ -995,7 +996,8 @@ async def retrieval_test_embedded():
                     chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_id)
                 else:
                     chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-                chat_mdl = LLMBundle(tenant_id, chat_model_config)
+                chat_mdl = LLMBundle(tenant_id, chat_model_config,
+                                     biz_type="search", biz_id=req.get("search_id") or None)
             # Apply search_config settings if not explicitly provided in request
             if not req.get("similarity_threshold"):
                 similarity_threshold = float(search_config.get("similarity_threshold", similarity_threshold))
@@ -1009,7 +1011,7 @@ async def retrieval_test_embedded():
             meta_data_filter = req.get("meta_data_filter") or {}
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-                chat_mdl = LLMBundle(tenant_id, chat_model_config)
+                chat_mdl = LLMBundle(tenant_id, chat_model_config, biz_type="search")
 
         if meta_data_filter:
             metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
@@ -1035,19 +1037,23 @@ async def retrieval_test_embedded():
             embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
         else:
             embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
-        embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
+        embd_mdl = LLMBundle(kb.tenant_id, embd_model_config,
+                             biz_type="search", biz_id=req.get("search_id") or None)
 
         rerank_mdl = None
         if tenant_rerank_id:
             rerank_model_config = get_model_config_by_id(tenant_rerank_id)
-            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
+            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config,
+                                   biz_type="search", biz_id=req.get("search_id") or None)
         elif rerank_id:
             rerank_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.RERANK, rerank_id)
-            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
+            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config,
+                                   biz_type="search", biz_id=req.get("search_id") or None)
 
         if req.get("keyword", False):
             default_chat_model = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
-            chat_mdl = LLMBundle(kb.tenant_id, default_chat_model)
+            chat_mdl = LLMBundle(kb.tenant_id, default_chat_model,
+                                 biz_type="search", biz_id=req.get("search_id") or None)
             _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
@@ -1058,7 +1064,8 @@ async def retrieval_test_embedded():
         if use_kg:
             default_chat_model = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
             ck = await settings.kg_retriever.retrieval(_question, tenant_ids, kb_ids, embd_mdl,
-                                                 LLMBundle(kb.tenant_id, default_chat_model))
+                                                 LLMBundle(kb.tenant_id, default_chat_model,
+                                                           biz_type="search", biz_id=req.get("search_id") or None))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
@@ -1106,7 +1113,8 @@ async def related_questions_embedded():
         chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-    chat_mdl = LLMBundle(tenant_id, chat_model_config)
+    chat_mdl = LLMBundle(tenant_id, chat_model_config,
+                          biz_type="search" if search_id else "dialog", biz_id=search_id or None)
 
     gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
     prompt = load_prompt("related_question")
@@ -1174,7 +1182,8 @@ async def mindmap():
     search_id = req.get("search_id", "")
     search_app = SearchService.get_detail(search_id) if search_id else {}
 
-    mind_map =await gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
+    mind_map =await gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}),
+                                 biz_type="search" if search_id else "dialog", biz_id=search_id or None)
     if "error" in mind_map:
         return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)
@@ -1211,7 +1220,7 @@ async def sequence2txt(tenant_id):
         default_asr_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.SPEECH2TEXT)
     except Exception as e:
         return get_error_data_result(message=str(e))
-    asr_mdl=LLMBundle(tenant_id, default_asr_model_config)
+    asr_mdl=LLMBundle(tenant_id, default_asr_model_config, biz_type="speech2text")
     if not stream_mode:
         text = asr_mdl.transcription(temp_audio_path)
         try:
@@ -1244,7 +1253,7 @@ async def tts(tenant_id):
         default_tts_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.TTS)
     except Exception as e:
         return get_error_data_result(message=str(e))
-    tts_mdl = LLMBundle(tenant_id, default_tts_model_config)
+    tts_mdl = LLMBundle(tenant_id, default_tts_model_config, biz_type="tts")
 
     def stream_audio():
         try:

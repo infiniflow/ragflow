@@ -806,7 +806,7 @@ async def tts():
     except Exception as e:
         return get_data_error_result(message=str(e))
 
-    tts_mdl = LLMBundle(current_user.id, default_tts_model_config)
+    tts_mdl = LLMBundle(current_user.id, default_tts_model_config, biz_type="tts")
 
     def stream_audio():
         try:
@@ -856,7 +856,7 @@ async def transcriptions():
     except Exception as e:
         return get_data_error_result(message=str(e))
 
-    asr_mdl = LLMBundle(current_user.id, default_asr_model_config)
+    asr_mdl = LLMBundle(current_user.id, default_asr_model_config, biz_type="speech2text")
     if not stream_mode:
         text = asr_mdl.transcription(temp_audio_path)
         try:
@@ -918,7 +918,7 @@ async def related_questions():
         chat_model_config = get_model_config_by_type_and_name(current_user.id, LLMType.CHAT, chat_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.CHAT)
-    chat_mdl = LLMBundle(current_user.id, chat_model_config)
+    chat_mdl = LLMBundle(current_user.id, chat_model_config, biz_type="search", biz_id=search_id)
 
     gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
     if "parameter" in gen_conf:

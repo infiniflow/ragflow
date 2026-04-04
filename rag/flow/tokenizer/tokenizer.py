@@ -62,7 +62,9 @@ class Tokenizer(ProcessBase):
                 embd_model_config = get_model_config_by_type_and_name(self._canvas._tenant_id, LLMType.EMBEDDING, kb.embd_id)
         else:
             embd_model_config = get_tenant_default_model_by_type(self._canvas._tenant_id, LLMType.EMBEDDING)
-        embedding_model = LLMBundle(self._canvas._tenant_id, embd_model_config)
+        embedding_model = LLMBundle(self._canvas._tenant_id, embd_model_config,
+                                     biz_type="agent", biz_id=self._canvas._id,
+                                     session_id=self._canvas.get_history_id())
         texts = []
         for c in chunks:
             txt = ""

@@ -356,7 +356,7 @@ class Parser(ProcessBase):
 
             tenant_id = self._canvas._tenant_id
             ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, parser_model_name)
-            ocr_model = LLMBundle(tenant_id, ocr_model_config, lang=conf.get("lang", "Chinese"))
+            ocr_model = LLMBundle(tenant_id, ocr_model_config, lang=conf.get("lang", "Chinese"), biz_type="document", biz_id=self._canvas._doc_id or "")
             pdf_parser = ocr_model.mdl
 
             lines, _ = pdf_parser.parse_pdf(
@@ -474,7 +474,7 @@ class Parser(ProcessBase):
 
             tenant_id = self._canvas._tenant_id
             ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, parser_model_name)
-            ocr_model = LLMBundle(tenant_id, ocr_model_config)
+            ocr_model = LLMBundle(tenant_id, ocr_model_config, biz_type="document", biz_id=self._canvas._doc_id or "")
             pdf_parser = ocr_model.mdl
 
             lines, _ = pdf_parser.parse_pdf(
@@ -507,7 +507,8 @@ class Parser(ProcessBase):
                 vision_model_config = get_model_config_by_type_and_name(self._canvas._tenant_id, LLMType.IMAGE2TEXT, conf["parse_method"])
             else:
                 vision_model_config = get_tenant_default_model_by_type(self._canvas._tenant_id, LLMType.IMAGE2TEXT)
-            vision_model = LLMBundle(self._canvas._tenant_id, vision_model_config, lang=self._param.setups["pdf"].get("lang"))
+
+            vision_model = LLMBundle(self._canvas._tenant_id, vision_model_config, lang=self._param.setups["pdf"].get("lang"), biz_type="document", biz_id=self._canvas._doc_id or "")
             pdf_parser = VisionParser(vision_model=vision_model)
             lines, _ = pdf_parser(blob, callback=self.callback)
             bboxes = []
@@ -958,7 +959,7 @@ class Parser(ProcessBase):
             lang = conf["lang"]
             # use VLM to describe the picture
             cv_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, conf["parse_method"])
-            cv_model = LLMBundle(self._canvas.get_tenant_id(), cv_model_config, lang=lang)
+            cv_model = LLMBundle(self._canvas.get_tenant_id(), cv_model_config, lang=lang, biz_type="document", biz_id=self._canvas._doc_id or "")
             img_binary = io.BytesIO()
             img.save(img_binary, format="JPEG")
             img_binary.seek(0)
@@ -993,7 +994,7 @@ class Parser(ProcessBase):
             tmpf.flush()
             tmp_path = os.path.abspath(tmpf.name)
             seq2txt_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), LLMType.SPEECH2TEXT, conf["llm_id"])
-            seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), seq2txt_model_config)
+            seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), seq2txt_model_config, biz_type="document", biz_id=self._canvas._doc_id or "")
             txt = seq2txt_mdl.transcription(tmp_path)
 
             self.set_output("text", txt)
@@ -1005,7 +1006,7 @@ class Parser(ProcessBase):
         conf = self._param.setups["video"]
         self.set_output("output_format", conf["output_format"])
         cv_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, conf["llm_id"])
-        cv_mdl = LLMBundle(self._canvas.get_tenant_id(), cv_model_config)
+        cv_mdl = LLMBundle(self._canvas.get_tenant_id(), cv_model_config, biz_type="document", biz_id=self._canvas._doc_id or "")
         video_prompt = str(conf.get("prompt", "") or "")
         txt = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name, video_prompt=video_prompt))
 

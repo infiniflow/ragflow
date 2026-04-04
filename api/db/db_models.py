@@ -836,6 +836,32 @@ class TenantLLM(DataBaseModel):
         )
 
 
+class LLMUsageLog(DataBaseModel):
+    """Detailed LLM usage log for recording token consumption, billing, and related business context for each call."""
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    user_id = CharField(max_length=32, null=True, index=True)
+    biz_type = CharField(max_length=32, null=False, index=True,
+                         help_text="Business type: dialog/agent/document_parse/graphrag/raptor/other")
+    biz_id = CharField(max_length=32, null=True, index=True,
+                       help_text="Business object ID, such as dialog.id or canvas.id")
+    session_id = CharField(max_length=32, null=True, index=True,
+                           help_text="Session ID, such as Conversation.id or API4Conversation.id")
+    tenant_llm_id = IntegerField(null=False, index=True,
+                                 help_text="Associated TenantLLM.id")
+    model_type = CharField(max_length=32, null=False, index=True,
+                           help_text="chat/embedding/rerank/image2text/speech2text")
+    prompt_tokens = IntegerField(default=0)
+    completion_tokens = IntegerField(default=0)
+    total_tokens = IntegerField(default=0)
+    cost = FloatField(default=0.0, help_text="USD")
+    created_at = BigIntegerField(null=False, index=True,
+                                 help_text="Unix timestamp in milliseconds")
+
+    class Meta:
+        db_table = "llm_usage_log"
+
+
 class TenantLangfuse(DataBaseModel):
     tenant_id = CharField(max_length=32, null=False, primary_key=True)
     secret_key = CharField(max_length=2048, null=False, help_text="SECRET KEY", index=True)

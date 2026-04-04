@@ -1048,7 +1048,7 @@ def test_sessions_ask_route_validation_and_stream_unit(monkeypatch):
     monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [SimpleNamespace(chunk_num=1)])
     captured = {}
 
-    async def _streaming_async_ask(question, kb_ids, uid):
+    async def _streaming_async_ask(question, kb_ids, uid, **kwargs):
         captured["question"] = question
         captured["kb_ids"] = kb_ids
         captured["uid"] = uid
@@ -1234,7 +1234,7 @@ def test_searchbots_ask_embedded_auth_and_stream_unit(monkeypatch):
     monkeypatch.setattr(module.SearchService, "get_detail", lambda _search_id: {"search_config": {"mode": "test"}})
     captured = {}
 
-    async def _embedded_async_ask(question, kb_ids, uid, search_config=None):
+    async def _embedded_async_ask(question, kb_ids, uid, search_config=None, **kwargs):
         captured["question"] = question
         captured["kb_ids"] = kb_ids
         captured["uid"] = uid
@@ -1575,7 +1575,7 @@ def test_searchbots_mindmap_embedded_matrix_unit(monkeypatch):
 
     captured = {}
 
-    async def _gen_ok(question, kb_ids, tenant_id, search_config):
+    async def _gen_ok(question, kb_ids, tenant_id, search_config, **kwargs):
         captured["params"] = (question, kb_ids, tenant_id, search_config)
         return {"nodes": [question]}
 

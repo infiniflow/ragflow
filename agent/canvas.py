@@ -294,8 +294,10 @@ class Canvas(Graph):
             "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         }
         self.variables = {}
-        super().__init__(dsl, tenant_id, task_id, custom_header=custom_header)
+        # Components are instantiated during super().__init__ -> load(),
+        # so identifiers used by component constructors must exist first.
         self._id = canvas_id
+        super().__init__(dsl, tenant_id, task_id, custom_header=custom_header)
 
     def load(self):
         super().load()
@@ -322,6 +324,9 @@ class Canvas(Graph):
 
         self.retrieval = self.dsl["retrieval"]
         self.memory = self.dsl.get("memory", [])
+
+    def get_history_id(self):
+        return self.task_id
 
     def __str__(self):
         self.dsl["history"] = self.history
@@ -518,7 +523,10 @@ class Canvas(Graph):
                 if cpn_obj.component_name.lower() == "message":
                     if cpn_obj.get_param("auto_play"):
                         tts_model_config = get_tenant_default_model_by_type(self._tenant_id, LLMType.TTS)
-                        tts_mdl = LLMBundle(self._tenant_id, tts_model_config)
+                        tts_mdl = LLMBundle(self._tenant_id, tts_model_config,
+                                            biz_type="agent",
+                                            biz_id=self._id,
+                                            session_id=self.get_history_id())
                     if isinstance(cpn_obj.output("content"), partial):
                         _m = ""
                         buff_m = ""

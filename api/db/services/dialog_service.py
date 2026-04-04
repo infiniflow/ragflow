@@ -15,6 +15,7 @@
 #
 import asyncio
 import binascii
+import inspect
 import logging
 import re
 import time
@@ -209,7 +210,11 @@ class DialogService(CommonService):
         return list(objs)
 
 
-async def async_chat_solo(dialog, messages, stream=True):
+async def async_chat_solo(dialog, messages, stream=True, **kwargs):
+    conversation_id = kwargs.get("conversation_id")
+    biz_type = "dialog"
+    biz_id = getattr(dialog, "id", None)
+    session_id = conversation_id
     llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
     attachments = ""
     image_attachments = []
@@ -221,14 +226,14 @@ async def async_chat_solo(dialog, messages, stream=True):
             text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
         attachments = "\n\n".join(text_attachments)
     model_config = get_model_config_by_id(dialog.tenant_llm_id)
-    chat_mdl = LLMBundle(dialog.tenant_id, model_config)
+    chat_mdl = LLMBundle(dialog.tenant_id, model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
     factory = model_config.get("llm_factory", "") if model_config else ""
 
     prompt_config = dialog.prompt_config
     tts_mdl = None
     if prompt_config.get("tts"):
         default_tts_model = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.TTS)
-        tts_mdl = LLMBundle(dialog.tenant_id, default_tts_model)
+        tts_mdl = LLMBundle(dialog.tenant_id, default_tts_model, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
     msg = [{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"]
     if attachments and msg:
         msg[-1]["content"] += attachments
@@ -255,7 +260,9 @@ async def async_chat_solo(dialog, messages, stream=True):
         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
 
 
-def get_models(dialog):
+def get_models(dialog, biz_type="dialog", biz_id=None, session_id=None):
+    if biz_id is None:
+        biz_id = getattr(dialog, "id", None)
     embd_mdl, chat_mdl, rerank_mdl, tts_mdl = None, None, None, None
     kbs = KnowledgebaseService.get_by_ids(dialog.kb_ids)
     embedding_list = list(set([kb.embd_id for kb in kbs]))
@@ -265,7 +272,7 @@ def get_models(dialog):
     if embedding_list:
         embd_owner_tenant_id = kbs[0].tenant_id
         embd_model_config = get_model_config_by_type_and_name(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
-        embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
+        embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
         if not embd_mdl:
             raise LookupError("Embedding model(%s) not found" % embedding_list[0])
 
@@ -276,16 +283,28 @@ def get_models(dialog):
     else:
         chat_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
-    chat_mdl = LLMBundle(dialog.tenant_id, chat_model_config)
+    chat_mdl = LLMBundle(dialog.tenant_id, chat_model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
 
     if dialog.rerank_id:
         rerank_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
-        rerank_mdl = LLMBundle(dialog.tenant_id, rerank_model_config)
+        rerank_mdl = LLMBundle(dialog.tenant_id, rerank_model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
 
     if dialog.prompt_config.get("tts"):
         default_tts_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.TTS)
-        tts_mdl = LLMBundle(dialog.tenant_id, default_tts_model_config)
+        tts_mdl = LLMBundle(dialog.tenant_id, default_tts_model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
     return kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl
+
+
+def _get_models_with_runtime_context(dialog, conversation_id=None):
+    call_kwargs = {}
+    params = inspect.signature(get_models).parameters
+    if "biz_type" in params:
+        call_kwargs["biz_type"] = "dialog"
+    if "biz_id" in params:
+        call_kwargs["biz_id"] = getattr(dialog, "id", None)
+    if "session_id" in params:
+        call_kwargs["session_id"] = conversation_id
+    return get_models(dialog, **call_kwargs)
 
 
 def split_file_attachments(files: list[dict] | None, raw: bool = False) -> tuple[list[str], list[str] | list[dict]]:
@@ -460,9 +479,10 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
 
 async def async_chat(dialog, messages, stream=True, **kwargs):
     logging.debug("Begin async_chat")
+    conversation_id = kwargs.get("conversation_id")
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     if not dialog.kb_ids and not dialog.prompt_config.get("tavily_api_key"):
-        async for ans in async_chat_solo(dialog, messages, stream):
+        async for ans in async_chat_solo(dialog, messages, stream, **kwargs):
             yield ans
         return
 
@@ -493,7 +513,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             pass
 
     check_langfuse_tracer_ts = timer()
-    kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
+    dialog_biz_id = getattr(dialog, "id", None)
+    kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = _get_models_with_runtime_context(dialog, conversation_id)
     toolcall_session, tools = kwargs.get("toolcall_session"), kwargs.get("tools")
     if toolcall_session and tools:
         chat_mdl.bind_tools(toolcall_session, tools)
@@ -542,12 +563,14 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             prompt_config["system"] = prompt_config["system"].replace("{%s}" % p["key"], " ")
 
     if len(questions) > 1 and prompt_config.get("refine_multiturn"):
-        questions = [await full_question(dialog.tenant_id, dialog.llm_id, messages)]
+        questions = [await full_question(dialog.tenant_id, dialog.llm_id, messages,
+                                         biz_type="dialog", biz_id=getattr(dialog, "id", None), session_id=conversation_id)]
     else:
         questions = questions[-1:]
 
     if prompt_config.get("cross_languages"):
-        questions = [await cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
+        questions = [await cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"],
+                                            biz_type="dialog", biz_id=getattr(dialog, "id", None), session_id=conversation_id)]
 
     if dialog.meta_data_filter:
         metas = DocMetadataService.get_flatted_meta_by_kbs(dialog.kb_ids)
@@ -637,7 +660,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             if prompt_config.get("use_kg"):
                 default_chat_model = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
                 ck = await settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl,
-                                                       LLMBundle(dialog.tenant_id, default_chat_model))
+                                                       LLMBundle(dialog.tenant_id, default_chat_model, biz_type="dialog", biz_id=dialog_biz_id, session_id=conversation_id))
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
 
@@ -1361,7 +1384,7 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
     if state.endswith_think:
         yield ("marker", "</think>", state)
 
-async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
+async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}, biz_type="dialog", biz_id=None, session_id=None):
     doc_ids = search_config.get("doc_ids", [])
     rerank_mdl = None
     kb_ids = search_config.get("kb_ids", kb_ids)
@@ -1376,12 +1399,12 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     retriever = settings.retriever if not is_knowledge_graph else settings.kg_retriever
     embd_owner_tenant_id = kbs[0].tenant_id
     embd_model_config = get_model_config_by_type_and_name(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
-    embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
+    embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
     chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_llm_name)
-    chat_mdl = LLMBundle(tenant_id, chat_model_config)
+    chat_mdl = LLMBundle(tenant_id, chat_model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
     if rerank_id:
         rerank_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.RERANK, rerank_id)
-        rerank_mdl = LLMBundle(tenant_id, rerank_model_config)
+        rerank_mdl = LLMBundle(tenant_id, rerank_model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
     max_tokens = chat_mdl.max_length
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
 
@@ -1445,7 +1468,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     yield final
 
 
-async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
+async def gen_mindmap(question, kb_ids, tenant_id, search_config={}, biz_type="dialog", biz_id=None, session_id=None):
     meta_data_filter = search_config.get("meta_data_filter", {})
     doc_ids = search_config.get("doc_ids", [])
     rerank_id = search_config.get("rerank_id", "")
@@ -1461,16 +1484,16 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     else:
         embd_owner_tenant_id = kbs[0].tenant_id
         embd_model_config = get_model_config_by_type_and_name(embd_owner_tenant_id, LLMType.EMBEDDING, kbs[0].embd_id)
-    embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
+    embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
     chat_id = search_config.get("chat_id", "")
     if chat_id:
         chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-    chat_mdl = LLMBundle(tenant_id, chat_model_config)
+    chat_mdl = LLMBundle(tenant_id, chat_model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
     if rerank_id:
         rerank_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.RERANK, rerank_id)
-        rerank_mdl = LLMBundle(tenant_id, rerank_model_config)
+        rerank_mdl = LLMBundle(tenant_id, rerank_model_config, biz_type=biz_type, biz_id=biz_id, session_id=session_id)
 
     if meta_data_filter:
         metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)

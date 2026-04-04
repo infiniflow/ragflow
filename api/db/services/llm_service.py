@@ -24,9 +24,10 @@ from typing import Generator
 
 from api.db.db_models import LLM
 from api.db.services.common_service import CommonService
+from api.db.services.llm_usage_log_service import LLMUsageLogService
 from api.db.services.tenant_llm_service import LLM4Tenant, TenantLLMService
 from common.constants import LLMType
-from common.token_utils import num_tokens_from_string
+from common.token_utils import LLMUsage, num_tokens_from_string
 
 
 class LLMService(CommonService):
@@ -83,8 +84,33 @@ def get_init_tenant_llm(user_id):
 
 
 class LLMBundle(LLM4Tenant):
-    def __init__(self, tenant_id: str, model_config: dict, lang="Chinese", **kwargs):
+    def __init__(self, tenant_id: str, model_config: dict, lang="Chinese",
+                 user_id: str = None, biz_type: str = None, biz_id: str = None,
+                 session_id: str = None, **kwargs):
         super().__init__(tenant_id, model_config, lang, **kwargs)
+        self.user_id = user_id
+        self.biz_type = biz_type or "other"
+        self.biz_id = biz_id
+        self.session_id = session_id
+
+    def _log_usage(self, model_type: str, usage: LLMUsage):
+        """Write token usage for this LLM call to the detail log table; failures are logged without affecting the main flow."""
+        tenant_llm_id = self.model_config.get("id")
+        if not tenant_llm_id:
+            return
+        LLMUsageLogService.create(
+            tenant_id=self.tenant_id,
+            tenant_llm_id=tenant_llm_id,
+            model_type=model_type,
+            user_id=self.user_id,
+            biz_type=self.biz_type,
+            biz_id=self.biz_id,
+            session_id=self.session_id,
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            total_tokens=usage.total_tokens,
+            cost=usage.cost,
+        )
 
     def bind_tools(self, toolcall_session, tools):
         if not self.is_tools:
@@ -115,6 +141,7 @@ class LLMBundle(LLM4Tenant):
             generation.update(usage_details={"total_tokens": used_tokens})
             generation.end()
 
+        self._log_usage("embedding", LLMUsage(total_tokens=used_tokens))
         return embeddings, used_tokens
 
     def encode_queries(self, query: str):
@@ -131,6 +158,7 @@ class LLMBundle(LLM4Tenant):
             generation.update(usage_details={"total_tokens": used_tokens})
             generation.end()
 
+        self._log_usage("embedding", LLMUsage(total_tokens=used_tokens))
         return emd, used_tokens
 
     def similarity(self, query: str, texts: list):
@@ -145,6 +173,7 @@ class LLMBundle(LLM4Tenant):
             generation.update(usage_details={"total_tokens": used_tokens})
             generation.end()
 
+        self._log_usage("rerank", LLMUsage(total_tokens=used_tokens))
         return sim, used_tokens
 
     def describe(self, image, max_tokens=300):
@@ -159,6 +188,7 @@ class LLMBundle(LLM4Tenant):
             generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
             generation.end()
 
+        self._log_usage("image2text", LLMUsage(total_tokens=used_tokens))
         return txt
 
     def describe_with_prompt(self, image, prompt):
@@ -173,6 +203,7 @@ class LLMBundle(LLM4Tenant):
             generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
             generation.end()
 
+        self._log_usage("image2text", LLMUsage(total_tokens=used_tokens))
         return txt
 
     def transcription(self, audio):
@@ -187,6 +218,7 @@ class LLMBundle(LLM4Tenant):
             generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
             generation.end()
 
+        self._log_usage("speech2text", LLMUsage(total_tokens=used_tokens))
         return txt
 
     def stream_transcription(self, audio):
@@ -225,6 +257,8 @@ class LLMBundle(LLM4Tenant):
                     )
                     generation.end()
 
+                self._log_usage("speech2text", LLMUsage(total_tokens=used_tokens))
+
             return
 
         if self.langfuse:
@@ -245,6 +279,7 @@ class LLMBundle(LLM4Tenant):
             )
             generation.end()
 
+        self._log_usage("speech2text", LLMUsage(total_tokens=used_tokens))
         yield {
             "event": "final",
             "text": full_text,
@@ -382,7 +417,7 @@ class LLMBundle(LLM4Tenant):
         use_kwargs = self._clean_param(chat_partial, **kwargs)
 
         try:
-            txt, used_tokens = await chat_partial(**use_kwargs)
+            txt, usage = await chat_partial(**use_kwargs)
         except Exception as e:
             if generation:
                 generation.update(output={"error": str(e)})
@@ -393,17 +428,22 @@ class LLMBundle(LLM4Tenant):
         if not self.verbose_tool_use:
             txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)
 
-        if used_tokens and not TenantLLMService.increase_usage_by_id(self.model_config["id"], used_tokens):
-            logging.error("LLMBundle.async_chat can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.model_config["llm_name"], used_tokens))
+        if usage.total_tokens and not TenantLLMService.increase_usage_by_id(self.model_config["id"], usage.total_tokens):
+            logging.error("LLMBundle.async_chat can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.model_config["llm_name"], usage.total_tokens))
 
         if generation:
-            generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
+            generation.update(output={"output": txt}, usage_details={
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+            })
             generation.end()
 
+        self._log_usage("chat", usage)
         return txt
 
     async def async_chat_streamly(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
-        total_tokens = 0
+        usage = LLMUsage()
         ans = ""
         _bundle_is_tools = self.is_tools
         _mdl_is_tools = getattr(self.mdl, "is_tools", False)
@@ -424,8 +464,8 @@ class LLMBundle(LLM4Tenant):
             use_kwargs = self._clean_param(chat_partial, **kwargs)
             try:
                 async for txt in chat_partial(**use_kwargs):
-                    if isinstance(txt, int):
-                        total_tokens = txt
+                    if isinstance(txt, LLMUsage):
+                        usage = txt
                         break
 
                     if txt.endswith("</think>") and ans.endswith("</think>"):
@@ -441,15 +481,20 @@ class LLMBundle(LLM4Tenant):
                     generation.update(output={"error": str(e)})
                     generation.end()
                 raise
-            if total_tokens and not TenantLLMService.increase_usage_by_id(self.model_config["id"], total_tokens):
-                logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.model_config["llm_name"], total_tokens))
+            if usage.total_tokens and not TenantLLMService.increase_usage_by_id(self.model_config["id"], usage.total_tokens):
+                logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.model_config["llm_name"], usage.total_tokens))
             if generation:
-                generation.update(output={"output": ans}, usage_details={"total_tokens": total_tokens})
+                generation.update(output={"output": ans}, usage_details={
+                    "prompt_tokens": usage.prompt_tokens,
+                    "completion_tokens": usage.completion_tokens,
+                    "total_tokens": usage.total_tokens,
+                })
                 generation.end()
+            self._log_usage("chat", usage)
             return
 
     async def async_chat_streamly_delta(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
-        total_tokens = 0
+        usage = LLMUsage()
         ans = ""
         if self.is_tools and getattr(self.mdl, "is_tools", False) and hasattr(self.mdl, "async_chat_streamly_with_tools"):
             stream_fn = getattr(self.mdl, "async_chat_streamly_with_tools", None)
@@ -467,8 +512,8 @@ class LLMBundle(LLM4Tenant):
             use_kwargs = self._clean_param(chat_partial, **kwargs)
             try:
                 async for txt in chat_partial(**use_kwargs):
-                    if isinstance(txt, int):
-                        total_tokens = txt
+                    if isinstance(txt, LLMUsage):
+                        usage = txt
                         break
 
                     if txt.endswith("</think>") and ans.endswith("</think>"):
@@ -484,9 +529,14 @@ class LLMBundle(LLM4Tenant):
                     generation.update(output={"error": str(e)})
                     generation.end()
                 raise
-            if total_tokens and not TenantLLMService.increase_usage_by_id(self.model_config["id"], total_tokens):
-                logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.model_config["llm_name"], total_tokens))
+            if usage.total_tokens and not TenantLLMService.increase_usage_by_id(self.model_config["id"], usage.total_tokens):
+                logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.model_config["llm_name"], usage.total_tokens))
             if generation:
-                generation.update(output={"output": ans}, usage_details={"total_tokens": total_tokens})
+                generation.update(output={"output": ans}, usage_details={
+                    "prompt_tokens": usage.prompt_tokens,
+                    "completion_tokens": usage.completion_tokens,
+                    "total_tokens": usage.total_tokens,
+                })
                 generation.end()
+            self._log_usage("chat", usage)
             return
