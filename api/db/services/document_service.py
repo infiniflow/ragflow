@@ -965,11 +965,13 @@ class DocumentService(CommonService):
             queue_tasks(doc, bucket, name, 0)
 
 
-def queue_raptor_o_graphrag_tasks(sample_doc_id, ty, priority, fake_doc_id="", doc_ids=[]):
+def queue_raptor_o_graphrag_tasks(sample_doc_id, ty, priority, fake_doc_id="", doc_ids=None):
     """
     You can provide a fake_doc_id to bypass the restriction of tasks at the knowledgebase level.
     Optionally, specify a list of doc_ids to determine which documents participate in the task.
     """
+    if doc_ids is None:
+        doc_ids = []
     assert ty in ["graphrag", "raptor", "mindmap"], "type should be graphrag, raptor or mindmap"
 
     chunking_config = DocumentService.get_chunking_config(sample_doc_id["id"])
