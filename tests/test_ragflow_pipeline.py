@@ -42,7 +42,8 @@ import json
 from pathlib import Path
 from typing import Optional
 
-import requests
+import asyncio
+import httpx
 from dotenv import load_dotenv
 
 # ── Load .env.test ─────────────────────────────────────────────────────────────
@@ -83,7 +84,7 @@ def _headers(cfg: dict) -> dict:
 
 # ── Dataset management ─────────────────────────────────────────────────────────
 
-def list_datasets(cfg: dict) -> list:
+async def list_datasets(cfg: dict) -> list:
     """
     MCP tool: list_datasets
     List all datasets in RagFlow.
@@ -94,10 +95,11 @@ def list_datasets(cfg: dict) -> list:
     Returns:
         list of dataset dicts (id, name, chunk_method, chunk_count, ...)
     """
-    resp = requests.get(
-        f"{cfg['base_url']}/api/v1/datasets",
-        headers=_headers(cfg),
-    )
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{cfg['base_url']}/api/v1/datasets",
+            headers=_headers(cfg),
+        )
     data = resp.json()
     if data.get("code") != 0:
         raise RuntimeError(f"list_datasets failed: {data.get('message')}")
@@ -135,7 +137,7 @@ def _build_dataset_name(brand: str, car_model: str, year: str,
     return f"{brand}_{car_model}_{year}_{market}_{trim}_{now.strftime('%Y%m%d')}_{now.strftime('%H%M')}"
 
 
-def create_analysis_dataset(
+async def create_analysis_dataset(
     cfg: dict,
     brand: str,
     car_model: str,
@@ -182,16 +184,17 @@ def create_analysis_dataset(
     if openai_api_key and whisper_backend == "openai-api":
         parser_config["openai_api_key"] = openai_api_key
 
-    resp = requests.post(
-        f"{cfg['base_url']}/api/v1/datasets",
-        headers=_headers(cfg),
-        json={
-            "name":            name,
-            "chunk_method":    "naive",
-            "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
-            "parser_config":   parser_config,
-        },
-    )
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{cfg['base_url']}/api/v1/datasets",
+            headers=_headers(cfg),
+            json={
+                "name":            name,
+                "chunk_method":    "naive",
+                "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
+                "parser_config":   parser_config,
+            },
+        )
     data = resp.json()
     if data.get("code") != 0:
         raise RuntimeError(f"create_analysis_dataset failed: {data.get('message')}")
@@ -203,32 +206,32 @@ def create_analysis_dataset(
 
 
 # kept for backward compatibility
-def create_video_dataset(cfg, brand, car_model, year, market,
+async def create_video_dataset(cfg, brand, car_model, year, market,
                          whisper_backend="youtube-transcript-api",
                          whisper_model="base", trim="All", openai_api_key=""):
     """Backward-compatible wrapper — use create_analysis_dataset() instead."""
-    return create_analysis_dataset(cfg, brand, car_model, year, market,
+    return await create_analysis_dataset(cfg, brand, car_model, year, market,
                                    trim=trim, whisper_backend=whisper_backend,
                                    whisper_model=whisper_model,
                                    openai_api_key=openai_api_key)
 
 
-def create_pdf_dataset(cfg, brand, car_model, year, market, trim="All"):
+async def create_pdf_dataset(cfg, brand, car_model, year, market, trim="All"):
     """Backward-compatible wrapper — use create_analysis_dataset() instead."""
-    return create_analysis_dataset(cfg, brand, car_model, year, market, trim=trim)
+    return await create_analysis_dataset(cfg, brand, car_model, year, market, trim=trim)
 
 
-def create_web_dataset(cfg, brand, car_model, year, market, trim="All"):
+async def create_web_dataset(cfg, brand, car_model, year, market, trim="All"):
     """Backward-compatible wrapper — use create_analysis_dataset() instead."""
-    return create_analysis_dataset(cfg, brand, car_model, year, market, trim=trim)
+    return await create_analysis_dataset(cfg, brand, car_model, year, market, trim=trim)
 
 
-def create_image_dataset(cfg, brand, car_model, year, market, trim="All"):
+async def create_image_dataset(cfg, brand, car_model, year, market, trim="All"):
     """Backward-compatible wrapper — use create_analysis_dataset() instead."""
-    return create_analysis_dataset(cfg, brand, car_model, year, market, trim=trim)
+    return await create_analysis_dataset(cfg, brand, car_model, year, market, trim=trim)
 
 
-def delete_dataset(cfg: dict, dataset_id: str) -> bool:
+async def delete_dataset(cfg: dict, dataset_id: str) -> bool:
     """
     MCP tool: delete_dataset
     Delete a dataset and all its documents and chunks.
@@ -240,11 +243,12 @@ def delete_dataset(cfg: dict, dataset_id: str) -> bool:
     Returns:
         True if deleted successfully
     """
-    resp = requests.delete(
-        f"{cfg['base_url']}/api/v1/datasets",
-        headers=_headers(cfg),
-        json={"ids": [dataset_id]},
-    )
+    async with httpx.AsyncClient() as client:
+        resp = await client.delete(
+            f"{cfg['base_url']}/api/v1/datasets",
+            headers=_headers(cfg),
+            json={"ids": [dataset_id]},
+        )
     data = resp.json()
     if data.get("code") != 0:
         # non-fatal — log warning but don't crash the test
@@ -256,7 +260,7 @@ def delete_dataset(cfg: dict, dataset_id: str) -> bool:
 
 # ── Ingestion ──────────────────────────────────────────────────────────────────
 
-def ingest_video(
+async def ingest_video(
     cfg: dict,
     dataset_id: str,
     url: str,
@@ -295,11 +299,12 @@ def ingest_video(
         "source_type":    source_type,
         "retrieval_date": retrieval_date or _date.today().isoformat(),
     }
-    resp = requests.post(
-        f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/videos",
-        headers=_headers(cfg),
-        json=_payload,
-    )
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/videos",
+            headers=_headers(cfg),
+            json=_payload,
+        )
     data = resp.json()
     if data.get("code") != 0:
         raise RuntimeError(f"ingest_video failed: {data.get('message')}")
@@ -309,7 +314,7 @@ def ingest_video(
     return doc
 
 
-def ingest_pdf(
+async def ingest_pdf(
     cfg: dict,
     dataset_id: str,
     file_path: str,
@@ -345,10 +350,12 @@ def ingest_pdf(
 
     headers = {"Authorization": f"Bearer {cfg['ragflow_api_key']}"}
     with open(path, "rb") as f:
-        resp = requests.post(
+        file_content = f.read()
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
             f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/documents",
             headers=headers,
-            files={"file": (path.name, f, "application/pdf")},
+            files={"file": (path.name, file_content, "application/pdf")},
         )
     data = resp.json()
     if data.get("code") != 0:
@@ -358,8 +365,7 @@ def ingest_pdf(
     # store business metadata via DocMetadataService
     if any([brand, car_model, year, market]):
         from datetime import date as _date
-        import requests as _req
-        _headers = {"Authorization": f"Bearer {cfg['ragflow_api_key']}", "Content-Type": "application/json"}
+        _meta_headers = {"Authorization": f"Bearer {cfg['ragflow_api_key']}", "Content-Type": "application/json"}
         _meta = {
             "brand":          brand,
             "car_model":      car_model,
@@ -369,16 +375,17 @@ def ingest_pdf(
             "source_type":    source_type,
             "retrieval_date": retrieval_date or _date.today().isoformat(),
         }
-        _req.post(
-            f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/metadata/update",
-            headers=_headers,
-            json={"selector": {"document_ids": [doc['id']]},
-                  "updates": [{"key": k, "value": v} for k, v in _meta.items() if v]},
-        )
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/metadata/update",
+                headers=_meta_headers,
+                json={"selector": {"document_ids": [doc['id']]},
+                      "updates": [{"key": k, "value": v} for k, v in _meta.items() if v]},
+            )
     return doc
 
 
-def ingest_html(
+async def ingest_html(
     cfg: dict,
     dataset_id: str,
     source: str,
@@ -415,7 +422,6 @@ def ingest_html(
     Returns:
         dict with document metadata including "id" field
     """
-    import urllib.request
     import re
 
     # ── Resolve source to a local file path ──────────────────────────────────
@@ -426,8 +432,9 @@ def ingest_html(
         local_path = Path(f"/tmp/{safe_name}")
         print(f"🌐 Fetching HTML from URL: {source}")
         import urllib3; urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        _r = requests.get(source, verify=False, timeout=30,
-                          headers={"User-Agent": "Mozilla/5.0"})
+        async with httpx.AsyncClient(verify=False) as _fetch:
+            _r = await _fetch.get(source, timeout=30,
+                                  headers={"User-Agent": "Mozilla/5.0"})
         _r.raise_for_status()
         local_path.write_bytes(_r.content)
         print(f"   Saved to: {local_path} ({len(_r.content)} bytes)")
@@ -440,10 +447,12 @@ def ingest_html(
     # ── Upload ────────────────────────────────────────────────────────────────
     upload_headers = {"Authorization": f"Bearer {cfg['ragflow_api_key']}"}
     with open(local_path, "rb") as f:
-        resp = requests.post(
+        file_content = f.read()
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
             f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/documents",
             headers=upload_headers,
-            files={"file": (local_path.name, f, "text/html")},
+            files={"file": (local_path.name, file_content, "text/html")},
         )
     data = resp.json()
     if data.get("code") != 0:
@@ -453,8 +462,7 @@ def ingest_html(
     # store business metadata via DocMetadataService
     if any([brand, car_model, year, market]):
         from datetime import date as _date
-        import requests as _req
-        _headers = {"Authorization": f"Bearer {cfg['ragflow_api_key']}", "Content-Type": "application/json"}
+        _meta_headers = {"Authorization": f"Bearer {cfg['ragflow_api_key']}", "Content-Type": "application/json"}
         _meta = {
             "brand":          brand,
             "car_model":      car_model,
@@ -464,16 +472,17 @@ def ingest_html(
             "source_type":    source_type,
             "retrieval_date": retrieval_date or _date.today().isoformat(),
         }
-        _req.post(
-            f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/metadata/update",
-            headers=_headers,
-            json={"selector": {"document_ids": [doc['id']]},
-                  "updates": [{"key": k, "value": v} for k, v in _meta.items() if v]},
-        )
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/metadata/update",
+                headers=_meta_headers,
+                json={"selector": {"document_ids": [doc['id']]},
+                      "updates": [{"key": k, "value": v} for k, v in _meta.items() if v]},
+            )
     return doc
 
 
-def ingest_image(
+async def ingest_image(
     cfg: dict,
     dataset_id: str,
     source: str,
@@ -527,8 +536,9 @@ def ingest_image(
         local_path = Path(f"/tmp/{safe_name}")
         print(f"🌐 Fetching image from URL: {source}")
         import urllib3; urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        _r = requests.get(source, verify=False, timeout=30,
-                          headers={"User-Agent": "Mozilla/5.0"})
+        async with httpx.AsyncClient(verify=False) as _fetch:
+            _r = await _fetch.get(source, timeout=30,
+                                  headers={"User-Agent": "Mozilla/5.0"})
         _r.raise_for_status()
         local_path.write_bytes(_r.content)
         print(f"   Saved to: {local_path} ({len(_r.content)} bytes)")
@@ -544,10 +554,12 @@ def ingest_image(
     # ── Upload ────────────────────────────────────────────────────────────────
     upload_headers = {"Authorization": f"Bearer {cfg['ragflow_api_key']}"}
     with open(local_path, "rb") as f:
-        resp = requests.post(
+        file_content = f.read()
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
             f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/documents",
             headers=upload_headers,
-            files={"file": (local_path.name, f, mime)},
+            files={"file": (local_path.name, file_content, mime)},
         )
     data = resp.json()
     if data.get("code") != 0:
@@ -557,8 +569,7 @@ def ingest_image(
     # store business metadata via DocMetadataService
     if any([brand, car_model, year, market]):
         from datetime import date as _date
-        import requests as _req
-        _headers = {"Authorization": f"Bearer {cfg['ragflow_api_key']}", "Content-Type": "application/json"}
+        _meta_headers = {"Authorization": f"Bearer {cfg['ragflow_api_key']}", "Content-Type": "application/json"}
         _meta = {
             "brand":          brand,
             "car_model":      car_model,
@@ -568,18 +579,19 @@ def ingest_image(
             "source_type":    source_type,
             "retrieval_date": retrieval_date or _date.today().isoformat(),
         }
-        _req.post(
-            f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/metadata/update",
-            headers=_headers,
-            json={"selector": {"document_ids": [doc['id']]},
-                  "updates": [{"key": k, "value": v} for k, v in _meta.items() if v]},
-        )
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/metadata/update",
+                headers=_meta_headers,
+                json={"selector": {"document_ids": [doc['id']]},
+                      "updates": [{"key": k, "value": v} for k, v in _meta.items() if v]},
+            )
     return doc
 
 
 # ── Processing ─────────────────────────────────────────────────────────────────
 
-def trigger_parsing(
+async def trigger_parsing(
     cfg: dict,
     dataset_id: str,
     doc_id: str,
@@ -596,11 +608,12 @@ def trigger_parsing(
     Returns:
         True if task queued successfully
     """
-    resp = requests.post(
-        f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/chunks",
-        headers=_headers(cfg),
-        json={"document_ids": [doc_id]},
-    )
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{cfg['base_url']}/api/v1/datasets/{dataset_id}/chunks",
+            headers=_headers(cfg),
+            json={"document_ids": [doc_id]},
+        )
     data = resp.json()
     if data.get("code") != 0:
         raise RuntimeError(f"trigger_parsing failed: {data.get('message')}")
@@ -608,7 +621,7 @@ def trigger_parsing(
     return True
 
 
-def wait_for_completion(
+async def wait_for_completion(
     cfg: dict,
     dataset_id: str,
     doc_id: str,
@@ -638,11 +651,12 @@ def wait_for_completion(
         elapsed = int(time.time() - start)
 
         # Poll dataset chunk_count — increases from 0 as parsing completes
-        resp = requests.get(
-            f"{cfg['base_url']}/api/v1/datasets",
-            headers=_headers(cfg),
-            params={"id": dataset_id},
-        )
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{cfg['base_url']}/api/v1/datasets",
+                headers=_headers(cfg),
+                params={"id": dataset_id},
+            )
         data = resp.json()
         datasets = data.get("data", [])
         if datasets:
@@ -658,14 +672,14 @@ def wait_for_completion(
                 print(f"✅ Parsing complete in {elapsed}s — {chunk_count} chunks produced")
                 return {"doc_id": doc_id, "chunk_count": chunk_count}
 
-        time.sleep(poll_interval)
+        await asyncio.sleep(poll_interval)
 
     raise TimeoutError(f"⏰ Parsing did not complete within {timeout}s")
 
 
 # ── Retrieval ──────────────────────────────────────────────────────────────────
 
-def retrieve(
+async def retrieve(
     cfg: dict,
     dataset_id: str,
     question: str,
@@ -696,16 +710,17 @@ def retrieve(
           - timestamp_seconds   : start time of segment in video
           - transcript_segment  : deep-link URL (&t=Xs) to exact moment
     """
-    resp = requests.post(
-        f"{cfg['base_url']}/api/v1/retrieval",
-        headers=_headers(cfg),
-        json={
-            "question":            question,
-            "dataset_ids":         [dataset_id],
-            "similarity_threshold": similarity_threshold,
-            "top_n":               top_n,
-        },
-    )
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{cfg['base_url']}/api/v1/retrieval",
+            headers=_headers(cfg),
+            json={
+                "question":            question,
+                "dataset_ids":         [dataset_id],
+                "similarity_threshold": similarity_threshold,
+                "top_n":               top_n,
+            },
+        )
     data = resp.json()
     if data.get("code") != 0:
         raise RuntimeError(f"retrieve failed: {data.get('message')}")
@@ -752,7 +767,7 @@ def display_results(chunks: list, max_content_length: int = 200) -> None:
 
 # ── Brand-model scoped dataset discovery and retrieval ─────────────────────────
 
-def get_datasets_by_brand_model(
+async def get_datasets_by_brand_model(
     cfg: dict,
     brand: str,
     model: str,
@@ -788,7 +803,7 @@ def get_datasets_by_brand_model(
         get_datasets_by_brand_model(cfg, "Opel", "Corsa", market="UK", source_type="Video")
           → [Opel_Corsa_2023_UK_All_Video_...]
     """
-    all_datasets = list_datasets(cfg)
+    all_datasets = await list_datasets(cfg)
     prefix = f"{brand}_{model}_"
     matched = [d for d in all_datasets if d["name"].startswith(prefix)]
 
@@ -815,7 +830,7 @@ def get_datasets_by_brand_model(
     return matched
 
 
-def retrieve_by_brand_model(
+async def retrieve_by_brand_model(
     cfg: dict,
     brand: str,
     model: str,
@@ -859,7 +874,7 @@ def retrieve_by_brand_model(
         retrieve_by_brand_model(cfg, "Opel", "Corsa", "engine performance",
                                 market="UK", source_type="Video")
     """
-    datasets = get_datasets_by_brand_model(cfg, brand, model, year, market, trim, source_type)
+    datasets = await get_datasets_by_brand_model(cfg, brand, model, year, market, trim, source_type)
 
     if not datasets:
         print(f"⚠️  No datasets found for {brand} {model}")
@@ -886,26 +901,26 @@ def retrieve_by_brand_model(
     import json as _json
     _meta_condition = {"conditions": _conditions, "logic": "and"}
 
-    import json as _json
     _doc_ids = []
-    for _ds_id in dataset_ids:
-        _dresp = requests.get(
-            f"{cfg['base_url']}/api/v1/datasets/{_ds_id}/documents",
-            headers=_headers(cfg),
-            params={"page_size": 1000},
-        )
-        for _doc in _dresp.json().get("data", {}).get("docs", []):
-            _meta = _doc.get("meta_fields", {})
-            _match = (
-                _meta.get("brand") == brand and
-                _meta.get("car_model") == model and
-                (not year or _meta.get("year") == (year if isinstance(year, str) else year[0])) and
-                (not market or _meta.get("market") == _normalize_market(market)) and
-                (not trim or _meta.get("trim") == trim) and
-                (not source_type or _meta.get("source_type") == source_type)
+    async with httpx.AsyncClient() as client:
+        for _ds_id in dataset_ids:
+            _dresp = await client.get(
+                f"{cfg['base_url']}/api/v1/datasets/{_ds_id}/documents",
+                headers=_headers(cfg),
+                params={"page_size": 1000},
             )
-            if _match:
-                _doc_ids.append(_doc["id"])
+            for _doc in _dresp.json().get("data", {}).get("docs", []):
+                _meta = _doc.get("meta_fields", {})
+                _match = (
+                    _meta.get("brand") == brand and
+                    _meta.get("car_model") == model and
+                    (not year or _meta.get("year") == (year if isinstance(year, str) else year[0])) and
+                    (not market or _meta.get("market") == _normalize_market(market)) and
+                    (not trim or _meta.get("trim") == trim) and
+                    (not source_type or _meta.get("source_type") == source_type)
+                )
+                if _match:
+                    _doc_ids.append(_doc["id"])
 
     # video docs (size=0) are excluded from documents API — handle separately
     # if filtering by Video or no source_type filter, run without doc_ids
@@ -916,17 +931,18 @@ def retrieve_by_brand_model(
         print(f"⚠️  No {source_type} documents matched filters for {brand} {model}")
         return []
 
-    resp = requests.post(
-        f"{cfg['base_url']}/api/v1/retrieval",
-        headers=_headers(cfg),
-        json={
-            "question":             question,
-            "dataset_ids":          dataset_ids,
-            **({"doc_ids": _doc_ids} if _use_doc_filter else {}),
-            "similarity_threshold": similarity_threshold,
-            "top_n":                top_n,
-        },
-    )
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{cfg['base_url']}/api/v1/retrieval",
+            headers=_headers(cfg),
+            json={
+                "question":             question,
+                "dataset_ids":          dataset_ids,
+                **({"doc_ids": _doc_ids} if _use_doc_filter else {}),
+                "similarity_threshold": similarity_threshold,
+                "top_n":                top_n,
+            },
+        )
     data = resp.json()
     if data.get("code") != 0:
         raise RuntimeError(f"retrieve_by_brand_model failed: {data.get('message')}")
@@ -939,7 +955,7 @@ def retrieve_by_brand_model(
 
 # ── Full pipeline runners ──────────────────────────────────────────────────────
 
-def run_video_pipeline(
+async def run_video_pipeline(
     cfg: dict,
     url: str,
     title: str,
@@ -992,7 +1008,7 @@ def run_video_pipeline(
     start = time.time()
 
     # Step 1 — Create analysis dataset (all source types share one dataset)
-    dataset = create_analysis_dataset(
+    dataset = await create_analysis_dataset(
         cfg, brand, car_model, year, market,
         trim=trim,
         whisper_backend=whisper_backend,
@@ -1002,7 +1018,7 @@ def run_video_pipeline(
     dataset_id = dataset["id"]
 
     # Step 2 — Ingest video
-    doc = ingest_video(
+    doc = await ingest_video(
         cfg, dataset_id, url, title,
         brand=brand, car_model=car_model, year=year,
         market=market, trim=trim, source_type="Video",
@@ -1010,13 +1026,13 @@ def run_video_pipeline(
     doc_id = doc["id"]
 
     # Step 3 — Trigger parsing
-    trigger_parsing(cfg, dataset_id, doc_id)
+    await trigger_parsing(cfg, dataset_id, doc_id)
 
     # Step 4 — Wait for completion
-    wait_for_completion(cfg, dataset_id, doc_id)
+    await wait_for_completion(cfg, dataset_id, doc_id)
 
     # Step 5 — Retrieve
-    chunks = retrieve(cfg, dataset_id, question, top_n, similarity_threshold)
+    chunks = await retrieve(cfg, dataset_id, question, top_n, similarity_threshold)
 
     # Step 6 — Display
     display_results(chunks)
@@ -1025,7 +1041,7 @@ def run_video_pipeline(
     print(f"\n⏱️  Total pipeline time: {elapsed}s")
 
     if cleanup:
-        delete_dataset(cfg, dataset_id)
+        await delete_dataset(cfg, dataset_id)
 
     return {
         "dataset_id":      dataset_id,
@@ -1037,7 +1053,7 @@ def run_video_pipeline(
     }
 
 
-def run_pdf_pipeline(
+async def run_pdf_pipeline(
     cfg: dict,
     file_path: str,
     question: str,
@@ -1085,21 +1101,21 @@ def run_pdf_pipeline(
     start = time.time()
 
     # Step 1 — Create dataset
-    dataset = create_analysis_dataset(cfg, brand, car_model, year, market, trim=trim)
+    dataset = await create_analysis_dataset(cfg, brand, car_model, year, market, trim=trim)
     dataset_id = dataset["id"]
 
     # Step 2 — Upload PDF
-    doc = ingest_pdf(cfg, dataset_id, file_path)
+    doc = await ingest_pdf(cfg, dataset_id, file_path)
     doc_id = doc["id"]
 
     # Step 3 — Trigger parsing
-    trigger_parsing(cfg, dataset_id, doc_id)
+    await trigger_parsing(cfg, dataset_id, doc_id)
 
     # Step 4 — Wait for completion
-    wait_for_completion(cfg, dataset_id, doc_id)
+    await wait_for_completion(cfg, dataset_id, doc_id)
 
     # Step 5 — Retrieve
-    chunks = retrieve(cfg, dataset_id, question, top_n, similarity_threshold)
+    chunks = await retrieve(cfg, dataset_id, question, top_n, similarity_threshold)
 
     # Step 6 — Display
     display_results(chunks)
@@ -1108,7 +1124,7 @@ def run_pdf_pipeline(
     print(f"\n⏱️  Total pipeline time: {elapsed}s")
 
     if cleanup:
-        delete_dataset(cfg, dataset_id)
+        await delete_dataset(cfg, dataset_id)
 
     return {
         "dataset_id":      dataset_id,
@@ -1118,7 +1134,7 @@ def run_pdf_pipeline(
     }
 
 
-def run_web_pipeline(
+async def run_web_pipeline(
     cfg: dict,
     source: str,
     question: str,
@@ -1166,21 +1182,21 @@ def run_web_pipeline(
     start = time.time()
 
     # Step 1 — Create dataset
-    dataset = create_web_dataset(cfg, brand, car_model, year, market, trim)
+    dataset = await create_web_dataset(cfg, brand, car_model, year, market, trim)
     dataset_id = dataset["id"]
 
     # Step 2 — Upload HTML (local or URL)
-    doc = ingest_html(cfg, dataset_id, source)
+    doc = await ingest_html(cfg, dataset_id, source)
     doc_id = doc["id"]
 
     # Step 3 — Trigger parsing
-    trigger_parsing(cfg, dataset_id, doc_id)
+    await trigger_parsing(cfg, dataset_id, doc_id)
 
     # Step 4 — Wait for completion
-    wait_for_completion(cfg, dataset_id, doc_id)
+    await wait_for_completion(cfg, dataset_id, doc_id)
 
     # Step 5 — Retrieve
-    chunks = retrieve(cfg, dataset_id, question, top_n, similarity_threshold)
+    chunks = await retrieve(cfg, dataset_id, question, top_n, similarity_threshold)
 
     # Step 6 — Display
     display_results(chunks)
@@ -1189,7 +1205,7 @@ def run_web_pipeline(
     print(f"\n⏱️  Total pipeline time: {elapsed}s")
 
     if cleanup:
-        delete_dataset(cfg, dataset_id)
+        await delete_dataset(cfg, dataset_id)
 
     return {
         "dataset_id":      dataset_id,
@@ -1200,7 +1216,7 @@ def run_web_pipeline(
     }
 
 
-def run_image_pipeline(
+async def run_image_pipeline(
     cfg: dict,
     source: str,
     question: str,
@@ -1248,21 +1264,21 @@ def run_image_pipeline(
     start = time.time()
 
     # Step 1 — Create dataset
-    dataset = create_image_dataset(cfg, brand, car_model, year, market, trim)
+    dataset = await create_image_dataset(cfg, brand, car_model, year, market, trim)
     dataset_id = dataset["id"]
 
     # Step 2 — Upload image (local or URL)
-    doc = ingest_image(cfg, dataset_id, source)
+    doc = await ingest_image(cfg, dataset_id, source)
     doc_id = doc["id"]
 
     # Step 3 — Trigger parsing
-    trigger_parsing(cfg, dataset_id, doc_id)
+    await trigger_parsing(cfg, dataset_id, doc_id)
 
     # Step 4 — Wait for completion
-    wait_for_completion(cfg, dataset_id, doc_id)
+    await wait_for_completion(cfg, dataset_id, doc_id)
 
     # Step 5 — Retrieve
-    chunks = retrieve(cfg, dataset_id, question, top_n, similarity_threshold)
+    chunks = await retrieve(cfg, dataset_id, question, top_n, similarity_threshold)
 
     # Step 6 — Display
     display_results(chunks)
@@ -1271,7 +1287,7 @@ def run_image_pipeline(
     print(f"\n⏱️  Total pipeline time: {elapsed}s")
 
     if cleanup:
-        delete_dataset(cfg, dataset_id)
+        await delete_dataset(cfg, dataset_id)
 
     return {
         "dataset_id":      dataset_id,
@@ -1282,7 +1298,7 @@ def run_image_pipeline(
     }
 
 
-def compare_backends(
+async def compare_backends(
     cfg: dict,
     url: str,
     title: str,
@@ -1335,7 +1351,7 @@ def compare_backends(
 
     for backend in backends:
         try:
-            result = run_video_pipeline(
+            result = await run_video_pipeline(
                 cfg=cfg,
                 url=url,
                 title=title,
@@ -1385,7 +1401,7 @@ def compare_backends(
 
 # ── Main — run all tests ───────────────────────────────────────────────────────
 
-if __name__ == "__main__":
+async def _main():
     # ── Config ──────────────────────────────────────────────────────────────────
     cfg = load_config()
 
@@ -1397,35 +1413,35 @@ if __name__ == "__main__":
     # ── Choose what to run — uncomment ONE block at a time ───────────────────────
 
     # Option A: youtube-transcript-api (fast, ~10s, captions only)
-    # run_video_pipeline(
+    # await run_video_pipeline(
     #     cfg=cfg, url=VIDEO_URL, title=VIDEO_TITLE, question=QUESTION,
     #     brand="Opel", car_model="Corsa", year="2023", market="UK", trim="All",
     #     whisper_backend="youtube-transcript-api", cleanup=False,
     # )
 
     # Option B: faster-whisper (local CPU, ~60s with tiny model)
-    # run_video_pipeline(
+    # await run_video_pipeline(
     #     cfg=cfg, url=VIDEO_URL, title=VIDEO_TITLE, question=QUESTION,
     #     brand="Opel", car_model="Corsa", year="2023", market="UK", trim="All",
     #     whisper_backend="faster-whisper", whisper_model="tiny", cleanup=False,
     # )
 
     # Option C: openai-whisper (local CPU, ~2-3min with tiny model)
-    # run_video_pipeline(
+    # await run_video_pipeline(
     #     cfg=cfg, url=VIDEO_URL, title=VIDEO_TITLE, question=QUESTION,
     #     brand="Opel", car_model="Corsa", year="2023", market="UK", trim="All",
     #     whisper_backend="openai-whisper", whisper_model="tiny", cleanup=False,
     # )
 
     # Option D: openai-api (cloud, ~30s, costs ~$0.02/video)
-    # run_video_pipeline(
+    # await run_video_pipeline(
     #     cfg=cfg, url=VIDEO_URL, title=VIDEO_TITLE, question=QUESTION,
     #     brand="Opel", car_model="Corsa", year="2023", market="UK", trim="All",
     #     whisper_backend="openai-api", cleanup=False,
     # )
 
     # Option E: compare multiple backends side by side
-    # compare_backends(
+    # await compare_backends(
     #     cfg=cfg, url=VIDEO_URL, title=VIDEO_TITLE, question=QUESTION,
     #     brand="Opel", car_model="Corsa", year="2023", market="UK", trim="All",
     #     backends=["youtube-transcript-api", "faster-whisper"],
@@ -1433,7 +1449,7 @@ if __name__ == "__main__":
     # )
 
     # Option F: Opel Corsa 2025 IE PDF
-    # run_pdf_pipeline(
+    # await run_pdf_pipeline(
     #     cfg=cfg, file_path="/ragflow/tests/Corsa_test.pdf",
     #     question="engine performance and fuel economy",
     #     brand="Opel", car_model="Corsa", year="2025", market="IE", trim="All",
@@ -1441,7 +1457,7 @@ if __name__ == "__main__":
     # )
 
     # Option G: Peugeot 208 2023 FR PDF
-    # run_pdf_pipeline(
+    # await run_pdf_pipeline(
     #     cfg=cfg, file_path="/ragflow/tests/208_test.pdf",
     #     question="engine performance and fuel economy",
     #     brand="Peugeot", car_model="208", year="2023", market="FR", trim="All",
@@ -1449,17 +1465,17 @@ if __name__ == "__main__":
     # )
 
     # Option H: brand-scoped retrieval (query existing datasets — no ingestion)
-    # get_datasets_by_brand_model(cfg, "Opel", "Corsa")
-    # chunks = retrieve_by_brand_model(cfg, "Opel", "Corsa", QUESTION)
+    # await get_datasets_by_brand_model(cfg, "Opel", "Corsa")
+    # chunks = await retrieve_by_brand_model(cfg, "Opel", "Corsa", QUESTION)
     # display_results(chunks)
 
     # Option H with filters:
-    # chunks = retrieve_by_brand_model(cfg, "Opel", "Corsa", QUESTION,
-    #                                   year="2025", market="IE", source_type="Docs")
+    # chunks = await retrieve_by_brand_model(cfg, "Opel", "Corsa", QUESTION,
+    #                                         year="2025", market="IE", source_type="Docs")
     # display_results(chunks)
 
     # Option I: HTML / web page ingestion (local file)
-    # run_web_pipeline(
+    # await run_web_pipeline(
     #     cfg=cfg, source="/ragflow/tests/corsa_ie.html",
     #     question="engine performance and fuel economy",
     #     brand="Opel", car_model="Corsa", year="2025", market="IE", trim="All",
@@ -1467,7 +1483,7 @@ if __name__ == "__main__":
     # )
 
     # Option I (URL variant): fetch live page then ingest
-    # run_web_pipeline(
+    # await run_web_pipeline(
     #     cfg=cfg, source="https://www.opel.ie/cars/corsa.html",
     #     question="engine performance and fuel economy",
     #     brand="Opel", car_model="Corsa", year="2025", market="IE", trim="All",
@@ -1475,7 +1491,7 @@ if __name__ == "__main__":
     # )
 
     # Option J: image ingestion (local file — DeepDoc picture parser)
-    # run_image_pipeline(
+    # await run_image_pipeline(
     #     cfg=cfg, source="/ragflow/tests/corsa_badge.jpg",
     #     question="exterior design and colour options",
     #     brand="Opel", car_model="Corsa", year="2025", market="IE", trim="All",
@@ -1483,7 +1499,7 @@ if __name__ == "__main__":
     # )
 
     # Option J (URL variant): fetch image from URL then ingest
-    # run_image_pipeline(
+    # await run_image_pipeline(
     #     cfg=cfg, source="https://example.com/corsa_spec.jpg",
     #     question="exterior design and colour options",
     #     brand="Opel", car_model="Corsa", year="2025", market="IE", trim="All",
@@ -1491,8 +1507,12 @@ if __name__ == "__main__":
     # )
 
     # ── Default: run Option A (fastest smoke test) ────────────────────────────
-    run_video_pipeline(
+    await run_video_pipeline(
         cfg=cfg, url=VIDEO_URL, title=VIDEO_TITLE, question=QUESTION,
         brand="Opel", car_model="Corsa", year="2023", market="UK", trim="All",
         whisper_backend="youtube-transcript-api", cleanup=False,
     )
+
+
+if __name__ == "__main__":
+    asyncio.run(_main())
