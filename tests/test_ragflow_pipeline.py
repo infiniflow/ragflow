@@ -425,6 +425,7 @@ def ingest_html(
             safe_name += ".html"
         local_path = Path(f"/tmp/{safe_name}")
         print(f"🌐 Fetching HTML from URL: {source}")
+        import urllib3; urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         _r = requests.get(source, verify=False, timeout=30,
                           headers={"User-Agent": "Mozilla/5.0"})
         _r.raise_for_status()
@@ -525,6 +526,7 @@ def ingest_image(
             safe_name += ".jpg"
         local_path = Path(f"/tmp/{safe_name}")
         print(f"🌐 Fetching image from URL: {source}")
+        import urllib3; urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         _r = requests.get(source, verify=False, timeout=30,
                           headers={"User-Agent": "Mozilla/5.0"})
         _r.raise_for_status()
