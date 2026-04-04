@@ -37,6 +37,6 @@ docker cp $BASE/tests/.env.test            $CONTAINER:/ragflow/tests/.env.test
 
 # Remove default nginx conf that conflicts with ragflow.conf
 docker exec $CONTAINER rm -f /etc/nginx/conf.d/default.conf
-docker exec $CONTAINER nginx -s reload
+docker exec $CONTAINER bash -c "nginx -s reload 2>/dev/null || true"
 
 echo "All files deployed. Container is ready."
