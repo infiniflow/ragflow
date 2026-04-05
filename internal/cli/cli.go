@@ -29,7 +29,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/peterh/liner"
-	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 
 	"ragflow/internal/cli/contextengine"
@@ -474,17 +473,9 @@ func (c *CLI) Run() error {
 		for attempt := 1; attempt <= maxAttempts; attempt++ {
 			fmt.Print("Please input your password: ")
 
-			passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
-			fmt.Println()
+			password, err := ReadPassword()
 
-			if err != nil {
-				fmt.Printf("Error reading password: %v\n", err)
-				return err
-			}
-
-			input := strings.TrimSpace(string(passwordBytes))
-
-			if input == "" {
+			if password == "" {
 				if attempt < maxAttempts {
 					fmt.Println("Password cannot be empty, please try again")
 					continue
@@ -492,7 +483,7 @@ func (c *CLI) Run() error {
 				return errors.New("no password provided after 3 attempts")
 			}
 
-			c.args.Password = input
+			c.args.Password = password
 
 			if err = c.VerifyAuth(); err != nil {
 				if attempt < maxAttempts {
