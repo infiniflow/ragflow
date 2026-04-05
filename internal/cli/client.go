@@ -254,6 +254,12 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "show_current_model":
 		return c.ShowCurrentModel(cmd)
 	// ContextEngine commands
+	case "context_list":
+		return c.ContextList(cmd)
+	case "context_cat":
+		return c.ContextCat(cmd)
+	case "context_search":
+		return c.ContextSearch(cmd)
 	case "ce_ls":
 		return c.CEList(cmd)
 	case "ce_search":

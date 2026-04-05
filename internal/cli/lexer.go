@@ -72,6 +72,12 @@ func (l *Lexer) NextToken() Token {
 	case ',':
 		tok = newToken(TokenComma, l.ch)
 		l.readChar()
+	case '/':
+		tok = newToken(TokenSlash, l.ch)
+		l.readChar()
+	case '-':
+		tok = newToken(TokenDash, l.ch)
+		l.readChar()
 	case '\'':
 		tok.Type = TokenQuotedString
 		tok.Value = l.readQuotedString('\'')
@@ -93,10 +99,10 @@ func (l *Lexer) NextToken() Token {
 			tok.Type = TokenNumber
 			tok.Value = l.readNumber()
 			return tok
-		} else {
-			tok = newToken(TokenIllegal, l.ch)
-			l.readChar()
 		}
+
+		tok = newToken(TokenIllegal, l.ch)
+		l.readChar()
 	}
 
 	return tok
@@ -257,6 +263,10 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenChat, Value: ident}
 	case "THINK":
 		return Token{Type: TokenThink, Value: ident}
+	case "LS":
+		return Token{Type: TokenLS, Value: ident}
+	case "CAT":
+		return Token{Type: TokenCat, Value: ident}
 	case "FILES":
 		return Token{Type: TokenFiles, Value: ident}
 	case "AS":
