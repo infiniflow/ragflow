@@ -41,6 +41,8 @@ except Exception:
     class RAGFlowPdfParser:  
         pass
 
+from deepdoc.parser.utils import extract_pdf_outlines
+
 
 class DoclingContentType(str, Enum):
     IMAGE = "image"
@@ -242,7 +244,7 @@ class DoclingParser(RAGFlowPdfParser):
                 continue
             
             tag = self._make_line_tag(bbox) if isinstance(bbox,_BBox) else ""
-            if parse_method == "manual":
+            if parse_method in {"manual", "pipeline"}:
                 sections.append((section, typ, tag))
             elif parse_method == "paper":
                 sections.append((section + tag, typ))
@@ -311,7 +313,7 @@ class DoclingParser(RAGFlowPdfParser):
         txt = (text or "").strip()
         if not txt:
             return []
-        if parse_method == "manual":
+        if parse_method in {"manual", "pipeline"}:
             return [(txt, DoclingContentType.TEXT.value, "")]
         if parse_method == "paper":
             return [(txt, DoclingContentType.TEXT.value)]
@@ -455,6 +457,7 @@ class DoclingParser(RAGFlowPdfParser):
         docling_server_url: Optional[str] = None,
         request_timeout: Optional[int] = None,
     ):
+        self.outlines = extract_pdf_outlines(binary if binary is not None else filepath)
 
         if not self.check_installation(docling_server_url=docling_server_url):
             raise RuntimeError("Docling not available, please install `docling`")
