@@ -582,7 +582,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         if not c:
             c = d["content_with_weight"]
         c = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", c)
-        if not c:
+        if not c.strip():
             c = "None"
         cnts.append(c)
 
