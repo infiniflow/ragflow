@@ -65,7 +65,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: t('knowledgeList.parserRequired'),
-          path: ['parser_id'],
+          path: ['chunk_method'],
         });
       }
       // When parseType === 1, pipline_id required
