@@ -415,6 +415,10 @@ def get_parser_config(chunk_method, parser_config):
                 ],
                 "method": "light",
             },
+            "parent_child": {
+                "use_parent_child": False,
+                "children_delimiter": "\n",
+            },
         },
         "qa": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
         "tag": None,
@@ -442,16 +446,23 @@ def get_parser_config(chunk_method, parser_config):
     # If no parser_config provided, return default merged with base defaults
     if not parser_config:
         if default_config is None:
-            return deep_merge(base_defaults, {})
-        return deep_merge(base_defaults, default_config)
+            merged_config = deep_merge(base_defaults, {})
+        else:
+            merged_config = deep_merge(base_defaults, default_config)
+    elif default_config is None:
+        # If parser_config is provided but no defaults for this method
+        merged_config = deep_merge(base_defaults, parser_config)
+    else:
+        # Ensure raptor and graph_rag fields have default values if not provided
+        merged_config = deep_merge(base_defaults, default_config)
+        merged_config = deep_merge(merged_config, parser_config)
 
-    # If parser_config is provided, merge with defaults to ensure required fields exist
-    if default_config is None:
-        return deep_merge(base_defaults, parser_config)
-
-    # Ensure raptor and graph_rag fields have default values if not provided
-    merged_config = deep_merge(base_defaults, default_config)
-    merged_config = deep_merge(merged_config, parser_config)
+    # Flatten parent_child config into children_delimiter for the execution layer
+    pc = merged_config.get("parent_child", {})
+    if pc.get("use_parent_child"):
+        merged_config["children_delimiter"] = pc.get("children_delimiter", "\n")
+    elif pc:
+        merged_config["children_delimiter"] = ""
 
     return merged_config
 
