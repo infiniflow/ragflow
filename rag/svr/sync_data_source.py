@@ -59,7 +59,7 @@ from common.data_source import (
     DingTalkAITableConnector,
 )
 from common.constants import FileSource, TaskStatus
-from common.data_source.config import INDEX_BATCH_SIZE
+from common.data_source.config import GOOGLE_DRIVE_SYNC_TIME_BUFFER_SECONDS, INDEX_BATCH_SIZE
 from common.data_source.models import ConnectorFailure, SeafileSyncScope
 from common.data_source.webdav_connector import WebDAVConnector
 from common.data_source.confluence_connector import ConfluenceConnector
@@ -519,8 +519,9 @@ class GoogleDrive(SyncBase):
             start_time = 0.0
             begin_info = "totally"
         else:
-            start_time = task["poll_range_start"].timestamp()
-            begin_info = f"from {task['poll_range_start']}"
+            raw_start = task["poll_range_start"].timestamp()
+            start_time = max(0.0, raw_start - GOOGLE_DRIVE_SYNC_TIME_BUFFER_SECONDS)
+            begin_info = f"from {task['poll_range_start']} (buffered back {GOOGLE_DRIVE_SYNC_TIME_BUFFER_SECONDS}s)"
 
         end_time = datetime.now(timezone.utc).timestamp()
         raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
