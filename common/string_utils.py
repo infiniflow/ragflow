@@ -61,6 +61,9 @@ def clean_markdown_block(text):
         str: Cleaned text with Markdown code block syntax removed, and stripped of surrounding whitespace
 
     """
+    if not text:
+        return ""
+
     # Remove opening ```Markdown tag with optional whitespace and newlines
     # Matches: optional whitespace + ```markdown + optional whitespace + optional newline
     text = re.sub(r'^\s*```markdown\s*\n?', '', text)

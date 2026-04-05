@@ -964,10 +964,14 @@ class Parser(ProcessBase):
             img_binary.seek(0)
 
             system_prompt = conf.get("system_prompt")
-            if system_prompt:
-                txt = cv_model.describe_with_prompt(img_binary.read(), system_prompt)
-            else:
-                txt = cv_model.describe(img_binary.read())
+            try:
+                if system_prompt:
+                    txt = cv_model.describe_with_prompt(img_binary.read(), system_prompt)
+                else:
+                    txt = cv_model.describe(img_binary.read())
+            except Exception as e:
+                logging.warning(f"CV model describe failed: {e}")
+                txt = ""
 
         json_result = [
             {
@@ -994,7 +998,11 @@ class Parser(ProcessBase):
             tmp_path = os.path.abspath(tmpf.name)
             seq2txt_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), LLMType.SPEECH2TEXT, conf["llm_id"])
             seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), seq2txt_model_config)
-            txt = seq2txt_mdl.transcription(tmp_path)
+            try:
+                txt = seq2txt_mdl.transcription(tmp_path)
+            except Exception as e:
+                logging.warning(f"Transcription failed: {e}")
+                txt = ""
 
             self.set_output("text", txt)
 

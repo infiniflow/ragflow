@@ -39,6 +39,7 @@ from pydantic import BaseModel, conint
 
 from common.http_client import sync_request
 from common.token_utils import num_tokens_from_string
+from rag.llm.retry import retry
 
 
 class ServeReferenceAudio(BaseModel):
@@ -155,6 +156,7 @@ class FishAudioTTS(Base):
         self.ref_id = key.get("fish_audio_refid")
         self.base_url = base_url
 
+    @retry
     def tts(self, text):
         from http import HTTPStatus
 
@@ -191,6 +193,7 @@ class QwenTTS(Base):
         self.model_name = model_name
         dashscope.api_key = key
 
+    @retry
     def tts(self, text):
         from collections import deque
 
@@ -460,6 +463,7 @@ class StepFunTTS(OpenAITTS):
         self.default_voice = os.environ.get("STEPFUN_TTS_VOICE") or "cixingnansheng"
         super().__init__(key, model_name, base_url, **kwargs)
 
+    @retry
     def tts(self, text, voice=None, response_format: Literal["wav", "mp3", "flac", "opus", "pcm"] = "mp3"):
         text = self.normalize_text(text)
         if response_format not in self._SUPPORTED_RESPONSE_FORMATS:
@@ -505,7 +509,8 @@ class RAGconTTS(Base):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
         }
-    
+
+    @retry
     def tts(self, text, voice="English Female", stream=True):
         """
         Uses LiteLLM's /v1/audio/speech endpoint
