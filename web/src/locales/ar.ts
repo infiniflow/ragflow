@@ -2063,12 +2063,10 @@ export default {
       tokenizerRequired: 'الرجاء إضافة عقدة المفهرس أولاً',
       tokenizerDescription:
         'يحول النص إلى بنية البيانات المطلوبة (على سبيل المثال، التضمينات المتجهة لبحث التضمين) اعتمادًا على طريقة البحث المختارة.',
-      splitter: 'رمز مميز',
-      splitterDescription:
+      tokenChunkerDescription:
         'قم بتقسيم النص إلى أجزاء حسب طول الرمز المميز باستخدام محددات وتداخلات اختيارية.',
-      hierarchicalMergerDescription:
+      titleChunkerDescription:
         'قم بتقسيم المستندات إلى أقسام حسب التسلسل الهرمي للعناوين باستخدام قواعد regex للتحكم بشكل أفضل.',
-      hierarchicalMerger: 'عنوان',
       extractor: 'محول',
       extractorDescription:
         'استخدم LLM لاستخراج الرؤى المنظمة من أجزاء المستند، مثل الملخصات والتصنيفات وما إلى ذلك.',
@@ -2080,6 +2078,8 @@ export default {
         image: 'صورة',
         email: 'بريد إلكتروني',
         'text&markdown': 'النص والترميز',
+        code: 'Code',
+        html: 'HTML',
         word: 'كلمة',
         slides: 'PPTX',
         audio: 'صوتي',

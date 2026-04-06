@@ -167,6 +167,10 @@ async def set():
         d["question_kwd"] = req["question_kwd"]
         d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["question_kwd"]))
     if "tag_kwd" in req:
+        if not isinstance(req["tag_kwd"], list):
+            return get_data_error_result(message="`tag_kwd` should be a list")
+        if not all(isinstance(t, str) for t in req["tag_kwd"]):
+            return get_data_error_result(message="`tag_kwd` must be a list of strings")
         d["tag_kwd"] = req["tag_kwd"]
     if "tag_feas" in req:
         d["tag_feas"] = req["tag_feas"]
@@ -329,6 +333,12 @@ async def create():
     d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
     d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
     d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
+    if "tag_kwd" in req:
+        if not isinstance(req["tag_kwd"], list):
+            return get_data_error_result(message="`tag_kwd` is required to be a list")
+        if not all(isinstance(t, str) for t in req["tag_kwd"]):
+            return get_data_error_result(message="`tag_kwd` must be a list of strings")
+        d["tag_kwd"] = req["tag_kwd"]
     if "tag_feas" in req:
         d["tag_feas"] = req["tag_feas"]
     image_base64 = req.get("image_base64", None)

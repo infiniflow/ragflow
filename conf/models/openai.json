@@ -1,0 +1,242 @@
+{
+  "name": "OpenAI",
+  "tags": "LLM,TEXT EMBEDDING,TTS,TEXT RE-RANK,SPEECH2TEXT,MODERATION",
+  "url": "https://api.openai.com/v1",
+  "url_suffix": {
+    "chat": "chat/completions"
+  },
+  "models": [
+    {
+      "name": "gpt-5.2-pro",
+      "max_tokens": 400000,
+      "model_types": [
+        "llm",
+        "vlm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-5.2",
+      "max_tokens": 400000,
+      "model_types": [
+        "llm",
+        "vlm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-5.1",
+      "max_tokens": 400000,
+      "model_types": [
+        "llm",
+        "vlm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-5.1-chat-latest",
+      "max_tokens": 400000,
+      "model_types": [
+        "llm",
+        "vlm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-5",
+      "max_tokens": 400000,
+      "model_types": [
+        "llm",
+        "vlm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-5-mini",
+      "max_tokens": 400000,
+      "model_types": [
+        "llm",
+        "vlm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-5-nano",
+      "max_tokens": 400000,
+      "model_types": [
+        "llm",
+        "vlm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-5-chat-latest",
+      "max_tokens": 400000,
+      "model_types": [
+        "llm",
+        "vlm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-4.1",
+      "max_tokens": 1047576,
+      "model_types": [
+        "llm",
+        "vlm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-4.1-mini",
+      "max_tokens": 1047576,
+      "model_types": [
+        "llm",
+        "vlm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-4.1-nano",
+      "max_tokens": 1047576,
+      "model_types": [
+        "llm",
+        "vlm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-4.5-preview",
+      "max_tokens": 128000,
+      "model_types": [
+        "llm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "o3",
+      "max_tokens": 200000,
+      "model_types": [
+        "llm",
+        "vlm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "o4-mini",
+      "max_tokens": 200000,
+      "model_types": [
+        "llm",
+        "vlm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "o4-mini-high",
+      "max_tokens": 200000,
+      "model_types": [
+        "llm",
+        "vlm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-4o-mini",
+      "max_tokens": 128000,
+      "model_types": [
+        "llm",
+        "vlm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-4o",
+      "max_tokens": 128000,
+      "model_types": [
+        "llm",
+        "vlm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-3.5-turbo",
+      "max_tokens": 4096,
+      "model_types": [
+        "llm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-3.5-turbo-16k-0613",
+      "max_tokens": 16385,
+      "model_types": [
+        "llm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "text-embedding-ada-002",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ],
+      "features": {}
+    },
+    {
+      "name": "text-embedding-3-small",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ],
+      "features": {}
+    },
+    {
+      "name": "text-embedding-3-large",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ],
+      "features": {}
+    },
+    {
+      "name": "whisper-1",
+      "max_tokens": 26214400,
+      "model_types": [
+        "speech2text"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-4",
+      "max_tokens": 8191,
+      "model_types": [
+        "llm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-4-turbo",
+      "max_tokens": 8191,
+      "model_types": [
+        "llm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "gpt-4-32k",
+      "max_tokens": 32768,
+      "model_types": [
+        "llm"
+      ],
+      "features": {}
+    },
+    {
+      "name": "tts-1",
+      "max_tokens": 2048,
+      "model_types": [
+        "tts"
+      ],
+      "features": {}
+    }
+  ]
+}

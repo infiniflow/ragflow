@@ -149,6 +149,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 	switch upper {
 	case "LOGIN":
 		return Token{Type: TokenLogin, Value: ident}
+	case "LOGOUT":
+		return Token{Type: TokenLogout, Value: ident}
 	case "REGISTER":
 		return Token{Type: TokenRegister, Value: ident}
 	case "LIST":
@@ -179,6 +181,10 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenActive, Value: ident}
 	case "ADMIN":
 		return Token{Type: TokenAdmin, Value: ident}
+	case "ADD":
+		return Token{Type: TokenAdd, Value: ident}
+	case "DELETE":
+		return Token{Type: TokenDelete, Value: ident}
 	case "PASSWORD":
 		return Token{Type: TokenPassword, Value: ident}
 	case "DATASET":
@@ -249,6 +255,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenChats, Value: ident}
 	case "CHAT":
 		return Token{Type: TokenChat, Value: ident}
+	case "THINK":
+		return Token{Type: TokenThink, Value: ident}
 	case "FILES":
 		return Token{Type: TokenFiles, Value: ident}
 	case "AS":
@@ -293,6 +301,32 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenToken, Value: ident}
 	case "TOKENS":
 		return Token{Type: TokenTokens, Value: ident}
+	case "INDEX":
+		return Token{Type: TokenIndex, Value: ident}
+	case "VECTOR_SIZE":
+		return Token{Type: TokenVectorSize, Value: ident}
+	case "DOC_META":
+		return Token{Type: TokenDocMeta, Value: ident}
+	case "AVAILABLE":
+		return Token{Type: TokenAvailable, Value: ident}
+	case "NAME":
+		return Token{Type: TokenName, Value: ident}
+	case "INSTANCE":
+		return Token{Type: TokenInstance, Value: ident}
+	case "INSTANCES":
+		return Token{Type: TokenInstances, Value: ident}
+	case "DISABLE":
+		return Token{Type: TokenDisable, Value: ident}
+	case "ENABLE":
+		return Token{Type: TokenEnable, Value: ident}
+	case "INSERT":
+		return Token{Type: TokenInsert, Value: ident}
+	case "FILE":
+		return Token{Type: TokenFile, Value: ident}
+	case "METADATA":
+		return Token{Type: TokenMetadata, Value: ident}
+	case "USE":
+		return Token{Type: TokenUse, Value: ident}
 	default:
 		return Token{Type: TokenIdentifier, Value: ident}
 	}
