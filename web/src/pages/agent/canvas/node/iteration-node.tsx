@@ -1,7 +1,7 @@
 import {
   IIterationNode,
   IIterationStartNode,
-} from '@/interfaces/database/flow';
+} from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
 import { NodeProps, NodeResizeControl, Position } from '@xyflow/react';
 import { memo } from 'react';

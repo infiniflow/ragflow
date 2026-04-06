@@ -31,12 +31,13 @@ type HTTPClient struct {
 	Host           string
 	Port           int
 	APIVersion     string
-	APIKey         string
+	APIToken       string
 	LoginToken     string
 	ConnectTimeout time.Duration
 	ReadTimeout    time.Duration
 	VerifySSL      bool
 	client         *http.Client
+	useAPIToken    bool
 }
 
 // NewHTTPClient creates a new HTTP client
@@ -83,16 +84,12 @@ func (c *HTTPClient) BuildURL(path string, useAPIBase bool) string {
 // Headers builds the request headers
 func (c *HTTPClient) Headers(authKind string, extra map[string]string) map[string]string {
 	headers := make(map[string]string)
-	switch authKind {
-	case "api":
-		if c.APIKey != "" {
-			headers["Authorization"] = fmt.Sprintf("Bearer %s", c.APIKey)
-		}
-	case "web", "admin":
-		if c.LoginToken != "" {
-			headers["Authorization"] = c.LoginToken
-		}
+	if c.APIToken != "" {
+		headers["Authorization"] = fmt.Sprintf("Bearer %s", c.APIToken)
+	} else if c.LoginToken != "" {
+		headers["Authorization"] = c.LoginToken
 	}
+
 	for k, v := range extra {
 		headers[k] = v
 	}
@@ -104,6 +101,7 @@ type Response struct {
 	StatusCode int
 	Body       []byte
 	Headers    http.Header
+	Duration   float64
 }
 
 // JSON parses the response body as JSON
@@ -142,11 +140,14 @@ func (c *HTTPClient) Request(method, path string, useAPIBase bool, authKind stri
 		req.Header.Set(k, v)
 	}
 
-	resp, err := c.client.Do(req)
+	var resp *http.Response
+	startTime := time.Now()
+	resp, err = c.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	duration := time.Since(startTime).Seconds()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -157,21 +158,93 @@ func (c *HTTPClient) Request(method, path string, useAPIBase bool, authKind stri
 		StatusCode: resp.StatusCode,
 		Body:       respBody,
 		Headers:    resp.Header.Clone(),
+		Duration:   duration,
+	}, nil
+}
+
+// Request makes an HTTP request
+func (c *HTTPClient) RequestWith2URL(method, webPath string, apiPath string, headers map[string]string, jsonBody map[string]interface{}) (*Response, error) {
+	var path string
+	var useAPIBase bool
+	var authKind string
+	if c.useAPIToken {
+		path = apiPath
+		useAPIBase = true
+		authKind = "api"
+	} else {
+		path = webPath
+		useAPIBase = false
+		authKind = "web"
+	}
+
+	url := c.BuildURL(path, useAPIBase)
+	mergedHeaders := c.Headers(authKind, headers)
+
+	var body io.Reader
+	if jsonBody != nil {
+		jsonData, err := json.Marshal(jsonBody)
+		if err != nil {
+			return nil, err
+		}
+		body = bytes.NewReader(jsonData)
+		if mergedHeaders == nil {
+			mergedHeaders = make(map[string]string)
+		}
+		mergedHeaders["Content-Type"] = "application/json"
+	}
+
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range mergedHeaders {
+		req.Header.Set(k, v)
+	}
+
+	var resp *http.Response
+	startTime := time.Now()
+	resp, err = c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	duration := time.Since(startTime).Seconds()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Response{
+		StatusCode: resp.StatusCode,
+		Body:       respBody,
+		Headers:    resp.Header.Clone(),
+		Duration:   duration,
 	}, nil
 }
 
 // RequestWithIterations makes multiple HTTP requests for benchmarking
 // Returns a map with "duration" (total time in seconds) and "response_list"
-func (c *HTTPClient) RequestWithIterations(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}, iterations int) (map[string]interface{}, error) {
+func (c *HTTPClient) RequestWithIterations(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}, iterations int) (*BenchmarkResponse, error) {
+	response := new(BenchmarkResponse)
+
 	if iterations <= 1 {
+		start := time.Now()
 		resp, err := c.Request(method, path, useAPIBase, authKind, headers, jsonBody)
+		totalDuration := time.Since(start).Seconds()
 		if err != nil {
 			return nil, err
 		}
-		return map[string]interface{}{
-			"duration":      0.0,
-			"response_list": []*Response{resp},
-		}, nil
+
+		response.Code = resp.StatusCode
+		response.Duration = totalDuration
+		if response.Code == 0 {
+			response.SuccessCount = 1
+		} else {
+			response.FailureCount = 1
+		}
+		return response, nil
 	}
 
 	url := c.BuildURL(path, useAPIBase)
@@ -232,10 +305,17 @@ func (c *HTTPClient) RequestWithIterations(method, path string, useAPIBase bool,
 		totalDuration += time.Since(start).Seconds()
 	}
 
-	return map[string]interface{}{
-		"duration":      totalDuration,
-		"response_list": responseList,
-	}, nil
+	response.Code = 0
+	response.Duration = totalDuration
+	for _, resp := range responseList {
+		if resp.StatusCode == 200 {
+			response.SuccessCount++
+		} else {
+			response.FailureCount++
+		}
+	}
+
+	return response, nil
 }
 
 // RequestJSON makes an HTTP request and returns JSON response
@@ -245,4 +325,51 @@ func (c *HTTPClient) RequestJSON(method, path string, useAPIBase bool, authKind 
 		return nil, err
 	}
 	return resp.JSON()
+}
+
+// RequestStream makes an HTTP request for SSE streaming and returns the response body reader
+func (c *HTTPClient) RequestStream(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}) (io.ReadCloser, float64, error) {
+	url := c.BuildURL(path, useAPIBase)
+	mergedHeaders := c.Headers(authKind, headers)
+
+	var body io.Reader
+	if jsonBody != nil {
+		jsonData, err := json.Marshal(jsonBody)
+		if err != nil {
+			return nil, 0, err
+		}
+		body = bytes.NewReader(jsonData)
+		if mergedHeaders == nil {
+			mergedHeaders = make(map[string]string)
+		}
+		mergedHeaders["Content-Type"] = "application/json"
+	}
+	// Add Accept header for SSE
+	if mergedHeaders == nil {
+		mergedHeaders = make(map[string]string)
+	}
+	mergedHeaders["Accept"] = "text/event-stream"
+
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	for k, v := range mergedHeaders {
+		req.Header.Set(k, v)
+	}
+
+	startTime := time.Now()
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	duration := time.Since(startTime).Seconds()
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, duration, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	return resp.Body, duration, nil
 }

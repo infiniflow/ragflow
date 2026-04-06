@@ -183,6 +183,14 @@ def _load_canvas_module(monkeypatch):
     api_pkg.__path__ = [str(repo_root / "api")]
     monkeypatch.setitem(sys.modules, "api", api_pkg)
 
+    db_pkg = ModuleType("api.db")
+    db_pkg.__path__ = [str(repo_root / "api" / "db")]
+    monkeypatch.setitem(sys.modules, "api.db", db_pkg)
+
+    db_services_pkg = ModuleType("api.db.services")
+    db_services_pkg.__path__ = [str(repo_root / "api" / "db" / "services")]
+    monkeypatch.setitem(sys.modules, "api.db.services", db_services_pkg)
+
     apps_mod = ModuleType("api.apps")
     apps_mod.__path__ = []
     apps_mod.current_user = SimpleNamespace(id="user-1")
@@ -327,6 +335,12 @@ def _load_canvas_module(monkeypatch):
     )
     monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
 
+    knowledgebase_service_mod = ModuleType("api.db.services.knowledgebase_service")
+    knowledgebase_service_mod.KnowledgebaseService = SimpleNamespace(
+        query=lambda **_kwargs: [],
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", knowledgebase_service_mod)
+
     pipeline_log_service_mod = ModuleType("api.db.services.pipeline_operation_log_service")
     pipeline_log_service_mod.PipelineOperationLogService = SimpleNamespace(
         get_documents_info=lambda *_args, **_kwargs: [],
@@ -352,6 +366,7 @@ def _load_canvas_module(monkeypatch):
         get_by_id=lambda *_args, **_kwargs: (True, None),
         save_or_replace_latest=lambda *_args, **_kwargs: True,
         build_version_title=lambda *_args, **_kwargs: "stub_version_title",
+        get_latest_version_title=lambda *_args, **_kwargs: "stub_version_title",
     )
     monkeypatch.setitem(sys.modules, "api.db.services.user_canvas_version", canvas_version_mod)
 
@@ -427,7 +442,10 @@ def _load_canvas_module(monkeypatch):
 
     agent_pkg = ModuleType("agent")
     agent_pkg.__path__ = []
+    agent_dsl_migration_mod = ModuleType("agent.dsl_migration")
+    agent_dsl_migration_mod.normalize_chunker_dsl = lambda dsl: dsl
     monkeypatch.setitem(sys.modules, "agent", agent_pkg)
+    monkeypatch.setitem(sys.modules, "agent.dsl_migration", agent_dsl_migration_mod)
 
     agent_component_mod = ModuleType("agent.component")
 
@@ -435,6 +453,7 @@ def _load_canvas_module(monkeypatch):
         pass
 
     agent_component_mod.LLM = _StubLLM
+    agent_pkg.component = agent_component_mod
     monkeypatch.setitem(sys.modules, "agent.component", agent_component_mod)
 
     agent_canvas_mod = ModuleType("agent.canvas")
@@ -464,6 +483,8 @@ def _load_canvas_module(monkeypatch):
             return "{}"
 
     agent_canvas_mod.Canvas = _StubCanvas
+    agent_pkg.canvas = agent_canvas_mod
+    agent_pkg.dsl_migration = agent_dsl_migration_mod
     monkeypatch.setitem(sys.modules, "agent.canvas", agent_canvas_mod)
 
     quart_mod = ModuleType("quart")

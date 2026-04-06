@@ -23,6 +23,7 @@ from quart import request
 
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
+from api.utils.image_utils import store_chunk_image
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter
@@ -154,6 +155,10 @@ async def set():
         d["question_kwd"] = req["question_kwd"]
         d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["question_kwd"]))
     if "tag_kwd" in req:
+        if not isinstance(req["tag_kwd"], list):
+            return get_data_error_result(message="`tag_kwd` should be a list")
+        if not all(isinstance(t, str) for t in req["tag_kwd"]):
+            return get_data_error_result(message="`tag_kwd` must be a list of strings")
         d["tag_kwd"] = req["tag_kwd"]
     if "tag_feas" in req:
         d["tag_feas"] = req["tag_feas"]
@@ -316,8 +321,15 @@ async def create():
     d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
     d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
     d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
+    if "tag_kwd" in req:
+        if not isinstance(req["tag_kwd"], list):
+            return get_data_error_result(message="`tag_kwd` is required to be a list")
+        if not all(isinstance(t, str) for t in req["tag_kwd"]):
+            return get_data_error_result(message="`tag_kwd` must be a list of strings")
+        d["tag_kwd"] = req["tag_kwd"]
     if "tag_feas" in req:
         d["tag_feas"] = req["tag_feas"]
+    image_base64 = req.get("image_base64", None)
 
     try:
         def _log_response(resp, code, message):
@@ -365,14 +377,21 @@ async def create():
                     embd_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.EMBEDDING)
             embd_mdl = LLMBundle(tenant_id, embd_model_config)
 
+            if image_base64:
+                d["img_id"] = "{}-{}".format(doc.kb_id, chunck_id)
+                d["doc_type_kwd"] = "image"
+
             v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
             v = 0.1 * v[0] + 0.9 * v[1]
             d["q_%d_vec" % len(v)] = v.tolist()
             settings.docStoreConn.insert([d], search.index_name(tenant_id), doc.kb_id)
 
+            if image_base64:
+                store_chunk_image(doc.kb_id, chunck_id, base64.b64decode(image_base64))
+
             DocumentService.increment_chunk_num(
                 doc.id, doc.kb_id, c, 1, 0)
-            resp = get_json_result(data={"chunk_id": chunck_id})
+            resp = get_json_result(data={"chunk_id": chunck_id, "image_id": d.get("img_id", "")})
             _log_response(resp, RetCode.SUCCESS, "success")
             return resp
 

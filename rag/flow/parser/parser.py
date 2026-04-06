@@ -30,22 +30,28 @@ from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from common import settings
 from common.constants import LLMType
-from common.misc_utils import get_uuid
-from deepdoc.parser import ExcelParser
+from common.misc_utils import get_uuid, thread_pool_exec
+from deepdoc.parser import ExcelParser, HtmlParser, TxtParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
+from rag.flow.parser.pdf_chunk_metadata import (
+    normalize_pdf_items_metadata,
+    reorder_multi_column_bboxes,
+)
 from rag.flow.parser.schema import ParserFromUpstream
+from rag.flow.parser.utils import (
+    enhance_media_sections_with_vision,
+    extract_word_outlines,
+    remove_toc,
+    remove_toc_pdf,
+    remove_toc_word,
+)
 from rag.llm.cv_model import Base as VLM
-from rag.nlp import BULLET_PATTERN, bullets_category, docx_question_level, not_bullet
 from rag.utils.base64_image import image2id
 
-
-
-
-from common.misc_utils import thread_pool_exec
 
 class ParserParam(ProcessParamBase):
     def __init__(self):
@@ -78,16 +84,29 @@ class ParserParam(ProcessParamBase):
                 "text",
                 "json",
             ],
+            "code": [
+                "text",
+                "json",
+            ],
+            "html": [
+                "text",
+                "json",
+            ],
             "audio": [
                 "json",
             ],
             "video": [],
+            "epub": [
+                "text",
+                "json",
+            ],
         }
 
         self.setups = {
             "pdf": {
                 "parse_method": "deepdoc",  # deepdoc/plain_text/tcadp_parser/vlm
                 "lang": "Chinese",
+                "remove_toc": False,
                 "suffix": [
                     "pdf",
                 ],
@@ -103,6 +122,7 @@ class ParserParam(ProcessParamBase):
                 ],
             },
             "word": {
+                "remove_toc": False,
                 "suffix": [
                     "doc",
                     "docx",
@@ -111,7 +131,31 @@ class ParserParam(ProcessParamBase):
             },
             "text&markdown": {
                 "suffix": ["md", "markdown", "mdx", "txt"],
+                "remove_toc": False,
                 "output_format": "json",
+            },
+            "code": {
+                "suffix": [
+                    "py",
+                    "js",
+                    "java",
+                    "c",
+                    "cpp",
+                    "h",
+                    "php",
+                    "go",
+                    "ts",
+                    "sh",
+                    "cs",
+                    "kt",
+                    "sql",
+                ],
+                "output_format": "text",
+            },
+            "html": {
+                "suffix": ["htm", "html"],
+                "remove_toc": "false",
+                "output_format": "text",
             },
             "slides": {
                 "parse_method": "deepdoc",  # deepdoc/tcadp_parser
@@ -166,6 +210,12 @@ class ParserParam(ProcessParamBase):
                 "output_format": "text",
                 "prompt": "",
             },
+            "epub": {
+                "suffix": [
+                    "epub",
+                ],
+                "output_format": "json",
+            },
         }
 
     def check(self):
@@ -206,6 +256,16 @@ class ParserParam(ProcessParamBase):
             text_output_format = text_config.get("output_format", "")
             self.check_valid_value(text_output_format, "Text output format abnormal.", self.allowed_output_format["text&markdown"])
 
+        code_config = self.setups.get("code", "")
+        if code_config:
+            code_output_format = code_config.get("output_format", "")
+            self.check_valid_value(code_output_format, "Code output format abnormal.", self.allowed_output_format["code"])
+
+        html_config = self.setups.get("html", "")
+        if html_config:
+            html_output_format = html_config.get("output_format", "")
+            self.check_valid_value(html_output_format, "HTML output format abnormal.", self.allowed_output_format["html"])
+
         audio_config = self.setups.get("audio", "")
         if audio_config:
             self.check_empty(audio_config.get("llm_id"), "Audio VLM")
@@ -219,6 +279,11 @@ class ParserParam(ProcessParamBase):
             email_output_format = email_config.get("output_format", "")
             self.check_valid_value(email_output_format, "Email output format abnormal.", self.allowed_output_format["email"])
 
+        epub_config = self.setups.get("epub", "")
+        if epub_config:
+            epub_output_format = epub_config.get("output_format", "")
+            self.check_valid_value(epub_output_format, "EPUB output format abnormal.", self.allowed_output_format["epub"])
+
     def get_input_form(self) -> dict[str, dict]:
         return {}
 
@@ -226,91 +291,18 @@ class ParserParam(ProcessParamBase):
 class Parser(ProcessBase):
     component_name = "Parser"
 
-    @staticmethod
-    def _extract_word_title_lines(doc, to_page=100000):
-        lines = []
-        if not doc or not getattr(doc, "paragraphs", None):
-            return lines
-
-        pn = 0
-        bull = bullets_category([p.text for p in doc.paragraphs])
-        for p in doc.paragraphs:
-            if pn > to_page:
-                break
-            question_level, p_text = docx_question_level(p, bull)
-            lines.append((question_level, p_text))
-            for run in p.runs:
-                if "lastRenderedPageBreak" in run._element.xml:
-                    pn += 1
-                    continue
-                if "w:br" in run._element.xml and 'type="page"' in run._element.xml:
-                    pn += 1
-        return lines
-
-    @staticmethod
-    def _extract_markdown_title_lines(sections):
-        lines = []
-        if not sections:
-            return lines
-
-        section_texts = []
-        for section in sections:
-            text = section[0] if isinstance(section, tuple) else section
-            if not isinstance(text, str):
-                continue
-            text = text.strip()
-            if text:
-                section_texts.append(text)
-
-        if not section_texts:
-            return lines
-
-        bull = bullets_category(section_texts)
-        if bull < 0:
-            return lines
-
-        bullet_patterns = BULLET_PATTERN[bull]
-        default_level = len(bullet_patterns) + 1
-        for text in section_texts:
-            level = default_level
-            for idx, pattern in enumerate(bullet_patterns, start=1):
-                if re.match(pattern, text) and not not_bullet(text):
-                    level = idx
-                    break
-            lines.append((level, text))
-        return lines
-
-    @staticmethod
-    def _extract_title_texts(lines):
-        normalized_lines = []
-        level_set = set()
-        for level, txt in lines or []:
-            if not isinstance(txt, str):
-                continue
-            txt = txt.strip()
-            if not txt:
-                continue
-            normalized_lines.append((level, txt))
-            level_set.add(level)
-
-        if not normalized_lines or not level_set:
-            return set()
-
-        sorted_levels = sorted(level_set)
-        h2_level = sorted_levels[1] if len(sorted_levels) > 1 else 1
-        h2_level = sorted_levels[-2] if h2_level == sorted_levels[-1] and len(sorted_levels) > 2 else h2_level
-
-        return {txt for level, txt in normalized_lines if level <= h2_level}
-
     def _pdf(self, name, blob, **kwargs):
+        """Parse PDF files into structured boxes or markdown/json output."""
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PDF.")
         conf = self._param.setups["pdf"]
         self.set_output("output_format", conf["output_format"])
+        pdf_parser = None
 
-        abstract_enabled = "abstract" in self._param.setups["pdf"].get("preprocess", [])
-        author_enabled = "author" in self._param.setups["pdf"].get("preprocess", [])
-        title_enabled = "title" in self._param.setups["pdf"].get("preprocess", [])
+        # Optional PDF post-processing flags applied after parsing.
+        abstract_enabled = "abstract" in conf.get("preprocess", [])
+        author_enabled = "author" in conf.get("preprocess", [])
 
+        # Normalize parser selection and optional provider-specific model name.
         raw_parse_method = conf.get("parse_method", "")
         parser_model_name = None
         parse_method = raw_parse_method
@@ -324,11 +316,21 @@ class Parser(ProcessBase):
                 parser_model_name = raw_parse_method.rsplit("@", 1)[0]
                 parse_method = "PaddleOCR"
 
+        # DeepDOC returns structured page boxes directly.
         if parse_method.lower() == "deepdoc":
-            bboxes = RAGFlowPdfParser().parse_into_bboxes(blob, callback=self.callback)
+            pdf_parser = RAGFlowPdfParser()
+            bboxes = pdf_parser.parse_into_bboxes(blob, callback=self.callback)
+            if conf.get("enable_multi_column"):
+                bboxes = reorder_multi_column_bboxes(pdf_parser, bboxes)
+
+        # Plain text only keeps extracted text lines.
         elif parse_method.lower() == "plain_text":
-            lines, _ = PlainParser()(blob)
-            bboxes = [{"text": t} for t, _ in lines]
+            pdf_parser = PlainParser()
+            lines, _ = pdf_parser(blob)
+            bboxes = [{"text": t, "layout_type": "text"} for t, _ in lines]
+
+        # MinerU/PaddleOCR/Docling/TCADP all return line-like sections that need
+        # to be converted into the shared bbox-like structure used below.
         elif parse_method.lower() == "mineru":
 
             def resolve_mineru_llm_name():
@@ -361,49 +363,63 @@ class Parser(ProcessBase):
                 filepath=name,
                 binary=blob,
                 callback=self.callback,
-                parse_method=conf.get("mineru_parse_method", "raw"),
+                parse_method="pipeline",
                 lang=conf.get("lang", "Chinese"),
             )
             bboxes = []
-            for t, poss in lines:
+            for line in lines or []:
+                if not isinstance(line, tuple) or len(line) < 3:
+                    continue
+
+                t, layout_type, poss = line[0], line[1], line[2]
                 box = {
-                    "image": pdf_parser.crop(poss, 1),
-                    "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)],
                     "text": t,
+                    "layout_type": layout_type or "text",
                 }
+                positions = [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
+                if positions:
+                    box["positions"] = positions
+                image = pdf_parser.crop(poss, 1)
+                if image is not None:
+                    box["image"] = image
                 bboxes.append(box)
+
         elif parse_method.lower() == "docling":
             pdf_parser = DoclingParser(docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""))
             lines, _ = pdf_parser.parse_pdf(
                 filepath=name,
                 binary=blob,
                 callback=self.callback,
-                parse_method=conf.get("docling_parse_method", "raw"),
+                parse_method="pipeline",
                 docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""),
             )
             bboxes = []
-            for item in lines:
-                if not isinstance(item, tuple) or not item:
+            for item in lines or []:
+                if not isinstance(item, tuple) or len(item) < 3:
                     continue
-                text = item[0]
-                poss = item[-1] if len(item) >= 2 else ""
+                text, layout_type, poss = item[0], item[1], item[2]
                 box = {
                     "text": text,
-                    "image": pdf_parser.crop(poss, 1) if isinstance(poss, str) and poss else None,
-                    "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
-                    if isinstance(poss, str) and poss
-                    else [],
+                    "layout_type": layout_type or "text",
                 }
+                if isinstance(poss, str) and poss:
+                    positions = [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
+                    if positions:
+                        box["positions"] = positions
+                    image = pdf_parser.crop(poss, 1)
+                    if image is not None:
+                        box["image"] = image
                 bboxes.append(box)
+
         elif parse_method.lower() == "tcadp parser":
             # ADP is a document parsing tool using Tencent Cloud API
             table_result_type = conf.get("table_result_type", "1")
             markdown_image_response_type = conf.get("markdown_image_response_type", "1")
-            tcadp_parser = TCADPParser(
+            pdf_parser = TCADPParser(
                 table_result_type=table_result_type,
                 markdown_image_response_type=markdown_image_response_type,
             )
-            sections, _ = tcadp_parser.parse_pdf(
+            sections, _ = pdf_parser.parse_pdf(
                 filepath=name,
                 binary=blob,
                 callback=self.callback,
@@ -414,26 +430,25 @@ class Parser(ProcessBase):
             bboxes = []
             for section, position_tag in sections:
                 if position_tag:
-                    # Extract position information from TCADP's position tag
-                    # Format: @@{page_number}\t{x0}\t{x1}\t{top}\t{bottom}##
                     match = re.match(r"@@([0-9-]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)##", position_tag)
                     if match:
                         pn, x0, x1, top, bott = match.groups()
                         bboxes.append(
                             {
-                                "page_number": int(pn.split("-")[0]),  # Take the first page number
+                                "page_number": int(pn.split("-")[0]),
                                 "x0": float(x0),
                                 "x1": float(x1),
                                 "top": float(top),
                                 "bottom": float(bott),
                                 "text": section,
+                                "layout_type": "text",
                             }
                         )
                     else:
-                        # If no position info, add as text without position
-                        bboxes.append({"text": section})
+                        bboxes.append({"text": section, "layout_type": "text"})
                 else:
-                    bboxes.append({"text": section})
+                    bboxes.append({"text": section, "layout_type": "text"})
+
         elif parse_method.lower() == "paddleocr":
 
             def resolve_paddleocr_llm_name():
@@ -466,54 +481,91 @@ class Parser(ProcessBase):
                 filepath=name,
                 binary=blob,
                 callback=self.callback,
-                parse_method=conf.get("paddleocr_parse_method", "raw"),
+                parse_method="pipeline",
             )
             bboxes = []
-            for t, poss in lines:
-                # Get cropped image and positions
-                cropped_image, positions = pdf_parser.crop(poss, need_position=True)
+            for line in lines or []:
+                if not isinstance(line, tuple) or len(line) < 3:
+                    continue
 
+                t, layout_type, poss = line[0], line[1], line[2]
                 box = {
                     "text": t,
-                    "image": cropped_image,
-                    "positions": positions,
+                    "layout_type": layout_type or "text",
                 }
+                positions = [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
+                if positions:
+                    box["positions"] = positions
+                image = pdf_parser.crop(poss)
+                if image is not None:
+                    box["image"] = image
                 bboxes.append(box)
+
+        # Vision parser treats each page as a large image block.
         else:
             if conf.get("parse_method"):
                 vision_model_config = get_model_config_by_type_and_name(self._canvas._tenant_id, LLMType.IMAGE2TEXT, conf["parse_method"])
             else:
                 vision_model_config = get_tenant_default_model_by_type(self._canvas._tenant_id, LLMType.IMAGE2TEXT)
             vision_model = LLMBundle(self._canvas._tenant_id, vision_model_config, lang=self._param.setups["pdf"].get("lang"))
-            lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
+            pdf_parser = VisionParser(vision_model=vision_model)
+            lines, _ = pdf_parser(blob, callback=self.callback)
             bboxes = []
             for t, poss in lines:
                 for pn, x0, x1, top, bott in RAGFlowPdfParser.extract_positions(poss):
                     bboxes.append(
                         {
-                            "page_number": int(pn[0]),
+                            "page_number": int(pn[0]) + 1,
                             "x0": float(x0),
                             "x1": float(x1),
                             "top": float(top),
                             "bottom": float(bott),
                             "text": t,
+                            "layout_type": "text",
                         }
                     )
 
+        # Persist outlines and optionally remove TOC before normalizing metadata.
+        self.set_output("file", {**kwargs.get("file", {}), "outlines": pdf_parser.outlines})
+        if conf.get("remove_toc"):
+            if not pdf_parser.outlines:
+                bboxes, _ = remove_toc(bboxes)
+            elif pdf_parser.outlines[0][2] == 1:
+                bboxes = remove_toc_pdf(bboxes, pdf_parser.outlines)
+            else:
+                first_outline_page = pdf_parser.outlines[0][2]
+                split_at = len(bboxes)
+                for i, item in enumerate(bboxes):
+                    if item["page_number"] >= first_outline_page:
+                        split_at = i
+                        break
+                toc_bboxes, _ = remove_toc(bboxes[:split_at])
+                bboxes = toc_bboxes + bboxes[split_at:]
+
+        # Normalize shared bbox fields for downstream consumers.
+        layout_counters = {}
         for b in bboxes:
-            text_val = b.get("text", "")
-            has_text = isinstance(text_val, str) and text_val.strip()
-            layout = b.get("layout_type")
-            if layout == "figure" or (b.get("image") and not has_text):
-                b["doc_type_kwd"] = "image"
-            elif layout == "table":
+            raw_layout = str(b.get("layout_type") or "").strip()
+            has_layout = bool(raw_layout)
+            layout = re.sub(r"\s+", " ", raw_layout) if has_layout else "text"
+            b["layout_type"] = layout
+
+            if not b.get("layoutno"):
+                seq = layout_counters.get(layout, 0)
+                layout_counters[layout] = seq + 1
+                b["layoutno"] = f"{layout}-{seq}"
+
+            if layout == "table":
                 b["doc_type_kwd"] = "table"
-            if title_enabled and "title" in str(b.get("layout_type", "").lower()):
-                b["title"] = True
+            elif layout == "figure":
+                b["doc_type_kwd"] = "image"
+            elif not has_layout and b.get("image") is not None:
+                b["doc_type_kwd"] = "image"
+            else:
+                b["doc_type_kwd"] = "text"
 
-        # Get authors
+        # Mark likely author blocks near the title when enabled.
         if author_enabled:
-
             def _begin(txt):
                 if not isinstance(txt, str):
                     return False
@@ -548,7 +600,7 @@ class Parser(ProcessBase):
                     bboxes[next_idx]["author"] = True
                 break
 
-        # Get abstract
+        # Mark the abstract block when enabled.
         if abstract_enabled:
             i = 0
             abstract_idx = None
@@ -573,7 +625,19 @@ class Parser(ProcessBase):
             if abstract_idx is not None:
                 bboxes[abstract_idx]["abstract"] = True
 
+        print(conf.get("vlm"))
+
+        if conf.get("vlm"):
+            enhance_media_sections_with_vision(
+                bboxes,
+                self._canvas._tenant_id,
+                conf["vlm"],
+                callback=self.callback,
+            )
+
+        # Emit the requested final PDF output format.
         if conf.get("output_format") == "json":
+            normalize_pdf_items_metadata(bboxes)
             self.set_output("json", bboxes)
         if conf.get("output_format") == "markdown":
             mkdn = ""
@@ -587,6 +651,7 @@ class Parser(ProcessBase):
             self.set_output("markdown", mkdn)
 
     def _spreadsheet(self, name, blob, **kwargs):
+        """Parse spreadsheet files and normalize them into html/json/markdown output."""
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a Spreadsheet.")
         conf = self._param.setups["spreadsheet"]
         self.set_output("output_format", conf["output_format"])
@@ -641,7 +706,7 @@ class Parser(ProcessBase):
                 # Add sections as text
                 for section, position_tag in sections:
                     if section:
-                        result.append({"text": section})
+                        result.append({"text": section, "doc_type_kwd": "text"})
                 # Add tables as text
                 for table in tables:
                     if table:
@@ -667,39 +732,63 @@ class Parser(ProcessBase):
                 htmls = spreadsheet_parser.html(blob, 1000000000)
                 self.set_output("html", htmls[0])
             elif conf.get("output_format") == "json":
-                self.set_output("json", [{"text": txt} for txt in spreadsheet_parser(blob) if txt])
+                self.set_output("json", [{"text": txt, "doc_type_kwd": "text"} for txt in spreadsheet_parser(blob) if txt])
             elif conf.get("output_format") == "markdown":
                 self.set_output("markdown", spreadsheet_parser.markdown(blob))
 
     def _word(self, name, blob, **kwargs):
+        """Parse doc/docx files and optionally remove table-of-contents content."""
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a Word Processor Document")
         conf = self._param.setups["word"]
         self.set_output("output_format", conf["output_format"])
         docx_parser = Docx()
 
+        # Extract heading-based outlines for metadata and TOC removal.
+        outlines = extract_word_outlines(name, blob)
+        self.set_output("file", {**kwargs.get("file", {}), "outlines": outlines})
+
+        # JSON output keeps text/image blocks and appends table HTML as table items.
         if conf.get("output_format") == "json":
             main_sections = docx_parser(name, binary=blob)
-            title_lines = self._extract_word_title_lines(getattr(docx_parser, "doc", None))
-            title_texts = self._extract_title_texts(title_lines)
+            if conf.get("remove_toc"):
+                main_sections = remove_toc_word(main_sections, outlines)
             sections = []
-            tbls = []
             for text, image, html in main_sections:
-                section = {"text": text, "image": image}
-                text_key = text.strip() if isinstance(text, str) else ""
-                if text_key and text_key in title_texts and "title" in self._param.setups["word"].get("preprocess", []):
-                    section["title"] = True
-                sections.append(section)
-                tbls.append(((None, html), ""))
-
-            sections.extend([{"text": tb, "image": None, "doc_type_kwd": "table"} for ((_, tb), _) in tbls])
+                sections.append(
+                    {
+                        "text": text,
+                        "image": image,
+                        "doc_type_kwd": "image" if image is not None else "text",
+                    }
+                )
+                if html:
+                    sections.append(
+                        {
+                            "text": html,
+                            "image": None,
+                            "doc_type_kwd": "table",
+                        }
+                    )
+            if conf.get("vlm"):
+                enhance_media_sections_with_vision(
+                    sections,
+                    self._canvas._tenant_id,
+                    conf["vlm"],
+                    callback=self.callback,
+                )
 
             self.set_output("json", sections)
+
+        # Markdown output removes TOC on plain markdown lines before writing back.
         elif conf.get("output_format") == "markdown":
             markdown_text = docx_parser.to_markdown(name, binary=blob)
+            if conf.get("remove_toc"):
+                markdown_text = "\n".join(remove_toc_word(markdown_text.split("\n"), outlines))
+                 
             self.set_output("markdown", markdown_text)
 
-
     def _slides(self, name, blob, **kwargs):
+        """Parse presentation files into json sections."""
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PowerPoint Document")
 
         conf = self._param.setups["slides"]
@@ -743,7 +832,7 @@ class Parser(ProcessBase):
                 # Add sections as text
                 for section, position_tag in sections:
                     if section:
-                        result.append({"text": section})
+                        result.append({"text": section, "doc_type_kwd": "text"})
                 # Add tables as text
                 for table in tables:
                     if table:
@@ -757,7 +846,7 @@ class Parser(ProcessBase):
             ppt_parser = ppt_parser()
             txts = ppt_parser(blob, 0, 100000, None)
 
-            sections = [{"text": section} for section in txts if section.strip()]
+            sections = [{"text": section, "doc_type_kwd": "text"} for section in txts if section.strip()]
 
             # json
             assert conf.get("output_format") == "json", "have to be json for ppt"
@@ -765,6 +854,7 @@ class Parser(ProcessBase):
                 self.set_output("json", sections)
 
     def _markdown(self, name, blob, **kwargs):
+        """Parse markdown and txt files into text/json sections."""
         from functools import reduce
 
         from rag.app.naive import Markdown as naive_markdown_parser
@@ -782,19 +872,18 @@ class Parser(ProcessBase):
             delimiter=conf.get("delimiter"),
             return_section_images=True,
         )
+        if name.lower().endswith(".txt") and conf.get("remove_toc") == "true":
+            sections, kept_indices = remove_toc(sections)
+            if section_images:
+                section_images = [section_images[i] for i in kept_indices if i < len(section_images)]
 
         if conf.get("output_format") == "json":
             json_results = []
-            title_lines = self._extract_markdown_title_lines(sections)
-            title_texts = self._extract_title_texts(title_lines)
 
             for idx, (section_text, _) in enumerate(sections):
                 json_result = {
                     "text": section_text,
                 }
-                text_key = section_text.strip() if isinstance(section_text, str) else ""
-                if text_key and text_key in title_texts and "title" in self._param.setups["text&markdown"].get("preprocess", []):
-                    json_result["title"] = True
 
                 images = []
                 if section_images and len(section_images) > idx and section_images[idx] is not None:
@@ -803,14 +892,55 @@ class Parser(ProcessBase):
                     # If multiple images found, combine them using concat_img
                     combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
                     json_result["image"] = combined_image
-
+                json_result["doc_type_kwd"] = "image" if json_result.get("image") is not None else "text"
                 json_results.append(json_result)
 
+            if conf.get("vlm"):
+                enhance_media_sections_with_vision(
+                    json_results,
+                    self._canvas._tenant_id,
+                    conf["vlm"],
+                    callback=self.callback,
+                )
             self.set_output("json", json_results)
         else:
             self.set_output("text", "\n".join([section_text for section_text, _ in sections]))
 
+    def _code(self, name, blob, **kwargs):
+        """Parse source code files as plain text chunks."""
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on a code or plain text file.")
+        conf = self._param.setups["code"]
+        self.set_output("output_format", conf["output_format"])
+
+        sections = TxtParser()(
+            name,
+            blob,
+            conf.get("chunk_token_num", 128),
+            conf.get("delimiter", "\n!?;。；！？"),
+        )
+        if conf.get("output_format") == "json":
+            self.set_output("json", [{"text": section[0], "doc_type_kwd": "text"} for section in sections if section[0]])
+            return
+
+        self.set_output("text", "\n".join([section[0] for section in sections if section[0]]))
+
+    def _html(self, name, blob, **kwargs):
+        """Parse HTML files into text/json sections."""
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on an HTML document.")
+        conf = self._param.setups["html"]
+        self.set_output("output_format", conf["output_format"])
+
+        sections = HtmlParser()(name, blob, int(conf.get("chunk_token_num", 512)))
+        if conf.get("remove_toc") == "true":
+            sections, _ = remove_toc(sections)
+        if conf.get("output_format") == "json":
+            self.set_output("json", [{"text": section, "doc_type_kwd": "text"} for section in sections if section])
+            return
+
+        self.set_output("text", "\n".join([section for section in sections if section]))
+
     def _image(self, name, blob, **kwargs):
+        """Parse images with OCR or image-to-text models."""
         from deepdoc.vision import OCR
 
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an image.")
@@ -839,14 +969,17 @@ class Parser(ProcessBase):
             else:
                 txt = cv_model.describe(img_binary.read())
 
-        json_result = [{
-            "text": txt,
-            "image": img,
-            "doc_type_kwd": "image",
-        }]
+        json_result = [
+            {
+                "text": txt,
+                "image": img,
+                "doc_type_kwd": "image",
+            }
+        ]
         self.set_output("json", json_result)
 
     def _audio(self, name, blob, **kwargs):
+        """Parse audio files with speech-to-text models."""
         import os
         import tempfile
 
@@ -866,6 +999,7 @@ class Parser(ProcessBase):
             self.set_output("text", txt)
 
     def _video(self, name, blob, **kwargs):
+        """Parse video files with image-to-text models."""
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an video.")
 
         conf = self._param.setups["video"]
@@ -878,6 +1012,7 @@ class Parser(ProcessBase):
         self.set_output("text", txt)
 
     def _email(self, name, blob, **kwargs):
+        """Parse eml/msg files into structured email content."""
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an email.")
 
         email_content = {}
@@ -957,7 +1092,6 @@ class Parser(ProcessBase):
             # handle msg file
             import extract_msg
 
-            print("handle a msg file.")
             msg = extract_msg.Message(blob)
             # handle header info
             basic_content = {
@@ -992,6 +1126,7 @@ class Parser(ProcessBase):
                 email_content["attachments"] = attachments
 
         if conf["output_format"] == "json":
+            email_content["doc_type_kwd"] = "text"
             self.set_output("json", [email_content])
         else:
             content_txt = ""
@@ -1013,10 +1148,30 @@ class Parser(ProcessBase):
                             content_txt += fb
             self.set_output("text", content_txt)
 
+    def _epub(self, name, blob, **kwargs):
+        """Parse EPUB files into text/json sections."""
+        from deepdoc.parser import EpubParser
+
+        self.callback(random.randint(1, 5) / 100.0, "Start to work on an EPUB.")
+        conf = self._param.setups["epub"]
+        self.set_output("output_format", conf["output_format"])
+
+        epub_parser = EpubParser()
+        sections = epub_parser(name, binary=blob)
+
+        if conf.get("output_format") == "json":
+            json_results = [{"text": s, "doc_type_kwd": "text"} for s in sections if s]
+            self.set_output("json", json_results)
+        else:
+            self.set_output("text", "\n".join(s for s in sections if s))
+
     async def _invoke(self, **kwargs):
+        """Dispatch the current file to the matching parser branch by suffix."""
         function_map = {
             "pdf": self._pdf,
             "text&markdown": self._markdown,
+            "code": self._code,
+            "html": self._html,
             "spreadsheet": self._spreadsheet,
             "slides": self._slides,
             "word": self._word,
@@ -1024,6 +1179,7 @@ class Parser(ProcessBase):
             "audio": self._audio,
             "video": self._video,
             "email": self._email,
+            "epub": self._epub,
         }
 
         try:

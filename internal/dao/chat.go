@@ -18,9 +18,8 @@ package dao
 
 import (
 	"fmt"
+	"ragflow/internal/entity"
 	"strings"
-
-	"ragflow/internal/model"
 )
 
 // ChatDAO chat data access object
@@ -32,10 +31,10 @@ func NewChatDAO() *ChatDAO {
 }
 
 // ListByTenantID list chats by tenant ID
-func (dao *ChatDAO) ListByTenantID(tenantID string, status string) ([]*model.Chat, error) {
-	var chats []*model.Chat
+func (dao *ChatDAO) ListByTenantID(tenantID string, status string) ([]*entity.Chat, error) {
+	var chats []*entity.Chat
 
-	query := DB.Model(&model.Chat{}).
+	query := DB.Model(&entity.Chat{}).
 		Where("tenant_id = ?", tenantID)
 
 	if status != "" {
@@ -51,12 +50,12 @@ func (dao *ChatDAO) ListByTenantID(tenantID string, status string) ([]*model.Cha
 }
 
 // ListByTenantIDs list chats by tenant IDs with pagination and filtering
-func (dao *ChatDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string) ([]*model.Chat, int64, error) {
-	var chats []*model.Chat
+func (dao *ChatDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string) ([]*entity.Chat, int64, error) {
+	var chats []*entity.Chat
 	var total int64
 
 	// Build query with join to user table for nickname and avatar
-	query := DB.Model(&model.Chat{}).
+	query := DB.Model(&entity.Chat{}).
 		Select(`
 			dialog.*,
 			user.nickname,
@@ -103,11 +102,11 @@ func (dao *ChatDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pag
 }
 
 // ListByOwnerIDs list chats by owner IDs with filtering (manual pagination)
-func (dao *ChatDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby string, desc bool, keywords string) ([]*model.Chat, int64, error) {
-	var chats []*model.Chat
+func (dao *ChatDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby string, desc bool, keywords string) ([]*entity.Chat, int64, error) {
+	var chats []*entity.Chat
 
 	// Build query with join to user table
-	query := DB.Model(&model.Chat{}).
+	query := DB.Model(&entity.Chat{}).
 		Select(`
 			dialog.*,
 			user.nickname,
@@ -142,8 +141,8 @@ func (dao *ChatDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby str
 }
 
 // GetByID gets chat by ID
-func (dao *ChatDAO) GetByID(id string) (*model.Chat, error) {
-	var chat model.Chat
+func (dao *ChatDAO) GetByID(id string) (*entity.Chat, error) {
+	var chat entity.Chat
 	err := DB.Where("id = ?", id).First(&chat).Error
 	if err != nil {
 		return nil, err
@@ -152,8 +151,8 @@ func (dao *ChatDAO) GetByID(id string) (*model.Chat, error) {
 }
 
 // GetByIDAndStatus gets chat by ID and status
-func (dao *ChatDAO) GetByIDAndStatus(id string, status string) (*model.Chat, error) {
-	var chat model.Chat
+func (dao *ChatDAO) GetByIDAndStatus(id string, status string) (*entity.Chat, error) {
+	var chat entity.Chat
 	err := DB.Where("id = ? AND status = ?", id, status).First(&chat).Error
 	if err != nil {
 		return nil, err
@@ -164,20 +163,20 @@ func (dao *ChatDAO) GetByIDAndStatus(id string, status string) (*model.Chat, err
 // GetExistingNames gets existing dialog names for a tenant
 func (dao *ChatDAO) GetExistingNames(tenantID string, status string) ([]string, error) {
 	var names []string
-	err := DB.Model(&model.Chat{}).
+	err := DB.Model(&entity.Chat{}).
 		Where("tenant_id = ? AND status = ?", tenantID, status).
 		Pluck("name", &names).Error
 	return names, err
 }
 
 // Create creates a new chat/dialog
-func (dao *ChatDAO) Create(chat *model.Chat) error {
+func (dao *ChatDAO) Create(chat *entity.Chat) error {
 	return DB.Create(chat).Error
 }
 
 // UpdateByID updates a chat by ID
 func (dao *ChatDAO) UpdateByID(id string, updates map[string]interface{}) error {
-	return DB.Model(&model.Chat{}).Where("id = ?", id).Updates(updates).Error
+	return DB.Model(&entity.Chat{}).Where("id = ?", id).Updates(updates).Error
 }
 
 // UpdateManyByID updates multiple chats by ID (batch update)
@@ -207,11 +206,26 @@ func (dao *ChatDAO) UpdateManyByID(updates []map[string]interface{}) error {
 			}
 		}
 
-		if err := tx.Model(&model.Chat{}).Where("id = ?", id).Updates(updatesWithoutID).Error; err != nil {
+		if err := tx.Model(&entity.Chat{}).Where("id = ?", id).Updates(updatesWithoutID).Error; err != nil {
 			tx.Rollback()
 			return err
 		}
 	}
 
 	return tx.Commit().Error
+}
+
+// DeleteByTenantID deletes all chats by tenant ID (hard delete)
+func (dao *ChatDAO) DeleteByTenantID(tenantID string) (int64, error) {
+	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.Chat{})
+	return result.RowsAffected, result.Error
+}
+
+// GetAllDialogIDsByTenantID gets all dialog IDs by tenant ID
+func (dao *ChatDAO) GetAllDialogIDsByTenantID(tenantID string) ([]string, error) {
+	var dialogIDs []string
+	err := DB.Model(&entity.Chat{}).
+		Where("tenant_id = ?", tenantID).
+		Pluck("id", &dialogIDs).Error
+	return dialogIDs, err
 }

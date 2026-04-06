@@ -28,7 +28,6 @@ from typing import Any
 
 import requests
 from quart import (
-    Response,
     jsonify,
     request,
     has_app_context,
@@ -234,6 +233,17 @@ def active_required(func):
     return wrapper
 
 
+def add_tenant_id_to_kwargs(func):
+    @wraps(func)
+    async def wrapper(**kwargs):
+        from api.apps import current_user
+        kwargs["tenant_id"] = current_user.id
+        if inspect.iscoroutinefunction(func):
+            return await func(**kwargs)
+        return func(**kwargs)
+    return wrapper
+
+
 def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=None):
     response = {"code": code, "message": message, "data": data}
     return _safe_jsonify(response)
@@ -242,7 +252,13 @@ def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=Non
 def apikey_required(func):
     @wraps(func)
     async def decorated_function(*args, **kwargs):
-        token = request.headers.get("Authorization").split()[1]
+        authorization = request.headers.get("Authorization")
+        if not authorization:
+            return build_error_result(message="Authorization header is missing!", code=RetCode.FORBIDDEN)
+        parts = authorization.split()
+        if len(parts) < 2:
+            return build_error_result(message="Please check your authorization format.", code=RetCode.FORBIDDEN)
+        token = parts[1]
         objs = APIToken.query(token=token)
         if not objs:
             return build_error_result(message="API-KEY is invalid!", code=RetCode.FORBIDDEN)
@@ -513,7 +529,7 @@ def check_duplicate_ids(ids, id_type="item"):
     return list(set(ids)), duplicate_messages
 
 
-def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, Response | None]:
+def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, str | None]:
     from api.db.services.llm_service import LLMService
     from api.db.services.tenant_llm_service import TenantLLMService
 
@@ -559,13 +575,16 @@ def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, R
 
         is_builtin_model = llm_factory == "Builtin"
         if not (is_builtin_model or is_tenant_model or in_llm_service):
-            return False, get_error_argument_result(f"Unsupported model: <{embd_id}>")
+            return False, f"Unsupported model: <{embd_id}>"
 
         if not (is_builtin_model or is_tenant_model):
-            return False, get_error_argument_result(f"Unauthorized model: <{embd_id}>")
+            return False, f"Unauthorized model: <{embd_id}>"
     except OperationalError as e:
         logging.exception(e)
-        return False, get_error_data_result(message="Database operation failed")
+        return False, "Database operation failed"
+    except Exception as e:
+        logging.exception(e)
+        return False, "Internal server error"
 
     return True, None
 

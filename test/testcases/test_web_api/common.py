@@ -15,9 +15,8 @@
 #
 import json
 import os
-import time
-import uuid
 from pathlib import Path
+from uuid import uuid4
 
 import requests
 from configs import HOST_ADDRESS, VERSION
@@ -27,9 +26,9 @@ from utils.file_utils import create_txt_file
 HEADERS = {"Content-Type": "application/json"}
 
 KB_APP_URL = f"/{VERSION}/kb"
+DATASETS_URL = f"/api/{VERSION}/datasets"
 DOCUMENT_APP_URL = f"/{VERSION}/document"
 CHUNK_API_URL = f"/{VERSION}/chunk"
-DIALOG_APP_URL = f"/{VERSION}/dialog"
 # SESSION_WITH_CHAT_ASSISTANT_API_URL = "/api/v1/chats/{chat_id}/sessions"
 # SESSION_WITH_AGENT_API_URL = "/api/v1/agents/{agent_id}/sessions"
 MEMORY_API_URL = f"/api/{VERSION}/memories"
@@ -38,7 +37,8 @@ API_APP_URL = f"/{VERSION}/api"
 SYSTEM_APP_URL = f"/{VERSION}/system"
 LLM_APP_URL = f"/{VERSION}/llm"
 PLUGIN_APP_URL = f"/{VERSION}/plugin"
-SEARCH_APP_URL = f"/{VERSION}/search"
+SEARCHES_URL = f"/api/{VERSION}/searches"
+CHATS_URL = f"/api/{VERSION}/chats"
 
 
 def _http_debug_enabled():
@@ -141,52 +141,86 @@ def plugin_llm_tools(auth, params=None, *, headers=HEADERS):
 
 # SEARCH APP
 def search_create(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{SEARCH_APP_URL}/create", headers=headers, auth=auth, json=payload, data=data)
+    res = requests.post(url=f"{HOST_ADDRESS}{SEARCHES_URL}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
-def search_update(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{SEARCH_APP_URL}/update", headers=headers, auth=auth, json=payload, data=data)
+def search_update(auth, search_id, payload=None, *, headers=HEADERS, data=None):
+    res = requests.put(url=f"{HOST_ADDRESS}{SEARCHES_URL}/{search_id}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
-def search_detail(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{SEARCH_APP_URL}/detail", headers=headers, auth=auth, params=params)
+def search_detail(auth, search_id, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{SEARCHES_URL}/{search_id}", headers=headers, auth=auth)
     return res.json()
 
 
-def search_list(auth, params=None, payload=None, *, headers=HEADERS, data=None):
+def search_list(auth, params=None, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{SEARCHES_URL}", headers=headers, auth=auth, params=params)
+    return res.json()
+
+
+def search_rm(auth, search_id, *, headers=HEADERS):
+    res = requests.delete(url=f"{HOST_ADDRESS}{SEARCHES_URL}/{search_id}", headers=headers, auth=auth)
+    return res.json()
+
+
+# CHAT APP
+def create_chat(auth, payload=None, *, headers=HEADERS, data=None):
     if payload is None:
         payload = {}
-    res = requests.post(url=f"{HOST_ADDRESS}{SEARCH_APP_URL}/list", headers=headers, auth=auth, params=params, json=payload, data=data)
+    res = requests.post(url=f"{HOST_ADDRESS}{CHATS_URL}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
-def search_rm(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{SEARCH_APP_URL}/rm", headers=headers, auth=auth, json=payload, data=data)
+def list_chats(auth, params=None, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{CHATS_URL}", headers=headers, auth=auth, params=params)
     return res.json()
+
+
+def delete_chat(auth, chat_id, *, headers=HEADERS):
+    res = requests.delete(url=f"{HOST_ADDRESS}{CHATS_URL}/{chat_id}", headers=headers, auth=auth)
+    return res.json()
+
+
+def delete_chats(auth, payload=None, *, headers=HEADERS, data=None):
+    if payload is None:
+        payload = {"delete_all": True}
+    res = requests.delete(url=f"{HOST_ADDRESS}{CHATS_URL}", headers=headers, auth=auth, json=payload, data=data)
+    return res.json()
+
+
+def batch_create_chats(auth, num):
+    ids = []
+    for i in range(num):
+        res = create_chat(auth, {"name": f"chat_{uuid4().hex}_{i}"})
+        ids.append(res["data"]["id"])
+    return ids
 
 
 # KB APP
-def create_kb(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/create", headers=headers, auth=auth, json=payload, data=data)
+def create_dataset(auth, payload=None, *, headers=HEADERS, data=None):
+    res = requests.post(url=f"{HOST_ADDRESS}{DATASETS_URL}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
-def list_kbs(auth, params=None, payload=None, *, headers=HEADERS, data=None):
-    if payload is None:
-        payload = {}
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/list", headers=headers, auth=auth, params=params, json=payload, data=data)
+def list_datasets(auth, params=None, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_URL}", headers=headers, auth=auth, params=params)
     return res.json()
 
 
-def update_kb(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/update", headers=headers, auth=auth, json=payload, data=data)
+def update_dataset(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
+    res = requests.put(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
-def rm_kb(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/rm", headers=headers, auth=auth, json=payload, data=data)
+def delete_datasets(auth, payload=None, *, headers=HEADERS, data=None):
+    """
+    Delete datasets.
+    The endpoint is DELETE /api/{VERSION}/datasets with payload {"ids": [...]}
+    This is the standard SDK REST API endpoint for dataset deletion.
+    """
+    res = requests.delete(url=f"{HOST_ADDRESS}{DATASETS_URL}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
@@ -236,23 +270,43 @@ def kb_pipeline_log_detail(auth, params=None, *, headers=HEADERS):
     return res.json()
 
 
-def kb_run_graphrag(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/run_graphrag", headers=headers, auth=auth, json=payload, data=data)
+# DATASET GRAPH AND TASKS
+def knowledge_graph(auth, dataset_id, params=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/knowledge_graph"
+    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
     return res.json()
 
 
-def kb_trace_graphrag(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/trace_graphrag", headers=headers, auth=auth, params=params)
+def delete_knowledge_graph(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/knowledge_graph"
+    if payload is None:
+        res = requests.delete(url=url, headers=HEADERS, auth=auth)
+    else:
+        res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def kb_run_raptor(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/run_raptor", headers=headers, auth=auth, json=payload, data=data)
+def run_graphrag(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/run_graphrag"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def kb_trace_raptor(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/trace_raptor", headers=headers, auth=auth, params=params)
+def trace_graphrag(auth, dataset_id, params=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/trace_graphrag"
+    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
+    return res.json()
+
+
+def run_raptor(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/run_raptor"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def trace_raptor(auth, dataset_id, params=None):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/trace_raptor"
+    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
     return res.json()
 
 
@@ -286,21 +340,11 @@ def rename_tags(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
     return res.json()
 
 
-def knowledge_graph(auth, dataset_id, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/{dataset_id}/knowledge_graph", headers=headers, auth=auth, params=params)
-    return res.json()
-
-
-def delete_knowledge_graph(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
-    res = requests.delete(url=f"{HOST_ADDRESS}{KB_APP_URL}/{dataset_id}/knowledge_graph", headers=headers, auth=auth, json=payload, data=data)
-    return res.json()
-
-
 def batch_create_datasets(auth, num):
     ids = []
     for i in range(num):
-        res = create_kb(auth, {"name": f"kb_{i}"})
-        ids.append(res["data"]["kb_id"])
+        res = create_dataset(auth, {"name": f"kb_{i}"})
+        ids.append(res["data"]["id"])
     return ids
 
 
@@ -456,103 +500,6 @@ def batch_add_chunks(auth, doc_id, num):
         chunk_ids.append(res["data"]["chunk_id"])
     return chunk_ids
 
-
-# DIALOG APP
-def create_dialog(auth, payload=None, *, headers=HEADERS, data=None):
-    if payload is None:
-        payload = {}
-    url = f"{HOST_ADDRESS}{DIALOG_APP_URL}/set"
-    req_id = str(uuid.uuid4())
-    req_headers = dict(headers)
-    req_headers["X-Request-ID"] = req_id
-    start = time.monotonic()
-    res = requests.post(url=url, headers=req_headers, auth=auth, json=payload, data=data)
-    elapsed_ms = (time.monotonic() - start) * 1000
-    resp_json = None
-    json_error = None
-    try:
-        resp_json = res.json()
-    except ValueError as exc:
-        json_error = exc
-    _log_http_debug("POST", url, req_id, payload, res.status_code, res.text, resp_json, elapsed_ms)
-    if _http_debug_enabled():
-        if not res.ok or (resp_json is not None and resp_json.get("code") != 0):
-            payload_summary = _redact_payload(payload)
-            raise AssertionError(
-                "HTTP helper failure: "
-                f"req_id={req_id} url={url} status={res.status_code} "
-                f"payload={payload_summary} response={res.text}"
-            )
-    if json_error:
-        raise json_error
-    return resp_json
-
-
-def update_dialog(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DIALOG_APP_URL}/set", headers=headers, auth=auth, json=payload, data=data)
-    return res.json()
-
-
-def get_dialog(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{DIALOG_APP_URL}/get", headers=headers, auth=auth, params=params)
-    return res.json()
-
-
-def list_dialogs(auth, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{DIALOG_APP_URL}/list", headers=headers, auth=auth)
-    return res.json()
-
-
-def delete_dialog(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DIALOG_APP_URL}/rm", headers=headers, auth=auth, json=payload, data=data)
-    return res.json()
-
-
-def batch_create_dialogs(auth, num, kb_ids=None):
-    if kb_ids is None:
-        kb_ids = []
-
-    dialog_ids = []
-    for i in range(num):
-        if kb_ids:
-            prompt_config = {
-                "system": "You are a helpful assistant. Use the following knowledge to answer questions: {knowledge}",
-                "parameters": [{"key": "knowledge", "optional": False}],
-            }
-        else:
-            prompt_config = {
-                "system": "You are a helpful assistant.",
-                "parameters": [],
-            }
-        payload = {
-            "name": f"dialog_{i}",
-            "description": f"Test dialog {i}",
-            "kb_ids": kb_ids,
-            "prompt_config": prompt_config,
-            "top_n": 6,
-            "top_k": 1024,
-            "similarity_threshold": 0.1,
-            "vector_similarity_weight": 0.3,
-            "llm_setting": {"model": "gpt-3.5-turbo", "temperature": 0.7},
-        }
-        res = create_dialog(auth, payload)
-        if res is None or res.get("code") != 0:
-            uses_knowledge = "{knowledge}" in payload["prompt_config"]["system"]
-            raise AssertionError(
-                "batch_create_dialogs failed: "
-                f"res={res} kb_ids_len={len(kb_ids)} uses_knowledge={uses_knowledge}"
-            )
-        if res["code"] == 0:
-            dialog_ids.append(res["data"]["id"])
-    return dialog_ids
-
-
-def delete_dialogs(auth):
-    res = list_dialogs(auth)
-    if res["code"] == 0 and res["data"]:
-        dialog_ids = [dialog["id"] for dialog in res["data"]]
-        if dialog_ids:
-            delete_dialog(auth, {"dialog_ids": dialog_ids})
 
 # MEMORY APP
 def create_memory(auth, payload=None):

@@ -1,4 +1,4 @@
-let api_host = `/v1`;
+const api_host = `/v1`;
 const ExternalApi = `/api`;
 
 export { ExternalApi, api_host };
@@ -52,28 +52,35 @@ export default {
   // plugin
   llm_tools: `${api_host}/plugin/llm_tools`,
 
-  sequence2txt: `${api_host}/conversation/sequence2txt`,
+  chatsTranscriptions: `${ExternalApi}${api_host}/chats/transcriptions`,
 
   // knowledge base
 
   check_embedding: `${api_host}/kb/check_embedding`,
-  kb_list: `${api_host}/kb/list`,
-  create_kb: `${api_host}/kb/create`,
-  update_kb: `${api_host}/kb/update`,
-  rm_kb: `${api_host}/kb/rm`,
+  kb_list: `${ExternalApi}${api_host}/datasets`,
+  create_kb: `${ExternalApi}${api_host}/datasets`,
+  update_kb: (datasetId: string) =>
+    `${ExternalApi}${api_host}/datasets/${datasetId}`,
+  rm_kb: `${ExternalApi}${api_host}/datasets`,
   get_kb_detail: `${api_host}/kb/detail`,
   getKnowledgeGraph: (knowledgeId: string) =>
-    `${api_host}/kb/${knowledgeId}/knowledge_graph`,
+    `${ExternalApi}${api_host}/datasets/${knowledgeId}/knowledge_graph`,
+  deleteKnowledgeGraph: (knowledgeId: string) =>
+    `${ExternalApi}${api_host}/datasets/${knowledgeId}/knowledge_graph`,
   getMeta: `${api_host}/kb/get_meta`,
   getKnowledgeBasicInfo: `${api_host}/kb/basic_info`,
   // data pipeline log
   fetchDataPipelineLog: `${api_host}/kb/list_pipeline_logs`,
   get_pipeline_detail: `${api_host}/kb/pipeline_log_detail`,
   fetchPipelineDatasetLogs: `${api_host}/kb/list_pipeline_dataset_logs`,
-  runGraphRag: `${api_host}/kb/run_graphrag`,
-  traceGraphRag: `${api_host}/kb/trace_graphrag`,
-  runRaptor: `${api_host}/kb/run_raptor`,
-  traceRaptor: `${api_host}/kb/trace_raptor`,
+  runGraphRag: (datasetId: string) =>
+    `${ExternalApi}${api_host}/datasets/${datasetId}/run_graphrag`,
+  traceGraphRag: (datasetId: string) =>
+    `${ExternalApi}${api_host}/datasets/${datasetId}/trace_graphrag`,
+  runRaptor: (datasetId: string) =>
+    `${ExternalApi}${api_host}/datasets/${datasetId}/run_raptor`,
+  traceRaptor: (datasetId: string) =>
+    `${ExternalApi}${api_host}/datasets/${datasetId}/trace_raptor`,
   unbindPipelineTask: ({ kb_id, type }: { kb_id: string; type: string }) =>
     `${api_host}/kb/unbind_task?kb_id=${kb_id}&pipeline_task_type=${type}`,
   pipelineRerun: `${api_host}/canvas/rerun`,
@@ -121,48 +128,52 @@ export default {
   get_dataset_filter: `${api_host}/document/filter`,
 
   // chat
-  setDialog: `${api_host}/dialog/set`,
-  getDialog: `${api_host}/dialog/get`,
-  removeDialog: `${api_host}/dialog/rm`,
-  listDialog: `${api_host}/dialog/list`,
-  setConversation: `${api_host}/conversation/set`,
-  getConversation: `${api_host}/conversation/get`,
-  getConversationSSE: (dialogId: string) =>
-    `${api_host}/conversation/getsse/${dialogId}`,
-  listConversation: `${api_host}/conversation/list`,
-  removeConversation: `${api_host}/conversation/rm`,
-  completeConversation: `${api_host}/conversation/completion`,
-  deleteMessage: `${api_host}/conversation/delete_msg`,
-  thumbup: `${api_host}/conversation/thumbup`,
-  tts: `${api_host}/conversation/tts`,
-  ask: `${api_host}/conversation/ask`,
-  mindmap: `${api_host}/conversation/mindmap`,
-  getRelatedQuestions: `${api_host}/conversation/related_questions`,
+  createChat: `${ExternalApi}${api_host}/chats`,
+  listChats: `${ExternalApi}${api_host}/chats`,
+  getChat: (chatId: string) => `${ExternalApi}${api_host}/chats/${chatId}`,
+  updateChat: (chatId: string) => `${ExternalApi}${api_host}/chats/${chatId}`,
+  patchChat: (chatId: string) => `${ExternalApi}${api_host}/chats/${chatId}`,
+  deleteChat: (chatId: string) => `${ExternalApi}${api_host}/chats/${chatId}`,
+  bulkDeleteChats: `${ExternalApi}${api_host}/chats`,
+  createSession: (chatId: string) =>
+    `${ExternalApi}${api_host}/chats/${chatId}/sessions`,
+  listSessions: (chatId: string) =>
+    `${ExternalApi}${api_host}/chats/${chatId}/sessions`,
+  getSession: (chatId: string, sessionId: string) =>
+    `${ExternalApi}${api_host}/chats/${chatId}/sessions/${sessionId}`,
+  updateSession: (chatId: string, sessionId: string) =>
+    `${ExternalApi}${api_host}/chats/${chatId}/sessions/${sessionId}`,
+  removeSessions: (chatId: string) =>
+    `${ExternalApi}${api_host}/chats/${chatId}/sessions`,
+  deleteMessage: (chatId: string, sessionId: string, msgId: string) =>
+    `${ExternalApi}${api_host}/chats/${chatId}/sessions/${sessionId}/messages/${msgId}`,
+  thumbup: (chatId: string, sessionId: string, msgId: string) =>
+    `${ExternalApi}${api_host}/chats/${chatId}/sessions/${sessionId}/messages/${msgId}/feedback`,
+  completionUrl: (chatId: string, sessionId: string) =>
+    `${ExternalApi}${api_host}/chats/${chatId}/sessions/${sessionId}/completions`,
+  chatsTts: `${ExternalApi}${api_host}/chats/tts`,
+  ask: `${ExternalApi}${api_host}/chats/ask`,
+  chatsMindmap: `${ExternalApi}${api_host}/chats/mindmap`,
+  chatsRelatedQuestions: `${ExternalApi}${api_host}/chats/related_questions`,
   // chat for external
   createToken: `${api_host}/api/new_token`,
   listToken: `${api_host}/api/token_list`,
   removeToken: `${api_host}/api/rm`,
   getStats: `${api_host}/api/stats`,
-  createExternalConversation: `${api_host}/api/new_conversation`,
-  getExternalConversation: `${api_host}/api/conversation`,
-  completeExternalConversation: `${api_host}/api/completion`,
-  uploadAndParseExternal: `${api_host}/api/document/upload_and_parse`,
 
   // next chat
-  listNextDialog: `${api_host}/dialog/next`,
   fetchExternalChatInfo: (id: string) =>
     `${ExternalApi}${api_host}/chatbots/${id}/info`,
 
   // file manager
-  listFile: `${api_host}/file/list`,
-  uploadFile: `${api_host}/file/upload`,
-  removeFile: `${api_host}/file/rm`,
-  renameFile: `${api_host}/file/rename`,
-  getAllParentFolder: `${api_host}/file/all_parent_folder`,
-  createFolder: `${api_host}/file/create`,
+  listFile: `${ExternalApi}${api_host}/files`,
+  uploadFile: `${ExternalApi}${api_host}/files`,
+  removeFile: `${ExternalApi}${api_host}/files`,
+  getAllParentFolder: `${ExternalApi}${api_host}/files`,
+  createFolder: `${ExternalApi}${api_host}/files`,
   connectFileToKnowledge: `${api_host}/file2document/convert`,
-  getFile: `${api_host}/file/get`,
-  moveFile: `${api_host}/file/mv`,
+  getFile: `${ExternalApi}${api_host}/files`,
+  moveFile: `${ExternalApi}${api_host}/files/move`,
 
   // system
   getSystemVersion: `${api_host}/system/version`,
@@ -231,12 +242,15 @@ export default {
   testMcpServer: `${api_host}/mcp_server/test_mcp`,
 
   // next-search
-  createSearch: `${api_host}/search/create`,
-  getSearchList: `${api_host}/search/list`,
-  deleteSearch: `${api_host}/search/rm`,
-  getSearchDetail: `${api_host}/search/detail`,
+  createSearch: `${ExternalApi}${api_host}/searches`,
+  getSearchList: `${ExternalApi}${api_host}/searches`,
+  deleteSearch: (params: { search_id: string }) =>
+    `${ExternalApi}${api_host}/searches/${params.search_id}`,
+  getSearchDetail: (params: { search_id: string }) =>
+    `${ExternalApi}${api_host}/searches/${params.search_id}`,
   getSearchDetailShare: `${ExternalApi}${api_host}/searchbots/detail`,
-  updateSearchSetting: `${api_host}/search/update`,
+  updateSearchSetting: (params: { search_id: string }) =>
+    `${ExternalApi}${api_host}/searches/${params.search_id}`,
   askShare: `${ExternalApi}${api_host}/searchbots/ask`,
   mindmapShare: `${ExternalApi}${api_host}/searchbots/mindmap`,
   getRelatedQuestionsShare: `${ExternalApi}${api_host}/searchbots/related_questions`,

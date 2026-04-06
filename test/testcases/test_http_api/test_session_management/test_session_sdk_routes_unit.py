@@ -469,6 +469,7 @@ def _load_session_module(monkeypatch):
     agent_pkg = ModuleType("agent")
     agent_pkg.__path__ = []
     agent_canvas_mod = ModuleType("agent.canvas")
+    agent_dsl_migration_mod = ModuleType("agent.dsl_migration")
 
     class _StubCanvas:
         def __init__(self, *_args, **_kwargs):
@@ -489,10 +490,13 @@ def _load_session_module(monkeypatch):
         def __str__(self):
             return self._dsl
 
+    agent_dsl_migration_mod.normalize_chunker_dsl = lambda dsl: dsl
     agent_canvas_mod.Canvas = _StubCanvas
     agent_pkg.canvas = agent_canvas_mod
+    agent_pkg.dsl_migration = agent_dsl_migration_mod
     monkeypatch.setitem(sys.modules, "agent", agent_pkg)
     monkeypatch.setitem(sys.modules, "agent.canvas", agent_canvas_mod)
+    monkeypatch.setitem(sys.modules, "agent.dsl_migration", agent_dsl_migration_mod)
 
     module_path = repo_root / "api" / "apps" / "sdk" / "session.py"
     spec = importlib.util.spec_from_file_location("test_session_sdk_routes_unit_module", module_path)
@@ -530,56 +534,20 @@ def _load_session_module(monkeypatch):
 def test_create_and_update_guard_matrix(monkeypatch):
     module = _load_session_module(monkeypatch)
 
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"name": "session"}))
-    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
-    res = _run(inspect.unwrap(module.create)("tenant-1", "chat-1"))
-    assert res["message"] == "You do not own the assistant."
-
-    dia = SimpleNamespace(prompt_config={"prologue": "hello"})
-    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [dia])
-    monkeypatch.setattr(module.ConversationService, "save", lambda **_kwargs: None)
-    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (False, None))
-    res = _run(inspect.unwrap(module.create)("tenant-1", "chat-1"))
-    assert "Fail to create a session" in res["message"]
-
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({}))
     monkeypatch.setattr(module, "request", SimpleNamespace(args=_Args()))
-    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (False, None))
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [SimpleNamespace(id="agent-1")])
+
+    def _raise_lookup(*_args, **_kwargs):
+        raise LookupError("Agent not found.")
+
+    monkeypatch.setattr(module.UserCanvasService, "get_agent_dsl_with_release", _raise_lookup)
     res = _run(inspect.unwrap(module.create_agent_session)("tenant-1", "agent-1"))
     assert res["message"] == "Agent not found."
 
-    canvas = SimpleNamespace(dsl="{}", id="agent-1")
-    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, canvas))
     monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [])
     res = _run(inspect.unwrap(module.create_agent_session)("tenant-1", "agent-1"))
     assert res["message"] == "You cannot access the agent."
-
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({}))
-    monkeypatch.setattr(module.ConversationService, "query", lambda **_kwargs: [])
-    res = _run(inspect.unwrap(module.update)("tenant-1", "chat-1", "session-1"))
-    assert res["message"] == "Session does not exist"
-
-    monkeypatch.setattr(module.ConversationService, "query", lambda **_kwargs: [SimpleNamespace(id="session-1")])
-    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
-    res = _run(inspect.unwrap(module.update)("tenant-1", "chat-1", "session-1"))
-    assert res["message"] == "You do not own the session"
-
-    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"message": []}))
-    res = _run(inspect.unwrap(module.update)("tenant-1", "chat-1", "session-1"))
-    assert "`message` can not be change" in res["message"]
-
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"reference": []}))
-    res = _run(inspect.unwrap(module.update)("tenant-1", "chat-1", "session-1"))
-    assert "`reference` can not be change" in res["message"]
-
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"name": ""}))
-    res = _run(inspect.unwrap(module.update)("tenant-1", "chat-1", "session-1"))
-    assert "`name` can not be empty" in res["message"]
-
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"name": "renamed"}))
-    monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_args, **_kwargs: False)
-    res = _run(inspect.unwrap(module.update)("tenant-1", "chat-1", "session-1"))
-    assert res["message"] == "Session updates error"
 
 
 @pytest.mark.p2
@@ -859,7 +827,18 @@ def test_agent_completions_stream_and_nonstream_unit(monkeypatch):
 
     async def _agent_stream(*_args, **_kwargs):
         yield "data:not-json"
-        yield "data:" + json.dumps({"event": "node_finished", "data": {"component_id": "c1"}})
+        yield "data:" + json.dumps(
+            {
+                "event": "node_finished",
+                "data": {"component_id": "c1", "outputs": {"structured": {"alpha": 1}}},
+            }
+        )
+        yield "data:" + json.dumps(
+            {
+                "event": "node_finished",
+                "data": {"component_id": "c2", "outputs": {"structured": {}}},
+            }
+        )
         yield "data:" + json.dumps({"event": "other", "data": {}})
         yield "data:" + json.dumps({"event": "message", "data": {"content": "hello"}})
 
@@ -875,14 +854,36 @@ def test_agent_completions_stream_and_nonstream_unit(monkeypatch):
 
     async def _agent_nonstream(*_args, **_kwargs):
         yield "data:" + json.dumps({"event": "message", "data": {"content": "A", "reference": {"doc": "r"}}})
-        yield "data:" + json.dumps({"event": "node_finished", "data": {"component_id": "c2"}})
+        yield "data:" + json.dumps(
+            {
+                "event": "node_finished",
+                "data": {"component_id": "c2", "outputs": {"structured": {"foo": "bar"}}},
+            }
+        )
+        yield "data:" + json.dumps(
+            {
+                "event": "node_finished",
+                "data": {"component_id": "c3", "outputs": {"structured": {"baz": 1}}},
+            }
+        )
+        yield "data:" + json.dumps(
+            {
+                "event": "node_finished",
+                "data": {"component_id": "c4", "outputs": {"structured": {}}},
+            }
+        )
 
     monkeypatch.setattr(module, "agent_completion", _agent_nonstream)
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"stream": False, "return_trace": True}))
     res = _run(inspect.unwrap(module.agent_completions)("tenant-1", "agent-1"))
     assert res["data"]["data"]["content"] == "A"
     assert res["data"]["data"]["reference"] == {"doc": "r"}
-    assert res["data"]["data"]["trace"][0]["component_id"] == "c2"
+    assert res["data"]["data"]["structured"] == {
+        "c2": {"foo": "bar"},
+        "c3": {"baz": 1},
+        "c4": {},
+    }
+    assert [item["component_id"] for item in res["data"]["data"]["trace"]] == ["c2", "c3", "c4"]
 
     async def _agent_nonstream_broken(*_args, **_kwargs):
         yield "data:{"
@@ -891,44 +892,6 @@ def test_agent_completions_stream_and_nonstream_unit(monkeypatch):
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"stream": False, "return_trace": False}))
     res = _run(inspect.unwrap(module.agent_completions)("tenant-1", "agent-1"))
     assert res["data"].startswith("**ERROR**")
-
-
-@pytest.mark.p2
-def test_list_session_projection_unit(monkeypatch):
-    module = _load_session_module(monkeypatch)
-
-    monkeypatch.setattr(module, "request", SimpleNamespace(args=_Args({})))
-    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
-
-    convs = [
-        {
-            "id": "session-1",
-            "dialog_id": "chat-1",
-            "message": [{"role": "assistant", "content": "hello", "prompt": "internal"}],
-            "reference": [
-                {
-                    "chunks": [
-                        {
-                            "chunk_id": "chunk-1",
-                            "content_with_weight": "weighted",
-                            "doc_id": "doc-1",
-                            "docnm_kwd": "doc-name",
-                            "kb_id": "kb-1",
-                            "image_id": "img-1",
-                            "positions": [1, 2],
-                        }
-                    ]
-                }
-            ],
-        }
-    ]
-    monkeypatch.setattr(module.ConversationService, "get_list", lambda *_args, **_kwargs: convs)
-
-    res = _run(inspect.unwrap(module.list_session)("tenant-1", "chat-1"))
-    assert res["data"][0]["chat_id"] == "chat-1"
-    assert "reference" not in res["data"][0]
-    assert "prompt" not in res["data"][0]["messages"][0]
-    assert res["data"][0]["messages"][0]["reference"][0]["positions"] == [1, 2]
 
 
 @pytest.mark.p2
@@ -983,41 +946,6 @@ def test_list_agent_session_projection_unit(monkeypatch):
 @pytest.mark.p2
 def test_delete_routes_partial_duplicate_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
-
-    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({}))
-    res = _run(inspect.unwrap(module.delete)("tenant-1", "chat-1"))
-    assert res["code"] == 0
-
-    monkeypatch.setattr(module.ConversationService, "delete_by_id", lambda *_args, **_kwargs: True)
-
-    def _conversation_query(**kwargs):
-        if "id" not in kwargs:
-            return [SimpleNamespace(id="seed")]
-        if kwargs["id"] == "ok":
-            return [SimpleNamespace(id="ok")]
-        return []
-
-    monkeypatch.setattr(module.ConversationService, "query", _conversation_query)
-
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"ids": ["ok", "bad"]}))
-    monkeypatch.setattr(module, "check_duplicate_ids", lambda ids, _kind: (ids, []))
-    res = _run(inspect.unwrap(module.delete)("tenant-1", "chat-1"))
-    assert res["code"] == 0
-    assert res["data"]["success_count"] == 1
-    assert res["data"]["errors"] == ["The chat doesn't own the session bad"]
-
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"ids": ["bad"]}))
-    monkeypatch.setattr(module, "check_duplicate_ids", lambda ids, _kind: (ids, []))
-    res = _run(inspect.unwrap(module.delete)("tenant-1", "chat-1"))
-    assert res["message"] == "The chat doesn't own the session bad"
-
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"ids": ["ok", "ok"]}))
-    monkeypatch.setattr(module, "check_duplicate_ids", lambda ids, _kind: (["ok"], ["Duplicate session ids: ok"]))
-    res = _run(inspect.unwrap(module.delete)("tenant-1", "chat-1"))
-    assert res["code"] == 0
-    assert res["data"]["success_count"] == 1
-    assert res["data"]["errors"] == ["Duplicate session ids: ok"]
 
     monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [SimpleNamespace(id="agent-1")])
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({}))

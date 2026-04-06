@@ -35,6 +35,7 @@ from PIL import Image
 from strenum import StrEnum
 
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
+from deepdoc.parser.utils import extract_pdf_outlines
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
@@ -74,6 +75,7 @@ LANGUAGE_TO_MINERU_MAP = {
     'Greek': 'el',
     'Hindi': 'devanagari',
     'Bulgarian': 'cyrillic',
+    'Turkish': 'latin',
 }
 
 
@@ -575,7 +577,7 @@ class MinerUParser(RAGFlowPdfParser):
                 case MinerUContentType.DISCARDED:
                     continue  # Skip discarded blocks entirely
 
-            if section and parse_method == "manual":
+            if section and parse_method in {"manual", "pipeline"}:
                 sections.append((section, output["type"], self._line_tag(output)))
             elif section and parse_method == "paper":
                 sections.append((section + self._line_tag(output), output["type"]))
@@ -601,6 +603,7 @@ class MinerUParser(RAGFlowPdfParser):
     ) -> tuple:
         import shutil
 
+        self.outlines = extract_pdf_outlines(binary if binary is not None else filepath)
         temp_pdf = None
         created_tmp_dir = False
 

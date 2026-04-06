@@ -298,7 +298,7 @@ export default function Agent() {
                 {t('flow.setting')}
               </AgentDropdownMenuItem>
               {isPipeline ||
-                (location.hostname !== 'demo.ragflow.io' && (
+                (location.hostname !== 'cloud.ragflow.io' && (
                   <>
                     <DropdownMenuSeparator />
                     <AgentDropdownMenuItem onClick={showEmbedModal}>

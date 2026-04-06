@@ -1,5 +1,5 @@
 <div align="center">
-<a href="https://demo.ragflow.io/">
+<a href="https://cloud.ragflow.io/">
 <img src="web/src/assets/logo-with-text.svg" width="520" alt="ragflow logo">
 </a>
 </div>
@@ -14,13 +14,14 @@
   <a href="./README_pt_br.md"><img alt="Português(Brasil)" src="https://img.shields.io/badge/Português(Brasil)-DFE0E5"></a>
   <a href="./README_fr.md"><img alt="README en Français" src="https://img.shields.io/badge/Français-DBEDFA"></a>
   <a href="./README_ar.md"><img alt="README in Arabic" src="https://img.shields.io/badge/Arabic-DFE0E5"></a>
+  <a href="./README_tr.md"><img alt="Türkçe README" src="https://img.shields.io/badge/Türkçe-DFE0E5"></a>
 </p>
 
 <p align="center">
     <a href="https://x.com/intent/follow?screen_name=infiniflowai" target="_blank">
         <img src="https://img.shields.io/twitter/follow/infiniflow?logo=X&color=%20%23f5f5f5" alt="suivre sur X(Twitter)">
     </a>
-    <a href="https://demo.ragflow.io" target="_blank">
+    <a href="https://cloud.ragflow.io" target="_blank">
         <img alt="Badge statique" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
@@ -42,7 +43,7 @@
   <a href="https://github.com/infiniflow/ragflow/issues/12241">Roadmap</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
   <a href="https://discord.gg/NjYzJD3GM3">Discord</a> |
-  <a href="https://demo.ragflow.io">Démo</a>
+  <a href="https://cloud.ragflow.io">Démo</a>
 </h4>
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
@@ -78,7 +79,7 @@
 
 ## 🎮 Démo
 
-Essayez notre démo sur [https://demo.ragflow.io](https://demo.ragflow.io).
+Essayez notre démo sur [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -87,6 +88,7 @@ Essayez notre démo sur [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Dernières mises à jour
 
+- 24-03-2026 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — Fournit un skill officiel pour accéder aux datasets RAGFlow via OpenClaw.
 - 26-12-2025 Prise en charge de la « Mémoire » pour l'agent IA.
 - 19-11-2025 Prise en charge de Gemini 3 Pro.
 - 12-11-2025 Prise en charge de la synchronisation de données depuis Confluence, S3, Notion, Discord et Google Drive.
@@ -382,8 +384,8 @@ docker build --platform linux/amd64 \
 - [Quickstart](https://ragflow.io/docs/dev/)
 - [Configuration](https://ragflow.io/docs/dev/configurations)
 - [Release notes](https://ragflow.io/docs/dev/release_notes)
-- [User guides](https://ragflow.io/docs/dev/category/guides)
-- [Developer guides](https://ragflow.io/docs/dev/category/developers)
+- [User guides](https://ragflow.io/docs/category/user-guides)
+- [Developer guides](https://ragflow.io/docs/category/developer-guides)
 - [References](https://ragflow.io/docs/dev/category/references)
 - [FAQs](https://ragflow.io/docs/dev/faq)
 

@@ -21,7 +21,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
+
 	"strings"
 )
 
@@ -115,7 +116,7 @@ func (m *giteeEmbeddingModel) EncodeQuery(query string) ([]float64, error) {
 
 // init registers the GiteeAI embedding model factory
 func init() {
-	RegisterEmbeddingModelFactory("GiteeAI", func(apiKey, apiBase, modelName string, httpClient *http.Client) model.EmbeddingModel {
+	RegisterEmbeddingModelFactory("GiteeAI", func(apiKey, apiBase, modelName string, httpClient *http.Client) entity.EmbeddingModel {
 		return &giteeEmbeddingModel{
 			apiKey:     apiKey,
 			apiBase:    apiBase,

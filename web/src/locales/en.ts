@@ -37,6 +37,7 @@ export default {
       italian: 'Italian',
       bulgarian: 'Bulgarian',
       arabic: 'Arabic',
+      turkish: 'Turkish',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
@@ -386,7 +387,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       changeSpecificCategory: 'Change specific category',
       uploadTitle: 'Drag and drop your file here to upload',
       uploadDescription:
-        'Supports single or batch file upload. For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. For demo.ragflow.io, the total file size limit per upload is 10MB, with each file not exceeding 10MB and a maximum of 128 files per account.',
+        'Supports single or batch file upload. For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. For cloud.ragflow.io, the total file size limit per upload is 10MB, with each file not exceeding 10MB and a maximum of 128 files per account.',
       chunk: 'Chunk',
       bulk: 'Bulk',
       cancel: 'Cancel',
@@ -875,6 +876,16 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       created: 'Created',
       action: 'Action',
       embedModalTitle: 'Embed into webpage',
+      published: 'Published',
+      publishedTooltip:
+        'Use the published version for this embed. When enabled, the generated URL includes release=true.',
+      embedType: 'Embed type',
+      fullscreenChat: 'Fullscreen chat (traditional iframe)',
+      floatingWidget: 'Floating widget (Intercom-style)',
+      theme: 'Theme',
+      light: 'Light',
+      dark: 'Dark',
+      enableStreaming: 'Enable streaming responses',
       comingSoon: 'Coming soon',
       fullScreenTitle: 'Full embed',
       fullScreenDescription:
@@ -989,6 +1000,8 @@ Example: Virtual Hosted Style`,
       newDocs: 'New docs',
       timeStarted: 'Time started',
       log: 'Log',
+      rssDescription:
+        'Connect to a public RSS or Atom feed and sync feed entries into your knowledge base.',
       confluenceDescription:
         'Integrate your Confluence workspace to search documentation.',
       s3Description:
@@ -1471,7 +1484,7 @@ Example: Virtual Hosted Style`,
       directory: 'Directory',
       uploadTitle: 'Drag and drop your file here to upload',
       uploadDescription:
-        'Supports single or batch file upload. For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. For demo.ragflow.io, the total file size limit per upload is 10MB, with each file not exceeding 10MB and a maximum of 128 files per account.',
+        'Supports single or batch file upload. For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. For cloud.ragflow.io, the total file size limit per upload is 10MB, with each file not exceeding 10MB and a maximum of 128 files per account.',
       local: 'Local uploads',
       s3: 'S3 uploads',
       preview: 'Preview',
@@ -1844,7 +1857,7 @@ Example: Virtual Hosted Style`,
       dbType: 'Database type',
       database: 'Database',
       username: 'Username',
-      userId: 'User id',
+      userId: 'User ID',
       host: 'Host',
       port: 'Port',
       password: 'Password',
@@ -2196,14 +2209,16 @@ This process aggregates variables from multiple branches into a single variable 
       production: 'Production',
       productionTooltip:
         'This version is published to production. Access it via the API or the embedded page.',
-      confirmPublish: 'Confirm Publish',
-      publishDescription: 'You are about to publish this data pipeline.',
-      linkedDataset: 'Linked dataset',
+      confirmPublish: 'Confirm publish',
+      publishIngestionPipeline:
+        'You are about to publish this Ingestion pipeline.',
+      publishAgent: 'You are about to publish this agent',
+      linkedDataset: 'Linked dataset:',
       lastPublished: 'Last published',
       createFromBlank: 'Create from blank',
       createFromTemplate: 'Create from template',
       importJsonFile: 'Import JSON file',
-      ceateAgent: 'Agent flow',
+      ceateAgent: 'Workflow',
       createPipeline: 'Ingestion pipeline',
       chooseAgentType: 'Choose agent type',
       parser: 'Parser',
@@ -2213,12 +2228,12 @@ This process aggregates variables from multiple branches into a single variable 
       tokenizerRequired: 'Please add the Indexer node first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
-      splitter: 'Token',
-      splitterDescription:
+      tokenChunker: 'Token Chunker',
+      tokenChunkerDescription:
         'Split text into chunks by token length with optional delimiters and overlap.',
-      hierarchicalMergerDescription:
+      titleChunkerDescription:
         'Split documents into sections by title hierarchy with regex rules for finer control.',
-      hierarchicalMerger: 'Title',
+      titleChunker: 'Title Chunker',
       extractor: 'Transformer',
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
@@ -2230,6 +2245,8 @@ This process aggregates variables from multiple branches into a single variable 
         image: 'Image',
         email: 'Email',
         'text&markdown': 'Text & Markup',
+        code: 'Code',
+        html: 'HTML',
         word: 'Word',
         slides: 'PPTX',
         audio: 'Audio',
@@ -2408,6 +2425,15 @@ Important structured information may include: names, dates, locations, events, k
       },
       saveToMemory: 'Save to memory',
       retrievalFrom: 'Retrieval from',
+      id: 'ID',
+      state: 'State',
+      number: 'Number',
+      latestDate: 'Latest date',
+      createDate: 'Create date',
+      noDataToExport: 'No data to export',
+      success: 'Success',
+      failed: 'Failed',
+      logTitle: 'Title',
     },
     llmTools: {
       bad_calculator: {
@@ -2479,6 +2505,7 @@ Important structured information may include: names, dates, locations, events, k
       russian: 'Russian',
       bulgarian: 'Bulgarian',
       arabic: 'Arabic',
+      turkish: 'Turkish',
     },
     pagination: {
       total: 'Total {{total}}',

@@ -43,6 +43,7 @@ from common import settings
 from common.config_utils import show_configs
 from common.data_source import (
     BlobStorageConnector,
+    RSSConnector,
     NotionConnector,
     DiscordConnector,
     GoogleDriveConnector,
@@ -123,7 +124,6 @@ class SyncBase:
             if not document_batch:
                 continue
 
-            min_update = min(doc.doc_updated_at for doc in document_batch)
             max_update = max(doc.doc_updated_at for doc in document_batch)
             next_update = max(next_update, max_update)
 
@@ -151,7 +151,7 @@ class SyncBase:
                     task["auto_parse"]
                 )
                 SyncLogsService.increase_docs(
-                    task["id"], min_update, max_update,
+                    task["id"], max_update,
                     len(docs), "\n".join(err), len(err)
                 )
 
@@ -242,6 +242,26 @@ class OCI_STORAGE(_BlobLikeBase):
 class GOOGLE_CLOUD_STORAGE(_BlobLikeBase):
     SOURCE_NAME: str = FileSource.GOOGLE_CLOUD_STORAGE
     DEFAULT_BUCKET_TYPE: str = "google_cloud_storage"
+
+
+class RSS(SyncBase):
+    SOURCE_NAME: str = FileSource.RSS
+
+    async def _generate(self, task: dict):
+        self.connector = RSSConnector(
+            feed_url=self.conf["feed_url"],
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+        self.connector.load_credentials(self.conf.get("credentials", {}))
+        self.connector.validate_connector_settings()
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            return self.connector.load_from_state()
+
+        return self.connector.poll_source(
+            task["poll_range_start"].timestamp(),
+            datetime.now(timezone.utc).timestamp(),
+        )
 
 
 class Confluence(SyncBase):
@@ -577,6 +597,7 @@ class Jira(SyncBase):
             "scoped_token": self.conf.get("scoped_token", False),
             "attachment_size_limit": self.conf.get("attachment_size_limit"),
             "timezone_offset": self.conf.get("timezone_offset"),
+            "time_buffer_seconds": self.conf.get("time_buffer_seconds"),
         }
 
         self.connector = JiraConnector(**connector_kwargs)
@@ -642,7 +663,15 @@ class Jira(SyncBase):
             if pending_docs:
                 yield pending_docs
 
-        logging.info(f"[Jira] Connect to Jira {connector_kwargs['jira_base_url']} {begin_info}")
+        logging.info(
+            "[Jira] Connect to Jira %s %s (start=%s, end=%s, sync_batch_size=%s, overlap_buffer_s=%s)",
+            connector_kwargs["jira_base_url"],
+            begin_info,
+            start_time,
+            end_time,
+            batch_size,
+            getattr(self.connector, "time_buffer_seconds", connector_kwargs.get("time_buffer_seconds")),
+        )
         return document_batches()
 
     @staticmethod
@@ -683,6 +712,7 @@ class WebDAV(SyncBase):
             base_url=self.conf["base_url"],
             remote_path=self.conf.get("remote_path", "/")
         )
+        self.connector.set_allow_images(self.conf.get("allow_images", False))
         self.connector.load_credentials(self.conf["credentials"])
 
         logging.info(f"Task info: reindex={task['reindex']}, poll_range_start={task['poll_range_start']}")
@@ -1339,6 +1369,7 @@ class PostgreSQL(SyncBase):
 
 
 func_factory = {
+    FileSource.RSS: RSS,
     FileSource.S3: S3,
     FileSource.R2: R2,
     FileSource.OCI_STORAGE: OCI_STORAGE,
@@ -1424,7 +1455,7 @@ async def main():
                                   __/ |
                                  |___/
     """)
-    logging.info(f"RAGFlow version: {get_ragflow_version()}")
+    logging.info(f"RAGFlow data sync version: {get_ragflow_version()}")
     show_configs()
     settings.init_settings()
     if sys.platform != "win32":

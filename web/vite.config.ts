@@ -30,6 +30,75 @@ const inspectorBabelPlugin = (): import('vite').Plugin => ({
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
 
+  const proxySchemes = {
+    python: {
+      '/api/v1/admin': {
+        target: 'http://127.0.0.1:9381/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/api': {
+        target: 'http://127.0.0.1:9380/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/v1': {
+        target: 'http://127.0.0.1:9380/',
+        changeOrigin: true,
+        ws: true,
+      },
+    },
+    hybrid: {
+      '^(/api/v1/memories)|^(/v1/user/info)|^(/v1/user/tenant_info)|^(/v1/tenant/list)|^(/v1/system/config)|^(/v1/user/login)|^(/v1/user/logout)|^(/api/v1/files)':
+        {
+          target: 'http://127.0.0.1:9384/',
+          changeOrigin: true,
+          ws: true,
+        },
+      '^(/api/v1/admin/sandbox)|^(/api/v1/admin/roles)|^(/api/v1/admin/roles/owner/permission)|^(/api/v1/admin/roles_with_permission)|^(/api/v1/admin/whitelist)|^(/api/v1/admin/variables)':
+        {
+          target: 'http://127.0.0.1:9381/',
+          changeOrigin: true,
+          ws: true,
+        },
+      '/api/v1/admin': {
+        target: 'http://127.0.0.1:9383/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/api': {
+        target: 'http://127.0.0.1:9380/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/v1': {
+        target: 'http://127.0.0.1:9380/',
+        changeOrigin: true,
+        ws: true,
+      },
+    },
+    go: {
+      '/api/v1/admin': {
+        target: 'http://127.0.0.1:9383/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/api': {
+        target: 'http://127.0.0.1:9384/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/v1': {
+        target: 'http://127.0.0.1:9384/',
+        changeOrigin: true,
+        ws: true,
+      },
+    },
+  };
+
+  const proxy =
+    proxySchemes[env.API_PROXY_SCHEME || 'python'] || proxySchemes.python;
+
   return {
     plugins: [
       inspectorBabelPlugin(),
@@ -85,38 +154,7 @@ export default defineConfig(({ mode }) => {
       hmr: {
         overlay: false,
       },
-      proxy: {
-        '/api/v1/admin': {
-          target: 'http://127.0.0.1:9381/',
-          changeOrigin: true,
-          ws: true,
-        },
-        '/api': {
-          target: 'http://127.0.0.1:9380/',
-          changeOrigin: true,
-          ws: true,
-        },
-        //         '/v1/system/config': {
-        //           target: 'http://127.0.0.1:9382/',
-        //           changeOrigin: true,
-        //           ws: true,
-        //         },
-        //         '/v1/user/login': {
-        //           target: 'http://127.0.0.1:9382/',
-        //           changeOrigin: true,
-        //           ws: true,
-        //         },
-        //         '/v1/user/logout': {
-        //           target: 'http://127.0.0.1:9382/',
-        //           changeOrigin: true,
-        //           ws: true,
-        //         },
-        '/v1': {
-          target: 'http://127.0.0.1:9380/',
-          changeOrigin: true,
-          ws: true,
-        },
-      },
+      proxy,
     },
     assetsInclude: ['**/*.md'],
     base: env.VITE_BASE_URL,
@@ -127,7 +165,6 @@ export default defineConfig(({ mode }) => {
         'react',
         'react-dom',
         'react-router',
-        'antd',
         'axios',
         'lodash',
         'dayjs',
