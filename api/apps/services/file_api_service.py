@@ -217,7 +217,6 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
         """Get hub UUID by hub name from Go backend"""
         try:
             import requests
-            from urllib.parse import quote
 
             host = getattr(settings, 'HOST_IP', '127.0.0.1')
             # Go service runs on port+4 (9384 by default)
