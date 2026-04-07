@@ -28,6 +28,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+pytestmark = pytest.mark.p2
+
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
@@ -250,6 +252,32 @@ class TestUpdateChunkWeight:
             mod.MAX_PAGERANK_WEIGHT,
         )
 
+    def test_update_weight_elasticsearch_forwards_row_id(self, feedback_env):
+        """Elasticsearch adjust accepts and forwards row_id without TypeError."""
+        mod, settings_mod = feedback_env
+        settings_mod.DOC_ENGINE = "elasticsearch"
+        mock_doc_store = MagicMock()
+        mock_adjust = MagicMock(return_value=True)
+        mock_doc_store.adjust_chunk_pagerank_fea = mock_adjust
+        settings_mod.docStoreConn = mock_doc_store
+
+        assert mod.ChunkFeedbackService.update_chunk_weight(
+            tenant_id="tenant1",
+            chunk_id="chunk1",
+            kb_id="kb1",
+            delta=-1,
+            row_id=42,
+        )
+        mock_adjust.assert_called_once_with(
+            "chunk1",
+            "idx-tenant1",
+            "kb1",
+            -1,
+            mod.MIN_PAGERANK_WEIGHT,
+            mod.MAX_PAGERANK_WEIGHT,
+            row_id=42,
+        )
+
     def test_update_weight_opensearch_uses_atomic_adjust(self, feedback_env):
         mod, settings_mod = feedback_env
         settings_mod.DOC_ENGINE = "opensearch"
@@ -271,6 +299,32 @@ class TestUpdateChunkWeight:
             -2,
             mod.MIN_PAGERANK_WEIGHT,
             mod.MAX_PAGERANK_WEIGHT,
+        )
+
+    def test_update_weight_opensearch_forwards_row_id(self, feedback_env):
+        """OpenSearch adjust accepts and forwards row_id without TypeError."""
+        mod, settings_mod = feedback_env
+        settings_mod.DOC_ENGINE = "opensearch"
+        mock_doc_store = MagicMock()
+        mock_adjust = MagicMock(return_value=True)
+        mock_doc_store.adjust_chunk_pagerank_fea = mock_adjust
+        settings_mod.docStoreConn = mock_doc_store
+
+        mod.ChunkFeedbackService.update_chunk_weight(
+            tenant_id="tenant1",
+            chunk_id="chunk1",
+            kb_id="kb1",
+            delta=-2,
+            row_id=77,
+        )
+        mock_adjust.assert_called_once_with(
+            "chunk1",
+            "idx-tenant1",
+            "kb1",
+            -2,
+            mod.MIN_PAGERANK_WEIGHT,
+            mod.MAX_PAGERANK_WEIGHT,
+            row_id=77,
         )
 
     def test_update_weight_infinity_uses_adjust_with_row_id(self, feedback_env):

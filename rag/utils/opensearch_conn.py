@@ -368,7 +368,11 @@ class OSConnection(DocStoreConnection):
                         scripts = []
                         params = {}
                         for kk, vv in remove_dict.items():
-                            scripts.append(f"int i=ctx._source.{kk}.indexOf(params.p_{kk});ctx._source.{kk}.remove(i);")
+                            scripts.append(
+                                f"if (ctx._source.containsKey('{kk}') && ctx._source.{kk} != null) "
+                                f"{{ int i = ctx._source.{kk}.indexOf(params.p_{kk}); "
+                                f"if (i >= 0) {{ ctx._source.{kk}.remove(i); }} }}"
+                            )
                             params[f"p_{kk}"] = vv
                         if scripts:
                             self.os.update(
@@ -461,13 +465,16 @@ class OSConnection(DocStoreConnection):
         delta: int,
         min_w: int = 0,
         max_w: int = 100,
+        row_id: int | None = None,
     ) -> bool:
         """Atomically adjust pagerank_fea on one chunk (painless script)."""
+        _ = row_id
         for _ in range(ATTEMPT_TIME):
             try:
                 self.os.update(
                     index=indexName,
                     id=chunk_id,
+                    retry_on_conflict=3,
                     body={
                         "script": {
                             "source": _PAGERANK_FEA_ADJUST_SCRIPT.strip(),
