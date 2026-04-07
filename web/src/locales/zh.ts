@@ -1256,7 +1256,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       FishAudioModelNameMessage: '请为你的TTS模型起名',
       addFishAudioAK: 'Fish Audio API KEY',
       FishAudioAKMessage: '请输入 API KEY',
-      addFishAudioRefID: 'FishAudio Refrence ID',
+      addFishAudioRefID: 'FishAudio Reference ID',
       FishAudioRefIDMessage: '请输入引用模型的ID（留空表示使用默认模型）',
       GoogleModelIDMessage: '请输入 model ID!',
       addGoogleProjectID: 'Project ID',

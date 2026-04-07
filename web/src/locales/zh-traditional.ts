@@ -717,7 +717,7 @@ export default {
       FishAudioModelNameMessage: '請為你的TTS模型起名',
       addFishAudioAK: 'Fish Audio API KEY',
       addFishAudioAKMessage: '請輸入 API KEY',
-      addFishAudioRefID: 'FishAudio Refrence ID',
+      addFishAudioRefID: 'FishAudio Reference ID',
       addFishAudioRefIDMessage: '請輸入引用模型的ID（留空表示使用默認模型）',
       GoogleModelIDMessage: '請輸入 model ID!',
       addGoogleProjectID: 'Project ID',
