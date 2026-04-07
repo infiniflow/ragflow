@@ -39,30 +39,6 @@ from quart import jsonify
 from api.utils.health_utils import run_health_checks, get_oceanbase_status
 from common import settings
 
-
-@manager.route("/version", methods=["GET"])  # noqa: F821
-@login_required
-def version():
-    """
-    Get the current version of the application.
-    ---
-    tags:
-      - System
-    security:
-      - ApiKeyAuth: []
-    responses:
-      200:
-        description: Version retrieved successfully.
-        schema:
-          type: object
-          properties:
-            version:
-              type: string
-              description: Version number.
-    """
-    return get_json_result(data=get_ragflow_version())
-
-
 @manager.route("/status", methods=["GET"])  # noqa: F821
 @login_required
 def status():

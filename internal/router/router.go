@@ -22,7 +22,6 @@ import (
 	"ragflow/internal/handler"
 )
 
-// Router router
 type Router struct {
 	authHandler          *handler.AuthHandler
 	userHandler          *handler.UserHandler
