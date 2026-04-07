@@ -19,7 +19,6 @@ import json
 
 from api.apps import login_required, current_user
 
-from api.db.db_models import APIToken
 from api.db.services.api_service import APITokenService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import UserTenantService
@@ -34,7 +33,7 @@ from common.log_utils import get_log_levels, set_log_level
 from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
-from api.utils.health_utils import run_health_checks, get_oceanbase_status
+from api.utils.health_utils import get_oceanbase_status
 from common import settings
 
 @manager.route("/status", methods=["GET"])  # noqa: F821
