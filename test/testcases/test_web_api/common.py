@@ -35,6 +35,7 @@ MEMORY_API_URL = f"/api/{VERSION}/memories"
 MESSAGE_API_URL = f"/api/{VERSION}/messages"
 API_APP_URL = f"/{VERSION}/api"
 SYSTEM_APP_URL = f"/{VERSION}/system"
+SYSTEM_API_URL = f"/api/{VERSION}/system"
 LLM_APP_URL = f"/{VERSION}/llm"
 PLUGIN_APP_URL = f"/{VERSION}/plugin"
 SEARCHES_URL = f"/api/{VERSION}/searches"
@@ -113,7 +114,7 @@ def system_status(auth, params=None, *, headers=HEADERS):
 
 
 def system_version(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{SYSTEM_APP_URL}/version", headers=headers, auth=auth, params=params)
+    res = requests.get(url=f"{HOST_ADDRESS}{SYSTEM_API_URL}/version", headers=headers, auth=auth, params=params)
     return res.json()
 
 

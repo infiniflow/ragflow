@@ -96,8 +96,7 @@ func (l *Lexer) NextToken() Token {
 			ident := l.readIdentifier()
 			return l.lookupIdent(ident)
 		} else if isDigit(l.ch) {
-			tok.Type = TokenNumber
-			tok.Value = l.readNumber()
+			tok.Value, tok.Type = l.readNumber()
 			return tok
 		}
 
@@ -129,12 +128,25 @@ func (l *Lexer) readIdentifier() string {
 	return l.input[start:l.pos]
 }
 
-func (l *Lexer) readNumber() string {
+func (l *Lexer) readNumber() (string, int) {
 	start := l.pos
+	tokenType := TokenInteger
+
+	// Read integer part
 	for isDigit(l.ch) {
 		l.readChar()
 	}
-	return l.input[start:l.pos]
+
+	// If encountering a decimal point followed by a digit, read as float
+	if l.ch == '.' && isDigit(l.peekChar()) {
+		tokenType = TokenFloat
+		l.readChar() // Consume '.'
+		for isDigit(l.ch) {
+			l.readChar()
+		}
+	}
+
+	return l.input[start:l.pos], tokenType
 }
 
 func (l *Lexer) readQuotedString(quote byte) string {

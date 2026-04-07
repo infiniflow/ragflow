@@ -69,11 +69,11 @@ func (c *RAGFlowClient) ShowServerVersion(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode: multiple iterations
-		return c.HTTPClient.RequestWithIterations("GET", "/system/version", false, "web", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/system/version", true, "web", nil, nil, iterations)
 	}
 
 	// Single mode
-	resp, err := c.HTTPClient.Request("GET", "/system/version", false, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/system/version", true, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show version: %w", err)
 	}
