@@ -22,7 +22,6 @@ import (
 	"ragflow/internal/handler"
 )
 
-// Router router
 type Router struct {
 	authHandler          *handler.AuthHandler
 	userHandler          *handler.UserHandler
@@ -188,41 +187,50 @@ func (r *Router) Setup(engine *gin.Engine) {
 				memory.GET("/:memory_id", r.memoryHandler.GetMemoryMessages)
 			}
 
-			// TODO: Message routes - Implementation pending - depends on CanvasService, TaskService and embedding engine
-			// message := v1.Group("/messages")
-			// {
-			// 	message.POST("", r.memoryHandler.AddMessage)
-			// 	message.DELETE("/:memory_id/:message_id", r.memoryHandler.ForgetMessage)
-			// 	message.PUT("/:memory_id/:message_id", r.memoryHandler.UpdateMessage)
-			// 	message.GET("/search", r.memoryHandler.SearchMessage)
-			// 	message.GET("", r.memoryHandler.GetMessages)
-			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
-			// }
+		// TODO: Message routes - Implementation pending - depends on CanvasService, TaskService and embedding engine
+		// message := v1.Group("/messages")
+		// {
+		// 	message.POST("", r.memoryHandler.AddMessage)
+		// 	message.DELETE("/:memory_id/:message_id", r.memoryHandler.ForgetMessage)
+		// 	message.PUT("/:memory_id/:message_id", r.memoryHandler.UpdateMessage)
+		// 	message.GET("/search", r.memoryHandler.SearchMessage)
+		// 	message.GET("", r.memoryHandler.GetMessages)
+		// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
+		// }
 
-			// Skill search routes
-			skills := v1.Group("/skills")
-			{
-				// Skills Hub management
-				skills.GET("/hubs", r.skillSearchHandler.ListHubs)
-				skills.POST("/hubs", r.skillSearchHandler.CreateHub)
-				skills.GET("/hubs/:hub_id", r.skillSearchHandler.GetHub)
-				skills.PUT("/hubs/:hub_id", r.skillSearchHandler.UpdateHub)
-				skills.DELETE("/hubs/:hub_id", r.skillSearchHandler.DeleteHub)
-				skills.GET("/hub/by-folder", r.skillSearchHandler.GetHubByFolder)
+		// Skill search routes
+		skills := v1.Group("/skills")
+		{
+			// Skills Hub management
+			skills.GET("/hubs", r.skillSearchHandler.ListHubs)
+			skills.POST("/hubs", r.skillSearchHandler.CreateHub)
+			skills.GET("/hubs/:hub_id", r.skillSearchHandler.GetHub)
+			skills.PUT("/hubs/:hub_id", r.skillSearchHandler.UpdateHub)
+			skills.DELETE("/hubs/:hub_id", r.skillSearchHandler.DeleteHub)
+			skills.GET("/hub/by-folder", r.skillSearchHandler.GetHubByFolder)
 
-				// Skill search config
-				skills.GET("/config", r.skillSearchHandler.GetConfig)
-				skills.POST("/config", r.skillSearchHandler.UpdateConfig)
+			// Skill search config
+			skills.GET("/config", r.skillSearchHandler.GetConfig)
+			skills.POST("/config", r.skillSearchHandler.UpdateConfig)
 
-				// Skill search and indexing
-				skills.POST("/search", r.skillSearchHandler.Search)
-				skills.POST("/index", r.skillSearchHandler.IndexSkills)
-				skills.DELETE("/index", r.skillSearchHandler.DeleteSkillIndex)
-				skills.POST("/reindex", r.skillSearchHandler.Reindex)
-			}
+			// Skill search and indexing
+			skills.POST("/search", r.skillSearchHandler.Search)
+			skills.POST("/index", r.skillSearchHandler.IndexSkills)
+			skills.DELETE("/index", r.skillSearchHandler.DeleteSkillIndex)
+			skills.POST("/reindex", r.skillSearchHandler.Reindex)
+		}
 
-			// File routes
-			file := v1.Group("/files")
+		chats := v1.Group("/chats")
+		{
+			chats.GET("", r.chatHandler.ListChats)
+		}
+
+		searches := v1.Group("/searches")
+		{
+			searches.GET("", r.searchHandler.ListSearches)
+		}
+
+		file := v1.Group("/files")
 			{
 				file.POST("", r.fileHandler.UploadFile)
 				file.GET("", r.fileHandler.ListFiles)
@@ -245,6 +253,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
 				provider.PUT("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.EnableOrDisableModel)
 				provider.POST("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.ChatToModel)
+			}
+
+			system := v1.Group("/system")
+			{
+				system.GET("/version", r.systemHandler.GetVersion)
 			}
 		}
 
@@ -311,7 +324,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Chat routes
 		chat := authorized.Group("/v1/dialog")
 		{
-			chat.GET("/list", r.chatHandler.ListChats)
 			chat.POST("/next", r.chatHandler.ListChatsNext)
 			chat.POST("/set", r.chatHandler.SetDialog)
 			chat.POST("/rm", r.chatHandler.RemoveChats)
@@ -330,12 +342,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		connector := authorized.Group("/v1/connector")
 		{
 			connector.GET("/list", r.connectorHandler.ListConnectors)
-		}
-
-		// Search routes
-		search := authorized.Group("/v1/search")
-		{
-			search.POST("/list", r.searchHandler.ListSearchApps)
 		}
 
 		// File routes

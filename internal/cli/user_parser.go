@@ -605,7 +605,7 @@ func (p *Parser) parseCreateIndex() (*Command, error) {
 	}
 	p.nextToken()
 
-	if p.curToken.Type != TokenNumber {
+	if p.curToken.Type != TokenInteger {
 		return nil, fmt.Errorf("expected vector size number, got %s", p.curToken.Value)
 	}
 	vectorSize, err := strconv.Atoi(p.curToken.Value)
@@ -1922,7 +1922,7 @@ func (p *Parser) parseSearchCommand() (*Command, error) {
 			if strings.ToLower(p.curToken.Value) == "n" {
 				p.nextToken()
 				var err error
-				if p.curToken.Type != TokenNumber {
+				if p.curToken.Type != TokenInteger {
 					return nil, fmt.Errorf("expect number")
 				}
 				cmd.Params["number"], err = p.parseNumber()
@@ -1936,7 +1936,7 @@ func (p *Parser) parseSearchCommand() (*Command, error) {
 			//if strings.ToLower(p.curToken.Value) == "t" {
 			//	p.nextToken()
 			//	var err error
-			//	if p.curToken.Type != TokenNumber {
+			//	if p.curToken.Type != TokenInteger {
 			//		return nil, fmt.Errorf("expect number")
 			//	}
 			//	cmd.Params["threshold"], err = p.parseFloat()

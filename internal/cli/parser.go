@@ -271,14 +271,14 @@ func (p *Parser) parseIdentifier() (string, error) {
 }
 
 func (p *Parser) parseNumber() (int, error) {
-	if p.curToken.Type != TokenNumber {
+	if p.curToken.Type != TokenInteger {
 		return 0, fmt.Errorf("expected number, got %s", p.curToken.Value)
 	}
 	return strconv.Atoi(p.curToken.Value)
 }
 
 func (p *Parser) parseFloat() (float64, error) {
-	if p.curToken.Type != TokenNumber {
+	if p.curToken.Type != TokenInteger {
 		return math.NaN(), fmt.Errorf("expected number, got %s", p.curToken.Value)
 	}
 	result, err := strconv.ParseFloat(p.curToken.Value, 64)
