@@ -73,7 +73,7 @@ func (c *RAGFlowClient) LoginUserInteractive(username, password string) error {
 	if password == "" {
 		fmt.Printf("password for %s: ", username)
 		var err error
-		password, err = readPassword()
+		password, err = ReadPassword()
 		if err != nil {
 			return fmt.Errorf("failed to read password: %w", err)
 		}
@@ -145,7 +145,7 @@ func (c *RAGFlowClient) LoginUser(cmd *Command) error {
 	if !ok {
 		// Get password from user input (hidden)
 		fmt.Printf("password for %s: ", email)
-		password, err = readPassword()
+		password, err = ReadPassword()
 		if err != nil {
 			return fmt.Errorf("failed to read password: %w", err)
 		}
@@ -374,9 +374,9 @@ func (c *RAGFlowClient) ShowModel(cmd *Command) (ResponseIf, error) {
 }
 
 // readPassword reads password from terminal without echoing
-func readPassword() (string, error) {
+func ReadPassword() (string, error) {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return readPasswordFallback()
+		return ReadPasswordFallback()
 	}
 
 	fmt.Print("Password: ")
@@ -391,7 +391,7 @@ func readPassword() (string, error) {
 }
 
 // readPasswordFallback reads password as plain text (fallback mode)
-func readPasswordFallback() (string, error) {
+func ReadPasswordFallback() (string, error) {
 	fmt.Print("Password (will be visible): ")
 	reader := bufio.NewReader(os.Stdin)
 	password, err := reader.ReadString('\n')

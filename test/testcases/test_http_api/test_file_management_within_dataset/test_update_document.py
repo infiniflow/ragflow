@@ -54,12 +54,12 @@ class TestDocumentsUpdated:
             (
                 0,
                 100,
-                """AttributeError("\'int\' object has no attribute \'encode\'")""",
+                """AttributeError(\'int\' object has no attribute \'encode\')""",
             ),
             (
                 None,
                 100,
-                """AttributeError("\'NoneType\' object has no attribute \'encode\'")""",
+                """AttributeError(\'NoneType\' object has no attribute \'encode\')""",
             ),
             (
                 "",
@@ -158,11 +158,11 @@ class TestDocumentsUpdated:
             ("knowledge_graph", 0, ""),
             ("email", 0, ""),
             ("tag", 0, ""),
-            ("", 102, "`chunk_method`  doesn't exist"),
+            ("", 102, "`chunk_method` (empty string) is not valid"),
             (
                 "other_chunk_method",
                 102,
-                "`chunk_method` other_chunk_method doesn't exist",
+                "Field: <chunk_method> - Message: <`chunk_method` other_chunk_method doesn't exist> - Value: <other_chunk_method>",
             ),
         ],
     )
@@ -298,6 +298,36 @@ class TestDocumentsUpdated:
         assert res["message"] == expected_message
 
 
+
+DEFAULT_PARSER_CONFIG_FOR_TEST = {
+    "layout_recognize": "DeepDOC",
+    "chunk_token_num": 512,
+    "delimiter": "\n",
+    "auto_keywords": 0,
+    "auto_questions": 0,
+    "html4excel": False,
+    "topn_tags": 3,
+    "raptor": {
+        "use_raptor": True,
+        "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
+        "max_token": 256,
+        "threshold": 0.1,
+        "max_cluster": 64,
+        "random_seed": 0,
+    },
+    "graphrag": {
+        "use_graphrag": True,
+        "entity_types": [
+            "organization",
+            "person",
+            "geo",
+            "event",
+            "category",
+        ],
+        "method": "light",
+    },
+}
+
 class TestUpdateDocumentParserConfig:
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -306,7 +336,7 @@ class TestUpdateDocumentParserConfig:
             ("naive", {}, 0, ""),
             (
                 "naive",
-                DEFAULT_PARSER_CONFIG,
+                DEFAULT_PARSER_CONFIG_FOR_TEST,
                 0,
                 "",
             ),
@@ -366,7 +396,7 @@ class TestUpdateDocumentParserConfig:
                 "AssertionError('html4excel should be True or False')",
                 marks=pytest.mark.skip(reason="issues/6098"),
             ),
-            ("naive", {"delimiter": ""}, 0, ""),
+            ("naive", {"delimiter": ""}, 102, "Field: <parser_config.delimiter> - Message: <String should have at least 1 character> - Value: <>"),
             ("naive", {"delimiter": "`##`"}, 0, ""),
             pytest.param(
                 "naive",
@@ -411,13 +441,8 @@ class TestUpdateDocumentParserConfig:
                 marks=pytest.mark.skip(reason="issues/6098"),
             ),
             ("naive", {"raptor": {"use_raptor": {
-                "use_raptor": True,
-                "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-                "max_token": 256,
-                "threshold": 0.1,
-                "max_cluster": 64,
-                "random_seed": 0,
-            },}}, 0, ""),
+                "a": "b"
+            },}}, 102, "Field: <parser_config.raptor.use_raptor> - Message: <Input should be a valid boolean> - Value: <{'a': 'b'}>"),
             ("naive", {"raptor": {"use_raptor": False}}, 0, ""),
             pytest.param(
                 "naive",
