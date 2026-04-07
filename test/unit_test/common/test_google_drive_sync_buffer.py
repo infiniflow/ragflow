@@ -31,47 +31,67 @@ from pathlib import Path
 from types import ModuleType
 from unittest.mock import patch
 
+import pytest
+
 import common
+
+# ---------------------------------------------------------------------------
+# Module-level stub setup.
+#
+# We snapshot sys.modules *before* injecting stubs so a module-scoped
+# autouse fixture can restore the original state after all tests in this
+# file have run, preventing leakage into other test modules.
+# ---------------------------------------------------------------------------
+_original_modules: dict[str, object] = {}
+
+repo_root = Path(__file__).resolve().parents[3]
+
+_injected_module_names: list[str] = []
+
+
+def _inject(name: str, mod: ModuleType) -> None:
+    """Register a stub module, keeping a backup of any pre-existing entry."""
+    _original_modules.setdefault(name, sys.modules.get(name, _SENTINEL))
+    sys.modules[name] = mod
+    _injected_module_names.append(name)
+
+
+_SENTINEL = object()
 
 # Bootstrap common.data_source without triggering __init__.py imports
 # (which pull in boto3, googleapiclient, etc.)
-repo_root = Path(__file__).resolve().parents[3]
 _ds_pkg = ModuleType("common.data_source")
 _ds_pkg.__path__ = [str(repo_root / "common" / "data_source")]
-sys.modules["common.data_source"] = _ds_pkg
+_inject("common.data_source", _ds_pkg)
 setattr(common, "data_source", _ds_pkg)
 
-# Stub out google_drive subpackage dependencies before importing file_retrieval
 _gd_pkg = ModuleType("common.data_source.google_drive")
 _gd_pkg.__path__ = [str(repo_root / "common" / "data_source" / "google_drive")]
-sys.modules["common.data_source.google_drive"] = _gd_pkg
+_inject("common.data_source.google_drive", _gd_pkg)
 
 _gu_pkg = ModuleType("common.data_source.google_util")
 _gu_pkg.__path__ = [str(repo_root / "common" / "data_source" / "google_util")]
-sys.modules["common.data_source.google_util"] = _gu_pkg
+_inject("common.data_source.google_util", _gu_pkg)
 
 # Stub heavy third-party modules that file_retrieval and its deps import
-_stub_modules = [
+for _mod_name in (
     "googleapiclient", "googleapiclient.discovery", "googleapiclient.errors",
     "google", "google.auth", "google.auth.exceptions",
     "google.oauth2", "google.oauth2.credentials", "google.oauth2.service_account",
-]
-for mod_name in _stub_modules:
-    if mod_name not in sys.modules:
-        stub = ModuleType(mod_name)
-        # Add common attributes that imports expect
-        stub.__dict__.setdefault("HttpError", type("HttpError", (Exception,), {}))
-        stub.__dict__.setdefault("Resource", type("Resource", (), {}))
-        stub.__dict__.setdefault("Credentials", type("Credentials", (), {}))
-        stub.__dict__.setdefault("RefreshError", type("RefreshError", (Exception,), {}))
-        stub.__dict__.setdefault("build", lambda *a, **kw: None)
-        stub.__dict__.setdefault("override", lambda f: f)
-        sys.modules[mod_name] = stub
+):
+    if _mod_name not in sys.modules:
+        _stub = ModuleType(_mod_name)
+        _stub.__dict__.setdefault("HttpError", type("HttpError", (Exception,), {}))
+        _stub.__dict__.setdefault("Resource", type("Resource", (), {}))
+        _stub.__dict__.setdefault("Credentials", type("Credentials", (), {}))
+        _stub.__dict__.setdefault("RefreshError", type("RefreshError", (Exception,), {}))
+        _stub.__dict__.setdefault("build", lambda *a, **kw: None)
+        _stub.__dict__.setdefault("override", lambda f: f)
+        _inject(_mod_name, _stub)
 
 cfg = importlib.import_module("common.data_source.config")
 ONE_DAY = cfg.ONE_DAY
 
-# Import models and util before file_retrieval (which depends on them)
 importlib.import_module("common.data_source.models")
 importlib.import_module("common.data_source.google_util.util")
 importlib.import_module("common.data_source.google_util.resource")
@@ -82,6 +102,32 @@ file_retrieval = importlib.import_module("common.data_source.google_drive.file_r
 generate_time_range_filter = file_retrieval.generate_time_range_filter
 
 
+# ---------------------------------------------------------------------------
+# Teardown: restore sys.modules after this test module finishes.
+# ---------------------------------------------------------------------------
+@pytest.fixture(autouse=True, scope="module")
+def _restore_sys_modules():
+    """Yield control to tests, then undo all sys.modules mutations."""
+    yield
+    for name in _injected_module_names:
+        original = _original_modules.get(name, _SENTINEL)
+        if original is _SENTINEL:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = original
+
+
+@pytest.fixture(autouse=True)
+def _restore_cfg():
+    """Reload cfg after each config test so env mutations don't leak."""
+    yield
+    importlib.reload(cfg)
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+@pytest.mark.p2
 class TestGoogleDriveSyncTimeBufferConfig:
     """Tests for the GOOGLE_DRIVE_SYNC_TIME_BUFFER_SECONDS config constant."""
 
@@ -103,6 +149,7 @@ class TestGoogleDriveSyncTimeBufferConfig:
             assert cfg.GOOGLE_DRIVE_SYNC_TIME_BUFFER_SECONDS == 0
 
 
+@pytest.mark.p2
 class TestAdjustStartForQuery:
     """Tests for the _adjust_start_for_query logic."""
 
@@ -144,6 +191,7 @@ class TestAdjustStartForQuery:
         assert self._adjust(3600.0, 86400) == 0.0
 
 
+@pytest.mark.p2
 class TestGenerateTimeRangeFilter:
     """Tests for generate_time_range_filter with createdTime support."""
 
