@@ -17,7 +17,7 @@ from google.oauth2.service_account import Credentials as ServiceAccountCredentia
 from googleapiclient.errors import HttpError  # type: ignore  # type: ignore
 from typing_extensions import override
 
-from common.data_source.config import GOOGLE_DRIVE_CONNECTOR_SIZE_THRESHOLD, INDEX_BATCH_SIZE, SLIM_BATCH_SIZE, DocumentSource
+from common.data_source.config import GOOGLE_DRIVE_CONNECTOR_SIZE_THRESHOLD, GOOGLE_DRIVE_SYNC_TIME_BUFFER_SECONDS, INDEX_BATCH_SIZE, SLIM_BATCH_SIZE, DocumentSource
 from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError, CredentialExpiredError, InsufficientPermissionsError
 from common.data_source.google_drive.doc_conversion import PermissionSyncContext, build_slim_document, convert_drive_item_to_document, onyx_document_id_from_drive_file
 from common.data_source.google_drive.file_retrieval import (
@@ -120,6 +120,7 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
         shared_folder_urls: str | None = None,
         specific_user_emails: str | None = None,
         batch_size: int = INDEX_BATCH_SIZE,
+        time_buffer_seconds: int = GOOGLE_DRIVE_SYNC_TIME_BUFFER_SECONDS,
     ) -> None:
         if not any(
             (
@@ -165,11 +166,21 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
         self.allow_images = False
 
         self.size_threshold = GOOGLE_DRIVE_CONNECTOR_SIZE_THRESHOLD
+        self.time_buffer_seconds = max(0, time_buffer_seconds)
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def set_allow_images(self, value: bool) -> None:
         self.allow_images = value
+
+    def _adjust_start_for_query(
+        self, start: SecondsSinceUnixEpoch | None
+    ) -> SecondsSinceUnixEpoch | None:
+        if not start or start <= 0:
+            return start
+        if self.time_buffer_seconds <= 0:
+            return start
+        return max(0.0, start - self.time_buffer_seconds)
 
     @property
     def primary_admin_email(self) -> str:
@@ -750,11 +761,16 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
         if self._creds is None or self._primary_admin_email is None:
             raise RuntimeError("Credentials missing, should not call this method before calling load_credentials")
 
-        self.logger.info(f"Loading from checkpoint with completion stage: {checkpoint.completion_stage},num retrieved ids: {len(checkpoint.all_retrieved_file_ids)}")
+        adjusted_start = self._adjust_start_for_query(start)
+        self.logger.info(
+            f"Loading from checkpoint with completion stage: {checkpoint.completion_stage},"
+            f"num retrieved ids: {len(checkpoint.all_retrieved_file_ids)}"
+            f"{f', start buffered back {self.time_buffer_seconds}s' if adjusted_start != start else ''}"
+        )
         checkpoint = copy.deepcopy(checkpoint)
         self._retrieved_folder_and_drive_ids = checkpoint.retrieved_folder_and_drive_ids
         try:
-            yield from self._extract_docs_from_google_drive(checkpoint, start, end, include_permissions)
+            yield from self._extract_docs_from_google_drive(checkpoint, adjusted_start, end, include_permissions)
         except Exception as e:
             if MISSING_SCOPES_ERROR_STR in str(e):
                 raise PermissionError() from e
