@@ -53,10 +53,10 @@ func (c *RAGFlowClient) LoginUserInteractive(username, password string) error {
 		return fmt.Errorf("server is down")
 	}
 
-	// Check response - admin returns JSON with message "PONG", user returns plain "pong"
+	// Check response - admin returns JSON with message "pong", user returns plain "pong"
 	resJSON, err := resp.JSON()
 	if err == nil {
-		// Admin mode returns {"code":0,"message":"PONG"}
+		// Admin mode returns {"code":0,"message":"pong"}
 		if msg, ok := resJSON["message"].(string); !ok || msg != "pong" {
 			fmt.Println("Server is down")
 			return fmt.Errorf("server is down")
@@ -120,10 +120,10 @@ func (c *RAGFlowClient) LoginUser(cmd *Command) error {
 		return fmt.Errorf("server is down")
 	}
 
-	// Check response - admin returns JSON with message "PONG", user returns plain "pong"
+	// Check response - admin returns JSON with message "pong", user returns plain "pong"
 	resJSON, err := resp.JSON()
 	if err == nil {
-		// Admin mode returns {"code":0,"message":"PONG"}
+		// Admin mode returns {"code":0,"message":"pong"}
 		if msg, ok := resJSON["message"].(string); !ok || msg != "pong" {
 			fmt.Println("Server is down")
 			return fmt.Errorf("server is down")
