@@ -1859,10 +1859,23 @@ func (p *Parser) parseInsertMetadataFromFile() (*Command, error) {
 
 func (p *Parser) parseSearchCommand() (*Command, error) {
 	p.nextToken() // consume SEARCH
-	question, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
+
+	var err error
+	var question string
+	if p.curToken.Type == TokenQuotedString {
+		question, err = p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+	} else if p.curToken.Type == TokenIdentifier {
+		question, err = p.parseIdentifier()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, fmt.Errorf("expected quoted string or identifier")
 	}
+
 	p.nextToken()
 
 	if p.curToken.Type == TokenOn {
@@ -1920,31 +1933,42 @@ func (p *Parser) parseSearchCommand() (*Command, error) {
 				continue
 			}
 
-			if strings.ToLower(p.curToken.Value) == "t" {
-				p.nextToken()
-				var err error
-				if p.curToken.Type != TokenNumber {
-					return nil, fmt.Errorf("expect number")
-				}
-				cmd.Params["threshold"], err = p.parseFloat()
-				if err != nil {
-					return nil, err
-				}
-				p.nextToken()
-				continue
-			}
+			//if strings.ToLower(p.curToken.Value) == "t" {
+			//	p.nextToken()
+			//	var err error
+			//	if p.curToken.Type != TokenNumber {
+			//		return nil, fmt.Errorf("expect number")
+			//	}
+			//	cmd.Params["threshold"], err = p.parseFloat()
+			//	if err != nil {
+			//		return nil, err
+			//	}
+			//	p.nextToken()
+			//	continue
+			//}
 
 			return nil, fmt.Errorf("unknow parameter: %s", p.curToken.Value)
 		} else if p.curToken.Type == TokenIdentifier {
 			if cmd.Params["path"] == nil {
 				cmd.Params["path"] = p.curToken.Value
 			} else {
-				cmd.Params["path"] = fmt.Sprintf("%s %s", cmd.Params["path"], p.curToken.Value)
+				cmd.Params["path"] = fmt.Sprintf("%s%s", cmd.Params["path"], p.curToken.Value)
 			}
 			p.nextToken() // skip path
 			continue
+		} else if p.curToken.Type == TokenSlash {
+			if cmd.Params["path"] == nil {
+				cmd.Params["path"] = "/"
+			} else {
+				cmd.Params["path"] = fmt.Sprintf("%s/", cmd.Params["path"])
+			}
+			p.nextToken() // skip slash
+			if p.curToken.Type == TokenIdentifier {
+				cmd.Params["path"] = fmt.Sprintf("%s%s", cmd.Params["path"], p.curToken.Value)
+				p.nextToken()
+			}
+			continue
 		}
-		return nil, fmt.Errorf("syntax error")
 	}
 	return cmd, nil
 }

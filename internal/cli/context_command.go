@@ -114,15 +114,15 @@ func (c *RAGFlowClient) ContextSearch(cmd *Command) (ResponseIf, error) {
 		}
 	}
 
-	threshold := 0.0
-	if cmd.Params["threshold"] != nil {
-		threshold, ok = cmd.Params["threshold"].(float64)
-		if !ok {
-			return nil, fmt.Errorf("fail to convert 'threshold' to float64")
-		}
-	}
+	//threshold := 0.0
+	//if cmd.Params["threshold"] != nil {
+	//	threshold, ok = cmd.Params["threshold"].(float64)
+	//	if !ok {
+	//		return nil, fmt.Errorf("fail to convert 'threshold' to float64")
+	//	}
+	//}
 
-	fmt.Printf("search query: %s, path: %s, threshold: %f, number: %d\n", query, path, threshold, number)
+	fmt.Printf("search query: %s, path: %s, number: %d\n", query, path, number)
 
 	// Convert to response
 	var response ContextSearchResponse
