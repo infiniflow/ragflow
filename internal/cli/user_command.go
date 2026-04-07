@@ -1346,8 +1346,8 @@ func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
 	}
 
 	// Convert to response
-	var response CEListResponse
-	response.outputFormat = c.OutputFormat
+	var response ContextListResponse
+	response.OutputFormat = c.OutputFormat
 	response.Code = 0
 	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
 
@@ -1385,8 +1385,8 @@ func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
 	}
 
 	// Convert to response
-	var response CESearchResponse
-	response.outputFormat = c.OutputFormat
+	var response ContextSearchResponse
+	response.OutputFormat = c.OutputFormat
 	response.Code = 0
 	response.Total = result.Total
 	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
