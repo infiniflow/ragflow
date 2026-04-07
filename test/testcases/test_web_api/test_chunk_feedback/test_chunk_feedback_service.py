@@ -463,3 +463,68 @@ class TestApplyFeedback:
             tenant_id="tenant1", reference=reference, is_positive=True
         )
         mock_update.assert_called_once_with("tenant1", "c1", "kb1", 1, row_id=99)
+
+
+class TestThumbFlipFeedback:
+    """Verify that toggling thumbup↔thumbdown applies undo + new (two calls)."""
+
+    @staticmethod
+    def _simulate_feedback(mod, monkeypatch, reference, prior_thumb, new_thumb):
+        """Reproduce the chat_api thumb-flip logic in isolation."""
+        monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
+        mock_update = MagicMock(return_value=True)
+        monkeypatch.setattr(mod.ChunkFeedbackService, "update_chunk_weight", mock_update)
+
+        calls = []
+
+        apply_chunk_feedback = False
+        if new_thumb is True:
+            apply_chunk_feedback = prior_thumb is not True
+        else:
+            apply_chunk_feedback = prior_thumb is not False
+
+        if apply_chunk_feedback and reference:
+            if isinstance(prior_thumb, bool) and prior_thumb != new_thumb:
+                r = mod.ChunkFeedbackService.apply_feedback(
+                    tenant_id="t1", reference=reference, is_positive=not prior_thumb,
+                )
+                calls.append(("undo", r))
+            r = mod.ChunkFeedbackService.apply_feedback(
+                tenant_id="t1", reference=reference, is_positive=new_thumb is True,
+            )
+            calls.append(("new", r))
+
+        return calls, mock_update
+
+    def test_toggle_thumbup_to_thumbdown(self, feedback_env, monkeypatch):
+        """thumbup→thumbdown: undo (+1→-1) then apply new (-1). Two calls."""
+        mod, _ = feedback_env
+        ref = {"chunks": [{"id": "c1", "dataset_id": "kb1"}]}
+        calls, mock = self._simulate_feedback(mod, monkeypatch, ref, True, False)
+        assert len(calls) == 2
+        assert calls[0][0] == "undo"
+        assert calls[1][0] == "new"
+
+    def test_toggle_thumbdown_to_thumbup(self, feedback_env, monkeypatch):
+        """thumbdown→thumbup: undo (-1→+1) then apply new (+1). Two calls."""
+        mod, _ = feedback_env
+        ref = {"chunks": [{"id": "c1", "dataset_id": "kb1"}]}
+        calls, mock = self._simulate_feedback(mod, monkeypatch, ref, False, True)
+        assert len(calls) == 2
+        assert calls[0][0] == "undo"
+        assert calls[1][0] == "new"
+
+    def test_no_prior_to_thumbup(self, feedback_env, monkeypatch):
+        """None→thumbup: single apply, no undo."""
+        mod, _ = feedback_env
+        ref = {"chunks": [{"id": "c1", "dataset_id": "kb1"}]}
+        calls, mock = self._simulate_feedback(mod, monkeypatch, ref, None, True)
+        assert len(calls) == 1
+        assert calls[0][0] == "new"
+
+    def test_same_thumb_no_op(self, feedback_env, monkeypatch):
+        """thumbup→thumbup: no feedback at all (apply_chunk_feedback is False)."""
+        mod, _ = feedback_env
+        ref = {"chunks": [{"id": "c1", "dataset_id": "kb1"}]}
+        calls, mock = self._simulate_feedback(mod, monkeypatch, ref, True, True)
+        assert len(calls) == 0

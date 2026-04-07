@@ -785,6 +785,7 @@ async def update_message_feedback(chat_id, session_id, msg_id):
         conv_dict = conv.to_dict()
         message_index = None
         apply_chunk_feedback = False
+        prior_thumb = None
         for i, msg in enumerate(conv_dict["message"]):
             if msg_id == msg.get("id", "") and msg.get("role", "") == "assistant":
                 prior_thumb = msg.get("thumbup")
@@ -806,6 +807,12 @@ async def update_message_feedback(chat_id, session_id, msg_id):
                 if 0 <= ref_index < len(conv_dict.get("reference", [])):
                     reference = conv_dict["reference"][ref_index]
                     if reference:
+                        if isinstance(prior_thumb, bool) and prior_thumb != thumb_raw:
+                            ChunkFeedbackService.apply_feedback(
+                                tenant_id=current_user.id,
+                                reference=reference,
+                                is_positive=not prior_thumb,
+                            )
                         feedback_result = ChunkFeedbackService.apply_feedback(
                             tenant_id=current_user.id,
                             reference=reference,

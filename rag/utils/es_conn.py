@@ -330,7 +330,9 @@ class ESConnection(ESConnectionBase):
             chunk_id = condition["id"]
             for i in range(ATTEMPT_TIME):
                 doc_part = copy.deepcopy(doc)
-                remove_field = doc_part.pop("remove", None) if isinstance(doc_part.get("remove"), str) else None
+                remove_value = doc_part.pop("remove", None)
+                remove_field = remove_value if isinstance(remove_value, str) else None
+                remove_dict = remove_value if isinstance(remove_value, dict) else None
                 for k in doc_part.keys():
                     if "feas" != k.split("_")[-1]:
                         continue
@@ -346,9 +348,21 @@ class ESConnection(ESConnectionBase):
                             id=chunk_id,
                             script=f"ctx._source.remove('{remove_field}');",
                         )
+                    if remove_dict is not None:
+                        scripts = []
+                        params = {}
+                        for kk, vv in remove_dict.items():
+                            scripts.append(f"int i=ctx._source.{kk}.indexOf(params.p_{kk});ctx._source.{kk}.remove(i);")
+                            params[f"p_{kk}"] = vv
+                        if scripts:
+                            self.es.update(
+                                index=index_name,
+                                id=chunk_id,
+                                script={"source": "".join(scripts), "params": params},
+                            )
                     if doc_part:
                         self.es.update(index=index_name, id=chunk_id, doc=doc_part)
-                    if remove_field is not None or doc_part:
+                    if remove_field is not None or remove_dict is not None or doc_part:
                         return True
                 except Exception as e:
                     self.logger.exception(
@@ -459,6 +473,8 @@ class ESConnection(ESConnectionBase):
                     chunk_id,
                     e,
                 )
+                if re.search(r"(timeout|connection)", str(e).lower()):
+                    continue
                 break
         return False
 
