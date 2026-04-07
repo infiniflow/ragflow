@@ -240,7 +240,7 @@ async def create():
 @manager.route("/list", methods=["POST"])  # noqa: F821
 @login_required
 async def list_docs():
-    kb_id = request.args.get("kb_id")
+    kb_id = request.args.get("id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
     tenants = UserTenantService.query(user_id=current_user.id)
