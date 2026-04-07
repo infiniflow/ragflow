@@ -77,9 +77,9 @@ def _apply_model_family_policies(
         sanitized_kwargs["extra_body"] = {"enable_thinking": False}
 
     if backend == "base":
-        # GPT-5 and GPT-5.1 endpoints in this path have inconsistent generation-param support.
-        if "gpt-5" in model_name_lower:
-            sanitized_gen_conf = {}
+        # The "base" backend is used by custom/compatible endpoints (VLLM, LM-Studio, etc.).
+        # We cannot assume model capabilities from the name alone, so no model-family-specific
+        # policies are applied here. Standard sanitization in _clean_conf handles the rest.
         return sanitized_gen_conf, sanitized_kwargs
 
     if backend == "litellm":
@@ -151,14 +151,11 @@ class Base(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
-        model_name_lower = (self.model_name or "").lower()
         gen_conf, _ = _apply_model_family_policies(
             self.model_name,
             backend="base",
             gen_conf=gen_conf,
         )
-        if "gpt-5" in model_name_lower:
-            return gen_conf
 
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
