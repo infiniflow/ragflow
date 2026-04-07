@@ -31,6 +31,7 @@ from api.utils.api_utils import (
 )
 from common.versions import get_ragflow_version
 from common.time_utils import current_timestamp, datetime_format
+from common.log_utils import get_log_levels, set_log_level
 from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
@@ -375,3 +376,56 @@ def get_config():
         "registerEnabled": settings.REGISTER_ENABLED,
         "disablePasswordLogin": settings.DISABLE_PASSWORD_LOGIN,
     })
+
+
+@manager.route("/log_levels", methods=["GET"])  # noqa: F821
+@login_required
+async def get_logger_levels():
+    """
+    Get current log levels for all packages.
+    ---
+    tags:
+        - System
+    responses:
+        200:
+            description: Return current log levels
+    """
+    return get_json_result(data=get_log_levels())
+
+
+@manager.route("/log_levels", methods=["PUT"])  # noqa: F821
+@login_required
+async def set_logger_level():
+    """
+    Set log level for a package.
+    ---
+    tags:
+        - System
+    parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            properties:
+                pkg_name:
+                    type: string
+                    description: Package name (e.g., "rag.utils.es_conn")
+                level:
+                    type: string
+                    description: Log level (DEBUG, INFO, WARNING, ERROR)
+    responses:
+        200:
+            description: Log level updated successfully
+    """
+    from quart import request
+    data = await request.get_json()
+    if not data or "pkg_name" not in data or "level" not in data:
+        return get_data_error_result(message="pkg_name and level are required")
+    pkg_name = data["pkg_name"]
+    level = data["level"]
+    success = set_log_level(pkg_name, level)
+    if success:
+        return get_json_result(data={"pkg_name": pkg_name, "level": level})
+    else:
+        return get_data_error_result(message=f"Invalid log level: {level}")

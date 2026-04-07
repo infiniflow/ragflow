@@ -17,22 +17,19 @@
 package cli
 
 import (
-	"bufio"
-	"context"
-	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
-	"strings"
-	"syscall"
-	"time"
-	"unsafe"
-
 	ce "ragflow/internal/cli/contextengine"
 )
 
 // PasswordPromptFunc is a function type for password input
 type PasswordPromptFunc func(prompt string) (string, error)
+
+// CurrentModel holds the current model configuration
+type CurrentModel struct {
+	Provider string
+	Instance string
+	Model    string
+}
 
 // RAGFlowClient handles API interactions with the RAGFlow server
 type RAGFlowClient struct {
@@ -41,6 +38,7 @@ type RAGFlowClient struct {
 	PasswordPrompt PasswordPromptFunc // Function for password input
 	OutputFormat   OutputFormat       // Output format: table, plain, json
 	ContextEngine  *ce.Engine         // Context Engine for virtual filesystem
+	CurrentModel   *CurrentModel      // Current model configuration
 }
 
 // NewRAGFlowClient creates a new RAGFlow client
@@ -103,264 +101,6 @@ func (a *httpClientAdapter) Request(method, path string, useAPIBase bool, authKi
 	}, nil
 }
 
-// LoginUserInteractive performs interactive login with username and password
-func (c *RAGFlowClient) LoginUserInteractive(username, password string) error {
-	// First, ping the server to check if it's available
-	// For admin mode, use /admin/ping with useAPIBase=true
-	// For user mode, use /system/ping with useAPIBase=false
-	var pingPath string
-	var useAPIBase bool
-	if c.ServerType == "admin" {
-		pingPath = "/admin/ping"
-		useAPIBase = true
-	} else {
-		pingPath = "/system/ping"
-		useAPIBase = false
-	}
-
-	resp, err := c.HTTPClient.Request("GET", pingPath, useAPIBase, "web", nil, nil)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		fmt.Println("Can't access server for login (connection failed)")
-		return err
-	}
-
-	if resp.StatusCode != 200 {
-		fmt.Println("Server is down")
-		return fmt.Errorf("server is down")
-	}
-
-	// Check response - admin returns JSON with message "PONG", user returns plain "pong"
-	resJSON, err := resp.JSON()
-	if err == nil {
-		// Admin mode returns {"code":0,"message":"PONG"}
-		if msg, ok := resJSON["message"].(string); !ok || msg != "pong" {
-			fmt.Println("Server is down")
-			return fmt.Errorf("server is down")
-		}
-	} else {
-		// User mode returns plain "pong"
-		if string(resp.Body) != "pong" {
-			fmt.Println("Server is down")
-			return fmt.Errorf("server is down")
-		}
-	}
-
-	// If password is not provided, prompt for it
-	if password == "" {
-		fmt.Printf("password for %s: ", username)
-		var err error
-		password, err = readPassword()
-		if err != nil {
-			return fmt.Errorf("failed to read password: %w", err)
-		}
-		password = strings.TrimSpace(password)
-	}
-
-	// Login
-	token, err := c.loginUser(username, password)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		fmt.Println("Can't access server for login (connection failed)")
-		return err
-	}
-
-	c.HTTPClient.LoginToken = token
-	fmt.Printf("Login user %s successfully\n", username)
-	return nil
-}
-
-// LoginUser performs user login
-func (c *RAGFlowClient) LoginUser(cmd *Command) error {
-	// First, ping the server to check if it's available
-	// For admin mode, use /admin/ping with useAPIBase=true
-	// For user mode, use /system/ping with useAPIBase=false
-	var pingPath string
-	var useAPIBase bool
-	if c.ServerType == "admin" {
-		pingPath = "/admin/ping"
-		useAPIBase = true
-	} else {
-		pingPath = "/system/ping"
-		useAPIBase = false
-	}
-
-	resp, err := c.HTTPClient.Request("GET", pingPath, useAPIBase, "web", nil, nil)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		fmt.Println("Can't access server for login (connection failed)")
-		return err
-	}
-
-	if resp.StatusCode != 200 {
-		fmt.Println("Server is down")
-		return fmt.Errorf("server is down")
-	}
-
-	// Check response - admin returns JSON with message "PONG", user returns plain "pong"
-	resJSON, err := resp.JSON()
-	if err == nil {
-		// Admin mode returns {"code":0,"message":"PONG"}
-		if msg, ok := resJSON["message"].(string); !ok || msg != "pong" {
-			fmt.Println("Server is down")
-			return fmt.Errorf("server is down")
-		}
-	} else {
-		// User mode returns plain "pong"
-		if string(resp.Body) != "pong" {
-			fmt.Println("Server is down")
-			return fmt.Errorf("server is down")
-		}
-	}
-
-	email, ok := cmd.Params["email"].(string)
-	if !ok {
-		return fmt.Errorf("email not provided")
-	}
-
-	password, ok := cmd.Params["password"].(string)
-	if !ok {
-		// Get password from user input (hidden)
-		fmt.Printf("password for %s: ", email)
-		password, err = readPassword()
-		if err != nil {
-			return fmt.Errorf("failed to read password: %w", err)
-		}
-		password = strings.TrimSpace(password)
-	}
-
-	// Login
-	token, err := c.loginUser(email, password)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		fmt.Println("Can't access server for login (connection failed)")
-		return err
-	}
-
-	c.HTTPClient.LoginToken = token
-	fmt.Printf("Login user %s successfully\n", email)
-	return nil
-}
-
-// loginUser performs the actual login request
-func (c *RAGFlowClient) loginUser(email, password string) (string, error) {
-	// Encrypt password using scrypt (same as Python implementation)
-	encryptedPassword, err := EncryptPassword(password)
-	if err != nil {
-		return "", fmt.Errorf("failed to encrypt password: %w", err)
-	}
-
-	payload := map[string]interface{}{
-		"email":    email,
-		"password": encryptedPassword,
-	}
-
-	var path string
-	if c.ServerType == "admin" {
-		path = "/admin/login"
-	} else {
-		path = "/user/login"
-	}
-
-	resp, err := c.HTTPClient.Request("POST", path, c.ServerType == "admin", "", nil, payload)
-	if err != nil {
-		return "", err
-	}
-
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return "", fmt.Errorf("login failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return "", fmt.Errorf("login failed: %s", result.Message)
-	}
-
-	token := resp.Headers.Get("Authorization")
-	if token == "" {
-		return "", fmt.Errorf("login failed: missing Authorization header")
-	}
-
-	return token, nil
-}
-
-func (c *RAGFlowClient) Logout() (ResponseIf, error) {
-	if c.HTTPClient.LoginToken == "" {
-		return nil, fmt.Errorf("not logged in")
-	}
-
-	var path string
-	if c.ServerType == "admin" {
-		path = "/admin/logout"
-	} else {
-		path = "/user/logout"
-	}
-
-	resp, err := c.HTTPClient.Request("GET", path, c.ServerType == "admin", "web", nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("login failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("login failed: %s", result.Message)
-	}
-
-	return &result, nil
-}
-
-// readPassword reads password from terminal without echoing
-func readPassword() (string, error) {
-	// Check if stdin is a terminal by trying to get terminal size
-	if isTerminal() {
-		// Use stty to disable echo
-		cmd := exec.Command("stty", "-echo")
-		cmd.Stdin = os.Stdin
-		if err := cmd.Run(); err != nil {
-			// Fallback: read normally
-			return readPasswordFallback()
-		}
-		defer func() {
-			// Re-enable echo
-			cmd := exec.Command("stty", "echo")
-			cmd.Stdin = os.Stdin
-			cmd.Run()
-		}()
-
-		reader := bufio.NewReader(os.Stdin)
-		password, err := reader.ReadString('\n')
-		fmt.Println() // New line after password input
-		if err != nil {
-			return "", err
-		}
-		return strings.TrimSpace(password), nil
-	}
-
-	// Fallback for non-terminal input (e.g., piped input)
-	return readPasswordFallback()
-}
-
-// isTerminal checks if stdin is a terminal
-func isTerminal() bool {
-	var termios syscall.Termios
-	_, _, err := syscall.Syscall6(syscall.SYS_IOCTL, os.Stdin.Fd(), syscall.TCGETS, uintptr(unsafe.Pointer(&termios)), 0, 0, 0)
-	return err == 0
-}
-
-// readPasswordFallback reads password as plain text (fallback mode)
-func readPasswordFallback() (string, error) {
-	reader := bufio.NewReader(os.Stdin)
-	password, err := reader.ReadString('\n')
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(password), nil
-}
-
 // ExecuteCommand executes a parsed command
 // Returns benchmark result map for commands that support it (e.g., ping_server with iterations > 1)
 func (c *RAGFlowClient) ExecuteCommand(cmd *Command) (ResponseIf, error) {
@@ -420,6 +160,16 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListAdminTokens(cmd)
 	case "drop_token":
 		return c.DropAdminToken(cmd)
+	case "list_available_providers":
+		return c.ListAvailableProviders(cmd)
+	case "show_provider":
+		return c.ShowProvider(cmd)
+	case "list_provider_models":
+		return c.ListModels(cmd)
+	case "list_instance_models":
+		return c.ListInstanceModels(cmd)
+	case "show_model":
+		return c.ShowModel(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
@@ -463,11 +213,55 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CreateDocMetaIndex(cmd)
 	case "drop_doc_meta_index":
 		return c.DropDocMetaIndex(cmd)
+	case "list_available_providers":
+		return c.ListAvailableProviders(cmd)
+	case "show_provider":
+		return c.ShowProvider(cmd)
+	case "list_provider_models":
+		return c.ListModels(cmd)
+	case "list_instance_models":
+		return c.ListInstanceModels(cmd)
+	case "show_model":
+		return c.ShowModel(cmd)
+	// Provider commands
+	case "add_provider":
+		return c.AddProvider(cmd)
+	case "list_providers":
+		return c.ListProviders(cmd)
+	case "delete_provider":
+		return c.DeleteProvider(cmd)
+	// Provider instance commands
+	case "create_provider_instance":
+		return c.CreateProviderInstance(cmd)
+	case "list_provider_instances":
+		return c.ListProviderInstances(cmd)
+	case "show_provider_instance":
+		return c.ShowProviderInstance(cmd)
+	case "alter_provider_instance":
+		return c.AlterProviderInstance(cmd)
+	case "drop_provider_instance":
+		return c.DropProviderInstance(cmd)
+	case "enable_model":
+		return c.EnableOrDisableModel(cmd, "enable")
+	case "disable_model":
+		return c.EnableOrDisableModel(cmd, "disable")
+	case "chat_to_model":
+		return c.ChatToModel(cmd)
+	case "think_chat_to_model":
+		return c.ChatToModel(cmd)
+	case "use_model":
+		return c.UseModel(cmd)
+	case "show_current_model":
+		return c.ShowCurrentModel(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)
 	case "ce_search":
 		return c.CESearch(cmd)
+	case "insert_dataset_from_file":
+		return c.InsertDatasetFromFile(cmd)
+	case "insert_metadata_from_file":
+		return c.InsertMetadataFromFile(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
@@ -481,367 +275,4 @@ func (c *RAGFlowClient) ShowCurrentUser(cmd *Command) (map[string]interface{}, e
 	// Currently there is no /admin/user/info or /user/info API available
 	// The /admin/auth API only verifies authorization, does not return user info
 	return nil, fmt.Errorf("command 'SHOW CURRENT USER' is not yet implemented")
-}
-
-type ResponseIf interface {
-	Type() string
-	PrintOut()
-	TimeCost() float64
-	SetOutputFormat(format OutputFormat)
-}
-
-type CommonResponse struct {
-	Code         int                      `json:"code"`
-	Data         []map[string]interface{} `json:"data"`
-	Message      string                   `json:"message"`
-	Duration     float64
-	outputFormat OutputFormat
-}
-
-func (r *CommonResponse) Type() string {
-	return "common"
-}
-
-func (r *CommonResponse) TimeCost() float64 {
-	return r.Duration
-}
-
-func (r *CommonResponse) SetOutputFormat(format OutputFormat) {
-	r.outputFormat = format
-}
-
-func (r *CommonResponse) PrintOut() {
-	if r.Code == 0 {
-		PrintTableSimpleByFormat(r.Data, r.outputFormat)
-	} else {
-		fmt.Println("ERROR")
-		fmt.Printf("%d, %s\n", r.Code, r.Message)
-	}
-}
-
-type CommonDataResponse struct {
-	Code         int                    `json:"code"`
-	Data         map[string]interface{} `json:"data"`
-	Message      string                 `json:"message"`
-	Duration     float64
-	outputFormat OutputFormat
-}
-
-func (r *CommonDataResponse) Type() string {
-	return "show"
-}
-
-func (r *CommonDataResponse) TimeCost() float64 {
-	return r.Duration
-}
-
-func (r *CommonDataResponse) SetOutputFormat(format OutputFormat) {
-	r.outputFormat = format
-}
-
-func (r *CommonDataResponse) PrintOut() {
-	if r.Code == 0 {
-		table := make([]map[string]interface{}, 0)
-		table = append(table, r.Data)
-		PrintTableSimpleByFormat(table, r.outputFormat)
-	} else {
-		fmt.Println("ERROR")
-		fmt.Printf("%d, %s\n", r.Code, r.Message)
-	}
-}
-
-type SimpleResponse struct {
-	Code         int    `json:"code"`
-	Message      string `json:"message"`
-	Duration     float64
-	outputFormat OutputFormat
-}
-
-func (r *SimpleResponse) Type() string {
-	return "simple"
-}
-
-func (r *SimpleResponse) TimeCost() float64 {
-	return r.Duration
-}
-
-func (r *SimpleResponse) SetOutputFormat(format OutputFormat) {
-	r.outputFormat = format
-}
-
-func (r *SimpleResponse) PrintOut() {
-	if r.Code == 0 {
-		fmt.Println("SUCCESS")
-	} else {
-		fmt.Println("ERROR")
-		fmt.Printf("%d, %s\n", r.Code, r.Message)
-	}
-}
-
-type RegisterResponse struct {
-	Code         int    `json:"code"`
-	Message      string `json:"message"`
-	Duration     float64
-	outputFormat OutputFormat
-}
-
-func (r *RegisterResponse) Type() string {
-	return "register"
-}
-
-func (r *RegisterResponse) TimeCost() float64 {
-	return r.Duration
-}
-
-func (r *RegisterResponse) SetOutputFormat(format OutputFormat) {
-	r.outputFormat = format
-}
-
-func (r *RegisterResponse) PrintOut() {
-	if r.Code == 0 {
-		fmt.Println("Register successfully")
-	} else {
-		fmt.Println("ERROR")
-		fmt.Printf("%d, %s\n", r.Code, r.Message)
-	}
-}
-
-type BenchmarkResponse struct {
-	Code         int     `json:"code"`
-	Duration     float64 `json:"duration"`
-	SuccessCount int     `json:"success_count"`
-	FailureCount int     `json:"failure_count"`
-	Concurrency  int
-	outputFormat OutputFormat
-}
-
-func (r *BenchmarkResponse) Type() string {
-	return "benchmark"
-}
-
-func (r *BenchmarkResponse) SetOutputFormat(format OutputFormat) {
-	r.outputFormat = format
-}
-
-func (r *BenchmarkResponse) PrintOut() {
-	if r.Code != 0 {
-		fmt.Printf("ERROR, Code: %d\n", r.Code)
-		return
-	}
-
-	iterations := r.SuccessCount + r.FailureCount
-	if r.Concurrency == 1 {
-		if iterations == 1 {
-			fmt.Printf("Latency: %fs\n", r.Duration)
-		} else {
-			fmt.Printf("Latency: %fs, QPS: %.1f, SUCCESS: %d, FAILURE: %d\n", r.Duration, float64(iterations)/r.Duration, r.SuccessCount, r.FailureCount)
-		}
-	} else {
-		fmt.Printf("Concurrency: %d, Latency: %fs, QPS: %.1f, SUCCESS: %d, FAILURE: %d\n", r.Concurrency, r.Duration, float64(iterations)/r.Duration, r.SuccessCount, r.FailureCount)
-	}
-}
-
-func (r *BenchmarkResponse) TimeCost() float64 {
-	return r.Duration
-}
-
-type KeyValueResponse struct {
-	Code         int    `json:"code"`
-	Key          string `json:"key"`
-	Value        string `json:"data"`
-	Duration     float64
-	outputFormat OutputFormat
-}
-
-func (r *KeyValueResponse) Type() string {
-	return "data"
-}
-
-func (r *KeyValueResponse) TimeCost() float64 {
-	return r.Duration
-}
-
-func (r *KeyValueResponse) SetOutputFormat(format OutputFormat) {
-	r.outputFormat = format
-}
-
-func (r *KeyValueResponse) PrintOut() {
-	if r.Code == 0 {
-		table := make([]map[string]interface{}, 0)
-		// insert r.key and r.value into table
-		table = append(table, map[string]interface{}{
-			"key":   r.Key,
-			"value": r.Value,
-		})
-		PrintTableSimpleByFormat(table, r.outputFormat)
-	} else {
-		fmt.Println("ERROR")
-		fmt.Printf("%d\n", r.Code)
-	}
-}
-
-// ==================== ContextEngine Commands ====================
-
-// CEListResponse represents the response for ls command
-type CEListResponse struct {
-	Code         int                      `json:"code"`
-	Data         []map[string]interface{} `json:"data"`
-	Message      string                   `json:"message"`
-	Duration     float64
-	outputFormat OutputFormat
-}
-
-func (r *CEListResponse) Type() string { return "ce_ls" }
-func (r *CEListResponse) TimeCost() float64 { return r.Duration }
-func (r *CEListResponse) SetOutputFormat(format OutputFormat) { r.outputFormat = format }
-func (r *CEListResponse) PrintOut() {
-	if r.Code == 0 {
-		PrintTableSimpleByFormat(r.Data, r.outputFormat)
-	} else {
-		fmt.Println("ERROR")
-		fmt.Printf("%d, %s\n", r.Code, r.Message)
-	}
-}
-
-// CEList handles the ls command - lists nodes using Context Engine
-func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
-	// Get path from command params, default to "datasets"
-	path, _ := cmd.Params["path"].(string)
-	if path == "" {
-		path = "datasets"
-	}
-
-	// Parse options
-	opts := &ce.ListOptions{}
-	if recursive, ok := cmd.Params["recursive"].(bool); ok {
-		opts.Recursive = recursive
-	}
-	if limit, ok := cmd.Params["limit"].(int); ok {
-		opts.Limit = limit
-	}
-	if offset, ok := cmd.Params["offset"].(int); ok {
-		opts.Offset = offset
-	}
-
-	// Execute list command through Context Engine
-	ctx := context.Background()
-	result, err := c.ContextEngine.List(ctx, path, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert to response
-	var response CEListResponse
-	response.outputFormat = c.OutputFormat
-	response.Code = 0
-	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
-
-	return &response, nil
-}
-
-// getStringValue safely converts interface{} to string
-func getStringValue(v interface{}) string {
-	if v == nil {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprintf("%v", v)
-}
-
-// formatTimeValue converts a timestamp (milliseconds or string) to readable format
-func formatTimeValue(v interface{}) string {
-	if v == nil {
-		return ""
-	}
-
-	var ts int64
-	switch val := v.(type) {
-	case float64:
-		ts = int64(val)
-	case int64:
-		ts = val
-	case int:
-		ts = int64(val)
-	case string:
-		// Try to parse as number
-		if _, err := fmt.Sscanf(val, "%d", &ts); err != nil {
-			// If it's already a formatted date string, return as is
-			return val
-		}
-	default:
-		return fmt.Sprintf("%v", v)
-	}
-
-	// Convert milliseconds to seconds if timestamp is in milliseconds (13 digits)
-	if ts > 1e12 {
-		ts = ts / 1000
-	}
-
-	t := time.Unix(ts, 0)
-	return t.Format("2006-01-02 15:04:05")
-}
-
-// CESearchResponse represents the response for search command
-type CESearchResponse struct {
-	Code         int                      `json:"code"`
-	Data         []map[string]interface{} `json:"data"`
-	Total        int                      `json:"total"`
-	Message      string                   `json:"message"`
-	Duration     float64
-	outputFormat OutputFormat
-}
-
-func (r *CESearchResponse) Type() string { return "ce_search" }
-func (r *CESearchResponse) TimeCost() float64 { return r.Duration }
-func (r *CESearchResponse) SetOutputFormat(format OutputFormat) { r.outputFormat = format }
-func (r *CESearchResponse) PrintOut() {
-	if r.Code == 0 {
-		fmt.Printf("Found %d results:\n", r.Total)
-		PrintTableSimpleByFormat(r.Data, r.outputFormat)
-	} else {
-		fmt.Println("ERROR")
-		fmt.Printf("%d, %s\n", r.Code, r.Message)
-	}
-}
-
-// CESearch handles the search command using Context Engine
-func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
-	// Get path and query from command params
-	path, _ := cmd.Params["path"].(string)
-	if path == "" {
-		path = "datasets"
-	}
-	query, _ := cmd.Params["query"].(string)
-
-	// Parse options
-	opts := &ce.SearchOptions{
-		Query: query,
-	}
-	if limit, ok := cmd.Params["limit"].(int); ok {
-		opts.Limit = limit
-	}
-	if offset, ok := cmd.Params["offset"].(int); ok {
-		opts.Offset = offset
-	}
-	if recursive, ok := cmd.Params["recursive"].(bool); ok {
-		opts.Recursive = recursive
-	}
-
-	// Execute search command through Context Engine
-	ctx := context.Background()
-	result, err := c.ContextEngine.Search(ctx, path, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert to response
-	var response CESearchResponse
-	response.outputFormat = c.OutputFormat
-	response.Code = 0
-	response.Total = result.Total
-	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
-
-	return &response, nil
 }

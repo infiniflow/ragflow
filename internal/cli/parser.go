@@ -150,6 +150,10 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseCreateCommand()
 	case TokenDrop:
 		return p.parseDropCommand()
+	case TokenAdd:
+		return p.parseAddCommand()
+	case TokenDelete:
+		return p.parseDeleteCommand()
 	case TokenAlter:
 		return p.parseAlterCommand()
 	case TokenGrant:
@@ -166,6 +170,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseGenerateCommand()
 	case TokenImport:
 		return p.parseImportCommand()
+	case TokenInsert:
+		return p.parseInsertCommand()
 	case TokenSearch:
 		return p.parseSearchCommand()
 	case TokenParse:
@@ -180,6 +186,16 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseShutdownCommand()
 	case TokenRestart:
 		return p.parseRestartCommand()
+	case TokenEnable:
+		return p.parseEnableCommand()
+	case TokenDisable:
+		return p.parseDisableCommand()
+	case TokenChat:
+		return p.parseChatCommand()
+	case TokenThink:
+		return p.parseThinkCommand()
+	case TokenUse:
+		return p.parseUseCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
@@ -217,7 +233,7 @@ func (p *Parser) expectSemicolon() error {
 }
 
 func isKeyword(tokenType int) bool {
-	return tokenType >= TokenLogin && tokenType <= TokenDocMeta
+	return tokenType >= TokenLogin && tokenType <= TokenMetadata
 }
 
 // isCECommand checks if the given string is a ContextEngine command

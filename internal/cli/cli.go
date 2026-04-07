@@ -59,9 +59,9 @@ type ConnectionArgs struct {
 	Password     string
 	APIToken     string
 	UserName     string
-	Command      string       // Original command string (for SQL mode)
-	CommandArgs  []string     // Split command arguments (for ContextEngine mode)
-	IsSQLMode    bool         // true=SQL mode (quoted), false=ContextEngine mode (unquoted)
+	Command      string   // Original command string (for SQL mode)
+	CommandArgs  []string // Split command arguments (for ContextEngine mode)
+	IsSQLMode    bool     // true=SQL mode (quoted), false=ContextEngine mode (unquoted)
 	ShowHelp     bool
 	AdminMode    bool
 	OutputFormat OutputFormat // Output format: table, plain, json
@@ -332,7 +332,7 @@ func looksLikeSQL(s string) bool {
 		"LIST ", "SHOW ", "CREATE ", "DROP ", "ALTER ",
 		"LOGIN ", "REGISTER ", "PING", "GRANT ", "REVOKE ",
 		"SET ", "UNSET ", "UPDATE ", "DELETE ", "INSERT ",
-		"SELECT ", "DESCRIBE ", "EXPLAIN ",
+		"SELECT ", "DESCRIBE ", "EXPLAIN ", "ADD ", "ENABLE ", "DISABLE ", "CHAT ", "USE", "THINK",
 	}
 	for _, prefix := range sqlPrefixes {
 		if strings.HasPrefix(s, prefix) {
@@ -384,8 +384,7 @@ Configuration File:
 Commands:
   SQL commands (use quotes): "LIST USERS", "CREATE USER 'email' 'password'", etc.
   Context Engine commands (no quotes): ls datasets, search "keyword", cat path, etc.
-  If no command is provided, CLI runs in interactive mode.
-`)
+  If no command is provided, CLI runs in interactive mode.`)
 }
 
 // HistoryFile returns the path to the history file
@@ -481,26 +480,19 @@ func NewCLIWithArgs(args *ConnectionArgs) (*CLI, error) {
 func (c *CLI) Run() error {
 	// If username is provided without password, prompt for password
 	if c.args != nil && c.args.UserName != "" && c.args.Password == "" && c.args.APIToken == "" {
-		// Allow 3 attempts for password verification
 		maxAttempts := 3
 		for attempt := 1; attempt <= maxAttempts; attempt++ {
-			var input string
-			var err error
+			fmt.Print("Please input your password: ")
 
-			// Check if terminal supports password masking
-			if term.IsTerminal(int(os.Stdin.Fd())) {
-				input, err = c.line.PasswordPrompt("Please input your password: ")
-			} else {
-				// Terminal doesn't support password masking, use regular prompt
-				fmt.Println("Warning: This terminal does not support secure password input")
-				input, err = c.line.Prompt("Please input your password (will be visible): ")
-			}
+			passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
+			fmt.Println()
+
 			if err != nil {
-				fmt.Printf("Error reading input: %v\n", err)
+				fmt.Printf("Error reading password: %v\n", err)
 				return err
 			}
 
-			input = strings.TrimSpace(input)
+			input := strings.TrimSpace(string(passwordBytes))
 
 			if input == "" {
 				if attempt < maxAttempts {
@@ -510,7 +502,6 @@ func (c *CLI) Run() error {
 				return errors.New("no password provided after 3 attempts")
 			}
 
-			// Set the password for verification
 			c.args.Password = input
 
 			if err = c.VerifyAuth(); err != nil {
@@ -521,7 +512,6 @@ func (c *CLI) Run() error {
 				return fmt.Errorf("authentication failed after %d attempts: %v", maxAttempts, err)
 			}
 
-			// Authentication successful
 			break
 		}
 	}
@@ -921,10 +911,10 @@ func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType con
 					break
 				}
 			}
-		fmt.Println(sep)
-		fmt.Printf("Total: %d\n", result.Total)
-	}
-case contextengine.CommandCat:
+			fmt.Println(sep)
+			fmt.Printf("Total: %d\n", result.Total)
+		}
+	case contextengine.CommandCat:
 		// Cat output is handled differently - it returns []byte, not *Result
 		// This case should not be reached in normal flow since Cat returns []byte directly
 		fmt.Println("Content retrieved")
@@ -1007,15 +997,21 @@ Commands (User Mode):
   LIST MODEL PROVIDERS;                                  - List model providers
   LIST DEFAULT MODELS;                                   - List default models
   LIST TOKENS;                                           - List API tokens
+  LIST PROVIDERS;                                        - List available LLM providers
   CREATE TOKEN;                                          - Create new API token
+  ADD PROVIDER 'name';                                - Create a provider without API key
+  ADD PROVIDER 'name' 'api_key';                      - Create a provider with API key
   DROP TOKEN 'token_value';                              - Delete an API token
+  DELETE PROVIDER 'name';                                  - Delete a provider
   SET TOKEN 'token_value';                               - Set and validate API token
   SHOW TOKEN;                                            - Show current API token
+  SHOW PROVIDER 'name';                                  - Show provider details
+  SHOW CURRENT MODEL;                                    - Show current model settings
   UNSET TOKEN;                                           - Remove current API token
-  CREATE INDEX FOR DATASET 'name' VECTOR_SIZE N;         - Create index for dataset
-  DROP INDEX FOR DATASET 'name';                         - Drop index for dataset
-  CREATE INDEX DOC_META;                                 - Create doc meta index
-  DROP INDEX DOC_META;                                   - Drop doc meta index
+  ALTER PROVIDER 'name' NAME 'new_name';                 - Rename a provider
+  USE MODEL 'provider/instance/model';                   - Set current model for chat
+  CHAT 'message';                                        - Chat using current model
+  CHAT 'provider/instance/model' 'message';              - Chat with specified model
 
 Context Engine Commands (no quotes):
   ls [path]                    - List resources
@@ -1138,7 +1134,8 @@ type ListCommandOptions struct {
 
 // parseSearchCommandArgs parses search command arguments
 // Format: search [-d dir1] [-d dir2] ... -q query [-k top_k] [-t threshold]
-//         search -h|--help (shows help)
+//
+//	search -h|--help (shows help)
 func parseSearchCommandArgs(args []string) (*SearchCommandOptions, error) {
 	opts := &SearchCommandOptions{
 		TopK:      10,

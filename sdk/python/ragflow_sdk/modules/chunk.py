@@ -28,6 +28,7 @@ class Chunk(Base):
         self.id = ""
         self.content = ""
         self.important_keywords = []
+        self.tag_kwd = []
         self.questions = []
         self.create_time = ""
         self.create_timestamp = 0.0

@@ -21,10 +21,13 @@ import (
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/logger"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -793,6 +796,115 @@ func (h *Handler) RestartService(c *gin.Context) {
 	success(c, result, "")
 }
 
+func (h *Handler) ListProviders(c *gin.Context) {
+
+	keywords := ""
+	if queryKeywords := c.Query("available"); queryKeywords != "" {
+		keywords = queryKeywords
+	}
+
+	// convert keywords to small case
+	keywords = strings.ToLower(keywords)
+	if keywords == "true" {
+		// list pool providers
+		providers, err := dao.GetModelProviderManager().ListProviders()
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeNotFound,
+				"message": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"message": "success",
+			"data":    providers,
+		})
+	}
+}
+
+func (h *Handler) ShowProvider(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	provider, err := dao.GetModelProviderManager().GetProviderByName(providerName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    provider,
+	})
+}
+
+func (h *Handler) ListModels(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+	models, err := dao.GetModelProviderManager().ListModels(providerName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    models,
+	})
+}
+
+func (h *Handler) ShowModel(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+	modelName := c.Param("model_name")
+	if modelName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Model name is required",
+		})
+		return
+	}
+	model, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    model,
+	})
+}
+
 // GetVariables handle get variables
 // Python logic: if request body is empty, list all variables; otherwise get single variable by var_name from body
 func (h *Handler) GetVariables(c *gin.Context) {
@@ -1104,6 +1216,33 @@ func (h *Handler) HandleNoRoute(c *gin.Context) {
 		Code:    404,
 		Message: "The requested resource was not found",
 	})
+}
+
+// GetLogLevel returns the current log level
+func (h *Handler) GetLogLevel(c *gin.Context) {
+	level := logger.GetLevel()
+	success(c, gin.H{"level": level}, "")
+}
+
+// SetLogLevelRequest set log level request
+type SetLogLevelRequest struct {
+	Level string `json:"level" binding:"required"`
+}
+
+// SetLogLevel sets the log level at runtime
+func (h *Handler) SetLogLevel(c *gin.Context) {
+	var req SetLogLevelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "level is required", 400)
+		return
+	}
+
+	if err := logger.SetLevel(req.Level); err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+
+	success(c, gin.H{"level": req.Level}, "Log level updated successfully")
 }
 
 // Reports handle heartbeat reports from servers

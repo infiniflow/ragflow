@@ -105,7 +105,18 @@ class DialogService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_tenant_ids(cls, joined_tenant_ids, user_id, page_number, items_per_page, orderby, desc, keywords, parser_id=None):
+    def get_by_tenant_ids(
+        cls,
+        joined_tenant_ids,
+        user_id,
+        page_number,
+        items_per_page,
+        orderby,
+        desc,
+        keywords,
+        id=None,
+        name=None,
+    ):
         from api.db.db_models import User
 
         fields = [
@@ -132,25 +143,20 @@ class DialogService(CommonService):
             cls.model.update_time,
             cls.model.create_time,
         ]
+        dialogs = (
+            cls.model.select(*fields)
+            .join(User, on=(cls.model.tenant_id == User.id))
+            .where(
+                (cls.model.tenant_id.in_(joined_tenant_ids) | (cls.model.tenant_id == user_id))
+                & (cls.model.status == StatusEnum.VALID.value),
+            )
+        )
+        if id:
+            dialogs = dialogs.where(cls.model.id == id)
+        if name:
+            dialogs = dialogs.where(cls.model.name == name)
         if keywords:
-            dialogs = (
-                cls.model.select(*fields)
-                .join(User, on=(cls.model.tenant_id == User.id))
-                .where(
-                    (cls.model.tenant_id.in_(joined_tenant_ids) | (cls.model.tenant_id == user_id)) & (cls.model.status == StatusEnum.VALID.value),
-                    (fn.LOWER(cls.model.name).contains(keywords.lower())),
-                )
-            )
-        else:
-            dialogs = (
-                cls.model.select(*fields)
-                .join(User, on=(cls.model.tenant_id == User.id))
-                .where(
-                    (cls.model.tenant_id.in_(joined_tenant_ids) | (cls.model.tenant_id == user_id)) & (cls.model.status == StatusEnum.VALID.value),
-                )
-            )
-        if parser_id:
-            dialogs = dialogs.where(cls.model.parser_id == parser_id)
+            dialogs = dialogs.where(fn.LOWER(cls.model.name).contains(keywords.lower()))
         if desc:
             dialogs = dialogs.order_by(cls.model.getter_by(orderby).desc())
         else:

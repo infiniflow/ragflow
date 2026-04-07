@@ -3,10 +3,7 @@ import MessageItem from '@/components/message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType } from '@/constants/chat';
-import {
-  useFetchDialog,
-  useGetChatSearchParams,
-} from '@/hooks/use-chat-request';
+import { useFetchChat, useGetChatSearchParams } from '@/hooks/use-chat-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IClientConversation } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
@@ -47,7 +44,7 @@ export function SingleChatBox({
     setDerivedMessages,
   } = useSendMessage(controller);
   const { data: userInfo } = useFetchUserInfo();
-  const { data: currentDialog } = useFetchDialog();
+  const { data: currentDialog } = useFetchChat();
   const { createConversationBeforeUploadDocument } =
     useCreateConversationBeforeUploadDocument();
   const { conversationId } = useGetChatSearchParams();
@@ -59,11 +56,11 @@ export function SingleChatBox({
   const showInternet = useShowInternet();
 
   useEffect(() => {
-    const messages = conversation?.message;
+    const messages = conversation?.messages;
     if (Array.isArray(messages)) {
       setDerivedMessages(messages);
     }
-  }, [conversation?.message, setDerivedMessages]);
+  }, [conversation?.messages, setDerivedMessages]);
 
   useEffect(() => {
     // Clear the message list after deleting the conversation.
@@ -93,7 +90,7 @@ export function SingleChatBox({
               avatarDialog={currentDialog.icon}
               reference={buildMessageItemReference(
                 {
-                  message: derivedMessages,
+                  messages: derivedMessages,
                   reference: conversation.reference,
                 },
                 message,
