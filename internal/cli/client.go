@@ -262,6 +262,12 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.InsertDatasetFromFile(cmd)
 	case "insert_metadata_from_file":
 		return c.InsertMetadataFromFile(cmd)
+	case "update_chunk":
+		return c.UpdateChunk(cmd)
+	case "set_meta":
+		return c.SetMeta(cmd)
+	case "rm_tags":
+		return c.RmTags(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
