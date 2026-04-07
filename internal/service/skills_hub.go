@@ -299,10 +299,10 @@ func (s *SkillsHubService) UpdateHub(hubID string, tenantID string, req *UpdateH
 
 		// Update folder name as well - if this fails, rollback hub name
 		if err := s.fileDAO.UpdateByID(hub.FolderID, map[string]interface{}{"name": req.Name}); err != nil {
-			logger.Error("Failed to update folder name, rolling back hub name", zap.Error(err), zap.String("hub_id", hubID))
+			logger.Error("Failed to update folder name, rolling back hub name", err)
 			// Rollback hub name
 			if rollbackErr := s.hubDAO.UpdateByID(hubID, map[string]interface{}{"name": originalName}); rollbackErr != nil {
-				logger.Error("Failed to rollback hub name after folder rename failure", zap.Error(rollbackErr), zap.String("hub_id", hubID))
+				logger.Error("Failed to rollback hub name after folder rename failure", rollbackErr)
 			}
 			return nil, common.CodeOperatingError, fmt.Errorf("failed to update folder name: %w", err)
 		}
