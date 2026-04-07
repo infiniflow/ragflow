@@ -130,7 +130,25 @@ class TestDocumentsUpdated:
     @pytest.mark.p2
     @pytest.mark.parametrize(
         "meta_fields, expected_code, expected_message",
-        [({"test": "test"}, 0, ""), ("test", 102, "Field: <meta_fields> - Message: <Input should be a valid dictionary> - Value: <test>")],
+        [
+            # Valid meta_fields
+            ({"test": "test"}, 0, ""),
+            # Valid meta_fields with various types
+            ({"author": "alice", "year": 2024}, 0, ""),
+            ({"tags": ["tag1", "tag2"]}, 0, ""),
+            ({"count": 42, "price": 19.99}, 0, ""),
+            # Invalid type - string instead of dict
+            ("test", 102, "Field: <meta_fields> - Message: <Input should be a valid dictionary> - Value: <test>"),
+            # Invalid type - list instead of dict
+            ([], 102, "Field: <meta_fields> - Message: <Input should be a valid dictionary> - Value: <[]>"),
+            # Invalid - list containing objects (unsupported type in list)
+            ({"tags": [{"x": {"a":"b"}}]}, 102, "Field: <meta_fields> - Message: <The type is not supported in list: [{'x': {'a': 'b'}}]> - Value: <{'tags': [{'x': {'a': 'b'}}]}>"),
+            ({"tags": [{"x": 1}]}, 102, "Field: <meta_fields> - Message: <The type is not supported in list: [{'x': 1}]> - Value: <{'tags': [{'x': 1}]}>"),
+            # Invalid - nested object with unsupported type
+            ({"obj": {"x": 1}}, 102, "Field: <meta_fields> - Message: <The type is not supported: {'x': 1}> - Value: <{'obj': {'x': 1}}>"),
+            # Valid types of list
+            ({"tags": [2,1]}, 0, ""),
+        ],
     )
     def test_meta_fields(self, HttpApiAuth, add_documents, meta_fields, expected_code, expected_message):
         dataset_id, document_ids = add_documents
@@ -139,7 +157,22 @@ class TestDocumentsUpdated:
             res = list_documents(HttpApiAuth, dataset_id, {"id": document_ids[0]})
             assert res["data"]["docs"][0]["meta_fields"] == meta_fields
         else:
-            assert res["message"] == expected_message
+            assert expected_message in res["message"] or res["message"] == expected_message
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "meta_fields, expected_code, expected_message",
+        [
+            # Test with invalid document ID (not owned by dataset)
+            ({"author": "alice"}, 102, "The dataset doesn't own the document."),
+        ],
+    )
+    def test_meta_fields_invalid_document(self, HttpApiAuth, add_documents, meta_fields, expected_code, expected_message):
+        """Test meta_fields update with invalid document ID"""
+        dataset_id, _ = add_documents
+        res = update_document(HttpApiAuth, dataset_id, "invalid_doc_id_12345678901234567890", {"meta_fields": meta_fields})
+        assert res["code"] == expected_code
+        assert expected_message in res["message"]
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

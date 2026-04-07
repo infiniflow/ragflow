@@ -15,7 +15,6 @@
 #
 import json
 import os.path
-import pathlib
 import re
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -49,7 +48,7 @@ from common.file_utils import get_project_base_directory
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
 from common.misc_utils import get_uuid, thread_pool_exec
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
-from rag.nlp import rag_tokenizer, search
+from rag.nlp import search
 
 
 def _is_safe_download_filename(name: str) -> bool:
@@ -240,7 +239,7 @@ async def create():
 @manager.route("/list", methods=["POST"])  # noqa: F821
 @login_required
 async def list_docs():
-    kb_id = request.args.get("kb_id")
+    kb_id = request.args.get("id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
     tenants = UserTenantService.query(user_id=current_user.id)

@@ -34,7 +34,7 @@ class _DummyManager:
 @pytest.fixture(scope="function")
 def add_document_func(request, WebApiAuth, add_dataset, ragflow_tmp_dir):
     def cleanup():
-        res = list_documents(WebApiAuth, {"kb_id": dataset_id})
+        res = list_documents(WebApiAuth, {"id": dataset_id})
         for doc in res["data"]["docs"]:
             delete_document(WebApiAuth, {"doc_id": doc["id"]})
 

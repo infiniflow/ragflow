@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import json
 import math
 import pathlib
 import re
@@ -22,7 +21,6 @@ import string
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from office365.sharepoint.search.query import context
 from quart import Request
 from pydantic import (
     BaseModel,
@@ -431,17 +429,17 @@ class UpdateDocumentReq(Base):
     @field_validator("meta_fields", mode="after")
     @classmethod
     def validate_document_meta_fields(cls, meta_fields: dict | None):
-        if dict is None:
+        if meta_fields is None:
             return None
 
         if not isinstance(meta_fields, dict):
-            return PydanticCustomError("format_invalid", "Only dictionary type supported")
+            raise PydanticCustomError("format_invalid", "Only dictionary type supported")
         for k, v in meta_fields.items():
             if isinstance(v, list):
                 if not all(isinstance(i, (str, int, float)) for i in v):
-                    return PydanticCustomError("format_invalid", "The type is not supported in list: {v}", {"v":v})
+                    raise PydanticCustomError("format_invalid", "The type is not supported in list: {v}", {"v":v})
             elif not isinstance(v, (str, int, float)):
-                return PydanticCustomError("format_invalid", "The type is not supported: {v}", {"v":v})
+                raise PydanticCustomError("format_invalid", "The type is not supported: {v}", {"v":v})
         return meta_fields
 
 class CreateDatasetReq(Base):

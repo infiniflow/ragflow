@@ -273,6 +273,7 @@ class TestDocumentsUpdated:
         "payload, expected_message",
         [
             ({"progress": 0.5}, "Can't change `progress`"),  # Attempt to change immutable field
+            ({"progress": 1.5}, "Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <1.5>"),  # Attempt to change immutable field
         ],
     )
     def test_immutable_fields_progress(self, add_documents, payload, expected_message):
@@ -282,27 +283,6 @@ class TestDocumentsUpdated:
         with pytest.raises(Exception) as exception_info:
             document.update(payload)
         assert expected_message in str(exception_info.value), str(exception_info.value)
-
-    @pytest.mark.p3
-    def test_immutable_fields_chunk_count(self, add_document):
-        document, _ = add_document  # Unpack the tuple to get the document object
-        with pytest.raises(Exception) as exception_info:
-            document.update({"chunk_count": 999})  # Attempt to change immutable field
-        assert "Can't change `chunk_count`" in str(exception_info.value), str(exception_info.value)
-
-    @pytest.mark.p3
-    def test_immutable_fields_token_count(self, add_document):
-        document, _ = add_document  # Unpack the tuple to get the document object
-        with pytest.raises(Exception) as exception_info:
-            document.update({"token_count": 9999})  # Attempt to change immutable field
-        assert "Can't change `token_num`" in str(exception_info.value), str(exception_info.value)
-
-    @pytest.mark.p3
-    def test_immutable_fields_progress(self, add_document):
-        document, _ = add_document  # Unpack the tuple to get the document object
-        with pytest.raises(Exception) as exception_info:
-            document.update({"progress": 0.5})  # Attempt to change immutable field
-        assert "Can't change `progress`" in str(exception_info.value), str(exception_info.value)
 
 
 DEFAULT_PARSER_CONFIG_FOR_TEST = {

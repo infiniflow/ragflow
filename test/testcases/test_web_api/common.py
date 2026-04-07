@@ -435,16 +435,6 @@ def document_change_status(auth, payload=None, *, headers=HEADERS, data=None):
     return res.json()
 
 
-def document_rename(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/rename", headers=headers, auth=auth, json=payload, data=data)
-    return res.json()
-
-
-def document_set_meta(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/set_meta", headers=headers, auth=auth, json=payload, data=data)
-    return res.json()
-
-
 def bulk_upload_documents(auth, kb_id, num, tmp_path):
     fps = []
     for i in range(num):
