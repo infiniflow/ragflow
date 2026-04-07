@@ -1308,7 +1308,7 @@ type ListCommandOptions struct {
 }
 
 // parseSearchCommandArgs parses search command arguments
-// Format: search [-d dir1] [-d dir2] ... -q query [-k top_k] [-t threshold]
+// Format: search <query> [path] [-n number]
 //
 //	search -h|--help (shows help)
 func parseSearchCommandArgs(args []string) (*SearchCommandOptions, error) {
@@ -1327,77 +1327,45 @@ func parseSearchCommandArgs(args []string) (*SearchCommandOptions, error) {
 	}
 
 	// Parse arguments
+	// Format: search <query> [path] [-n number]
 	i := 0
 	for i < len(args) {
 		arg := args[i]
 
-		switch arg {
-		case "-d", "--dir":
-			if i+1 >= len(args) {
-				return nil, fmt.Errorf("missing value for %s flag", arg)
-			}
-			opts.Dirs = append(opts.Dirs, args[i+1])
-			i += 2
-		case "-q", "--query":
-			if i+1 >= len(args) {
-				return nil, fmt.Errorf("missing value for %s flag", arg)
-			}
-			opts.Query = args[i+1]
-			i += 2
-		case "-k", "--top-k":
+		// Handle -n flag for number of results
+		if arg == "-n" || arg == "--number" {
 			if i+1 >= len(args) {
 				return nil, fmt.Errorf("missing value for %s flag", arg)
 			}
 			topK, err := strconv.Atoi(args[i+1])
 			if err != nil {
-				return nil, fmt.Errorf("invalid top-k value: %s", args[i+1])
+				return nil, fmt.Errorf("invalid number value: %s", args[i+1])
 			}
 			opts.TopK = topK
 			i += 2
-		case "-t", "--threshold":
-			if i+1 >= len(args) {
-				return nil, fmt.Errorf("missing value for %s flag", arg)
-			}
-			threshold, err := strconv.ParseFloat(args[i+1], 64)
-			if err != nil {
-				return nil, fmt.Errorf("invalid threshold value: %s", args[i+1])
-			}
-			opts.Threshold = threshold
-			i += 2
-		default:
-			// If it doesn't start with -, it might be a positional argument
-			if !strings.HasPrefix(arg, "-") {
-				// For backwards compatibility: if no -q flag and this is the last arg, treat as query
-				if opts.Query == "" && i == len(args)-1 {
-					opts.Query = arg
-				} else if opts.Query == "" && len(args) > 0 && i < len(args)-1 {
-					// Old format: search [path] query
-					// Treat first non-flag as path, rest as query
-					opts.Dirs = append(opts.Dirs, arg)
-					// Join remaining args as query
-					remainingArgs := args[i+1:]
-					queryParts := []string{}
-					for _, part := range remainingArgs {
-						if !strings.HasPrefix(part, "-") {
-							queryParts = append(queryParts, part)
-						}
-					}
-					opts.Query = strings.Join(queryParts, " ")
-					break
-				}
-			} else {
-				return nil, fmt.Errorf("unknown flag: %s", arg)
-			}
-			i++
+			continue
 		}
+
+		// If it starts with -, it's an unknown flag
+		if strings.HasPrefix(arg, "-") {
+			return nil, fmt.Errorf("unknown flag: %s", arg)
+		}
+
+		// Non-flag arguments: first is query, second is path
+		if opts.Query == "" {
+			opts.Query = arg
+		} else if len(opts.Dirs) == 0 {
+			opts.Dirs = append(opts.Dirs, arg)
+		}
+		i++
 	}
 
 	// Validate required parameters
 	if opts.Query == "" {
-		return nil, fmt.Errorf("query is required (use -q or --query)")
+		return nil, fmt.Errorf("query is required")
 	}
 
-	// If no directories specified, search in all datasets (empty path means all)
+	// If no path specified, default to "datasets"
 	if len(opts.Dirs) == 0 {
 		opts.Dirs = []string{"datasets"}
 	}
@@ -1407,37 +1375,34 @@ func parseSearchCommandArgs(args []string) (*SearchCommandOptions, error) {
 
 // printSearchHelp prints help for the search command
 func printSearchHelp() {
-	help := `Search command usage: search [options]
+	help := `Search command usage: search <query> [path] [-n number]
 
 Search for content in datasets or skills.
 
-Options:
-  -d, --dir <path>       Directory to search in (can be specified multiple times)
-                         Supports: 
+Arguments:
+  <query>                Search query (required)
+                         Example: "machine learning"
+  [path]                 Path to search in (default: datasets)
+                         Supports:
                            - 'datasets' (all datasets)
                            - 'datasets/<kb_name>' (specific dataset)
                            - 'skills' (default skills hub)
                            - 'skills/<hub_name>' (specific skills hub)
-                         Example: -d datasets/kb1 -d datasets/kb2
-                         Example: -d skills/hub1
-  -q, --query <query>    Search query (required)
-                         Example: -q "machine learning"
-  -k, --top-k <number>   Number of top results to return (default: 10)
-                         Example: -k 20
-  -t, --threshold <num>  Similarity threshold, 0.0-1.0 (default: 0.2, datasets only)
-                         Example: -t 0.5
+                         Example: skills/hub1
+
+Options:
+  -n, --number <num>     Number of results to return (default: 10)
+                         Example: -n 20
   -h, --help             Show this help message
 
 Output:
   Default output format is JSON. Use --output plain or --output table for other formats.
 
 Examples:
-  search -d datasets/kb1 -q "neural networks"       # Search in kb1 (JSON output)
-  search -d datasets/kb1 -q "AI" --output plain     # Search with plain text output
-  search -q "data mining"                           # Search all datasets
-  search -q "RAG" -k 20 -t 0.5                      # Return 20 results with threshold 0.5
-  search -d skills -q "data processing"             # Search skills (default hub)
-  search -d skills/hub1 -q "API"                    # Search skills in hub1
+  search "neural networks"                          # Search all datasets
+  search "AI" datasets/kb1                          # Search in kb1
+  search "RAG" skills/hub1 -n 20                    # Search skills in hub1, return 20 results
+  search "data processing" skills                   # Search skills (default hub)
 `
 	fmt.Println(help)
 }

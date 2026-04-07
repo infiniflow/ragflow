@@ -17,7 +17,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"strings"
+
+	ce "ragflow/internal/cli/filesystem"
 )
 
 func (c *RAGFlowClient) ContextList(cmd *Command) (ResponseIf, error) {
@@ -97,13 +101,13 @@ func (c *RAGFlowClient) ContextSearch(cmd *Command) (ResponseIf, error) {
 	}
 
 	path, ok := cmd.Params["path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("fail to convert 'path' to string")
+	if !ok || path == "" {
+		path = "datasets"
 	}
 
 	query, ok := cmd.Params["query"].(string)
-	if !ok {
-		return nil, fmt.Errorf("fail to convert 'parameter' to float64")
+	if !ok || query == "" {
+		return nil, fmt.Errorf("search query is required")
 	}
 
 	number := 10
@@ -114,22 +118,66 @@ func (c *RAGFlowClient) ContextSearch(cmd *Command) (ResponseIf, error) {
 		}
 	}
 
-	//threshold := 0.0
-	//if cmd.Params["threshold"] != nil {
-	//	threshold, ok = cmd.Params["threshold"].(float64)
-	//	if !ok {
-	//		return nil, fmt.Errorf("fail to convert 'threshold' to float64")
-	//	}
-	//}
-
 	fmt.Printf("search query: %s, path: %s, number: %d\n", query, path, number)
+
+	// Check if searching skills
+	if path == "skills" || strings.HasPrefix(path, "skills/") {
+		// Parse hub ID from path
+		hubID := "default"
+		if strings.HasPrefix(path, "skills/") {
+			hubID = strings.TrimPrefix(path, "skills/")
+			if hubID == "" {
+				hubID = "default"
+			}
+		}
+
+		// Get skill provider and perform search
+		provider := c.ContextEngine.GetProvider("skills")
+		if provider == nil {
+			return nil, fmt.Errorf("skill provider not available")
+		}
+		skillProvider, ok := provider.(*ce.SkillProvider)
+		if !ok {
+			return nil, fmt.Errorf("invalid skill provider type")
+		}
+
+		searchOptions := &ce.SearchOptions{
+			Query:  query,
+			Limit:  number,
+			Offset: 0,
+			TopK:   number,
+		}
+		result, err := skillProvider.Search(context.Background(), hubID, searchOptions)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert to response
+		var response ContextSearchResponse
+		response.OutputFormat = c.OutputFormat
+		response.Code = 0
+		response.Total = result.Total
+		response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
+		return &response, nil
+	}
+
+	// For dataset search, use ContextEngine
+	opts := &ce.SearchOptions{
+		Query: query,
+		Limit: number,
+	}
+
+	result, err := c.ContextEngine.Search(context.Background(), path, opts)
+	if err != nil {
+		return nil, err
+	}
 
 	// Convert to response
 	var response ContextSearchResponse
 	response.OutputFormat = c.OutputFormat
 	response.Code = 0
-	response.Total = 0
-	response.Data = nil
+	response.Total = result.Total
+	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
 
 	return &response, nil
 }

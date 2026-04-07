@@ -366,22 +366,9 @@ func (s *SkillIndexerService) DeleteSkillByName(ctx context.Context, tenantID, h
 	hubID = normalizeHubID(hubID)
 	indexName := getSkillIndexName(tenantID, hubID)
 
-	// 1. Delete new format: skill name only
 	docID := strings.ReplaceAll(skillName, "/", "_")
 	if err := docEngine.DeleteDocument(ctx, indexName, docID); err != nil {
 		logger.Debug(fmt.Sprintf("Document %s not found in index %s", skillName, indexName))
-	}
-
-	// 2. Delete old format with version suffix: skillname_x.x.x
-	// Try to delete common version patterns to ensure cleanup
-	versionPatterns := []string{"1.0.0", "1.0.1", "1.0.2", "1.0.3", "1.0.4", "1.0.5", "1.1.0", "1.2.0", "2.0.0"}
-	for _, ver := range versionPatterns {
-		oldDocID := strings.ReplaceAll(skillName, "/", "_") + "_" + ver
-		if err := docEngine.DeleteDocument(ctx, indexName, oldDocID); err != nil {
-			logger.Debug(fmt.Sprintf("Old format document %s not found", oldDocID))
-		} else {
-			logger.Info(fmt.Sprintf("Deleted old format document %s", oldDocID))
-		}
 	}
 
 	return nil

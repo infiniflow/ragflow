@@ -28,6 +28,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
 
@@ -146,6 +147,12 @@ func (p *SkillProvider) Supports(path string) bool {
 	return normalized == "skills" || strings.HasPrefix(normalized, "skills/")
 }
 
+// isUUID checks if a string is a valid UUID
+func isUUID(s string) bool {
+	_, err := uuid.Parse(s)
+	return err == nil
+}
+
 // List lists nodes at the given path
 // Path structure: skills/ or skills/{hub_id}/ or skills/{hub_id}/{skill_name}/...
 func (p *SkillProvider) List(ctx stdctx.Context, subPath string, opts *ListOptions) (*Result, error) {
@@ -181,13 +188,14 @@ func (p *SkillProvider) Search(ctx stdctx.Context, subPath string, opts *SearchO
 		hubID = parts[0]
 	}
 
-	// Convert hub name to UUID if needed
-	if hubID != "" && hubID != "default" {
+	// Hub ID can be either a name or UUID
+	// If it's not "default" and doesn't look like a UUID, try to convert it
+	if hubID != "" && hubID != "default" && !isUUID(hubID) {
 		hubUUID, err := p.getHubUUIDByName(ctx, hubID)
-		if err != nil {
-			return nil, err
+		if err == nil {
+			hubID = hubUUID
 		}
-		hubID = hubUUID
+		// If lookup fails, use the original hubID as-is (it might already be a UUID)
 	}
 
 	// Build search payload
@@ -207,7 +215,7 @@ func (p *SkillProvider) Search(ctx stdctx.Context, subPath string, opts *SearchO
 	}
 
 	// Call skill search API
-	resp, err := p.httpClient.Request("POST", "/skills/search", true, "web", nil, payload)
+	resp, err := p.httpClient.Request("POST", "/skills/search", true, "auto", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("search request failed: %w", err)
 	}
@@ -269,7 +277,7 @@ func (p *SkillProvider) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 
 // listHubs lists all skills hubs
 func (p *SkillProvider) listHubs(ctx stdctx.Context, opts *ListOptions) (*Result, error) {
-	resp, err := p.httpClient.Request("GET", "/skills/hubs", true, "web", nil, nil)
+	resp, err := p.httpClient.Request("GET", "/skills/hubs", true, "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list hubs: %w", err)
 	}
@@ -330,7 +338,7 @@ func (p *SkillProvider) listSkillsInHub(ctx stdctx.Context, hubID string, opts *
 		"page_size":  1000,
 	}
 
-	resp, err := p.httpClient.Request("POST", "/skills/search", true, "web", nil, payload)
+	resp, err := p.httpClient.Request("POST", "/skills/search", true, "auto", nil, payload)
 	if err != nil {
 		// If search fails, return empty list
 		return &Result{Nodes: []*Node{}}, nil
@@ -402,7 +410,7 @@ func (p *SkillProvider) listSkillContent(ctx stdctx.Context, hubID, skillName, v
 
 // getHubUUIDByName gets hub UUID by its name
 func (p *SkillProvider) getHubUUIDByName(ctx stdctx.Context, hubName string) (string, error) {
-	resp, err := p.httpClient.Request("GET", "/skills/hubs", true, "web", nil, nil)
+	resp, err := p.httpClient.Request("GET", "/skills/hubs", true, "auto", nil, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to list hubs: %w", err)
 	}
@@ -488,7 +496,7 @@ func (p *SkillProvider) IndexSkill(ctx stdctx.Context, hubID string, skillInfo m
 	}
 
 	// Call index API
-	resp, err := p.httpClient.Request("POST", "/skills/index", true, "web", nil, payload)
+	resp, err := p.httpClient.Request("POST", "/skills/index", true, "auto", nil, payload)
 	if err != nil {
 		return fmt.Errorf("index request failed: %w", err)
 	}
