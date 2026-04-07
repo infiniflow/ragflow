@@ -444,6 +444,34 @@ func (h *KnowledgebaseHandler) RemoveTags(c *gin.Context) {
 		return
 	}
 
+	// Get KB to find tenant_id and build index name
+	kb, err := h.kbService.GetByID(kbID)
+	if err != nil {
+		jsonError(c, common.CodeDataError, "knowledge base not found")
+		return
+	}
+
+	// Build index name prefix: ragflow_<tenant_id>
+	indexName := "ragflow_" + kb.TenantID
+
+	// For each tag, call UpdateChunk to remove it from documents
+	for _, tag := range req.Tags {
+		condition := map[string]interface{}{
+			"tag_kwd": tag,
+			"kb_id":   kbID,
+		}
+		newValue := map[string]interface{}{
+			"remove": map[string]interface{}{
+				"tag_kwd": tag,
+			},
+		}
+		err := h.kbService.RemoveTag(condition, newValue, indexName, kbID)
+		if err != nil {
+			jsonError(c, common.CodeServerError, "Failed to remove tag: "+err.Error())
+			return
+		}
+	}
+
 	jsonResponse(c, common.CodeSuccess, true, "success")
 }
 

@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"ragflow/internal/common"
 
@@ -244,5 +245,124 @@ func (h *ChunkHandler) List(c *gin.Context) {
 		"code":    0,
 		"data":    resp,
 		"message": "success",
+	})
+}
+
+// UpdateChunk updates a chunk
+// @Summary Update Chunk
+// @Description Update chunk fields
+// @Tags chunks
+// @Accept json
+// @Produce json
+// @Param dataset_id path string true "Dataset ID"
+// @Param document_id path string true "Document ID"
+// @Param chunk_id path string true "Chunk ID"
+// @Param request body service.UpdateChunkRequest true "update chunk"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id} [put]
+func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	// Get path parameters
+	datasetID := c.Param("dataset_id")
+	documentID := c.Param("document_id")
+	chunkID := c.Param("chunk_id")
+
+	if datasetID == "" || documentID == "" || chunkID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "dataset_id, document_id, and chunk_id are required",
+		})
+		return
+	}
+
+	// Validate allowed update fields
+	var rawBody map[string]interface{}
+	if err := json.NewDecoder(c.Request.Body).Decode(&rawBody); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "invalid JSON body: " + err.Error(),
+		})
+		return
+	}
+
+	// Allowed fields for update
+	allowedFields := map[string]bool{
+		"content":              true,
+		"important_keywords":    true,
+		"questions":             true,
+		"available":             true,
+		"positions":             true,
+		"tag_kwd":              true,
+		"tag_feas":             true,
+	}
+	for field := range rawBody {
+		if !allowedFields[field] {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Update field '" + field + "' is not supported. Updatable fields: content, important_keywords, questions, available, positions, tag_kwd, tag_feas",
+			})
+			return
+		}
+	}
+
+	// Build UpdateChunkRequest from rawBody
+	var req service.UpdateChunkRequest
+	if content, ok := rawBody["content"].(string); ok {
+		req.Content = &content
+	}
+	if importantKwd, ok := rawBody["important_keywords"].([]interface{}); ok {
+		req.ImportantKwd = make([]string, len(importantKwd))
+		for i, v := range importantKwd {
+			if s, ok := v.(string); ok {
+				req.ImportantKwd[i] = s
+			}
+		}
+	}
+	if questions, ok := rawBody["questions"].([]interface{}); ok {
+		req.Questions = make([]string, len(questions))
+		for i, v := range questions {
+			if s, ok := v.(string); ok {
+				req.Questions[i] = s
+			}
+		}
+	}
+	if available, ok := rawBody["available"].(bool); ok {
+		req.Available = &available
+	}
+	if positions, ok := rawBody["positions"].([]interface{}); ok {
+		req.Positions = positions
+	}
+	if tagKwd, ok := rawBody["tag_kwd"].([]interface{}); ok {
+		req.TagKwd = make([]string, len(tagKwd))
+		for i, v := range tagKwd {
+			if s, ok := v.(string); ok {
+				req.TagKwd[i] = s
+			}
+		}
+	}
+	req.TagFeas = rawBody["tag_feas"]
+
+	// Set path parameters
+	req.DatasetID = datasetID
+	req.DocumentID = documentID
+	req.ChunkID = chunkID
+
+	err := h.chunkService.UpdateChunk(&req, user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "chunk updated successfully",
 	})
 }
