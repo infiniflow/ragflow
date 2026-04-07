@@ -40,6 +40,7 @@ type SkillsHubService struct {
 	skillsFolderCache  map[string]string   // tenant-keyed cache for skills folder ID
 	skillsFolderMu     sync.RWMutex        // protects skillsFolderCache
 	skillsFolderCreateMu sync.Map          // tenant-scoped locks for folder creation
+	hubCreateMu        sync.Map            // tenant-scoped locks for hub creation (prevents TOCTOU races)
 }
 
 // NewSkillsHubService creates a new SkillsHubService instance
@@ -157,7 +158,17 @@ func (s *SkillsHubService) CreateHub(req *CreateHubRequest) (map[string]interfac
 		return nil, common.CodeDataError, fmt.Errorf("hub name is required")
 	}
 
-	// Check if hub with same name already exists (active status)
+	// Tenant-scoped serialization to prevent concurrent create/delete races
+	tenantKey := req.TenantID + ":" + req.Name
+	mu, _ := s.hubCreateMu.LoadOrStore(tenantKey, &sync.Mutex{})
+	tenantMu := mu.(*sync.Mutex)
+	tenantMu.Lock()
+	defer func() {
+		tenantMu.Unlock()
+		s.hubCreateMu.Delete(tenantKey)
+	}()
+
+	// Double-check after acquiring lock: Check if hub with same name already exists (active status)
 	existingHub, err := s.hubDAO.GetByTenantAndName(req.TenantID, req.Name)
 	if err != nil {
 		// Hub doesn't exist, continue
@@ -165,8 +176,9 @@ func (s *SkillsHubService) CreateHub(req *CreateHubRequest) (map[string]interfac
 		return nil, common.CodeDataError, fmt.Errorf("hub with name '%s' already exists", req.Name)
 	}
 
-	// Check if there's a deleted hub with the same name and permanently delete it
+	// Check if there's a deleted/non-active hub with the same name and permanently delete it
 	// This handles the case where a previous creation failed partially
+	// Only delete non-active hubs (status != '1') to prevent TOCTOU race
 	if err := s.hubDAO.DeletePermanentByName(req.TenantID, req.Name); err != nil {
 		logger.Warn("Failed to delete permanent hub by name", zap.Error(err))
 	}

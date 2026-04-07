@@ -91,9 +91,9 @@ func (dao *SkillsHubDAO) Delete(id string) error {
 }
 
 // DeletePermanentByName permanently deletes a skills hub by tenant ID and name
-// This is used to clean up failed/partial creations
+// This is used to clean up failed/partial creations (only deletes non-active hubs)
 func (dao *SkillsHubDAO) DeletePermanentByName(tenantID, name string) error {
-	return DB.Unscoped().Where("tenant_id = ? AND name = ?", tenantID, name).Delete(&entity.SkillsHub{}).Error
+	return DB.Unscoped().Where("tenant_id = ? AND name = ? AND status != '1'", tenantID, name).Delete(&entity.SkillsHub{}).Error
 }
 
 // CountByTenant counts skills hubs by tenant ID
