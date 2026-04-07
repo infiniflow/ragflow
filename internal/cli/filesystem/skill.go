@@ -608,7 +608,7 @@ func (p *SkillProvider) UploadSkill(ctx stdctx.Context, skillPath string, versio
 	}
 
 	// 7. Index the skill for search
-	if err := p.indexSkillFromUpload(ctx, result, files, hubID); err != nil {
+	if err := p.indexSkillFromUpload(ctx, result, files, hubID, skillFolderID); err != nil {
 		return fmt.Errorf("failed to index skill: %w", err)
 	}
 
@@ -738,7 +738,7 @@ func (p *SkillProvider) uploadFile(ctx stdctx.Context, file *SkillFile, parentID
 }
 
 // indexSkillFromUpload indexes the skill after upload
-func (p *SkillProvider) indexSkillFromUpload(ctx stdctx.Context, result *SkillValidationResult, files []*SkillFile, hubID string) error {
+func (p *SkillProvider) indexSkillFromUpload(ctx stdctx.Context, result *SkillValidationResult, files []*SkillFile, hubID string, skillFolderID string) error {
 	var contentBuilder strings.Builder
 	for _, file := range files {
 		if !isTextFile(file.Path, "") {
@@ -756,14 +756,13 @@ func (p *SkillProvider) indexSkillFromUpload(ctx stdctx.Context, result *SkillVa
 	}
 	content := contentBuilder.String()
 
-	// Include version in ID to match delete format (skillname/version)
+	// Use skill name as ID (without version suffix)
+	// This ensures all versions of the same skill share the same index document
 	skillID := result.Name
-	if result.Version != "" {
-		skillID = result.Name + "/" + result.Version
-	}
 
 	skillInfo := map[string]interface{}{
 		"id":          skillID,
+		"folder_id":   skillFolderID,
 		"name":        result.Name,
 		"description": result.Description,
 		"tags":        result.Tags,
@@ -1680,11 +1679,9 @@ func (u *SkillUploader) indexSkill(ctx stdctx.Context, result *SkillValidationRe
 	}
 	content := contentBuilder.String()
 
-	// Include version in ID to match delete format (skillname/version)
+	// Use skill name as ID (without version suffix)
+	// This ensures all versions of the same skill share the same index document
 	skillID := result.Name
-	if result.Version != "" {
-		skillID = result.Name + "/" + result.Version
-	}
 
 	skillInfo := map[string]interface{}{
 		"id":          skillID,

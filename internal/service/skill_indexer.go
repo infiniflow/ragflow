@@ -171,8 +171,16 @@ func (s *SkillIndexerService) IndexSkill(ctx context.Context, tenantID, hubID st
 		}
 	}
 
+	// Delete old versions (both new format and old format with version suffix)
+	// This ensures only the latest version is indexed
+	logger.Info(fmt.Sprintf("Deleting old versions of skill if exists: indexName=%s, skillName=%s", indexName, skill.Name))
+	if err := s.DeleteSkillByName(ctx, tenantID, hubID, skill.Name, docEngine); err != nil {
+		logger.Info(fmt.Sprintf("No existing document to delete for skill %s (this is normal for new skills)", skill.Name))
+	}
+
 	// ES document ID cannot contain '/' - replace with '_'
 	docID := strings.ReplaceAll(skill.ID, "/", "_")
+
 	logger.Info(fmt.Sprintf("Calling IndexDocument: indexName=%s, docID=%s, engineType=%s", indexName, docID, docEngine.GetType()))
 	if err := docEngine.IndexDocument(ctx, indexName, docID, doc); err != nil {
 		logger.Error(fmt.Sprintf("IndexDocument failed: indexName=%s, docID=%s", indexName, docID), err)
@@ -264,6 +272,12 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, hu
 
 	var indexErrors []string
 	for i, skill := range skills {
+		// Delete old versions (both new format and old format with version suffix)
+		// This ensures only the latest version is indexed
+		if err := s.DeleteSkillByName(ctx, tenantID, hubID, skill.Name, docEngine); err != nil {
+			logger.Debug(fmt.Sprintf("No existing document to delete for skill %s (this is normal for new skills)", skill.Name))
+		}
+
 		// ES document ID cannot contain '/' - replace with '_'
 		docID := strings.ReplaceAll(skill.ID, "/", "_")
 
@@ -346,10 +360,31 @@ func (s *SkillIndexerService) DeleteSkillIndex(ctx context.Context, tenantID, hu
 	return nil
 }
 
-// DeleteSkillByName deletes a skill's index by skill name (used when deleting a skill)
+// DeleteSkillByName deletes a skill's index by skill name
+// Deletes all versions: both new format (skillname) and old format (skillname_x.x.x)
 func (s *SkillIndexerService) DeleteSkillByName(ctx context.Context, tenantID, hubID, skillName string, docEngine engine.DocEngine) error {
-	// Use skill name as doc_id
-	return s.DeleteSkillIndex(ctx, tenantID, hubID, skillName, docEngine)
+	hubID = normalizeHubID(hubID)
+	indexName := getSkillIndexName(tenantID, hubID)
+
+	// 1. Delete new format: skill name only
+	docID := strings.ReplaceAll(skillName, "/", "_")
+	if err := docEngine.DeleteDocument(ctx, indexName, docID); err != nil {
+		logger.Debug(fmt.Sprintf("Document %s not found in index %s", skillName, indexName))
+	}
+
+	// 2. Delete old format with version suffix: skillname_x.x.x
+	// Try to delete common version patterns to ensure cleanup
+	versionPatterns := []string{"1.0.0", "1.0.1", "1.0.2", "1.0.3", "1.0.4", "1.0.5", "1.1.0", "1.2.0", "2.0.0"}
+	for _, ver := range versionPatterns {
+		oldDocID := strings.ReplaceAll(skillName, "/", "_") + "_" + ver
+		if err := docEngine.DeleteDocument(ctx, indexName, oldDocID); err != nil {
+			logger.Debug(fmt.Sprintf("Old format document %s not found", oldDocID))
+		} else {
+			logger.Info(fmt.Sprintf("Deleted old format document %s", oldDocID))
+		}
+	}
+
+	return nil
 }
 
 // UpdateSkillVersion updates a skill's index when version changes
@@ -585,7 +620,12 @@ func (s *SkillIndexerService) getSkillContentFromFolder(ctx context.Context, ten
 	// Parse SKILL.md for metadata
 	name, description, tags := s.parseSkillMetadata(skillMdContent, skillFolder.Name)
 
-	skillID := fmt.Sprintf("%s/%s", skillFolder.Name, versionFolder.Name)
+	// Use skill name as ID (without version suffix)
+	// This ensures all versions of the same skill share the same index document
+	skillID := name
+	if skillID == "" {
+		skillID = skillFolder.Name
+	}
 
 	skillInfo := &SkillInfo{
 		ID:          skillID,

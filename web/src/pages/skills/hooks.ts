@@ -1319,14 +1319,11 @@ export const useSkillSearchConfig = (hubId?: string) => {
           // Fallback to now only when backend doesn't provide time fields.
           const timestamp = pickSkillTimestamp(result);
 
-          // Remove version suffix from skill_id to match list view format
-          // skill_id from backend is like "my-skill/1.0.0", but we need "my-skill"
-          const skillId = result.skill_id
-            ? result.skill_id.split('/')[0]
-            : result.skill_id;
+          // skill_id from backend is now the skill name (without version suffix)
+          const skillId = result.skill_id || result.name;
 
           return {
-            id: skillId, // Use skill name without version as ID (consistent with list view)
+            id: skillId, // Use skill name as ID (consistent with list view)
             name: result.name,
             description: result.description,
             source_type: 'search',

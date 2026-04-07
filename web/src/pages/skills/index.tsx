@@ -234,7 +234,12 @@ const SkillsPage: React.FC = () => {
       if (!(skill as any)._folderId) {
         const existingSkill = filteredSkills.find((s) => s.id === skill.id);
         if (existingSkill && (existingSkill as any)._folderId) {
-          skill = { ...skill, _folderId: (existingSkill as any)._folderId };
+          skill = {
+            ...skill,
+            _folderId: (existingSkill as any)._folderId,
+            versions: existingSkill.versions,
+            files: existingSkill.files,
+          };
         } else {
           console.warn(
             `[Skill Search] Skill "${skill.name}" has no folder_id. ` +
@@ -387,6 +392,8 @@ const SkillsPage: React.FC = () => {
               updated_at: localSkill.updated_at,
               _folderId:
                 (skill as any)._folderId || (localSkill as any)._folderId,
+              versions: localSkill.versions,
+              files: localSkill.files,
             };
           });
           setSearchResults(mergedResults);

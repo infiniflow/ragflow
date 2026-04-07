@@ -487,8 +487,10 @@ func (s *SkillSearchService) executeKeywordSearch(ctx context.Context, docEngine
 }
 
 // convertChunksToResults converts search chunks to SkillSearchResult
+// Deduplicates by skill name, keeping only the highest scored result for each skill
 func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interface{}, threshold float64) []entity.SkillSearchResult {
-	var results []entity.SkillSearchResult
+	// Use a map to deduplicate by skill name, keeping the highest scored version
+	skillMap := make(map[string]entity.SkillSearchResult)
 
 	for _, chunk := range chunks {
 		// Get score
@@ -518,6 +520,12 @@ func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interfac
 			}
 		}
 
+		// Use skill name as the deduplication key (skillID may contain version suffix)
+		skillKey := name
+		if skillKey == "" {
+			skillKey = skillID
+		}
+
 		result := entity.SkillSearchResult{
 			SkillID:     skillID,
 			FolderID:    folderID,
@@ -527,6 +535,15 @@ func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interfac
 			Score:       score,
 		}
 
+		// Keep only the highest scored result for each skill
+		if existing, ok := skillMap[skillKey]; !ok || score > existing.Score {
+			skillMap[skillKey] = result
+		}
+	}
+
+	// Convert map to slice
+	var results []entity.SkillSearchResult
+	for _, result := range skillMap {
 		results = append(results, result)
 	}
 
