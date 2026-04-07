@@ -1169,6 +1169,38 @@ Example: Virtual Hosted Style`,
         'Column to use as unique document ID. If not specified, a hash of the content will be used.',
       postgresqlTimestampColumnTip:
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      rest_apiDescription:
+        'Connect any REST API endpoint as a data source using a flexible, configuration-driven connector.',
+      restApiQueryParamsTip:
+        'Key=value pairs (one per line) sent as URL query parameters. Use this instead of embedding params in the URL.',
+      restApiHeadersTip:
+        'Optional JSON object of additional HTTP headers to send with every request.',
+      restApiItemsPathTip:
+        'Field name or JSONPath to the array of items in the response. Leave empty to auto-detect (tries "items", "results", "data", etc.).',
+      restApiIdFieldTip:
+        'Field path within each item used to build a stable document ID. Leave empty to auto-generate from content hash.',
+      restApiContentFieldsTip:
+        'Comma-separated list of item fields to concatenate into the document content.',
+      restApiMetadataFieldsTip:
+        'Comma-separated list of item fields to store as metadata.',
+      restApiNextCursorPathTip:
+        'JSONPath expression that resolves to the next-page cursor in the API response.',
+      restApiPollTimestampFieldTip:
+        'Field path in each item that represents the last updated time, used for incremental sync.',
+      restApiRequestBodyTip:
+        'Optional JSON body to send for POST requests. Used together with query params and pagination.',
+      restApiRequestDelayTip:
+        'Delay in seconds between consecutive page requests. Helps avoid rate limiting from the API. Set to 0 to disable.',
+      restApiValidationApiKeyRequired:
+        'API key is required when Auth Type is API Key (Header).',
+      restApiValidationBearerTokenRequired:
+        'Bearer token is required when Auth Type is Bearer Token.',
+      restApiValidationBasicPasswordRequired:
+        'Password is required when Auth Type is Basic Auth.',
+      restApiTestConnection: 'Test connection',
+      restApiTestSuccess: 'REST API connector validated successfully.',
+      restApiTestFailed:
+        'REST API connector validation failed. Please check your configuration and logs.',
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available sources',
       datasourceDescription: 'Manage your data source and connections',
