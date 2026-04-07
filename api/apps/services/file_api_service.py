@@ -224,7 +224,7 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
             service_url = f"http://{host}:{port}"
 
             # List all hubs and find the one matching the name
-            url = f"{service_url}/api/v1/skills/hubs"
+            url = f"{service_url}/api/v1/ns/hubs"
             headers = {"Content-Type": "application/json"}
             if authorization:
                 headers["Authorization"] = authorization
@@ -243,7 +243,11 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
         return None
 
     def _delete_skill_index(tenant_id, hub_name, skill_name, authorization):
-        """Delete skill index from Go backend"""
+        """Delete skill index from Go backend.
+
+        Returns:
+            bool: True if deletion succeeded (HTTP 200), False otherwise.
+        """
         try:
             import requests
             from urllib.parse import quote
@@ -258,16 +262,29 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
             hub_uuid = _get_hub_uuid_by_name(tenant_id, hub_name, authorization)
             hub_id = hub_uuid if hub_uuid else hub_name
 
-            url = f"{service_url}/api/v1/skills/index?skill_id={quote(skill_name)}&hub_id={quote(hub_id)}"
+            url = f"{service_url}/api/v1/ns/index?skill_id={quote(skill_name)}&hub_id={quote(hub_id)}"
             headers = {"Content-Type": "application/json"}
             if authorization:
                 headers["Authorization"] = authorization
 
             response = requests.delete(url, headers=headers, timeout=10)
-            if response.status_code != 200:
-                logging.debug(f"Failed to delete skill index: status={response.status_code}")
+            if response.status_code == 200:
+                logging.info(
+                    f"Successfully deleted skill index: hub={hub_name}, skill={skill_name}, "
+                    f"status={response.status_code}"
+                )
+                return True
+            else:
+                logging.error(
+                    f"Failed to delete skill index: hub={hub_name}, skill={skill_name}, "
+                    f"status={response.status_code}, response={response.text}"
+                )
+                return False
         except Exception as e:
-            logging.debug(f"Error deleting skill index: {e}")
+            logging.error(
+                f"Exception deleting skill index: hub={hub_name}, skill={skill_name}, error={e}"
+            )
+            return False
 
     def _delete_single_file(file):
         try:
@@ -300,7 +317,16 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
 
         # If this is a skill folder, delete its index first
         if is_skill_folder and current_hub_name:
-            _delete_skill_index(tenant_id, current_hub_name, folder.name, authorization)
+            index_deleted = _delete_skill_index(tenant_id, current_hub_name, folder.name, authorization)
+            if not index_deleted:
+                logging.error(
+                    f"Aborting folder deletion due to index deletion failure: "
+                    f"folder={folder.name}, hub={current_hub_name}"
+                )
+                raise RuntimeError(
+                    f"Failed to delete skill index for folder '{folder.name}' in hub '{current_hub_name}'. "
+                    f"Folder deletion aborted to prevent orphaned indexes."
+                )
 
         sub_files = FileService.list_all_files_by_parent_id(folder.id)
         for sub_file in sub_files:
@@ -324,7 +350,11 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
                 continue
 
             if file.type == FileType.FOLDER.value:
-                _delete_folder_recursive(file, uid, False, None, auth_header)
+                try:
+                    _delete_folder_recursive(file, uid, False, None, auth_header)
+                except RuntimeError as e:
+                    logging.error(f"Folder deletion failed: {e}")
+                    return False, str(e)
                 continue
 
             _delete_single_file(file)

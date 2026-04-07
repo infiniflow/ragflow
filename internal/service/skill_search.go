@@ -595,17 +595,24 @@ func getSkillIndexName(tenantID, hubID string) string {
 	hubID = strings.ToLower(hubID)
 	replacer := strings.NewReplacer("-", "_", "/", "_", "\\", "_", " ", "_", ".", "_", ":", "_")
 	sanitizedHubID := replacer.Replace(hubID)
-	// Use shortened IDs to keep index name readable but unique
-	// First 12 chars of UUID provides 48-bit entropy, sufficient for uniqueness
-	shortTenant := tenantID
-	if len(tenantID) > 12 {
-		shortTenant = tenantID[:12]
+
+	// Generate unique, deterministic suffix from full IDs to avoid collisions
+	// Use SHA-256 hash of the combined tenantID and sanitizedHubID
+	hash := sha256.Sum256([]byte(tenantID + "_" + sanitizedHubID))
+	hashStr := hex.EncodeToString(hash[:])[:16] // Take first 16 hex chars (64-bit entropy)
+
+	// Use full IDs if they fit within reasonable length, otherwise use hash to ensure uniqueness
+	const maxIDLen = 32 // Maximum length for each ID component
+	uniqueTenant := tenantID
+	if len(tenantID) > maxIDLen {
+		uniqueTenant = tenantID[:maxIDLen] + "_" + hashStr[:8]
 	}
-	shortHub := sanitizedHubID
-	if len(sanitizedHubID) > 12 {
-		shortHub = sanitizedHubID[:12]
+	uniqueHub := sanitizedHubID
+	if len(sanitizedHubID) > maxIDLen {
+		uniqueHub = sanitizedHubID[:maxIDLen] + "_" + hashStr[8:16]
 	}
-	return fmt.Sprintf("skill_%s_%s", shortTenant, shortHub)
+
+	return fmt.Sprintf("skill_%s_%s", uniqueTenant, uniqueHub)
 }
 
 func normalizeHubID(hubID string) string {

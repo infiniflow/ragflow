@@ -72,7 +72,9 @@ func (e *infinityEngine) InsertSkill(ctx context.Context, tableName, docID strin
 	insertDoc["skill_id"] = docID
 
 	// Delete existing document with same skill_id
-	filter := fmt.Sprintf("skill_id = '%s'", docID)
+	// Escape single quotes to prevent filter injection
+	docIDEscaped := strings.ReplaceAll(docID, "'", "''")
+	filter := fmt.Sprintf("skill_id = '%s'", docIDEscaped)
 	delResp, delErr := table.Delete(filter)
 	if delErr != nil {
 		logger.Warn(fmt.Sprintf("Failed to delete existing skill document: %v", delErr))
@@ -178,7 +180,9 @@ func (e *infinityEngine) DeleteDocument(ctx context.Context, tableName, docID st
 	if strings.HasPrefix(tableName, "skill_") {
 		idField = "skill_id"
 	}
-	filter := fmt.Sprintf("%s = '%s'", idField, docID)
+	// Escape single quotes to prevent filter injection
+	docIDEscaped := strings.ReplaceAll(docID, "'", "''")
+	filter := fmt.Sprintf("%s = '%s'", idField, docIDEscaped)
 	resp, err := table.Delete(filter)
 	if err != nil {
 		return fmt.Errorf("failed to delete document: %w", err)

@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/logger"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,18 +34,20 @@ import (
 
 // SkillsHubService handles business logic for skills hub operations
 type SkillsHubService struct {
-	hubDAO      *dao.SkillsHubDAO
-	fileDAO     *dao.FileDAO
-	configDAO   *dao.SkillSearchConfigDAO
-	skillsFolderID string // Cache for skills folder ID
+	hubDAO             *dao.SkillsHubDAO
+	fileDAO            *dao.FileDAO
+	configDAO          *dao.SkillSearchConfigDAO
+	skillsFolderCache  map[string]string // tenant-keyed cache for skills folder ID
+	skillsFolderMu     sync.RWMutex      // protects skillsFolderCache
 }
 
 // NewSkillsHubService creates a new SkillsHubService instance
 func NewSkillsHubService() *SkillsHubService {
 	return &SkillsHubService{
-		hubDAO:    dao.NewSkillsHubDAO(),
-		fileDAO:   dao.NewFileDAO(),
-		configDAO: dao.NewSkillSearchConfigDAO(),
+		hubDAO:            dao.NewSkillsHubDAO(),
+		fileDAO:           dao.NewFileDAO(),
+		configDAO:         dao.NewSkillSearchConfigDAO(),
+		skillsFolderCache: make(map[string]string),
 	}
 }
 
@@ -68,10 +71,13 @@ type UpdateHubRequest struct {
 
 // getSkillsFolderID gets or creates the skills folder for a tenant
 func (s *SkillsHubService) getSkillsFolderID(tenantID string) (string, error) {
-	// Return cached value if available
-	if s.skillsFolderID != "" {
-		return s.skillsFolderID, nil
+	// Return cached value if available (read lock)
+	s.skillsFolderMu.RLock()
+	if cachedID, ok := s.skillsFolderCache[tenantID]; ok && cachedID != "" {
+		s.skillsFolderMu.RUnlock()
+		return cachedID, nil
 	}
+	s.skillsFolderMu.RUnlock()
 
 	// Get root folder
 	rootFolder, err := s.fileDAO.GetRootFolder(tenantID)
@@ -87,7 +93,10 @@ func (s *SkillsHubService) getSkillsFolderID(tenantID string) (string, error) {
 
 	for _, file := range files {
 		if file.Type == "folder" && file.Name == "skills" {
-			s.skillsFolderID = file.ID
+			// Cache the result (write lock)
+			s.skillsFolderMu.Lock()
+			s.skillsFolderCache[tenantID] = file.ID
+			s.skillsFolderMu.Unlock()
 			return file.ID, nil
 		}
 	}
@@ -118,7 +127,11 @@ func (s *SkillsHubService) getSkillsFolderID(tenantID string) (string, error) {
 		return "", fmt.Errorf("failed to create skills folder: %w", err)
 	}
 
-	s.skillsFolderID = folderID
+	// Cache the result (write lock)
+	s.skillsFolderMu.Lock()
+	s.skillsFolderCache[tenantID] = folderID
+	s.skillsFolderMu.Unlock()
+
 	return folderID, nil
 }
 
