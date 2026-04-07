@@ -126,7 +126,8 @@ const (
 	// Literals
 	TokenIdentifier
 	TokenQuotedString
-	TokenNumber
+	TokenInteger
+	TokenFloat
 
 	// Special
 	TokenSemicolon

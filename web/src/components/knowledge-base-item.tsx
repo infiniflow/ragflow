@@ -71,7 +71,7 @@ export function KnowledgeBaseFormField({
   required = false,
 }: {
   showVariable?: boolean;
-  name: string;
+  name?: string;
   required?: boolean;
 }) {
   const form = useFormContext();
