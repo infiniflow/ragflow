@@ -16,6 +16,7 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { ProgrammingLanguage } from '@/constants/agent';
 import { ICodeForm } from '@/interfaces/database/agent';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { AlertTriangle } from 'lucide-react';
 import { memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -33,6 +34,11 @@ import {
   useHandleLanguageChange,
   useWatchFormChange,
 } from './use-watch-change';
+import {
+  CodeExecPanelSystemOutputs,
+  getBusinessOutputs,
+  serializeCodeOutputContract,
+} from './utils';
 
 loader.config({ paths: { vs: '/vs' } });
 
@@ -41,18 +47,10 @@ const options = [
   ProgrammingLanguage.Javascript,
 ].map((x) => ({ value: x, label: x }));
 
-const DynamicFieldName = 'outputs';
-const CodeSystemOutputs = {
-  content: {
-    type: 'string',
-    value: '',
-  },
-};
-
 function CodeForm({ node }: INextOperatorForm) {
   const formData = node?.data.form as ICodeForm;
   const { t } = useTranslation();
-  const values = useValues(node);
+  const { values, legacyOutputs } = useValues(node);
   const isDarkTheme = useIsDarkTheme();
 
   const form = useForm<FormSchemaType>({
@@ -63,6 +61,13 @@ function CodeForm({ node }: INextOperatorForm) {
   useWatchFormChange(node?.id, form);
 
   const handleLanguageChange = useHandleLanguageChange(node?.id, form);
+  const lang = form.watch('lang');
+  const currentOutput = form.watch('output');
+  const outputFieldDirty = !!form.formState.dirtyFields?.output;
+  const displayedBusinessOutputs =
+    legacyOutputs.length > 0 && !outputFieldDirty
+      ? getBusinessOutputs(formData?.outputs)
+      : serializeCodeOutputContract(currentOutput);
 
   return (
     <Form {...form}>
@@ -103,7 +108,7 @@ function CodeForm({ node }: INextOperatorForm) {
                 <Editor
                   height={300}
                   theme={isDarkTheme ? 'vs-dark' : 'vs'}
-                  language={formData.lang}
+                  language={lang}
                   options={{
                     minimap: { enabled: false },
                     automaticLayout: true,
@@ -116,61 +121,62 @@ function CodeForm({ node }: INextOperatorForm) {
           )}
         />
 
-        {formData.lang === ProgrammingLanguage.Python ? (
-          <DynamicInputVariable
-            node={node}
-            title={'Return Values'}
-            name={DynamicFieldName}
-            isOutputs
-          ></DynamicInputVariable>
-        ) : (
-          <div>
-            <VariableTitle title={'Return Values'}></VariableTitle>
-            <FormContainer className="space-y-5">
-              <FormField
-                control={form.control}
-                name={`${DynamicFieldName}.name`}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Name</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        placeholder={t('common.pleaseInput')}
-                      ></Input>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name={`${DynamicFieldName}.type`}
-                render={({ field }) => (
-                  <FormItem className="flex-1">
-                    <FormLabel>Type</FormLabel>
-                    <FormControl>
-                      <RAGFlowSelect
-                        placeholder={t('common.pleaseSelect')}
-                        options={TypeOptions}
-                        {...field}
-                      ></RAGFlowSelect>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </FormContainer>
-          </div>
-        )}
+        <div className="space-y-3">
+          <VariableTitle title={'Return Value'}></VariableTitle>
+          {legacyOutputs.length > 0 && (
+            <div className="flex items-start gap-2 rounded-md border border-state-error/40 bg-state-error/10 px-3 py-2 text-sm text-text-primary">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-state-error" />
+              <p>
+                This CodeExec node uses the deprecated multi-output schema:{' '}
+                {legacyOutputs.join(', ')}. Keep one business output here and
+                move field extraction to downstream nodes.
+              </p>
+            </div>
+          )}
+          <FormContainer className="space-y-5">
+            <FormField
+              control={form.control}
+              name="output.name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Name</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      placeholder={t('common.pleaseInput')}
+                    ></Input>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="output.type"
+              render={({ field }) => (
+                <FormItem className="flex-1">
+                  <FormLabel>Type</FormLabel>
+                  <FormControl>
+                    <RAGFlowSelect
+                      placeholder={t('common.pleaseSelect')}
+                      options={TypeOptions}
+                      {...field}
+                    ></RAGFlowSelect>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </FormContainer>
+        </div>
       </FormWrapper>
-      <div className="p-5">
-        <Output
-          list={buildOutputList({
-            ...(formData?.outputs ?? {}),
-            ...CodeSystemOutputs,
-          })}
-        ></Output>
+      <div className="space-y-4 p-5">
+        <Output list={buildOutputList(displayedBusinessOutputs)}>
+          Business
+        </Output>
+        <Output list={buildOutputList(CodeExecPanelSystemOutputs)}>
+          System
+        </Output>
       </div>
     </Form>
   );

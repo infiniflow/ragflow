@@ -19,7 +19,7 @@ import kbService, {
   listDocument,
   updateDocument,
 } from '@/services/knowledge-service';
-import api, { api_host, ExternalApi } from '@/utils/api';
+import api, { restAPIv1, webAPI } from '@/utils/api';
 import { getSearchValue } from '@/utils/common-util';
 import { buildChunkHighlights } from '@/utils/document-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -137,8 +137,8 @@ export const useFetchDocumentList = () => {
       }
       const ret = await listDocument(
         {
-          kb_id: knowledgeId || id,
-          keywords: debouncedSearchString,
+          id: knowledgeId || id,
+          ext: { keywords: debouncedSearchString },
           page_size: pagination.pageSize,
           page: pagination.current,
         },
@@ -473,8 +473,8 @@ export const useGetDocumentUrl = (documentId?: string) => {
   const getDocumentUrl = useCallback(
     (id?: string) => {
       return auth
-        ? `${ExternalApi}/v1/documents/${id || documentId}`
-        : `${api_host}/document/get/${id || documentId}`;
+        ? `${restAPIv1}/documents/${id || documentId}`
+        : `${webAPI}/document/get/${id || documentId}`;
     },
     [documentId, auth],
   );

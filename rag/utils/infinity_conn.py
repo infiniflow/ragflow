@@ -82,6 +82,8 @@ class InfinityConnection(InfinityConnectionBase):
             field = "authors@ft_authors_rag_coarse"
         elif field == "authors_sm_tks":
             field = "authors@ft_authors_rag_fine"
+        elif field == "tag_kwd":
+            field = "tag_kwd@ft_tag_kwd_whitespace__"
         tokens[0] = field
         return "^".join(tokens)
 

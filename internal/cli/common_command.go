@@ -21,10 +21,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
-	"syscall"
-	"unsafe"
+
+	"golang.org/x/term"
 )
 
 // LoginUserInteractive performs interactive login with username and password
@@ -54,10 +53,10 @@ func (c *RAGFlowClient) LoginUserInteractive(username, password string) error {
 		return fmt.Errorf("server is down")
 	}
 
-	// Check response - admin returns JSON with message "PONG", user returns plain "pong"
+	// Check response - admin returns JSON with message "pong", user returns plain "pong"
 	resJSON, err := resp.JSON()
 	if err == nil {
-		// Admin mode returns {"code":0,"message":"PONG"}
+		// Admin mode returns {"code":0,"message":"pong"}
 		if msg, ok := resJSON["message"].(string); !ok || msg != "pong" {
 			fmt.Println("Server is down")
 			return fmt.Errorf("server is down")
@@ -74,7 +73,7 @@ func (c *RAGFlowClient) LoginUserInteractive(username, password string) error {
 	if password == "" {
 		fmt.Printf("password for %s: ", username)
 		var err error
-		password, err = readPassword()
+		password, err = ReadPassword()
 		if err != nil {
 			return fmt.Errorf("failed to read password: %w", err)
 		}
@@ -121,10 +120,10 @@ func (c *RAGFlowClient) LoginUser(cmd *Command) error {
 		return fmt.Errorf("server is down")
 	}
 
-	// Check response - admin returns JSON with message "PONG", user returns plain "pong"
+	// Check response - admin returns JSON with message "pong", user returns plain "pong"
 	resJSON, err := resp.JSON()
 	if err == nil {
-		// Admin mode returns {"code":0,"message":"PONG"}
+		// Admin mode returns {"code":0,"message":"pong"}
 		if msg, ok := resJSON["message"].(string); !ok || msg != "pong" {
 			fmt.Println("Server is down")
 			return fmt.Errorf("server is down")
@@ -146,7 +145,7 @@ func (c *RAGFlowClient) LoginUser(cmd *Command) error {
 	if !ok {
 		// Get password from user input (hidden)
 		fmt.Printf("password for %s: ", email)
-		password, err = readPassword()
+		password, err = ReadPassword()
 		if err != nil {
 			return fmt.Errorf("failed to read password: %w", err)
 		}
@@ -375,45 +374,25 @@ func (c *RAGFlowClient) ShowModel(cmd *Command) (ResponseIf, error) {
 }
 
 // readPassword reads password from terminal without echoing
-func readPassword() (string, error) {
-	// Check if stdin is a terminal by trying to get terminal size
-	if isTerminal() {
-		// Use stty to disable echo
-		cmd := exec.Command("stty", "-echo")
-		cmd.Stdin = os.Stdin
-		if err := cmd.Run(); err != nil {
-			// Fallback: read normally
-			return readPasswordFallback()
-		}
-		defer func() {
-			// Re-enable echo
-			cmd := exec.Command("stty", "echo")
-			cmd.Stdin = os.Stdin
-			cmd.Run()
-		}()
-
-		reader := bufio.NewReader(os.Stdin)
-		password, err := reader.ReadString('\n')
-		fmt.Println() // New line after password input
-		if err != nil {
-			return "", err
-		}
-		return strings.TrimSpace(password), nil
+func ReadPassword() (string, error) {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return ReadPasswordFallback()
 	}
 
-	// Fallback for non-terminal input (e.g., piped input)
-	return readPasswordFallback()
-}
+	fmt.Print("Password: ")
+	passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println()
 
-// isTerminal checks if stdin is a terminal
-func isTerminal() bool {
-	var termios syscall.Termios
-	_, _, err := syscall.Syscall6(syscall.SYS_IOCTL, os.Stdin.Fd(), syscall.TCGETS, uintptr(unsafe.Pointer(&termios)), 0, 0, 0)
-	return err == 0
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(passwordBytes)), nil
 }
 
 // readPasswordFallback reads password as plain text (fallback mode)
-func readPasswordFallback() (string, error) {
+func ReadPasswordFallback() (string, error) {
+	fmt.Print("Password (will be visible): ")
 	reader := bufio.NewReader(os.Stdin)
 	password, err := reader.ReadString('\n')
 	if err != nil {

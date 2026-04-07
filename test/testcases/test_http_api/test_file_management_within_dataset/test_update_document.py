@@ -323,8 +323,6 @@ class TestDocumentsUpdated:
             assert expected_message in res["message"] or res["message"] == expected_message
 
 
-
-
 DEFAULT_PARSER_CONFIG_FOR_TEST = {
     "layout_recognize": "DeepDOC",
     "chunk_token_num": 512,

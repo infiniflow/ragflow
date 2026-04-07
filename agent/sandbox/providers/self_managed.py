@@ -187,6 +187,7 @@ class SelfManagedProvider(SandboxProvider):
                 )
 
             result = response.json()
+            structured_result = result.get("result") or {}
 
             return ExecutionResult(
                 stdout=result.get("stdout", ""),
@@ -200,6 +201,9 @@ class SelfManagedProvider(SandboxProvider):
                     "detail": result.get("detail"),
                     "instance_id": instance_id,
                     "artifacts": result.get("artifacts", []),
+                    "result_present": structured_result.get("present", False),
+                    "result_value": structured_result.get("value"),
+                    "result_type": structured_result.get("type"),
                 }
             )
 

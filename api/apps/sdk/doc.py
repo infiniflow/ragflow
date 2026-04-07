@@ -15,13 +15,11 @@
 #
 import datetime
 import json
-import logging
 import re
 from io import BytesIO
 
 import xxhash
-from peewee import OperationalError
-from pydantic import BaseModel, Field, validator, ValidationError
+from pydantic import BaseModel, Field, validator
 from quart import request, send_file
 
 from api.constants import FILE_NAME_LEN_LIMIT
@@ -35,10 +33,8 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
 from api.db.services.tenant_llm_service import TenantLLMService
-from api.utils import validation_utils
-from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_request_json, get_result, server_error_response, token_required
+from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_request_json, get_result, server_error_response, token_required
 from api.utils.image_utils import store_chunk_image
-from api.utils.validation_utils import format_validation_error_message, UpdateDocumentReq
 from common import settings
 from common.constants import FileSource, LLMType, ParserType, RetCode, TaskStatus
 from common.metadata_utils import convert_conditions, meta_filter
@@ -183,9 +179,6 @@ async def upload(dataset_id, tenant_id):
         renamed_doc["run"] = "UNSTART"
         renamed_doc_list.append(renamed_doc)
     return get_result(data=renamed_doc_list)
-
-
-
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
 @token_required
