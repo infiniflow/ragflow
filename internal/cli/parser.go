@@ -196,6 +196,10 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseThinkCommand()
 	case TokenUse:
 		return p.parseUseCommand()
+	case TokenUpdate:
+		return p.parseUpdateCommand()
+	case TokenRemove:
+		return p.parseRemoveCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
@@ -233,7 +237,7 @@ func (p *Parser) expectSemicolon() error {
 }
 
 func isKeyword(tokenType int) bool {
-	return tokenType >= TokenLogin && tokenType <= TokenMetadata
+	return tokenType >= TokenLogin && tokenType <= TokenTag
 }
 
 // isCECommand checks if the given string is a ContextEngine command
