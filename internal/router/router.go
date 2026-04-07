@@ -22,7 +22,6 @@ import (
 	"ragflow/internal/handler"
 )
 
-// Router router
 type Router struct {
 	authHandler          *handler.AuthHandler
 	userHandler          *handler.UserHandler
@@ -196,6 +195,16 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
 
+			chats := v1.Group("/chats")
+			{
+				chats.GET("", r.chatHandler.ListChats)
+			}
+
+			searches := v1.Group("/searches")
+			{
+				searches.GET("", r.searchHandler.ListSearches)
+			}
+
 			file := v1.Group("/files")
 			{
 				file.POST("", r.fileHandler.UploadFile)
@@ -219,6 +228,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
 				provider.PUT("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.EnableOrDisableModel)
 				provider.POST("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.ChatToModel)
+			}
+
+			system := v1.Group("/system")
+			{
+				system.GET("/version", r.systemHandler.GetVersion)
 			}
 		}
 
@@ -285,7 +299,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Chat routes
 		chat := authorized.Group("/v1/dialog")
 		{
-			chat.GET("/list", r.chatHandler.ListChats)
 			chat.POST("/next", r.chatHandler.ListChatsNext)
 			chat.POST("/set", r.chatHandler.SetDialog)
 			chat.POST("/rm", r.chatHandler.RemoveChats)
@@ -304,12 +317,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		connector := authorized.Group("/v1/connector")
 		{
 			connector.GET("/list", r.connectorHandler.ListConnectors)
-		}
-
-		// Search routes
-		search := authorized.Group("/v1/search")
-		{
-			search.POST("/list", r.searchHandler.ListSearchApps)
 		}
 
 		// File routes

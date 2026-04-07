@@ -40,7 +40,7 @@ func NewSearchHandler(searchService *service.SearchService, userService *service
 	}
 }
 
-// ListSearchApps list search apps
+// ListSearches list search apps
 // @Summary List Search Apps
 // @Description Get list of search apps for the current user with filtering, pagination and sorting
 // @Tags search
@@ -53,8 +53,8 @@ func NewSearchHandler(searchService *service.SearchService, userService *service
 // @Param desc query bool false "descending order (default: true)"
 // @Param request body service.ListSearchAppsRequest true "filter options including owner_ids"
 // @Success 200 {object} service.ListSearchAppsResponse
-// @Router /v1/search/list [post]
-func (h *SearchHandler) ListSearchApps(c *gin.Context) {
+// @Router /api/v1/searches [post]
+func (h *SearchHandler) ListSearches(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
@@ -99,7 +99,7 @@ func (h *SearchHandler) ListSearchApps(c *gin.Context) {
 	}
 
 	// List search apps with filtering
-	result, err := h.searchService.ListSearchApps(userID, keywords, page, pageSize, orderby, desc, req.OwnerIDs)
+	result, err := h.searchService.ListSearches(userID, keywords, page, pageSize, orderby, desc, req.OwnerIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
