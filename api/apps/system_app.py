@@ -29,7 +29,6 @@ from api.utils.api_utils import (
     server_error_response,
     generate_confirmation_token,
 )
-from common.versions import get_ragflow_version
 from common.time_utils import current_timestamp, datetime_format
 from common.log_utils import get_log_levels, set_log_level
 from timeit import default_timer as timer
