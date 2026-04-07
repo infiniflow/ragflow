@@ -126,7 +126,7 @@ func (p *Parser) parseContextSearchCommand() (*Command, error) {
 			if strings.ToLower(p.curToken.Value) == "n" {
 				p.nextToken()
 				var err error
-				if p.curToken.Type != TokenNumber {
+				if p.curToken.Type != TokenInteger {
 					return nil, fmt.Errorf("expect number")
 				}
 				cmd.Params["number"], err = p.parseNumber()
@@ -140,7 +140,7 @@ func (p *Parser) parseContextSearchCommand() (*Command, error) {
 			if strings.ToLower(p.curToken.Value) == "t" {
 				p.nextToken()
 				var err error
-				if p.curToken.Type != TokenNumber {
+				if p.curToken.Type != TokenInteger {
 					return nil, fmt.Errorf("expect number")
 				}
 				cmd.Params["threshold"], err = p.parseFloat()
