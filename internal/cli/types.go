@@ -112,9 +112,16 @@ const (
 	TokenEnable
 	TokenUse
 	TokenThink
+	TokenLS
+	TokenCat
 	TokenInsert
 	TokenFile
 	TokenMetadata
+	TokenUpdate
+	TokenRemove
+	TokenChunk
+	TokenDocument
+	TokenTag
 
 	// Literals
 	TokenIdentifier
@@ -124,7 +131,9 @@ const (
 	// Special
 	TokenSemicolon
 	TokenComma
+	TokenSlash
 	TokenEOF
+	TokenDash
 	TokenIllegal
 )
 
