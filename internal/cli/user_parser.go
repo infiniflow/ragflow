@@ -1863,30 +1863,88 @@ func (p *Parser) parseSearchCommand() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	p.nextToken()
-	if p.curToken.Type != TokenOn {
-		return nil, fmt.Errorf("expected ON")
-	}
-	p.nextToken()
-	if p.curToken.Type != TokenDatasets {
-		return nil, fmt.Errorf("expected DATASETS")
-	}
 	p.nextToken()
 
-	datasets, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
+	if p.curToken.Type == TokenOn {
+		p.nextToken() // skip on
 
-	cmd := NewCommand("search_on_datasets")
-	cmd.Params["question"] = question
-	cmd.Params["datasets"] = datasets
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
+		if p.curToken.Type != TokenDatasets {
+			return nil, fmt.Errorf("expected DATASETS")
+		}
 		p.nextToken()
+
+		datasets, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+
+		cmd := NewCommand("search_on_datasets")
+		cmd.Params["question"] = question
+		cmd.Params["datasets"] = datasets
+
+		p.nextToken()
+		// Semicolon is optional for UNSET TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
+		}
+		return cmd, nil
+	}
+
+	cmd := NewCommand("context_search")
+
+	cmd.Params["query"] = question
+
+	if p.curToken.Type == TokenEOF {
+		cmd.Params["path"] = "."
+		return cmd, nil
+	}
+
+	for p.curToken.Type != TokenEOF {
+		if p.curToken.Type == TokenDash {
+			p.nextToken() // skip dash
+			if p.curToken.Type != TokenIdentifier {
+				return nil, fmt.Errorf("expect identifier")
+			}
+
+			if strings.ToLower(p.curToken.Value) == "n" {
+				p.nextToken()
+				var err error
+				if p.curToken.Type != TokenNumber {
+					return nil, fmt.Errorf("expect number")
+				}
+				cmd.Params["number"], err = p.parseNumber()
+				if err != nil {
+					return nil, err
+				}
+				p.nextToken()
+				continue
+			}
+
+			if strings.ToLower(p.curToken.Value) == "t" {
+				p.nextToken()
+				var err error
+				if p.curToken.Type != TokenNumber {
+					return nil, fmt.Errorf("expect number")
+				}
+				cmd.Params["threshold"], err = p.parseFloat()
+				if err != nil {
+					return nil, err
+				}
+				p.nextToken()
+				continue
+			}
+
+			return nil, fmt.Errorf("unknow parameter: %s", p.curToken.Value)
+		} else if p.curToken.Type == TokenIdentifier {
+			if cmd.Params["path"] == nil {
+				cmd.Params["path"] = p.curToken.Value
+			} else {
+				cmd.Params["path"] = fmt.Sprintf("%s %s", cmd.Params["path"], p.curToken.Value)
+			}
+			p.nextToken() // skip path
+			continue
+		}
+		return nil, fmt.Errorf("syntax error")
 	}
 	return cmd, nil
 }
