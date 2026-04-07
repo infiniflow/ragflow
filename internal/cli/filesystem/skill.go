@@ -545,11 +545,12 @@ func (p *SkillProvider) getDefaultEmbdID(ctx stdctx.Context, hubID string) (stri
 // ============================================================================
 
 // UploadSkill uploads a skill directory to the server
-func (p *SkillProvider) UploadSkill(ctx stdctx.Context, skillPath string, versionOverride string, hubID string, fileProvider Provider) error {
+// nameOverride: user-specified skill name (overrides SKILL.md metadata)
+func (p *SkillProvider) UploadSkill(ctx stdctx.Context, skillPath string, versionOverride string, hubID string, fileProvider Provider, nameOverride string) error {
 	hubID = normalizeHubID(hubID)
 
 	// 1. Validate the skill directory
-	result, files, err := ValidateSkillDirectory(skillPath, versionOverride)
+	result, files, err := ValidateSkillDirectory(skillPath, versionOverride, nameOverride)
 	if err != nil {
 		return fmt.Errorf("validation error: %w", err)
 	}
@@ -557,9 +558,13 @@ func (p *SkillProvider) UploadSkill(ctx stdctx.Context, skillPath string, versio
 		return fmt.Errorf("validation failed: %s", GetValidationErrorMessage(result))
 	}
 
-	// Get skill name from directory name
-	skillName := filepath.Base(skillPath)
-	skillName = normalizeSkillName(skillName)
+	// Get skill name from validation result (SKILL.md metadata or user-specified)
+	// Fallback to directory name if not specified
+	skillName := result.Name
+	if skillName == "" {
+		skillName = filepath.Base(skillPath)
+		skillName = normalizeSkillName(skillName)
+	}
 
 	// Use provided version or default
 	version := result.Version
@@ -777,7 +782,8 @@ func (p *SkillProvider) indexSkillFromUpload(ctx stdctx.Context, result *SkillVa
 // ============================================================================
 
 // ValidateSkillDirectory validates a skill directory
-func ValidateSkillDirectory(skillPath string, versionOverride string) (*SkillValidationResult, []*SkillFile, error) {
+// nameOverride: user-specified skill name (overrides SKILL.md metadata)
+func ValidateSkillDirectory(skillPath string, versionOverride string, nameOverride string) (*SkillValidationResult, []*SkillFile, error) {
 	info, err := os.Stat(skillPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot access directory %s: %w", skillPath, err)
@@ -886,9 +892,15 @@ func ValidateSkillDirectory(skillPath string, versionOverride string) (*SkillVal
 		}
 	}
 
+	// Use user-specified name if provided, otherwise use metadata.Name from SKILL.md
+	skillName := metadata.Name
+	if nameOverride != "" {
+		skillName = nameOverride
+	}
+
 	return &SkillValidationResult{
 		Valid:       true,
-		Name:        metadata.Name,
+		Name:        skillName,
 		Description: metadata.Description,
 		Version:     version,
 		Tags:        metadata.Tags,
@@ -1181,6 +1193,7 @@ func NewAddSkillCommand(client HTTPClientInterface, fileProvider *FileProvider, 
 type AddSkillArgs struct {
 	SkillPath string
 	Version   string
+	SkillName string // User-specified skill name (overrides SKILL.md)
 	ShowHelp  bool
 }
 
@@ -1201,6 +1214,13 @@ func ParseAddSkillArgs(args []string) (*AddSkillArgs, error) {
 				i++
 			} else {
 				return nil, fmt.Errorf("version flag requires a value")
+			}
+		case "-n", "--name":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				result.SkillName = args[i+1]
+				i++
+			} else {
+				return nil, fmt.Errorf("name flag requires a value")
 			}
 		default:
 			// Non-flag argument is the skill path
@@ -1243,7 +1263,7 @@ func (c *AddSkillCommand) Execute(args []string) error {
 	// Upload skill to default hub
 	uploader := NewSkillUploader(c.client, c.fileProvider)
 	uploader.SetSkillProvider(c.skillProvider)
-	err = uploader.UploadSkill(stdctx.Background(), skillPath, parsedArgs.Version, "")
+	err = uploader.UploadSkill(stdctx.Background(), skillPath, parsedArgs.Version, "", parsedArgs.SkillName)
 	if err != nil {
 		// Handle version conflict error
 		if conflictErr, ok := err.(*SkillConflictError); ok {
@@ -1445,13 +1465,14 @@ func parseHubFromPath(path string) string {
 }
 
 // UploadSkill uploads a skill directory to the server
-func (u *SkillUploader) UploadSkill(ctx stdctx.Context, skillPath string, versionOverride string, hubPath string) error {
+// nameOverride: user-specified skill name (overrides SKILL.md metadata)
+func (u *SkillUploader) UploadSkill(ctx stdctx.Context, skillPath string, versionOverride string, hubPath string, nameOverride string) error {
 	// Parse hub from path
 	hubID := parseHubFromPath(hubPath)
 
 	// 1. Validate the skill directory
 	fmt.Printf("Validating skill at %s...\n", skillPath)
-	result, files, err := ValidateSkillDirectory(skillPath, versionOverride)
+	result, files, err := ValidateSkillDirectory(skillPath, versionOverride, nameOverride)
 	if err != nil {
 		return fmt.Errorf("validation error: %w", err)
 	}
@@ -1459,9 +1480,13 @@ func (u *SkillUploader) UploadSkill(ctx stdctx.Context, skillPath string, versio
 		return fmt.Errorf("validation failed: %s", GetValidationErrorMessage(result))
 	}
 
-	// Get skill name from directory name
-	skillName := filepath.Base(skillPath)
-	skillName = normalizeSkillName(skillName)
+	// Get skill name from validation result (SKILL.md metadata or user-specified)
+	// Fallback to directory name if not specified
+	skillName := result.Name
+	if skillName == "" {
+		skillName = filepath.Base(skillPath)
+		skillName = normalizeSkillName(skillName)
+	}
 
 	// Use provided version or default
 	version := result.Version

@@ -271,7 +271,9 @@ export const useSkills = () => {
       const createDate = firstFileDate || new Date().toISOString();
       const updateDate = createDate;
 
-      const skillName = metadata.name || folderName;
+      // Priority: folderName (user-specified) > metadata.name (from SKILL.md)
+      // This allows users to override the skill name from SKILL.md
+      const skillName = folderName || metadata.name;
 
       return {
         id: skillName, // Use skill name as ID (consistent with search results)
@@ -381,7 +383,9 @@ export const useSkills = () => {
 
       const createDate = firstFileDate || new Date().toISOString();
 
-      const skillName = metadata.name || folderName;
+      // Priority: folderName (user-specified) > metadata.name (from SKILL.md)
+      // This allows users to override the skill name from SKILL.md
+      const skillName = folderName || metadata.name;
 
       return {
         id: skillName, // Use skill name as ID (consistent with search results)
@@ -790,6 +794,8 @@ export const useSkills = () => {
             .join('\n\n');
 
           // Index the skill (embd_id will be fetched from skill search config by backend)
+          // Use user-specified name (skillNameNormalized) as skill ID and name
+          // This ensures consistency between folder name, skill ID, and display name
           const indexResponse = await fetch('/api/v1/skills/index', {
             method: 'POST',
             headers: {
@@ -800,9 +806,9 @@ export const useSkills = () => {
               hub_id: normalizedHubId, // Use hub ID for indexing
               skills: [
                 {
-                  id: `${skillNameNormalized}/${version}`,
+                  id: skillNameNormalized, // Use user-specified name as ID (without version suffix)
                   folder_id: skillFolderId, // Pass folder ID for file retrieval
-                  name: skillMetadata.name || name,
+                  name: skillNameNormalized, // Use user-specified name (override SKILL.md)
                   description: skillDescription,
                   tags: skillMetadata.tags || [],
                   content: concatenatedContent,
