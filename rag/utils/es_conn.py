@@ -34,21 +34,21 @@ SEARCH_AFTER_BATCH_SIZE = 1000
 # Single-document atomic pagerank_fea adjust (chunk feedback). Clamps using params.min_w / max_w;
 # removes field at zero for rank_feature compatibility.
 _PAGERANK_FEA_ADJUST_SCRIPT = """
-int cur = 0;
+double cur = 0.0;
 if (ctx._source.containsKey(params.pf)) {
   Object v = ctx._source[params.pf];
   if (v != null) {
     if (v instanceof Number) {
-      cur = ((Number)v).intValue();
+      cur = ((Number)v).doubleValue();
     } else {
-      try { cur = Integer.parseInt(v.toString()); } catch (Exception e) { cur = 0; }
+      try { cur = Double.parseDouble(v.toString()); } catch (Exception e) { cur = 0.0; }
     }
   }
 }
-int nw = cur + params.delta;
+double nw = cur + params.delta;
 if (nw < params.min_w) { nw = params.min_w; }
 if (nw > params.max_w) { nw = params.max_w; }
-if (nw == 0) {
+if (nw <= 0.0) {
   if (ctx._source.containsKey(params.pf)) {
     ctx._source.remove(params.pf);
   }
@@ -448,9 +448,9 @@ class ESConnection(ESConnectionBase):
         chunk_id: str,
         index_name: str,
         knowledgebase_id: str,
-        delta: int,
-        min_w: int = 0,
-        max_w: int = 100,
+        delta: float,
+        min_w: float = 0.0,
+        max_w: float = 100.0,
         row_id: int | None = None,
     ) -> bool:
         """Atomically adjust pagerank_fea on one chunk (painless script)."""
@@ -466,13 +466,24 @@ class ESConnection(ESConnectionBase):
                         "lang": "painless",
                         "params": {
                             "pf": PAGERANK_FLD,
-                            "delta": int(delta),
-                            "min_w": int(min_w),
-                            "max_w": int(max_w),
+                            "delta": float(delta),
+                            "min_w": float(min_w),
+                            "max_w": float(max_w),
                         },
                     },
                 )
+                self.logger.debug(
+                    "ESConnection.adjust_chunk_pagerank_fea(index=%s, id=%s, delta=%s) succeeded",
+                    index_name,
+                    chunk_id,
+                    delta,
+                )
                 return True
+            except ConnectionTimeout:
+                self.logger.exception("ES request timeout")
+                time.sleep(3)
+                self._connect()
+                continue
             except Exception as e:
                 self.logger.exception(
                     "ESConnection.adjust_chunk_pagerank_fea(index=%s, id=%s): %s",
@@ -480,7 +491,9 @@ class ESConnection(ESConnectionBase):
                     chunk_id,
                     e,
                 )
-                if re.search(r"(timeout|connection)", str(e).lower()):
+                if re.search(r"connection", str(e).lower()):
+                    time.sleep(3)
+                    self._connect()
                     continue
                 break
         return False

@@ -35,21 +35,21 @@ from common import settings
 ATTEMPT_TIME = 2
 
 _PAGERANK_FEA_ADJUST_SCRIPT = """
-int cur = 0;
+double cur = 0.0;
 if (ctx._source.containsKey(params.pf)) {
   Object v = ctx._source[params.pf];
   if (v != null) {
     if (v instanceof Number) {
-      cur = ((Number)v).intValue();
+      cur = ((Number)v).doubleValue();
     } else {
-      try { cur = Integer.parseInt(v.toString()); } catch (Exception e) { cur = 0; }
+      try { cur = Double.parseDouble(v.toString()); } catch (Exception e) { cur = 0.0; }
     }
   }
 }
-int nw = cur + params.delta;
+double nw = cur + params.delta;
 if (nw < params.min_w) { nw = params.min_w; }
 if (nw > params.max_w) { nw = params.max_w; }
-if (nw == 0) {
+if (nw <= 0.0) {
   if (ctx._source.containsKey(params.pf)) {
     ctx._source.remove(params.pf);
   }
@@ -462,43 +462,45 @@ class OSConnection(DocStoreConnection):
         chunk_id: str,
         indexName: str,
         knowledgebaseId: str,
-        delta: int,
-        min_w: int = 0,
-        max_w: int = 100,
+        delta: float,
+        min_w: float = 0.0,
+        max_w: float = 100.0,
         row_id: int | None = None,
     ) -> bool:
         """Atomically adjust pagerank_fea on one chunk (painless script)."""
         _ = row_id
-        for _ in range(ATTEMPT_TIME):
-            try:
-                self.os.update(
-                    index=indexName,
-                    id=chunk_id,
-                    retry_on_conflict=3,
-                    body={
-                        "script": {
-                            "source": _PAGERANK_FEA_ADJUST_SCRIPT.strip(),
-                            "lang": "painless",
-                            "params": {
-                                "pf": PAGERANK_FLD,
-                                "delta": int(delta),
-                                "min_w": int(min_w),
-                                "max_w": int(max_w),
-                            },
-                        }
-                    },
-                )
-                return True
-            except Exception as e:
-                logger.exception(
-                    "OSConnection.adjust_chunk_pagerank_fea(index=%s, id=%s): %s",
-                    indexName,
-                    chunk_id,
-                    e,
-                )
-                if re.search(r"(timeout|connection)", str(e).lower()):
-                    continue
-                break
+        try:
+            self.os.update(
+                index=indexName,
+                id=chunk_id,
+                retry_on_conflict=3,
+                body={
+                    "script": {
+                        "source": _PAGERANK_FEA_ADJUST_SCRIPT.strip(),
+                        "lang": "painless",
+                        "params": {
+                            "pf": PAGERANK_FLD,
+                            "delta": float(delta),
+                            "min_w": float(min_w),
+                            "max_w": float(max_w),
+                        },
+                    }
+                },
+            )
+            logger.debug(
+                "OSConnection.adjust_chunk_pagerank_fea(index=%s, id=%s, delta=%s) succeeded",
+                indexName,
+                chunk_id,
+                delta,
+            )
+            return True
+        except Exception as e:
+            logger.exception(
+                "OSConnection.adjust_chunk_pagerank_fea(index=%s, id=%s): %s",
+                indexName,
+                chunk_id,
+                e,
+            )
         return False
 
     def delete(self, condition: dict, indexName: str, knowledgebaseId: str) -> int:

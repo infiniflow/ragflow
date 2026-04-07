@@ -195,7 +195,7 @@ class ChunkFeedbackService:
                     chunk_id,
                     idx_name,
                     kb_id,
-                    int(delta),
+                    float(delta),
                     MIN_PAGERANK_WEIGHT,
                     MAX_PAGERANK_WEIGHT,
                     **kwargs,
@@ -215,16 +215,16 @@ class ChunkFeedbackService:
                 logging.warning("Chunk %s not found in index %s", chunk_id, idx_name)
                 return False
 
-            current_weight = int(float(chunk.get(PAGERANK_FLD, 0) or 0))
-            new_weight = current_weight + int(delta)
-            new_weight = max(MIN_PAGERANK_WEIGHT, min(MAX_PAGERANK_WEIGHT, new_weight))
+            current_weight = float(chunk.get(PAGERANK_FLD, 0) or 0)
+            new_weight = current_weight + float(delta)
+            new_weight = max(float(MIN_PAGERANK_WEIGHT), min(float(MAX_PAGERANK_WEIGHT), new_weight))
 
             condition = {"id": chunk_id}
             doc_engine = settings.DOC_ENGINE.lower()
-            if new_weight == 0 and doc_engine in ("elasticsearch", "opensearch"):
+            if new_weight <= 0.0 and doc_engine in ("elasticsearch", "opensearch"):
                 new_value = {"remove": PAGERANK_FLD}
             else:
-                new_value = {PAGERANK_FLD: int(new_weight)}
+                new_value = {PAGERANK_FLD: new_weight}
 
             success = conn.update(condition, new_value, idx_name, kb_id)
 
