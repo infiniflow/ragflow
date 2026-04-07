@@ -15,10 +15,10 @@ user_id/
 │       ├── DOC.md
 │       └── ...
 ├── skills/
-│   ├── registry.json
 │   └── skill_name/
-│       ├── SKILL.md
-│       └── ...
+│       └── version
+│.          ├──SKILL.md
+│.          └── ...
 └── memories/
     └── memory_id/
         ├── sessions/
@@ -46,4 +46,4 @@ user_id/
 
 - `ls [path]` - List directory contents
 - `cat <path>` - Display file contents(only for text files)
-- `search <query>` - Search content
+- `search <query> path` - Search content
