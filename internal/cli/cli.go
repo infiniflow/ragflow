@@ -322,6 +322,7 @@ func looksLikeSQL(s string) bool {
 		"LOGIN ", "REGISTER ", "PING", "GRANT ", "REVOKE ",
 		"SET ", "UNSET ", "UPDATE ", "DELETE ", "INSERT ",
 		"SELECT ", "DESCRIBE ", "EXPLAIN ", "ADD ", "ENABLE ", "DISABLE ", "CHAT ", "USE", "THINK",
+		"REMOVE ",
 	}
 	for _, prefix := range sqlPrefixes {
 		if strings.HasPrefix(s, prefix) {
@@ -994,6 +995,7 @@ Meta Commands:
 
 Commands (User Mode):
   LOGIN USER 'email';                                    - Login as user
+  LOGIN USER 'email' PASSWORD 'pwd';                     - Login as user with password
   REGISTER USER 'name' AS 'nickname' PASSWORD 'pwd';     - Register new user
   SHOW VERSION;                                          - Show version info
   PING;                                                  - Ping server

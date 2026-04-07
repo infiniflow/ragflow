@@ -475,6 +475,11 @@ func (s *KnowledgebaseService) Accessible(kbID, userID string) bool {
 	return s.kbDAO.Accessible(kbID, userID)
 }
 
+// RemoveTag removes a tag from documents in a dataset
+func (s *KnowledgebaseService) RemoveTag(condition map[string]interface{}, newValue map[string]interface{}, indexName, kbID string) error {
+	return s.docEngine.UpdateDataset(context.Background(), condition, newValue, indexName, kbID)
+}
+
 // GetByID retrieves a knowledge base by ID
 func (s *KnowledgebaseService) GetByID(kbID string) (*entity.Knowledgebase, error) {
 	return s.kbDAO.GetByID(kbID)
