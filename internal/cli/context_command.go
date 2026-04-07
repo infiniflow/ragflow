@@ -76,18 +76,23 @@ func (c *RAGFlowClient) ContextCat(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	path, ok := cmd.Params["filename"].(string)
+	path, ok := cmd.Params["path"].(string)
 	if !ok {
-		return nil, fmt.Errorf("fail to convert 'filename' to string")
+		return nil, fmt.Errorf("fail to convert 'path' to string")
 	}
 
-	fmt.Printf("cat %s\n", path)
+	// Execute cat command through Filesystem Engine
+	ctx := context.Background()
+	content, err := c.ContextEngine.Cat(ctx, path)
+	if err != nil {
+		return nil, err
+	}
 
 	// Convert to response
-	var response ContextListResponse
+	var response ContextCatResponse
 	response.OutputFormat = c.OutputFormat
 	response.Code = 0
-	response.Data = nil
+	response.Content = string(content)
 
 	return &response, nil
 }

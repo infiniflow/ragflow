@@ -456,7 +456,8 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 	outputColumns = convertSelectFields(outputColumns, isSkillIndex)
 
 	// Determine if text or vector search
-	hasTextMatch := req.Question != ""
+	// Treat "*" as wildcard (match all), disable text match
+	hasTextMatch := req.Question != "" && req.Question != "*"
 	hasVectorMatch := !req.KeywordOnly && len(req.Vector) > 0
 
 	// Determine score column
@@ -756,7 +757,8 @@ func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName str
 	}
 
 	// Build query using Table's chainable methods
-	hasTextMatch := question != ""
+	// Treat "*" as wildcard (match all), disable text match
+	hasTextMatch := question != "" && question != "*"
 	hasVectorMatch := len(vector) > 0
 
 	// Determine if this is a skill index (starts with "skill_")

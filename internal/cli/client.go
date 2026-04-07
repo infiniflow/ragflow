@@ -69,6 +69,7 @@ func (c *RAGFlowClient) initContextEngine() {
 
 	// Register providers
 	engine.RegisterProvider(ce.NewDatasetProvider(&httpClientAdapter{c.HTTPClient}))
+	engine.RegisterProvider(ce.NewFileProvider(&httpClientAdapter{c.HTTPClient}))
 	engine.RegisterProvider(ce.NewSkillProvider(&httpClientAdapter{c.HTTPClient}))
 
 	c.ContextEngine = engine
@@ -268,6 +269,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ContextSearch(cmd)
 	case "ce_ls":
 		return c.CEList(cmd)
+	case "ce_cat":
+		return c.ContextCat(cmd)
 	case "ce_search":
 		return c.CESearch(cmd)
 	case "insert_dataset_from_file":

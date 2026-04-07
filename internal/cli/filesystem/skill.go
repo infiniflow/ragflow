@@ -163,6 +163,7 @@ func (p *SkillProvider) List(ctx stdctx.Context, subPath string, opts *ListOptio
 	}
 
 	parts := SplitPath(subPath)
+	
 	switch len(parts) {
 	case 1:
 		// skills/{hub_id} - list skills in hub
@@ -279,9 +280,208 @@ func (p *SkillProvider) Search(ctx stdctx.Context, subPath string, opts *SearchO
 }
 
 // Cat retrieves the content of a skill file at the given path
-// Not supported for skills as they are directories, not files
+// Path structure: skills/{hub_id}/{skill_name}/{version}/.../{file_path}
 func (p *SkillProvider) Cat(ctx stdctx.Context, path string) ([]byte, error) {
-	return nil, fmt.Errorf("cannot cat skill: skills are directories, use 'ls' instead")
+	parts := SplitPath(path)
+	if len(parts) < 4 {
+		return nil, fmt.Errorf("invalid file path: %s (expected: skills/{hub}/{skill}/{version}/.../{file})", path)
+	}
+
+	hubID := parts[0]
+	skillName := parts[1]
+	version := parts[2]
+	_ = JoinPath(parts[3:]...) // file path within version folder (used for nested directories)
+
+	// Step 1: Get the hub UUID
+	hubUUID, err := p.getHubUUIDByName(ctx, hubID)
+	if err != nil {
+		return nil, fmt.Errorf("hub '%s' not found: %w", hubID, err)
+	}
+
+	// Step 2: Find the skill's folder_id by searching
+	payload := map[string]interface{}{
+		"query":      skillName,
+		"hub_id":     hubUUID,
+		"page":       1,
+		"page_size":  10,
+	}
+
+	resp, err := p.httpClient.Request("POST", "/skills/search", true, "auto", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find skill: %w", err)
+	}
+
+	var searchResult struct {
+		Code int    `json:"code"`
+		Msg  string `json:"message"`
+		Data struct {
+			Skills []struct {
+				SkillID  string `json:"skill_id"`
+				FolderID string `json:"folder_id"`
+				Name     string `json:"name"`
+			} `json:"skills"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &searchResult); err != nil {
+		return nil, fmt.Errorf("failed to parse search response: %w", err)
+	}
+
+	if searchResult.Code != 0 {
+		return nil, fmt.Errorf("search failed: %s", searchResult.Msg)
+	}
+
+	// Find the matching skill
+	var skillFolderID string
+	for _, skill := range searchResult.Data.Skills {
+		if skill.Name == skillName {
+			skillFolderID = skill.FolderID
+			break
+		}
+	}
+
+	if skillFolderID == "" {
+		return nil, fmt.Errorf("skill '%s' not found in hub '%s'", skillName, hubID)
+	}
+
+	// Step 3: Find the version folder
+	filesResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", skillFolderID), true, "auto", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list versions: %w", err)
+	}
+
+	var filesResult struct {
+		Code int    `json:"code"`
+		Msg  string `json:"message"`
+		Data struct {
+			Files []struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+				Type string `json:"type"`
+			} `json:"files"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(filesResp.Body, &filesResult); err != nil {
+		return nil, fmt.Errorf("failed to parse files response: %w", err)
+	}
+
+	if filesResult.Code != 0 {
+		return nil, fmt.Errorf("failed to list files: %s", filesResult.Msg)
+	}
+
+	// Find the version folder
+	var versionFolderID string
+	for _, file := range filesResult.Data.Files {
+		if file.Name == version && file.Type == "folder" {
+			versionFolderID = file.ID
+			break
+		}
+	}
+
+	if versionFolderID == "" {
+		return nil, fmt.Errorf("version '%s' not found for skill '%s'", version, skillName)
+	}
+
+	// Step 4: Navigate to the file through the path
+	currentFolderID := versionFolderID
+	pathParts := parts[3:]
+
+	// If there's a directory path before the file, navigate through it
+	for i := 0; i < len(pathParts)-1; i++ {
+		subResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", currentFolderID), true, "auto", nil, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to navigate path: %w", err)
+		}
+
+		var subResult struct {
+			Code int    `json:"code"`
+			Msg  string `json:"message"`
+			Data struct {
+				Files []struct {
+					ID   string `json:"id"`
+					Name string `json:"name"`
+					Type string `json:"type"`
+				} `json:"files"`
+			} `json:"data"`
+		}
+
+		if err := json.Unmarshal(subResp.Body, &subResult); err != nil {
+			return nil, fmt.Errorf("failed to parse navigation response: %w", err)
+		}
+
+		if subResult.Code != 0 {
+			return nil, fmt.Errorf("navigation failed: %s", subResult.Msg)
+		}
+
+		found := false
+		for _, file := range subResult.Data.Files {
+			if file.Name == pathParts[i] {
+				if file.Type != "folder" {
+					return nil, fmt.Errorf("'%s' is not a directory", pathParts[i])
+				}
+				currentFolderID = file.ID
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return nil, fmt.Errorf("directory not found: %s", pathParts[i])
+		}
+	}
+
+	// Step 5: Find the file in the current directory
+	fileName := pathParts[len(pathParts)-1]
+	finalResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", currentFolderID), true, "auto", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list directory: %w", err)
+	}
+
+	var finalResult struct {
+		Code int    `json:"code"`
+		Msg  string `json:"message"`
+		Data struct {
+			Files []struct {
+				ID       string `json:"id"`
+				Name     string `json:"name"`
+				Type     string `json:"type"`
+				Location string `json:"location"`
+			} `json:"files"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(finalResp.Body, &finalResult); err != nil {
+		return nil, fmt.Errorf("failed to parse final response: %w", err)
+	}
+
+	if finalResult.Code != 0 {
+		return nil, fmt.Errorf("failed to list files: %s", finalResult.Msg)
+	}
+
+	// Find the file
+	var fileID string
+	for _, file := range finalResult.Data.Files {
+		if file.Name == fileName {
+			fileID = file.ID
+			break
+		}
+	}
+
+	if fileID == "" {
+		return nil, fmt.Errorf("file '%s' not found", fileName)
+	}
+
+	// Step 6: Download the file content
+	// First get file info to get the download URL
+	contentResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files/%s", fileID), true, "auto", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file info: %w", err)
+	}
+
+	// For now, return a placeholder - actual file download may need storage access
+	// The file content is stored in the storage backend
+	return contentResp.Body, nil
 }
 
 // listHubs lists all skills hubs
@@ -336,12 +536,12 @@ func (p *SkillProvider) listSkillsInHub(ctx stdctx.Context, hubName string, opts
 	// First get the hub UUID from hub name
 	hubUUID, err := p.getHubUUIDByName(ctx, hubName)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("hub '%s' not found: %w", hubName, err)
 	}
 
-	// Search for all skills in this hub (empty query returns all)
+	// Search for all skills in this hub (use "*" as wildcard to match all)
 	payload := map[string]interface{}{
-		"query":      "",
+		"query":      "*",
 		"hub_id":     hubUUID,
 		"page":       1,
 		"page_size":  1000,
@@ -349,8 +549,7 @@ func (p *SkillProvider) listSkillsInHub(ctx stdctx.Context, hubName string, opts
 
 	resp, err := p.httpClient.Request("POST", "/skills/search", true, "auto", nil, payload)
 	if err != nil {
-		// If search fails, return empty list
-		return &Result{Nodes: []*Node{}}, nil
+		return nil, fmt.Errorf("search request failed: %w", err)
 	}
 
 	var result struct {
@@ -366,7 +565,11 @@ func (p *SkillProvider) listSkillsInHub(ctx stdctx.Context, hubName string, opts
 	}
 
 	if err := json.Unmarshal(resp.Body, &result); err != nil {
-		return &Result{Nodes: []*Node{}}, nil
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("search failed: %s", result.Msg)
 	}
 
 	nodes := make([]*Node, 0, len(result.Data.Skills))
@@ -390,30 +593,347 @@ func (p *SkillProvider) listSkillsInHub(ctx stdctx.Context, hubName string, opts
 
 // listSkillVersions lists versions of a skill
 func (p *SkillProvider) listSkillVersions(ctx stdctx.Context, hubID, skillName string, opts *ListOptions) (*Result, error) {
-	// Versions are stored as subdirectories in the file system
-	// For now, return a placeholder - actual implementation would query file system
-	return &Result{
-		Nodes: []*Node{
-			{
-				Name: "latest",
-				Type: NodeTypeDirectory,
-				Path: fmt.Sprintf("skills/%s/%s/latest", hubID, skillName),
+	// Step 1: Get the hub UUID
+	hubUUID, err := p.getHubUUIDByName(ctx, hubID)
+	if err != nil {
+		return nil, fmt.Errorf("hub '%s' not found: %w", hubID, err)
+	}
+
+	// Step 2: Find the skill's folder_id by searching
+	payload := map[string]interface{}{
+		"query":      skillName,
+		"hub_id":     hubUUID,
+		"page":       1,
+		"page_size":  10,
+	}
+
+	resp, err := p.httpClient.Request("POST", "/skills/search", true, "auto", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find skill: %w", err)
+	}
+
+	var searchResult struct {
+		Code int    `json:"code"`
+		Msg  string `json:"message"`
+		Data struct {
+			Skills []struct {
+				SkillID  string `json:"skill_id"`
+				FolderID string `json:"folder_id"`
+				Name     string `json:"name"`
+			} `json:"skills"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &searchResult); err != nil {
+		return nil, fmt.Errorf("failed to parse search response: %w", err)
+	}
+
+	if searchResult.Code != 0 {
+		return nil, fmt.Errorf("search failed: %s", searchResult.Msg)
+	}
+
+	// Find the matching skill
+	var skillFolderID string
+	for _, skill := range searchResult.Data.Skills {
+		if skill.Name == skillName {
+			skillFolderID = skill.FolderID
+			break
+		}
+	}
+
+	if skillFolderID == "" {
+		return nil, fmt.Errorf("skill '%s' not found in hub '%s'", skillName, hubID)
+	}
+
+	// Step 3: List the skill folder to get versions (subdirectories)
+	filesResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", skillFolderID), true, "auto", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list versions: %w", err)
+	}
+
+	var filesResult struct {
+		Code int    `json:"code"`
+		Msg  string `json:"message"`
+		Data struct {
+			Files []struct {
+				ID         string `json:"id"`
+				Name       string `json:"name"`
+				Type       string `json:"type"`
+				UpdateTime int64  `json:"update_time"`
+			} `json:"files"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(filesResp.Body, &filesResult); err != nil {
+		return nil, fmt.Errorf("failed to parse files response: %w", err)
+	}
+
+	if filesResult.Code != 0 {
+		return nil, fmt.Errorf("failed to list files: %s", filesResult.Msg)
+	}
+
+	// Convert version folders to nodes
+	nodes := make([]*Node, 0)
+	for _, file := range filesResult.Data.Files {
+		// Only include folders (version directories)
+		if file.Type == "folder" {
+			nodes = append(nodes, &Node{
+				Name:      file.Name,
+				Type:      NodeTypeDirectory,
+				Path:      fmt.Sprintf("skills/%s/%s/%s", hubID, skillName, file.Name),
+				UpdatedAt: time.UnixMilli(file.UpdateTime),
 				Metadata: map[string]interface{}{
-					"description": "Latest version",
+					"id": file.ID,
 				},
-			},
-		},
-		Total: 1,
+			})
+		}
+	}
+
+	return &Result{
+		Nodes: nodes,
+		Total: len(nodes),
 	}, nil
 }
 
 // listSkillContent lists content of a specific skill version
 func (p *SkillProvider) listSkillContent(ctx stdctx.Context, hubID, skillName, version string, extraParts []string, opts *ListOptions) (*Result, error) {
-	// Skill content is stored in file system
-	// This would need to be integrated with FileProvider
+	// Skill content is stored in file system under skills/{hub}/{skill}/{version}/
+	// We need to traverse the file system to find the skill folder and list its contents
+
+	// Step 1: Get the skills hub folder ID
+	hubUUID, err := p.getHubUUIDByName(ctx, hubID)
+	if err != nil {
+		return nil, fmt.Errorf("hub '%s' not found: %w", hubID, err)
+	}
+
+	// Step 2: Find the skill folder by searching for the skill
+	// First get the skill's folder_id from search
+	payload := map[string]interface{}{
+		"query":      skillName,
+		"hub_id":     hubUUID,
+		"page":       1,
+		"page_size":  10,
+	}
+
+	resp, err := p.httpClient.Request("POST", "/skills/search", true, "auto", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find skill: %w", err)
+	}
+
+	var searchResult struct {
+		Code int    `json:"code"`
+		Msg  string `json:"message"`
+		Data struct {
+			Skills []struct {
+				SkillID  string `json:"skill_id"`
+				FolderID string `json:"folder_id"`
+				Name     string `json:"name"`
+			} `json:"skills"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &searchResult); err != nil {
+		return nil, fmt.Errorf("failed to parse search response: %w", err)
+	}
+
+	if searchResult.Code != 0 {
+		return nil, fmt.Errorf("search failed: %s", searchResult.Msg)
+	}
+
+	// Find the matching skill
+	var skillFolderID string
+	for _, skill := range searchResult.Data.Skills {
+		if skill.Name == skillName {
+			skillFolderID = skill.FolderID
+			break
+		}
+	}
+
+	if skillFolderID == "" {
+		return nil, fmt.Errorf("skill '%s' not found in hub '%s'", skillName, hubID)
+	}
+
+	// Step 3: List the version folder under the skill folder
+	// First find the version folder
+	filesResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", skillFolderID), true, "auto", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list skill versions: %w", err)
+	}
+
+	var filesResult struct {
+		Code int    `json:"code"`
+		Msg  string `json:"message"`
+		Data struct {
+			Files []struct {
+				ID       string `json:"id"`
+				Name     string `json:"name"`
+				Type     string `json:"type"`
+				Size     int64  `json:"size"`
+				UpdateTime int64 `json:"update_time"`
+			} `json:"files"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(filesResp.Body, &filesResult); err != nil {
+		return nil, fmt.Errorf("failed to parse files response: %w", err)
+	}
+
+	if filesResult.Code != 0 {
+		return nil, fmt.Errorf("failed to list files: %s", filesResult.Msg)
+	}
+
+	// Find the version folder
+	var versionFolderID string
+	for _, file := range filesResult.Data.Files {
+		if file.Name == version && file.Type == "folder" {
+			versionFolderID = file.ID
+			break
+		}
+	}
+
+	if versionFolderID == "" {
+		return nil, fmt.Errorf("version '%s' not found for skill '%s'", version, skillName)
+	}
+
+	// Step 4: If there are extra parts, navigate deeper
+	currentFolderID := versionFolderID
+	currentPath := fmt.Sprintf("skills/%s/%s/%s", hubID, skillName, version)
+
+	// Check if the last part is a file (for ls on a specific file)
+	var lastFile *struct {
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		Type       string `json:"type"`
+		Size       int64  `json:"size"`
+		UpdateTime int64  `json:"update_time"`
+	}
+
+	for i, part := range extraParts {
+		isLastPart := (i == len(extraParts)-1)
+
+		// List current folder to find the next part
+		subResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", currentFolderID), true, "auto", nil, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to navigate path: %w", err)
+		}
+
+		var subResult struct {
+			Code int    `json:"code"`
+			Msg  string `json:"message"`
+			Data struct {
+				Files []struct {
+					ID         string `json:"id"`
+					Name       string `json:"name"`
+					Type       string `json:"type"`
+					Size       int64  `json:"size"`
+					UpdateTime int64  `json:"update_time"`
+				} `json:"files"`
+			} `json:"data"`
+		}
+
+		if err := json.Unmarshal(subResp.Body, &subResult); err != nil {
+			return nil, fmt.Errorf("failed to parse navigation response: %w", err)
+		}
+
+		if subResult.Code != 0 {
+			return nil, fmt.Errorf("navigation failed: %s", subResult.Msg)
+		}
+
+		found := false
+		for _, file := range subResult.Data.Files {
+			if file.Name == part {
+				if file.Type != "folder" {
+					// This is a file
+					if isLastPart {
+						// If it's the last part, remember the file for listing
+						lastFile = &file
+						found = true
+						break
+					}
+					// Not the last part - cannot navigate into a file
+					return nil, fmt.Errorf("'%s' is not a directory", part)
+				}
+				currentFolderID = file.ID
+				currentPath = currentPath + "/" + part
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return nil, fmt.Errorf("path not found: %s", part)
+		}
+
+		// If we found a file as the last part, return it
+		if lastFile != nil {
+			return &Result{
+				Nodes: []*Node{{
+					Name: lastFile.Name,
+					Type: NodeTypeFile,
+					Path: currentPath + "/" + lastFile.Name,
+					Metadata: map[string]interface{}{
+						"id":          lastFile.ID,
+						"size":        lastFile.Size,
+						"update_time": lastFile.UpdateTime,
+					},
+				}},
+				Total: 1,
+			}, nil
+		}
+	}
+
+	// Step 5: List the final folder contents
+	finalResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", currentFolderID), true, "auto", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list folder contents: %w", err)
+	}
+
+	var finalResult struct {
+		Code int    `json:"code"`
+		Msg  string `json:"message"`
+		Data struct {
+			Files []struct {
+				ID         string `json:"id"`
+				Name       string `json:"name"`
+				Type       string `json:"type"`
+				Size       int64  `json:"size"`
+				UpdateTime int64  `json:"update_time"`
+			} `json:"files"`
+			Total int `json:"total"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(finalResp.Body, &finalResult); err != nil {
+		return nil, fmt.Errorf("failed to parse final response: %w", err)
+	}
+
+	if finalResult.Code != 0 {
+		return nil, fmt.Errorf("failed to list contents: %s", finalResult.Msg)
+	}
+
+	// Convert to nodes
+	nodes := make([]*Node, 0, len(finalResult.Data.Files))
+	for _, file := range finalResult.Data.Files {
+		nodeType := NodeTypeFile
+		if file.Type == "folder" {
+			nodeType = NodeTypeDirectory
+		}
+
+		nodes = append(nodes, &Node{
+			Name: file.Name,
+			Type: nodeType,
+			Path: currentPath + "/" + file.Name,
+			Size: file.Size,
+			UpdatedAt: time.UnixMilli(file.UpdateTime),
+			Metadata: map[string]interface{}{
+				"id": file.ID,
+			},
+		})
+	}
+
 	return &Result{
-		Nodes: []*Node{},
-		Total: 0,
+		Nodes: nodes,
+		Total: len(nodes),
 	}, nil
 }
 

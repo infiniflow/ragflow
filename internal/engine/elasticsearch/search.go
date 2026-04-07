@@ -425,16 +425,23 @@ func buildSkillFilterClauses() []map[string]interface{} {
 func buildESKeywordQuery(matchText string, filterClauses []map[string]interface{}, boost float64) map[string]interface{} {
 	var mustClause map[string]interface{}
 
-	// Use query_string for complex queries
-	queryString := map[string]interface{}{
-		"query":                matchText,
-		"fields":               []string{"title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"},
-		"type":                 "best_fields",
-		"minimum_should_match": "30%",
-		"boost":                boost,
-	}
-	mustClause = map[string]interface{}{
-		"query_string": queryString,
+	// Handle wildcard query (match all)
+	if matchText == "*" || matchText == "" {
+		mustClause = map[string]interface{}{
+			"match_all": map[string]interface{}{},
+		}
+	} else {
+		// Use query_string for complex queries
+		queryString := map[string]interface{}{
+			"query":                matchText,
+			"fields":               []string{"title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"},
+			"type":                 "best_fields",
+			"minimum_should_match": "30%",
+			"boost":                boost,
+		}
+		mustClause = map[string]interface{}{
+			"query_string": queryString,
+		}
 	}
 
 	return map[string]interface{}{
@@ -450,16 +457,23 @@ func buildESKeywordQuery(matchText string, filterClauses []map[string]interface{
 func buildSkillKeywordQuery(matchText string, filterClauses []map[string]interface{}, boost float64) map[string]interface{} {
 	var mustClause map[string]interface{}
 
-	// Use query_string for complex queries with skill-specific fields
-	queryString := map[string]interface{}{
-		"query":                matchText,
-		"fields":               []string{"name_tks^10", "tags_tks^5", "description_tks^3", "content_tks^1"},
-		"type":                 "best_fields",
-		"minimum_should_match": "30%",
-		"boost":                boost,
-	}
-	mustClause = map[string]interface{}{
-		"query_string": queryString,
+	// Handle wildcard query (match all)
+	if matchText == "*" || matchText == "" {
+		mustClause = map[string]interface{}{
+			"match_all": map[string]interface{}{},
+		}
+	} else {
+		// Use query_string for complex queries with skill-specific fields
+		queryString := map[string]interface{}{
+			"query":                matchText,
+			"fields":               []string{"name_tks^10", "tags_tks^5", "description_tks^3", "content_tks^1"},
+			"type":                 "best_fields",
+			"minimum_should_match": "30%",
+			"boost":                boost,
+		}
+		mustClause = map[string]interface{}{
+			"query_string": queryString,
+		}
 	}
 
 	return map[string]interface{}{

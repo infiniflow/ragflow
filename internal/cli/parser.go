@@ -326,8 +326,49 @@ func (p *Parser) parseCEListCommand() (*Command, error) {
 		if p.curToken.Type == TokenQuotedString {
 			path = strings.Trim(path, "\"'")
 		}
-		cmd.Params["path"] = path
 		p.nextToken()
+
+		// Handle path components separated by slashes (e.g., "skills/hub1")
+		for p.curToken.Type == TokenSlash {
+			p.nextToken() // consume slash
+			if p.curToken.Type == TokenIdentifier || p.curToken.Type == TokenDatasets ||
+				p.curToken.Type == TokenAgents || p.curToken.Type == TokenChats {
+				path = path + "/" + p.curToken.Value
+				p.nextToken()
+			} else if p.curToken.Type == TokenNumber {
+				// Handle version numbers like 1.0.0 (parsed as number . number . number)
+				// OR filenames starting with numbers like 3_list_compressors.pdf
+				numberPart := p.curToken.Value
+				p.nextToken()
+				// Continue reading .number parts (version number format)
+				if p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
+					versionPart := numberPart
+					for p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
+						p.nextToken() // consume .
+						if p.curToken.Type == TokenNumber {
+							versionPart = versionPart + "." + p.curToken.Value
+							p.nextToken()
+						} else {
+							break
+						}
+					}
+					path = path + "/" + versionPart
+				} else if p.curToken.Type == TokenIdentifier {
+					// Filename starting with number: 3_list_compressors.pdf
+					path = path + "/" + numberPart + p.curToken.Value
+					p.nextToken()
+				} else {
+					// Just a number
+					path = path + "/" + numberPart
+				}
+			} else {
+				// Trailing slash, just append it
+				path = path + "/"
+				break
+			}
+		}
+
+		cmd.Params["path"] = path
 	} else {
 		// Default to "datasets" root
 		cmd.Params["path"] = "datasets"
@@ -356,8 +397,52 @@ func (p *Parser) parseCECatCommand() (*Command, error) {
 	if p.curToken.Type == TokenQuotedString {
 		path = strings.Trim(path, "\"'")
 	}
-	cmd.Params["path"] = path
 	p.nextToken()
+
+	// Handle path components separated by slashes (e.g., "skills/hub1/skill/README.md")
+	for p.curToken.Type == TokenSlash {
+		p.nextToken() // consume slash
+		if p.curToken.Type == TokenIdentifier || p.curToken.Type == TokenAgents ||
+			p.curToken.Type == TokenChats || p.curToken.Type == TokenDatasets {
+			path = path + "/" + p.curToken.Value
+			p.nextToken()
+		} else if p.curToken.Type == TokenNumber {
+			// Handle version numbers like 1.0.0 (parsed as number . number . number)
+			// OR filenames starting with numbers like 3_list_compressors.pdf
+			numberPart := p.curToken.Value
+			p.nextToken()
+			// Continue reading .number parts (version number format)
+			if p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
+				versionPart := numberPart
+				for p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
+					p.nextToken() // consume .
+					if p.curToken.Type == TokenNumber {
+						versionPart = versionPart + "." + p.curToken.Value
+						p.nextToken()
+					} else {
+						break
+					}
+				}
+				path = path + "/" + versionPart
+			} else if p.curToken.Type == TokenIdentifier {
+				// Filename starting with number: 3_list_compressors.pdf
+				path = path + "/" + numberPart + p.curToken.Value
+				p.nextToken()
+			} else {
+				// Just a number
+				path = path + "/" + numberPart
+			}
+		} else if p.curToken.Type == TokenQuotedString {
+			path = path + "/" + strings.Trim(p.curToken.Value, "\"'")
+			p.nextToken()
+		} else {
+			// Trailing slash, just append it
+			path = path + "/"
+			break
+		}
+	}
+
+	cmd.Params["path"] = path
 
 	// Optional semicolon
 	if p.curToken.Type == TokenSemicolon {
@@ -397,8 +482,52 @@ func (p *Parser) parseCESearchCommand() (*Command, error) {
 		if p.curToken.Type == TokenQuotedString {
 			path = strings.Trim(path, "\"'")
 		}
-		cmd.Params["path"] = path
 		p.nextToken()
+
+		// Handle path components separated by slashes (e.g., "skills/hub1")
+		for p.curToken.Type == TokenSlash {
+			p.nextToken() // consume slash
+			if p.curToken.Type == TokenIdentifier || p.curToken.Type == TokenAgents ||
+				p.curToken.Type == TokenChats || p.curToken.Type == TokenDatasets {
+				path = path + "/" + p.curToken.Value
+				p.nextToken()
+		} else if p.curToken.Type == TokenNumber {
+			// Handle version numbers like 1.0.0 (parsed as number . number . number)
+			// OR filenames starting with numbers like 3_list_compressors.pdf
+			numberPart := p.curToken.Value
+			p.nextToken()
+			// Continue reading .number parts (version number format)
+			if p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
+				versionPart := numberPart
+				for p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
+					p.nextToken() // consume .
+					if p.curToken.Type == TokenNumber {
+						versionPart = versionPart + "." + p.curToken.Value
+						p.nextToken()
+					} else {
+						break
+					}
+				}
+				path = path + "/" + versionPart
+			} else if p.curToken.Type == TokenIdentifier {
+				// Filename starting with number: 3_list_compressors.pdf
+				path = path + "/" + numberPart + p.curToken.Value
+				p.nextToken()
+			} else {
+				// Just a number
+				path = path + "/" + numberPart
+			}
+		} else if p.curToken.Type == TokenQuotedString {
+			path = path + "/" + strings.Trim(p.curToken.Value, "\"'")
+			p.nextToken()
+		} else {
+			// Trailing slash, just append it
+			path = path + "/"
+			break
+		}
+	}
+
+	cmd.Params["path"] = path
 	} else {
 		cmd.Params["path"] = "."
 	}
