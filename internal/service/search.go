@@ -53,8 +53,8 @@ type ListSearchAppsResponse struct {
 	Total      int64                    `json:"total"`
 }
 
-// ListSearchApps list search apps with advanced filtering (equivalent to list_search_app)
-func (s *SearchService) ListSearchApps(userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string) (*ListSearchAppsResponse, error) {
+// ListSearches list search apps with advanced filtering (equivalent to list_search_app)
+func (s *SearchService) ListSearches(userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string) (*ListSearchAppsResponse, error) {
 	var searches []*entity.Search
 	var total int64
 	var err error

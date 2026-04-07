@@ -179,6 +179,7 @@ type MinioConfig struct {
 	Password   string `mapstructure:"password"`    // Secret key
 	Secure     bool   `mapstructure:"secure"`      // Use HTTPS
 	Verify     bool   `mapstructure:"verify"`      // Verify SSL certificates
+	Region     string `mapstructure:"region"`      // optional
 	Bucket     string `mapstructure:"bucket"`      // Default bucket (optional)
 	PrefixPath string `mapstructure:"prefix_path"` // Path prefix (optional)
 }
@@ -465,6 +466,11 @@ func FromEnvironments() error {
 		globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", ip, minioPort)
 	}
 
+	minioRegion := strings.ToLower(os.Getenv("MINIO_REGION"))
+	if minioRegion != "" {
+		globalConfig.StorageEngine.Minio.Region = minioRegion
+	}
+
 	// Language
 	if globalConfig.Language == "" {
 		globalConfig.Language = GetLanguage()
@@ -644,6 +650,7 @@ func FromConfigFile(configPath string) error {
 						Secure:     minioConfig.GetBool("secure"),
 						PrefixPath: minioConfig.GetString("prefix_path"),
 						Verify:     minioConfig.GetBool("verify"),
+						Region:     minioConfig.GetString("region"),
 						Bucket:     minioConfig.GetString("bucket"),
 					}
 				}

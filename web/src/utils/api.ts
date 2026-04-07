@@ -170,7 +170,7 @@ export default {
   moveFile: `${restAPIv1}/files/move`,
 
   // system
-  getSystemVersion: `${webAPI}/system/version`,
+  getSystemVersion: `${restAPIv1}/system/version`,
   getSystemStatus: `${webAPI}/system/status`,
   getSystemTokenList: `${webAPI}/system/token_list`,
   createSystemToken: `${webAPI}/system/new_token`,
