@@ -506,7 +506,7 @@ func (h *SkillSearchHandler) DeleteHub(c *gin.Context) {
 		return
 	}
 
-	code, err := h.hubService.DeleteHub(hubID, user.ID, h.docEngine)
+	code, err := h.hubService.DeleteHub(c.Request.Context(), hubID, user.ID, h.docEngine)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return

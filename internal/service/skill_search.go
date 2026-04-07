@@ -377,9 +377,12 @@ func (s *SkillSearchService) vectorSearch(ctx context.Context, docEngine engine.
 
 	// If no results, return error to trigger fallback
 	if len(results) == 0 {
+		// Log truncated/redacted query at Debug level to avoid PII in Info logs
 		logger.Info("Vector search: no results found, will fallback to keyword search",
+			zap.String("indexName", indexName))
+		logger.Debug("Vector search query details",
 			zap.String("indexName", indexName),
-			zap.String("query", query))
+			zap.String("queryTruncated", truncate(query, 50)))
 		return nil, fmt.Errorf("vector search returned no results")
 	}
 
@@ -440,9 +443,12 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 
 	// If no results, fallback to keyword search
 	if len(results) == 0 {
+		// Log truncated/redacted query at Debug level to avoid PII in Info logs
 		logger.Info("Hybrid search: no results found, falling back to keyword search",
+			zap.String("indexName", indexName))
+		logger.Debug("Hybrid search query details",
 			zap.String("indexName", indexName),
-			zap.String("query", query))
+			zap.String("queryTruncated", truncate(query, 50)))
 		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchText, keywords, config)
 	}
 
@@ -451,9 +457,12 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 
 // executeKeywordSearch executes a keyword search (used for fallback)
 func (s *SkillSearchService) executeKeywordSearch(ctx context.Context, docEngine engine.DocEngine, indexName, query, matchText string, keywords []string, config *entity.SkillSearchConfig) ([]entity.SkillSearchResult, error) {
+	// Log truncated/redacted query at Debug level to avoid PII in Info logs
 	logger.Info("Executing fallback keyword search",
+		zap.String("indexName", indexName))
+	logger.Debug("Keyword search query details",
 		zap.String("indexName", indexName),
-		zap.String("query", query))
+		zap.String("queryTruncated", truncate(query, 50)))
 
 	searchReq := &types.SearchRequest{
 		IndexNames:          []string{indexName},
@@ -520,11 +529,10 @@ func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interfac
 			}
 		}
 
-		// Use skill name as the deduplication key (skillID may contain version suffix)
-		skillKey := name
-		if skillKey == "" {
-			skillKey = skillID
-		}
+		// Use folderID + baseSkillID as deduplication key to preserve distinct skills
+		// even when names match across different folders
+		baseSkillID := normalizeSkillID(skillID)
+		skillKey := fmt.Sprintf("%s:%s", folderID, baseSkillID)
 
 		// Extract create_time
 		var createTime int64
@@ -623,7 +631,17 @@ func normalizeHubID(hubID string) string {
 	return hubID
 }
 
-
+// normalizeSkillID strips version suffix/qualifier from skillID to get base skill identifier
+// e.g., "skill123@v1.0" -> "skill123", "my-skill" -> "my-skill"
+func normalizeSkillID(skillID string) string {
+	// Strip version suffix (e.g., @v1.0, #v2, etc.)
+	for _, sep := range []string{"@", "#"} {
+		if idx := strings.Index(skillID, sep); idx > 0 {
+			return skillID[:idx]
+		}
+	}
+	return skillID
+}
 
 func getString(m map[string]interface{}, key string) string {
 	if v, ok := m[key].(string); ok {
@@ -649,14 +667,33 @@ func generateID() string {
 }
 
 // CalculateContentHash calculates SHA256 hash of skill content
+// Uses length-prefixed values to prevent collision when boundaries shift
 func CalculateContentHash(name, description string, tags []string, content string) string {
 	h := sha256.New()
-	h.Write([]byte(name))
-	h.Write([]byte(description))
+
+	// Write name: length (4 bytes) + content
+	nameBytes := []byte(name)
+	h.Write([]byte(fmt.Sprintf("%04d", len(nameBytes))))
+	h.Write(nameBytes)
+
+	// Write description: length (4 bytes) + content
+	descBytes := []byte(description)
+	h.Write([]byte(fmt.Sprintf("%04d", len(descBytes))))
+	h.Write(descBytes)
+
+	// Write tags: count (4 bytes) + for each tag: length (4 bytes) + content
+	h.Write([]byte(fmt.Sprintf("%04d", len(tags))))
 	for _, tag := range tags {
-		h.Write([]byte(tag))
+		tagBytes := []byte(tag)
+		h.Write([]byte(fmt.Sprintf("%04d", len(tagBytes))))
+		h.Write(tagBytes)
 	}
-	h.Write([]byte(content))
+
+	// Write content: length (4 bytes) + content
+	contentBytes := []byte(content)
+	h.Write([]byte(fmt.Sprintf("%04d", len(contentBytes))))
+	h.Write(contentBytes)
+
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -775,7 +812,8 @@ func (s *SkillSearchService) buildMatchText(originalText string, keywords []stri
 
 	// Add the original text with high boost
 	if originalText != "" {
-		parts = append(parts, fmt.Sprintf("(\"%s\")^2.0", originalText))
+		escapedText := escapeQueryString(originalText)
+		parts = append(parts, fmt.Sprintf("(\"%s\")^2.0", escapedText))
 	}
 
 	// Add individual keywords with decreasing weights
@@ -800,14 +838,19 @@ func (s *SkillSearchService) buildMatchText(originalText string, keywords []stri
 	return strings.Join(parts, " OR ")
 }
 
-// escapeQueryString escapes special characters for ES query_string
-func (s *SkillSearchService) escapeQueryString(text string) string {
+// escapeQueryString escapes special characters for ES query_string (package-level function)
+func escapeQueryString(text string) string {
 	specialChars := []string{"\\", "+", "-", "=", "&&", "||", ">", "<", "!", "(", ")", "{", "}", "[", "]", "^", "\"", "~", "*", "?", ":", "/"}
 	result := text
 	for _, char := range specialChars {
 		result = strings.ReplaceAll(result, char, "\\"+char)
 	}
 	return result
+}
+
+// escapeQueryString escapes special characters for ES query_string (method wrapper)
+func (s *SkillSearchService) escapeQueryString(text string) string {
+	return escapeQueryString(text)
 }
 
 // SkillInfo represents skill information for indexing

@@ -269,11 +269,30 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
 
             response = requests.delete(url, headers=headers, timeout=10)
             if response.status_code == 200:
-                logging.info(
-                    f"Successfully deleted skill index: hub={hub_name}, skill={skill_name}, "
-                    f"status={response.status_code}"
-                )
-                return True
+                try:
+                    data = response.json()
+                    if data.get("code") == 0:
+                        logging.info(
+                            f"Successfully deleted skill index: hub={hub_name}, skill={skill_name}, "
+                            f"status={response.status_code}, code=0"
+                        )
+                        return True
+                    else:
+                        app_code = data.get("code", "unknown")
+                        app_msg = data.get("message", "no message")
+                        logging.error(
+                            f"Failed to delete skill index: hub={hub_name}, skill={skill_name}, "
+                            f"status={response.status_code}, app_code={app_code}, app_msg={app_msg}, "
+                            f"response={response.text}"
+                        )
+                        return False
+                except ValueError as json_err:
+                    # JSON decode error - treat as failure
+                    logging.error(
+                        f"Failed to parse delete response JSON: hub={hub_name}, skill={skill_name}, "
+                        f"error={json_err}, raw_response={response.text}"
+                    )
+                    return False
             else:
                 logging.error(
                     f"Failed to delete skill index: hub={hub_name}, skill={skill_name}, "
@@ -305,15 +324,41 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
 
         FileService.delete(file)
 
+    def _find_ancestor_skills_hub(folder_id, tenant_id):
+        """Walk up the folder hierarchy to find an ancestor with source_type == 'skills_hub'.
+
+        Returns:
+            tuple: (success, folder) where folder has source_type == 'skills_hub', or (False, None)
+        """
+        visited = set()
+        current_id = folder_id
+        while current_id and current_id not in visited:
+            visited.add(current_id)
+            success, folder = FileService.get_by_id(current_id)
+            if not success or not folder:
+                return False, None
+            if folder.source_type == "skills_hub":
+                return True, folder
+            # Move to parent
+            current_id = folder.parent_id
+        return False, None
+
     def _delete_folder_recursive(folder, tenant_id, is_skill_folder=False, hub_name=None, authorization=""):
-        # Check if this is a skill folder (parent is a skills_hub)
+        # Check if this is a skill folder or has a skills_hub ancestor
         current_hub_name = hub_name
         if not is_skill_folder and not current_hub_name:
+            # First check immediate parent
             parent_success, parent_folder = FileService.get_by_id(folder.parent_id)
             if parent_success and parent_folder and parent_folder.source_type == "skills_hub":
                 is_skill_folder = True
                 # Use parent folder name as hub name (e.g., "hub11")
                 current_hub_name = parent_folder.name
+            else:
+                # Walk up the hierarchy to find skills_hub ancestor
+                ancestor_success, ancestor_folder = _find_ancestor_skills_hub(folder.parent_id, tenant_id)
+                if ancestor_success and ancestor_folder:
+                    is_skill_folder = True
+                    current_hub_name = ancestor_folder.name
 
         # If this is a skill folder, delete its index first
         if is_skill_folder and current_hub_name:
@@ -331,8 +376,20 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
         sub_files = FileService.list_all_files_by_parent_id(folder.id)
         for sub_file in sub_files:
             if sub_file.type == FileType.FOLDER.value:
-                _delete_folder_recursive(sub_file, tenant_id, False, current_hub_name, authorization)
+                _delete_folder_recursive(sub_file, tenant_id, is_skill_folder, current_hub_name, authorization)
             else:
+                # If we're in a skill folder context, delete the skill index for this file too
+                if is_skill_folder and current_hub_name:
+                    index_deleted = _delete_skill_index(tenant_id, current_hub_name, sub_file.name, authorization)
+                    if not index_deleted:
+                        logging.error(
+                            f"Aborting file deletion due to index deletion failure: "
+                            f"file={sub_file.name}, hub={current_hub_name}"
+                        )
+                        raise RuntimeError(
+                            f"Failed to delete skill index for file '{sub_file.name}' in hub '{current_hub_name}'. "
+                            f"File deletion aborted to prevent orphaned indexes."
+                        )
                 _delete_single_file(sub_file)
         FileService.delete(folder)
 

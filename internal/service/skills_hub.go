@@ -37,8 +37,9 @@ type SkillsHubService struct {
 	hubDAO             *dao.SkillsHubDAO
 	fileDAO            *dao.FileDAO
 	configDAO          *dao.SkillSearchConfigDAO
-	skillsFolderCache  map[string]string // tenant-keyed cache for skills folder ID
-	skillsFolderMu     sync.RWMutex      // protects skillsFolderCache
+	skillsFolderCache  map[string]string   // tenant-keyed cache for skills folder ID
+	skillsFolderMu     sync.RWMutex        // protects skillsFolderCache
+	skillsFolderCreateMu sync.Map          // tenant-scoped locks for folder creation
 }
 
 // NewSkillsHubService creates a new SkillsHubService instance
@@ -70,8 +71,22 @@ type UpdateHubRequest struct {
 }
 
 // getSkillsFolderID gets or creates the skills folder for a tenant
+// Uses tenant-scoped locking to prevent duplicate folder creation
 func (s *SkillsHubService) getSkillsFolderID(tenantID string) (string, error) {
 	// Return cached value if available (read lock)
+	s.skillsFolderMu.RLock()
+	if cachedID, ok := s.skillsFolderCache[tenantID]; ok && cachedID != "" {
+		s.skillsFolderMu.RUnlock()
+		return cachedID, nil
+	}
+	s.skillsFolderMu.RUnlock()
+
+	// Acquire tenant-scoped creation lock
+	lock, _ := s.skillsFolderCreateMu.LoadOrStore(tenantID, &sync.Mutex{})
+	lock.(*sync.Mutex).Lock()
+	defer lock.(*sync.Mutex).Unlock()
+
+	// Double-check cache after acquiring lock
 	s.skillsFolderMu.RLock()
 	if cachedID, ok := s.skillsFolderCache[tenantID]; ok && cachedID != "" {
 		s.skillsFolderMu.RUnlock()
@@ -273,12 +288,27 @@ func (s *SkillsHubService) UpdateHub(hubID string, tenantID string, req *UpdateH
 		if existingHub != nil && existingHub.ID != hubID {
 			return nil, common.CodeDataError, fmt.Errorf("hub with name '%s' already exists", req.Name)
 		}
+
+		originalName := hub.Name
 		updates["name"] = req.Name
-		
-		// Update folder name as well
-		if err := s.fileDAO.UpdateByID(hub.FolderID, map[string]interface{}{"name": req.Name}); err != nil {
-			logger.Warn("Failed to update folder name", zap.Error(err))
+
+		// Update hub first, then folder (atomic-like behavior with rollback on failure)
+		if err := s.hubDAO.UpdateByID(hubID, updates); err != nil {
+			return nil, common.CodeOperatingError, fmt.Errorf("failed to update hub name: %w", err)
 		}
+
+		// Update folder name as well - if this fails, rollback hub name
+		if err := s.fileDAO.UpdateByID(hub.FolderID, map[string]interface{}{"name": req.Name}); err != nil {
+			logger.Error("Failed to update folder name, rolling back hub name", zap.Error(err), zap.String("hub_id", hubID))
+			// Rollback hub name
+			if rollbackErr := s.hubDAO.UpdateByID(hubID, map[string]interface{}{"name": originalName}); rollbackErr != nil {
+				logger.Error("Failed to rollback hub name after folder rename failure", zap.Error(rollbackErr), zap.String("hub_id", hubID))
+			}
+			return nil, common.CodeOperatingError, fmt.Errorf("failed to update folder name: %w", err)
+		}
+
+		// Clear updates map since we've already applied name change
+		delete(updates, "name")
 	}
 	
 	if req.Description != hub.Description {
@@ -306,7 +336,7 @@ func (s *SkillsHubService) UpdateHub(hubID string, tenantID string, req *UpdateH
 }
 
 // DeleteHub deletes a skills hub and its associated folder
-func (s *SkillsHubService) DeleteHub(hubID, tenantID string, docEngine engine.DocEngine) (common.ErrorCode, error) {
+func (s *SkillsHubService) DeleteHub(ctx context.Context, hubID, tenantID string, docEngine engine.DocEngine) (common.ErrorCode, error) {
 	hub, err := s.hubDAO.GetByID(hubID)
 	if err != nil {
 		return common.CodeDataError, fmt.Errorf("hub not found")
@@ -320,7 +350,10 @@ func (s *SkillsHubService) DeleteHub(hubID, tenantID string, docEngine engine.Do
 	// Delete the hub index if docEngine is provided
 	if docEngine != nil {
 		indexName := getSkillIndexName(tenantID, hubID)
-		if err := docEngine.DeleteIndex(context.Background(), indexName); err != nil {
+		// Create a timeout context for index deletion
+		deleteCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := docEngine.DeleteIndex(deleteCtx, indexName); err != nil {
 			logger.Warn("Failed to delete hub index", zap.String("index", indexName), zap.Error(err))
 			// Don't return error, continue to delete hub data
 		} else {
@@ -350,12 +383,24 @@ func (s *SkillsHubService) deleteFolderRecursive(folderID string) error {
 		return err
 	}
 
-	// Delete all children first
+	// Collect file IDs (non-folder) and recurse into subfolders
+	var fileIDs []string
 	for _, child := range children {
 		if child.Type == "folder" {
 			if err := s.deleteFolderRecursive(child.ID); err != nil {
 				logger.Warn("Failed to delete child folder", zap.String("folder_id", child.ID), zap.Error(err))
 			}
+		} else {
+			// Collect non-folder files for batch deletion
+			fileIDs = append(fileIDs, child.ID)
+		}
+	}
+
+	// Delete all non-folder files in batch
+	if len(fileIDs) > 0 {
+		if _, err := s.fileDAO.DeleteByIDs(fileIDs); err != nil {
+			logger.Warn("Failed to delete files in folder", zap.String("folder_id", folderID), zap.Strings("file_ids", fileIDs), zap.Error(err))
+			// Continue to delete folder even if file deletion fails
 		}
 	}
 

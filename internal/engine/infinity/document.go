@@ -102,7 +102,10 @@ func (e *infinityEngine) BulkIndex(ctx context.Context, tableName string, docs [
 	return nil, fmt.Errorf("infinity bulk insert not implemented for regular documents: waiting for official Go SDK")
 }
 
-// BulkInsertSkill inserts multiple skill documents in bulk
+// BulkInsertSkill inserts multiple skill documents in bulk with upsert semantics.
+// For each document, deletes existing rows with the same skill_id before inserting,
+// matching the behavior of InsertSkill. Creates shallow copies of input maps to
+// avoid mutating caller data.
 func (e *infinityEngine) BulkInsertSkill(ctx context.Context, tableName string, docs []interface{}) (int, error) {
 	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {
@@ -114,23 +117,60 @@ func (e *infinityEngine) BulkInsertSkill(ctx context.Context, tableName string, 
 		return 0, fmt.Errorf("failed to get table %s: %w", tableName, err)
 	}
 
-	// Transform docs to maps
+	// Collect skill_ids for upsert and create shallow copies of docs
+	skillIDs := make([]string, 0, len(docs))
 	insertDocs := make([]map[string]interface{}, 0, len(docs))
+
 	for _, doc := range docs {
 		docMap, ok := doc.(map[string]interface{})
 		if !ok {
 			logger.Warn("Invalid doc type in bulk insert, expected map[string]interface{}")
 			continue
 		}
-		// Ensure skill_id is set if id or skill_id exists in doc
-		if docID, hasID := docMap["id"]; hasID {
-			docMap["skill_id"] = docID
+
+		// Create shallow copy to avoid mutating caller's map
+		insertDoc := make(map[string]interface{})
+		for k, v := range docMap {
+			insertDoc[k] = v
 		}
-		insertDocs = append(insertDocs, docMap)
+
+		// Ensure skill_id is set if id or skill_id exists in doc
+		var skillID string
+		if id, hasID := docMap["id"]; hasID {
+			skillID = fmt.Sprintf("%v", id)
+			insertDoc["skill_id"] = skillID
+		} else if sid, hasSkillID := docMap["skill_id"]; hasSkillID {
+			skillID = fmt.Sprintf("%v", sid)
+		}
+
+		if skillID != "" {
+			skillIDs = append(skillIDs, skillID)
+		}
+		insertDocs = append(insertDocs, insertDoc)
 	}
 
 	if len(insertDocs) == 0 {
+		logger.Warn("No valid documents to bulk insert", zap.String("tableName", tableName))
 		return 0, nil
+	}
+
+	// Upsert: delete existing documents with same skill_ids before inserting
+	for _, skillID := range skillIDs {
+		// Escape single quotes to prevent filter injection
+		docIDEscaped := strings.ReplaceAll(skillID, "'", "''")
+		filter := fmt.Sprintf("skill_id = '%s'", docIDEscaped)
+		delResp, delErr := table.Delete(filter)
+		if delErr != nil {
+			logger.Warn("Failed to delete existing skill document before bulk insert",
+				zap.String("tableName", tableName),
+				zap.String("skill_id", skillID),
+				zap.Error(delErr))
+		} else if delResp.DeletedRows > 0 {
+			logger.Debug("Deleted existing skill document before bulk insert",
+				zap.String("tableName", tableName),
+				zap.String("skill_id", skillID),
+				zap.Int64("deletedRows", delResp.DeletedRows))
+		}
 	}
 
 	// Insert the documents
@@ -139,9 +179,10 @@ func (e *infinityEngine) BulkInsertSkill(ctx context.Context, tableName string, 
 		return 0, fmt.Errorf("failed to bulk insert skill documents: %w", err)
 	}
 
-	logger.Debug("Bulk inserted skill documents",
+	logger.Debug("Bulk upserted skill documents",
 		zap.String("tableName", tableName),
-		zap.Int("count", len(insertDocs)))
+		zap.Int("count", len(insertDocs)),
+		zap.Int("skillIDs", len(skillIDs)))
 	return len(insertDocs), nil
 }
 
