@@ -209,7 +209,7 @@ export const useGetDocumentFilter = (): {
       }
     },
   });
-  const handleOnpenChange = (e: boolean) => {
+  const handleOpenChange = (e: boolean) => {
     if (e) {
       const currentOpen = open + 1;
       setOpen(currentOpen);
@@ -221,7 +221,7 @@ export const useGetDocumentFilter = (): {
       suffix: {},
       metadata: {},
     },
-    onOpenChange: handleOnpenChange,
+    onOpenChange: handleOpenChange,
   };
 };
 // update document status
