@@ -1966,6 +1966,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       categoryName: '分类名称',
       nextStep: '下一步',
       insertVariableTip: `输入 / 插入变量`,
+      mergePath: '合并路径',
+      mergePathTip:
+        '开启后，紧跟在变量后面的点号后缀会合并为路径查询，例如 {node@result.name}。',
       setting: '设置',
       settings: {
         agentSetting: 'Agent设置',

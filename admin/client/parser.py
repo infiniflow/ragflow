@@ -99,6 +99,9 @@ sql_command: login_user
            | list_chunks
            | insert_dataset_from_file
            | insert_metadata_from_file
+           | update_chunk
+           | set_metadata
+           | remove_tags
            | create_chat_session
            | drop_chat_session
            | list_chat_sessions
@@ -114,10 +117,12 @@ sql_command: login_user
 // meta command definition
 meta_command: "\\" meta_command_name [meta_args]
 
+COMMA: ","
+
 meta_command_name: /[a-zA-Z?]+/
 meta_args: (meta_arg)+
 
-meta_arg: /[^\\s"']+/ | quoted_string
+meta_arg: /[^\s"',]+/ | quoted_string
 
 // command definition
 
@@ -215,8 +220,11 @@ SIZE: "SIZE"i
 KEYWORDS: "KEYWORDS"i
 AVAILABLE: "AVAILABLE"i
 FILE: "FILE"i
+UPDATE: "UPDATE"i
+REMOVE: "REMOVE"i
+TAGS: "TAGS"i
 
-login_user: LOGIN USER quoted_string ";"
+login_user: LOGIN USER quoted_string (PASSWORD quoted_string)? ";"
 list_services: LIST SERVICES ";"
 show_service: SHOW SERVICE NUMBER ";"
 startup_service: STARTUP SERVICE NUMBER ";"
@@ -299,6 +307,9 @@ user_statement: ping_server
                 | list_user_default_models
                 | import_docs_into_dataset
                 | search_on_datasets
+                | update_chunk
+                | set_metadata
+                | remove_tags
                 | create_chat_session
                 | drop_chat_session
                 | list_chat_sessions
@@ -328,8 +339,8 @@ create_user_dataset_with_pipeline: CREATE DATASET quoted_string WITH EMBEDDING q
 drop_user_dataset: DROP DATASET quoted_string ";"
 list_user_dataset_files: LIST FILES OF DATASET quoted_string ";"
 list_user_dataset_documents: LIST DOCUMENTS OF DATASET quoted_string ";"
-list_user_datasets_metadata: LIST METADATA OF DATASETS quoted_string ("," quoted_string)* ";"
-list_user_documents_metadata_summary: LIST METADATA SUMMARY OF DATASET quoted_string (DOCUMENTS quoted_string ("," quoted_string)*)? ";"
+list_user_datasets_metadata: LIST METADATA OF DATASETS quoted_string (COMMA quoted_string)* ";"
+list_user_documents_metadata_summary: LIST METADATA SUMMARY OF DATASET quoted_string (DOCUMENTS quoted_string (COMMA quoted_string)*)? ";"
 list_user_agents: LIST AGENTS ";"
 list_user_chats: LIST CHATS ";"
 create_user_chat: CREATE CHAT quoted_string ";"
@@ -353,11 +364,15 @@ parse_dataset_docs: PARSE quoted_string OF DATASET quoted_string ";"
 parse_dataset_sync: PARSE DATASET quoted_string SYNC ";"
 parse_dataset_async: PARSE DATASET quoted_string ASYNC ";"
 
+update_chunk: UPDATE CHUNK quoted_string OF DATASET quoted_string SET quoted_string ";"
+set_metadata: SET METADATA OF DOCUMENT quoted_string TO quoted_string ";"
+remove_tags: REMOVE TAGS quoted_string (COMMA quoted_string)* FROM DATASET quoted_string ";"
+
 // Internal CLI for GO
 insert_dataset_from_file: INSERT DATASET FROM FILE quoted_string ";"
 insert_metadata_from_file: INSERT METADATA FROM FILE quoted_string ";"
 
-identifier_list: identifier ("," identifier)*
+identifier_list: identifier (COMMA identifier)*
 
 identifier: WORD
 quoted_string: QUOTED_STRING
@@ -381,7 +396,13 @@ class RAGFlowCLITransformer(Transformer):
 
     def login_user(self, items):
         email = items[2].children[0].strip("'\"")
-        return {"type": "login_user", "email": email}
+        if len(items) == 5:
+            # With password: LOGIN USER email PASSWORD password
+            password = items[4].children[0].strip("'\"")
+            return {"type": "login_user", "email": email, "password": password}
+        else:
+            # Without password: LOGIN USER email
+            return {"type": "login_user", "email": email}
 
     def ping_server(self, items):
         return {"type": "ping_server"}
@@ -765,6 +786,44 @@ class RAGFlowCLITransformer(Transformer):
     def insert_metadata_from_file(self, items):
         file_path = items[4].children[0].strip("'\"")
         return {"type": "insert_metadata_from_file", "file_path": file_path}
+
+    def update_chunk(self, items):
+        def get_quoted_value(item):
+            if hasattr(item, 'children') and item.children:
+                return item.children[0].strip("'\"")
+            return str(item).strip("'\"")
+
+        chunk_id = get_quoted_value(items[2])
+        dataset_name = get_quoted_value(items[5])
+        json_body = get_quoted_value(items[7])
+        return {"type": "update_chunk", "chunk_id": chunk_id, "dataset_name": dataset_name, "json_body": json_body}
+
+    def set_metadata(self, items):
+        doc_id = items[4].children[0].strip("'\"")
+        meta_json = items[6].children[0].strip("'\"")
+        return {"type": "set_metadata", "doc_id": doc_id, "meta": meta_json}
+
+    def remove_tags(self, items):
+        # items: REMOVE, TAGS, quoted_string(tag1), quoted_string(tag2), ..., FROM, DATASET, quoted_string(dataset_name), ";"
+        tags = []
+        # Start from index 2 (after TAGS keyword) and parse quoted strings until FROM
+        for i in range(2, len(items)):
+            item = items[i]
+            # Check for FROM token to stop
+            if hasattr(item, 'type') and item.type == 'FROM':
+                break
+            if hasattr(item, 'children') and item.children:
+                tag = item.children[0].strip("'\"")
+                tags.append(tag)
+        # Find dataset_name: quoted_string after DATASET
+        dataset_name = None
+        for i, item in enumerate(items):
+            # Check if item is a DATASET token
+            if hasattr(item, 'type') and item.type == 'DATASET':
+                # Next item should be quoted_string
+                dataset_name = items[i + 1].children[0].strip("'\"")
+                break
+        return {"type": "remove_tags", "dataset_name": dataset_name, "tags": tags}
 
     def list_chunks(self, items):
         doc_id = items[4].children[0].strip("'\"")

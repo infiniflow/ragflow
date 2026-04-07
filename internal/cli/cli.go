@@ -29,7 +29,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/peterh/liner"
-	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 
 	"ragflow/internal/cli/filesystem"
@@ -59,9 +58,9 @@ type ConnectionArgs struct {
 	Password     string
 	APIToken     string
 	UserName     string
-	Command      string   // Original command string (for SQL mode)
-	CommandArgs  []string // Split command arguments (for Filesystem mode)
-	IsSQLMode    bool     // true=SQL mode (quoted), false=Filesystem mode (unquoted)
+	Command      *string  // Original command string (for SQL mode)
+	CommandArgs  []string // Split command arguments (for ContextEngine mode)
+	IsSQLMode    bool     // true=SQL mode (quoted), false=ContextEngine mode (unquoted)
 	ShowHelp     bool
 	AdminMode    bool
 	OutputFormat OutputFormat // Output format: table, plain, json
@@ -306,19 +305,21 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 
 	// Get command from remaining args (non-flag arguments)
 	if len(nonFlagArgs) > 0 {
-		// Check if this is SQL mode or Filesystem mode
+		// Check if this is SQL mode or ContextEngine mode
 		// SQL mode: single argument that looks like SQL (e.g., "LIST DATASETS")
-		// Filesystem mode: multiple arguments (e.g., "ls", "datasets")
+		// ContextEngine mode: multiple arguments (e.g., "ls", "datasets")
 		if len(nonFlagArgs) == 1 && looksLikeSQL(nonFlagArgs[0]) {
 			// SQL mode: single argument that looks like SQL
 			result.IsSQLMode = true
-			result.Command = nonFlagArgs[0]
+			command := nonFlagArgs[0]
+			result.Command = &command
 		} else {
-			// Filesystem mode: multiple arguments
+			// ContextEngine mode: multiple arguments
 			result.IsSQLMode = false
 			result.CommandArgs = nonFlagArgs
 			// Also store joined version for backward compatibility
-			result.Command = strings.Join(nonFlagArgs, " ")
+			command := strings.Join(nonFlagArgs, " ")
+			result.Command = &command
 		}
 	}
 
@@ -333,6 +334,7 @@ func looksLikeSQL(s string) bool {
 		"LOGIN ", "REGISTER ", "PING", "GRANT ", "REVOKE ",
 		"SET ", "UNSET ", "UPDATE ", "DELETE ", "INSERT ",
 		"SELECT ", "DESCRIBE ", "EXPLAIN ", "ADD ", "ENABLE ", "DISABLE ", "CHAT ", "USE", "THINK",
+		"REMOVE ",
 	}
 	for _, prefix := range sqlPrefixes {
 		if strings.HasPrefix(s, prefix) {
@@ -489,17 +491,9 @@ func (c *CLI) Run() error {
 		for attempt := 1; attempt <= maxAttempts; attempt++ {
 			fmt.Print("Please input your password: ")
 
-			passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
-			fmt.Println()
+			password, err := ReadPassword()
 
-			if err != nil {
-				fmt.Printf("Error reading password: %v\n", err)
-				return err
-			}
-
-			input := strings.TrimSpace(string(passwordBytes))
-
-			if input == "" {
+			if password == "" {
 				if attempt < maxAttempts {
 					fmt.Println("Password cannot be empty, please try again")
 					continue
@@ -507,7 +501,7 @@ func (c *CLI) Run() error {
 				return errors.New("no password provided after 3 attempts")
 			}
 
-			c.args.Password = input
+			c.args.Password = password
 
 			if err = c.VerifyAuth(); err != nil {
 				if attempt < maxAttempts {
@@ -561,12 +555,37 @@ func (c *CLI) Run() error {
 			c.line.AppendHistory(input)
 		}
 
-		if err = c.execute(input); err != nil {
+		if err = c.executeNew(input); err != nil {
 			fmt.Printf("CLI error: %v\n", err)
 		}
 	}
 
 	return nil
+}
+
+func (c *CLI) executeNew(input string) error {
+	p := NewParser(input)
+	cmd, err := p.Parse(c.args.AdminMode)
+	if err != nil {
+		return err
+	}
+
+	if cmd == nil {
+		return nil
+	}
+
+	// Handle meta commands
+	if cmd.Type == "meta" {
+		return c.handleMetaCommand(cmd)
+	}
+
+	// Execute the command using the client
+	var result ResponseIf
+	result, err = c.client.ExecuteCommand(cmd)
+	if result != nil {
+		result.PrintOut()
+	}
+	return err
 }
 
 func (c *CLI) execute(input string) error {
@@ -740,9 +759,9 @@ func (c *CLI) executeFilesystem(input string) error {
 			fmt.Println("(empty file)")
 		} else if isBinaryContent(content) {
 			return fmt.Errorf("cannot display binary file content")
-		} else {
-			fmt.Println(string(content))
 		}
+
+		fmt.Println(string(content))
 		return nil
 	case "add-skill":
 		// Get the file provider and skill provider from the engine
@@ -1143,6 +1162,7 @@ Meta Commands:
 
 Commands (User Mode):
   LOGIN USER 'email';                                    - Login as user
+  LOGIN USER 'email' PASSWORD 'pwd';                     - Login as user with password
   REGISTER USER 'name' AS 'nickname' PASSWORD 'pwd';     - Register new user
   SHOW VERSION;                                          - Show version info
   PING;                                                  - Ping server
@@ -1221,12 +1241,12 @@ func RunInteractive() error {
 }
 
 // RunSingleCommand executes a single command and exits
-func (c *CLI) RunSingleCommand(command string) error {
+func (c *CLI) RunSingleCommand(command *string) error {
 	// Ensure cleanup is called on exit to restore terminal settings
 	defer c.Cleanup()
 
 	// Execute the command
-	if err := c.execute(command); err != nil {
+	if err := c.executeNew(*command); err != nil {
 		return err
 	}
 	return nil

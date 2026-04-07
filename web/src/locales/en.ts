@@ -2235,6 +2235,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       }`,
       datatype: 'MINE type of the HTTP request',
       insertVariableTip: `Enter / Insert variables`,
+      mergePath: 'Merge path',
+      mergePathTip:
+        'When enabled, a dot suffix immediately after a variable is merged into a path query, such as {node@result.name}.',
       historyVersion: 'Version history',
       version: {
         created: 'Created',

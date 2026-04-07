@@ -165,6 +165,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 			}
 
+			// RESTful dataset chunk routes
+			datasetChunks := v1.Group("/datasets/:dataset_id/documents/:document_id/chunks")
+			{
+				datasetChunks.PUT("/:chunk_id", r.chunkHandler.UpdateChunk)
+			}
+
 			// Author routes
 			authors := v1.Group("/authors")
 			{
@@ -282,6 +288,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		{
 			doc.POST("/list", r.documentHandler.ListDocuments)
 			doc.POST("/metadata/summary", r.documentHandler.MetadataSummary)
+			doc.POST("/set_meta", r.documentHandler.SetMeta)
 		}
 
 		// Chunk routes

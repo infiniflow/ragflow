@@ -351,6 +351,7 @@ func convertMatchingField(fieldWeightStr string) string {
 		"content_sm_ltks":     "content@ft_content_rag_fine",
 		"authors_tks":         "authors@ft_authors_rag_coarse",
 		"authors_sm_tks":      "authors@ft_authors_rag_fine",
+		"tag_kwd":             "tag_kwd@ft_tag_kwd_whitespace__",
 	}
 
 	// Note: Skill index fields (name, tags, description, content) should NOT be converted

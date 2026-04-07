@@ -18,6 +18,7 @@ package cli
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -55,13 +56,13 @@ func (p *Parser) Parse(adminCommand bool) (*Command, error) {
 		return p.parseMetaCommand()
 	}
 
-	// Check for Filesystem commands (ls, cat, search)
-	if p.curToken.Type == TokenIdentifier && isCECommand(p.curToken.Value) {
-		return p.parseCECommand()
-	}
+	// Check for ContextEngine commands (ls, cat, search)
+	// Note: These are now handled in parseUserCommand to support both SQL-style and CE-style syntax
+	// if p.curToken.Type == TokenIdentifier && isCECommand(p.curToken.Value) {
+	// 	return p.parseCECommand()
+	// }
 
-	// Parse SQL-like command
-	return p.parseSQLCommand(adminCommand)
+	return p.parseCommand(adminCommand)
 }
 
 func (p *Parser) parseMetaCommand() (*Command, error) {
@@ -194,14 +195,22 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseChatCommand()
 	case TokenThink:
 		return p.parseThinkCommand()
+	case TokenLS:
+		return p.parseCEListCommand()
+	case TokenCat:
+		return p.parseCECatCommand()
 	case TokenUse:
 		return p.parseUseCommand()
+	case TokenUpdate:
+		return p.parseUpdateCommand()
+	case TokenRemove:
+		return p.parseRemoveCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
 }
 
-func (p *Parser) parseSQLCommand(adminCommand bool) (*Command, error) {
+func (p *Parser) parseCommand(adminCommand bool) (*Command, error) {
 	if p.curToken.Type != TokenIdentifier && !isKeyword(p.curToken.Type) {
 		return nil, fmt.Errorf("expected command, got %s", p.curToken.Value)
 	}
@@ -233,7 +242,7 @@ func (p *Parser) expectSemicolon() error {
 }
 
 func isKeyword(tokenType int) bool {
-	return tokenType >= TokenLogin && tokenType <= TokenMetadata
+	return tokenType >= TokenLogin && tokenType <= TokenTag
 }
 
 // isCECommand checks if the given string is a Filesystem command
@@ -268,22 +277,36 @@ func (p *Parser) parseNumber() (int, error) {
 	return strconv.Atoi(p.curToken.Value)
 }
 
+func (p *Parser) parseFloat() (float64, error) {
+	if p.curToken.Type != TokenNumber {
+		return math.NaN(), fmt.Errorf("expected number, got %s", p.curToken.Value)
+	}
+	result, err := strconv.ParseFloat(p.curToken.Value, 64)
+	if err != nil {
+		return math.NaN(), err
+	}
+
+	return result, nil
+}
+
 func tokenTypeToString(t int) string {
 	// Simplified for error messages
 	return fmt.Sprintf("token(%d)", t)
 }
 
-// parseCECommand parses Filesystem commands (ls, search)
+// parseCECommand parses ContextEngine commands (ls, search)
 func (p *Parser) parseCECommand() (*Command, error) {
 	cmdName := strings.ToUpper(p.curToken.Value)
 
 	switch cmdName {
 	case "LS", "LIST":
 		return p.parseCEListCommand()
+	case "CAT":
+		return p.parseCECatCommand()
 	case "SEARCH":
 		return p.parseCESearchCommand()
 	default:
-		return nil, fmt.Errorf("unknown Filesystem command: %s", cmdName)
+		return nil, fmt.Errorf("unknown ContextEngine command: %s", cmdName)
 	}
 }
 
@@ -309,6 +332,32 @@ func (p *Parser) parseCEListCommand() (*Command, error) {
 		// Default to "datasets" root
 		cmd.Params["path"] = "datasets"
 	}
+
+	// Optional semicolon
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// parseCECatCommand parses the cat command
+// Syntax: cat <path>
+func (p *Parser) parseCECatCommand() (*Command, error) {
+	p.nextToken() // consume CAT
+
+	cmd := NewCommand("ce_cat")
+
+	if p.curToken.Type != TokenIdentifier && p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected path after CAT")
+	}
+
+	path := p.curToken.Value
+	if p.curToken.Type == TokenQuotedString {
+		path = strings.Trim(path, "\"'")
+	}
+	cmd.Params["path"] = path
+	p.nextToken()
 
 	// Optional semicolon
 	if p.curToken.Type == TokenSemicolon {
