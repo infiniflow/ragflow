@@ -134,8 +134,8 @@ export const useFetchDocumentList = () => {
       }
       const ret = await listDocument(
         {
-          kb_id: knowledgeId || id,
-          keywords: debouncedSearchString,
+          id: knowledgeId || id,
+          ext: { keywords: debouncedSearchString },
           page_size: pagination.pageSize,
           page: pagination.current,
         },
