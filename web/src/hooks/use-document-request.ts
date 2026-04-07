@@ -15,7 +15,10 @@ import {
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
-import kbService, { listDocument } from '@/services/knowledge-service';
+import kbService, {
+  listDocument,
+  updateDocument,
+} from '@/services/knowledge-service';
 import api, { api_host, ExternalApi } from '@/utils/api';
 import { getSearchValue } from '@/utils/common-util';
 import { buildChunkHighlights } from '@/utils/document-util';
@@ -336,12 +339,13 @@ export const useSaveDocumentName = () => {
     mutationFn: async ({
       name,
       documentId,
+      kbId,
     }: {
       name: string;
       documentId: string;
+      kbId: string;
     }) => {
-      const { data } = await kbService.document_rename({
-        doc_id: documentId,
+      const { data } = await updateDocument(kbId, documentId, {
         name: name,
       });
       if (data.code === 0) {

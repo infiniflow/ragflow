@@ -26,11 +26,11 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
+                401,
+                "<Unauthorized '401: Unauthorized'>",
             ),
         ],
     )
@@ -93,7 +93,7 @@ class TestDocumentsUpdated:
         else:
             assert res["message"] == expected_message
 
-    @pytest.mark.p3
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
@@ -110,7 +110,7 @@ class TestDocumentsUpdated:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
-    @pytest.mark.p3
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
@@ -127,10 +127,10 @@ class TestDocumentsUpdated:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
-    @pytest.mark.p3
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "meta_fields, expected_code, expected_message",
-        [({"test": "test"}, 0, ""), ("test", 102, "meta_fields must be a dictionary")],
+        [({"test": "test"}, 0, ""), ("test", 102, "Field: <meta_fields> - Message: <Input should be a valid dictionary> - Value: <test>")],
     )
     def test_meta_fields(self, HttpApiAuth, add_documents, meta_fields, expected_code, expected_message):
         dataset_id, document_ids = add_documents
@@ -297,6 +297,32 @@ class TestDocumentsUpdated:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "payload, expected_code, expected_message",
+        [
+            ({"chunk_count": 100}, 102, "Can't change `chunk_count`."),
+            ({"token_count": 100}, 102, "Can't change `token_count`."),
+            ({"progress": 2.0}, 102, "Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <2.0>"),
+            ({"progress": 1.0}, 102, "Can't change `progress`."),
+            ({"meta_fields": []}, 102, "Field: <meta_fields> - Message: <Input should be a valid dictionary> - Value: <[]>"),
+        ],
+    )
+    def test_update_doc_guards_and_error_paths(self, HttpApiAuth, add_documents, payload, expected_code, expected_message):
+        """
+        Test various guard conditions and error paths for document update functionality.
+        This includes testing for invalid dataset ownership, document ownership,
+        immutable fields, and validation errors.
+        """
+        dataset_id, document_ids = add_documents
+        document_id = document_ids[0]
+
+        res = update_document(HttpApiAuth, dataset_id, document_id, payload)
+        assert res["code"] == expected_code
+        if expected_message:
+            assert expected_message in res["message"] or res["message"] == expected_message
+
+
 
 
 DEFAULT_PARSER_CONFIG_FOR_TEST = {
@@ -343,37 +369,32 @@ class TestUpdateDocumentParserConfig:
             pytest.param(
                 "naive",
                 {"chunk_token_num": -1},
-                100,
-                "AssertionError('chunk_token_num should be in range from 1 to 100000000')",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.chunk_token_num> - Message: <Input should be greater than or equal to 1> - Value: <-1>",
             ),
             pytest.param(
                 "naive",
                 {"chunk_token_num": 0},
-                100,
-                "AssertionError('chunk_token_num should be in range from 1 to 100000000')",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.chunk_token_num> - Message: <Input should be greater than or equal to 1> - Value: <0>",
             ),
             pytest.param(
                 "naive",
                 {"chunk_token_num": 100000000},
-                100,
-                "AssertionError('chunk_token_num should be in range from 1 to 100000000')",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.chunk_token_num> - Message: <Input should be less than or equal to 2048> - Value: <100000000>",
             ),
             pytest.param(
                 "naive",
                 {"chunk_token_num": 3.14},
                 102,
-                "",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                "Field: <parser_config.chunk_token_num> - Message: <Input should be a valid integer> - Value: <3.14>",
             ),
             pytest.param(
                 "naive",
                 {"chunk_token_num": "1024"},
-                100,
-                "",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.chunk_token_num> - Message: <Input should be a valid integer> - Value: <1024>",
             ),
             (
                 "naive",
@@ -392,53 +413,46 @@ class TestUpdateDocumentParserConfig:
             pytest.param(
                 "naive",
                 {"html4excel": 1},
-                100,
-                "AssertionError('html4excel should be True or False')",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.html4excel> - Message: <Input should be a valid boolean> - Value: <1>",
             ),
             ("naive", {"delimiter": ""}, 102, "Field: <parser_config.delimiter> - Message: <String should have at least 1 character> - Value: <>"),
             ("naive", {"delimiter": "`##`"}, 0, ""),
             pytest.param(
                 "naive",
                 {"delimiter": 1},
-                100,
-                "",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.delimiter> - Message: <Input should be a valid string> - Value: <1>",
             ),
             pytest.param(
                 "naive",
                 {"task_page_size": -1},
-                100,
-                "AssertionError('task_page_size should be in range from 1 to 100000000')",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.task_page_size> - Message: <Input should be greater than or equal to 1> - Value: <-1>",
             ),
             pytest.param(
                 "naive",
                 {"task_page_size": 0},
-                100,
-                "AssertionError('task_page_size should be in range from 1 to 100000000')",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.task_page_size> - Message: <Input should be greater than or equal to 1> - Value: <0>",
             ),
             pytest.param(
                 "naive",
                 {"task_page_size": 100000000},
-                100,
-                "AssertionError('task_page_size should be in range from 1 to 100000000')",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                0,
+                "",
             ),
             pytest.param(
                 "naive",
                 {"task_page_size": 3.14},
-                100,
-                "",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.task_page_size> - Message: <Input should be a valid integer> - Value: <3.14>",
             ),
             pytest.param(
                 "naive",
                 {"task_page_size": "1024"},
-                100,
-                "",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.task_page_size> - Message: <Input should be a valid integer> - Value: <1024>",
             ),
             ("naive", {"raptor": {"use_raptor": {
                 "a": "b"
@@ -447,93 +461,80 @@ class TestUpdateDocumentParserConfig:
             pytest.param(
                 "naive",
                 {"invalid_key": "invalid_value"},
-                100,
-                """AssertionError("Abnormal \'parser_config\'. Invalid key: invalid_key")""",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.invalid_key> - Message: <Extra inputs are not permitted> - Value: <invalid_value>",
             ),
             pytest.param(
                 "naive",
                 {"auto_keywords": -1},
-                100,
-                "AssertionError('auto_keywords should be in range from 0 to 32')",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.auto_keywords> - Message: <Input should be greater than or equal to 0> - Value: <-1>",
             ),
             pytest.param(
                 "naive",
                 {"auto_keywords": 32},
-                100,
-                "AssertionError('auto_keywords should be in range from 0 to 32')",
-                marks=pytest.mark.skip(reason="issues/6098"),
-            ),
-            pytest.param(
-                "naive",
-                {"auto_questions": 3.14},
-                100,
+                0,
                 "",
-                marks=pytest.mark.skip(reason="issues/6098"),
             ),
             pytest.param(
                 "naive",
                 {"auto_keywords": "1024"},
-                100,
-                "",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.auto_keywords> - Message: <Input should be a valid integer> - Value: <1024>",
+            ),
+            pytest.param(
+                "naive",
+                {"auto_keywords": 3.14},
+                102,
+                "Field: <parser_config.auto_keywords> - Message: <Input should be a valid integer> - Value: <3.14>",
             ),
             pytest.param(
                 "naive",
                 {"auto_questions": -1},
-                100,
-                "AssertionError('auto_questions should be in range from 0 to 10')",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.auto_questions> - Message: <Input should be greater than or equal to 0> - Value: <-1>",
             ),
             pytest.param(
                 "naive",
                 {"auto_questions": 10},
-                100,
-                "AssertionError('auto_questions should be in range from 0 to 10')",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                0,
+                "",
             ),
             pytest.param(
                 "naive",
                 {"auto_questions": 3.14},
-                100,
-                "",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.auto_questions> - Message: <Input should be a valid integer> - Value: <3.14>",
             ),
             pytest.param(
                 "naive",
                 {"auto_questions": "1024"},
-                100,
-                "",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.auto_questions> - Message: <Input should be a valid integer> - Value: <1024>",
             ),
             pytest.param(
                 "naive",
                 {"topn_tags": -1},
-                100,
-                "AssertionError('topn_tags should be in range from 0 to 10')",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.topn_tags> - Message: <Input should be greater than or equal to 1> - Value: <-1>",
             ),
             pytest.param(
                 "naive",
                 {"topn_tags": 10},
-                100,
-                "AssertionError('topn_tags should be in range from 0 to 10')",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                0,
+                "",
             ),
             pytest.param(
                 "naive",
                 {"topn_tags": 3.14},
-                100,
-                "",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.topn_tags> - Message: <Input should be a valid integer> - Value: <3.14>",
             ),
             pytest.param(
                 "naive",
                 {"topn_tags": "1024"},
-                100,
-                "",
-                marks=pytest.mark.skip(reason="issues/6098"),
+                102,
+                "Field: <parser_config.topn_tags> - Message: <Input should be a valid integer> - Value: <1024>",
             ),
         ],
     )

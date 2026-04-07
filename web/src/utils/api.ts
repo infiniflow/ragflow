@@ -112,6 +112,8 @@ export default {
   document_rm: `${api_host}/document/rm`,
   document_delete: `${api_host}/api/document`,
   document_rename: `${api_host}/document/rename`,
+  document_update: (datasetId: string, documentId: string) =>
+    `${ExternalApi}${api_host}/datasets/${datasetId}/documents/${documentId}`,
   document_create: `${api_host}/document/create`,
   document_run: `${api_host}/document/run`,
   document_change_parser: `${api_host}/document/change_parser`,

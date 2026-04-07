@@ -28,6 +28,7 @@ const {
   rm_chunk,
   retrieval_test,
   document_rename,
+  document_update,
   document_run,
   document_upload,
   web_crawl,
@@ -78,6 +79,10 @@ const methods = {
   document_rename: {
     url: document_rename,
     method: 'post',
+  },
+  document_update: {
+    url: document_update,
+    method: 'put',
   },
   document_create: {
     url: document_create,
@@ -250,6 +255,12 @@ export const listDocument = (
 
 export const documentFilter = (kb_id: string) =>
   request.post(api.get_dataset_filter, { kb_id });
+
+export const updateDocument = (
+  datasetId: string,
+  documentId: string,
+  data: { name?: string },
+) => request.put(api.document_update(datasetId, documentId), { data });
 
 export const getMetaDataService = ({
   kb_id,
