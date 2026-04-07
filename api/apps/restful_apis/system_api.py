@@ -14,9 +14,11 @@
 #  limitations under the License.
 #
 
-from api.apps import login_required
+from quart import jsonify
 
+from api.apps import login_required
 from api.utils.api_utils import get_json_result
+from api.utils.health_utils import run_health_checks
 from common.versions import get_ragflow_version
 
 @manager.route("/system/version", methods=["GET"])  # noqa: F821
@@ -40,3 +42,8 @@ def version():
               description: Version number.
     """
     return get_json_result(data=get_ragflow_version())
+
+@manager.route("/healthz", methods=["GET"])  # noqa: F821
+def healthz():
+    result, all_ok = run_health_checks()
+    return jsonify(result), (200 if all_ok else 500)

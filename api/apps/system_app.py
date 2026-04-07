@@ -34,7 +34,6 @@ from common.log_utils import get_log_levels, set_log_level
 from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
-from quart import jsonify
 from api.utils.health_utils import run_health_checks, get_oceanbase_status
 from common import settings
 
@@ -145,13 +144,6 @@ def status():
     res["task_executor_heartbeats"] = task_executor_heartbeats
 
     return get_json_result(data=res)
-
-
-@manager.route("/healthz", methods=["GET"])  # noqa: F821
-def healthz():
-    result, all_ok = run_health_checks()
-    return jsonify(result), (200 if all_ok else 500)
-
 
 @manager.route("/ping", methods=["GET"])  # noqa: F821
 async def ping():
