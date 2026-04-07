@@ -217,7 +217,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Skill search and indexing
 				skills.POST("/search", r.skillSearchHandler.Search)
 				skills.POST("/index", r.skillSearchHandler.IndexSkills)
-				skills.DELETE("/index/*skill_id", r.skillSearchHandler.DeleteSkillIndex)
+				skills.DELETE("/index", r.skillSearchHandler.DeleteSkillIndex)
 				skills.POST("/reindex", r.skillSearchHandler.Reindex)
 			}
 

@@ -20,7 +20,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/service"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -265,9 +264,10 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param skill_id path string true "Skill ID (skill name)"
+// @Param skill_id query string true "Skill ID (skill name)"
+// @Param hub_id query string true "Hub ID"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/skills/index/{skill_id} [delete]
+// @Router /v1/skills/index [delete]
 func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -275,9 +275,7 @@ func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
 		return
 	}
 
-	skillID := c.Param("skill_id")
-	// Wildcard parameter includes leading "/", remove it
-	skillID = strings.TrimPrefix(skillID, "/")
+	skillID := c.Query("skill_id")
 	hubID := c.Query("hub_id")
 	if skillID == "" {
 		jsonError(c, common.CodeDataError, "skill_id is required")
@@ -508,7 +506,7 @@ func (h *SkillSearchHandler) DeleteHub(c *gin.Context) {
 		return
 	}
 
-	code, err := h.hubService.DeleteHub(hubID, user.ID)
+	code, err := h.hubService.DeleteHub(hubID, user.ID, h.docEngine)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return

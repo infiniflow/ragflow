@@ -803,12 +803,12 @@ export const useSkills = () => {
               Authorization: getAuthorization(),
             },
             body: JSON.stringify({
-              hub_id: normalizedHubId, // Use hub ID for indexing
+              hub_id: normalizedHubId,
               skills: [
                 {
-                  id: skillNameNormalized, // Use user-specified name as ID (without version suffix)
-                  folder_id: skillFolderId, // Pass folder ID for file retrieval
-                  name: skillNameNormalized, // Use user-specified name (override SKILL.md)
+                  id: skillNameNormalized,
+                  folder_id: skillFolderId,
+                  name: skillNameNormalized,
                   description: skillDescription,
                   tags: skillMetadata.tags || [],
                   content: concatenatedContent,

@@ -129,9 +129,15 @@ type infinityEngine struct {
 
 // NewEngine creates an Infinity engine
 func NewEngine(cfg interface{}) (*infinityEngine, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("infinity config is nil, please check your configuration file for 'doc_engine.infinity' settings")
+	}
 	infConfig, ok := cfg.(*server.InfinityConfig)
 	if !ok {
 		return nil, fmt.Errorf("invalid infinity config type, expected *config.InfinityConfig")
+	}
+	if infConfig == nil {
+		return nil, fmt.Errorf("infinity config is nil, please check your configuration file for 'doc_engine.infinity' settings")
 	}
 
 	client, err := NewInfinityClient(infConfig)

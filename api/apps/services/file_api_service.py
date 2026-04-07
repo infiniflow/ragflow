@@ -204,14 +204,72 @@ def get_all_parent_folders(file_id: str):
     return True, {"parent_folders": [pf.to_json() for pf in parent_folders]}
 
 
-async def delete_files(uid: str, file_ids: list):
+async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
     """
     Delete files/folders with team permission check and recursive deletion.
 
     :param uid: user ID
     :param file_ids: list of file IDs to delete
+    :param auth_header: Authorization header for Go backend API calls
     :return: (success, result) or (success, error_message)
     """
+    def _get_hub_uuid_by_name(tenant_id, hub_name, authorization):
+        """Get hub UUID by hub name from Go backend"""
+        try:
+            import requests
+            from urllib.parse import quote
+
+            host = getattr(settings, 'HOST_IP', '127.0.0.1')
+            # Go service runs on port+4 (9384 by default)
+            port = getattr(settings, 'HOST_PORT', 9380) + 4
+            service_url = f"http://{host}:{port}"
+
+            # List all hubs and find the one matching the name
+            url = f"{service_url}/api/v1/skills/hubs"
+            headers = {"Content-Type": "application/json"}
+            if authorization:
+                headers["Authorization"] = authorization
+
+            response = requests.get(url, headers=headers, timeout=10)
+
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("code") == 0:
+                    hubs = data.get("data", {}).get("hubs", [])
+                    for hub in hubs:
+                        if hub.get("name") == hub_name:
+                            return hub.get("id")
+        except Exception as e:
+            logging.warning(f"Error getting hub UUID: {e}")
+        return None
+
+    def _delete_skill_index(tenant_id, hub_name, skill_name, authorization):
+        """Delete skill index from Go backend"""
+        try:
+            import requests
+            from urllib.parse import quote
+
+            # Construct service URL from settings
+            host = getattr(settings, 'HOST_IP', '127.0.0.1')
+            # Go service runs on port+4 (9384 by default)
+            port = getattr(settings, 'HOST_PORT', 9380) + 4
+            service_url = f"http://{host}:{port}"
+
+            # Get hub UUID from hub name
+            hub_uuid = _get_hub_uuid_by_name(tenant_id, hub_name, authorization)
+            hub_id = hub_uuid if hub_uuid else hub_name
+
+            url = f"{service_url}/api/v1/skills/index?skill_id={quote(skill_name)}&hub_id={quote(hub_id)}"
+            headers = {"Content-Type": "application/json"}
+            if authorization:
+                headers["Authorization"] = authorization
+
+            response = requests.delete(url, headers=headers, timeout=10)
+            if response.status_code != 200:
+                logging.debug(f"Failed to delete skill index: status={response.status_code}")
+        except Exception as e:
+            logging.debug(f"Error deleting skill index: {e}")
+
     def _delete_single_file(file):
         try:
             if file.location:
@@ -231,11 +289,24 @@ async def delete_files(uid: str, file_ids: list):
 
         FileService.delete(file)
 
-    def _delete_folder_recursive(folder, tenant_id):
+    def _delete_folder_recursive(folder, tenant_id, is_skill_folder=False, hub_name=None, authorization=""):
+        # Check if this is a skill folder (parent is a skills_hub)
+        current_hub_name = hub_name
+        if not is_skill_folder and not current_hub_name:
+            parent_success, parent_folder = FileService.get_by_id(folder.parent_id)
+            if parent_success and parent_folder and parent_folder.source_type == "skills_hub":
+                is_skill_folder = True
+                # Use parent folder name as hub name (e.g., "hub11")
+                current_hub_name = parent_folder.name
+
+        # If this is a skill folder, delete its index first
+        if is_skill_folder and current_hub_name:
+            _delete_skill_index(tenant_id, current_hub_name, folder.name, authorization)
+
         sub_files = FileService.list_all_files_by_parent_id(folder.id)
         for sub_file in sub_files:
             if sub_file.type == FileType.FOLDER.value:
-                _delete_folder_recursive(sub_file, tenant_id)
+                _delete_folder_recursive(sub_file, tenant_id, False, current_hub_name, authorization)
             else:
                 _delete_single_file(sub_file)
         FileService.delete(folder)
@@ -254,7 +325,7 @@ async def delete_files(uid: str, file_ids: list):
                 continue
 
             if file.type == FileType.FOLDER.value:
-                _delete_folder_recursive(file, uid)
+                _delete_folder_recursive(file, uid, False, None, auth_header)
                 continue
 
             _delete_single_file(file)

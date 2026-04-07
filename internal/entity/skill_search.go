@@ -107,4 +107,5 @@ type SkillSearchResult struct {
 	BM25Score    float64  `json:"bm25_score,omitempty"`
 	VectorScore  float64  `json:"vector_score,omitempty"`
 	IndexVersion string   `json:"index_version,omitempty"`
+	CreateTime   int64    `json:"create_time,omitempty"`
 }

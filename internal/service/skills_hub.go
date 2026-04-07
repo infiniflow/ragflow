@@ -17,9 +17,11 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/logger"
 	"strings"
@@ -291,7 +293,7 @@ func (s *SkillsHubService) UpdateHub(hubID string, tenantID string, req *UpdateH
 }
 
 // DeleteHub deletes a skills hub and its associated folder
-func (s *SkillsHubService) DeleteHub(hubID, tenantID string) (common.ErrorCode, error) {
+func (s *SkillsHubService) DeleteHub(hubID, tenantID string, docEngine engine.DocEngine) (common.ErrorCode, error) {
 	hub, err := s.hubDAO.GetByID(hubID)
 	if err != nil {
 		return common.CodeDataError, fmt.Errorf("hub not found")
@@ -300,6 +302,17 @@ func (s *SkillsHubService) DeleteHub(hubID, tenantID string) (common.ErrorCode, 
 	// Verify tenant ownership
 	if hub.TenantID != tenantID {
 		return common.CodeDataError, fmt.Errorf("hub not found")
+	}
+
+	// Delete the hub index if docEngine is provided
+	if docEngine != nil {
+		indexName := getSkillIndexName(tenantID, hubID)
+		if err := docEngine.DeleteIndex(context.Background(), indexName); err != nil {
+			logger.Warn("Failed to delete hub index", zap.String("index", indexName), zap.Error(err))
+			// Don't return error, continue to delete hub data
+		} else {
+			logger.Info("Deleted hub index", zap.String("index", indexName))
+		}
 	}
 
 	// Delete the hub (soft delete)

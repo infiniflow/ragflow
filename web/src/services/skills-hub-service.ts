@@ -228,12 +228,12 @@ class SkillsHubService {
 
   // Delete skill index
   async deleteSkillIndex(skillId: string, hubId?: string): Promise<void> {
-    const params: Record<string, string> = {};
+    const params: Record<string, string> = { skill_id: skillId };
     if (hubId) params.hub_id = hubId;
 
     await this.request<void>(
       'DELETE',
-      `${API_PREFIX}/skills/index/${skillId}`,
+      `${API_PREFIX}/skills/index`,
       null,
       params,
     );

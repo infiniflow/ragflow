@@ -782,9 +782,14 @@ func (c *CLI) executeFilesystem(input string) error {
 		if skillProvider == nil {
 			return fmt.Errorf("skill provider not available")
 		}
+		fileProvider := c.contextEngine.GetProvider("files")
+		if fileProvider == nil {
+			return fmt.Errorf("file provider not available")
+		}
 		// Create adapter for HTTPClient
 		httpAdapter := &httpClientAdapter{client: c.client.HTTPClient}
-		cmd := filesystem.NewDeleteSkillCommand(httpAdapter, skillProvider)
+		fileProv, _ := fileProvider.(*filesystem.FileProvider)
+		cmd := filesystem.NewDeleteSkillCommand(httpAdapter, skillProvider, fileProv)
 		return cmd.Execute(cmdArgs)
 	default:
 		return fmt.Errorf("unknown filesystem command: %s", cmdType)

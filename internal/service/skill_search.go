@@ -526,6 +526,14 @@ func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interfac
 			skillKey = skillID
 		}
 
+		// Extract create_time
+		var createTime int64
+		if ctVal, ok := chunk["create_time"].(float64); ok {
+			createTime = int64(ctVal)
+		} else if ctVal, ok := chunk["create_time"].(int64); ok {
+			createTime = ctVal
+		}
+
 		result := entity.SkillSearchResult{
 			SkillID:     skillID,
 			FolderID:    folderID,
@@ -533,6 +541,7 @@ func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interfac
 			Description: description,
 			Tags:        tags,
 			Score:       score,
+			CreateTime:  createTime,
 		}
 
 		// Keep only the highest scored result for each skill

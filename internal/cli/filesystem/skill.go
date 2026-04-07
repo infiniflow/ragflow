@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
@@ -182,14 +183,15 @@ func (p *SkillProvider) Search(ctx stdctx.Context, subPath string, opts *SearchO
 	}
 
 	// Parse hub from path
-	hubID := ""
+	hubName := ""
 	parts := SplitPath(subPath)
 	if len(parts) > 0 {
-		hubID = parts[0]
+		hubName = parts[0]
 	}
 
 	// Hub ID can be either a name or UUID
 	// If it's not "default" and doesn't look like a UUID, try to convert it
+	hubID := hubName
 	if hubID != "" && hubID != "default" && !isUUID(hubID) {
 		hubUUID, err := p.getHubUUIDByName(ctx, hubID)
 		if err == nil {
@@ -232,6 +234,7 @@ func (p *SkillProvider) Search(ctx stdctx.Context, subPath string, opts *SearchO
 				Score       float64  `json:"score"`
 				BM25Score   float64  `json:"bm25_score,omitempty"`
 				VectorScore float64  `json:"vector_score,omitempty"`
+				CreateTime  int64    `json:"create_time,omitempty"`
 			} `json:"skills"`
 			Total int `json:"total"`
 		} `json:"data"`
@@ -248,10 +251,16 @@ func (p *SkillProvider) Search(ctx stdctx.Context, subPath string, opts *SearchO
 	// Convert to Result format
 	nodes := make([]*Node, 0, len(result.Data.Skills))
 	for _, skill := range result.Data.Skills {
+		var createdAt time.Time
+		if skill.CreateTime > 0 {
+			createdAt = time.UnixMilli(skill.CreateTime)
+		}
 		nodes = append(nodes, &Node{
-			Name: skill.Name,
-			Type: NodeTypeDirectory,
-			Path: fmt.Sprintf("skills/%s/%s", hubID, skill.Name),
+			Name:      skill.Name,
+			Type:      NodeTypeDirectory,
+			Path:      fmt.Sprintf("skills/%s/%s", hubName, skill.Name),
+			CreatedAt: createdAt,
+			UpdatedAt: createdAt,
 			Metadata: map[string]interface{}{
 				"skill_id":     skill.SkillID,
 				"score":        skill.Score,
@@ -323,9 +332,9 @@ func (p *SkillProvider) listHubs(ctx stdctx.Context, opts *ListOptions) (*Result
 
 // listSkillsInHub lists skills in a specific hub
 // This is a virtual listing based on folder structure in file system
-func (p *SkillProvider) listSkillsInHub(ctx stdctx.Context, hubID string, opts *ListOptions) (*Result, error) {
-	// First get the hub UUID
-	hubUUID, err := p.getHubUUIDByName(ctx, hubID)
+func (p *SkillProvider) listSkillsInHub(ctx stdctx.Context, hubName string, opts *ListOptions) (*Result, error) {
+	// First get the hub UUID from hub name
+	hubUUID, err := p.getHubUUIDByName(ctx, hubName)
 	if err != nil {
 		return nil, err
 	}
@@ -365,7 +374,7 @@ func (p *SkillProvider) listSkillsInHub(ctx stdctx.Context, hubID string, opts *
 		nodes = append(nodes, &Node{
 			Name: skill.Name,
 			Type: NodeTypeDirectory,
-			Path: fmt.Sprintf("skills/%s/%s", hubID, skill.Name),
+			Path: fmt.Sprintf("skills/%s/%s", hubName, skill.Name),
 			Metadata: map[string]interface{}{
 				"skill_id":    skill.SkillID,
 				"description": skill.Description,
@@ -452,11 +461,11 @@ func (p *SkillProvider) DeleteSkill(ctx stdctx.Context, hubID, skillName string)
 	}
 
 	// Call delete skill index API
-	resp, err := p.httpClient.Request("DELETE", 
-		fmt.Sprintf("/skills/index/%s?hub_id=%s", 
-			url.PathEscape(skillName), 
-			url.QueryEscape(hubUUID)), 
-		true, "web", nil, nil)
+	resp, err := p.httpClient.Request("DELETE",
+		fmt.Sprintf("/skills/index/%s?hub_id=%s",
+			url.PathEscape(skillName),
+			url.QueryEscape(hubUUID)),
+		true, "auto", nil, nil)
 	if err != nil {
 		return fmt.Errorf("delete index request failed: %w", err)
 	}
@@ -1323,13 +1332,15 @@ Validation rules:
 type DeleteSkillCommand struct {
 	client        HTTPClientInterface
 	skillProvider Provider
+	fileProvider  *FileProvider
 }
 
 // NewDeleteSkillCommand creates a new delete skill command handler
-func NewDeleteSkillCommand(client HTTPClientInterface, skillProvider Provider) *DeleteSkillCommand {
+func NewDeleteSkillCommand(client HTTPClientInterface, skillProvider Provider, fileProvider *FileProvider) *DeleteSkillCommand {
 	return &DeleteSkillCommand{
 		client:        client,
 		skillProvider: skillProvider,
+		fileProvider:  fileProvider,
 	}
 }
 
@@ -1407,7 +1418,17 @@ func (c *DeleteSkillCommand) deleteSkill(ctx stdctx.Context, skillName, hubID st
 		fmt.Printf("✓ Search index deleted\n")
 	}
 
-	// Note: File system deletion is handled separately by FileProvider
+	// Delete file system folder
+	if c.fileProvider != nil {
+		fmt.Printf("Deleting skill folder '%s/%s'...\n", hubID, skillName)
+		folderPath := fmt.Sprintf("skills/%s/%s", hubID, skillName)
+		if err := c.fileProvider.DeleteFolderByPath(ctx, folderPath); err != nil {
+			fmt.Printf("⚠ Warning: Failed to delete skill folder: %v\n", err)
+		} else {
+			fmt.Printf("✓ Skill folder deleted\n")
+		}
+	}
+
 	fmt.Printf("✓ Successfully deleted skill '%s'\n", skillName)
 	return nil
 }

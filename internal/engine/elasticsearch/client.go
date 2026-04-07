@@ -36,9 +36,15 @@ type elasticsearchEngine struct {
 
 // NewEngine creates an Elasticsearch engine
 func NewEngine(cfg interface{}) (*elasticsearchEngine, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("elasticsearch config is nil, please check your configuration file for 'doc_engine.es' settings")
+	}
 	esConfig, ok := cfg.(*server.ElasticsearchConfig)
 	if !ok {
 		return nil, fmt.Errorf("invalid Elasticsearch config type, expected *config.ElasticsearchConfig")
+	}
+	if esConfig == nil {
+		return nil, fmt.Errorf("elasticsearch config is nil, please check your configuration file for 'doc_engine.es' settings")
 	}
 
 	// Create ES client

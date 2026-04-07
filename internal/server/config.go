@@ -591,20 +591,26 @@ func FromConfigFile(configPath string) error {
 	}
 
 	// Map doc_engine section to DocEngineConfig
-	if globalConfig != nil && globalConfig.DocEngine.Type == "" {
-		if v.IsSet("doc_engine") {
-			docEngineConfig := v.Sub("doc_engine")
-			if docEngineConfig != nil {
-				globalConfig.DocEngine.Type = EngineType(docEngineConfig.GetString("type"))
+	if globalConfig != nil {
+		// First, ensure engine type is set
+		if globalConfig.DocEngine.Type == "" {
+			if v.IsSet("doc_engine") {
+				docEngineConfig := v.Sub("doc_engine")
+				if docEngineConfig != nil {
+					globalConfig.DocEngine.Type = EngineType(docEngineConfig.GetString("type"))
+				}
 			}
 		}
-		// Also check legacy es section for backward compatibility
+
+		// Map es section from top-level (service_conf.yaml format)
 		if v.IsSet("es") {
 			esConfig := v.Sub("es")
 			if esConfig != nil {
+				// Set default engine type if not set
 				if globalConfig.DocEngine.Type == "" {
 					globalConfig.DocEngine.Type = EngineElasticsearch
 				}
+				// Always populate ES config if es section exists
 				if globalConfig.DocEngine.ES == nil {
 					globalConfig.DocEngine.ES = &ElasticsearchConfig{
 						Hosts:    esConfig.GetString("hosts"),
@@ -614,17 +620,23 @@ func FromConfigFile(configPath string) error {
 				}
 			}
 		}
+
+		// Map infinity section from top-level (service_conf.yaml format)
 		if v.IsSet("infinity") {
 			infConfig := v.Sub("infinity")
 			if infConfig != nil {
+				// Set default engine type if not set
 				if globalConfig.DocEngine.Type == "" {
 					globalConfig.DocEngine.Type = EngineInfinity
 				}
+				// Always populate Infinity config if infinity section exists
 				if globalConfig.DocEngine.Infinity == nil {
 					globalConfig.DocEngine.Infinity = &InfinityConfig{
-						URI:          infConfig.GetString("uri"),
-						PostgresPort: infConfig.GetInt("postgres_port"),
-						DBName:       infConfig.GetString("db_name"),
+						URI:                    infConfig.GetString("uri"),
+						PostgresPort:           infConfig.GetInt("postgres_port"),
+						DBName:                 infConfig.GetString("db_name"),
+						MappingFileName:        infConfig.GetString("mapping_file_name"),
+						DocMetaMappingFileName: infConfig.GetString("doc_meta_mapping_file_name"),
 					}
 				}
 			}
