@@ -204,7 +204,9 @@ func (e *infinityEngine) UpdateMetadata(ctx context.Context, docID string, kbID 
 	}
 
 	// Build filter to find existing row by docID and kbID
-	filter := fmt.Sprintf("id = '%s' AND kb_id = '%s'", docID, kbID)
+	escapedDocID := strings.ReplaceAll(docID, "'", "''")
+	escapedKbID := strings.ReplaceAll(kbID, "'", "''")
+	filter := fmt.Sprintf("id = '%s' AND kb_id = '%s'", escapedDocID, escapedKbID)
 
 	// Query existing metadata using the chainable API
 	queryTable := table.Output([]string{"id", "kb_id", "meta_fields"}).Filter(filter).Limit(1).Offset(0)
