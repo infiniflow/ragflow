@@ -12,11 +12,4 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-<<<<<<<< HEAD:rag/flow/chunker/__init__.py
-
-from rag.flow.chunker.token_chunker import TokenChunker, TokenChunkerParam
-
-__all__ = ["TokenChunker", "TokenChunkerParam"]
-========
 #
->>>>>>>> cfee2bc9dbcaceedc6b09e6e57fffbc240329b09:test/testcases/test_web_api/test_chunk_feedback/__init__.py
