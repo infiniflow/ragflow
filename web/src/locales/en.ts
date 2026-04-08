@@ -175,6 +175,10 @@ export default {
       filesSelected: '{{count}} files selected',
       uploading: 'Uploading...',
       files: 'Files',
+      noFiles: 'No files',
+      versionHistory: 'Version History',
+      selectVersion: 'Select version to preview',
+      latest: 'Latest',
       metadata: {
         basic: 'Basic Info',
         emoji: 'Emoji',

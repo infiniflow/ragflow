@@ -17,11 +17,14 @@
 package handler
 
 import (
+	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
+	"ragflow/internal/logger"
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 // SkillSearchHandler handles skill search HTTP requests
@@ -185,8 +188,13 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 		}
 	}
 
-	// For Infinity: BatchIndexSkills will handle index creation with correct dimension
-	// For ES: need to ensure index exists first
+	// Ensure index exists before indexing (for both ES and Infinity)
+	logger.Info("Ensuring skill index exists before indexing",
+		zap.String("tenantID", user.ID),
+		zap.String("hubID", req.HubID),
+		zap.String("engineType", h.docEngine.GetType()),
+		zap.Int("skillCount", len(req.Skills)))
+
 	if h.docEngine.GetType() == "elasticsearch" {
 		if err := h.indexerService.EnsureIndex(c.Request.Context(), user.ID, req.HubID, h.docEngine, embdID); err != nil {
 			jsonError(c, common.CodeOperatingError, err.Error())
@@ -195,9 +203,15 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 	}
 
 	if err := h.indexerService.BatchIndexSkills(c.Request.Context(), user.ID, req.HubID, req.Skills, h.docEngine, embdID); err != nil {
+		logger.Error(fmt.Sprintf("Failed to batch index skills: tenantID=%s, hubID=%s, error=%v", user.ID, req.HubID, err), err)
 		jsonError(c, common.CodeOperatingError, err.Error())
 		return
 	}
+
+	logger.Info("Successfully indexed skills",
+		zap.String("tenantID", user.ID),
+		zap.String("hubID", req.HubID),
+		zap.Int("indexedCount", len(req.Skills)))
 
 	jsonResponse(c, common.CodeSuccess, gin.H{
 		"indexed_count": len(req.Skills),
@@ -506,7 +520,10 @@ func (h *SkillSearchHandler) DeleteHub(c *gin.Context) {
 		return
 	}
 
-	code, err := h.hubService.DeleteHub(c.Request.Context(), hubID, user.ID, h.docEngine)
+	// Get Authorization header for Python API calls
+	authHeader := c.GetHeader("Authorization")
+
+	code, err := h.hubService.DeleteHub(hubID, user.ID, h.docEngine, authHeader)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return

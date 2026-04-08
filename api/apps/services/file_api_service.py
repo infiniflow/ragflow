@@ -344,24 +344,35 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
         return False, None
 
     def _delete_folder_recursive(folder, tenant_id, is_skill_folder=False, hub_name=None, authorization=""):
-        # Check if this is a skill folder or has a skills_hub ancestor
+        # Determine if this is a hub folder, skill folder, or regular folder
         current_hub_name = hub_name
-        if not is_skill_folder and not current_hub_name:
+        is_hub_folder = folder.source_type == "skills_hub"
+        
+        # If not already identified as skill folder and no hub name, check parent/ancestors
+        if not is_skill_folder and not current_hub_name and not is_hub_folder:
             # First check immediate parent
             parent_success, parent_folder = FileService.get_by_id(folder.parent_id)
             if parent_success and parent_folder and parent_folder.source_type == "skills_hub":
                 is_skill_folder = True
                 # Use parent folder name as hub name (e.g., "hub11")
                 current_hub_name = parent_folder.name
+                logging.info(f"Identified skill folder '{folder.name}' (parent hub: {current_hub_name})")
             else:
                 # Walk up the hierarchy to find skills_hub ancestor
                 ancestor_success, ancestor_folder = _find_ancestor_skills_hub(folder.parent_id, tenant_id)
                 if ancestor_success and ancestor_folder:
                     is_skill_folder = True
                     current_hub_name = ancestor_folder.name
+                    logging.info(f"Identified skill folder '{folder.name}' (ancestor hub: {current_hub_name})")
+        
+        # If this is a hub folder, extract hub name for children
+        if is_hub_folder:
+            current_hub_name = folder.name
+            logging.info(f"Processing hub folder '{folder.name}' - will delete all skill indexes within")
 
-        # If this is a skill folder, delete its index first
-        if is_skill_folder and current_hub_name:
+        # If this is a skill folder (not hub folder), delete its index first
+        if is_skill_folder and current_hub_name and not is_hub_folder:
+            logging.info(f"Deleting skill index for skill '{folder.name}' in hub '{current_hub_name}'")
             index_deleted = _delete_skill_index(tenant_id, current_hub_name, folder.name, authorization)
             if not index_deleted:
                 logging.error(
@@ -374,8 +385,11 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
                 )
 
         sub_files = FileService.list_all_files_by_parent_id(folder.id)
+        logging.info(f"Folder '{folder.name}': found {len(sub_files)} children to delete")
+        
         for sub_file in sub_files:
             if sub_file.type == FileType.FOLDER.value:
+                # Recursively delete subfolder, passing hub_name for skill identification
                 _delete_folder_recursive(sub_file, tenant_id, is_skill_folder, current_hub_name, authorization)
             else:
                 # Note: Skill index is already deleted above when deleting the skill folder.
@@ -383,7 +397,20 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
                 # not the individual file names. Deleting files here would incorrectly try to delete
                 # non-existent documents with file names as keys.
                 _delete_single_file(sub_file)
+        
+        # Delete folder from database
         FileService.delete(folder)
+        
+        # Remove storage bucket for this folder (folder.id is used as bucket name for its children)
+        try:
+            if hasattr(settings.STORAGE_IMPL, 'remove_bucket'):
+                logging.info(f"Removing storage bucket for folder '{folder.name}' (id={folder.id})")
+                settings.STORAGE_IMPL.remove_bucket(folder.id)
+            else:
+                logging.debug(f"Storage implementation does not support remove_bucket, skipping for folder '{folder.name}'")
+        except Exception as e:
+            # Log but don't fail - the bucket might not exist or might be already empty
+            logging.warning(f"Failed to remove storage bucket for folder '{folder.name}' (id={folder.id}): {e}")
 
     def _rm_sync():
         for file_id in file_ids:

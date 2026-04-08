@@ -17,8 +17,12 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -37,6 +41,7 @@ type SkillsHubService struct {
 	hubDAO             *dao.SkillsHubDAO
 	fileDAO            *dao.FileDAO
 	configDAO          *dao.SkillSearchConfigDAO
+	tenantDAO          *dao.TenantDAO
 	skillsFolderCache  map[string]string   // tenant-keyed cache for skills folder ID
 	skillsFolderMu     sync.RWMutex        // protects skillsFolderCache
 	skillsFolderCreateMu sync.Map          // tenant-scoped locks for folder creation
@@ -49,6 +54,7 @@ func NewSkillsHubService() *SkillsHubService {
 		hubDAO:            dao.NewSkillsHubDAO(),
 		fileDAO:           dao.NewFileDAO(),
 		configDAO:         dao.NewSkillSearchConfigDAO(),
+		tenantDAO:         dao.NewTenantDAO(),
 		skillsFolderCache: make(map[string]string),
 	}
 }
@@ -236,11 +242,20 @@ func (s *SkillsHubService) CreateHub(req *CreateHubRequest) (map[string]interfac
 	}
 
 	// Create default search config for this hub
+	// Use tenant's default embedding model if not provided
 	defaultEmbdID := req.EmbdID
 	if defaultEmbdID == "" {
-		defaultEmbdID = "default"
+		tenant, err := s.tenantDAO.GetByID(req.TenantID)
+		if err == nil && tenant != nil && tenant.EmbdID != "" {
+			defaultEmbdID = tenant.EmbdID
+			logger.Info("Using tenant default embedding model", zap.String("tenantID", req.TenantID), zap.String("embdID", defaultEmbdID))
+		} else {
+			logger.Warn("Tenant has no default embedding model, skill search will not work until configured", zap.String("tenantID", req.TenantID))
+		}
 	}
-	_, _ = s.configDAO.GetOrCreate(req.TenantID, hubID, defaultEmbdID)
+	if defaultEmbdID != "" {
+		_, _ = s.configDAO.GetOrCreate(req.TenantID, hubID, defaultEmbdID)
+	}
 
 	return hub.ToMap(), common.CodeSuccess, nil
 }
@@ -347,8 +362,71 @@ func (s *SkillsHubService) UpdateHub(hubID string, tenantID string, req *UpdateH
 	return hub.ToMap(), common.CodeSuccess, nil
 }
 
+// deleteFolderViaPythonAPI calls Python backend API to delete folder and its storage
+func (s *SkillsHubService) deleteFolderViaPythonAPI(folderID, tenantID, authHeader string) error {
+	// Python service runs on port 9380 (Go runs on 9384)
+	pythonURL := "http://127.0.0.1:9380/api/v1/files"
+
+	reqBody := map[string]interface{}{
+		"ids": []string{folderID},
+	}
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("DELETE", pythonURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	// Extract raw token from "Bearer <token>" format if present
+	// Python backend needs the raw token for authentication
+	authToken := authHeader
+	if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+		authToken = strings.TrimSpace(authHeader[7:])
+	}
+	req.Header.Set("Authorization", authToken)
+	// Set tenant ID header for Python backend
+	req.Header.Set("X-tenant-id", tenantID)
+
+	logger.Info("Calling Python API to delete folder", zap.String("folderID", folderID), zap.String("tenantID", tenantID))
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to call Python API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	logger.Info("Python API delete folder response", zap.String("folderID", folderID), zap.Int("status", resp.StatusCode), zap.String("body", string(body)))
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Python API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response to check if deletion was successful
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if code, ok := result["code"].(float64); !ok || int(code) != 0 {
+		message := "unknown error"
+		if msg, ok := result["message"].(string); ok {
+			message = msg
+		}
+		return fmt.Errorf("Python API returned error: %s", message)
+	}
+
+	logger.Info("Successfully deleted folder via Python API", zap.String("folderID", folderID))
+	return nil
+}
+
 // DeleteHub deletes a skills hub and its associated folder
-func (s *SkillsHubService) DeleteHub(ctx context.Context, hubID, tenantID string, docEngine engine.DocEngine) (common.ErrorCode, error) {
+func (s *SkillsHubService) DeleteHub(hubID, tenantID string, docEngine engine.DocEngine, authHeader string) (common.ErrorCode, error) {
 	hub, err := s.hubDAO.GetByID(hubID)
 	if err != nil {
 		return common.CodeDataError, fmt.Errorf("hub not found")
@@ -362,27 +440,34 @@ func (s *SkillsHubService) DeleteHub(ctx context.Context, hubID, tenantID string
 	// Delete the hub index if docEngine is provided
 	if docEngine != nil {
 		indexName := getSkillIndexName(tenantID, hubID)
+		logger.Info("Deleting hub index", zap.String("index", indexName), zap.String("hubID", hubID), zap.String("tenantID", tenantID))
 		// Create a timeout context for index deletion
-		deleteCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		deleteCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := docEngine.DeleteIndex(deleteCtx, indexName); err != nil {
 			logger.Warn("Failed to delete hub index", zap.String("index", indexName), zap.Error(err))
 			// Don't return error, continue to delete hub data
 		} else {
-			logger.Info("Deleted hub index", zap.String("index", indexName))
+			logger.Info("Successfully deleted hub index", zap.String("index", indexName))
 		}
+	} else {
+		logger.Warn("docEngine is nil, skipping index deletion")
+	}
+
+	// Delete the associated folder and all its contents via Python API (hard delete with storage)
+	logger.Info("Starting to delete hub folder via Python API", zap.String("folderID", hub.FolderID))
+	if err := s.deleteFolderViaPythonAPI(hub.FolderID, tenantID, authHeader); err != nil {
+		logger.Error("Failed to delete hub folder via Python API", err)
+		// Don't return error, continue to delete hub record
+	} else {
+		logger.Info("Successfully deleted hub folder via Python API", zap.String("folderID", hub.FolderID))
 	}
 
 	// Delete the hub (soft delete)
 	if err := s.hubDAO.Delete(hubID); err != nil {
 		return common.CodeOperatingError, fmt.Errorf("failed to delete hub: %w", err)
 	}
-
-	// Delete the associated folder and all its contents (hard delete)
-	if err := s.deleteFolderRecursive(hub.FolderID); err != nil {
-		logger.Warn("Failed to delete hub folder", zap.Error(err))
-		// Don't return error, hub is already deleted
-	}
+	logger.Info("Soft deleted hub record", zap.String("hubID", hubID))
 
 	return common.CodeSuccess, nil
 }
@@ -392,24 +477,30 @@ func (s *SkillsHubService) deleteFolderRecursive(folderID string) error {
 	// Get all children
 	children, err := s.fileDAO.ListByParentID(folderID)
 	if err != nil {
+		logger.Error(fmt.Sprintf("Failed to list children for folder %s", folderID), err)
 		return err
 	}
+
+	logger.Info("Deleting folder contents", zap.String("folder_id", folderID), zap.Int("child_count", len(children)))
 
 	// Collect file IDs (non-folder) and recurse into subfolders
 	var fileIDs []string
 	for _, child := range children {
 		if child.Type == "folder" {
+			logger.Debug("Recursively deleting child folder", zap.String("folder_id", child.ID), zap.String("folder_name", child.Name))
 			if err := s.deleteFolderRecursive(child.ID); err != nil {
 				logger.Warn("Failed to delete child folder", zap.String("folder_id", child.ID), zap.Error(err))
 			}
 		} else {
 			// Collect non-folder files for batch deletion
+			logger.Debug("Collecting file for deletion", zap.String("file_id", child.ID), zap.String("file_name", child.Name))
 			fileIDs = append(fileIDs, child.ID)
 		}
 	}
 
 	// Delete all non-folder files in batch
 	if len(fileIDs) > 0 {
+		logger.Info("Deleting files in folder", zap.String("folder_id", folderID), zap.Int("file_count", len(fileIDs)))
 		if _, err := s.fileDAO.DeleteByIDs(fileIDs); err != nil {
 			logger.Warn("Failed to delete files in folder", zap.String("folder_id", folderID), zap.Strings("file_ids", fileIDs), zap.Error(err))
 			// Continue to delete folder even if file deletion fails
@@ -417,7 +508,11 @@ func (s *SkillsHubService) deleteFolderRecursive(folderID string) error {
 	}
 
 	// Delete the folder itself
+	logger.Info("Deleting folder", zap.String("folder_id", folderID))
 	_, err = s.fileDAO.DeleteByIDs([]string{folderID})
+	if err != nil {
+		logger.Error(fmt.Sprintf("Failed to delete folder %s", folderID), err)
+	}
 	return err
 }
 
