@@ -42,6 +42,7 @@ const SkillCard: React.FC<SkillCardProps> = ({
 
   const fileCount = skill.files.filter((f) => !f.is_dir).length;
   const dirCount = skill.files.filter((f) => f.is_dir).length;
+  const filesLoading = skill.files.length === 0 && (skill as any)._folderId;
 
   return (
     <TooltipProvider>
@@ -142,7 +143,11 @@ const SkillCard: React.FC<SkillCardProps> = ({
 
             <div className="flex justify-between items-center mt-2">
               <span className="text-text-secondary text-xs">
-                {fileCount > 0 ? `${fileCount} files` : ''}
+                {filesLoading
+                  ? '...'
+                  : fileCount > 0
+                    ? `${fileCount} files`
+                    : ''}
               </span>
 
               <div className="flex items-center gap-2">

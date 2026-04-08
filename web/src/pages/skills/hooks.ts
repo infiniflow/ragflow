@@ -652,6 +652,28 @@ export const useSkills = () => {
           });
 
           setSkills(skillsData);
+
+          // Asynchronously load file counts for search results
+          Promise.all(
+            skillsData.map(async (skill) => {
+              if (!skill._folderId) return skill;
+              try {
+                const detail = await fetchSkillDetails(
+                  skill._folderId,
+                  skill.name,
+                );
+                if (detail) {
+                  return { ...skill, files: detail.files };
+                }
+              } catch {
+                // Ignore errors for individual skill file loading
+              }
+              return skill;
+            }),
+          ).then((enrichedSkills) => {
+            setSkills(enrichedSkills);
+          });
+
           return { skills: skillsData, total };
         }
 
