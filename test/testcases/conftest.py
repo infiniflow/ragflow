@@ -160,7 +160,7 @@ def auth():
 
 @pytest.fixture(scope="session")
 def token(auth):
-    url = HOST_ADDRESS + f"/{VERSION}/system/tokens"
+    url = HOST_ADDRESS + f"/api/{VERSION}/system/tokens"
     auth = {"Authorization": auth}
     response = requests.post(url=url, headers=auth)
     res = response.json()
