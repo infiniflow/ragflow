@@ -173,7 +173,7 @@ export default {
   getSystemVersion: `${restAPIv1}/system/version`,
   getSystemStatus: `${webAPI}/system/status`,
   getSystemTokenList: `${restAPIv1}/system/tokens`,
-  createSystemToken: `${webAPI}/system/new_token`,
+  createSystemToken: `${restAPIv1}/system/tokens`,
   listSystemToken: `${restAPIv1}/system/tokens`,
   removeSystemToken: `${restAPIv1}/system/tokens`,
   getSystemConfig: `${webAPI}/system/config`,
