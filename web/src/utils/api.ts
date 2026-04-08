@@ -150,11 +150,6 @@ export default {
   ask: `${restAPIv1}/chats/ask`,
   chatsMindmap: `${restAPIv1}/chats/mindmap`,
   chatsRelatedQuestions: `${restAPIv1}/chats/related_questions`,
-  // chat for external
-  createToken: `${webAPI}/api/new_token`,
-  listToken: `${webAPI}/api/token_list`,
-  removeToken: `${webAPI}/api/rm`,
-  getStats: `${webAPI}/api/stats`,
 
   // next chat
   fetchExternalChatInfo: (id: string) => `${restAPIv1}/chatbots/${id}/info`,
@@ -171,11 +166,9 @@ export default {
 
   // system
   getSystemVersion: `${restAPIv1}/system/version`,
-  getSystemStatus: `${webAPI}/system/status`,
-  getSystemTokenList: `${webAPI}/system/token_list`,
-  createSystemToken: `${webAPI}/system/new_token`,
-  listSystemToken: `${webAPI}/system/token_list`,
-  removeSystemToken: `${webAPI}/system/token`,
+  getSystemTokenList: `${restAPIv1}/system/tokens`,
+  createSystemToken: `${restAPIv1}/system/tokens`,
+  removeSystemToken: `${restAPIv1}/system/tokens`,
   getSystemConfig: `${webAPI}/system/config`,
   setLangfuseConfig: `${webAPI}/langfuse/api_key`,
 

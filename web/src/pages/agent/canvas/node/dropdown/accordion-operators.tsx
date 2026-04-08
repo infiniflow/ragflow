@@ -166,7 +166,7 @@ export function PipelineAccordionOperators({
   const { getOperatorTypeFromId } = useGraphStore((state) => state);
 
   const operators = useMemo(() => {
-    let list = [
+    const list = [
       ...restrictSingleOperatorOnCanvas([Operator.Parser, Operator.Tokenizer]),
     ];
     list.push(Operator.Extractor);

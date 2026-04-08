@@ -93,8 +93,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 	engine.GET("/v1/system/config", r.systemHandler.GetConfig)
 	engine.GET("/v1/system/configs", r.systemHandler.GetConfigs)
 	engine.GET("/v1/system/version", r.systemHandler.GetVersion)
-	engine.GET("/v1/system/log_level", r.systemHandler.GetLogLevel)
-	engine.PUT("/v1/system/log_level", r.systemHandler.SetLogLevel)
 	engine.POST("/v1/user/register", r.userHandler.Register)
 	// User login channels endpoint
 	engine.GET("/v1/user/login/channels", r.userHandler.GetLoginChannels)
@@ -139,12 +137,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 			//	users.GET("/:id", r.userHandler.GetUserByID)
 			//}
 
-			apiTokens := v1.Group("/tokens")
-			{
-				apiTokens.POST("", r.systemHandler.CreateToken)
-				apiTokens.GET("", r.systemHandler.ListTokens)
-				apiTokens.DELETE("/:token", r.systemHandler.DeleteToken)
-			}
+			//apiTokens := v1.Group("/tokens")
+			//{
+			//	apiTokens.POST("", r.systemHandler.CreateToken)
+			//	apiTokens.GET("", r.systemHandler.ListTokens)
+			//	apiTokens.DELETE("/:token", r.systemHandler.DeleteToken)
+			//}
 
 			// Document routes
 			documents := v1.Group("/documents")
@@ -258,6 +256,24 @@ func (r *Router) Setup(engine *gin.Engine) {
 			system := v1.Group("/system")
 			{
 				system.GET("/version", r.systemHandler.GetVersion)
+				system.GET("/configs", r.systemHandler.GetConfigs)
+				log := system.Group("/log")
+				{
+					// /api/v1/system/log GET
+					log.GET("", r.systemHandler.GetLogLevel)
+					// /api/v1/system/log PUT
+					log.PUT("", r.systemHandler.SetLogLevel)
+				}
+
+				tokens := system.Group("/tokens")
+				{
+					// list tokens /api/v1/system/tokens GET
+					tokens.GET("", r.systemHandler.ListTokens)
+					// create token /api/v1/system/tokens POST
+					tokens.POST("", r.systemHandler.CreateToken)
+					// delete token /api/v1/system/tokens/:token DELETE
+					tokens.DELETE("/:token", r.systemHandler.DeleteToken)
+				}
 			}
 		}
 
