@@ -20,7 +20,7 @@
 
 
 import time
-start_ts = time.time()
+start_ts = time.perf_counter()
 
 import asyncio
 import copy
@@ -83,6 +83,38 @@ class SyncBase:
 
     def __init__(self, conf: dict) -> None:
         self.conf = conf
+
+    @staticmethod
+    def _format_window_boundary(value: datetime | None) -> str:
+        if value is None:
+            return "beginning"
+        return value.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+
+    @classmethod
+    def window_info(cls, task: dict) -> str:
+        window_start = None
+        if task.get("reindex") != "1" and task.get("poll_range_start"):
+            window_start = task["poll_range_start"]
+        window_end = datetime.now(timezone.utc)
+        return (
+            f"sync window: {cls._format_window_boundary(window_start)}"
+            f" -> {cls._format_window_boundary(window_end)}"
+        )
+
+    @classmethod
+    def log_connection(
+        cls,
+        name: str,
+        details: str,
+        task: dict,
+        extra: str = "",
+    ):
+        if task.get("skip_connection_log"):
+            return
+        if extra:
+            logging.info("Connect to %s: %s, %s, %s", name, details, cls.window_info(task), extra)
+            return
+        logging.info("Connect to %s: %s, %s", name, details, cls.window_info(task))
 
     async def __call__(self, task: dict):
         SyncLogsService.start(task["id"], task["connector_id"])
@@ -170,10 +202,11 @@ class SyncBase:
                 continue
 
         prefix = self._get_source_prefix()
+        next_update_info = self._format_window_boundary(next_update)
         if failed_docs > 0:
-            logging.info(f"{prefix}{doc_num} docs synchronized till {next_update} ({failed_docs} skipped)")
+            logging.info(f"{prefix}{doc_num} docs synchronized till {next_update_info} ({failed_docs} skipped)")
         else:
-            logging.info(f"{prefix}{doc_num} docs synchronized till {next_update}")
+            logging.info(f"{prefix}{doc_num} docs synchronized till {next_update_info}")
 
         SyncLogsService.done(task["id"], task["connector_id"])
         task["poll_range_start"] = next_update
@@ -354,7 +387,7 @@ class Confluence(SyncBase):
             for batch in document_batches():
                 yield batch
 
-        logging.info("Connect to Confluence: {} {}".format(self.conf["wiki_base"], begin_info))
+        self.log_connection("Confluence", self.conf["wiki_base"], task)
         return wrapper()
 
 
@@ -373,7 +406,7 @@ class Notion(SyncBase):
 
         begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(
             task["poll_range_start"])
-        logging.info("Connect to Notion: root({}) {}".format(self.conf["root_page_id"], begin_info))
+        self.log_connection("Notion", f"root({self.conf['root_page_id']})", task)
         return document_generator
 
 
@@ -401,7 +434,7 @@ class Discord(SyncBase):
 
         begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(
             task["poll_range_start"])
-        logging.info("Connect to Discord: servers({}),  channel({}) {}".format(server_ids, channel_names, begin_info))
+        self.log_connection("Discord", f"servers({server_ids}), channel({channel_names})", task)
         return document_generator
 
 
@@ -465,7 +498,7 @@ class Gmail(SyncBase):
             admin_email = self.connector.primary_admin_email
         except RuntimeError:
             admin_email = "unknown"
-        logging.info(f"Connect to Gmail as {admin_email} {begin_info}")
+        self.log_connection("Gmail", f"as {admin_email}", task)
         return document_generator
 
 
@@ -486,7 +519,7 @@ class Dropbox(SyncBase):
             )
             begin_info = f"from {poll_start}"
 
-        logging.info(f"[Dropbox] Connect to Dropbox {begin_info}")
+        self.log_connection("Dropbox", "workspace", task)
         return document_generator
 
 
@@ -564,7 +597,7 @@ class GoogleDrive(SyncBase):
             admin_email = self.connector.primary_admin_email
         except RuntimeError:
             admin_email = "unknown"
-        logging.info(f"Connect to Google Drive as {admin_email} {begin_info}")
+        self.log_connection("Google Drive", f"as {admin_email}", task)
         return document_batches()
 
     def _persist_rotated_credentials(self, connector_id: str, credentials: dict[str, Any]) -> None:
@@ -663,14 +696,14 @@ class Jira(SyncBase):
             if pending_docs:
                 yield pending_docs
 
-        logging.info(
-            "[Jira] Connect to Jira %s %s (start=%s, end=%s, sync_batch_size=%s, overlap_buffer_s=%s)",
+        self.log_connection(
+            "Jira",
             connector_kwargs["jira_base_url"],
-            begin_info,
-            start_time,
-            end_time,
-            batch_size,
-            getattr(self.connector, "time_buffer_seconds", connector_kwargs.get("time_buffer_seconds")),
+            task,
+            (
+                f"sync_batch_size={batch_size}, "
+                f"overlap_buffer_s={getattr(self.connector, 'time_buffer_seconds', connector_kwargs.get('time_buffer_seconds'))}"
+            ),
         )
         return document_batches()
 
@@ -715,24 +748,16 @@ class WebDAV(SyncBase):
         self.connector.set_allow_images(self.conf.get("allow_images", False))
         self.connector.load_credentials(self.conf["credentials"])
 
-        logging.info(f"Task info: reindex={task['reindex']}, poll_range_start={task['poll_range_start']}")
-
         if task["reindex"] == "1" or not task["poll_range_start"]:
-            logging.info("Using load_from_state (full sync)")
             document_batch_generator = self.connector.load_from_state()
             begin_info = "totally"
         else:
             start_ts = task["poll_range_start"].timestamp()
             end_ts = datetime.now(timezone.utc).timestamp()
-            logging.info(f"Polling WebDAV from {task['poll_range_start']} (ts: {start_ts}) to now (ts: {end_ts})")
             document_batch_generator = self.connector.poll_source(start_ts, end_ts)
             begin_info = "from {}".format(task["poll_range_start"])
 
-        logging.info("Connect to WebDAV: {}(path: {}) {}".format(
-            self.conf["base_url"],
-            self.conf.get("remote_path", "/"),
-            begin_info
-        ))
+        self.log_connection("WebDAV", f"{self.conf['base_url']}(path: {self.conf.get('remote_path', '/')})", task)
 
         def wrapper():
             for document_batch in document_batch_generator:
@@ -765,7 +790,7 @@ class Moodle(SyncBase):
             )
             begin_info = f"from {poll_start}"
 
-        logging.info("Connect to Moodle: {} {}".format(self.conf["moodle_url"], begin_info))
+        self.log_connection("Moodle", self.conf["moodle_url"], task)
         return document_generator
 
 
@@ -804,7 +829,7 @@ class BOX(SyncBase):
                 datetime.now(timezone.utc).timestamp(),
             )
             begin_info = f"from {poll_start}"
-        logging.info("Connect to Box: folder_id({}) {}".format(self.conf["folder_id"], begin_info))
+        self.log_connection("Box", f"folder_id({self.conf['folder_id']})", task)
         return document_generator
 
 
@@ -841,11 +866,10 @@ class Airtable(SyncBase):
             )
             begin_info = f"from {poll_start}"
 
-        logging.info(
-            "Connect to Airtable: base_id(%s), table(%s) %s",
-            self.conf.get("base_id"),
-            self.conf.get("table_name_or_id"),
-            begin_info,
+        self.log_connection(
+            "Airtable",
+            f"base_id({self.conf.get('base_id')}), table({self.conf.get('table_name_or_id')})",
+            task,
         )
 
         return document_generator
@@ -882,12 +906,10 @@ class Asana(SyncBase):
                 )
                 begin_info = f"from {poll_start}"
 
-        logging.info(
-            "Connect to Asana: workspace_id(%s), project_ids(%s), team_id(%s) %s",
-            self.conf.get("asana_workspace_id"),
-            self.conf.get("asana_project_ids"),
-            self.conf.get("asana_team_id"),
-            begin_info,
+        self.log_connection(
+            "Asana",
+            f"workspace_id({self.conf.get('asana_workspace_id')}), project_ids({self.conf.get('asana_project_ids')}), team_id({self.conf.get('asana_team_id')})",
+            task,
         )
 
         return document_generator
@@ -952,11 +974,10 @@ class Github(SyncBase):
             for batch in document_batches():
                 yield batch
 
-        logging.info(
-            "Connect to Github: org_name(%s), repo_names(%s) for %s",
-            self.conf.get("repository_owner"),
-            self.conf.get("repository_name"),
-            begin_info,
+        self.log_connection(
+            "Github",
+            f"org_name({self.conf.get('repository_owner')}), repo_names({self.conf.get('repository_name')})",
+            task,
         )
 
         return wrapper()
@@ -1020,13 +1041,10 @@ class IMAP(SyncBase):
             for batch in document_batches():
                 yield batch
 
-        logging.info(
-            "Connect to IMAP: host(%s) port(%s) user(%s) folder(%s) %s",
-            self.conf["imap_host"],
-            self.conf["imap_port"],
-            self.conf["credentials"]["imap_username"],
-            self.conf["imap_mailbox"],
-            begin_info
+        self.log_connection(
+            "IMAP",
+            f"host({self.conf['imap_host']}) port({self.conf['imap_port']}) user({self.conf['credentials']['imap_username']}) folder({self.conf['imap_mailbox']})",
+            task,
         )
         return wrapper()
 
@@ -1102,11 +1120,7 @@ class Zendesk(SyncBase):
             for batch in document_batches():
                 yield batch
 
-        logging.info(
-            "Connect to Zendesk: subdomain(%s) %s",
-            self.conf['credentials'].get("zendesk_subdomain"),
-            begin_info,
-        )
+        self.log_connection("Zendesk", f"subdomain({self.conf['credentials'].get('zendesk_subdomain')})", task)
 
         return wrapper()
 
@@ -1148,7 +1162,7 @@ class Gitlab(SyncBase):
                     datetime.now(timezone.utc).timestamp()
                 )
                 begin_info = "from {}".format(poll_start)
-        logging.info("Connect to Gitlab: ({}) {}".format(self.conf["project_name"], begin_info))
+        self.log_connection("Gitlab", f"({self.conf['project_name']})", task)
         return document_generator
 
 
@@ -1204,11 +1218,7 @@ class Bitbucket(SyncBase):
             for batch in document_batches():
                 yield batch
 
-        logging.info(
-            "Connect to Bitbucket: workspace(%s), %s",
-            self.conf.get("workspace"),
-            begin_info,
-        )
+        self.log_connection("Bitbucket", f"workspace({self.conf.get('workspace')})", task)
 
         return wrapper()
 
@@ -1246,10 +1256,7 @@ class SeaFile(SyncBase):
         if scope == "directory":
             extra += f" path={conf.get('sync_path')}"
 
-        logging.info(
-            "Connect to SeaFile: %s (scope=%s%s) %s",
-            conf["seafile_url"], scope, extra, begin_info,
-        )
+        self.log_connection("SeaFile", f"{conf['seafile_url']} (scope={scope}{extra})", task)
         return document_generator
 
 
@@ -1286,11 +1293,10 @@ class DingTalkAITable(SyncBase):
             )
             begin_info = f"from {poll_start}"
 
-        logging.info(
-            "Connect to DingTalk AI Table: table_id(%s), operator_id(%s) %s",
-            self.conf.get("table_id"),
-            self.conf.get("operator_id"),
-            begin_info,
+        self.log_connection(
+            "DingTalk AI Table",
+            f"table_id({self.conf.get('table_id')}), operator_id({self.conf.get('operator_id')})",
+            task,
         )
 
         return document_generator
@@ -1331,7 +1337,7 @@ class MySQL(SyncBase):
             )
             begin_info = f"from {poll_start}"
 
-        logging.info(f"[MySQL] Connect to {self.conf.get('host')}:{self.conf.get('database')} {begin_info}")
+        self.log_connection("MySQL", f"{self.conf.get('host')}:{self.conf.get('database')}", task)
         return document_generator
 
 
@@ -1370,7 +1376,7 @@ class PostgreSQL(SyncBase):
             )
             begin_info = f"from {poll_start}"
 
-        logging.info(f"[PostgreSQL] Connect to {self.conf.get('host')}:{self.conf.get('database')} {begin_info}")
+        self.log_connection("PostgreSQL", f"{self.conf.get('host')}:{self.conf.get('database')}", task)
         return document_generator
 
 
@@ -1470,7 +1476,7 @@ async def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    logging.info(f"RAGFlow data sync is ready after {time.time() - start_ts}s initialization.")
+    logging.info(f"RAGFlow data sync is ready after {time.perf_counter() - start_ts}s initialization.")
     while not stop_event.is_set():
         await dispatch_tasks()
     logging.error("BUG!!! You should not reach here!!!")
