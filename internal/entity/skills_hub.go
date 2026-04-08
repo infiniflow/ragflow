@@ -18,6 +18,13 @@ package entity
 
 import "time"
 
+// Hub status constants
+const (
+	HubStatusActive   = "1" // Normal active hub
+	HubStatusDeleted  = "0" // Soft-deleted hub
+	HubStatusDeleting = "2" // Hub is being asynchronously deleted
+)
+
 // SkillsHub represents a skills hub (library) that contains skills
 type SkillsHub struct {
 	ID          string     `gorm:"column:id;primaryKey;size:32" json:"id"`
@@ -38,15 +45,29 @@ func (SkillsHub) TableName() string {
 	return "skills_hubs"
 }
 
+// StatusDescription returns a human-readable status string
+func (s *SkillsHub) StatusDescription() string {
+	switch s.Status {
+	case HubStatusActive:
+		return "active"
+	case HubStatusDeleted:
+		return "deleted"
+	case HubStatusDeleting:
+		return "deleting"
+	default:
+		return "unknown"
+	}
+}
+
 // ToMap converts SkillsHub to a map for JSON response
 func (s *SkillsHub) ToMap() map[string]interface{} {
 	result := map[string]interface{}{
-		"id":         s.ID,
-		"tenant_id":  s.TenantID,
-		"name":       s.Name,
-		"folder_id":  s.FolderID,
-		"top_k":      s.TopK,
-		"status":     s.Status,
+		"id":          s.ID,
+		"tenant_id":   s.TenantID,
+		"name":        s.Name,
+		"folder_id":   s.FolderID,
+		"top_k":       s.TopK,
+		"status":      s.StatusDescription(),
 	}
 
 	if s.Description != "" {

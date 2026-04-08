@@ -182,6 +182,12 @@ func (s *SkillsHubService) CreateHub(req *CreateHubRequest) (map[string]interfac
 		return nil, common.CodeDataError, fmt.Errorf("hub with name '%s' already exists", req.Name)
 	}
 
+	// Check if there's a hub with the same name that is currently being deleted
+	existingHubAny, err := s.hubDAO.GetByTenantAndNameAnyStatus(req.TenantID, req.Name)
+	if err == nil && existingHubAny != nil && existingHubAny.Status == entity.HubStatusDeleting {
+		return nil, common.CodeDataError, fmt.Errorf("hub with name '%s' is being deleted, please try again later", req.Name)
+	}
+
 	// Check if there's a deleted/non-active hub with the same name and permanently delete it
 	// This handles the case where a previous creation failed partially
 	// Only delete non-active hubs (status != '1') to prevent TOCTOU race
@@ -292,15 +298,20 @@ func (s *SkillsHubService) ListHubs(tenantID string) (map[string]interface{}, co
 	}, common.CodeSuccess, nil
 }
 
-// GetHub retrieves a skills hub by ID
+// GetHub retrieves a skills hub by ID (includes deleting status for visibility)
 func (s *SkillsHubService) GetHub(hubID, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
-	hub, err := s.hubDAO.GetByID(hubID)
+	hub, err := s.hubDAO.GetByIDAnyStatus(hubID)
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("hub not found")
 	}
 
 	// Verify tenant ownership
 	if hub.TenantID != tenantID {
+		return nil, common.CodeDataError, fmt.Errorf("hub not found")
+	}
+
+	// Return deleted hubs as not found
+	if hub.Status == entity.HubStatusDeleted {
 		return nil, common.CodeDataError, fmt.Errorf("hub not found")
 	}
 
@@ -438,9 +449,11 @@ func (s *SkillsHubService) deleteFolderViaPythonAPI(folderID, tenantID, authHead
 	return nil
 }
 
-// DeleteHub deletes a skills hub and its associated folder
+// DeleteHub starts asynchronous deletion of a skills hub and returns immediately.
+// The hub status is set to "deleting" and the actual cleanup runs in a background goroutine.
 func (s *SkillsHubService) DeleteHub(hubID, tenantID string, docEngine engine.DocEngine, authHeader string) (common.ErrorCode, error) {
-	hub, err := s.hubDAO.GetByID(hubID)
+	// Get hub regardless of status (could be retrying a failed delete)
+	hub, err := s.hubDAO.GetByIDAnyStatus(hubID)
 	if err != nil {
 		return common.CodeDataError, fmt.Errorf("hub not found")
 	}
@@ -450,38 +463,94 @@ func (s *SkillsHubService) DeleteHub(hubID, tenantID string, docEngine engine.Do
 		return common.CodeDataError, fmt.Errorf("hub not found")
 	}
 
-	// Delete the hub index if docEngine is provided
+	// If already deleting, return success (idempotent)
+	if hub.Status == entity.HubStatusDeleting {
+		logger.Info("Hub is already being deleted", zap.String("hubID", hubID))
+		return common.CodeSuccess, nil
+	}
+
+	// If already deleted, return success (idempotent)
+	if hub.Status == entity.HubStatusDeleted {
+		logger.Info("Hub is already deleted", zap.String("hubID", hubID))
+		return common.CodeSuccess, nil
+	}
+
+	// CAS: status must be "1" (active) → "2" (deleting) to prevent concurrent deletes
+	swapped, err := s.hubDAO.CASStatus(hubID, entity.HubStatusActive, entity.HubStatusDeleting)
+	if err != nil {
+		return common.CodeOperatingError, fmt.Errorf("failed to update hub status: %w", err)
+	}
+	if !swapped {
+		// Another request already changed the status
+		return common.CodeOperatingError, fmt.Errorf("hub is being modified by another request")
+	}
+
+	logger.Info("Hub marked as deleting, starting async cleanup", zap.String("hubID", hubID), zap.String("tenantID", tenantID))
+
+	// Launch async deletion in background goroutine
+	go s.asyncDeleteHub(hubID, hub.FolderID, tenantID, docEngine, authHeader)
+
+	return common.CodeSuccess, nil
+}
+
+// asyncDeleteHub performs the actual deletion work in the background.
+// It deletes the search index, removes files via Python API, and soft-deletes the hub record.
+func (s *SkillsHubService) asyncDeleteHub(hubID, folderID, tenantID string, docEngine engine.DocEngine, authHeader string) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Warn("Panic in asyncDeleteHub, marking hub as deleted", zap.Any("recover", r), zap.String("hubID", hubID))
+			// Mark hub as deleted even on panic to prevent stuck "deleting" status
+			_, _ = s.hubDAO.CASStatus(hubID, entity.HubStatusDeleting, entity.HubStatusDeleted)
+		}
+	}()
+
+	// Step 1: Delete the search index
 	if docEngine != nil {
 		indexName := getSkillIndexName(tenantID, hubID)
-		logger.Info("Deleting hub index", zap.String("index", indexName), zap.String("hubID", hubID), zap.String("tenantID", tenantID))
-		// Create a timeout context for index deletion
-		deleteCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
+		logger.Info("Async deleting hub index", zap.String("index", indexName), zap.String("hubID", hubID))
+		deleteCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		if err := docEngine.DeleteIndex(deleteCtx, indexName); err != nil {
-			logger.Warn("Failed to delete hub index", zap.String("index", indexName), zap.Error(err))
-			// Don't return error, continue to delete hub data
+			logger.Warn("Failed to delete hub index during async delete", zap.String("index", indexName), zap.Error(err))
+			// Continue with other cleanup steps
 		} else {
 			logger.Info("Successfully deleted hub index", zap.String("index", indexName))
 		}
+		cancel()
+	}
+
+	// Step 2: Delete folder and storage via Python API
+	logger.Info("Async deleting hub folder via Python API", zap.String("folderID", folderID), zap.String("hubID", hubID))
+	if err := s.deleteFolderViaPythonAPI(folderID, tenantID, authHeader); err != nil {
+		logger.Error(fmt.Sprintf("Failed to delete hub folder via Python API during async delete, hubID=%s", hubID), err)
+		// Retry once with a delay
+		time.Sleep(5 * time.Second)
+		if retryErr := s.deleteFolderViaPythonAPI(folderID, tenantID, authHeader); retryErr != nil {
+			logger.Error(fmt.Sprintf("Retry failed to delete hub folder, marking hub as deleted anyway, hubID=%s", hubID), retryErr)
+			// Mark as deleted even if folder deletion fails - orphaned folders can be cleaned up later
+		}
 	} else {
-		logger.Warn("docEngine is nil, skipping index deletion")
+		logger.Info("Successfully deleted hub folder via Python API", zap.String("folderID", folderID))
 	}
 
-	// Delete the associated folder and all its contents via Python API (hard delete with storage)
-	logger.Info("Starting to delete hub folder via Python API", zap.String("folderID", hub.FolderID))
-	if err := s.deleteFolderViaPythonAPI(hub.FolderID, tenantID, authHeader); err != nil {
-		logger.Error("Failed to delete hub folder via Python API", err)
-		return common.CodeOperatingError, fmt.Errorf("failed to delete hub folder: %w", err)
+	// Step 3: Soft delete the hub record (status "2" → "0")
+	// First, permanently remove any previously deleted hubs with the same tenant+name
+	// to avoid UNIQUE INDEX constraint violation when changing status from "2" to "0"
+	hub, err := s.hubDAO.GetByIDAnyStatus(hubID)
+	if err == nil && hub != nil {
+		_ = s.hubDAO.DeletePermanentByName(hub.TenantID, hub.Name)
 	}
-	logger.Info("Successfully deleted hub folder via Python API", zap.String("folderID", hub.FolderID))
 
-	// Delete the hub (soft delete)
-	if err := s.hubDAO.Delete(hubID); err != nil {
-		return common.CodeOperatingError, fmt.Errorf("failed to delete hub: %w", err)
+	swapped, err := s.hubDAO.CASStatus(hubID, entity.HubStatusDeleting, entity.HubStatusDeleted)
+	if err != nil {
+		logger.Error(fmt.Sprintf("Failed to update hub status to deleted, hubID=%s", hubID), err)
+		return
 	}
-	logger.Info("Soft deleted hub record", zap.String("hubID", hubID))
+	if !swapped {
+		logger.Warn("Hub status was not 'deleting' when trying to mark as deleted", zap.String("hubID", hubID))
+		return
+	}
 
-	return common.CodeSuccess, nil
+	logger.Info("Successfully completed async hub deletion", zap.String("hubID", hubID))
 }
 
 // deleteFolderRecursive recursively deletes a folder and all its contents

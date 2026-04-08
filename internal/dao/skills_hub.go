@@ -37,37 +37,57 @@ func (dao *SkillsHubDAO) Create(hub *entity.SkillsHub) error {
 	return DB.Create(hub).Error
 }
 
-// GetByID retrieves a skills hub by ID
+// GetByID retrieves a skills hub by ID (active only)
 func (dao *SkillsHubDAO) GetByID(id string) (*entity.SkillsHub, error) {
 	var hub entity.SkillsHub
-	err := DB.Where("id = ? AND status = ?", id, "1").First(&hub).Error
+	err := DB.Where("id = ? AND status = ?", id, entity.HubStatusActive).First(&hub).Error
 	if err != nil {
 		return nil, err
 	}
 	return &hub, nil
 }
 
-// GetByTenantID retrieves all skills hubs by tenant ID
+// GetByTenantID retrieves all skills hubs by tenant ID (active only)
 func (dao *SkillsHubDAO) GetByTenantID(tenantID string) ([]*entity.SkillsHub, error) {
 	var hubs []*entity.SkillsHub
-	err := DB.Where("tenant_id = ? AND status = ?", tenantID, "1").Order("create_time DESC").Find(&hubs).Error
+	err := DB.Where("tenant_id = ? AND status = ?", tenantID, entity.HubStatusActive).Order("create_time DESC").Find(&hubs).Error
 	return hubs, err
 }
 
-// GetByTenantAndName retrieves a skills hub by tenant ID and name
+// GetByTenantAndName retrieves a skills hub by tenant ID and name (active only)
 func (dao *SkillsHubDAO) GetByTenantAndName(tenantID, name string) (*entity.SkillsHub, error) {
 	var hub entity.SkillsHub
-	err := DB.Where("tenant_id = ? AND name = ? AND status = ?", tenantID, name, "1").First(&hub).Error
+	err := DB.Where("tenant_id = ? AND name = ? AND status = ?", tenantID, name, entity.HubStatusActive).First(&hub).Error
 	if err != nil {
 		return nil, err
 	}
 	return &hub, nil
 }
 
-// GetByFolderID retrieves a skills hub by folder ID
+// GetByTenantAndNameAnyStatus retrieves a skills hub by tenant ID and name regardless of status
+func (dao *SkillsHubDAO) GetByTenantAndNameAnyStatus(tenantID, name string) (*entity.SkillsHub, error) {
+	var hub entity.SkillsHub
+	err := DB.Where("tenant_id = ? AND name = ?", tenantID, name).First(&hub).Error
+	if err != nil {
+		return nil, err
+	}
+	return &hub, nil
+}
+
+// GetByIDAnyStatus retrieves a skills hub by ID regardless of status
+func (dao *SkillsHubDAO) GetByIDAnyStatus(id string) (*entity.SkillsHub, error) {
+	var hub entity.SkillsHub
+	err := DB.Where("id = ?", id).First(&hub).Error
+	if err != nil {
+		return nil, err
+	}
+	return &hub, nil
+}
+
+// GetByFolderID retrieves a skills hub by folder ID (active only)
 func (dao *SkillsHubDAO) GetByFolderID(folderID string) (*entity.SkillsHub, error) {
 	var hub entity.SkillsHub
-	err := DB.Where("folder_id = ? AND status = ?", folderID, "1").First(&hub).Error
+	err := DB.Where("folder_id = ? AND status = ?", folderID, entity.HubStatusActive).First(&hub).Error
 	if err != nil {
 		return nil, err
 	}
@@ -87,19 +107,31 @@ func (dao *SkillsHubDAO) UpdateByID(id string, updates map[string]interface{}) e
 
 // Delete deletes a skills hub by ID (soft delete)
 func (dao *SkillsHubDAO) Delete(id string) error {
-	return DB.Model(&entity.SkillsHub{}).Where("id = ?", id).Update("status", "0").Error
+	return DB.Model(&entity.SkillsHub{}).Where("id = ?", id).Update("status", entity.HubStatusDeleted).Error
+}
+
+// CASStatus performs a compare-and-swap on the hub status atomically
+// Returns true if the update was applied, false if the current status didn't match expected
+func (dao *SkillsHubDAO) CASStatus(id string, expectedStatus, newStatus string) (bool, error) {
+	result := DB.Model(&entity.SkillsHub{}).
+		Where("id = ? AND status = ?", id, expectedStatus).
+		Update("status", newStatus)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
 }
 
 // DeletePermanentByName permanently deletes a skills hub by tenant ID and name
-// This is used to clean up failed/partial creations (only deletes non-active hubs)
+// This is used to clean up previously deleted hubs (only deletes status='0' deleted hubs, NOT deleting hubs)
 func (dao *SkillsHubDAO) DeletePermanentByName(tenantID, name string) error {
-	return DB.Unscoped().Where("tenant_id = ? AND name = ? AND status != '1'", tenantID, name).Delete(&entity.SkillsHub{}).Error
+	return DB.Unscoped().Where("tenant_id = ? AND name = ? AND status = ?", tenantID, name, entity.HubStatusDeleted).Delete(&entity.SkillsHub{}).Error
 }
 
 // CountByTenant counts skills hubs by tenant ID
 func (dao *SkillsHubDAO) CountByTenant(tenantID string) (int64, error) {
 	var count int64
-	err := DB.Model(&entity.SkillsHub{}).Where("tenant_id = ? AND status = ?", tenantID, "1").Count(&count).Error
+	err := DB.Model(&entity.SkillsHub{}).Where("tenant_id = ? AND status = ?", tenantID, entity.HubStatusActive).Count(&count).Error
 	return count, err
 }
 

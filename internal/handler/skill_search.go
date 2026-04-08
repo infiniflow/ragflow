@@ -18,6 +18,7 @@ package handler
 
 import (
 	"fmt"
+	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/logger"
@@ -505,7 +506,7 @@ func (h *SkillSearchHandler) UpdateHub(c *gin.Context) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param hub_id path string true "Hub ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 202 {object} map[string]interface{}
 // @Router /api/v1/skills/hubs/{hub_id} [delete]
 func (h *SkillSearchHandler) DeleteHub(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
@@ -529,7 +530,12 @@ func (h *SkillSearchHandler) DeleteHub(c *gin.Context) {
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, gin.H{"deleted": true}, "success")
+	// Return 202 Accepted since deletion is async
+	c.JSON(http.StatusAccepted, gin.H{
+		"code":    0,
+		"data":    gin.H{"deleting": true, "hub_id": hubID},
+		"message": "success",
+	})
 }
 
 // GetHubByFolder handles the get skills hub by folder ID request
