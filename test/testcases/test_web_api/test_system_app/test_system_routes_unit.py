@@ -149,6 +149,7 @@ def _load_system_module(monkeypatch):
 
     health_utils_mod = ModuleType("api.utils.health_utils")
     health_utils_mod.run_health_checks = lambda: ({"status": "ok"}, True)
+    health_utils_mod.get_oceanbase_status = lambda: {"status": "alive"}
     monkeypatch.setitem(sys.modules, "api.utils.health_utils", health_utils_mod)
 
     quart_mod = ModuleType("quart")
