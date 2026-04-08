@@ -210,11 +210,11 @@ class TestDocumentsListUnit:
         monkeypatch.setattr(module, "get_request_json", fake_request_json)
         res = _run(module.list_docs())
         assert res["code"] == 101
-        assert res["message"] == 'Lack of "KB ID"'
+        assert res["message"] == 'Dataset ID is required for listing files.'
 
     def test_unauthorized_dataset(self, document_app_module, monkeypatch):
         module = document_app_module
-        self._set_args(module, monkeypatch, kb_id="kb1")
+        self._set_args(module, monkeypatch, id="kb1")
         monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant1")])
         monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: False)
 
@@ -228,7 +228,7 @@ class TestDocumentsListUnit:
 
     def test_return_empty_metadata_flags(self, document_app_module, monkeypatch):
         module = document_app_module
-        self._set_args(module, monkeypatch, kb_id="kb1")
+        self._set_args(module, monkeypatch, id="kb1")
         self._allow_kb(module, monkeypatch)
         monkeypatch.setattr(module.DocumentService, "get_by_kb_id", lambda *_args, **_kwargs: ([], 0))
 
@@ -248,7 +248,7 @@ class TestDocumentsListUnit:
 
     def test_invalid_filters(self, document_app_module, monkeypatch):
         module = document_app_module
-        self._set_args(module, monkeypatch, kb_id="kb1")
+        self._set_args(module, monkeypatch, id="kb1")
         self._allow_kb(module, monkeypatch)
 
         async def fake_request_json():
@@ -269,7 +269,7 @@ class TestDocumentsListUnit:
 
     def test_invalid_metadata_types(self, document_app_module, monkeypatch):
         module = document_app_module
-        self._set_args(module, monkeypatch, kb_id="kb1")
+        self._set_args(module, monkeypatch, id="kb1")
         self._allow_kb(module, monkeypatch)
 
         async def fake_request_json():
@@ -290,7 +290,7 @@ class TestDocumentsListUnit:
 
     def test_metadata_condition_empty_result(self, document_app_module, monkeypatch):
         module = document_app_module
-        self._set_args(module, monkeypatch, kb_id="kb1")
+        self._set_args(module, monkeypatch, id="kb1")
         self._allow_kb(module, monkeypatch)
         monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda *_args, **_kwargs: {})
         monkeypatch.setattr(module, "meta_filter", lambda *_args, **_kwargs: set())
@@ -305,7 +305,7 @@ class TestDocumentsListUnit:
 
     def test_metadata_values_intersection(self, document_app_module, monkeypatch):
         module = document_app_module
-        self._set_args(module, monkeypatch, kb_id="kb1")
+        self._set_args(module, monkeypatch, id="kb1")
         self._allow_kb(module, monkeypatch)
         metas = {
             "author": {"alice": ["doc1", "doc2"]},
@@ -334,7 +334,7 @@ class TestDocumentsListUnit:
 
     def test_metadata_intersection_empty(self, document_app_module, monkeypatch):
         module = document_app_module
-        self._set_args(module, monkeypatch, kb_id="kb1")
+        self._set_args(module, monkeypatch, id="kb1")
         self._allow_kb(module, monkeypatch)
         metas = {
             "author": {"alice": ["doc1"]},
@@ -352,7 +352,7 @@ class TestDocumentsListUnit:
 
     def test_desc_time_and_schema(self, document_app_module, monkeypatch):
         module = document_app_module
-        self._set_args(module, monkeypatch, kb_id="kb1", desc="false", create_time_from="150", create_time_to="250")
+        self._set_args(module, monkeypatch, id="kb1", desc="false", create_time_from="150", create_time_to="250")
         self._allow_kb(module, monkeypatch)
 
         docs = [
@@ -377,7 +377,7 @@ class TestDocumentsListUnit:
 
     def test_exception_path(self, document_app_module, monkeypatch):
         module = document_app_module
-        self._set_args(module, monkeypatch, kb_id="kb1")
+        self._set_args(module, monkeypatch, id="kb1")
         self._allow_kb(module, monkeypatch)
 
         def raise_error(*_args, **_kwargs):
