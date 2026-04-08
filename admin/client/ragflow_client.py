@@ -1685,7 +1685,7 @@ class RAGFlowClient:
             time.sleep(0.5)
 
     def _list_documents(self, dataset_name: str, dataset_id: str):
-        response = self.http_client.request("POST", f"/document/list?kb_id={dataset_id}", use_api_base=False,
+        response = self.http_client.request("POST", f"/document/list?id={dataset_id}", use_api_base=False,
                                             auth_kind="web")
         res_json = response.json()
         if response.status_code != 200:

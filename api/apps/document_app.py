@@ -241,7 +241,7 @@ async def create():
 async def list_docs():
     kb_id = request.args.get("id")
     if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
+        return get_json_result(data=False, message='Dataset ID is required for listing files.', code=RetCode.ARGUMENT_ERROR)
     tenants = UserTenantService.query(user_id=current_user.id)
     for tenant in tenants:
         if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
