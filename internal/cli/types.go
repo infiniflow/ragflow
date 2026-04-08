@@ -129,6 +129,7 @@ const (
 	TokenQuotedString
 	TokenInteger
 	TokenFloat
+	TokenNumber // Alias for integer tokens in path parsing (e.g., version numbers like 1.0.0)
 
 	// Special
 	TokenSemicolon

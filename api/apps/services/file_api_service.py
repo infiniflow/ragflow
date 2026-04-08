@@ -224,7 +224,7 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
             service_url = f"http://{host}:{port}"
 
             # List all hubs and find the one matching the name
-            url = f"{service_url}/api/v1/ns/hubs"
+            url = f"{service_url}/api/v1/skills/hubs"
             headers = {"Content-Type": "application/json"}
             if authorization:
                 headers["Authorization"] = authorization
@@ -262,7 +262,7 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
             hub_uuid = _get_hub_uuid_by_name(tenant_id, hub_name, authorization)
             hub_id = hub_uuid if hub_uuid else hub_name
 
-            url = f"{service_url}/api/v1/ns/index?skill_id={quote(skill_name)}&hub_id={quote(hub_id)}"
+            url = f"{service_url}/api/v1/skills/index?skill_id={quote(skill_name)}&hub_id={quote(hub_id)}"
             headers = {"Content-Type": "application/json"}
             if authorization:
                 headers["Authorization"] = authorization
