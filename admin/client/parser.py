@@ -836,9 +836,9 @@ class RAGFlowCLITransformer(Transformer):
         for item in items:
             if hasattr(item, 'type') and item.type == 'ALL':
                 # Find doc_id
-                for i, item in enumerate(items):
-                    if hasattr(item, 'type') and item.type == 'DOCUMENT':
-                        doc_id = items[i + 1].children[0].strip("'\"")
+                for j, inner_item in enumerate(items):
+                    if hasattr(inner_item, 'type') and inner_item.type == 'DOCUMENT':
+                        doc_id = items[j + 1].children[0].strip("'\"")
                         return {"type": "remove_chunks", "doc_id": doc_id, "delete_all": True}
 
         # Otherwise, we have chunk_ids

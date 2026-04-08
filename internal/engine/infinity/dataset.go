@@ -585,7 +585,11 @@ func TransformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 
 	// Fill missing embedding columns with zeros if embedding info provided
 	for _, ec := range embeddingCols {
-		name, size := ec[0].(string), ec[1].(int)
+		name, ok1 := ec[0].(string)
+		size, ok2 := ec[1].(int)
+		if !ok1 || !ok2 {
+			continue
+		}
 		if _, exists := d[name]; !exists {
 			zeros := make([]float64, size)
 			for i := range zeros {

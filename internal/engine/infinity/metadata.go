@@ -161,8 +161,9 @@ func (e *infinityEngine) InsertMetadata(ctx context.Context, metadata []map[stri
 	if len(insertMetadata) > 0 {
 		idList := make([]string, len(insertMetadata))
 		for i, m := range insertMetadata {
-			docID := fmt.Sprintf("'%v'", m["id"])
-			kbID := fmt.Sprintf("'%v'", m["kb_id"])
+			// Escape single quotes in values to prevent SQL injection
+			docID := fmt.Sprintf("'%s'", strings.ReplaceAll(fmt.Sprintf("%v", m["id"]), "'", "''"))
+			kbID := fmt.Sprintf("'%s'", strings.ReplaceAll(fmt.Sprintf("%v", m["kb_id"]), "'", "''"))
 			idList[i] = fmt.Sprintf("(id = %s AND kb_id = %s)", docID, kbID)
 		}
 		filter := strings.Join(idList, " OR ")
