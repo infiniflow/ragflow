@@ -150,11 +150,6 @@ export default {
   ask: `${restAPIv1}/chats/ask`,
   chatsMindmap: `${restAPIv1}/chats/mindmap`,
   chatsRelatedQuestions: `${restAPIv1}/chats/related_questions`,
-  // chat for external
-  createToken: `${webAPI}/api/new_token`,
-  listToken: `${webAPI}/api/token_list`,
-  removeToken: `${webAPI}/api/rm`,
-  getStats: `${webAPI}/api/stats`,
 
   // next chat
   fetchExternalChatInfo: (id: string) => `${restAPIv1}/chatbots/${id}/info`,
