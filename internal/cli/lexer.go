@@ -223,7 +223,7 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenPassword, Value: ident}
 	case "DATASET":
 		// Check if followed by TABLE for compound token
-		if l.peekToken() == "TABLE" {
+		if strings.ToUpper(l.peekToken()) == "TABLE" {
 			// Skip whitespace to TABLE
 			for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
 				l.readChar()
