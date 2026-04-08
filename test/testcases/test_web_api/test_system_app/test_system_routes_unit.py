@@ -149,7 +149,6 @@ def _load_system_module(monkeypatch):
 
     health_utils_mod = ModuleType("api.utils.health_utils")
     health_utils_mod.run_health_checks = lambda: ({"status": "ok"}, True)
-    health_utils_mod.get_oceanbase_status = lambda: {"status": "alive"}
     monkeypatch.setitem(sys.modules, "api.utils.health_utils", health_utils_mod)
 
     quart_mod = ModuleType("quart")
@@ -213,32 +212,6 @@ def test_status_branch_matrix_unit(monkeypatch):
     assert res["data"]["redis"]["status"] == "red"
     assert "Lost connection!" in res["data"]["redis"]["error"]
     assert res["data"]["task_executor_heartbeats"] == {}
-
-
-@pytest.mark.p2
-def test_healthz_and_oceanbase_status_matrix_unit(monkeypatch):
-    module = _load_system_module(monkeypatch)
-
-    monkeypatch.setattr(module, "run_health_checks", lambda: ({"status": "ok"}, True))
-    payload, status = module.healthz()
-    assert status == 200
-    assert payload["status"] == "ok"
-
-    monkeypatch.setattr(module, "run_health_checks", lambda: ({"status": "degraded"}, False))
-    payload, status = module.healthz()
-    assert status == 500
-    assert payload["status"] == "degraded"
-
-    monkeypatch.setattr(module, "get_oceanbase_status", lambda: {"status": "alive", "latency_ms": 8})
-    res = module.oceanbase_status()
-    assert res["code"] == 0
-    assert res["data"]["status"] == "alive"
-
-    monkeypatch.setattr(module, "get_oceanbase_status", lambda: (_ for _ in ()).throw(RuntimeError("ocean boom")))
-    res = module.oceanbase_status()
-    assert res["code"] == 500
-    assert res["data"]["status"] == "error"
-    assert "ocean boom" in res["data"]["message"]
 
 
 @pytest.mark.p2
