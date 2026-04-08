@@ -84,10 +84,10 @@ sql_command: login_user
            | list_user_chats
            | create_user_chat
            | drop_user_chat
-           | create_index
-           | drop_index
-           | create_doc_meta_index
-           | drop_doc_meta_index
+           | create_dataset_table
+           | drop_dataset_table
+           | create_metadata_table
+           | drop_metadata_table
            | list_user_model_providers
            | list_user_default_models
            | parse_dataset_docs
@@ -102,6 +102,7 @@ sql_command: login_user
            | update_chunk
            | set_metadata
            | remove_tags
+           | remove_chunks
            | create_chat_session
            | drop_chat_session
            | list_chat_sessions
@@ -143,6 +144,7 @@ ALTER: "ALTER"i
 ACTIVE: "ACTIVE"i
 ADMIN: "ADMIN"i
 PASSWORD: "PASSWORD"i
+DATASET_TABLE: "DATASET TABLE"i
 DATASET: "DATASET"i
 DATASETS: "DATASETS"i
 OF: "OF"i
@@ -187,7 +189,8 @@ IMPORT: "IMPORT"i
 INTO: "INTO"i
 IN: "IN"i
 WITH: "WITH"i
-VECTOR_SIZE: "VECTOR_SIZE"i
+VECTOR: "VECTOR"i
+SIZE: "SIZE"i
 PARSER: "PARSER"i
 PIPELINE: "PIPELINE"i
 SEARCH: "SEARCH"i
@@ -210,13 +213,12 @@ LICENSE: "LICENSE"i
 CHECK: "CHECK"i
 CONFIG: "CONFIG"i
 INDEX: "INDEX"i
-DOC_META: "DOC_META"i
+TABLE: "TABLE"i
 CHUNK: "CHUNK"i
 CHUNKS: "CHUNKS"i
 GET: "GET"i
 INSERT: "INSERT"i
 PAGE: "PAGE"i
-SIZE: "SIZE"i
 KEYWORDS: "KEYWORDS"i
 AVAILABLE: "AVAILABLE"i
 FILE: "FILE"i
@@ -345,10 +347,6 @@ list_user_agents: LIST AGENTS ";"
 list_user_chats: LIST CHATS ";"
 create_user_chat: CREATE CHAT quoted_string ";"
 drop_user_chat: DROP CHAT quoted_string ";"
-create_index: CREATE INDEX FOR DATASET quoted_string VECTOR_SIZE NUMBER ";"
-drop_index: DROP INDEX FOR DATASET quoted_string ";"
-create_doc_meta_index: CREATE INDEX DOC_META ";"
-drop_doc_meta_index: DROP INDEX DOC_META ";"
 create_chat_session: CREATE CHAT quoted_string SESSION ";"
 drop_chat_session: DROP CHAT quoted_string SESSION quoted_string ";"
 list_chat_sessions: LIST CHAT quoted_string SESSIONS ";"
@@ -359,18 +357,23 @@ import_docs_into_dataset: IMPORT quoted_string INTO DATASET quoted_string ";"
 search_on_datasets: SEARCH quoted_string ON DATASETS quoted_string ";"
 get_chunk: GET CHUNK quoted_string ";"
 list_chunks: LIST CHUNKS OF DOCUMENT quoted_string ("PAGE" NUMBER)? ("SIZE" NUMBER)? ("KEYWORDS" quoted_string)? ("AVAILABLE" NUMBER)? ";"
+set_metadata: SET METADATA OF DOCUMENT quoted_string TO quoted_string ";"
+remove_tags: REMOVE TAGS quoted_string (COMMA quoted_string)* FROM DATASET quoted_string ";"
+remove_chunks: REMOVE CHUNKS quoted_string (COMMA quoted_string)* FROM DOCUMENT quoted_string ";"
+           | REMOVE ALL CHUNKS FROM DOCUMENT quoted_string ";"
 
 parse_dataset_docs: PARSE quoted_string OF DATASET quoted_string ";"
 parse_dataset_sync: PARSE DATASET quoted_string SYNC ";"
 parse_dataset_async: PARSE DATASET quoted_string ASYNC ";"
 
-update_chunk: UPDATE CHUNK quoted_string OF DATASET quoted_string SET quoted_string ";"
-set_metadata: SET METADATA OF DOCUMENT quoted_string TO quoted_string ";"
-remove_tags: REMOVE TAGS quoted_string (COMMA quoted_string)* FROM DATASET quoted_string ";"
-
-// Internal CLI for GO
+// Internal CLI only for GO
+create_dataset_table: CREATE DATASET TABLE quoted_string VECTOR SIZE NUMBER ";"
+drop_dataset_table: DROP DATASET TABLE quoted_string ";"
+create_metadata_table: CREATE METADATA TABLE ";"
+drop_metadata_table: DROP METADATA TABLE ";"
 insert_dataset_from_file: INSERT DATASET FROM FILE quoted_string ";"
 insert_metadata_from_file: INSERT METADATA FROM FILE quoted_string ";"
+update_chunk: UPDATE CHUNK quoted_string OF DATASET quoted_string SET quoted_string ";"
 
 identifier_list: identifier (COMMA identifier)*
 
@@ -690,30 +693,29 @@ class RAGFlowCLITransformer(Transformer):
         chat_name = items[2].children[0].strip("'\"")
         return {"type": "drop_user_chat", "chat_name": chat_name}
 
-    def create_index(self, items):
-        # items: CREATE, INDEX, FOR, DATASET, quoted_string, VECTOR_SIZE, NUMBER, ";"
+    def create_dataset_table(self, items):
         dataset_name = None
         vector_size = None
         for i, item in enumerate(items):
             if hasattr(item, 'data') and item.data == 'quoted_string':
                 dataset_name = item.children[0].strip("'\"")
             if hasattr(item, 'type') and item.type == 'NUMBER':
-                if i > 0 and items[i-1].type == 'VECTOR_SIZE':
+                if i > 0 and items[i-1].type == 'SIZE' and items[i-2].type == 'VECTOR':
                     vector_size = int(item)
-        return {"type": "create_index", "dataset_name": dataset_name, "vector_size": vector_size}
+        return {"type": "create_dataset_table", "dataset_name": dataset_name, "vector_size": vector_size}
 
-    def drop_index(self, items):
+    def drop_dataset_table(self, items):
         dataset_name = None
         for item in items:
             if hasattr(item, 'data') and item.data == 'quoted_string':
                 dataset_name = item.children[0].strip("'\"")
-        return {"type": "drop_index", "dataset_name": dataset_name}
+        return {"type": "drop_dataset_table", "dataset_name": dataset_name}
 
-    def create_doc_meta_index(self, items):
-        return {"type": "create_doc_meta_index"}
+    def create_metadata_table(self, items):
+        return {"type": "create_metadata_table"}
 
-    def drop_doc_meta_index(self, items):
-        return {"type": "drop_doc_meta_index"}
+    def drop_metadata_table(self, items):
+        return {"type": "drop_metadata_table"}
 
     def list_user_model_providers(self, items):
         return {"type": "list_user_model_providers"}
@@ -824,6 +826,35 @@ class RAGFlowCLITransformer(Transformer):
                 dataset_name = items[i + 1].children[0].strip("'\"")
                 break
         return {"type": "remove_tags", "dataset_name": dataset_name, "tags": tags}
+
+    def remove_chunks(self, items):
+        # Handle two cases:
+        # 1. REMOVE CHUNKS quoted_string (COMMA quoted_string)* FROM DOCUMENT quoted_string ";"
+        # 2. REMOVE ALL CHUNKS FROM DOCUMENT quoted_string ";"
+
+        # Check if it's "REMOVE ALL CHUNKS"
+        for item in items:
+            if hasattr(item, 'type') and item.type == 'ALL':
+                # Find doc_id
+                for i, item in enumerate(items):
+                    if hasattr(item, 'type') and item.type == 'DOCUMENT':
+                        doc_id = items[i + 1].children[0].strip("'\"")
+                        return {"type": "remove_chunks", "doc_id": doc_id, "delete_all": True}
+
+        # Otherwise, we have chunk_ids
+        chunk_ids = []
+        doc_id = None
+        for i, item in enumerate(items):
+            if hasattr(item, 'type') and item.type == 'DOCUMENT':
+                doc_id = items[i + 1].children[0].strip("'\"")
+            elif hasattr(item, 'children') and item.children:
+                val = item.children[0].strip("'\"")
+                # Skip if it's "FROM" or "DOCUMENT"
+                if val.upper() in ['FROM', 'DOCUMENT']:
+                    continue
+                chunk_ids.append(val)
+
+        return {"type": "remove_chunks", "doc_id": doc_id, "chunk_ids": chunk_ids}
 
     def list_chunks(self, items):
         doc_id = items[4].children[0].strip("'\"")
