@@ -920,7 +920,7 @@ export const useSkills = () => {
         }
 
         message.success(t('skills.uploadSuccess'));
-        await fetchSkills(normalizedHubName);
+        await fetchSkills(normalizedHubName, normalizedHubId);
         return true;
       } catch (error) {
         console.error('Error uploading skill:', error);
@@ -1051,8 +1051,8 @@ export const useSkills = () => {
         if (data.code !== 0) throw new Error('Failed to delete skill');
 
         message.success(t('skills.deleteSuccess'));
-        // Refresh skills list using hub name
-        await fetchSkills(normalizedHubName);
+        // Refresh skills list using hub name and hub id
+        await fetchSkills(normalizedHubName, normalizedHubId);
         return true;
       } catch (error) {
         console.error('Error deleting skill:', error);

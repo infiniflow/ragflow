@@ -378,18 +378,10 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
             if sub_file.type == FileType.FOLDER.value:
                 _delete_folder_recursive(sub_file, tenant_id, is_skill_folder, current_hub_name, authorization)
             else:
-                # If we're in a skill folder context, delete the skill index for this file too
-                if is_skill_folder and current_hub_name:
-                    index_deleted = _delete_skill_index(tenant_id, current_hub_name, sub_file.name, authorization)
-                    if not index_deleted:
-                        logging.error(
-                            f"Aborting file deletion due to index deletion failure: "
-                            f"file={sub_file.name}, hub={current_hub_name}"
-                        )
-                        raise RuntimeError(
-                            f"Failed to delete skill index for file '{sub_file.name}' in hub '{current_hub_name}'. "
-                            f"File deletion aborted to prevent orphaned indexes."
-                        )
+                # Note: Skill index is already deleted above when deleting the skill folder.
+                # We don't delete index here because skill index uses skill name (folder name) as key,
+                # not the individual file names. Deleting files here would incorrectly try to delete
+                # non-existent documents with file names as keys.
                 _delete_single_file(sub_file)
         FileService.delete(folder)
 

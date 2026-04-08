@@ -178,9 +178,9 @@ func (s *SkillIndexerService) IndexSkill(ctx context.Context, tenantID, hubID st
 
 	// Delete old versions (both new format and old format with version suffix)
 	// This ensures only the latest version is indexed
-	logger.Info(fmt.Sprintf("Deleting old versions of skill if exists: indexName=%s, skillName=%s", indexName, skill.Name))
+	logger.Debug(fmt.Sprintf("Deleting old versions of skill if exists: indexName=%s, skillName=%s", indexName, skill.Name))
 	if err := s.DeleteSkillByName(ctx, tenantID, hubID, skill.Name, docEngine); err != nil {
-		logger.Info(fmt.Sprintf("No existing document to delete for skill %s (this is normal for new skills)", skill.Name))
+		logger.Debug(fmt.Sprintf("No existing document to delete for skill %s (this is normal for new skills)", skill.Name))
 	}
 
 	// ES document ID cannot contain '/' - replace with '_'
@@ -362,7 +362,7 @@ func (s *SkillIndexerService) DeleteSkillIndex(ctx context.Context, tenantID, hu
 	if err := docEngine.DeleteDocument(ctx, indexName, docID); err != nil {
 		// Check if it's a "not found" error - this is OK, document might not have been indexed
 		if strings.Contains(err.Error(), "not found") {
-			logger.Info(fmt.Sprintf("Document %s not found in index %s, treating as already deleted", skillID, indexName))
+			logger.Debug(fmt.Sprintf("Document %s not found in index %s, treating as already deleted", skillID, indexName))
 			return nil
 		}
 		logger.Error(fmt.Sprintf("Failed to delete document %s from index %s", skillID, indexName), err)
@@ -391,7 +391,7 @@ func (s *SkillIndexerService) UpdateSkillVersion(ctx context.Context, tenantID, 
 	// Delete old version first (upsert behavior)
 	if err := s.DeleteSkillByName(ctx, tenantID, hubID, skill.Name, docEngine); err != nil {
 		// Log but don't fail - the document might not exist
-		logger.Info(fmt.Sprintf("No existing index to delete for skill %s", skill.Name))
+		logger.Debug(fmt.Sprintf("No existing index to delete for skill %s", skill.Name))
 	}
 
 	// Index new version

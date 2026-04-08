@@ -144,7 +144,7 @@ const SkillsPage: React.FC = () => {
 
   // Pagination and sorting state
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(50);
+  const [pageSize] = useState(20);
   const [totalSkills, setTotalSkills] = useState(0);
   const [sortBy, setSortBy] = useState<'name' | 'update_time' | 'create_time'>(
     'update_time',
@@ -1164,8 +1164,7 @@ const SkillsPage: React.FC = () => {
           <div className="flex-1 overflow-auto border border-border rounded-lg">
             <table className="w-full" style={{ tableLayout: 'fixed' }}>
               <colgroup>
-                <col style={{ width: '20vw' }} />
-                <col style={{ width: '160px' }} />
+                <col style={{ width: 'auto' }} />
                 <col style={{ width: '120px' }} />
                 <col style={{ width: '96px' }} />
               </colgroup>
@@ -1173,9 +1172,6 @@ const SkillsPage: React.FC = () => {
                 <tr>
                   <th className="px-4 py-3 text-left text-sm font-medium text-text-title">
                     {t('skills.skillName') || 'Name'}
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-text-title">
-                    {t('skills.source') || 'Source'}
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-text-title">
                     {t('skills.version') || 'Version'}
@@ -1208,9 +1204,6 @@ const SkillsPage: React.FC = () => {
                           {skill.description}
                         </p>
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-text-secondary capitalize">
-                      {skill.source_type}
                     </td>
                     <td className="px-4 py-3 text-sm text-text-secondary">
                       {skill.metadata?.version || '-'}
@@ -1257,8 +1250,7 @@ const SkillsPage: React.FC = () => {
         {!hasSearched && totalSkills > 0 && (
           <div className="flex items-center justify-between py-4 border-t border-border mt-4">
             <div className="text-sm text-text-secondary">
-              {t('skills.totalSkills', { total: totalSkills }) ||
-                `Total: ${totalSkills} skills`}
+              {t('skills.totalSkills', { total: totalSkills })}
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -1267,14 +1259,13 @@ const SkillsPage: React.FC = () => {
                 disabled={currentPage <= 1 || loading}
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               >
-                {t('common.previous') || 'Previous'}
+                {t('common.previous')}
               </Button>
               <span className="text-sm text-text-secondary px-2">
                 {t('skills.pageInfo', {
                   current: currentPage,
                   total: Math.ceil(totalSkills / pageSize),
-                }) ||
-                  `Page ${currentPage} of ${Math.ceil(totalSkills / pageSize)}`}
+                })}
               </span>
               <Button
                 variant="outline"
@@ -1284,7 +1275,7 @@ const SkillsPage: React.FC = () => {
                 }
                 onClick={() => setCurrentPage((p) => p + 1)}
               >
-                {t('common.next') || 'Next'}
+                {t('common.next')}
               </Button>
             </div>
           </div>
