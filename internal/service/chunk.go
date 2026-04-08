@@ -1064,7 +1064,10 @@ func (s *ChunkService) RemoveChunks(req *RemoveChunksRequest, userID string) (in
 
 	// Build condition
 	condition := make(map[string]interface{})
-	if len(req.ChunkIDs) > 0 {
+	switch {
+	case len(req.ChunkIDs) > 0 && req.DeleteAll:
+		return 0, fmt.Errorf("chunk_ids and delete_all are mutually exclusive")
+	case len(req.ChunkIDs) > 0:
 		// Delete specific chunks - convert []string to []interface{} for buildFilterFromCondition
 		chunkIDsIf := make([]interface{}, len(req.ChunkIDs))
 		for i, id := range req.ChunkIDs {
@@ -1072,9 +1075,11 @@ func (s *ChunkService) RemoveChunks(req *RemoveChunksRequest, userID string) (in
 		}
 		condition["id"] = chunkIDsIf
 		condition["doc_id"] = req.DocID
-	} else {
+	case req.DeleteAll:
 		// Delete all chunks for this document
 		condition["doc_id"] = req.DocID
+	default:
+		return 0, fmt.Errorf("either chunk_ids or delete_all must be provided")
 	}
 
 	deletedCount, err := s.docEngine.Delete(ctx, condition, indexName, doc.KbID)
