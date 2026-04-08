@@ -152,6 +152,10 @@ export default {
       filesSelected: '已选择 {{count}} 个文件',
       uploading: '上传中...',
       files: '文件',
+      noFiles: '没有文件',
+      versionHistory: '版本历史',
+      selectVersion: '选择版本预览',
+      latest: '最新',
       metadata: {
         basic: '基本信息',
         emoji: '表情符号',

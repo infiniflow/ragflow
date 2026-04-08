@@ -30,7 +30,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
+
+	"ragflow/internal/logger"
 )
 
 // SkillProvider handles skill operations using /skills API
@@ -531,19 +534,111 @@ func (p *SkillProvider) listHubs(ctx stdctx.Context, opts *ListOptions) (*Result
 }
 
 // listSkillsInHub lists skills in a specific hub
-// This is a virtual listing based on folder structure in file system
+// First tries search API (supports pagination & sorting), falls back to file system if search returns empty
 func (p *SkillProvider) listSkillsInHub(ctx stdctx.Context, hubName string, opts *ListOptions) (*Result, error) {
+	// Get hub UUID for search API
+	hubUUID, err := p.getHubUUIDByName(ctx, hubName)
+	if err != nil {
+		return nil, fmt.Errorf("hub '%s' not found: %w", hubName, err)
+	}
+
+	// Set default limit to 10 if not specified
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+
+	// Try search API first (supports pagination, sorting, and large collections)
+	payload := map[string]interface{}{
+		"query":      "", // Empty query = list all (match_all)
+		"hub_id":     hubUUID,
+		"page":       1,
+		"page_size":  limit,
+		"sort_by":    opts.SortBy,
+		"sort_order": opts.SortOrder,
+	}
+
+	logger.Debug("Listing skills via search API", zap.String("hub", hubName), zap.String("hubUUID", hubUUID), zap.Int("limit", limit))
+
+	resp, err := p.httpClient.Request("POST", "/skills/search", true, "auto", nil, payload)
+	if err == nil {
+		var result struct {
+			Code int    `json:"code"`
+			Msg  string `json:"message"`
+			Data struct {
+				Skills []struct {
+					SkillID     string   `json:"skill_id"`
+					Name        string   `json:"name"`
+					Description string   `json:"description"`
+					Tags        []string `json:"tags"`
+					Score       float64  `json:"score"`
+					CreateTime  int64    `json:"create_time,omitempty"`
+					UpdateTime  int64    `json:"update_time,omitempty"`
+				} `json:"skills"`
+				Total int64 `json:"total"`
+			} `json:"data"`
+		}
+
+		if err := json.Unmarshal(resp.Body, &result); err == nil && result.Code == 0 {
+			logger.Debug("Search API response", zap.Int("skills_count", len(result.Data.Skills)), zap.Int64("total", result.Data.Total))
+			// If search returned results, use them
+			if len(result.Data.Skills) > 0 {
+				nodes := make([]*Node, 0, len(result.Data.Skills))
+				for _, skill := range result.Data.Skills {
+					updatedAt := time.UnixMilli(skill.UpdateTime)
+					if skill.UpdateTime == 0 {
+						updatedAt = time.UnixMilli(skill.CreateTime)
+					}
+					nodes = append(nodes, &Node{
+						Name:      skill.Name,
+						Type:      NodeTypeDirectory,
+						Path:      fmt.Sprintf("skills/%s/%s", hubName, skill.Name),
+						UpdatedAt: updatedAt,
+						Metadata: map[string]interface{}{
+							"id":          skill.SkillID,
+							"tags":        skill.Tags,
+							"score":       skill.Score,
+							"description": skill.Description,
+						},
+					})
+				}
+				logger.Info("Listed skills via SEARCH", zap.String("hub", hubName), zap.Int("count", len(nodes)), zap.Int64("total", result.Data.Total))
+				return &Result{
+					Nodes:      nodes,
+					Total:      int(result.Data.Total),
+					HasMore:    int(result.Data.Total) > limit,
+					NextOffset: limit,
+				}, nil
+			}
+			// Search returned empty result, fall through to file system
+			logger.Debug("Search returned empty result, falling back to file system")
+		} else {
+			logger.Debug("Search API error", zap.Error(err), zap.Int("code", result.Code), zap.String("msg", result.Msg))
+		}
+	} else {
+		logger.Debug("Search request failed", zap.Error(err))
+	}
+
+	// Fall back to file system listing (for skills not yet indexed)
+	logger.Info("Listing skills via FILE SYSTEM (search unavailable)", zap.String("hub", hubName))
+	return p.listSkillsInHubFromFileSystem(ctx, hubName, opts)
+}
+
+// listSkillsInHubFromFileSystem lists skills from file system (fallback when search returns empty)
+func (p *SkillProvider) listSkillsInHubFromFileSystem(ctx stdctx.Context, hubName string, opts *ListOptions) (*Result, error) {
 	// Get the skills hub folder ID from file system
 	skillsFolderID, err := p.getSkillsFolderID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get skills folder: %w", err)
 	}
+	logger.Debug("Got skills folder ID", zap.String("skillsFolderID", skillsFolderID))
 
 	// Find the hub folder
 	hubFolderID, err := p.findFolderID(ctx, skillsFolderID, hubName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find hub folder: %w", err)
 	}
+	logger.Debug("Got hub folder ID", zap.String("hubName", hubName), zap.String("hubFolderID", hubFolderID))
 
 	// List all subfolders in the hub folder (each subfolder is a skill)
 	skillsResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", hubFolderID), true, "auto", nil, nil)
@@ -571,6 +666,7 @@ func (p *SkillProvider) listSkillsInHub(ctx stdctx.Context, hubName string, opts
 	if skillsResult.Code != 0 {
 		return nil, fmt.Errorf("failed to list skills: %s", skillsResult.Msg)
 	}
+	logger.Debug("File system list response", zap.Int("files_count", len(skillsResult.Data.Files)))
 
 	// Convert folders to nodes
 	nodes := make([]*Node, 0)
@@ -589,9 +685,23 @@ func (p *SkillProvider) listSkillsInHub(ctx stdctx.Context, hubName string, opts
 		}
 	}
 
+	// Apply limit
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	total := len(nodes)
+	if len(nodes) > limit {
+		nodes = nodes[:limit]
+	}
+
+	logger.Info("Listed skills via FILE SYSTEM", zap.String("hub", hubName), zap.Int("count", len(nodes)), zap.Int("total", total))
+
 	return &Result{
-		Nodes: nodes,
-		Total: len(nodes),
+		Nodes:      nodes,
+		Total:      total,
+		HasMore:    total > limit,
+		NextOffset: limit,
 	}, nil
 }
 
@@ -1389,6 +1499,7 @@ func (p *SkillProvider) indexSkillFromUpload(ctx stdctx.Context, result *SkillVa
 		"description": result.Description,
 		"tags":        result.Tags,
 		"content":     content,
+		"version":     result.Version,
 	}
 
 	return p.IndexSkill(ctx, hubID, skillInfo)
@@ -1490,8 +1601,12 @@ func ValidateSkillDirectory(skillPath string, versionOverride string, nameOverri
 	if version == "" {
 		version = metadata.Version
 	}
+	// Set default version if not provided
+	if version == "" {
+		version = "1.0.0"
+	}
 
-	if version != "" && !isValidSemver(version) {
+	if !isValidSemver(version) {
 		return &SkillValidationResult{
 			Valid:   false,
 			Error:   "invalid_version",
@@ -2389,6 +2504,7 @@ func (u *SkillUploader) indexSkill(ctx stdctx.Context, result *SkillValidationRe
 		"description": result.Description,
 		"tags":        result.Tags,
 		"content":     content,
+		"version":     result.Version,
 	}
 
 	return skillProvider.IndexSkill(ctx, hubID, skillInfo)

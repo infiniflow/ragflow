@@ -142,11 +142,7 @@ const SkillCard: React.FC<SkillCardProps> = ({
 
             <div className="flex justify-between items-center mt-2">
               <span className="text-text-secondary text-xs">
-                {skill.versions && skill.versions.length > 0
-                  ? `${skill.versions.length} versions`
-                  : fileCount > 0
-                    ? `${fileCount} files`
-                    : ''}
+                {fileCount > 0 ? `${fileCount} files` : ''}
               </span>
 
               <div className="flex items-center gap-2">

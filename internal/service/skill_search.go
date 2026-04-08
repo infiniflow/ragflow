@@ -194,11 +194,13 @@ func (s *SkillSearchService) UpdateConfig(req *UpdateConfigRequest) (map[string]
 
 // SearchRequest represents the skill search request
 type SearchRequest struct {
-	TenantID string `json:"tenant_id"` // Set from user context, not from request body
-	HubID    string `json:"hub_id"`
-	Query    string `json:"query" binding:"required"`
-	Page     int    `json:"page"`
-	PageSize int    `json:"page_size"`
+	TenantID  string `json:"tenant_id"` // Set from user context, not from request body
+	HubID     string `json:"hub_id"`
+	Query     string `json:"query"` // Empty query lists all skills (match_all)
+	Page      int    `json:"page"`
+	PageSize  int    `json:"page_size"`
+	SortBy    string `json:"sort_by"`    // Sort field: "name", "update_time", "create_time", "relevance"
+	SortOrder string `json:"sort_order"` // "asc" or "desc", default "desc" for time fields, "asc" for name
 }
 
 // SearchResponse represents the skill search response
@@ -221,18 +223,24 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 
 	// Check if index exists before searching
 	indexName := getSkillIndexName(req.TenantID, req.HubID)
+	logger.Info("Searching skills", zap.String("indexName", indexName), zap.String("tenantID", req.TenantID), zap.String("hubID", req.HubID), zap.String("query", req.Query))
 
 	indexExists, err := docEngine.IndexExists(ctx, indexName)
 	if err != nil {
 		logger.Error("Failed to check index existence", err)
 		return nil, common.CodeOperatingError, fmt.Errorf("failed to check index existence: %w", err)
 	}
+	logger.Info("Index existence check", zap.String("indexName", indexName), zap.Bool("exists", indexExists))
 	if !indexExists {
-		return nil, common.CodeOperatingError, fmt.Errorf("search index '%s' for hub '%s' does not exist. This usually means:\n\n"+
-			"1. No skills have been uploaded to this hub yet\n"+
-			"2. The skill was uploaded by a different user (index is per-user)\n"+
-			"3. The index was deleted\n\n"+
-			"Please upload at least one skill to this hub using the same user account.", indexName, req.HubID)
+		// Return empty result if index doesn't exist (no skills indexed yet)
+		// This allows listing skills via file system API as fallback
+		logger.Warn("Skill index does not exist, returning empty result", zap.String("indexName", indexName), zap.String("tenantID", req.TenantID), zap.String("hubID", req.HubID))
+		return &SearchResponse{
+			Skills:     []entity.SkillSearchResult{},
+			Total:      0,
+			Query:      req.Query,
+			SearchType: "keyword",
+		}, common.CodeSuccess, nil
 	}
 
 	// Get config for search strategy
@@ -261,23 +269,34 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 	hasEmbdConfig := config.EmbdID != ""
 
 	switch {
-	case config.VectorSimilarityWeight == 0 || !hasEmbdConfig:
+	case config.VectorSimilarityWeight == 0 || !hasEmbdConfig || req.Query == "":
 		// Pure keyword search (BM25)
 		// Also fallback to keyword search if no embedding model configured
+		// Or if query is empty (list all)
 		searchType = "keyword"
-		results, err = s.keywordSearch(ctx, docEngine, indexName, req.Query, config)
-	case config.VectorSimilarityWeight == 1:
-		// Pure vector search
+		// For empty query (list all), pass threshold=0 to disable score filtering
+		threshold := config.SimilarityThreshold
+		if req.Query == "" {
+			threshold = 0 // Disable threshold for list all
+		}
+		results, err = s.keywordSearch(ctx, docEngine, indexName, req.Query, config, threshold, req.SortBy, req.SortOrder)
+	case config.VectorSimilarityWeight == 1 && req.Query != "":
+		// Pure vector search (skip if query is empty)
 		searchType = "vector"
 		results, err = s.vectorSearch(ctx, docEngine, indexName, req.Query, config, req.TenantID)
 		if err != nil {
 			logger.Warn("Vector search failed, falling back to keyword search", zap.Error(err))
 			searchType = "keyword"
-			results, err = s.keywordSearch(ctx, docEngine, indexName, req.Query, config)
+			results, err = s.keywordSearch(ctx, docEngine, indexName, req.Query, config, config.SimilarityThreshold, req.SortBy, req.SortOrder)
 		}
 	default:
-		// Hybrid search
-		results, err = s.hybridSearch(ctx, docEngine, indexName, req.Query, config, req.TenantID)
+		// Hybrid search (fallback to keyword if query is empty)
+		if req.Query == "" {
+			// Empty query: list all, disable threshold
+			results, err = s.keywordSearch(ctx, docEngine, indexName, req.Query, config, 0, req.SortBy, req.SortOrder)
+		} else {
+			results, err = s.hybridSearch(ctx, docEngine, indexName, req.Query, config, req.TenantID)
+		}
 	}
 
 	if err != nil {
@@ -306,9 +325,19 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 }
 
 // keywordSearch performs pure keyword search using BM25
-func (s *SkillSearchService) keywordSearch(ctx context.Context, docEngine engine.DocEngine, indexName, query string, config *entity.SkillSearchConfig) ([]entity.SkillSearchResult, error) {
+func (s *SkillSearchService) keywordSearch(ctx context.Context, docEngine engine.DocEngine, indexName, query string, config *entity.SkillSearchConfig, threshold float64, sortBy, sortOrder string) ([]entity.SkillSearchResult, error) {
 	// Analyze query: tokenize and extract keywords
 	matchText, keywords := s.analyzeQuery(query)
+
+	// Build order_by string for sorting
+	orderBy := s.buildOrderBy(sortBy, sortOrder, query == "")
+
+	// For empty query (list all), we need to set AvailableInt to ensure status filter
+	var availableInt *int
+	if query == "" {
+		v := 1
+		availableInt = &v
+	}
 
 	// Use unified search request with analyzed query
 	searchReq := &types.SearchRequest{
@@ -321,6 +350,8 @@ func (s *SkillSearchService) keywordSearch(ctx context.Context, docEngine engine
 		Size:                100,
 		TopK:                100,
 		SimilarityThreshold: config.SimilarityThreshold,
+		OrderBy:             orderBy,
+		AvailableInt:        availableInt,
 	}
 
 	resp, err := docEngine.Search(ctx, searchReq)
@@ -335,7 +366,7 @@ func (s *SkillSearchService) keywordSearch(ctx context.Context, docEngine engine
 	}
 
 	// Convert chunks to SkillSearchResult
-	return s.convertChunksToResults(searchResp.Chunks, config.SimilarityThreshold), nil
+	return s.convertChunksToResults(searchResp.Chunks, threshold), nil
 }
 
 // vectorSearch performs pure vector search
@@ -548,15 +579,19 @@ func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interfac
 			createTime = ctVal
 		}
 
-		result := entity.SkillSearchResult{
-			SkillID:     skillID,
-			FolderID:    folderID,
-			Name:        name,
-			Description: description,
-			Tags:        tags,
-			Score:       score,
-			CreateTime:  createTime,
-		}
+	// Extract version
+	version := getString(chunk, "version")
+
+	result := entity.SkillSearchResult{
+		SkillID:     skillID,
+		FolderID:    folderID,
+		Name:        name,
+		Description: description,
+		Tags:        tags,
+		Score:       score,
+		CreateTime:  createTime,
+		Version:     version,
+	}
 
 		// Keep only the highest scored result for each skill
 		if existing, ok := skillMap[skillKey]; !ok || score > existing.Score {
@@ -832,6 +867,7 @@ type SkillInfo struct {
 	Description string   `json:"description"`
 	Tags        []string `json:"tags"`
 	Content     string   `json:"content"`
+	Version     string   `json:"version"` // Skill version (e.g., "1.0.0")
 }
 
 // IndexSkillsRequest represents the request to index skills
@@ -845,4 +881,52 @@ type ReindexRequest struct {
 	TenantID string `json:"tenant_id" binding:"required"`
 	HubID    string `json:"hub_id" binding:"required"`
 	EmbdID   string `json:"embd_id"` // Optional, will use config's embd_id if empty
+}
+
+// buildOrderBy builds the order_by string for sorting
+// For empty queries (list all), default sort is by update_time desc
+// For search queries, default sort is by relevance (score)
+func (s *SkillSearchService) buildOrderBy(sortBy, sortOrder string, isEmptyQuery bool) string {
+	// Normalize sort_by
+	if sortBy == "" {
+		if isEmptyQuery {
+			sortBy = "update_time"
+		} else {
+			return "" // Use default relevance sorting for search
+		}
+	}
+
+	// Normalize sort_order
+	order := strings.ToLower(sortOrder)
+	if order != "asc" && order != "desc" {
+		// Default order: desc for time fields, asc for name
+		if sortBy == "name" {
+			order = "asc"
+		} else {
+			order = "desc"
+		}
+	}
+
+	// Map frontend field names to backend field names
+	fieldMapping := map[string]string{
+		"name":         "name",
+		"update_time":  "update_time",
+		"create_time":  "create_time",
+		"updateTime":   "update_time",
+		"createTime":   "create_time",
+		"relevance":    "", // Empty means sort by score/relevance
+		"updated_at":   "update_time",
+		"created_at":   "create_time",
+	}
+
+	backendField, ok := fieldMapping[sortBy]
+	if !ok {
+		backendField = sortBy
+	}
+
+	if backendField == "" {
+		return "" // Relevance sorting
+	}
+
+	return backendField + " " + order
 }

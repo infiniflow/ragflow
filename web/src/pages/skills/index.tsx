@@ -102,6 +102,7 @@ const SkillsPage: React.FC = () => {
     deleteSkill,
     getSkillFileContent,
     getSkillVersionFiles,
+    getSkillDetails,
   } = useSkills();
 
   const {
@@ -139,6 +140,16 @@ const SkillsPage: React.FC = () => {
   const [searchResults, setSearchResults] = useState<Skill[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [skillDetailLoading, setSkillDetailLoading] = useState(false);
+
+  // Pagination and sorting state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(50);
+  const [totalSkills, setTotalSkills] = useState(0);
+  const [sortBy, setSortBy] = useState<'name' | 'update_time' | 'create_time'>(
+    'update_time',
+  );
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // Selection state derived values (must be declared before any functions that use them)
   const selectedHubCount = useMemo(
@@ -212,45 +223,117 @@ const SkillsPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Function to load skills with pagination and sorting
+  const loadSkills = useCallback(async () => {
+    const result = await fetchSkills(
+      selectedHubName,
+      selectedHubId,
+      currentPage,
+      pageSize,
+      sortBy,
+      sortOrder,
+    );
+    setTotalSkills(result.total);
+  }, [
+    fetchSkills,
+    selectedHubName,
+    selectedHubId,
+    currentPage,
+    pageSize,
+    sortBy,
+    sortOrder,
+  ]);
+
+  // Load skills when hub changes or pagination/sorting changes
   useEffect(() => {
     if (!selectedHubId || !selectedHubName) return;
     // Clear search results when switching hubs
     setSearchResults([]);
     setHasSearched(false);
     setSearchQuery('');
+    setCurrentPage(1);
     fetchConfig(undefined, selectedHubId);
-    // Use hub name for file system operations
-    fetchSkills(selectedHubName);
-  }, [
-    selectedHubId,
-    selectedHubName,
-    fetchConfig,
-    fetchSkills,
-    setSearchQuery,
-  ]);
+    // Use search API with pagination and sorting
+    loadSkills();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedHubId, selectedHubName]);
+
+  // Load skills when pagination or sorting changes
+  useEffect(() => {
+    if (!selectedHubId || !selectedHubName || hasSearched) return;
+    loadSkills();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, sortBy, sortOrder]);
 
   const handleViewSkill = useCallback(
-    (skill: Skill) => {
-      if (!(skill as any)._folderId) {
+    async (skill: Skill) => {
+      // If skill already has versions, use it directly
+      if (skill.versions && skill.versions.length > 0) {
+        setSelectedSkill(skill);
+        setDetailOpen(true);
+        return;
+      }
+
+      // Try to enrich skill data with versions from existing skills list
+      if (!(skill as any)._folderId || !skill.versions) {
         const existingSkill = filteredSkills.find((s) => s.id === skill.id);
-        if (existingSkill && (existingSkill as any)._folderId) {
-          skill = {
-            ...skill,
-            _folderId: (existingSkill as any)._folderId,
-            versions: existingSkill.versions,
-            files: existingSkill.files,
-          };
-        } else {
-          console.warn(
-            `[Skill Search] Skill "${skill.name}" has no folder_id. ` +
-              'Please reindex skills to fix this issue.',
-          );
+        if (existingSkill) {
+          if ((existingSkill as any)._folderId) {
+            skill = {
+              ...skill,
+              _folderId: (existingSkill as any)._folderId,
+            };
+          }
+          if (existingSkill.versions && existingSkill.versions.length > 0) {
+            skill = {
+              ...skill,
+              versions: existingSkill.versions,
+              files: existingSkill.files,
+            };
+          }
         }
       }
+
+      // If still no versions but has folderId, fetch from file system
+      if (
+        (!skill.versions || skill.versions.length === 0) &&
+        (skill as any)._folderId
+      ) {
+        setSkillDetailLoading(true);
+        try {
+          const detailedSkill = await getSkillDetails(
+            (skill as any)._folderId,
+            skill.name,
+          );
+          if (detailedSkill) {
+            skill = {
+              ...skill,
+              versions: detailedSkill.versions,
+              files: detailedSkill.files,
+              metadata: {
+                ...skill.metadata,
+                ...detailedSkill.metadata,
+              },
+            };
+          }
+        } catch (error) {
+          console.warn('Failed to fetch skill details:', error);
+        } finally {
+          setSkillDetailLoading(false);
+        }
+      }
+
+      if (!(skill as any)._folderId) {
+        console.warn(
+          `[Skill Search] Skill "${skill.name}" has no folder_id. ` +
+            'Please reindex skills to fix this issue.',
+        );
+      }
+
       setSelectedSkill(skill);
       setDetailOpen(true);
     },
-    [filteredSkills],
+    [filteredSkills, getSkillDetails],
   );
 
   const handleCloseDetail = useCallback(() => {
@@ -349,12 +432,8 @@ const SkillsPage: React.FC = () => {
   }, [hubToRename, renameHubInput, updateHub, loadHubs, selectedHubId]);
 
   const handleDeleteSelectedHubs = useCallback(async () => {
-    let hasError = false;
     for (const hubId of selectedHubIds) {
-      const success = await deleteHub(hubId);
-      if (!success) {
-        hasError = true;
-      }
+      await deleteHub(hubId);
     }
     setDeleteHubsModalOpen(false);
     setRowSelection({});
@@ -451,8 +530,8 @@ const SkillsPage: React.FC = () => {
   }, [hubs, hubSearchString]);
 
   const displayedSkills = useMemo(() => {
-    const skills = hasSearched ? searchResults : filteredSkills;
-    return [...skills].sort((a, b) => b.updated_at - a.updated_at);
+    // Server-side sorting is already applied via API, no need to sort here
+    return hasSearched ? searchResults : filteredSkills;
   }, [hasSearched, searchResults, filteredSkills]);
 
   const isLoading = loading || isSearching || configLoading;
@@ -959,6 +1038,40 @@ const SkillsPage: React.FC = () => {
                 <Search className="size-4" />
               </button>
             </div>
+            {/* Sort order toggle */}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+              title={
+                sortOrder === 'asc'
+                  ? t('skills.sortDesc') || 'Sort Descending'
+                  : t('skills.sortAsc') || 'Sort Ascending'
+              }
+            >
+              {sortOrder === 'asc' ? (
+                <svg
+                  className="size-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M12 5v14M5 12l7-7 7 7" />
+                </svg>
+              ) : (
+                <svg
+                  className="size-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M12 19V5M5 12l7 7 7-7" />
+                </svg>
+              )}
+            </Button>
+
             {/* Grid/List toggle */}
             <Segmented
               value={viewMode}
@@ -987,7 +1100,7 @@ const SkillsPage: React.FC = () => {
                   <Button
                     variant="outline"
                     size="icon"
-                    onClick={() => fetchSkills(selectedHubName)}
+                    onClick={() => loadSkills()}
                     disabled={loading}
                   >
                     <RefreshCw className={loading ? 'animate-spin' : ''} />
@@ -1139,6 +1252,43 @@ const SkillsPage: React.FC = () => {
             </table>
           </div>
         )}
+
+        {/* Pagination */}
+        {!hasSearched && totalSkills > 0 && (
+          <div className="flex items-center justify-between py-4 border-t border-border mt-4">
+            <div className="text-sm text-text-secondary">
+              {t('skills.totalSkills', { total: totalSkills }) ||
+                `Total: ${totalSkills} skills`}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage <= 1 || loading}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              >
+                {t('common.previous') || 'Previous'}
+              </Button>
+              <span className="text-sm text-text-secondary px-2">
+                {t('skills.pageInfo', {
+                  current: currentPage,
+                  total: Math.ceil(totalSkills / pageSize),
+                }) ||
+                  `Page ${currentPage} of ${Math.ceil(totalSkills / pageSize)}`}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={
+                  currentPage >= Math.ceil(totalSkills / pageSize) || loading
+                }
+                onClick={() => setCurrentPage((p) => p + 1)}
+              >
+                {t('common.next') || 'Next'}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Skill Detail Drawer */}
@@ -1150,6 +1300,13 @@ const SkillsPage: React.FC = () => {
           getFileContent={getSkillFileContent}
           getVersionFiles={getSkillVersionFiles}
         />
+      )}
+
+      {/* Skill Detail Loading Overlay */}
+      {skillDetailLoading && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/20">
+          <Spin size="large" />
+        </div>
       )}
 
       {/* Upload Modal */}

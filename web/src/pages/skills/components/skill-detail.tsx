@@ -1,19 +1,20 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Spin } from '@/components/ui/spin';
 import { TreeDataItem, TreeView } from '@/components/ui/tree-view';
 import {
   ArrowBigLeft,
+  ChevronDown,
   FileCode,
   FileText,
   FolderOpen,
+  GitBranch,
   Tag,
 } from 'lucide-react';
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
@@ -110,12 +111,15 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
   useEffect(() => {
     if (open && skill) {
       // Initialize version
+      // For multi-version skill, check if metadata.version is in availableVersions
+      // If not, use the first available version
+      let defaultVersion = skill.metadata?.version || '';
       if (hasVersions) {
-        const defaultVersion = skill.metadata?.version || availableVersions[0];
-        setSelectedVersion(defaultVersion);
-      } else {
-        setSelectedVersion('');
+        if (!defaultVersion || !availableVersions.includes(defaultVersion)) {
+          defaultVersion = availableVersions[0];
+        }
       }
+      setSelectedVersion(defaultVersion);
     } else {
       // Reset when closed
       setSelectedVersion('');
@@ -309,30 +313,67 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
       <header className="flex items-center justify-between px-6 py-4 bg-bg-base">
         <Button variant="outline" onClick={onClose}>
           <ArrowBigLeft />
-          {t('common.back') || 'Back'}
+          {t('common.back')}
         </Button>
         <div className="flex items-center gap-2">
           {hasVersions ? (
-            <Select
-              value={selectedVersion}
-              onValueChange={setSelectedVersion}
-              disabled={versionLoading}
-            >
-              <SelectTrigger className="w-[120px] h-8 text-xs">
-                <Tag className="size-3 mr-1" />
-                <SelectValue placeholder="Version" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableVersions.map((version) => (
-                  <SelectItem key={version} value={version}>
-                    v{version}
-                  </SelectItem>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-3 text-xs gap-1"
+                  disabled={versionLoading}
+                >
+                  <GitBranch className="size-3.5" />
+                  <span className="max-w-[120px] truncate">
+                    {t('skills.versionHistory')}
+                  </span>
+                  <ChevronDown className="size-3 ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-[200px]">
+                <div className="px-2 py-1.5 text-xs font-medium text-text-secondary border-b border-border mb-1">
+                  {t('skills.selectVersion')}
+                </div>
+                {availableVersions.map((version, index) => (
+                  <DropdownMenuItem
+                    key={version}
+                    onClick={() => setSelectedVersion(version)}
+                    className={`flex items-center justify-between cursor-pointer ${
+                      selectedVersion === version ? 'bg-accent-primary/10' : ''
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Tag className="size-3 text-text-secondary" />
+                      <span
+                        className={
+                          selectedVersion === version ? 'font-medium' : ''
+                        }
+                      >
+                        v{version}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {index === 0 && (
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] h-4 px-1"
+                        >
+                          {t('skills.latest')}
+                        </Badge>
+                      )}
+                      {selectedVersion === version && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-accent-primary" />
+                      )}
+                    </div>
+                  </DropdownMenuItem>
                 ))}
-              </SelectContent>
-            </Select>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : (
             skill.metadata?.version && (
-              <Badge variant="outline" className="text-xs">
+              <Badge variant="outline" className="text-xs h-8 px-2">
                 <Tag className="size-3 mr-1" />v{skill.metadata.version}
               </Badge>
             )
@@ -361,6 +402,57 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
               </div>
             </div>
 
+            {/* Version History Section */}
+            {hasVersions && (
+              <div className="border-b border-b-0.5 border-border-button bg-bg-secondary/30">
+                <div className="px-4 py-2 flex items-center gap-2 text-xs font-medium text-text-secondary">
+                  <GitBranch className="size-3.5" />
+                  <span>{t('skills.versionHistory')}</span>
+                  <span className="text-text-tertiary">
+                    ({availableVersions.length})
+                  </span>
+                </div>
+                <div className="px-2 pb-2 max-h-[120px] overflow-y-auto">
+                  {availableVersions.map((version, index) => (
+                    <button
+                      key={version}
+                      onClick={() => setSelectedVersion(version)}
+                      disabled={versionLoading}
+                      className={`w-full flex items-center justify-between px-2 py-1.5 text-xs rounded-md transition-colors ${
+                        selectedVersion === version
+                          ? 'bg-accent-primary/10 text-accent-primary'
+                          : 'hover:bg-bg-secondary text-text-secondary'
+                      } ${versionLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Tag className="size-3" />
+                        <span
+                          className={
+                            selectedVersion === version ? 'font-medium' : ''
+                          }
+                        >
+                          v{version}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {index === 0 && (
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] h-4 px-1"
+                          >
+                            {t('skills.latest')}
+                          </Badge>
+                        )}
+                        {selectedVersion === version && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-accent-primary" />
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex-1 overflow-auto p-2">
               {/* File Tree */}
               {versionLoading ? (
@@ -374,13 +466,13 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
                     {skill?.source_type === 'search' &&
                     !(skill as any)._folderId
                       ? 'Please reindex skills in settings to view files'
-                      : t('skills.noFiles') || 'No files'}
+                      : t('skills.noFiles')}
                   </p>
                 </div>
               ) : (
                 <div>
                   <p className="text-text-secondary text-xs pl-2 mb-2">
-                    {t('skills.files') || 'Files'}
+                    {t('skills.files')}
                     {currentFiles.length > 0 && (
                       <span className="ml-1 text-text-tertiary">
                         ({currentFiles.filter((f) => !f.is_dir).length} files)

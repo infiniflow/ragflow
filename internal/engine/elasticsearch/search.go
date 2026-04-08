@@ -156,6 +156,14 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 	queryBody["size"] = limit
 	queryBody["from"] = offset
 
+	// Add sorting if specified
+	if req.OrderBy != "" {
+		sort := parseOrderBy(req.OrderBy)
+		if len(sort) > 0 {
+			queryBody["sort"] = sort
+		}
+	}
+
 	// Serialize query
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(queryBody); err != nil {
@@ -548,6 +556,50 @@ func BuildRangeQuery(field string, from, to interface{}) map[string]interface{} 
 			field: rangeQuery,
 		},
 	}
+}
+
+// parseOrderBy parses the OrderBy string into ES sort format
+// Format: "field1 desc, field2 asc" or "field1" (defaults to asc)
+func parseOrderBy(orderBy string) []map[string]interface{} {
+	if orderBy == "" {
+		return nil
+	}
+
+	var result []map[string]interface{}
+	fields := strings.Split(orderBy, ",")
+
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+
+		// Check for direction
+		direction := "asc"
+		if strings.HasSuffix(strings.ToLower(field), " desc") {
+			direction = "desc"
+			field = strings.TrimSpace(field[:len(field)-5])
+		} else if strings.HasSuffix(strings.ToLower(field), " asc") {
+			field = strings.TrimSpace(field[:len(field)-4])
+		}
+
+		if field == "" {
+			continue
+		}
+
+		// Special handling for _score (relevance)
+		if field == "_score" || field == "score" {
+			result = append(result, map[string]interface{}{
+				"_score": direction,
+			})
+		} else {
+			result = append(result, map[string]interface{}{
+				field: direction,
+			})
+		}
+	}
+
+	return result
 }
 
 // BuildBoolQuery builds a bool query

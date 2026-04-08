@@ -116,6 +116,11 @@ func (s *SkillIndexerService) IndexSkill(ctx context.Context, tenantID, hubID st
 	isES := isElasticsearch(docEngine)
 
 	// Build base document
+	// Use skill.Version if available, otherwise use config.IndexVersion as fallback
+	skillVersion := skill.Version
+	if skillVersion == "" {
+		skillVersion = "1.0.0"
+	}
 	doc := map[string]interface{}{
 		"skill_id":    skill.ID,
 		"hub_id":      hubID,
@@ -124,7 +129,7 @@ func (s *SkillIndexerService) IndexSkill(ctx context.Context, tenantID, hubID st
 		"tags":        strings.Join(skill.Tags, ", "),
 		"description": skill.Description,
 		"content":     skill.Content,
-		"version":     config.IndexVersion,
+		"version":     skillVersion,
 		"status":      "1",
 		"create_time": timestamp,
 		"update_time": timestamp,
@@ -281,6 +286,12 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, hu
 		// ES document ID cannot contain '/' - replace with '_'
 		docID := strings.ReplaceAll(skill.ID, "/", "_")
 
+		// Use skill.Version if available, otherwise default to "1.0.0"
+		skillVersion := skill.Version
+		if skillVersion == "" {
+			skillVersion = "1.0.0"
+		}
+
 		doc := map[string]interface{}{
 			"skill_id":    skill.ID,
 			"hub_id":      hubID,
@@ -289,7 +300,7 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, hu
 			"tags":        strings.Join(skill.Tags, ", "),
 			"description": skill.Description,
 			"content":     skill.Content,
-			"version":     config.IndexVersion,
+			"version":     skillVersion,
 			"status":      "1",
 			"create_time": timestamp,
 			"update_time": timestamp,

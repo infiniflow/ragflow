@@ -64,6 +64,7 @@ type ConnectionArgs struct {
 	ShowHelp     bool
 	AdminMode    bool
 	OutputFormat OutputFormat // Output format: table, plain, json
+	Verbose      bool         // Enable verbose logging
 }
 
 // LoadDefaultConfigFile reads the rf.yml file from current directory if it exists
@@ -124,9 +125,10 @@ func parseHostPort(hostPort string) (string, int, error) {
 
 // ParseConnectionArgs parses command line arguments similar to Python's parse_connection_args
 func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
-	// First, scan args to check for help, config file, and admin mode
+	// First, scan args to check for help, config file, admin mode, and verbose flag
 	var configFilePath string
 	var adminMode bool = false
+	var verboseMode bool = false
 	foundCommand := false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -138,7 +140,7 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 		}
 		// Only process --help as global help if it's before any command
 		if !foundCommand && (arg == "--help" || arg == "-help") {
-			return &ConnectionArgs{ShowHelp: true}, nil
+			return &ConnectionArgs{ShowHelp: true, Verbose: verboseMode}, nil
 		} else if (arg == "-f" || arg == "--config") && i+1 < len(args) {
 			configFilePath = args[i+1]
 			i++
@@ -148,6 +150,8 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 			continue
 		} else if arg == "--admin" {
 			adminMode = true
+		} else if arg == "-v" || arg == "--verbose" {
+			verboseMode = true
 		}
 	}
 
@@ -158,7 +162,9 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 	// Parse arguments manually to support both short and long forms
 	// and to handle priority: command line > config file > defaults
 
-	result := &ConnectionArgs{}
+	result := &ConnectionArgs{
+		Verbose: verboseMode,
+	}
 
 	if !adminMode {
 		// Only user mode read config file
@@ -256,6 +262,8 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 				}
 				i++
 			}
+		case "-v", "--verbose":
+			result.Verbose = true
 		case "--admin", "-admin":
 			result.AdminMode = true
 		case "--help", "-help":
@@ -357,6 +365,7 @@ Options:
   -p, --password string  Password for authentication
   -f, --config string    Path to config file (YAML format)
   -o, --output string    Output format: table, plain, json (search defaults to json)
+  -v, --verbose          Enable verbose logging (shows debug info)
   --admin, -admin        Run in admin mode
   --help                 Show this help message
 

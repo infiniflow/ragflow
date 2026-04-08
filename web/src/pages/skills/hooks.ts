@@ -273,7 +273,7 @@ export const useSkills = () => {
 
       // Priority: folderName (user-specified) > metadata.name (from SKILL.md)
       // This allows users to override the skill name from SKILL.md
-      const skillName = folderName || metadata.name;
+      const skillName = folderName || metadata.name || 'unnamed-skill';
 
       return {
         id: skillName, // Use skill name as ID (consistent with search results)
@@ -385,7 +385,7 @@ export const useSkills = () => {
 
       // Priority: folderName (user-specified) > metadata.name (from SKILL.md)
       // This allows users to override the skill name from SKILL.md
-      const skillName = folderName || metadata.name;
+      const skillName = folderName || metadata.name || 'unnamed-skill';
 
       return {
         id: skillName, // Use skill name as ID (consistent with search results)
@@ -543,19 +543,16 @@ export const useSkills = () => {
     [t],
   );
 
-  // Fetch skills from file API
-  const fetchSkills = useCallback(
-    async (hubName?: string) => {
+  // Fetch skills from file system (fallback when search returns empty)
+  const fetchSkillsFromFileSystem = useCallback(
+    async (hubName?: string): Promise<{ skills: Skill[]; total: number }> => {
       if (!hubName) {
-        setSkills([]);
-        return;
+        return { skills: [], total: 0 };
       }
-      setLoading(true);
       try {
         const hubFolderId = await ensureSkillsHubFolder(hubName, false);
         if (!hubFolderId) {
-          setSkills([]);
-          return;
+          return { skills: [], total: 0 };
         }
 
         const { data } = await fileManagerService.listFile({
@@ -568,22 +565,114 @@ export const useSkills = () => {
             : [];
 
         // Fetch details for each skill
-        const skillsData: Skill[] = await Promise.all(
-          skillFolders.map(async (folder: any) => {
-            const skill = await fetchSkillDetails(folder.id, folder.name);
-            return skill;
-          }),
-        );
+        const skillsData: Skill[] = (
+          await Promise.all(
+            skillFolders.map(async (folder: any) => {
+              const skill = await fetchSkillDetails(folder.id, folder.name);
+              return skill;
+            }),
+          )
+        ).filter(Boolean);
 
-        setSkills(skillsData.filter(Boolean));
+        return { skills: skillsData, total: skillsData.length };
+      } catch (error) {
+        console.error('Error fetching skills from file system:', error);
+        return { skills: [], total: 0 };
+      }
+    },
+    [ensureSkillsHubFolder],
+  );
+
+  // Fetch skills using search API (supports pagination and sorting)
+  // Falls back to file system if search returns empty (skills not indexed yet)
+  const fetchSkills = useCallback(
+    async (
+      hubName?: string,
+      hubId?: string,
+      page = 1,
+      pageSize = 50,
+      sortBy = 'update_time',
+      sortOrder: 'asc' | 'desc' = 'desc',
+    ) => {
+      if (!hubName || !hubId) {
+        setSkills([]);
+        return { skills: [], total: 0 };
+      }
+      setLoading(true);
+      try {
+        // Use search API with empty query to list all skills
+        const response = await fetch('/api/v1/skills/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: getAuthorization(),
+          },
+          body: JSON.stringify({
+            hub_id: hubId,
+            query: '', // Empty query = list all
+            page,
+            page_size: pageSize,
+            sort_by: sortBy,
+            sort_order: sortOrder,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch skills');
+        }
+
+        const result = await response.json();
+        if (result.code !== 0) {
+          throw new Error(result.message || 'Failed to fetch skills');
+        }
+
+        const searchSkills = result.data?.skills || [];
+        const total = result.data?.total || 0;
+
+        // If search returned results, use them
+        if (searchSkills.length > 0) {
+          const skillsData: Skill[] = searchSkills.map((result: any) => {
+            const timestamp = pickSkillTimestamp(result);
+            const skillId = result.skill_id || result.name;
+
+            return {
+              id: skillId,
+              name: result.name,
+              description: result.description || '',
+              source_type: 'search',
+              created_at: timestamp,
+              updated_at: timestamp,
+              metadata: {
+                tags: result.tags || [],
+                version: result.version,
+              },
+              files: [],
+              _folderId: result.folder_id,
+            };
+          });
+
+          setSkills(skillsData);
+          return { skills: skillsData, total };
+        }
+
+        // Search returned empty, fall back to file system
+        console.log(
+          '[Skills] Search returned empty, falling back to file system',
+        );
+        const fsResult = await fetchSkillsFromFileSystem(hubName);
+        setSkills(fsResult.skills);
+        return fsResult;
       } catch (error) {
         console.error('Error fetching skills:', error);
-        message.error(t('skills.fetchError'));
+        // Fall back to file system on error
+        const fsResult = await fetchSkillsFromFileSystem(hubName);
+        setSkills(fsResult.skills);
+        return fsResult;
       } finally {
         setLoading(false);
       }
     },
-    [ensureSkillsHubFolder, t],
+    [t, fetchSkillsFromFileSystem],
   );
 
   // Upload a new skill with proper directory structure (with version support)
@@ -949,7 +1038,7 @@ export const useSkills = () => {
               console.log(
                 `[deleteSkill] Successfully deleted index: ${indexId}`,
               );
-            } catch (e) {
+            } catch {
               // Ignore errors for versions that don't exist
             }
           }
@@ -1210,6 +1299,14 @@ export const useSkills = () => {
     fetchSkills();
   }, [fetchSkills]);
 
+  // Get skill details by folder ID and name (for loading versions)
+  const getSkillDetails = useCallback(
+    async (folderId: string, folderName: string): Promise<Skill | null> => {
+      return await fetchSkillDetails(folderId, folderName);
+    },
+    [],
+  );
+
   return {
     skills,
     filteredSkills,
@@ -1225,6 +1322,7 @@ export const useSkills = () => {
     deleteSkill,
     getSkillFileContent,
     getSkillVersionFiles,
+    getSkillDetails,
   };
 };
 

@@ -108,4 +108,5 @@ type SkillSearchResult struct {
 	VectorScore  float64  `json:"vector_score,omitempty"`
 	IndexVersion string   `json:"index_version,omitempty"`
 	CreateTime   int64    `json:"create_time,omitempty"`
+	Version      string   `json:"version,omitempty"` // Skill version from index
 }
