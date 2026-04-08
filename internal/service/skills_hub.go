@@ -404,6 +404,11 @@ func (s *SkillsHubService) deleteFolderViaPythonAPI(folderID, tenantID, authHead
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
+	// Use request context with timeout to prevent indefinite blocking
+	deleteCtx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	req = req.WithContext(deleteCtx)
+
 	req.Header.Set("Content-Type", "application/json")
 	// Extract raw token from "Bearer <token>" format if present
 	// Python backend needs the raw token for authentication

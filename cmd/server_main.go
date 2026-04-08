@@ -218,11 +218,15 @@ func startServer(config *server.Config) {
 	// Setup routes
 	r.Setup(ginEngine)
 
-	// Create HTTP server
+	// Create HTTP server with timeouts to prevent slow clients from blocking shutdown
 	addr := fmt.Sprintf(":%d", config.Server.Port)
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: ginEngine,
+		Addr:              addr,
+		Handler:           ginEngine,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// Start server in a goroutine
