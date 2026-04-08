@@ -211,6 +211,13 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
         parser_config.update(req_ext_fields)
         req["parser_config"] = deep_merge(kb.parser_config, parser_config)
 
+        # Flatten parent_child config into children_delimiter for the execution layer
+        pc = req["parser_config"].get("parent_child", {})
+        if pc.get("use_parent_child"):
+            req["parser_config"]["children_delimiter"] = pc.get("children_delimiter", "\n")
+        elif pc:
+            req["parser_config"]["children_delimiter"] = ""
+
     if (chunk_method := req.get("parser_id")) and chunk_method != kb.parser_id:
         if not req.get("parser_config"):
             req["parser_config"] = get_parser_config(chunk_method, None)

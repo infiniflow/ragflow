@@ -171,10 +171,8 @@ export default {
 
   // system
   getSystemVersion: `${restAPIv1}/system/version`,
-  getSystemStatus: `${webAPI}/system/status`,
   getSystemTokenList: `${restAPIv1}/system/tokens`,
   createSystemToken: `${restAPIv1}/system/tokens`,
-  listSystemToken: `${restAPIv1}/system/tokens`,
   removeSystemToken: `${restAPIv1}/system/tokens`,
   getSystemConfig: `${webAPI}/system/config`,
   setLangfuseConfig: `${webAPI}/langfuse/api_key`,
