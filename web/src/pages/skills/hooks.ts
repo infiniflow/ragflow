@@ -1276,21 +1276,28 @@ export const useSkillSearchConfig = (hubId?: string) => {
   );
 
   // Reindex all skills
-  const reindex = useCallback(async (): Promise<boolean> => {
-    try {
-      setLoading(true);
-      if (!hubId) throw new Error('Hub ID is required');
-      await skillsHubService.reindex({ skills: [], hub_id: hubId });
-      message.success(t('skillSearch.reindexSuccess'));
-      return true;
-    } catch (error: any) {
-      console.error('Error reindexing skills:', error);
-      message.error(error.message || t('skillSearch.reindexError'));
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  }, [t, hubId]);
+  const reindex = useCallback(
+    async (embdId?: string): Promise<boolean> => {
+      try {
+        setLoading(true);
+        if (!hubId) throw new Error('Hub ID is required');
+        await skillsHubService.reindex({
+          skills: [],
+          hub_id: hubId,
+          embd_id: embdId,
+        });
+        message.success(t('skillSearch.reindexSuccess'));
+        return true;
+      } catch (error: any) {
+        console.error('Error reindexing skills:', error);
+        message.error(error.message || t('skillSearch.reindexError'));
+        return false;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [t, hubId],
+  );
 
   // Initialize index
   const initializeIndex = useCallback(async (): Promise<boolean> => {

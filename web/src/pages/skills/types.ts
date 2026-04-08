@@ -169,6 +169,6 @@ export interface SearchConfigModalProps {
   onOpenChange: (open: boolean) => void;
   config?: SkillSearchConfig;
   onSave: (config: SkillSearchConfig) => Promise<boolean>;
-  onReindex?: () => Promise<boolean>;
+  onReindex?: (embdId: string) => Promise<boolean>;
   loading?: boolean;
 }

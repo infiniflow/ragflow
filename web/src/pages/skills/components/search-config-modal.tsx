@@ -101,9 +101,13 @@ export const SearchConfigModal: React.FC<SearchConfigModalProps> = ({
 
   const handleReindex = async () => {
     if (!onReindex) return;
+    if (!formData.embd_id) {
+      message.error(t('skillSearch.pleaseSelectEmbeddingModel'));
+      return;
+    }
     setReindexing(true);
     try {
-      await onReindex();
+      await onReindex(formData.embd_id);
     } finally {
       setReindexing(false);
     }
