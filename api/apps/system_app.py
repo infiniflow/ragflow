@@ -22,10 +22,8 @@ from api.apps import login_required
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import (
     get_json_result,
-    get_data_error_result,
 )
 
-from common.log_utils import get_log_levels, set_log_level
 from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
