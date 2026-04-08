@@ -109,8 +109,7 @@ export default {
   document_change_status: `${webAPI}/document/change_status`,
   document_rm: `${webAPI}/document/rm`,
   document_delete: `${webAPI}/api/document`,
-  document_rename: `${webAPI}/document/rename`,
-  document_update: (datasetId: string, documentId: string) =>
+  document_rename: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
   document_create: `${webAPI}/document/create`,
   document_run: `${webAPI}/document/run`,

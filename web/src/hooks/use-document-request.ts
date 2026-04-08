@@ -17,7 +17,7 @@ import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
 import kbService, {
   listDocument,
-  updateDocument,
+  renameDocument,
 } from '@/services/knowledge-service';
 import api, { restAPIv1, webAPI } from '@/utils/api';
 import { getSearchValue } from '@/utils/common-util';
@@ -345,7 +345,7 @@ export const useSaveDocumentName = () => {
       documentId: string;
       kbId: string;
     }) => {
-      const { data } = await updateDocument(kbId, documentId, {
+      const { data } = await renameDocument(kbId, documentId, {
         name: name,
       });
       if (data.code === 0) {
