@@ -196,6 +196,19 @@ func (s *SkillsHubService) CreateHub(req *CreateHubRequest) (map[string]interfac
 		return nil, common.CodeOperatingError, err
 	}
 
+	// Check if there's an existing folder with the same name under skills folder
+	// If exists, delete it to prevent duplicate folder names
+	existingFolders := s.fileDAO.Query(req.Name, skillsFolderID)
+	for _, f := range existingFolders {
+		if f.Type == "folder" && f.Name == req.Name {
+			logger.Info("Deleting existing hub folder with same name", zap.String("folderID", f.ID), zap.String("name", req.Name))
+			if err := s.deleteFolderRecursive(f.ID); err != nil {
+				logger.Warn("Failed to delete existing folder", zap.String("folderID", f.ID), zap.Error(err))
+			}
+			break
+		}
+	}
+
 	// Generate hub ID and folder ID
 	hubID := generateHubID()
 	folderID := generateHubID()
@@ -458,10 +471,9 @@ func (s *SkillsHubService) DeleteHub(hubID, tenantID string, docEngine engine.Do
 	logger.Info("Starting to delete hub folder via Python API", zap.String("folderID", hub.FolderID))
 	if err := s.deleteFolderViaPythonAPI(hub.FolderID, tenantID, authHeader); err != nil {
 		logger.Error("Failed to delete hub folder via Python API", err)
-		// Don't return error, continue to delete hub record
-	} else {
-		logger.Info("Successfully deleted hub folder via Python API", zap.String("folderID", hub.FolderID))
+		return common.CodeOperatingError, fmt.Errorf("failed to delete hub folder: %w", err)
 	}
+	logger.Info("Successfully deleted hub folder via Python API", zap.String("folderID", hub.FolderID))
 
 	// Delete the hub (soft delete)
 	if err := s.hubDAO.Delete(hubID); err != nil {
