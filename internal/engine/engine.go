@@ -50,6 +50,10 @@ type DocEngine interface {
 	InsertDataset(ctx context.Context, documents []map[string]interface{}, indexName string, knowledgebaseID string) ([]string, error)
 	InsertMetadata(ctx context.Context, documents []map[string]interface{}, tenantID string) ([]string, error)
 
+	// Update operations
+	UpdateDataset(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, tableNamePrefix string, knowledgebaseID string) error
+    UpdateMetadata(ctx context.Context, docID string, kbID string, metaFields map[string]interface{}, tenantID string) error
+
 	// Document operations
 	IndexDocument(ctx context.Context, indexName, docID string, doc interface{}) error
 	BulkIndex(ctx context.Context, indexName string, docs []interface{}) (interface{}, error)

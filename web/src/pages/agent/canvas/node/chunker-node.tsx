@@ -11,7 +11,7 @@ import { NodeWrapper } from './node-wrapper';
 import { ToolBar } from './toolbar';
 
 type RagNodeProps = NodeProps<IRagNode> & PropsWithChildren;
-function InnerSplitterNode({
+function InnerChunkerNode({
   id,
   data,
   isConnectable = true,
@@ -47,7 +47,7 @@ function InnerSplitterNode({
           id={id}
           name={'Chunker'}
           label={data.label}
-          icon={<OperatorIcon name={Operator.Splitter}></OperatorIcon>}
+          icon={<OperatorIcon name={data.label as Operator}></OperatorIcon>}
         ></NodeHeader>
         <LabelCard>{data.name}</LabelCard>
       </NodeWrapper>
@@ -55,4 +55,4 @@ function InnerSplitterNode({
   );
 }
 
-export const SplitterNode = memo(InnerSplitterNode);
+export const ChunkerNode = memo(InnerChunkerNode);

@@ -4,11 +4,19 @@ import {
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { LlmModelType } from '@/constants/knowledge';
+import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { isEmpty } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { LanguageFormField, ParserMethodFormField } from './common-form-fields';
+import {
+  LanguageFormField,
+  LargeModelFormField,
+  ParserMethodFormField,
+  RmdirFormField,
+  TwoColumnCheckFormField,
+} from './common-form-fields';
 import { CommonProps } from './interface';
 import { useSetInitialLanguage } from './use-set-initial-language';
 import { buildFieldNameWithPrefix } from './utils';
@@ -28,7 +36,9 @@ export function PdfFormFields({ prefix }: CommonProps) {
   const form = useFormContext();
 
   const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
-
+  const modelOptions = useComposeLlmOptionsByModelTypes([
+    LlmModelType.Image2text,
+  ]);
   const parseMethod = useWatch({
     name: parseMethodName,
   });
@@ -88,7 +98,14 @@ export function PdfFormFields({ prefix }: CommonProps) {
 
   return (
     <>
+      <TwoColumnCheckFormField prefix={prefix} />
+      <RmdirFormField prefix={prefix} />
       <ParserMethodFormField prefix={prefix}></ParserMethodFormField>
+
+      <LargeModelFormField
+        prefix={prefix}
+        options={modelOptions}
+      ></LargeModelFormField>
       {languageShown && <LanguageFormField prefix={prefix}></LanguageFormField>}
       {tcadpOptionsShown && (
         <>

@@ -8,6 +8,7 @@ declare global {
 declare module '@tanstack/react-table' {
   interface ColumnMeta {
     headerClassName?: string;
+    headerCellClassName?: string;
     cellClassName?: string;
   }
 }

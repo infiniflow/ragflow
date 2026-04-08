@@ -367,26 +367,26 @@ class TenantModelProviderStage(MigrationStage):
 
 class TenantModelInstanceStage(MigrationStage):
     """Migrate tenant_llm to tenant_model_instance"""
-    
+
     name = "tenant_model_instance"
     description = "Migrate tenant_llm to tenant_model_instance with provider_id lookup"
     source_tables = ["tenant_llm", "tenant_model_provider"]
     target_tables = ["tenant_model_instance"]
-    
+
     def current_timestamp(self) -> int:
         return int(time.time())
-    
+
     def generate_uuid(self) -> str:
         """Generate 32-character UUID1"""
         return uuid.uuid1().hex
-    
+
     def check(self) -> bool:
         """Check if migration is needed"""
         # Check if source table exists
         if not self.db.table_exists("tenant_llm"):
             logger.warning("Source table 'tenant_llm' does not exist")
             return False
-        
+
         # Check if tenant_model_provider exists (dependency)
         if not self.db.table_exists("tenant_model_provider"):
             if self.dry_run:
@@ -396,7 +396,7 @@ class TenantModelInstanceStage(MigrationStage):
             logger.warning("Dependency table 'tenant_model_provider' does not exist. "
                           "Please run 'tenant_model_provider' stage first.")
             return False
-        
+
         # Check if target table exists
         if not self.db.table_exists("tenant_model_instance"):
             if self.dry_run:
@@ -405,7 +405,7 @@ class TenantModelInstanceStage(MigrationStage):
                 return False
             logger.info("Target table 'tenant_model_instance' does not exist, will create")
             return True
-        
+
         # Check if there's data to migrate (distinct by tenant_id, llm_factory, api_key)
         cursor = self.db.execute_sql(
             "SELECT COUNT(*) FROM ("
@@ -420,25 +420,25 @@ class TenantModelInstanceStage(MigrationStage):
             ") AS distinct_records"
         )
         count = cursor.fetchone()[0]
-        
+
         if count == 0:
             logger.info("No new data to migrate from tenant_llm to tenant_model_instance")
             return False
-        
+
         logger.info(f"Found {count} rows to migrate from tenant_llm to tenant_model_instance")
         return True
-    
+
     def execute(self) -> tuple[int, list]:
         """Execute migration"""
         current_ts = self.current_timestamp()
         rows_inserted = 0
-        
+
         # Check if tenant_model_provider exists (dependency)
         if not self.db.table_exists("tenant_model_provider"):
             logger.error("Dependency table 'tenant_model_provider' does not exist. "
                         "Please run 'tenant_model_provider' stage first.")
             return 0, []
-        
+
         # Check if target table exists
         if not self.db.table_exists("tenant_model_instance"):
             if self.dry_run:
@@ -447,12 +447,12 @@ class TenantModelInstanceStage(MigrationStage):
                 return 0, []
             logger.info("Target table 'tenant_model_instance' does not exist, will create")
             self.create_target_table()
-        
+
         # If create_table_only mode, skip data migration
         if self.create_table_only:
             logger.info("[CREATE TABLE ONLY] Target table created/verified, skipping data migration")
             return 0, self.target_tables
-        
+
         # Get records from tenant_llm with provider_id lookup
         # Group by tenant_id, llm_factory, api_key to get distinct records
         # instance_name = llm_factory, provider_id from tenant_model_provider, api_key from tenant_llm
@@ -466,15 +466,15 @@ class TenantModelInstanceStage(MigrationStage):
             ") "
             "GROUP BY tl.tenant_id, tl.llm_factory, tl.api_key, tmp.id"
         )
-        
+
         records = cursor.fetchall()
-        
+
         if not records:
             logger.info("No records to migrate")
             return 0, []
-        
+
         logger.info(f"Migrating {len(records)} tenant_model_instance records...")
-        
+
         if self.dry_run:
             logger.info(f"[DRY RUN] Would insert {len(records)} records")
             for tenant_id, llm_factory, api_key, status, provider_id in records[:5]:
@@ -482,7 +482,7 @@ class TenantModelInstanceStage(MigrationStage):
             if len(records) > 5:
                 logger.info(f"  ... and {len(records) - 5} more records")
             return len(records), self.target_tables
-        
+
         # Insert records in batches
         batch_size = 100
         for i in range(0, len(records), batch_size):
@@ -497,7 +497,7 @@ class TenantModelInstanceStage(MigrationStage):
                             f"'{api_key_escaped}', '{status_val}', "
                             f"{current_ts}, FROM_UNIXTIME({current_ts}), "
                             f"{current_ts}, FROM_UNIXTIME({current_ts}))")
-            
+
             insert_sql = f"""
                 INSERT INTO tenant_model_instance 
                 (id, instance_name, provider_id, api_key, status, create_time, create_date, update_time, update_date)
@@ -506,9 +506,9 @@ class TenantModelInstanceStage(MigrationStage):
             self.db.execute_sql(insert_sql)
             rows_inserted += len(batch)
             logger.info(f"Inserted batch {i // batch_size + 1}: {len(batch)} records")
-        
+
         return rows_inserted, self.target_tables
-    
+
     def create_target_table(self):
         """Create tenant_model_instance table"""
         create_sql = """
@@ -532,26 +532,26 @@ class TenantModelInstanceStage(MigrationStage):
 
 class TenantModelStage(MigrationStage):
     """Migrate tenant_llm to tenant_model"""
-    
+
     name = "tenant_model"
     description = "Migrate tenant_llm to tenant_model (only status='0' records)"
     source_tables = ["tenant_llm", "tenant_model_provider", "tenant_model_instance"]
     target_tables = ["tenant_model"]
-    
+
     def current_timestamp(self) -> int:
         return int(time.time())
-    
+
     def generate_uuid(self) -> str:
         """Generate 32-character UUID1"""
         return uuid.uuid1().hex
-    
+
     def check(self) -> bool:
         """Check if migration is needed"""
         # Check if source table exists
         if not self.db.table_exists("tenant_llm"):
             logger.warning("Source table 'tenant_llm' does not exist")
             return False
-        
+
         # Check if tenant_model_provider exists (dependency)
         if not self.db.table_exists("tenant_model_provider"):
             if self.dry_run:
@@ -561,7 +561,7 @@ class TenantModelStage(MigrationStage):
             logger.warning("Dependency table 'tenant_model_provider' does not exist. "
                           "Please run 'tenant_model_provider' stage first.")
             return False
-        
+
         # Check if tenant_model_instance exists (dependency)
         if not self.db.table_exists("tenant_model_instance"):
             if self.dry_run:
@@ -571,7 +571,7 @@ class TenantModelStage(MigrationStage):
             logger.warning("Dependency table 'tenant_model_instance' does not exist. "
                           "Please run 'tenant_model_instance' stage first.")
             return False
-        
+
         # Check if target table exists
         if not self.db.table_exists("tenant_model"):
             if self.dry_run:
@@ -580,7 +580,7 @@ class TenantModelStage(MigrationStage):
                 return False
             logger.info("Target table 'tenant_model' does not exist, will create")
             return True
-        
+
         # Check if there's data to migrate (only status='0' records)
         cursor = self.db.execute_sql(
             "SELECT COUNT(*) FROM ("
@@ -596,31 +596,31 @@ class TenantModelStage(MigrationStage):
             ") AS distinct_records"
         )
         count = cursor.fetchone()[0]
-        
+
         if count == 0:
             logger.info("No new data to migrate from tenant_llm to tenant_model (status='0' only)")
             return False
-        
+
         logger.info(f"Found {count} rows to migrate from tenant_llm to tenant_model")
         return True
-    
+
     def execute(self) -> tuple[int, list]:
         """Execute migration"""
         current_ts = self.current_timestamp()
         rows_inserted = 0
-        
+
         # Check if tenant_model_provider exists (dependency)
         if not self.db.table_exists("tenant_model_provider"):
             logger.error("Dependency table 'tenant_model_provider' does not exist. "
                         "Please run 'tenant_model_provider' stage first.")
             return 0, []
-        
+
         # Check if tenant_model_instance exists (dependency)
         if not self.db.table_exists("tenant_model_instance"):
             logger.error("Dependency table 'tenant_model_instance' does not exist. "
                         "Please run 'tenant_model_instance' stage first.")
             return 0, []
-        
+
         # Check if target table exists
         if not self.db.table_exists("tenant_model"):
             if self.dry_run:
@@ -629,12 +629,12 @@ class TenantModelStage(MigrationStage):
                 return 0, []
             logger.info("Target table 'tenant_model' does not exist, will create")
             self.create_target_table()
-        
+
         # If create_table_only mode, skip data migration
         if self.create_table_only:
             logger.info("[CREATE TABLE ONLY] Target table created/verified, skipping data migration")
             return 0, self.target_tables
-        
+
         # Get records from tenant_llm with provider_id and instance_id lookup
         # Only migrate records where status='0'
         cursor = self.db.execute_sql(
@@ -649,15 +649,15 @@ class TenantModelStage(MigrationStage):
             "  WHERE tm.provider_id = tmp.id AND tm.model_name = tl.llm_name AND tm.instance_id = tmi.id"
             ")"
         )
-        
+
         records = cursor.fetchall()
-        
+
         if not records:
             logger.info("No records to migrate")
             return 0, []
-        
+
         logger.info(f"Migrating {len(records)} tenant_model records...")
-        
+
         if self.dry_run:
             logger.info(f"[DRY RUN] Would insert {len(records)} records")
             for source_id, llm_name, provider_id, instance_id, model_type, status in records[:5]:
@@ -666,7 +666,7 @@ class TenantModelStage(MigrationStage):
             if len(records) > 5:
                 logger.info(f"  ... and {len(records) - 5} more records")
             return len(records), self.target_tables
-        
+
         # Insert records in batches
         batch_size = 100
         for i in range(0, len(records), batch_size):
@@ -681,7 +681,7 @@ class TenantModelStage(MigrationStage):
                             f"'{instance_id}', '{model_type_escaped}', '{status_val}', "
                             f"{current_ts}, FROM_UNIXTIME({current_ts}), "
                             f"{current_ts}, FROM_UNIXTIME({current_ts}))")
-            
+
             insert_sql = f"""
                 INSERT INTO tenant_model 
                 (id, model_name, provider_id, instance_id, model_type, status, 
@@ -691,9 +691,9 @@ class TenantModelStage(MigrationStage):
             self.db.execute_sql(insert_sql)
             rows_inserted += len(batch)
             logger.info(f"Inserted batch {i // batch_size + 1}: {len(batch)} records")
-        
+
         return rows_inserted, self.target_tables
-    
+
     def create_target_table(self):
         """Create tenant_model table"""
         create_sql = """
