@@ -48,6 +48,7 @@ type SkillSearchConfig struct {
 	TenantID               string     `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
 	HubID                  string     `gorm:"column:hub_id;size:128;not null;default:'default';index" json:"hub_id"`
 	EmbdID                 string     `gorm:"column:embd_id;size:128;not null" json:"embd_id"`
+	Status                 string     `gorm:"column:status;size:1;default:1" json:"status"`
 	VectorSimilarityWeight float64    `gorm:"column:vector_similarity_weight;default:0.3" json:"vector_similarity_weight"`
 	SimilarityThreshold    float64    `gorm:"column:similarity_threshold;default:0.2" json:"similarity_threshold"`
 	FieldConfig            JSONMap    `gorm:"column:field_config;type:json" json:"field_config"`
@@ -55,7 +56,6 @@ type SkillSearchConfig struct {
 	TenantRerankID         *int64     `gorm:"column:tenant_rerank_id" json:"tenant_rerank_id,omitempty"`
 	TopK                   int64      `gorm:"column:top_k;default:10" json:"top_k"`
 	IndexVersion           string     `gorm:"column:index_version;size:32;default:'1.0.0'" json:"index_version"`
-	Status                 string     `gorm:"column:status;size:1;default:1" json:"status"`
 	CreateTime             *int64     `gorm:"column:create_time" json:"create_time,omitempty"`
 	UpdateTime             *time.Time `gorm:"column:update_time" json:"update_time,omitempty"`
 }

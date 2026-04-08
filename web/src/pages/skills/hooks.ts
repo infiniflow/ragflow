@@ -594,6 +594,7 @@ export const useSkills = () => {
       files: File[],
       hubName?: string,
       hubId?: string,
+      embdId?: string,
     ): Promise<boolean> => {
       try {
         setLoading(true);
@@ -793,7 +794,7 @@ export const useSkills = () => {
             .map((f) => `${f.path}\n===\n${f.content}`)
             .join('\n\n');
 
-          // Index the skill (embd_id will be fetched from skill search config by backend)
+          // Index the skill with embd_id from config (if available)
           // Use user-specified name (skillNameNormalized) as skill ID and name
           // This ensures consistency between folder name, skill ID, and display name
           const indexResponse = await fetch('/api/v1/skills/index', {
@@ -804,6 +805,7 @@ export const useSkills = () => {
             },
             body: JSON.stringify({
               hub_id: normalizedHubId,
+              embd_id: embdId,
               skills: [
                 {
                   id: skillNameNormalized,

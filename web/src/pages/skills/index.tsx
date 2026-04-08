@@ -260,16 +260,17 @@ const SkillsPage: React.FC = () => {
 
   const handleUpload = useCallback(
     async (name: string, version: string, files: File[]) => {
-      // Pass both hub name (for file system) and hub ID (for indexing)
+      // Pass hub name (for file system), hub ID (for indexing), and embd_id (for indexing)
       return await uploadSkill(
         name,
         version,
         files,
         selectedHubName,
         selectedHubId,
+        config?.embd_id,
       );
     },
-    [uploadSkill, selectedHubName, selectedHubId],
+    [uploadSkill, selectedHubName, selectedHubId, config?.embd_id],
   );
 
   const handleDelete = useCallback(

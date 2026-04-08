@@ -47,6 +47,16 @@ func (dao *SkillSearchConfigDAO) Create(config *entity.SkillSearchConfig) error 
 	return DB.Create(config).Error
 }
 
+// GetByID retrieves a skill search config by ID
+func (dao *SkillSearchConfigDAO) GetByID(id string) (*entity.SkillSearchConfig, error) {
+	var config entity.SkillSearchConfig
+	err := DB.Where("id = ? AND status = ?", id, "1").First(&config).Error
+	if err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
 // GetByTenantID retrieves a skill search config by tenant ID
 func (dao *SkillSearchConfigDAO) GetByTenantID(tenantID, hubID string) (*entity.SkillSearchConfig, error) {
 	var config entity.SkillSearchConfig
@@ -93,6 +103,12 @@ func (dao *SkillSearchConfigDAO) GetOrCreate(tenantID, hubID, embdID string) (*e
 	}
 
 	// Create default config
+	return dao.CreateWithTenantHub(tenantID, hubID, embdID)
+}
+
+// CreateWithTenantHub creates a new config for tenant+hub
+func (dao *SkillSearchConfigDAO) CreateWithTenantHub(tenantID, hubID, embdID string) (*entity.SkillSearchConfig, error) {
+	hubID = normalizeHubID(hubID)
 	timestamp := time.Now().UnixMilli()
 	defaultFieldConfig := entity.DefaultFieldConfig()
 	fieldConfigMap := entity.JSONMap{
@@ -133,9 +149,26 @@ func (dao *SkillSearchConfigDAO) GetOrCreate(tenantID, hubID, embdID string) (*e
 	return defaultConfig, nil
 }
 
-// Update updates a skill search config
-func (dao *SkillSearchConfigDAO) Update(config *entity.SkillSearchConfig) error {
-	return DB.Save(config).Error
+// DeleteAllByTenantHub deletes all configs for a tenant+hub (for cleanup before creating new one)
+func (dao *SkillSearchConfigDAO) DeleteAllByTenantHub(tenantID, hubID string) error {
+	hubID = normalizeHubID(hubID)
+	return DB.Model(&entity.SkillSearchConfig{}).
+		Where("tenant_id = ? AND hub_id = ?", tenantID, hubID).
+		Update("status", "0").Error
+}
+
+// DeleteAllByTenantHubExceptID deletes all active configs for a tenant+hub except the specified ID
+func (dao *SkillSearchConfigDAO) DeleteAllByTenantHubExceptID(tenantID, hubID, exceptID string) error {
+	hubID = normalizeHubID(hubID)
+	return DB.Model(&entity.SkillSearchConfig{}).
+		Where("tenant_id = ? AND hub_id = ? AND id != ? AND status = ?", tenantID, hubID, exceptID, "1").
+		Update("status", "0").Error
+}
+
+// Update updates a skill search config with the given updates map
+func (dao *SkillSearchConfigDAO) Update(id string, updates map[string]interface{}) error {
+	updates["update_time"] = time.Now()
+	return DB.Model(&entity.SkillSearchConfig{}).Where("id = ? AND status = ?", id, "1").Updates(updates).Error
 }
 
 // UpdateByTenantID updates config by tenant ID
