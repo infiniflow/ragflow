@@ -12,7 +12,6 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-import logging
 import random
 import re
 from copy import deepcopy
@@ -80,13 +79,7 @@ def _split_text_by_pattern(text, pattern):
     if not pattern:
         return [text or ""]
 
-    try:
-        compiled_pattern = re.compile(r"(%s)" % pattern, flags=re.DOTALL)
-    except re.error as e:
-        logging.warning(f"Invalid delimiter regex pattern '{pattern}': {e}. Falling back to unsplit text.")
-        return [text or ""]
-
-    split_texts = compiled_pattern.split(text or "")
+    split_texts = re.split(r"(%s)" % pattern, text or "", flags=re.DOTALL)
     chunks = []
     for i in range(0, len(split_texts), 2):
         chunk = split_texts[i]
@@ -262,6 +255,8 @@ def _finalize_json_chunks(chunks):
             "text": text,
             "doc_type_kwd": chunk.get("doc_type_kwd", "text"),
         }
+        if chunk.get(PDF_POSITIONS_KEY):
+            doc[PDF_POSITIONS_KEY] = deepcopy(chunk[PDF_POSITIONS_KEY])
         if chunk.get("mom"):
             doc["mom"] = chunk["mom"]
         if chunk.get("img_id"):
@@ -283,9 +278,6 @@ def _split_chunk_docs_by_children(chunks, pattern):
             continue
 
         split_texts = _split_text_by_pattern(chunk.get("text", ""), pattern)
-        if not split_texts:
-            docs.append(chunk)
-            continue
 
         mom = chunk.get("text", "")
         for text in split_texts:
@@ -297,14 +289,6 @@ def _split_chunk_docs_by_children(chunks, pattern):
             docs.append(child)
 
     return docs
-
-
-def _split_plain_payload(payload, delimiter_pattern, chunk_token_size, overlapped_percent):
-    # Plain text uses delimiter splitting first and token-size splitting as fallback.
-    if delimiter_pattern:
-        return _split_text_by_pattern(payload, delimiter_pattern)
-    return naive_merge(payload, chunk_token_size, "", overlapped_percent)
-
 
 class TokenChunker(ProcessBase):
     component_name = "TokenChunker"
@@ -325,20 +309,11 @@ class TokenChunker(ProcessBase):
         self.callback(random.randint(1, 5) / 100.0, "Start to split into chunks.")
         overlapped_percent = normalize_overlapped_percent(self._param.overlapped_percent)
         if from_upstream.output_format in ["markdown", "text", "html"]:
-            if from_upstream.output_format == "markdown":
-                payload = from_upstream.markdown_result
-            elif from_upstream.output_format == "text":
-                payload = from_upstream.text_result
-            else:  # == "html"
-                payload = from_upstream.html_result
-
-            if not payload:
-                payload = ""
-
-            cks = _split_plain_payload(
+            payload = getattr(from_upstream, f"{from_upstream.output_format}_result") or ""
+            cks = _split_text_by_pattern(payload, delimiter_pattern) if delimiter_pattern else naive_merge(
                 payload,
-                delimiter_pattern,
                 self._param.chunk_token_size,
+                "",
                 overlapped_percent,
             )
             if custom_pattern:
@@ -346,17 +321,10 @@ class TokenChunker(ProcessBase):
                 for c in cks:
                     if not c.strip():
                         continue
-                    split_sec = re.split(r"(%s)" % custom_pattern, c, flags=re.DOTALL)
-                    if split_sec:
-                        for j in range(0, len(split_sec), 2):
-                            if not split_sec[j].strip():
-                                continue
-                            docs.append({
-                                "text": split_sec[j],
-                                "mom": c
-                            })
-                    else:
-                        docs.append({"text": c})
+                    for text in _split_text_by_pattern(c, custom_pattern):
+                        if not text.strip():
+                            continue
+                        docs.append({"text": text, "mom": c})
                 self.set_output("chunks", docs)
             else:
                 self.set_output("chunks", [{"text": c.strip()} for c in cks if c.strip()])

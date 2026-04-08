@@ -3,6 +3,7 @@ import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -26,6 +27,7 @@ import { transformApiResponseToForm, useDynamicHierarchyOptions } from './hook';
 
 type FormModeValues = {
   hierarchy?: string;
+  include_heading_content?: boolean;
   rules: Array<{ levels: Array<{ expression: string }> }>;
 };
 
@@ -56,6 +58,7 @@ const rulesSchema = z.array(
 export const FormSchema = z.object({
   method: z.enum(['hierarchy', 'group']),
   hierarchy: z.string().optional(),
+  include_heading_content: z.boolean().optional(),
   rules: rulesSchema,
 });
 
@@ -214,11 +217,13 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
       if (currentMode === 'hierarchy') {
         hierarchyModeValues.current = {
           hierarchy: hierarchyValue,
+          include_heading_content: form.getValues('include_heading_content'),
           rules: rulesValue,
         };
       } else if (currentMode === 'group') {
         groupValues.current = {
           hierarchy: hierarchyValue,
+          include_heading_content: form.getValues('include_heading_content'),
           rules: rulesValue,
         };
       }
@@ -226,22 +231,11 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
       initialMode.current = method;
 
       if (method === 'group') {
-        // const rules = groupValues.current?.rules?.map((item) => {
-        //   const levels = item.levels.filter((level) => {
-        //     return !isEmpty(level.expression);
-        //   });
-        //   if (levels.length === 0) {
-        //     return { levels: [{ expression: '' }] };
-        //   }
-        //   return {
-        //     levels: levels,
-        //   };
-        // });
-        let modeValues: FormModeValues | null = null;
-        modeValues = groupValues.current;
+        const modeValues = groupValues.current;
         form.reset({
           method: 'group',
-          hierarchy: undefined,
+          hierarchy: modeValues?.hierarchy ?? '0',
+          include_heading_content: false,
           rules: modeValues?.rules || initialGroupValues.rules,
         });
       } else {
@@ -252,17 +246,21 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
           form.reset({
             method: method,
             hierarchy: modeValues.hierarchy || defaultHierarchy,
+            include_heading_content:
+              modeValues.include_heading_content || false,
             rules: modeValues.rules,
           });
         } else {
           const newModeValues: FormModeValues = {
             hierarchy: defaultHierarchy,
+            include_heading_content: false,
             rules: JSON.parse(JSON.stringify(initialTitleChunkerValues.rules)),
           };
 
           form.reset({
             method: method,
             hierarchy: defaultHierarchy,
+            include_heading_content: newModeValues.include_heading_content,
             rules: newModeValues.rules,
           });
         }
@@ -292,9 +290,28 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
             ],
           }}
         />
-        {method !== 'group' && (
-          <RAGFlowFormItem name={'hierarchy'} label={''}>
-            <SelectWithSearch options={hierarchyOptions}></SelectWithSearch>
+        <RAGFlowFormItem name={'hierarchy'} label={''}>
+          <SelectWithSearch options={hierarchyOptions}></SelectWithSearch>
+        </RAGFlowFormItem>
+        {method === 'hierarchy' && (
+          <RAGFlowFormItem
+            name="include_heading_content"
+            label={t('flow.includeHeadingContent', 'Include heading content')}
+            tooltip={t(
+              'flow.includeHeadingContentTip',
+              'When enabled, content directly under a heading is kept as its own chunk. Child chunks keep only the heading path.',
+            )}
+            horizontal={true}
+            labelClassName="w-[200px]"
+          >
+            {(field) => (
+              <Checkbox
+                checked={field.value}
+                onCheckedChange={(checked) => {
+                  field.onChange?.(checked);
+                }}
+              />
+            )}
           </RAGFlowFormItem>
         )}
         {/* {method === 'group' ? (

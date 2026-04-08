@@ -3,6 +3,7 @@ import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import {
   LargeModelFormField,
   OutputFormatFormFieldProps,
+  RmdirFormField,
 } from './common-form-fields';
 
 export function WordFormFields({ prefix }: OutputFormatFormFieldProps) {
@@ -12,6 +13,7 @@ export function WordFormFields({ prefix }: OutputFormatFormFieldProps) {
 
   return (
     <>
+      <RmdirFormField prefix={prefix} />
       {/* Multimodal Model */}
       <LargeModelFormField
         prefix={prefix}

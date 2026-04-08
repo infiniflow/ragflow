@@ -124,6 +124,7 @@ class Tokenizer(ProcessBase):
             if from_upstream.chunks:
                 chunks = from_upstream.chunks
                 for i, ck in enumerate(chunks):
+                    ck["chunk_order_int"] = i
                     ck["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", from_upstream.name))
                     ck["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(ck["title_tks"])
                     if ck.get("questions"):

@@ -14,12 +14,26 @@
 #  limitations under the License.
 
 from rag.flow.base import ProcessBase
-from rag.flow.chunker.title_chunker.hierarchy import invoke_hierarchy_title_chunker
-
+from rag.flow.chunker.title_chunker.group_chunker import GroupTitleChunker
+from rag.flow.chunker.title_chunker.hierarchy_chunker import HierarchyTitleChunker
+from rag.flow.chunker.title_chunker.schema import TitleChunkerFromUpstream
 
 class TitleChunker(ProcessBase):
     component_name = "TitleChunker"
 
     async def _invoke(self, **kwargs):
+        try:
+            from_upstream = TitleChunkerFromUpstream.model_validate(kwargs)
+        except Exception as e:
+            self.set_output("_ERROR", f"Input error: {str(e)}")
+            return
+
         if self._param.method == "hierarchy":
-            await invoke_hierarchy_title_chunker(self, **kwargs)
+            await HierarchyTitleChunker(self, from_upstream).invoke()
+            return
+
+        if self._param.method == "group":
+            await GroupTitleChunker(self, from_upstream).invoke()
+            return
+
+        self.set_output("_ERROR", f"Unsupported TitleChunker method: {self._param.method}")

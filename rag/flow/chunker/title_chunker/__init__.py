@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from rag.flow.chunker.title_chunker.hierarchy import TitleChunkerParam
+from rag.flow.chunker.title_chunker.common import TitleChunkerParam
 from rag.flow.chunker.title_chunker.title_chunker import TitleChunker
 
 __all__ = ["TitleChunker", "TitleChunkerParam"]

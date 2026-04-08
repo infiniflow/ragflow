@@ -920,7 +920,7 @@ def extract_text_from_confluence_html(
         confluence_client (Confluence): Confluence client
         fetched_titles (set[str]): The titles of the pages that have already been fetched
     Returns:
-        str: loaded and formated Confluence page
+        str: loaded and formatted Confluence page
     """
     body = confluence_object["body"]
     object_html = body.get("storage", body.get("view", {})).get("value")

@@ -18,6 +18,7 @@ import sys
 from copy import deepcopy
 from functools import partial
 
+import numpy as np
 import pdfplumber
 from PIL import Image
 
@@ -32,6 +33,7 @@ PDF_PREVIEW_GAP = 6
 PDF_PREVIEW_CONTEXT = 120
 PDF_PREVIEW_ZOOM = 3
 PDF_POSITIONS_KEY = "_pdf_positions"
+PDF_MULTI_COLUMN_ZOOM = 3
 
 
 def _extract_raw_positions(item):
@@ -115,6 +117,24 @@ def normalize_pdf_items_metadata(items):
     for item in items:
         normalize_pdf_item_metadata(item)
     return items
+
+
+def reorder_multi_column_bboxes(pdf_parser, bboxes, zoom=PDF_MULTI_COLUMN_ZOOM):
+    text_boxes = [
+        box
+        for box in bboxes
+        if box.get("layout_type") == "text"
+        and all(box.get(key) is not None for key in ["x0", "x1", "page_number"])
+    ]
+    if not text_boxes or not pdf_parser.page_images:
+        return bboxes
+
+    column_width = np.median([box["x1"] - box["x0"] for box in text_boxes])
+    page_width = pdf_parser.page_images[0].size[0] / zoom
+    if column_width >= page_width / 2:
+        return bboxes
+
+    return pdf_parser.sort_X_by_page(bboxes, column_width / 2)
 
 
 def merge_pdf_positions(sources):
@@ -221,7 +241,8 @@ def _crop_pdf_preview(page_images, positions, zoom=PDF_PREVIEW_ZOOM):
     max_width = max(right - left for _, left, right, _, _ in normalized_positions)
     first_page, first_left, _, first_top, _ = normalized_positions[0]
     last_page, last_left, _, _, last_bottom = normalized_positions[-1]
-    page_height = lambda idx: page_images[idx].size[1] / zoom
+    def page_height(idx):
+        return page_images[idx].size[1] / zoom
 
     crop_positions = [
         (

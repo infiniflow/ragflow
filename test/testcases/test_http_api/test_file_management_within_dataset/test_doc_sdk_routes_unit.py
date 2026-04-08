@@ -22,6 +22,8 @@ from types import ModuleType, SimpleNamespace
 import numpy as np
 import pytest
 
+from api.db import FileType
+
 
 class _DummyManager:
     def route(self, *_args, **_kwargs):
@@ -69,7 +71,7 @@ class _DummyDoc:
         progress=0,
         process_duration=0,
         parser_id="naive",
-        doc_type=1,
+        doc_type=FileType.OTHER,
         status=True,
         run=0,
     ):
@@ -397,7 +399,7 @@ class TestDocRoutesUnit:
 
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"meta_fields": []}))
         res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert res["message"] == "meta_fields must be a dictionary"
+        assert res["message"] == "Field: <meta_fields> - Message: <Input should be a valid dictionary> - Value: <[]>"
 
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"meta_fields": {"k": "v"}}))
         monkeypatch.setattr(module.DocMetadataService, "update_document_metadata", lambda *_args, **_kwargs: False)
@@ -416,7 +418,8 @@ class TestDocRoutesUnit:
 
     def test_update_doc_chunk_method_enabled_and_db_error(self, monkeypatch):
         module = _load_doc_module(monkeypatch)
-        visual_doc = _DummyDoc(parser_id="naive", doc_type=module.FileType.VISUAL)
+        from api.db import FileType
+        visual_doc = _DummyDoc(parser_id="naive", doc_type=FileType.VISUAL)
         kb = SimpleNamespace(tenant_id="tenant-1")
         monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [1])
         monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, kb))
@@ -446,7 +449,7 @@ class TestDocRoutesUnit:
         monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _id: (True, doc_for_enabled))
         monkeypatch.setattr(module.DocumentService, "update_by_id", lambda *_args, **_kwargs: False)
         _patch_docstore(monkeypatch, module, update=lambda *_args, **_kwargs: None, delete=lambda *_args, **_kwargs: None)
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"enabled": True}))
+        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"enabled": 1}))
         res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
         assert "Document update" in res["message"]
 
@@ -747,14 +750,14 @@ class TestDocRoutesUnit:
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc(run=module.TaskStatus.RUNNING.value)])
         monkeypatch.setattr(
             module.DocumentService,
-            "update_by_id",
-            lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("update_by_id must not be called for running docs")),
+            "filter_update",
+            lambda *_args, **_kwargs: 0,
         )
         res = _run(module.parse.__wrapped__("tenant-1", "ds-1"))
         assert "currently being processed" in res["message"]
 
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc(progress=0)])
-        monkeypatch.setattr(module.DocumentService, "update_by_id", lambda *_args, **_kwargs: True)
+        monkeypatch.setattr(module.DocumentService, "filter_update", lambda *_args, **_kwargs: 1)
         monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _id: (True, _DummyDoc()))
         monkeypatch.setattr(module.File2DocumentService, "get_storage_address", lambda **_kwargs: ("b", "n"))
         _patch_docstore(monkeypatch, module, delete=lambda *_args, **_kwargs: None)

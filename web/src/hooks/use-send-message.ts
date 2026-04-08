@@ -2,7 +2,6 @@ import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import { IReferenceObject } from '@/interfaces/database/chat';
 import { BeginQuery } from '@/pages/agent/interface';
-import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { useCallback, useRef, useState } from 'react';
@@ -86,7 +85,7 @@ export type IChatEvent = INodeEvent | IMessageEvent | IMessageEndEvent;
 
 export type IEventList = Array<IChatEvent>;
 
-export const useSendMessageBySSE = (url: string = api.completeConversation) => {
+export const useSendMessageBySSE = (url: string) => {
   const [answerList, setAnswerList] = useState<IEventList>([]);
   const [done, setDone] = useState(true);
   const timer = useRef<any>();

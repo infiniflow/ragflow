@@ -42,6 +42,7 @@ from common.misc_utils import pip_install_torch
 from deepdoc.vision import OCR, AscendLayoutRecognizer, LayoutRecognizer, Recognizer, TableStructureRecognizer
 from rag.nlp import rag_tokenizer
 from rag.prompts.generator import vision_llm_describe_prompt
+from deepdoc.parser.utils import extract_pdf_outlines
 from common import settings
 
 
@@ -707,7 +708,7 @@ class RAGFlowPdfParser:
     def __ocr(self, pagenum, img, chars, ZM=3, device_id: int | None = None):
         start = timer()
         bxs = self.ocr.detect(np.array(img), device_id)
-        logging.info(f"__ocr detecting boxes of a image cost ({timer() - start}s)")
+        logging.info(f"__ocr detecting boxes of an image cost ({timer() - start}s)")
 
         start = timer()
         if not bxs:
@@ -1582,28 +1583,6 @@ class RAGFlowPdfParser:
             logging.exception(f"RAGFlowPdfParser __images__, exception: {e}")
         logging.info(f"__images__ dedupe_chars cost {timer() - start}s")
 
-        self.outlines = []
-        try:
-            with pdf2_read(fnm if isinstance(fnm, str) else BytesIO(fnm)) as pdf:
-                self.pdf = pdf
-
-                outlines = self.pdf.outline
-
-                def dfs(arr, depth):
-                    for a in arr:
-                        if isinstance(a, dict):
-                            self.outlines.append((a["/Title"], depth))
-                            continue
-                        dfs(a, depth + 1)
-
-                dfs(outlines, 0)
-
-        except Exception as e:
-            logging.warning(f"Outlines exception: {e}")
-
-        if not self.outlines:
-            logging.warning("Miss outlines")
-
         logging.debug("Images converted.")
         self.is_english = [
             re.search(r"[ a-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join(random.choices([c["text"] for c in self.page_chars[i]], k=min(100, len(self.page_chars[i])))))
@@ -1711,6 +1690,7 @@ class RAGFlowPdfParser:
         if auto_rotate_tables is None:
             auto_rotate_tables = os.getenv("TABLE_AUTO_ROTATE", "true").lower() in ("true", "1", "yes")
 
+        self.outlines = extract_pdf_outlines(fnm)
         self.__images__(fnm, zoomin)
         self._layouts_rec(zoomin)
         self._table_transformer_job(zoomin, auto_rotate=auto_rotate_tables)
@@ -1722,6 +1702,7 @@ class RAGFlowPdfParser:
 
     def parse_into_bboxes(self, fnm, callback=None, zoomin=3):
         start = timer()
+        self.outlines = extract_pdf_outlines(fnm)
         self.__images__(fnm, zoomin, callback=callback)
         if callback:
             callback(0.40, "OCR finished ({:.2f}s)".format(timer() - start))
@@ -1969,27 +1950,14 @@ class RAGFlowPdfParser:
 
 class PlainParser:
     def __call__(self, filename, from_page=0, to_page=100000, **kwargs):
-        self.outlines = []
         lines = []
         try:
             self.pdf = pdf2_read(filename if isinstance(filename, str) else BytesIO(filename))
             for page in self.pdf.pages[from_page:to_page]:
                 lines.extend([t for t in page.extract_text().split("\n")])
-
-            outlines = self.pdf.outline
-
-            def dfs(arr, depth):
-                for a in arr:
-                    if isinstance(a, dict):
-                        self.outlines.append((a["/Title"], depth))
-                        continue
-                    dfs(a, depth + 1)
-
-            dfs(outlines, 0)
         except Exception:
             logging.exception("Outlines exception")
-        if not self.outlines:
-            logging.warning("Miss outlines")
+        self.outlines = extract_pdf_outlines(filename)
 
         return [(line, "") for line in lines], []
 

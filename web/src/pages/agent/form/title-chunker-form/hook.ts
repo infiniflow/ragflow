@@ -1,6 +1,7 @@
 import { isEmpty } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { TitleChunkerFormSchemaType } from '.';
 import { Hierarchy, initialTitleChunkerValues } from '../../constant/pipeline';
 
@@ -85,6 +86,9 @@ function transformApiResponseToForm(
   if (typeof hierarchy === 'number') {
     hierarchy = String(hierarchy);
   }
+  if (method === 'group' && !hierarchy) {
+    hierarchy = '0';
+  }
 
   let rules = apiData.rules;
   const hasLevelsData = apiData.levels && Array.isArray(apiData.levels);
@@ -123,13 +127,14 @@ function transformApiResponseToForm(
   return {
     method,
     hierarchy,
+    include_heading_content: Boolean(apiData.include_heading_content),
     rules,
   };
 }
 
 type HierarchyOption = {
   label: string;
-  value: Hierarchy;
+  value: string;
 };
 
 function getDynamicHierarchyOptions(maxLevel: number): HierarchyOption[] {
@@ -155,13 +160,24 @@ export function useDynamicHierarchyOptions(
   form: UseFormReturn<any>,
   name: string,
 ): HierarchyOption[] {
+  const { t } = useTranslation();
   const rules = useWatch({ name, control: form?.control });
+  const method = useWatch({ name: 'method', control: form?.control });
   const currentHierarchy = form.watch('hierarchy');
 
   const hierarchyOptions = useMemo(() => {
     const maxLevelCount = calculateMaxLevelCount(rules);
-    return getDynamicHierarchyOptions(maxLevelCount);
-  }, [rules]);
+    const options = getDynamicHierarchyOptions(maxLevelCount);
+
+    if (method === 'group') {
+      return [
+        { label: t('common.automatic', 'Automatic'), value: '0' },
+        ...options,
+      ];
+    }
+
+    return options;
+  }, [method, rules, t]);
 
   useEffect(() => {
     if (!currentHierarchy || !form) {

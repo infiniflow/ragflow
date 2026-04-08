@@ -258,10 +258,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     if table_ctx or image_ctx:
         attach_media_context(res, table_ctx, image_ctx)
     
-    print("\n\n")
-    print(res)
-    print("\n\n")
-    
     return res
 
 

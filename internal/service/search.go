@@ -18,7 +18,7 @@ package service
 
 import (
 	"ragflow/internal/dao"
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
 )
 
 // SearchService search service
@@ -37,7 +37,7 @@ func NewSearchService() *SearchService {
 
 // SearchWithTenantInfo search with tenant info
 type SearchWithTenantInfo struct {
-	*model.Search
+	*entity.Search
 	Nickname     string `json:"nickname"`
 	TenantAvatar string `json:"tenant_avatar,omitempty"`
 }
@@ -53,9 +53,9 @@ type ListSearchAppsResponse struct {
 	Total      int64                    `json:"total"`
 }
 
-// ListSearchApps list search apps with advanced filtering (equivalent to list_search_app)
-func (s *SearchService) ListSearchApps(userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string) (*ListSearchAppsResponse, error) {
-	var searches []*model.Search
+// ListSearches list search apps with advanced filtering (equivalent to list_search_app)
+func (s *SearchService) ListSearches(userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string) (*ListSearchAppsResponse, error) {
+	var searches []*entity.Search
 	var total int64
 	var err error
 
@@ -88,7 +88,7 @@ func (s *SearchService) ListSearchApps(userID string, keywords string, page, pag
 				}
 				searches = searches[start:end]
 			} else {
-				searches = []*model.Search{}
+				searches = []*entity.Search{}
 			}
 		}
 	}
@@ -106,7 +106,7 @@ func (s *SearchService) ListSearchApps(userID string, keywords string, page, pag
 }
 
 // toSearchAppResponse converts search model to response format
-func (s *SearchService) toSearchAppResponse(search *model.Search) map[string]interface{} {
+func (s *SearchService) toSearchAppResponse(search *entity.Search) map[string]interface{} {
 	result := map[string]interface{}{
 		"id":            search.ID,
 		"tenant_id":     search.TenantID,

@@ -242,6 +242,7 @@ function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             parse_method: cur.parse_method,
+            vlm: { llm_id: cur.vlm?.llm_id },
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -279,6 +280,7 @@ function transformParserParams(params: ParserFormSchemaType) {
         case FileType.Video:
         case FileType.Docx:
         case FileType.Audio:
+        case FileType.TextMarkdown:
           filteredSetup = {
             ...filteredSetup,
             vlm: { llm_id: cur.vlm?.llm_id },
@@ -324,6 +326,7 @@ function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
   return {
     method: params.method,
     hierarchy: Number(params.hierarchy || 0),
+    include_heading_content: Boolean(params.include_heading_content),
     levels,
   };
 }

@@ -72,6 +72,12 @@ func (l *Lexer) NextToken() Token {
 	case ',':
 		tok = newToken(TokenComma, l.ch)
 		l.readChar()
+	case '/':
+		tok = newToken(TokenSlash, l.ch)
+		l.readChar()
+	case '-':
+		tok = newToken(TokenDash, l.ch)
+		l.readChar()
 	case '\'':
 		tok.Type = TokenQuotedString
 		tok.Value = l.readQuotedString('\'')
@@ -90,13 +96,12 @@ func (l *Lexer) NextToken() Token {
 			ident := l.readIdentifier()
 			return l.lookupIdent(ident)
 		} else if isDigit(l.ch) {
-			tok.Type = TokenNumber
-			tok.Value = l.readNumber()
+			tok.Value, tok.Type = l.readNumber()
 			return tok
-		} else {
-			tok = newToken(TokenIllegal, l.ch)
-			l.readChar()
 		}
+
+		tok = newToken(TokenIllegal, l.ch)
+		l.readChar()
 	}
 
 	return tok
@@ -123,12 +128,25 @@ func (l *Lexer) readIdentifier() string {
 	return l.input[start:l.pos]
 }
 
-func (l *Lexer) readNumber() string {
+func (l *Lexer) readNumber() (string, int) {
 	start := l.pos
+	tokenType := TokenInteger
+
+	// Read integer part
 	for isDigit(l.ch) {
 		l.readChar()
 	}
-	return l.input[start:l.pos]
+
+	// If encountering a decimal point followed by a digit, read as float
+	if l.ch == '.' && isDigit(l.peekChar()) {
+		tokenType = TokenFloat
+		l.readChar() // Consume '.'
+		for isDigit(l.ch) {
+			l.readChar()
+		}
+	}
+
+	return l.input[start:l.pos], tokenType
 }
 
 func (l *Lexer) readQuotedString(quote byte) string {
@@ -181,6 +199,10 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenActive, Value: ident}
 	case "ADMIN":
 		return Token{Type: TokenAdmin, Value: ident}
+	case "ADD":
+		return Token{Type: TokenAdd, Value: ident}
+	case "DELETE":
+		return Token{Type: TokenDelete, Value: ident}
 	case "PASSWORD":
 		return Token{Type: TokenPassword, Value: ident}
 	case "DATASET":
@@ -251,6 +273,12 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenChats, Value: ident}
 	case "CHAT":
 		return Token{Type: TokenChat, Value: ident}
+	case "THINK":
+		return Token{Type: TokenThink, Value: ident}
+	case "LS":
+		return Token{Type: TokenLS, Value: ident}
+	case "CAT":
+		return Token{Type: TokenCat, Value: ident}
 	case "FILES":
 		return Token{Type: TokenFiles, Value: ident}
 	case "AS":
@@ -301,6 +329,36 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenVectorSize, Value: ident}
 	case "DOC_META":
 		return Token{Type: TokenDocMeta, Value: ident}
+	case "AVAILABLE":
+		return Token{Type: TokenAvailable, Value: ident}
+	case "NAME":
+		return Token{Type: TokenName, Value: ident}
+	case "INSTANCE":
+		return Token{Type: TokenInstance, Value: ident}
+	case "INSTANCES":
+		return Token{Type: TokenInstances, Value: ident}
+	case "DISABLE":
+		return Token{Type: TokenDisable, Value: ident}
+	case "ENABLE":
+		return Token{Type: TokenEnable, Value: ident}
+	case "INSERT":
+		return Token{Type: TokenInsert, Value: ident}
+	case "FILE":
+		return Token{Type: TokenFile, Value: ident}
+	case "METADATA":
+		return Token{Type: TokenMetadata, Value: ident}
+	case "USE":
+		return Token{Type: TokenUse, Value: ident}
+	case "UPDATE":
+		return Token{Type: TokenUpdate, Value: ident}
+	case "REMOVE":
+		return Token{Type: TokenRemove, Value: ident}
+	case "CHUNK":
+		return Token{Type: TokenChunk, Value: ident}
+	case "DOCUMENT":
+		return Token{Type: TokenDocument, Value: ident}
+	case "TAGS":
+		return Token{Type: TokenTag, Value: ident}
 	default:
 		return Token{Type: TokenIdentifier, Value: ident}
 	}

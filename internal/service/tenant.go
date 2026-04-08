@@ -17,14 +17,14 @@
 package service
 
 import (
-	"strings"
 	"context"
 	"fmt"
+	"ragflow/internal/entity"
+	"strings"
 	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/model"
 	"ragflow/internal/engine"
 )
 
@@ -133,10 +133,10 @@ func NewTenantLLMService() *TenantLLMService {
  *	// Get API key for model without factory
  *	tenantLLM, err := service.GetAPIKey("tenant-123", "gpt-4")
  */
-func (s *TenantLLMService) GetAPIKey(tenantID, modelName string) (*model.TenantLLM, error) {
+func (s *TenantLLMService) GetAPIKey(tenantID, modelName string) (*entity.TenantLLM, error) {
 	modelName, factory := s.SplitModelNameAndFactory(modelName)
 
-	var tenantLLM *model.TenantLLM
+	var tenantLLM *entity.TenantLLM
 	var err error
 
 	if factory == "" {

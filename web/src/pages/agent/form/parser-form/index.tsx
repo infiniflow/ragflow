@@ -39,6 +39,10 @@ import { ImageFormFields } from './image-form-fields';
 import { PdfFormFields } from './pdf-form-fields';
 import { PptFormFields } from './ppt-form-fields';
 import { SpreadsheetFormFields } from './spreadsheet-form-fields';
+import {
+  HtmlFormFields,
+  TextMarkdownFormFields,
+} from './text-html-form-fields';
 import { buildFieldNameWithPrefix } from './utils';
 import { AudioFormFields, VideoFormFields } from './video-form-fields';
 import { WordFormFields } from './word-form-fields';
@@ -127,6 +131,8 @@ const FileFormatWidgetMap = {
   [FileType.Audio]: AudioFormFields,
   [FileType.Email]: EmailFormFields,
   [FileType.Image]: ImageFormFields,
+  [FileType.TextMarkdown]: TextMarkdownFormFields,
+  [FileType.Html]: HtmlFormFields,
 };
 
 type ParserItemProps = {

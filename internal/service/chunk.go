@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/entity"
 	"ragflow/internal/server"
 	"strings"
 
@@ -27,8 +28,9 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/logger"
-	"ragflow/internal/model"
+
 	"ragflow/internal/service/nlp"
+	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 )
 
@@ -76,10 +78,10 @@ type RetrievalTestRequest struct {
 
 // RetrievalTestResponse retrieval test response
 type RetrievalTestResponse struct {
-	Chunks  []map[string]interface{} `json:"chunks"`
-	DocAggs []map[string]interface{} `json:"doc_aggs"`
+	Chunks  []map[string]interface{}  `json:"chunks"`
+	DocAggs []map[string]interface{}  `json:"doc_aggs"`
 	Labels  *[]map[string]interface{} `json:"labels"`
-	Total   int64                    `json:"total,omitempty"`
+	Total   int64                     `json:"total,omitempty"`
 }
 
 // RetrievalTest performs retrieval test
@@ -130,7 +132,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 
 	// Check permission for each kb_id
 	var tenantIDs []string
-	var kbRecords []*model.Knowledgebase
+	var kbRecords []*entity.Knowledgebase
 
 	for _, kbID := range kbIDs {
 		found := false
@@ -531,6 +533,9 @@ func buildRetrievalTestResults(filteredChunks []map[string]interface{}) []map[st
 		} else if v, ok := chunk["important_keywords"]; ok {
 			result["important_kwd"] = v
 		}
+		if v, ok := chunk["tag_kwd"]; ok {
+			result["tag_kwd"] = v
+		}
 		if v, ok := chunk["similarity"]; ok {
 			result["similarity"] = v
 		}
@@ -651,11 +656,11 @@ func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkRespon
 
 // ListChunksRequest request for listing chunks
 type ListChunksRequest struct {
-	DocID       string `json:"doc_id" binding:"required"`
-	Page        *int   `json:"page,omitempty"`
-	Size        *int   `json:"size,omitempty"`
-	Keywords    string `json:"keywords,omitempty"`
-	AvailableInt *int  `json:"available_int,omitempty"`
+	DocID        string `json:"doc_id" binding:"required"`
+	Page         *int   `json:"page,omitempty"`
+	Size         *int   `json:"size,omitempty"`
+	Keywords     string `json:"keywords,omitempty"`
+	AvailableInt *int   `json:"available_int,omitempty"`
 }
 
 // ListChunksResponse response for listing chunks
@@ -772,7 +777,7 @@ func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksR
 					result["image_id"] = ""
 				}
 			case "position_int":
-                result["positions"] = v
+				result["positions"] = v
 			case "id":
 				result["chunk_id"] = v
 			case "content":
@@ -817,32 +822,32 @@ func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksR
 	// Build document info (matching Python doc.to_dict())
 	timeFormat := "2006-01-02T15:04:05"
 	docInfo := map[string]interface{}{
-		"id":                doc.ID,
-		"thumbnail":         doc.Thumbnail,
-		"kb_id":             doc.KbID,
-		"parser_id":         doc.ParserID,
-		"pipeline_id":       doc.PipelineID,
-		"parser_config":     doc.ParserConfig,
-		"source_type":       doc.SourceType,
-		"type":              doc.Type,
-		"created_by":        doc.CreatedBy,
-		"name":              doc.Name,
-		"location":          doc.Location,
-		"size":              doc.Size,
-		"token_num":         doc.TokenNum,
-		"chunk_num":         doc.ChunkNum,
-		"progress":          utility.JSONFloat64(doc.Progress),
-		"progress_msg":      doc.ProgressMsg,
-		"process_begin_at":  utility.FormatTimeToString(doc.ProcessBeginAt, timeFormat),
-		"process_duration":  doc.ProcessDuration,
-		"content_hash":      doc.ContentHash,
-		"suffix":            doc.Suffix,
-		"run":               doc.Run,
-		"status":            doc.Status,
-		"create_time":       doc.CreateTime,
-		"create_date":       utility.FormatTimeToString(doc.CreateDate, timeFormat),
-		"update_time":       doc.UpdateTime,
-		"update_date":       utility.FormatTimeToString(doc.UpdateDate, timeFormat),
+		"id":               doc.ID,
+		"thumbnail":        doc.Thumbnail,
+		"kb_id":            doc.KbID,
+		"parser_id":        doc.ParserID,
+		"pipeline_id":      doc.PipelineID,
+		"parser_config":    doc.ParserConfig,
+		"source_type":      doc.SourceType,
+		"type":             doc.Type,
+		"created_by":       doc.CreatedBy,
+		"name":             doc.Name,
+		"location":         doc.Location,
+		"size":             doc.Size,
+		"token_num":        doc.TokenNum,
+		"chunk_num":        doc.ChunkNum,
+		"progress":         utility.JSONFloat64(doc.Progress),
+		"progress_msg":     doc.ProgressMsg,
+		"process_begin_at": utility.FormatTimeToString(doc.ProcessBeginAt, timeFormat),
+		"process_duration": doc.ProcessDuration,
+		"content_hash":     doc.ContentHash,
+		"suffix":           doc.Suffix,
+		"run":              doc.Run,
+		"status":           doc.Status,
+		"create_time":      doc.CreateTime,
+		"create_date":      utility.FormatTimeToString(doc.CreateDate, timeFormat),
+		"update_time":      doc.UpdateTime,
+		"update_date":      utility.FormatTimeToString(doc.UpdateDate, timeFormat),
 	}
 
 	return &ListChunksResponse{
@@ -850,4 +855,157 @@ func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksR
 		Chunks: chunks,
 		Doc:    docInfo,
 	}, nil
+}
+
+// UpdateChunkRequest request for updating a chunk
+type UpdateChunkRequest struct {
+	DatasetID    string                   `json:"dataset_id"`
+	DocumentID   string                   `json:"document_id"`
+	ChunkID      string                   `json:"chunk_id"`
+	Content      *string                  `json:"content,omitempty"`
+	ImportantKwd []string                 `json:"important_keywords,omitempty"`
+	Questions    []string                 `json:"questions,omitempty"`
+	Available    *bool                    `json:"available,omitempty"`
+	Positions    []interface{}             `json:"positions,omitempty"`
+	TagKwd       []string                 `json:"tag_kwd,omitempty"`
+	TagFeas      interface{}              `json:"tag_feas,omitempty"`
+}
+
+// UpdateChunk updates a chunk fields
+func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error {
+	if s.docEngine == nil {
+		return fmt.Errorf("doc engine not initialized")
+	}
+
+	if req.ChunkID == "" {
+		return fmt.Errorf("chunk_id is required")
+	}
+
+	ctx := context.Background()
+
+	// Get user's tenants
+	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	if err != nil {
+		return fmt.Errorf("failed to get user tenants: %w", err)
+	}
+	if len(tenants) == 0 {
+		return fmt.Errorf("user has no accessible tenants")
+	}
+
+	// Find the tenant that owns this dataset
+	var targetTenantID string
+	for _, tenant := range tenants {
+		kb, err := s.kbDAO.GetByIDAndTenantID(req.DatasetID, tenant.TenantID)
+		if err == nil && kb != nil {
+			targetTenantID = tenant.TenantID
+			break
+		}
+	}
+	if targetTenantID == "" {
+		return fmt.Errorf("user does not have access to this dataset")
+	}
+
+	// Verify document belongs to dataset
+	docDAO := dao.NewDocumentDAO()
+	doc, err := docDAO.GetByID(req.DocumentID)
+	if err != nil || doc == nil {
+		return fmt.Errorf("document not found")
+	}
+	if doc.KbID != req.DatasetID {
+		return fmt.Errorf("document does not belong to this dataset")
+	}
+
+	// Fetch existing chunk first (like Python does)
+	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
+	existingChunk, err := s.docEngine.GetChunk(ctx, indexName, req.ChunkID, []string{req.DatasetID})
+	if err != nil {
+		return fmt.Errorf("failed to get existing chunk: %w", err)
+	}
+
+	existing, ok := existingChunk.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid chunk format")
+	}
+
+	// Build update dict like Python does (doc.py:1476-1523)
+	d := make(map[string]interface{})
+
+	// Content - use new value or existing
+	if req.Content != nil {
+		d["content_with_weight"] = *req.Content
+	} else {
+		if v, ok := existing["content_with_weight"].(string); ok {
+			d["content_with_weight"] = v
+		} else if v, ok := existing["content"].(string); ok {
+			d["content_with_weight"] = v
+		} else {
+			d["content_with_weight"] = ""
+		}
+	}
+
+	// Tokenize content
+	contentStr := d["content_with_weight"].(string)
+	d["content_ltks"], _ = tokenizer.Tokenize(contentStr)
+	d["content_sm_ltks"], _ = tokenizer.FineGrainedTokenize(d["content_ltks"].(string))
+
+	// Important keywords - convert []string to []interface{} for transformChunkFields
+	if req.ImportantKwd != nil {
+		impKwd := make([]interface{}, len(req.ImportantKwd))
+		for i, v := range req.ImportantKwd {
+			impKwd[i] = v
+		}
+		d["important_kwd"] = impKwd
+	}
+
+	// Questions
+	if req.Questions != nil {
+		// Filter out empty questions and trim
+		filteredQuestions := []string{}
+		for _, q := range req.Questions {
+			q = strings.TrimSpace(q)
+			if q != "" {
+				filteredQuestions = append(filteredQuestions, q)
+			}
+		}
+		d["question_kwd"] = filteredQuestions
+	}
+
+	// Available
+	if req.Available != nil {
+		if *req.Available {
+			d["available_int"] = 1
+		} else {
+			d["available_int"] = 0
+		}
+	}
+
+	// Positions
+	if req.Positions != nil {
+		d["position_int"] = req.Positions
+	}
+
+	// Tag keywords
+	if req.TagKwd != nil {
+		d["tag_kwd"] = req.TagKwd
+	}
+
+	// Tag features
+	if req.TagFeas != nil {
+		d["tag_feas"] = req.TagFeas
+	}
+
+	// Always include id
+	d["id"] = req.ChunkID
+
+	// Call update
+	condition := map[string]interface{}{
+		"id": req.ChunkID,
+	}
+
+	err = s.docEngine.UpdateDataset(ctx, condition, d, indexName, req.DatasetID)
+	if err != nil {
+		return fmt.Errorf("failed to update chunk: %w", err)
+	}
+
+	return nil
 }

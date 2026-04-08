@@ -283,9 +283,9 @@ const rules = [
     levels: [
       { expression: '第[0-9]+章' },
       { expression: '第[0-9]+节' },
-      { expression: '[0-9]{,2}[\\. 、]' },
-      { expression: '[0-9]{,2}\\.[0-9]{,2}[^a-zA-Z/%~-]' },
-      { expression: '[0-9]{,2}\\.[0-9]{,2}\\.[0-9]{,2}' },
+      { expression: '[0-9]{1,2}[\\. 、]' },
+      { expression: '[0-9]{1,2}\\.[0-9]{1,2}($|[^a-zA-Z/%~.-])' },
+      { expression: '[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}' },
     ],
   },
   {
@@ -314,11 +314,14 @@ export const initialTitleChunkerValues = {
   },
   method: 'hierarchy',
   hierarchy: Hierarchy.H3,
+  include_heading_content: false,
   rules: rules,
 };
 
 export const initialGroupValues = {
   method: 'group',
+  hierarchy: '0',
+  include_heading_content: false,
   rules: rules,
 };
 

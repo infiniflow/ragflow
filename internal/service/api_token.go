@@ -18,7 +18,7 @@ package service
 
 import (
 	"ragflow/internal/dao"
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 	"time"
 )
@@ -76,7 +76,7 @@ func (s *SystemService) CreateAPIToken(tenantID string, req *CreateAPITokenReque
 	// beta: generate_confirmation_token().replace("ragflow-", "")[:32]
 	betaAPIKey := utility.GenerateBetaAPIToken(APIToken)
 
-	APITokenData := &model.APIToken{
+	APITokenData := &entity.APIToken{
 		TenantID: tenantID,
 		Token:    APIToken,
 		Beta:     &betaAPIKey,
