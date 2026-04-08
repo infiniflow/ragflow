@@ -653,7 +653,7 @@ export default {
       FishAudioModelNameMessage: 'Silakan beri nama model sintesis ucapan Anda',
       addFishAudioAK: 'Fish Audio API KEY',
       addFishAudioAKMessage: 'Silakan masukkan API KEY Anda',
-      addFishAudioRefID: 'FishAudio Refrence ID',
+      addFishAudioRefID: 'FishAudio Reference ID',
       addFishAudioRefIDMessage:
         'Silakan masukkan Reference ID (biarkan kosong untuk menggunakan model default).',
       GoogleModelIDMessage: 'Silakan masukkan ID model Anda!',

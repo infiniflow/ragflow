@@ -69,11 +69,11 @@ func (c *RAGFlowClient) ShowServerVersion(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode: multiple iterations
-		return c.HTTPClient.RequestWithIterations("GET", "/system/version", false, "web", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/system/version", true, "web", nil, nil, iterations)
 	}
 
 	// Single mode
-	resp, err := c.HTTPClient.Request("GET", "/system/version", false, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/system/version", true, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show version: %w", err)
 	}
@@ -90,6 +90,189 @@ func (c *RAGFlowClient) ShowServerVersion(cmd *Command) (ResponseIf, error) {
 	result.Duration = resp.Duration
 
 	return &result, nil
+}
+
+func (c *RAGFlowClient) ListConfigs(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+	// Get iterations from command params (for benchmark)
+	iterations := 1
+	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
+		iterations = val
+	}
+
+	if iterations > 1 {
+		// Benchmark mode: multiple iterations
+		return c.HTTPClient.RequestWithIterations("GET", "/system/configs", true, "web", nil, nil, iterations)
+	}
+
+	// Single mode
+	resp, err := c.HTTPClient.Request("GET", "/system/configs", true, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list configs: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list configs: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var response CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &response); err != nil {
+		return nil, fmt.Errorf("list configs failed: invalid JSON (%w)", err)
+	}
+
+	var result CommonResponse
+	result.Code = 0
+	result.Data, err = GetConfigs(&response.Data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list configs: %w", err)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func GetConfigs(config *map[string]interface{}) ([]map[string]interface{}, error) {
+	if config == nil {
+		return nil, fmt.Errorf("config is nil")
+	}
+	result := []map[string]interface{}{}
+	{
+		redisHost := GetHost(config, "Redis", "Host", "Port")
+		result = append(result, map[string]interface{}{
+			"key":   "redis_host",
+			"value": redisHost})
+	}
+	{
+		if docEngine, ok := (*config)["DocEngine"].(map[string]interface{}); ok {
+			engineType, _ := docEngine["Type"].(string)
+			result = append(result, map[string]interface{}{
+				"key":   "doc_engine",
+				"value": engineType})
+			if engineType == "elasticsearch" {
+				esCfg, _ := docEngine["ES"].(map[string]interface{})
+				esHost, _ := esCfg["Hosts"].(string)
+				result = append(result, map[string]interface{}{
+					"key":   "elasticsearch_host",
+					"value": esHost})
+			} else if engineType == "Infinity" {
+				infinityCfg, _ := docEngine["Infinity"].(map[string]interface{})
+				infinityHost, _ := infinityCfg["URI"]
+				result = append(result, map[string]interface{}{
+					"key":   "infinity_host",
+					"value": infinityHost})
+			} else {
+				return nil, fmt.Errorf("unknown doc engine: %s", engineType)
+			}
+		}
+	}
+	{
+		if logConfig, ok := (*config)["Log"].(map[string]interface{}); ok {
+			level, _ := logConfig["Level"].(string)
+			result = append(result, map[string]interface{}{
+				"key":   "log_level",
+				"value": level})
+		}
+	}
+	{
+		if databaseConfig, ok := (*config)["Database"].(map[string]interface{}); ok {
+			driver, _ := databaseConfig["Driver"].(string)
+			result = append(result, map[string]interface{}{
+				"key":   "database",
+				"value": driver})
+			driverAddr, _ := databaseConfig["Host"].(string)
+			driverPort, _ := databaseConfig["Port"].(float64)
+			driverHost := fmt.Sprintf("%s:%0.f", driverAddr, driverPort)
+			result = append(result, map[string]interface{}{
+				"key":   "database_host",
+				"value": driverHost})
+		}
+	}
+	{
+		if language, ok := (*config)["Language"].(map[string]interface{}); ok {
+			result = append(result, map[string]interface{}{
+				"key":   "language",
+				"value": language})
+		}
+	}
+	{
+		if adminConfig, ok := (*config)["Admin"].(map[string]interface{}); ok {
+			adminAddr, _ := adminConfig["Host"].(string)
+			adminPort, _ := adminConfig["Port"].(float64)
+			adminHost := fmt.Sprintf("%s:%0.f", adminAddr, adminPort)
+			result = append(result, map[string]interface{}{
+				"key":   "admin",
+				"value": adminHost})
+		}
+	}
+	{
+		if storageEngineConfig, ok := (*config)["StorageEngine"].(map[string]interface{}); ok {
+			engineType, _ := storageEngineConfig["Type"].(string)
+			result = append(result, map[string]interface{}{
+				"key":   "storage_engine",
+				"value": engineType})
+			if engineType == "minio" {
+				minioCfg, _ := storageEngineConfig["Minio"].(map[string]interface{})
+				miniHost, _ := minioCfg["Host"].(string)
+				result = append(result, map[string]interface{}{
+					"key":   "minio_host",
+					"value": miniHost})
+			} else {
+				return nil, fmt.Errorf("unknown storage engine: %s", engineType)
+			}
+		}
+	}
+	return result, nil
+}
+
+func GetHost(config *map[string]interface{}, serverType, address, port string) string {
+	if config == nil {
+		return ""
+	}
+
+	result := ""
+
+	if redis, ok := (*config)[serverType].(map[string]interface{}); ok {
+		serverAddr, hostOk := redis[address].(string)
+		serverPort, portOk := redis[port].(float64)
+
+		if hostOk && portOk {
+			result = fmt.Sprintf("%s:%.0f", serverAddr, serverPort)
+		}
+	}
+
+	return result
+}
+
+func (c *RAGFlowClient) SetLogLevel(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	if logLevel, ok := cmd.Params["level"].(string); ok {
+		payload := map[string]interface{}{
+			"level": logLevel,
+		}
+
+		resp, err := c.HTTPClient.Request("PUT", "/system/log", true, "admin", nil, payload)
+		if err != nil {
+			return nil, fmt.Errorf("failed to change log level: %w", err)
+		}
+
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("failed to register user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		}
+
+		var result SimpleResponse
+		if err = json.Unmarshal(resp.Body, &result); err != nil {
+			return nil, fmt.Errorf("change log level failed: invalid JSON (%w)", err)
+		}
+		result.Code = 0
+		result.Duration = resp.Duration
+		return &result, nil
+	}
+
+	return nil, fmt.Errorf("no log level")
 }
 
 func (c *RAGFlowClient) RegisterUser(cmd *Command) (ResponseIf, error) {
@@ -150,9 +333,9 @@ func (c *RAGFlowClient) RegisterUser(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// ListUserDatasets lists datasets for current user (user mode)
+// ListDatasets lists datasets for current user (user mode)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (ResponseIf, error) {
+func (c *RAGFlowClient) ListDatasets(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -164,9 +347,17 @@ func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 	}
 
 	// Determine auth kind based on whether API token is being used
+	if c.HTTPClient.LoginToken == "" && !c.HTTPClient.useAPIToken {
+		return nil, fmt.Errorf("no authorization")
+	}
+
 	authKind := "web"
 	if c.HTTPClient.useAPIToken {
 		authKind = "api"
+	}
+
+	if c.HTTPClient.LoginToken != "" {
+		authKind = "web"
 	}
 
 	if iterations > 1 {
@@ -199,13 +390,13 @@ func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 
 // getDatasetID gets dataset ID by name
 func (c *RAGFlowClient) getDatasetID(datasetName string) (string, error) {
-	resp, err := c.HTTPClient.Request("POST", "/kb/list", false, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/datasets", true, "web", nil, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to list datasets: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("failed to list datasets: HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf("failed to list datasets: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	resJSON, err := resp.JSON()
@@ -219,17 +410,12 @@ func (c *RAGFlowClient) getDatasetID(datasetName string) (string, error) {
 		return "", fmt.Errorf("failed to list datasets: %s", msg)
 	}
 
-	data, ok := resJSON["data"].(map[string]interface{})
+	data, ok := resJSON["data"].([]interface{})
 	if !ok {
 		return "", fmt.Errorf("invalid response format")
 	}
 
-	kbs, ok := data["kbs"].([]interface{})
-	if !ok {
-		return "", fmt.Errorf("invalid response format: kbs not found")
-	}
-
-	for _, kb := range kbs {
+	for _, kb := range data {
 		if kbMap, ok := kb.(map[string]interface{}); ok {
 			if name, _ := kbMap["name"].(string); name == datasetName {
 				if id, _ := kbMap["id"].(string); id != "" {
@@ -387,7 +573,7 @@ func (c *RAGFlowClient) CreateToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/tokens", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("POST", "/system/tokens", true, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create token: %w", err)
 	}
@@ -418,7 +604,7 @@ func (c *RAGFlowClient) ListTokens(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", "/tokens", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/system/tokens", true, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tokens: %w", err)
 	}
@@ -450,7 +636,7 @@ func (c *RAGFlowClient) DropToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("token not provided")
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/tokens/%s", token), true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/system/tokens/%s", token), true, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop token: %w", err)
 	}
@@ -1351,8 +1537,8 @@ func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
 	}
 
 	// Convert to response
-	var response CEListResponse
-	response.outputFormat = c.OutputFormat
+	var response ContextListResponse
+	response.OutputFormat = c.OutputFormat
 	response.Code = 0
 	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
 
@@ -1390,8 +1576,8 @@ func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
 	}
 
 	// Convert to response
-	var response CESearchResponse
-	response.outputFormat = c.OutputFormat
+	var response ContextSearchResponse
+	response.OutputFormat = c.OutputFormat
 	response.Code = 0
 	response.Total = result.Total
 	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
@@ -1483,6 +1669,198 @@ func (c *RAGFlowClient) InsertMetadataFromFile(cmd *Command) (ResponseIf, error)
 		result.Message = fmt.Sprintf("Success to insert metadata from file: %s", filePath)
 	} else {
 		result.Message = fmt.Sprintf("Failed to insert metadata from file: %v", resJSON)
+	}
+	result.Duration = 0
+	return &result, nil
+}
+
+// UpdateChunk updates a chunk in a dataset
+func (c *RAGFlowClient) UpdateChunk(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	chunkID, ok := cmd.Params["chunk_id"].(string)
+	if !ok {
+		return nil, fmt.Errorf("chunk_id not provided")
+	}
+
+	datasetName, ok := cmd.Params["dataset_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("dataset_name not provided")
+	}
+
+	jsonBody, ok := cmd.Params["json_body"].(string)
+	if !ok {
+		return nil, fmt.Errorf("json_body not provided")
+	}
+
+	// Look up dataset_id from dataset_name
+	datasetID, err := c.getDatasetID(datasetName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dataset ID: %w", err)
+	}
+
+	// Try to get doc_id from the chunk retrieval endpoint
+	getResp, err := c.HTTPClient.Request("GET", "/chunk/get?chunk_id="+chunkID, false, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get chunk info: %w", err)
+	}
+
+	var docID string
+	if getResp.StatusCode == 200 {
+		getJSON, err := getResp.JSON()
+		if err == nil {
+			if data, ok := getJSON["data"].(map[string]interface{}); ok {
+				if d, ok := data["doc_id"].(string); ok {
+					docID = d
+				}
+			}
+		}
+	}
+
+	if docID == "" {
+		return nil, fmt.Errorf("could not find document_id for chunk %s. Please provide document_id explicitly", chunkID)
+	}
+
+	// Parse the JSON body
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonBody), &payload); err != nil {
+		return nil, fmt.Errorf("invalid JSON body: %w", err)
+	}
+
+	path := fmt.Sprintf("/datasets/%s/documents/%s/chunks/%s", datasetID, docID, chunkID)
+	resp, err := c.HTTPClient.Request("PUT", path, true, "api", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update chunk: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to update chunk: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	code, ok := resJSON["code"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: code is not a number")
+	}
+
+	var result SimpleResponse
+	result.Code = int(code)
+	if result.Code == 0 {
+		result.Message = fmt.Sprintf("Success to update chunk: %s", chunkID)
+	} else {
+		result.Message = fmt.Sprintf("Failed to update chunk: %v", resJSON)
+	}
+	result.Duration = 0
+	return &result, nil
+}
+
+// SetMeta sets metadata for a document
+func (c *RAGFlowClient) SetMeta(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	docID, ok := cmd.Params["doc_id"].(string)
+	if !ok {
+		return nil, fmt.Errorf("doc_id not provided")
+	}
+
+	metaJSON, ok := cmd.Params["meta"].(string)
+	if !ok {
+		return nil, fmt.Errorf("meta not provided")
+	}
+
+	payload := map[string]interface{}{
+		"doc_id": docID,
+		"meta":   metaJSON,
+	}
+
+	resp, err := c.HTTPClient.Request("POST", "/document/set_meta", false, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set metadata: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to set metadata: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	code, ok := resJSON["code"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: code is not a number")
+	}
+
+	var result SimpleResponse
+	result.Code = int(code)
+	if result.Code == 0 {
+		result.Message = fmt.Sprintf("Success to set metadata for document: %s", docID)
+	} else {
+		result.Message = fmt.Sprintf("Failed to set metadata: %v", resJSON)
+	}
+	result.Duration = 0
+	return &result, nil
+}
+
+// RmTags removes tags from chunks in a dataset
+func (c *RAGFlowClient) RmTags(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	datasetName, ok := cmd.Params["dataset_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("dataset_name not provided")
+	}
+
+	kbID, err := c.getDatasetID(datasetName)
+	if err != nil {
+		return nil, err
+	}
+
+	tags, ok := cmd.Params["tags"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("tags not provided")
+	}
+
+	payload := map[string]interface{}{
+		"tags": tags,
+	}
+
+	resp, err := c.HTTPClient.Request("POST", "/kb/"+kbID+"/rm_tags", false, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove tags: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to remove tags: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	code, ok := resJSON["code"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: code is not a number")
+	}
+
+	var result SimpleResponse
+	result.Code = int(code)
+	if result.Code == 0 {
+		result.Message = fmt.Sprintf("Success to remove tags from dataset: %s", kbID)
+	} else {
+		result.Message = fmt.Sprintf("Failed to remove tags: %v", resJSON)
 	}
 	result.Duration = 0
 	return &result, nil

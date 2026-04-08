@@ -708,7 +708,7 @@ class RAGFlowPdfParser:
     def __ocr(self, pagenum, img, chars, ZM=3, device_id: int | None = None):
         start = timer()
         bxs = self.ocr.detect(np.array(img), device_id)
-        logging.info(f"__ocr detecting boxes of a image cost ({timer() - start}s)")
+        logging.info(f"__ocr detecting boxes of an image cost ({timer() - start}s)")
 
         start = timer()
         if not bxs:

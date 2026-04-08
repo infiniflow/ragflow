@@ -22,7 +22,6 @@ import (
 	"ragflow/internal/handler"
 )
 
-// Router router
 type Router struct {
 	authHandler          *handler.AuthHandler
 	userHandler          *handler.UserHandler
@@ -91,8 +90,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 	engine.GET("/v1/system/config", r.systemHandler.GetConfig)
 	engine.GET("/v1/system/configs", r.systemHandler.GetConfigs)
 	engine.GET("/v1/system/version", r.systemHandler.GetVersion)
-	engine.GET("/v1/system/log_level", r.systemHandler.GetLogLevel)
-	engine.PUT("/v1/system/log_level", r.systemHandler.SetLogLevel)
 	engine.POST("/v1/user/register", r.userHandler.Register)
 	// User login channels endpoint
 	engine.GET("/v1/user/login/channels", r.userHandler.GetLoginChannels)
@@ -137,12 +134,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 			//	users.GET("/:id", r.userHandler.GetUserByID)
 			//}
 
-			apiTokens := v1.Group("/tokens")
-			{
-				apiTokens.POST("", r.systemHandler.CreateToken)
-				apiTokens.GET("", r.systemHandler.ListTokens)
-				apiTokens.DELETE("/:token", r.systemHandler.DeleteToken)
-			}
+			//apiTokens := v1.Group("/tokens")
+			//{
+			//	apiTokens.POST("", r.systemHandler.CreateToken)
+			//	apiTokens.GET("", r.systemHandler.ListTokens)
+			//	apiTokens.DELETE("/:token", r.systemHandler.DeleteToken)
+			//}
 
 			// Document routes
 			documents := v1.Group("/documents")
@@ -160,6 +157,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("", r.datasetsHandler.ListDatasets)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
+			}
+
+			// RESTful dataset chunk routes
+			datasetChunks := v1.Group("/datasets/:dataset_id/documents/:document_id/chunks")
+			{
+				datasetChunks.PUT("/:chunk_id", r.chunkHandler.UpdateChunk)
 			}
 
 			// Author routes
@@ -190,6 +193,16 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
 
+			chats := v1.Group("/chats")
+			{
+				chats.GET("", r.chatHandler.ListChats)
+			}
+
+			searches := v1.Group("/searches")
+			{
+				searches.GET("", r.searchHandler.ListSearches)
+			}
+
 			file := v1.Group("/files")
 			{
 				file.POST("", r.fileHandler.UploadFile)
@@ -213,6 +226,29 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
 				provider.PUT("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.EnableOrDisableModel)
 				provider.POST("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.ChatToModel)
+			}
+
+			system := v1.Group("/system")
+			{
+				system.GET("/version", r.systemHandler.GetVersion)
+				system.GET("/configs", r.systemHandler.GetConfigs)
+				log := system.Group("/log")
+				{
+					// /api/v1/system/log GET
+					log.GET("", r.systemHandler.GetLogLevel)
+					// /api/v1/system/log PUT
+					log.PUT("", r.systemHandler.SetLogLevel)
+				}
+
+				tokens := system.Group("/tokens")
+				{
+					// list tokens /api/v1/system/tokens GET
+					tokens.GET("", r.systemHandler.ListTokens)
+					// create token /api/v1/system/tokens POST
+					tokens.POST("", r.systemHandler.CreateToken)
+					// delete token /api/v1/system/tokens/:token DELETE
+					tokens.DELETE("/:token", r.systemHandler.DeleteToken)
+				}
 			}
 		}
 
@@ -256,6 +292,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		{
 			doc.POST("/list", r.documentHandler.ListDocuments)
 			doc.POST("/metadata/summary", r.documentHandler.MetadataSummary)
+			doc.POST("/set_meta", r.documentHandler.SetMeta)
 		}
 
 		// Chunk routes
@@ -278,7 +315,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Chat routes
 		chat := authorized.Group("/v1/dialog")
 		{
-			chat.GET("/list", r.chatHandler.ListChats)
 			chat.POST("/next", r.chatHandler.ListChatsNext)
 			chat.POST("/set", r.chatHandler.SetDialog)
 			chat.POST("/rm", r.chatHandler.RemoveChats)
@@ -297,12 +333,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		connector := authorized.Group("/v1/connector")
 		{
 			connector.GET("/list", r.connectorHandler.ListConnectors)
-		}
-
-		// Search routes
-		search := authorized.Group("/v1/search")
-		{
-			search.POST("/list", r.searchHandler.ListSearchApps)
 		}
 
 		// File routes
