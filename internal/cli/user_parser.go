@@ -188,23 +188,8 @@ func (p *Parser) parseListCommand() (*Command, error) {
 }
 
 func (p *Parser) parseListDatasets() (*Command, error) {
-	cmd := NewCommand("list_user_datasets")
+	cmd := NewCommand("list_datasets")
 	p.nextToken() // consume DATASETS
-
-	if p.curToken.Type == TokenSemicolon {
-		return cmd, nil
-	}
-
-	if p.curToken.Type == TokenOf {
-		p.nextToken()
-		userName, err := p.parseQuotedString()
-		if err != nil {
-			return nil, err
-		}
-		cmd = NewCommand("list_datasets")
-		cmd.Params["user_name"] = userName
-		p.nextToken()
-	}
 
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {
@@ -243,20 +228,7 @@ func (p *Parser) parseListAgents() (*Command, error) {
 
 func (p *Parser) parseListTokens() (*Command, error) {
 	p.nextToken() // consume TOKENS
-	if p.curToken.Type != TokenOf {
-		return nil, fmt.Errorf("expected OF")
-	}
-	p.nextToken()
-
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
 	cmd := NewCommand("list_tokens")
-	cmd.Params["user_name"] = userName
-
-	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
@@ -1584,6 +1556,9 @@ func (p *Parser) parseSetCommand() (*Command, error) {
 	if p.curToken.Type == TokenMetadata {
 		return p.parseSetMeta()
 	}
+	if p.curToken.Type == TokenLog {
+		return p.parseSetLog()
+	}
 
 	return nil, fmt.Errorf("unknown SET target: %s", p.curToken.Value)
 }
@@ -1665,6 +1640,45 @@ func (p *Parser) parseSetToken() (*Command, error) {
 	cmd := NewCommand("set_token")
 	cmd.Params["token"] = tokenValue
 
+	p.nextToken()
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseSetLog() (*Command, error) {
+	p.nextToken() // consume LOG
+
+	switch p.curToken.Type {
+	case TokenLevel:
+		return p.parseSetLogLevel()
+	default:
+		return nil, fmt.Errorf("unknown log target: %s", p.curToken.Value)
+	}
+}
+
+func (p *Parser) parseSetLogLevel() (*Command, error) {
+	p.nextToken() // consume LEVEL
+
+	cmd := NewCommand("set_log_level")
+	switch p.curToken.Type {
+	case TokenDebug:
+		cmd.Params["level"] = "debug"
+	case TokenInfo:
+		cmd.Params["level"] = "info"
+	case TokenWarn:
+		cmd.Params["level"] = "warn"
+	case TokenError:
+		cmd.Params["level"] = "error"
+	case TokenFatal:
+		cmd.Params["level"] = "fatal"
+	case TokenPanic:
+		cmd.Params["level"] = "panic"
+	default:
+		return nil, fmt.Errorf("unknown log target: %s", p.curToken.Value)
+	}
 	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {

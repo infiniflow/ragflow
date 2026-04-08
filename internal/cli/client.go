@@ -126,8 +126,6 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.PingAdmin(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
-	case "list_user_datasets":
-		return c.ListUserDatasets(cmd)
 	case "list_users":
 		return c.ListUsers(cmd)
 	case "list_services":
@@ -150,8 +148,8 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowAdminVersion(cmd)
 	case "show_user":
 		return c.ShowUser(cmd)
-	case "list_datasets":
-		return c.ListDatasets(cmd)
+	case "list_user_datasets":
+		return c.ListUserDatasets(cmd)
 	case "list_agents":
 		return c.ListAgents(cmd)
 	case "generate_token":
@@ -185,10 +183,15 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.Logout()
 	case "ping":
 		return c.PingServer(cmd)
+	// Configuration commands
+	case "list_configs":
+		return c.ListConfigs(cmd)
+	case "set_log_level":
+		return c.SetLogLevel(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
-	case "list_user_datasets":
-		return c.ListUserDatasets(cmd)
+	case "list_datasets":
+		return c.ListDatasets(cmd)
 	case "search_on_datasets":
 		return c.SearchOnDatasets(cmd)
 	case "create_token":
