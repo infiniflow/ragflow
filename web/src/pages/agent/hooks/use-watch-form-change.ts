@@ -14,7 +14,7 @@ export function useWatchFormChange(
     // Manually triggered form updates are synchronized to the canvas
     if (id) {
       values = form?.getValues() || {};
-      let nextValues: any = values;
+      const nextValues: any = values;
 
       (enableReplacement ? replaceNodeForm : updateNodeForm)(id, nextValues);
     }
