@@ -1972,7 +1972,10 @@ func (c *RAGFlowClient) RemoveChunks(cmd *Command) (ResponseIf, error) {
 	result.Code = int(code)
 	if result.Code == 0 {
 		deletedCount := int64(0)
-		if data, ok := resJSON["data"].(map[string]interface{}); ok {
+		switch data := resJSON["data"].(type) {
+		case float64:
+			deletedCount = int64(data)
+		case map[string]interface{}:
 			if count, ok := data["deleted_count"].(float64); ok {
 				deletedCount = int64(count)
 			}
