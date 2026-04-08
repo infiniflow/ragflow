@@ -36,6 +36,8 @@ except Exception:
     class RAGFlowPdfParser:
         pass
 
+from deepdoc.parser.utils import extract_pdf_outlines
+
 
 AlgorithmType = Literal["PaddleOCR-VL"]
 SectionTuple = tuple[str, ...]
@@ -253,6 +255,7 @@ class PaddleOCRParser(RAGFlowPdfParser):
         **kwargs: Any,
     ) -> ParseResult:
         """Parse PDF document using PaddleOCR API."""
+        self.outlines = extract_pdf_outlines(binary if binary is not None else filepath)
         # Create configuration - pass all kwargs to capture VL config parameters
         config_dict = {
             "api_url": api_url if api_url is not None else self.api_url,
@@ -409,7 +412,7 @@ class PaddleOCRParser(RAGFlowPdfParser):
 
                     tag = f"@@{page_idx + 1}\t{left // self._ZOOMIN}\t{right // self._ZOOMIN}\t{top // self._ZOOMIN}\t{bottom // self._ZOOMIN}##"
 
-                    if parse_method == "manual":
+                    if parse_method in {"manual", "pipeline"}:
                         sections.append((block_content, label, tag))
                     elif parse_method == "paper":
                         sections.append((block_content + tag, label))

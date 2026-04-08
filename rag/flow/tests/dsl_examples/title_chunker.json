@@ -52,33 +52,32 @@
               }
           }
         },
-        "downstream": ["Splitter:0"],
+        "downstream": ["TokenChunker:0"],
         "upstream": ["File"]
     },
-    "Splitter:0": {
+    "TokenChunker:0": {
         "obj": {
-            "component_name": "Splitter",
+            "component_name": "TokenChunker",
             "params": {
               "chunk_token_size": 512,
               "delimiters": ["\r\n"],
               "overlapped_percent": 0
             }
         },
-        "downstream": ["HierarchicalMerger:0"],
+        "downstream": ["TitleChunker:0"],
         "upstream": ["Parser:0"]
     },
-    "HierarchicalMerger:0": {
+    "TitleChunker:0": {
         "obj": {
-            "component_name": "HierarchicalMerger",
+            "component_name": "TitleChunker",
             "params": {
               "levels": [["^#[^#]"], ["^##[^#]"], ["^###[^#]"], ["^####[^#]"]],
               "hierarchy": 2
             }
         },
         "downstream": [],
-        "upstream": ["Splitter:0"]
+        "upstream": ["TokenChunker:0"]
     }
   },
   "path": []
 }
-
