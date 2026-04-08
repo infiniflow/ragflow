@@ -22,6 +22,7 @@ from common import (
     document_filter,
     document_infos,
     document_metadata_summary,
+    # document_metadata_update,  # still unused while metadata_update tests stay TODO
     document_rename,
     document_set_meta,
     document_update_metadata_setting,
@@ -50,23 +51,20 @@ class TestAuthorization:
         assert res["code"] == expected_code, res
         assert expected_fragment in res["message"], res
 
-    ## The inputs has been changed to add 'doc_ids'
-    ## TODO: 
-    #@pytest.mark.p2
-    #@pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
-    #def test_metadata_summary_auth_invalid(self, invalid_auth, expected_code, expected_fragment):
-    #    res = document_metadata_summary(invalid_auth, {"kb_id": "kb_id"})
-    #    assert res["code"] == expected_code, res
-    #    assert expected_fragment in res["message"], res
+    @pytest.mark.p2
+    @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
+    def test_metadata_summary_auth_invalid(self, invalid_auth, expected_code, expected_fragment):
+        payload = {"kb_id": "kb_id", "doc_ids": ["doc_id"]}
+        res = document_metadata_summary(invalid_auth, payload)
+        assert res["code"] == expected_code, res
+        assert expected_fragment in res["message"], res
 
-    ## The inputs has been changed to deprecate 'selector'
-    ## TODO: 
-    #@pytest.mark.p2
-    #@pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
-    #def test_metadata_update_auth_invalid(self, invalid_auth, expected_code, expected_fragment):
-    #    res = document_metadata_update(invalid_auth, {"kb_id": "kb_id", "selector": {"document_ids": ["doc_id"]}, "updates": []})
-    #    assert res["code"] == expected_code, res
-    #    assert expected_fragment in res["message"], res
+    ## The inputs have been changed from only kb_id to kb_id + doc_ids.
+    ## This test now exercises the current API shape but keeps the scope
+    ## focused only on metadata summary authorization.
+    #
+    # Other metadata-related tests (metadata_update, etc.) remain TODOs
+    # to keep this contribution minimal.
 
     @pytest.mark.p2
     @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
@@ -114,44 +112,16 @@ class TestDocumentMetadata:
         assert len(res["data"]) == 1, res
         assert res["data"][0]["id"] == doc_id, res
 
-    ## The inputs has been changed to add 'doc_ids'
-    ## TODO: 
-    #@pytest.mark.p2
-    #def test_metadata_summary(self, WebApiAuth, add_document_func):
-    #    kb_id, _ = add_document_func
-    #    res = document_metadata_summary(WebApiAuth, {"kb_id": kb_id})
-    #    assert res["code"] == 0, res
-    #    assert isinstance(res["data"]["summary"], dict), res
+    @pytest.mark.p2
+    def test_metadata_summary(self, WebApiAuth, add_document_func):
+        kb_id, doc_id = add_document_func
+        res = document_metadata_summary(WebApiAuth, {"kb_id": kb_id, "doc_ids": [doc_id]})
+        assert res["code"] == 0, res
+        assert isinstance(res["data"]["summary"], dict), res
 
-    ## The inputs has been changed to deprecate 'selector'
-    ## TODO: 
-    #@pytest.mark.p2
-    #def test_metadata_update(self, WebApiAuth, add_document_func):
-    #    kb_id, doc_id = add_document_func
-    #    payload = {
-    #        "kb_id": kb_id,
-    #        "selector": {"document_ids": [doc_id]},
-    #        "updates": [{"key": "author", "value": "alice"}],
-    #        "deletes": [],
-    #    }
-    #    res = document_metadata_update(WebApiAuth, payload)
-    #    assert res["code"] == 0, res
-    #    assert res["data"]["matched_docs"] == 1, res
-    #    info_res = document_infos(WebApiAuth, {"doc_ids": [doc_id]})
-    #    assert info_res["code"] == 0, info_res
-    #    meta_fields = info_res["data"][0].get("meta_fields", {})
-    #    assert meta_fields.get("author") == "alice", info_res
-    
-    ## The inputs has been changed to deprecate 'selector'
-    ## TODO: 
-    #@pytest.mark.p2
-    #def test_update_metadata_setting(self, WebApiAuth, add_document_func):
-    #    _, doc_id = add_document_func
-    #    metadata = {"source": "test"}
-    #    res = document_update_metadata_setting(WebApiAuth, {"doc_id": doc_id, "metadata": metadata})
-    #    assert res["code"] == 0, res
-    #    assert res["data"]["id"] == doc_id, res
-    #    assert res["data"]["parser_config"]["metadata"] == metadata, res
+    ## The inputs for metadata update and metadata setting have changed
+    ## (selector -> doc_ids, etc.). To keep this PR small, these tests
+    ## are left as TODOs for a follow-up.
 
     @pytest.mark.p2
     def test_change_status(self, WebApiAuth, add_document_func):
@@ -201,14 +171,12 @@ class TestDocumentMetadataNegative:
         assert res["code"] == 101, res
         assert "KB ID" in res["message"], res
 
-    ## The inputs has been changed to deprecate 'selector'
-    ## TODO: 
-    #@pytest.mark.p3
-    #def test_metadata_update_missing_kb_id(self, WebApiAuth, add_document_func):
-    #    _, doc_id = add_document_func
-    #    res = document_metadata_update(WebApiAuth, {"selector": {"document_ids": [doc_id]}, "updates": []})
-    #    assert res["code"] == 101, res
-    #    assert "KB ID" in res["message"], res
+    @pytest.mark.p3
+    def test_metadata_update_missing_kb_id(self, WebApiAuth, add_document_func):
+        _, doc_id = add_document_func
+        res = document_metadata_update(WebApiAuth, {"doc_ids": [doc_id], "updates": [], "deletes": []})
+        assert res["code"] == 101, res
+        assert "KB ID" in res["message"], res
 
     @pytest.mark.p3
     def test_infos_invalid_doc_id(self, WebApiAuth):
