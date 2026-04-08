@@ -30,7 +30,7 @@ def _run(coro):
 
 @wait_for(30, 1, "Document parsing timeout")
 def condition(_auth, _kb_id, _document_ids=None):
-    res = list_documents(_auth, {"kb_id": _kb_id})
+    res = list_documents(_auth, {"id": _kb_id})
     target_docs = res["data"]["docs"]
 
     if _document_ids is None:
@@ -48,7 +48,7 @@ def condition(_auth, _kb_id, _document_ids=None):
 
 
 def validate_document_parse_done(auth, _kb_id, _document_ids):
-    res = list_documents(auth, {"kb_id": _kb_id})
+    res = list_documents(auth, {"id": _kb_id})
     for doc in res["data"]["docs"]:
         if doc["id"] not in _document_ids:
             continue
@@ -60,7 +60,7 @@ def validate_document_parse_done(auth, _kb_id, _document_ids):
 
 
 def validate_document_parse_cancel(auth, _kb_id, _document_ids):
-    res = list_documents(auth, {"kb_id": _kb_id})
+    res = list_documents(auth, {"id": _kb_id})
     for doc in res["data"]["docs"]:
         if doc["id"] not in _document_ids:
             continue
@@ -151,7 +151,7 @@ class TestDocumentsParse:
 def test_parse_100_files(WebApiAuth, add_dataset_func, tmp_path):
     @wait_for(100, 1, "Document parsing timeout")
     def condition(_auth, _kb_id, _document_num):
-        res = list_documents(_auth, {"kb_id": _kb_id, "page_size": _document_num})
+        res = list_documents(_auth, {"id": _kb_id, "page_size": _document_num})
         for doc in res["data"]["docs"]:
             if doc["run"] != "3":
                 return False
@@ -172,7 +172,7 @@ def test_parse_100_files(WebApiAuth, add_dataset_func, tmp_path):
 def test_concurrent_parse(WebApiAuth, add_dataset_func, tmp_path):
     @wait_for(120, 1, "Document parsing timeout")
     def condition(_auth, _kb_id, _document_num):
-        res = list_documents(_auth, {"kb_id": _kb_id, "page_size": _document_num})
+        res = list_documents(_auth, {"id": _kb_id, "page_size": _document_num})
         for doc in res["data"]["docs"]:
             if doc["run"] != "3":
                 return False
@@ -305,7 +305,7 @@ class TestDocumentsParseStop:
     def test_basic_scenarios(self, WebApiAuth, add_documents_func, payload, expected_code, expected_message):
         @wait_for(30, 1, "Document parsing timeout")
         def condition(_auth, _kb_id, _doc_ids):
-            res = list_documents(_auth, {"kb_id": _kb_id})
+            res = list_documents(_auth, {"id": _kb_id})
             for doc in res["data"]["docs"]:
                 if doc["id"] in _doc_ids:
                     if doc["run"] != "3":
