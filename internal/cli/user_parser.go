@@ -2662,6 +2662,7 @@ func (p *Parser) parseRemoveChunk() (*Command, error) {
 		return nil, fmt.Errorf("expected doc_id: %w", err)
 	}
 	cmd.Params["doc_id"] = docID
+	p.nextToken()
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
