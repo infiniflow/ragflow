@@ -205,7 +205,10 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 	var conditions []string
 
 	for k, v := range condition {
-		if v == nil || v == "" {
+		if v == nil {
+			continue
+		}
+		if strVal, ok := v.(string); ok && strVal == "" {
 			continue
 		}
 
