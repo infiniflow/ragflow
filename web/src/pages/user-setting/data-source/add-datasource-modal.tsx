@@ -8,6 +8,8 @@ import {
   DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
   DataSourceFormFields,
+  getCommonExtraDefaultValues,
+  getCommonExtraFields,
 } from './constant';
 import { IDataSorceInfo } from './interface';
 
@@ -28,6 +30,7 @@ const AddDataSourceModal = ({
         ...DataSourceFormFields[
           sourceData.id as keyof typeof DataSourceFormFields
         ],
+        ...getCommonExtraFields(sourceData.id),
       ] as FormFieldConfig[]);
     }
   }, [sourceData]);
@@ -59,9 +62,12 @@ const AddDataSourceModal = ({
           console.log(data);
         }}
         defaultValues={
-          DataSourceFormDefaultValues[
-            sourceData?.id as keyof typeof DataSourceFormDefaultValues
-          ] as FieldValues
+          {
+            ...(DataSourceFormDefaultValues[
+              sourceData?.id as keyof typeof DataSourceFormDefaultValues
+            ] as FieldValues),
+            ...getCommonExtraDefaultValues(),
+          } as FieldValues
         }
         labelClassName="font-normal"
       >

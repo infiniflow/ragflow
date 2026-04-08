@@ -18,6 +18,8 @@ import {
   DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
   DataSourceFormFields,
+  getCommonExtraDefaultValues,
+  getCommonExtraFields,
   useDataSourceInfo,
 } from '../constant';
 import {
@@ -166,6 +168,7 @@ const SourceDetailPage = () => {
         ...DataSourceFormFields[
           detail.source as keyof typeof DataSourceFormFields
         ],
+        ...getCommonExtraFields(detail.source),
         ...customFields,
       ] as FormFieldConfig[];
 
@@ -182,6 +185,7 @@ const SourceDetailPage = () => {
         ...(DataSourceFormDefaultValues[
           detail?.source as keyof typeof DataSourceFormDefaultValues
         ] as FieldValues),
+        ...getCommonExtraDefaultValues(),
         ...detail,
       };
       console.log('defaultValue', defaultValueTemp);

@@ -1,4 +1,4 @@
-import { FormFieldType } from '@/components/dynamic-form';
+import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
@@ -45,6 +45,27 @@ export enum DataSourceKey {
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
 }
+
+type DataSourceFeatureVisibility = {
+  syncDeletedFiles?: boolean;
+};
+
+export const DataSourceFeatureVisibilityMap = {
+  [DataSourceKey.GITHUB]: {
+    syncDeletedFiles: true,
+  },
+};
+
+const isDataSourceFeatureVisible = (
+  source?: DataSourceKey,
+  feature?: keyof DataSourceFeatureVisibility,
+) => {
+  if (!source || !feature) {
+    return false;
+  }
+
+  return Boolean(DataSourceFeatureVisibilityMap[source]?.[feature]);
+};
 
 export const generateDataSourceInfo = (t: TFunction) => {
   return {
@@ -227,6 +248,24 @@ export const DataSourceFormBaseFields = [
     })),
   },
 ];
+
+export const getCommonExtraFields = (
+  source?: DataSourceKey,
+): FormFieldConfig[] => [
+  {
+    label: '同步删除文件',
+    name: 'sync_deleted_files',
+    type: FormFieldType.Checkbox,
+    required: false,
+    defaultValue: false,
+    shouldRender: () => isDataSourceFeatureVisible(source, 'syncDeletedFiles'),
+  },
+];
+
+export const getCommonExtraDefaultValues = () => ({
+  sync_deleted_files: false,
+});
+
 export const DataSourceFormFields = {
   [DataSourceKey.RSS]: [
     {
