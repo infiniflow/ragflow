@@ -115,7 +115,7 @@ dependencies = [
     "webdriver-manager==4.0.1",
     "wikipedia==1.4.0",
     "word2number==1.1",
-    "xgboost==3.2.0",
+    "xgboost==1.6.0",
     "xpinyin==0.7.6",
     "yfinance==0.2.65",
     "zhipuai==2.0.1",
