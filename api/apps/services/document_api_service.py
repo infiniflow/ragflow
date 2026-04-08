@@ -25,7 +25,12 @@ from rag.nlp import rag_tokenizer, search
 
 
 def update_document_name_only(document_id, req_doc_name):
-    """Update document name only (without validation)."""
+    """
+    Update document name only (without validation).
+    :param document_id: id (string) of the document
+    :param req_doc_name: new name (string) from request for the document
+    :return: None if all are good; otherwise returns the error message in the JSON format
+    """
     if not DocumentService.update_by_id(document_id, {"name": req_doc_name}):
         return get_error_data_result(message="Database error (Document rename)!")
 
@@ -54,7 +59,22 @@ def update_document_name_only(document_id, req_doc_name):
     return None
 
 def update_chunk_method_only(req, doc, dataset_id, tenant_id):
-    """Update chunk method only (without validation)."""
+    """
+    Update chunk method only (without validation).
+
+    Updates the chunk method and parser configuration for a document,
+    and resets the document's progress if the chunk method changes.
+    Also clears existing chunks from the document store if the method changes.
+
+    Args:
+        req: The request dictionary containing chunk_method and parser_config.
+        doc: The document model from the database.
+        dataset_id: The ID of the dataset containing the document.
+        tenant_id: The tenant ID for the document store.
+
+    Returns:
+        None if successful, or an error result dictionary if failed.
+    """
     if doc.parser_id.lower() != req["chunk_method"].lower():
         # if chunk method changed
         e = DocumentService.update_by_id(
@@ -85,7 +105,20 @@ def update_chunk_method_only(req, doc, dataset_id, tenant_id):
     return None
 
 def update_document_status_only(status:int, doc, kb):
-    """Update document status only (without validation)."""
+    """
+    Update document status only (without validation).
+
+    Updates the enabled/disabled status of a document and updates
+    the corresponding index in the document store.
+
+    Args:
+        status: The new status value (0 for disabled, 1 for enabled).
+        doc: The document model from the database.
+        kb: The knowledge base model.
+
+    Returns:
+        None if successful, or an error result dictionary if failed.
+    """
     if doc.status is None or (int(doc.status) != status):
         try:
             if not DocumentService.update_by_id(doc.id, {"status": str(status)}):
@@ -97,7 +130,21 @@ def update_document_status_only(status:int, doc, kb):
 
 
 def validate_document_update_fields(update_doc_req:UpdateDocumentReq, doc, req):
-    """Validate document update fields in a single method."""
+    """
+    Validate document update fields in a single method.
+
+    Performs comprehensive validation of all document update fields,
+    including immutable fields, document name, and chunk method.
+
+    Args:
+        update_doc_req: The validated update document request.
+        doc: The document model from the database.
+        req: The original request dictionary.
+
+    Returns:
+        A tuple of (error_message, error_code) if validation fails,
+        or (None, None) if validation passes.
+    """
     # Validate immutable fields
     error_msg, error_code = validation_utils.validate_immutable_fields(update_doc_req, doc)
     if error_msg:
@@ -119,6 +166,18 @@ def validate_document_update_fields(update_doc_req:UpdateDocumentReq, doc, req):
     return None, None
 
 def rename_doc_key(doc):
+    """
+    Rename document keys to match API response format.
+
+    Converts internal document model field names to the external API
+    response field names (e.g., 'chunk_num' -> 'chunk_count').
+
+    Args:
+        doc: The document model from the database.
+
+    Returns:
+        A dictionary with renamed keys for API response.
+    """
     key_mapping = {
         "chunk_num": "chunk_count",
         "kb_id": "dataset_id",

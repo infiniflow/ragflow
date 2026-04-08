@@ -18,7 +18,7 @@ import logging
 from peewee import OperationalError
 from pydantic import ValidationError
 
-from api.apps.services.document_service import rename_doc_key, validate_document_update_fields, \
+from api.apps.services.document_api_service import rename_doc_key, validate_document_update_fields, \
     update_document_name_only, update_chunk_method_only, update_document_status_only
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService
@@ -111,7 +111,7 @@ async def update_document(tenant_id, dataset_id, document_id):
 
     # All validations passed, now perform all updates
     # meta_fields provided, then update it
-    if update_doc_req.meta_fields:
+    if "meta_fields" in req:
         if not DocMetadataService.update_document_metadata(document_id, update_doc_req.meta_fields):
             return get_error_data_result(message="Failed to update metadata")
     # doc name provided from request and diff with existing value, update
@@ -134,9 +134,10 @@ async def update_document(tenant_id, dataset_id, document_id):
             return error
 
     try:
+        original_doc_id = doc.id
         ok, doc = DocumentService.get_by_id(doc.id)
         if not ok:
-            return get_error_data_result(message=f"Can not get document by id:{doc.id}")
+            return get_error_data_result(message=f"Can not get document by id:{original_doc_id}")
     except OperationalError as e:
         logging.exception(e)
         return get_error_data_result(message="Database operation failed")

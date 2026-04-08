@@ -402,7 +402,14 @@ class ParserConfig(Base):
     ext: Annotated[dict, Field(default={})]
 
 class UpdateDocumentReq(Base):
+    """
+    Request model for updating a document.
+
+    This model validates the request parameters for updating a document,
+    including name, chunk method, enabled status, and other metadata.
+    """
     model_config = ConfigDict(extra='ignore')
+    name: Annotated[str | None, Field(default=None, max_length=65535)]
     chunk_method: Annotated[str | None, Field(default=None, max_length=65535)]
     enabled: Annotated[int | None, Field(default=None, ge=0, le=1)]
     chunk_count: Annotated[int | None, Field(default=None, ge=0)]
@@ -870,7 +877,20 @@ class ListFileReq(BaseModel):
 
 
 def validate_immutable_fields(update_doc_req:UpdateDocumentReq, doc):
-    """Validate that immutable fields have not been changed."""
+    """
+    Validate that immutable fields have not been changed.
+
+    Checks that fields like chunk_count, token_count, and progress
+    cannot be modified directly by the user.
+
+    Args:
+        update_doc_req: The validated update document request.
+        doc: The document model from the database.
+
+    Returns:
+        A tuple of (error_message, error_code) if validation fails,
+        or (None, None) if validation passes.
+    """
     if update_doc_req.chunk_count and update_doc_req.chunk_count != int(getattr(doc, "chunk_num", -1)):
         return "Can't change `chunk_count`.", RetCode.DATA_ERROR
 
@@ -887,7 +907,24 @@ def validate_immutable_fields(update_doc_req:UpdateDocumentReq, doc):
 
 
 def validate_document_name(req_doc_name:str, doc, docs_from_name):
-    """Validate document name update."""
+    """
+    Validate document name update.
+
+    Checks that the new document name is valid:
+    - Must be a string
+    - Must not exceed the file name length limit
+    - File extension cannot be changed
+    - Must not duplicate an existing document name in the same dataset.
+
+    Args:
+        req_doc_name: The new document name to validate.
+        doc: The document model from the database.
+        docs_from_name: Query result for documents with the new name.
+
+    Returns:
+        A tuple of (error_message, error_code) if validation fails,
+        or (None, None) if validation passes.
+    """
     if not isinstance(req_doc_name, str):
         return f"AttributeError('{type(req_doc_name).__name__}' object has no attribute 'encode')", RetCode.EXCEPTION_ERROR
     if len(req_doc_name.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
@@ -901,7 +938,20 @@ def validate_document_name(req_doc_name:str, doc, docs_from_name):
     return None, None
 
 def validate_chunk_method(doc, chunk_method=None):
-    """Validate chunk method update."""
+    """
+    Validate chunk method update.
+
+    Checks if the chunk method is valid for the given document,
+    particularly for visual documents or specific file types.
+
+    Args:
+        doc: The document model from the database.
+        chunk_method: The chunk method to validate.
+
+    Returns:
+        A tuple of (error_message, error_code) if validation fails,
+        or (None, None) if validation passes.
+    """
     if chunk_method is not None and len(chunk_method) == 0: # will not be detected in UpdateDocumentReq
         return "`chunk_method` (empty string) is not valid", RetCode.DATA_ERROR
     if doc.type == FileType.VISUAL or re.search(r"\.(ppt|pptx|pages)$", doc.name):

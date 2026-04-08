@@ -21,6 +21,7 @@ from configs import DOCUMENT_NAME_LIMIT, INVALID_API_TOKEN, INVALID_ID_32
 from libs.auth import RAGFlowHttpApiAuth
 from configs import DEFAULT_PARSER_CONFIG
 
+
 @pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
@@ -53,13 +54,13 @@ class TestDocumentsUpdated:
             ),
             (
                 0,
-                100,
-                """AttributeError(\'int\' object has no attribute \'encode\')""",
+                102,
+                "Field: <name> - Message: <Input should be a valid string> - Value: <0>",
             ),
             (
                 None,
                 100,
-                """AttributeError(\'NoneType\' object has no attribute \'encode\')""",
+                "AttributeError('NoneType' object has no attribute 'encode')",
             ),
             (
                 "",
@@ -142,12 +143,12 @@ class TestDocumentsUpdated:
             # Invalid type - list instead of dict
             ([], 102, "Field: <meta_fields> - Message: <Input should be a valid dictionary> - Value: <[]>"),
             # Invalid - list containing objects (unsupported type in list)
-            ({"tags": [{"x": {"a":"b"}}]}, 102, "Field: <meta_fields> - Message: <The type is not supported in list: [{'x': {'a': 'b'}}]> - Value: <{'tags': [{'x': {'a': 'b'}}]}>"),
+            ({"tags": [{"x": {"a": "b"}}]}, 102, "Field: <meta_fields> - Message: <The type is not supported in list: [{'x': {'a': 'b'}}]> - Value: <{'tags': [{'x': {'a': 'b'}}]}>"),
             ({"tags": [{"x": 1}]}, 102, "Field: <meta_fields> - Message: <The type is not supported in list: [{'x': 1}]> - Value: <{'tags': [{'x': 1}]}>"),
             # Invalid - nested object with unsupported type
             ({"obj": {"x": 1}}, 102, "Field: <meta_fields> - Message: <The type is not supported: {'x': 1}> - Value: <{'obj': {'x': 1}}>"),
             # Valid types of list
-            ({"tags": [2,1]}, 0, ""),
+            ({"tags": [2, 1]}, 0, ""),
         ],
     )
     def test_meta_fields(self, HttpApiAuth, add_documents, meta_fields, expected_code, expected_message):
@@ -385,6 +386,7 @@ DEFAULT_PARSER_CONFIG_FOR_TEST = {
     },
 }
 
+
 class TestUpdateDocumentParserConfig:
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -485,9 +487,16 @@ class TestUpdateDocumentParserConfig:
                 102,
                 "Field: <parser_config.task_page_size> - Message: <Input should be a valid integer> - Value: <1024>",
             ),
-            ("naive", {"raptor": {"use_raptor": {
-                "a": "b"
-            },}}, 102, "Field: <parser_config.raptor.use_raptor> - Message: <Input should be a valid boolean> - Value: <{'a': 'b'}>"),
+            (
+                "naive",
+                {
+                    "raptor": {
+                        "use_raptor": {"a": "b"},
+                    }
+                },
+                102,
+                "Field: <parser_config.raptor.use_raptor> - Message: <Input should be a valid boolean> - Value: <{'a': 'b'}>",
+            ),
             ("naive", {"raptor": {"use_raptor": False}}, 0, ""),
             pytest.param(
                 "naive",
