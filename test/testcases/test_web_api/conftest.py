@@ -49,7 +49,7 @@ from utils.file_utils import (
 
 @wait_for(30, 1, "Document parsing timeout")
 def condition(_auth, _kb_id):
-    res = list_documents(_auth, {"kb_id": _kb_id})
+    res = list_documents(_auth, {"id": _kb_id})
     for doc in res["data"]["docs"]:
         if doc["run"] != "3":
             return False

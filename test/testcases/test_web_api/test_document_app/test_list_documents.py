@@ -34,7 +34,7 @@ class TestAuthorization:
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
-        res = list_documents(invalid_auth, {"kb_id": "dataset_id"})
+        res = list_documents(invalid_auth, {"id": "dataset_id"})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -43,7 +43,7 @@ class TestDocumentsList:
     @pytest.mark.p1
     def test_default(self, WebApiAuth, add_documents):
         kb_id, _ = add_documents
-        res = list_documents(WebApiAuth, {"kb_id": kb_id})
+        res = list_documents(WebApiAuth, {"id": kb_id})
         assert res["code"] == 0
         assert len(res["data"]["docs"]) == 5
         assert res["data"]["total"] == 5
@@ -57,7 +57,7 @@ class TestDocumentsList:
         ],
     )
     def test_invalid_dataset_id(self, WebApiAuth, kb_id, expected_code, expected_message):
-        res = list_documents(WebApiAuth, {"kb_id": kb_id})
+        res = list_documents(WebApiAuth, {"id": kb_id})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -76,7 +76,7 @@ class TestDocumentsList:
     )
     def test_page(self, WebApiAuth, add_documents, params, expected_code, expected_page_size, expected_message):
         kb_id, _ = add_documents
-        res = list_documents(WebApiAuth, {"kb_id": kb_id, **params})
+        res = list_documents(WebApiAuth, {"id": kb_id, **params})
         assert res["code"] == expected_code, res
         if expected_code == 0:
             assert len(res["data"]["docs"]) == expected_page_size, res
@@ -99,7 +99,7 @@ class TestDocumentsList:
     )
     def test_page_size(self, WebApiAuth, add_documents, params, expected_code, expected_page_size, expected_message):
         kb_id, _ = add_documents
-        res = list_documents(WebApiAuth, {"kb_id": kb_id, **params})
+        res = list_documents(WebApiAuth, {"id": kb_id, **params})
         assert res["code"] == expected_code, res
         if expected_code == 0:
             assert len(res["data"]["docs"]) == expected_page_size, res
@@ -119,7 +119,7 @@ class TestDocumentsList:
     )
     def test_orderby(self, WebApiAuth, add_documents, params, expected_code, assertions, expected_message):
         kb_id, _ = add_documents
-        res = list_documents(WebApiAuth, {"kb_id": kb_id, **params})
+        res = list_documents(WebApiAuth, {"id": kb_id, **params})
         assert res["code"] == expected_code, res
         if expected_code == 0:
             if callable(assertions):
@@ -144,7 +144,7 @@ class TestDocumentsList:
     )
     def test_desc(self, WebApiAuth, add_documents, params, expected_code, assertions, expected_message):
         kb_id, _ = add_documents
-        res = list_documents(WebApiAuth, {"kb_id": kb_id, **params})
+        res = list_documents(WebApiAuth, {"id": kb_id, **params})
         assert res["code"] == expected_code, res
         if expected_code == 0:
             if callable(assertions):
@@ -165,7 +165,7 @@ class TestDocumentsList:
     )
     def test_keywords(self, WebApiAuth, add_documents, params, expected_num):
         kb_id, _ = add_documents
-        res = list_documents(WebApiAuth, {"kb_id": kb_id, **params})
+        res = list_documents(WebApiAuth, {"id": kb_id, **params})
         assert res["code"] == 0, res
         assert len(res["data"]["docs"]) == expected_num, res
         assert res["data"]["total"] == expected_num, res
