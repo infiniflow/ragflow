@@ -31,6 +31,32 @@ ATTEMPT_TIME = 2
 MAX_RESULT_WINDOW = 10000
 SEARCH_AFTER_BATCH_SIZE = 1000
 
+# Single-document atomic pagerank_fea adjust (chunk feedback). Clamps using params.min_w / max_w;
+# removes field at zero for rank_feature compatibility.
+_PAGERANK_FEA_ADJUST_SCRIPT = """
+double cur = 0.0;
+if (ctx._source.containsKey(params.pf)) {
+  Object v = ctx._source[params.pf];
+  if (v != null) {
+    if (v instanceof Number) {
+      cur = ((Number)v).doubleValue();
+    } else {
+      try { cur = Double.parseDouble(v.toString()); } catch (Exception e) { cur = 0.0; }
+    }
+  }
+}
+double nw = cur + params.delta;
+if (nw < params.min_w) { nw = params.min_w; }
+if (nw > params.max_w) { nw = params.max_w; }
+if (nw <= 0.0) {
+  if (ctx._source.containsKey(params.pf)) {
+    ctx._source.remove(params.pf);
+  }
+} else {
+  ctx._source[params.pf] = nw;
+}
+"""
+
 
 @singleton
 class ESConnection(ESConnectionBase):
@@ -303,7 +329,11 @@ class ESConnection(ESConnectionBase):
             # update specific single document
             chunk_id = condition["id"]
             for i in range(ATTEMPT_TIME):
-                for k in doc.keys():
+                doc_part = copy.deepcopy(doc)
+                remove_value = doc_part.pop("remove", None)
+                remove_field = remove_value if isinstance(remove_value, str) else None
+                remove_dict = remove_value if isinstance(remove_value, dict) else None
+                for k in doc_part.keys():
                     if "feas" != k.split("_")[-1]:
                         continue
                     try:
@@ -312,8 +342,32 @@ class ESConnection(ESConnectionBase):
                         self.logger.exception(
                             f"ESConnection.update(index={index_name}, id={chunk_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
                 try:
-                    self.es.update(index=index_name, id=chunk_id, doc=doc)
-                    return True
+                    if remove_field is not None:
+                        self.es.update(
+                            index=index_name,
+                            id=chunk_id,
+                            script=f"ctx._source.remove('{remove_field}');",
+                        )
+                    if remove_dict is not None:
+                        scripts = []
+                        params = {}
+                        for kk, vv in remove_dict.items():
+                            scripts.append(
+                                f"if (ctx._source.containsKey('{kk}') && ctx._source.{kk} != null) "
+                                f"{{ int i = ctx._source.{kk}.indexOf(params.p_{kk}); "
+                                f"if (i >= 0) {{ ctx._source.{kk}.remove(i); }} }}"
+                            )
+                            params[f"p_{kk}"] = vv
+                        if scripts:
+                            self.es.update(
+                                index=index_name,
+                                id=chunk_id,
+                                script={"source": "".join(scripts), "params": params},
+                            )
+                    if doc_part:
+                        self.es.update(index=index_name, id=chunk_id, doc=doc_part)
+                    if remove_field is not None or remove_dict is not None or doc_part:
+                        return True
                 except Exception as e:
                     self.logger.exception(
                         f"ESConnection.update(index={index_name}, id={chunk_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception: " + str(
@@ -386,6 +440,61 @@ class ESConnection(ESConnectionBase):
                 continue
             except Exception as e:
                 self.logger.error("ESConnection.update got exception: " + str(e) + "\n".join(scripts))
+                break
+        return False
+
+    def adjust_chunk_pagerank_fea(
+        self,
+        chunk_id: str,
+        index_name: str,
+        knowledgebase_id: str,
+        delta: float,
+        min_w: float = 0.0,
+        max_w: float = 100.0,
+        row_id: int | None = None,
+    ) -> bool:
+        """Atomically adjust pagerank_fea on one chunk (painless script)."""
+        _ = row_id
+        for _ in range(ATTEMPT_TIME):
+            try:
+                self.es.update(
+                    index=index_name,
+                    id=chunk_id,
+                    retry_on_conflict=3,
+                    script={
+                        "source": _PAGERANK_FEA_ADJUST_SCRIPT.strip(),
+                        "lang": "painless",
+                        "params": {
+                            "pf": PAGERANK_FLD,
+                            "delta": float(delta),
+                            "min_w": float(min_w),
+                            "max_w": float(max_w),
+                        },
+                    },
+                )
+                self.logger.debug(
+                    "ESConnection.adjust_chunk_pagerank_fea(index=%s, id=%s, delta=%s) succeeded",
+                    index_name,
+                    chunk_id,
+                    delta,
+                )
+                return True
+            except ConnectionTimeout:
+                self.logger.exception("ES request timeout")
+                time.sleep(3)
+                self._connect()
+                continue
+            except Exception as e:
+                self.logger.exception(
+                    "ESConnection.adjust_chunk_pagerank_fea(index=%s, id=%s): %s",
+                    index_name,
+                    chunk_id,
+                    e,
+                )
+                if re.search(r"connection", str(e).lower()):
+                    time.sleep(3)
+                    self._connect()
+                    continue
                 break
         return False
 
