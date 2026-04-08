@@ -443,8 +443,16 @@ func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, hubID st
 		return nil, fmt.Errorf("hub not found")
 	}
 
+	// Find the actual hub folder ID by hub name (consistent with frontend behavior)
+	// Frontend uses hub name to find folder, not hub.FolderID which may be outdated
+	hubFolderID, err := s.getHubFolderIDByName(tenantID, hub.Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find hub folder: %w", err)
+	}
+	logger.Info(fmt.Sprintf("ReindexAll: found hub folder ID %s for hub %s (stored FolderID was %s)", hubFolderID, hub.Name, hub.FolderID))
+
 	// Traverse all skill folders under the hub
-	skills, err := s.getSkillsFromFileSystem(ctx, tenantID, hub.FolderID, hubID)
+	skills, err := s.getSkillsFromFileSystem(ctx, tenantID, hubFolderID, hubID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get skills from file system: %w", err)
 	}
@@ -646,6 +654,48 @@ func isTextFileForSkill(fileName string) bool {
 	return textFileExtensions[ext]
 }
 
+// getHubFolderIDByName finds the hub folder ID by hub name (consistent with frontend behavior)
+// Frontend finds hub folder by listing folders under skills folder and matching by name
+func (s *SkillIndexerService) getHubFolderIDByName(tenantID, hubName string) (string, error) {
+	// Get root folder
+	rootFolder, err := s.fileDAO.GetRootFolder(tenantID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get root folder: %w", err)
+	}
+
+	// Find skills folder under root
+	files, _, err := s.fileDAO.GetByPfID(tenantID, rootFolder.ID, 0, 0, "name", false, "")
+	if err != nil {
+		return "", fmt.Errorf("failed to list root folder contents: %w", err)
+	}
+
+	var skillsFolderID string
+	for _, file := range files {
+		if file.Type == "folder" && file.Name == "skills" {
+			skillsFolderID = file.ID
+			break
+		}
+	}
+
+	if skillsFolderID == "" {
+		return "", fmt.Errorf("skills folder not found for tenant %s", tenantID)
+	}
+
+	// Find hub folder by name under skills folder
+	hubFolders, _, err := s.fileDAO.GetByPfID(tenantID, skillsFolderID, 0, 0, "name", false, "")
+	if err != nil {
+		return "", fmt.Errorf("failed to list skills folder contents: %w", err)
+	}
+
+	for _, folder := range hubFolders {
+		if folder.Type == "folder" && folder.Name == hubName {
+			return folder.ID, nil
+		}
+	}
+
+	return "", fmt.Errorf("hub folder '%s' not found under skills folder", hubName)
+}
+
 // parseSkillMetadata parses SKILL.md content to extract metadata
 func (s *SkillIndexerService) parseSkillMetadata(content, defaultName string) (name, description string, tags []string) {
 	name = defaultName
@@ -712,10 +762,17 @@ func (s *SkillIndexerService) getFileContent(ctx context.Context, tenantID strin
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	// Get file content from storage using tenantID as bucket and Location as path
-	content, err := storageImpl.Get(tenantID, *file.Location)
+	// Get file content from storage using parent folder ID as bucket (consistent with Python)
+	// Python: settings.STORAGE_IMPL.put(last_folder.id, location, blob)
+	// Go: should use file.ParentID as bucket, not tenantID
+	bucket := file.ParentID
+	if bucket == "" {
+		// Fallback to tenantID if ParentID is empty (should not happen)
+		bucket = tenantID
+	}
+	content, err := storageImpl.Get(bucket, *file.Location)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get file from storage: %w", err)
+		return nil, fmt.Errorf("failed to get file from storage (bucket=%s, location=%s): %w", bucket, *file.Location, err)
 	}
 
 	return content, nil

@@ -165,9 +165,34 @@ func (e *infinityEngine) CreateIndex(ctx context.Context, indexName, datasetID s
 	}
 	logger.Debug("Infinity created table", zap.String("tableName", tableName))
 
-	// Create HNSW index on vector column
+	// Check if vector column exists (for embedding model changes)
+	// When embedding model changes, vector_size changes, and we need to add new column
+	colExists, err := e.columnExists(table, vectorColName)
+	if err != nil {
+		logger.Warn("Failed to check column existence", zap.String("column", vectorColName), zap.Error(err))
+	}
+
+	// Add new vector column if it doesn't exist (handles embedding model change)
+	if !colExists {
+		logger.Info("Adding new vector column for embedding model change", zap.String("column", vectorColName), zap.Int("size", vecSize))
+		addColSchema := infinity.TableSchema{
+			&infinity.ColumnDefinition{
+				Name:     vectorColName,
+				DataType: fmt.Sprintf("vector,%d,float", vecSize),
+			},
+		}
+		if _, err := table.AddColumns(addColSchema); err != nil {
+			logger.Error("Failed to add vector column", err)
+			return fmt.Errorf("Failed to add vector column %s: %w", vectorColName, err)
+		}
+		logger.Info("Successfully added vector column", zap.String("column", vectorColName))
+	}
+
+	// Create HNSW index on vector column with unique name based on vector size
+	// Use unique index name to avoid conflict when embedding model changes
+	vectorIndexName := fmt.Sprintf("q_%d_vec_idx", vecSize)
 	_, err = table.CreateIndex(
-		"q_vec_idx",
+		vectorIndexName,
 		infinity.NewIndexInfo(vectorColName, infinity.IndexTypeHnsw, map[string]string{
 			"M":               "16",
 			"ef_construction": "50",
@@ -178,8 +203,9 @@ func (e *infinityEngine) CreateIndex(ctx context.Context, indexName, datasetID s
 		"",
 	)
 	if err != nil {
-		return fmt.Errorf("Failed to create HNSW index: %w", err)
+		return fmt.Errorf("Failed to create HNSW index %s: %w", vectorIndexName, err)
 	}
+	logger.Info("Created vector index", zap.String("indexName", vectorIndexName), zap.String("column", vectorColName))
 
 	// Create full-text indexes for varchar fields with analyzers
 	for _, fieldName := range schema.Keys {
@@ -311,6 +337,30 @@ func (e *infinityEngine) IndexExists(ctx context.Context, indexName string) (boo
 	}
 	logger.Info("IndexExists: table found", zap.String("indexName", indexName))
 	return true, nil
+}
+
+// columnExists checks if a column exists in the table
+func (e *infinityEngine) columnExists(table *infinity.Table, columnName string) (bool, error) {
+	colsResp, err := table.ShowColumns()
+	if err != nil {
+		return false, err
+	}
+
+	result, ok := colsResp.(*infinity.QueryResult)
+	if !ok {
+		return false, fmt.Errorf("unexpected response type: %T", colsResp)
+	}
+
+	// ShowColumns returns a result set where Data contains arrays of column values
+	if nameArr, ok := result.Data["name"]; ok {
+		for i := 0; i < len(nameArr); i++ {
+			colName, _ := nameArr[i].(string)
+			if colName == columnName {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 // CreateDocMetaIndex creates the document metadata table/index
