@@ -449,6 +449,10 @@ class TestDatasetCreate:
             ("raptor_max_cluster_mid", {"raptor": {"max_cluster": 512}}),
             ("raptor_max_cluster_max", {"raptor": {"max_cluster": 1024}}),
             ("raptor_random_seed_min", {"raptor": {"random_seed": 0}}),
+            ("parent_child_true", {"parent_child": {"use_parent_child": True}}),
+            ("parent_child_false", {"parent_child": {"use_parent_child": False}}),
+            ("parent_child_delimiter", {"parent_child": {"children_delimiter": "\n\n"}}),
+            ("parent_child_delimiter_custom", {"parent_child": {"use_parent_child": True, "children_delimiter": "。"}}),
         ],
         ids=[
             "auto_keywords_min",
@@ -499,6 +503,10 @@ class TestDatasetCreate:
             "raptor_max_cluster_mid",
             "raptor_max_cluster_max",
             "raptor_random_seed_min",
+            "parent_child_true",
+            "parent_child_false",
+            "parent_child_delimiter",
+            "parent_child_delimiter_custom",
         ],
     )
     def test_parser_config(self, HttpApiAuth, name, parser_config):
@@ -570,6 +578,8 @@ class TestDatasetCreate:
             ("raptor_random_seed_float_not_allowed", {"raptor": {"random_seed": 3.14}}, "Input should be a valid integer"),
             ("raptor_random_seed_type_invalid", {"raptor": {"random_seed": "string"}}, "Input should be a valid integer"),
             ("parser_config_type_invalid", {"delimiter": "a" * 65536}, "Parser config exceeds size limit (max 65,535 characters)"),
+            ("parent_child_type_invalid", {"parent_child": {"use_parent_child": "string"}}, "Input should be a valid boolean"),
+            ("parent_child_delimiter_empty", {"parent_child": {"children_delimiter": ""}}, "String should have at least 1 character"),
         ],
         ids=[
             "auto_keywords_min_limit",
@@ -626,6 +636,8 @@ class TestDatasetCreate:
             "raptor_random_seed_float_not_allowed",
             "raptor_random_seed_type_invalid",
             "parser_config_type_invalid",
+            "parent_child_type_invalid",
+            "parent_child_delimiter_empty",
         ],
     )
     def test_parser_config_invalid(self, HttpApiAuth, name, parser_config, expected_message):

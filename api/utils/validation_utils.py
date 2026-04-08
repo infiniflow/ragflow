@@ -362,6 +362,11 @@ class GraphragConfig(Base):
     resolution: Annotated[bool, Field(default=False)]
 
 
+class ParentChildConfig(Base):
+    use_parent_child: Annotated[bool, Field(default=False)]
+    children_delimiter: Annotated[str, Field(default=r"\n", min_length=1)]
+
+
 class AutoMetadataField(Base):
     """Schema for a single auto-metadata field configuration."""
 
@@ -387,6 +392,7 @@ class ParserConfig(Base):
     graphrag: Annotated[GraphragConfig, Field(default_factory=lambda: GraphragConfig(use_graphrag=False))]
     html4excel: Annotated[bool, Field(default=False)]
     layout_recognize: Annotated[str, Field(default="DeepDOC")]
+    parent_child: Annotated[ParentChildConfig, Field(default_factory=lambda: ParentChildConfig(use_parent_child=False))]
     raptor: Annotated[RaptorConfig, Field(default_factory=lambda: RaptorConfig(use_raptor=False))]
     tag_kb_ids: Annotated[list[str], Field(default_factory=list)]
     topn_tags: Annotated[int, Field(default=1, ge=1, le=10)]
