@@ -544,10 +544,21 @@ func (p *FileProvider) downloadFile(ctx stdctx.Context, fileID string) ([]byte, 
 
 // DeleteFile deletes a file or folder by its ID
 func (p *FileProvider) DeleteFile(ctx stdctx.Context, fileID string) error {
-	path := fmt.Sprintf("/files?file_ids=%s", fileID)
-	resp, err := p.httpClient.Request("DELETE", path, true, "auto", nil, nil)
+	// Use JSON body format expected by Python backend: {"ids": ["file_id"]}
+	payload := map[string]interface{}{
+		"ids": []string{fileID},
+	}
+	resp, err := p.httpClient.Request("DELETE", "/files", true, "api", nil, payload)
 	if err != nil {
 		return fmt.Errorf("delete request failed: %w", err)
+	}
+
+	// Handle empty response (e.g., 204 No Content)
+	if len(resp.Body) == 0 {
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return nil
+		}
+		return fmt.Errorf("delete failed with status code: %d", resp.StatusCode)
 	}
 
 	var apiResp struct {

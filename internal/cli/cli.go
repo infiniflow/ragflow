@@ -1251,7 +1251,7 @@ func (c *CLI) RunSingleCommand(command *string) error {
 	defer c.Cleanup()
 
 	// Execute the command
-	if err := c.executeNew(*command); err != nil {
+	if err := c.execute(*command); err != nil {
 		return err
 	}
 	return nil

@@ -533,62 +533,138 @@ func (p *SkillProvider) listHubs(ctx stdctx.Context, opts *ListOptions) (*Result
 // listSkillsInHub lists skills in a specific hub
 // This is a virtual listing based on folder structure in file system
 func (p *SkillProvider) listSkillsInHub(ctx stdctx.Context, hubName string, opts *ListOptions) (*Result, error) {
-	// First get the hub UUID from hub name
-	hubUUID, err := p.getHubUUIDByName(ctx, hubName)
+	// Get the skills hub folder ID from file system
+	skillsFolderID, err := p.getSkillsFolderID(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("hub '%s' not found: %w", hubName, err)
+		return nil, fmt.Errorf("failed to get skills folder: %w", err)
 	}
 
-	// Search for all skills in this hub (use "*" as wildcard to match all)
-	payload := map[string]interface{}{
-		"query":      "*",
-		"hub_id":     hubUUID,
-		"page":       1,
-		"page_size":  1000,
-	}
-
-	resp, err := p.httpClient.Request("POST", "/skills/search", true, "auto", nil, payload)
+	// Find the hub folder
+	hubFolderID, err := p.findFolderID(ctx, skillsFolderID, hubName)
 	if err != nil {
-		return nil, fmt.Errorf("search request failed: %w", err)
+		return nil, fmt.Errorf("failed to find hub folder: %w", err)
 	}
 
-	var result struct {
+	// List all subfolders in the hub folder (each subfolder is a skill)
+	skillsResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", hubFolderID), true, "auto", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list skills: %w", err)
+	}
+
+	var skillsResult struct {
 		Code int    `json:"code"`
 		Msg  string `json:"message"`
 		Data struct {
-			Skills []struct {
-				SkillID     string `json:"skill_id"`
-				Name        string `json:"name"`
-				Description string `json:"description"`
-			} `json:"skills"`
+			Files []struct {
+				ID         string `json:"id"`
+				Name       string `json:"name"`
+				Type       string `json:"type"`
+				UpdateTime int64  `json:"update_time"`
+			} `json:"files"`
 		} `json:"data"`
 	}
 
-	if err := json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	if err := json.Unmarshal(skillsResp.Body, &skillsResult); err != nil {
+		return nil, fmt.Errorf("failed to parse skills response: %w", err)
 	}
 
-	if result.Code != 0 {
-		return nil, fmt.Errorf("search failed: %s", result.Msg)
+	if skillsResult.Code != 0 {
+		return nil, fmt.Errorf("failed to list skills: %s", skillsResult.Msg)
 	}
 
-	nodes := make([]*Node, 0, len(result.Data.Skills))
-	for _, skill := range result.Data.Skills {
-		nodes = append(nodes, &Node{
-			Name: skill.Name,
-			Type: NodeTypeDirectory,
-			Path: fmt.Sprintf("skills/%s/%s", hubName, skill.Name),
-			Metadata: map[string]interface{}{
-				"skill_id":    skill.SkillID,
-				"description": skill.Description,
-			},
-		})
+	// Convert folders to nodes
+	nodes := make([]*Node, 0)
+	for _, file := range skillsResult.Data.Files {
+		// Only include folders (skill directories)
+		if file.Type == "folder" {
+			nodes = append(nodes, &Node{
+				Name:      file.Name,
+				Type:      NodeTypeDirectory,
+				Path:      fmt.Sprintf("skills/%s/%s", hubName, file.Name),
+				UpdatedAt: time.UnixMilli(file.UpdateTime),
+				Metadata: map[string]interface{}{
+					"id": file.ID,
+				},
+			})
+		}
 	}
 
 	return &Result{
 		Nodes: nodes,
 		Total: len(nodes),
 	}, nil
+}
+
+// getSkillsFolderID gets the ID of the 'skills' folder
+func (p *SkillProvider) getSkillsFolderID(ctx stdctx.Context) (string, error) {
+	resp, err := p.httpClient.Request("GET", "/files", true, "auto", nil, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to list root folders: %w", err)
+	}
+
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"message"`
+		Data struct {
+			Files []struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+				Type string `json:"type"`
+			} `json:"files"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &result); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if result.Code != 0 {
+		return "", fmt.Errorf("failed to list folders: %s", result.Msg)
+	}
+
+	for _, file := range result.Data.Files {
+		if file.Name == "skills" && file.Type == "folder" {
+			return file.ID, nil
+		}
+	}
+
+	return "", fmt.Errorf("skills folder not found")
+}
+
+// findFolderID finds a folder by name under a parent folder
+func (p *SkillProvider) findFolderID(ctx stdctx.Context, parentID, folderName string) (string, error) {
+	resp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", parentID), true, "auto", nil, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to list folders: %w", err)
+	}
+
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"message"`
+		Data struct {
+			Files []struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+				Type string `json:"type"`
+			} `json:"files"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &result); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if result.Code != 0 {
+		return "", fmt.Errorf("failed to list folders: %s", result.Msg)
+	}
+
+	for _, file := range result.Data.Files {
+		if file.Name == folderName && file.Type == "folder" {
+			return file.ID, nil
+		}
+	}
+
+	return "", fmt.Errorf("folder '%s' not found", folderName)
 }
 
 // listSkillVersions lists versions of a skill
@@ -981,9 +1057,10 @@ func (p *SkillProvider) DeleteSkill(ctx stdctx.Context, hubID, skillName string)
 	}
 
 	// Call delete skill index API
+	// API format: DELETE /skills/index?skill_id={skill_name}&hub_id={hub_id}
 	resp, err := p.httpClient.Request("DELETE",
-		fmt.Sprintf("/skills/index/%s?hub_id=%s",
-			url.PathEscape(skillName),
+		fmt.Sprintf("/skills/index?skill_id=%s&hub_id=%s",
+			url.QueryEscape(skillName),
 			url.QueryEscape(hubUUID)),
 		true, "auto", nil, nil)
 	if err != nil {
@@ -992,7 +1069,7 @@ func (p *SkillProvider) DeleteSkill(ctx stdctx.Context, hubID, skillName string)
 
 	var result struct {
 		Code int    `json:"code"`
-		Msg  string `json:"msg"`
+		Msg  string `json:"message"`
 	}
 
 	if err := json.Unmarshal(resp.Body, &result); err != nil {
@@ -1000,7 +1077,10 @@ func (p *SkillProvider) DeleteSkill(ctx stdctx.Context, hubID, skillName string)
 	}
 
 	if result.Code != 0 {
-		return fmt.Errorf("delete failed: %s", result.Msg)
+		if result.Msg != "" {
+			return fmt.Errorf("delete failed: %s", result.Msg)
+		}
+		return fmt.Errorf("delete failed with code: %d", result.Code)
 	}
 
 	return nil
@@ -1731,13 +1811,18 @@ type AddSkillArgs struct {
 	SkillPath string
 	Version   string
 	SkillName string // User-specified skill name (overrides SKILL.md)
+	HubID     string // Skills hub ID
 	ShowHelp  bool
 }
 
 // ParseAddSkillArgs parses the add-skill command arguments
+// Format: add-skill <hub> <path> [options]
+// Hub is required
 func ParseAddSkillArgs(args []string) (*AddSkillArgs, error) {
 	result := &AddSkillArgs{}
 
+	// Collect non-flag arguments (hub and path)
+	var nonFlagArgs []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 
@@ -1760,15 +1845,29 @@ func ParseAddSkillArgs(args []string) (*AddSkillArgs, error) {
 				return nil, fmt.Errorf("name flag requires a value")
 			}
 		default:
-			// Non-flag argument is the skill path
-			if !strings.HasPrefix(arg, "-") && result.SkillPath == "" {
-				result.SkillPath = arg
+			// Non-flag argument (hub or path)
+			if !strings.HasPrefix(arg, "-") {
+				nonFlagArgs = append(nonFlagArgs, arg)
 			}
 		}
 	}
 
-	if result.SkillPath == "" && !result.ShowHelp {
-		return nil, fmt.Errorf("skill path is required")
+	// Parse hub and path from non-flag arguments
+	switch len(nonFlagArgs) {
+	case 0:
+		if !result.ShowHelp {
+			return nil, fmt.Errorf("hub and skill path are required")
+		}
+	case 1:
+		if !result.ShowHelp {
+			return nil, fmt.Errorf("skill path is required")
+		}
+	case 2:
+		// Hub and path provided
+		result.HubID = nonFlagArgs[0]
+		result.SkillPath = nonFlagArgs[1]
+	default:
+		return nil, fmt.Errorf("too many arguments: expected <hub> <path>")
 	}
 
 	return result, nil
@@ -1797,10 +1896,10 @@ func (c *AddSkillCommand) Execute(args []string) error {
 		return fmt.Errorf("%s is not a directory", skillPath)
 	}
 
-	// Upload skill to default hub
+	// Upload skill to specified hub (or default if not specified)
 	uploader := NewSkillUploader(c.client, c.fileProvider)
 	uploader.SetSkillProvider(c.skillProvider)
-	err = uploader.UploadSkill(stdctx.Background(), skillPath, parsedArgs.Version, "", parsedArgs.SkillName)
+	err = uploader.UploadSkill(stdctx.Background(), skillPath, parsedArgs.Version, parsedArgs.HubID, parsedArgs.SkillName)
 	if err != nil {
 		// Handle version conflict error
 		if conflictErr, ok := err.(*SkillConflictError); ok {
@@ -1814,22 +1913,23 @@ func (c *AddSkillCommand) Execute(args []string) error {
 
 // PrintHelp prints the help message for add-skill command
 func (c *AddSkillCommand) PrintHelp() {
-	fmt.Println(`Usage: add-skill <path> [options]
+	fmt.Println(`Usage: add-skill <hub> <path> [options]
 
 Upload a skill directory to RAGFlow.
-The skill is uploaded to the current skills hub (based on your current directory context).
 
 Arguments:
-  <path>                 Path to the skill directory
+  <hub>                  Skills Hub ID (required)
+  <path>                 Path to the skill directory (required)
 
 Options:
   -v, --version string   Specify the skill version (default: from SKILL.md or 1.0.0)
+  -n, --name string      Specify the skill name (overrides SKILL.md metadata)
   -h, --help             Show this help message
 
 Examples:
-  add-skill /path/to/my-skill
-  add-skill /path/to/my-skill --version 1.0.0
-  add-skill /path/to/my-skill -v 2.0.0
+  add-skill my-hub /path/to/my-skill
+  add-skill my-hub /path/to/my-skill --version 1.0.0
+  add-skill my-hub /path/to/my-skill -v 2.0.0 --name my-custom-name
 
 The skill directory must contain a SKILL.md file with required frontmatter:
   ---
@@ -1872,9 +1972,13 @@ type DeleteSkillArgs struct {
 }
 
 // ParseDeleteSkillArgs parses the delete-skill command arguments
+// Format: delete-skill <hub> <skill-name>
+// Both hub and skill-name are required
 func ParseDeleteSkillArgs(args []string) (*DeleteSkillArgs, error) {
-	result := &DeleteSkillArgs{HubID: DefaultHubID}
+	result := &DeleteSkillArgs{}
 
+	// Collect non-flag arguments (hub and skill name)
+	var nonFlagArgs []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 
@@ -1882,23 +1986,30 @@ func ParseDeleteSkillArgs(args []string) (*DeleteSkillArgs, error) {
 		case "-h", "--help":
 			result.ShowHelp = true
 			return result, nil
-		case "--hub":
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-				result.HubID = normalizeHubID(args[i+1])
-				i++
-			} else {
-				return nil, fmt.Errorf("hub flag requires a value")
-			}
 		default:
-			// Non-flag argument is the skill name
-			if !strings.HasPrefix(arg, "-") && result.SkillName == "" {
-				result.SkillName = arg
+			// Non-flag argument (hub or skill name)
+			if !strings.HasPrefix(arg, "-") {
+				nonFlagArgs = append(nonFlagArgs, arg)
 			}
 		}
 	}
 
-	if result.SkillName == "" && !result.ShowHelp {
-		return nil, fmt.Errorf("skill name is required")
+	// Parse hub and skill name from non-flag arguments
+	switch len(nonFlagArgs) {
+	case 0:
+		if !result.ShowHelp {
+			return nil, fmt.Errorf("hub and skill name are required")
+		}
+	case 1:
+		if !result.ShowHelp {
+			return nil, fmt.Errorf("skill name is required")
+		}
+	case 2:
+		// Hub and skill name provided
+		result.HubID = nonFlagArgs[0]
+		result.SkillName = nonFlagArgs[1]
+	default:
+		return nil, fmt.Errorf("too many arguments: expected <hub> <skill-name>")
 	}
 
 	return result, nil
@@ -1930,10 +2041,13 @@ func (c *DeleteSkillCommand) deleteSkill(ctx stdctx.Context, skillName, hubID st
 		return fmt.Errorf("invalid skill provider type")
 	}
 
+	var indexErr, folderErr error
+
 	// Delete index first
 	fmt.Printf("Deleting search index for skill '%s'...\n", skillName)
 	if err := skillProvider.DeleteSkill(ctx, hubID, skillName); err != nil {
-		fmt.Printf("⚠ Warning: Failed to delete search index: %v\n", err)
+		indexErr = fmt.Errorf("failed to delete search index: %w", err)
+		fmt.Printf("✗ %v\n", indexErr)
 	} else {
 		fmt.Printf("✓ Search index deleted\n")
 	}
@@ -1943,10 +2057,22 @@ func (c *DeleteSkillCommand) deleteSkill(ctx stdctx.Context, skillName, hubID st
 		fmt.Printf("Deleting skill folder '%s/%s'...\n", hubID, skillName)
 		folderPath := fmt.Sprintf("skills/%s/%s", hubID, skillName)
 		if err := c.fileProvider.DeleteFolderByPath(ctx, folderPath); err != nil {
-			fmt.Printf("⚠ Warning: Failed to delete skill folder: %v\n", err)
+			folderErr = fmt.Errorf("failed to delete skill folder: %w", err)
+			fmt.Printf("✗ %v\n", folderErr)
 		} else {
 			fmt.Printf("✓ Skill folder deleted\n")
 		}
+	}
+
+	// Return error if any deletion failed
+	if indexErr != nil && folderErr != nil {
+		return fmt.Errorf("failed to delete skill '%s': index deletion failed (%v), folder deletion failed (%v)", skillName, indexErr, folderErr)
+	}
+	if indexErr != nil {
+		return fmt.Errorf("failed to delete skill '%s': %w", skillName, indexErr)
+	}
+	if folderErr != nil {
+		return fmt.Errorf("failed to delete skill '%s': %w", skillName, folderErr)
 	}
 
 	fmt.Printf("✓ Successfully deleted skill '%s'\n", skillName)
@@ -1955,21 +2081,20 @@ func (c *DeleteSkillCommand) deleteSkill(ctx stdctx.Context, skillName, hubID st
 
 // PrintHelp prints the help message for delete-skill command
 func (c *DeleteSkillCommand) PrintHelp() {
-	fmt.Println(`Usage: delete-skill <skill-name> [options]
+	fmt.Println(`Usage: delete-skill <hub> <skill-name>
 
 Delete a skill from RAGFlow and remove its search index.
 
 Arguments:
-  <skill-name>           Name of the skill to delete
+  <hub>                  Skills Hub ID (required)
+  <skill-name>           Name of the skill to delete (required)
 
 Options:
-  --hub string           Skills Hub ID (default: default)
   -h, --help            Show this help message
 
 Examples:
-  delete-skill my-skill
-  delete-skill my-skill --hub hub1
-  delete-skill my-awesome-skill`)
+  delete-skill my-hub my-skill
+  delete-skill hub1 my-awesome-skill`)
 }
 
 // ============================================================================
