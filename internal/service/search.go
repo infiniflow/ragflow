@@ -199,3 +199,37 @@ func (s *SearchService) CreateSearch(userID string, name string, description *st
 		SearchID: searchID,
 	}, nil
 }
+
+func (s *SearchService) GetSearchDetail(userID string, searchID string) (*entity.Search, error) {
+	// Step 1: Get user tenants (same as Python UserTenantService.query(user_id=current_user.id))
+	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user tenants: %w", err)
+	}
+
+	// Step 2: Check if user has permission to access this search
+	// Python: for tenant in tenants: if SearchService.query(tenant_id=tenant.tenant_id, id=search_id): break
+	hasPermission := false
+	for _, tenant := range tenants {
+		searches, err := s.searchDAO.QueryByTenantIDAndID(tenant.TenantID, searchID)
+		if err != nil {
+			continue // Try next tenant
+		}
+		if len(searches) > 0 {
+			hasPermission = true
+			break
+		}
+	}
+
+	if !hasPermission {
+		return nil, fmt.Errorf("has no permission for this operation")
+	}
+
+	// Step 3: Get search detail (same as Python SearchService.get_detail(search_id))
+	search, err := s.searchDAO.GetByID(searchID)
+	if err != nil {
+		return nil, fmt.Errorf("can't find this Search App!")
+	}
+
+	return search, nil
+}

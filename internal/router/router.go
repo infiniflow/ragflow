@@ -196,6 +196,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		{
 			searches.GET("", r.searchHandler.ListSearches)
 			searches.POST("", r.searchHandler.CreateSearch)
+			searches.GET("/:search_id", r.searchHandler.GetSearch)
 		}
 
 			file := v1.Group("/files")

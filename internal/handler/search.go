@@ -177,3 +177,78 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 		"message": "success",
 	})
 }
+
+// GetSearch get search app detail
+// @Summary Get Search App Detail
+// @Description Get detail of a search app by ID
+// @Tags search
+// @Accept json
+// @Produce json
+// @Param search_id path string true "search app ID"
+// @Success 200 {object} entity.Search
+// @Router /api/v1/searches/{search_id} [get]
+func (h *SearchHandler) GetSearch(c *gin.Context) {
+	// Get current user from context (same as Python current_user)
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	userID := user.ID
+
+	// Get search_id from path parameter (same as Python <search_id>)
+	searchID := c.Param("search_id")
+	if searchID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    nil,
+			"message": "search_id is required",
+		})
+		return
+	}
+
+	// Get search detail with permission check
+	search, err := h.searchService.GetSearchDetail(userID, searchID)
+	if err != nil {
+		// Check if it's a permission error
+		if err.Error() == "has no permission for this operation" {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeOperatingError,
+				"data":    false,
+				"message": "Has no permission for this operation.",
+			})
+			return
+		}
+		// Not found error
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Convert to response format (same as Python get_json_result(data=search))
+	result := map[string]interface{}{
+		"id":            search.ID,
+		"tenant_id":     search.TenantID,
+		"name":          search.Name,
+		"description":   search.Description,
+		"created_by":    search.CreatedBy,
+		"status":        search.Status,
+		"create_time":   search.CreateTime,
+		"update_time":   search.UpdateTime,
+		"search_config": search.SearchConfig,
+	}
+
+	if search.Avatar != nil {
+		result["avatar"] = *search.Avatar
+	}
+
+	// Return success response
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    result,
+		"message": "success",
+	})
+}
