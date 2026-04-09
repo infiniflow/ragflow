@@ -422,7 +422,7 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 		// Note: schema has skill_id as primary identifier, no 'id' column
 		outputColumns = []string{
 			"skill_id",
-			"hub_id",
+			"space_id",
 			"folder_id",
 			"name",
 			"tags",

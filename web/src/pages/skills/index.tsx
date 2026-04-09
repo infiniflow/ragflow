@@ -80,12 +80,12 @@ const SkillsPage: React.FC = () => {
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const [hubs, setHubs] = useState<Array<{ id: string; name: string }>>([]);
-  const [hubInput, setHubInput] = useState('');
-  const [selectedHubId, setSelectedHubId] = useState<string>('');
-  const [selectedHubName, setSelectedHubName] = useState<string>('');
-  const [hubLoading, setHubLoading] = useState(false);
-  const [hubSearchString, setHubSearchString] = useState('');
+  const [spaces, setSpaces] = useState<Array<{ id: string; name: string }>>([]);
+  const [spaceInput, setSpaceInput] = useState('');
+  const [selectedSpaceId, setSelectedSpaceId] = useState<string>('');
+  const [selectedSpaceName, setSelectedSpaceName] = useState<string>('');
+  const [spaceLoading, setSpaceLoading] = useState(false);
+  const [spaceSearchString, setSpaceSearchString] = useState('');
 
   const {
     skills,
@@ -93,10 +93,10 @@ const SkillsPage: React.FC = () => {
     loading,
     searchQuery,
     setSearchQuery,
-    fetchHubs,
-    createHub,
-    deleteHub,
-    updateHub,
+    fetchSpaces,
+    createSpace,
+    deleteSpace,
+    updateSpace,
     fetchSkills,
     uploadSkill,
     deleteSkill,
@@ -112,31 +112,31 @@ const SkillsPage: React.FC = () => {
     fetchConfig,
     reindex,
     searchSkills,
-  } = useSkillSearchConfig(selectedHubId);
+  } = useSkillSearchConfig(selectedSpaceId);
 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [hubViewMode, setHubViewMode] = useState<'grid' | 'list'>('grid');
+  const [spaceViewMode, setSpaceViewMode] = useState<'grid' | 'list'>('grid');
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [configModalOpen, setConfigModalOpen] = useState(false);
-  const [createHubModalOpen, setCreateHubModalOpen] = useState(false);
-  const [deleteHubModalOpen, setDeleteHubModalOpen] = useState(false);
-  const [hubToDelete, setHubToDelete] = useState<{
+  const [createSpaceModalOpen, setCreateSpaceModalOpen] = useState(false);
+  const [deleteSpaceModalOpen, setDeleteSpaceModalOpen] = useState(false);
+  const [spaceToDelete, setSpaceToDelete] = useState<{
     id: string;
     name: string;
   } | null>(null);
-  const [renameHubModalOpen, setRenameHubModalOpen] = useState(false);
-  const [hubToRename, setHubToRename] = useState<{
+  const [renameSpaceModalOpen, setRenameSpaceModalOpen] = useState(false);
+  const [spaceToRename, setSpaceToRename] = useState<{
     id: string;
     name: string;
   } | null>(null);
-  const [renameHubInput, setRenameHubInput] = useState('');
+  const [renameSpaceInput, setRenameSpaceInput] = useState('');
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
-  const [hubDetails, setHubDetails] = useState<
+  const [spaceDetails, setSpaceDetails] = useState<
     Record<string, { size: number; createTime: number }>
   >({});
-  const [deleteHubsModalOpen, setDeleteHubsModalOpen] = useState(false);
+  const [deleteSpacesModalOpen, setDeleteSpacesModalOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<Skill[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -152,15 +152,15 @@ const SkillsPage: React.FC = () => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // Selection state derived values (must be declared before any functions that use them)
-  const selectedHubCount = useMemo(
+  const selectedSpaceCount = useMemo(
     () => Object.keys(rowSelection).length,
     [rowSelection],
   );
-  const selectedHubIds = useMemo(
+  const selectedSpaceIds = useMemo(
     () => Object.keys(rowSelection),
     [rowSelection],
   );
-  const hasSelectedHubs = selectedHubCount > 0;
+  const hasSelectedSpaces = selectedSpaceCount > 0;
 
   const clearModalLocks = useCallback(() => {
     setDetailOpen(false);
@@ -182,19 +182,19 @@ const SkillsPage: React.FC = () => {
     };
   }, []);
 
-  const loadHubs = useCallback(async () => {
-    setHubLoading(true);
+  const loadSpaces = useCallback(async () => {
+    setSpaceLoading(true);
     setRowSelection({}); // Clear selection when loading new data
     try {
-      const nextHubs = await fetchHubs();
-      setHubs(nextHubs);
-      // Fetch folder details for each hub
+      const nextSpaces = await fetchSpaces();
+      setSpaces(nextSpaces);
+      // Fetch folder details for each space
       const details: Record<string, { size: number; createTime: number }> = {};
-      for (const hub of nextHubs) {
-        if (hub.folder_id) {
+      for (const space of nextSpaces) {
+        if (space.folder_id) {
           try {
             const { data } = await fileManagerService.listFile({
-              parent_id: hub.folder_id,
+              parent_id: space.folder_id,
             });
             if (data.code === 0) {
               const files = data.data?.files || [];
@@ -202,32 +202,32 @@ const SkillsPage: React.FC = () => {
                 (sum: number, f: any) => sum + (f.size || 0),
                 0,
               );
-              details[hub.id] = {
+              details[space.id] = {
                 size: totalSize,
-                createTime: hub.create_time || Date.now(),
+                createTime: space.create_time || Date.now(),
               };
             }
           } catch (e) {
-            console.warn('Failed to fetch hub folder details:', e);
+            console.warn('Failed to fetch space folder details:', e);
           }
         }
       }
-      setHubDetails(details);
+      setSpaceDetails(details);
     } finally {
-      setHubLoading(false);
+      setSpaceLoading(false);
     }
-  }, [fetchHubs]);
+  }, [fetchSpaces]);
 
   useEffect(() => {
-    loadHubs();
+    loadSpaces();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Function to load skills with pagination and sorting
   const loadSkills = useCallback(async () => {
     const result = await fetchSkills(
-      selectedHubName,
-      selectedHubId,
+      selectedSpaceName,
+      selectedSpaceId,
       currentPage,
       pageSize,
       sortBy,
@@ -236,31 +236,31 @@ const SkillsPage: React.FC = () => {
     setTotalSkills(result.total);
   }, [
     fetchSkills,
-    selectedHubName,
-    selectedHubId,
+    selectedSpaceName,
+    selectedSpaceId,
     currentPage,
     pageSize,
     sortBy,
     sortOrder,
   ]);
 
-  // Load skills when hub changes or pagination/sorting changes
+  // Load skills when space changes or pagination/sorting changes
   useEffect(() => {
-    if (!selectedHubId || !selectedHubName) return;
-    // Clear search results when switching hubs
+    if (!selectedSpaceId || !selectedSpaceName) return;
+    // Clear search results when switching spaces
     setSearchResults([]);
     setHasSearched(false);
     setSearchQuery('');
     setCurrentPage(1);
-    fetchConfig(undefined, selectedHubId);
+    fetchConfig(undefined, selectedSpaceId);
     // Use search API with pagination and sorting
     loadSkills();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedHubId, selectedHubName]);
+  }, [selectedSpaceId, selectedSpaceName]);
 
   // Load skills when pagination or sorting changes
   useEffect(() => {
-    if (!selectedHubId || !selectedHubName || hasSearched) return;
+    if (!selectedSpaceId || !selectedSpaceName || hasSearched) return;
     loadSkills();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, sortBy, sortOrder]);
@@ -343,27 +343,27 @@ const SkillsPage: React.FC = () => {
 
   const handleUpload = useCallback(
     async (name: string, version: string, files: File[]) => {
-      // Pass hub name (for file system), hub ID (for indexing), and embd_id (for indexing)
+      // Pass space name (for file system), space ID (for indexing), and embd_id (for indexing)
       return await uploadSkill(
         name,
         version,
         files,
-        selectedHubName,
-        selectedHubId,
+        selectedSpaceName,
+        selectedSpaceId,
         config?.embd_id,
       );
     },
-    [uploadSkill, selectedHubName, selectedHubId, config?.embd_id],
+    [uploadSkill, selectedSpaceName, selectedSpaceId, config?.embd_id],
   );
 
   const handleDelete = useCallback(
     async (skillId: string, skillName: string, folderId?: string) => {
-      // Pass both hub ID (for index), hub name (for file system), and folderId (for search results)
+      // Pass both space ID (for index), space name (for file system), and folderId (for search results)
       const success = await deleteSkill(
         skillId,
         skillName,
-        selectedHubId,
-        selectedHubName,
+        selectedSpaceId,
+        selectedSpaceName,
         folderId,
       );
       // If delete succeeded and we have search results, remove the skill from searchResults
@@ -371,77 +371,86 @@ const SkillsPage: React.FC = () => {
         setSearchResults((prev) => prev.filter((s) => s.id !== skillId));
       }
     },
-    [deleteSkill, selectedHubId, selectedHubName],
+    [deleteSkill, selectedSpaceId, selectedSpaceName],
   );
 
   const handleCreateHub = useCallback(async () => {
-    const nextHubName = hubInput.trim();
+    const nextHubName = spaceInput.trim();
     if (!nextHubName) return;
-    const newHub = await createHub(nextHubName);
+    const newHub = await createSpace(nextHubName);
     if (!newHub) return;
-    setHubInput('');
-    setCreateHubModalOpen(false);
-    await loadHubs();
-    // Select the newly created hub
-    setSelectedHubId(newHub.id);
-    setSelectedHubName(newHub.name);
-  }, [hubInput, createHub, loadHubs]);
+    setSpaceInput('');
+    setCreateSpaceModalOpen(false);
+    await loadSpaces();
+    // Select the newly created space
+    setSelectedSpaceId(newHub.id);
+    setSelectedSpaceName(newHub.name);
+  }, [spaceInput, createSpace, loadSpaces]);
 
   const handleDeleteHub = useCallback(async () => {
-    if (!hubToDelete) return;
-    const success = await deleteHub(hubToDelete.id);
+    if (!spaceToDelete) return;
+    const success = await deleteSpace(spaceToDelete.id);
     if (success) {
-      setDeleteHubModalOpen(false);
-      setHubToDelete(null);
-      await loadHubs();
+      setDeleteSpaceModalOpen(false);
+      setSpaceToDelete(null);
+      await loadSpaces();
     }
-  }, [hubToDelete, deleteHub, loadHubs]);
+  }, [spaceToDelete, deleteSpace, loadSpaces]);
 
-  const openDeleteHubModal = useCallback(
-    (hub: { id: string; name: string }, e: React.MouseEvent) => {
+  const openDeleteSpaceModal = useCallback(
+    (space: { id: string; name: string }, e: React.MouseEvent) => {
       e.stopPropagation();
-      setHubToDelete(hub);
-      setDeleteHubModalOpen(true);
+      setSpaceToDelete(space);
+      setDeleteSpaceModalOpen(true);
     },
     [],
   );
 
-  const openRenameHubModal = useCallback(
-    (hub: { id: string; name: string }, e: React.MouseEvent) => {
+  const openRenameSpaceModal = useCallback(
+    (space: { id: string; name: string }, e: React.MouseEvent) => {
       e.stopPropagation();
-      setHubToRename(hub);
-      setRenameHubInput(hub.name);
-      setRenameHubModalOpen(true);
+      setSpaceToRename(space);
+      setRenameSpaceInput(space.name);
+      setRenameSpaceModalOpen(true);
     },
     [],
   );
 
   const handleRenameHub = useCallback(async () => {
-    if (!hubToRename || !renameHubInput.trim()) return;
-    const success = await updateHub(hubToRename.id, renameHubInput.trim());
+    if (!spaceToRename || !renameSpaceInput.trim()) return;
+    const success = await updateSpace(
+      spaceToRename.id,
+      renameSpaceInput.trim(),
+    );
     if (success) {
-      setRenameHubModalOpen(false);
-      setHubToRename(null);
-      setRenameHubInput('');
-      await loadHubs();
-      // Update selected hub name if it's the current hub
-      if (selectedHubId === hubToRename.id) {
-        setSelectedHubName(renameHubInput.trim());
+      setRenameSpaceModalOpen(false);
+      setSpaceToRename(null);
+      setRenameSpaceInput('');
+      await loadSpaces();
+      // Update selected space name if it's the current space
+      if (selectedSpaceId === spaceToRename.id) {
+        setSelectedSpaceName(renameSpaceInput.trim());
       }
     }
-  }, [hubToRename, renameHubInput, updateHub, loadHubs, selectedHubId]);
+  }, [
+    spaceToRename,
+    renameSpaceInput,
+    updateSpace,
+    loadSpaces,
+    selectedSpaceId,
+  ]);
 
   const handleDeleteSelectedHubs = useCallback(async () => {
-    for (const hubId of selectedHubIds) {
-      await deleteHub(hubId);
+    for (const hubId of selectedSpaceIds) {
+      await deleteSpace(hubId);
     }
-    setDeleteHubsModalOpen(false);
+    setDeleteSpacesModalOpen(false);
     setRowSelection({});
-    await loadHubs();
-  }, [selectedHubIds, deleteHub, loadHubs]);
+    await loadSpaces();
+  }, [selectedSpaceIds, deleteSpace, loadSpaces]);
 
   const handleOpenDeleteSelectedModal = useCallback(() => {
-    setDeleteHubsModalOpen(true);
+    setDeleteSpacesModalOpen(true);
   }, []);
 
   const handleSearch = useCallback(
@@ -517,17 +526,17 @@ const SkillsPage: React.FC = () => {
 
   const handleHubSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      setHubSearchString(e.target.value);
+      setSpaceSearchString(e.target.value);
     },
     [],
   );
 
-  const filteredHubs = useMemo(() => {
-    if (!hubSearchString.trim()) return hubs;
-    return hubs.filter((hub) =>
-      hub.name.toLowerCase().includes(hubSearchString.toLowerCase()),
+  const filteredSpaces = useMemo(() => {
+    if (!spaceSearchString.trim()) return spaces;
+    return spaces.filter((space) =>
+      space.name.toLowerCase().includes(spaceSearchString.toLowerCase()),
     );
-  }, [hubs, hubSearchString]);
+  }, [spaces, spaceSearchString]);
 
   const displayedSkills = useMemo(() => {
     // Server-side sorting is already applied via API, no need to sort here
@@ -536,7 +545,7 @@ const SkillsPage: React.FC = () => {
 
   const isLoading = loading || isSearching || configLoading;
 
-  // Hub list breadcrumb: root / skills
+  // Space list breadcrumb: root / skills
   const hubListBreadcrumb = (
     <div className="flex items-center gap-2">
       <span
@@ -563,8 +572,8 @@ const SkillsPage: React.FC = () => {
       <span
         className="text-text-secondary cursor-pointer hover:text-text-primary"
         onClick={() => {
-          setSelectedHubId('');
-          setSelectedHubName('');
+          setSelectedSpaceId('');
+          setSelectedSpaceName('');
           setSearchResults([]);
           setHasSearched(false);
           setSearchQuery('');
@@ -574,47 +583,47 @@ const SkillsPage: React.FC = () => {
         {t('skills.title')}
       </span>
       <span className="text-text-secondary">/</span>
-      <span>{selectedHubName}</span>
+      <span>{selectedSpaceName}</span>
     </div>
   );
 
-  // Hub list page (no hub selected)
-  if (!selectedHubId) {
+  // Space list page (no space selected)
+  if (!selectedSpaceId) {
     return (
       <>
         <article
           className="size-full flex flex-col"
-          data-testid="skills-hub-list"
+          data-testid="skill-space-list"
         >
           <header className="px-5 pt-8 mb-4">
             <ListFilterBar
               leftPanel={hubListBreadcrumb}
-              searchString={hubSearchString}
+              searchString={spaceSearchString}
               onSearchChange={handleHubSearchChange}
               showFilter={false}
               icon="file"
             >
               <div className="flex items-center gap-2">
                 <Segmented
-                  value={hubViewMode}
-                  onChange={(v) => setHubViewMode(v as 'grid' | 'list')}
+                  value={spaceViewMode}
+                  onChange={(v) => setSpaceViewMode(v as 'grid' | 'list')}
                   options={[
                     { value: 'grid', label: <LayoutGrid className="size-4" /> },
                     { value: 'list', label: <List className="size-4" /> },
                   ]}
                 />
-                <Button onClick={() => setCreateHubModalOpen(true)}>
+                <Button onClick={() => setCreateSpaceModalOpen(true)}>
                   <Plus className="size-[1em]" />
-                  {t('skills.createHub') || 'Create Skills Hub'}
+                  {t('skills.createSpace') || 'Create Skill Space'}
                 </Button>
               </div>
             </ListFilterBar>
 
-            {hasSelectedHubs && hubViewMode === 'list' && (
+            {hasSelectedSpaces && spaceViewMode === 'list' && (
               <BulkOperateBar
                 className="mt-4"
-                count={selectedHubCount}
-                unit={t('skills.hub') || 'hubs'}
+                count={selectedSpaceCount}
+                unit={t('skills.space') || 'spaces'}
                 list={[
                   {
                     id: 'delete',
@@ -628,31 +637,31 @@ const SkillsPage: React.FC = () => {
           </header>
 
           <div className="flex-1 px-5 flex flex-col overflow-hidden">
-            {hubLoading ? (
+            {spaceLoading ? (
               <div className="flex-1 flex items-center justify-center">
                 <Spin size="large" />
               </div>
-            ) : filteredHubs.length ? (
-              hubViewMode === 'grid' ? (
+            ) : filteredSpaces.length ? (
+              spaceViewMode === 'grid' ? (
                 <CardContainer className="flex-1 overflow-auto">
-                  {filteredHubs.map((hub) => (
+                  {filteredSpaces.map((space) => (
                     <div
-                      key={hub.id}
+                      key={space.id}
                       className="group flex flex-col rounded-xl border border-border p-4 hover:border-accent-primary hover:shadow-md transition-all cursor-pointer bg-bg-card relative"
                       onClick={() => {
-                        setSelectedHubId(hub.id);
-                        setSelectedHubName(hub.name);
+                        setSelectedSpaceId(space.id);
+                        setSelectedSpaceName(space.name);
                       }}
                     >
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex-1 min-w-0 flex items-center gap-2">
                           <SvgIcon
-                            name="home-icon/skills-hub"
+                            name="home-icon/skill-space"
                             width={20}
                             height={20}
                           />
                           <h3 className="font-semibold text-lg truncate">
-                            {hub.name}
+                            {space.name}
                           </h3>
                         </div>
                         <div className="flex opacity-0 group-hover:opacity-100 transition-opacity">
@@ -661,7 +670,7 @@ const SkillsPage: React.FC = () => {
                             size="icon"
                             className="h-8 w-8 text-text-secondary hover:text-accent-primary"
                             onClick={(e: React.MouseEvent) =>
-                              openRenameHubModal(hub, e)
+                              openRenameSpaceModal(space, e)
                             }
                           >
                             <Pencil className="size-4" />
@@ -671,7 +680,7 @@ const SkillsPage: React.FC = () => {
                             size="icon"
                             className="h-8 w-8 text-text-secondary hover:text-red-500"
                             onClick={(e: React.MouseEvent) =>
-                              openDeleteHubModal(hub, e)
+                              openDeleteSpaceModal(space, e)
                             }
                           >
                             <Trash2 className="size-4" />
@@ -680,7 +689,7 @@ const SkillsPage: React.FC = () => {
                       </div>
                       <div className="mt-auto pt-2">
                         <span className="text-accent-primary text-sm">
-                          {t('skills.enterHub') || 'Enter'} →
+                          {t('skills.enterSpace') || 'Enter'} →
                         </span>
                       </div>
                     </div>
@@ -701,16 +710,18 @@ const SkillsPage: React.FC = () => {
                         <th className="px-3 py-3 text-center">
                           <Checkbox
                             checked={
-                              filteredHubs.length > 0 &&
-                              filteredHubs.every((hub) => rowSelection[hub.id])
+                              filteredSpaces.length > 0 &&
+                              filteredSpaces.every(
+                                (space) => rowSelection[space.id],
+                              )
                             }
                             onCheckedChange={(checked) => {
                               const newSelection = { ...rowSelection };
-                              filteredHubs.forEach((hub) => {
+                              filteredSpaces.forEach((space) => {
                                 if (checked) {
-                                  newSelection[hub.id] = true;
+                                  newSelection[space.id] = true;
                                 } else {
-                                  delete newSelection[hub.id];
+                                  delete newSelection[space.id];
                                 }
                               });
                               setRowSelection(newSelection);
@@ -718,7 +729,7 @@ const SkillsPage: React.FC = () => {
                           />
                         </th>
                         <th className="px-4 py-3 text-left text-sm font-medium text-text-title">
-                          {t('skills.hubName') || 'Name'}
+                          {t('skills.spaceName') || 'Name'}
                         </th>
                         <th className="px-4 py-3 text-left text-sm font-medium text-text-title">
                           {t('fileManager.uploadDate') || 'Upload Date'}
@@ -732,13 +743,13 @@ const SkillsPage: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {filteredHubs.map((hub) => (
+                      {filteredSpaces.map((space) => (
                         <tr
-                          key={hub.id}
+                          key={space.id}
                           className="hover:bg-bg-secondary/50 cursor-pointer transition-colors"
                           onClick={() => {
-                            setSelectedHubId(hub.id);
-                            setSelectedHubName(hub.name);
+                            setSelectedSpaceId(space.id);
+                            setSelectedSpaceName(space.name);
                           }}
                         >
                           <td
@@ -746,14 +757,14 @@ const SkillsPage: React.FC = () => {
                             onClick={(e) => e.stopPropagation()}
                           >
                             <Checkbox
-                              checked={!!rowSelection[hub.id]}
+                              checked={!!rowSelection[space.id]}
                               onCheckedChange={(checked) => {
                                 setRowSelection((prev) => {
                                   const newSelection = { ...prev };
                                   if (checked) {
-                                    newSelection[hub.id] = true;
+                                    newSelection[space.id] = true;
                                   } else {
-                                    delete newSelection[hub.id];
+                                    delete newSelection[space.id];
                                   }
                                   return newSelection;
                                 });
@@ -763,23 +774,23 @@ const SkillsPage: React.FC = () => {
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2 overflow-hidden">
                               <SvgIcon
-                                name="home-icon/skills-hub"
+                                name="home-icon/skill-space"
                                 width={16}
                                 height={16}
                               />
                               <span className="font-medium truncate">
-                                {hub.name}
+                                {space.name}
                               </span>
                             </div>
                           </td>
                           <td className="px-4 py-3 text-sm text-text-secondary">
-                            {hubDetails[hub.id]?.createTime
-                              ? formatDate(hubDetails[hub.id].createTime)
+                            {spaceDetails[space.id]?.createTime
+                              ? formatDate(spaceDetails[space.id].createTime)
                               : '-'}
                           </td>
                           <td className="px-4 py-3 text-sm text-text-secondary">
-                            {hubDetails[hub.id]?.size !== undefined
-                              ? formatFileSize(hubDetails[hub.id].size)
+                            {spaceDetails[space.id]?.size !== undefined
+                              ? formatFileSize(spaceDetails[space.id].size)
                               : '-'}
                           </td>
                           <td
@@ -791,7 +802,7 @@ const SkillsPage: React.FC = () => {
                               size="icon"
                               className="h-8 w-8 text-text-secondary hover:text-accent-primary"
                               onClick={(e: React.MouseEvent) =>
-                                openRenameHubModal(hub, e)
+                                openRenameSpaceModal(space, e)
                               }
                             >
                               <Pencil className="size-4" />
@@ -801,7 +812,7 @@ const SkillsPage: React.FC = () => {
                               size="icon"
                               className="h-8 w-8 text-text-secondary hover:text-red-500"
                               onClick={(e: React.MouseEvent) =>
-                                openDeleteHubModal(hub, e)
+                                openDeleteSpaceModal(space, e)
                               }
                             >
                               <Trash2 className="size-4" />
@@ -815,7 +826,7 @@ const SkillsPage: React.FC = () => {
               )
             ) : (
               <div className="flex-1 flex items-center justify-center">
-                {hubSearchString ? (
+                {spaceSearchString ? (
                   <EmptyAppCard
                     showIcon
                     size="large"
@@ -829,7 +840,7 @@ const SkillsPage: React.FC = () => {
                     size="large"
                     className="w-[480px] p-14"
                     type={EmptyCardType.Skills}
-                    onClick={() => setCreateHubModalOpen(true)}
+                    onClick={() => setCreateSpaceModalOpen(true)}
                   />
                 )}
               </div>
@@ -837,28 +848,33 @@ const SkillsPage: React.FC = () => {
           </div>
         </article>
 
-        {/* Create Hub Modal */}
-        <Dialog open={createHubModalOpen} onOpenChange={setCreateHubModalOpen}>
+        {/* Create Space Modal */}
+        <Dialog
+          open={createSpaceModalOpen}
+          onOpenChange={setCreateSpaceModalOpen}
+        >
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
               <DialogTitle>
-                {t('skills.createHubTitle') || 'Create New Skills Hub'}
+                {t('skills.createSpaceTitle') || 'Create New Skill Space'}
               </DialogTitle>
               <DialogDescription>
-                {t('skills.createHubDescription') ||
-                  'Create a new hub to organize and manage your skills.'}
+                {t('skills.createSpaceDescription') ||
+                  'Create a new space to organize and manage your skills.'}
               </DialogDescription>
             </DialogHeader>
             <div className="py-4">
               <label className="text-sm font-medium mb-2 block">
-                {t('skills.hubName') || 'Hub Name'}
+                {t('skills.spaceName') || 'Space Name'}
               </label>
               <Input
-                placeholder={t('skills.hubNamePlaceholder') || 'e.g., my-hub'}
-                value={hubInput}
-                onChange={(e) => setHubInput(e.target.value)}
+                placeholder={
+                  t('skills.spaceNamePlaceholder') || 'e.g., my-space'
+                }
+                value={spaceInput}
+                onChange={(e) => setSpaceInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && hubInput.trim()) {
+                  if (e.key === 'Enter' && spaceInput.trim()) {
                     handleCreateHub();
                   }
                 }}
@@ -868,43 +884,46 @@ const SkillsPage: React.FC = () => {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setCreateHubModalOpen(false);
-                  setHubInput('');
+                  setCreateSpaceModalOpen(false);
+                  setSpaceInput('');
                 }}
               >
                 {t('common.cancel')}
               </Button>
-              <Button onClick={handleCreateHub} disabled={!hubInput.trim()}>
+              <Button onClick={handleCreateHub} disabled={!spaceInput.trim()}>
                 {t('common.create')}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
-        {/* Delete Hub Modal */}
-        <Dialog open={deleteHubModalOpen} onOpenChange={setDeleteHubModalOpen}>
+        {/* Delete Space Modal */}
+        <Dialog
+          open={deleteSpaceModalOpen}
+          onOpenChange={setDeleteSpaceModalOpen}
+        >
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
               <DialogTitle>
-                {t('skills.deleteHubTitle') || 'Delete Skills Hub'}
+                {t('skills.deleteSpaceTitle') || 'Delete Skill Space'}
               </DialogTitle>
               <DialogDescription>
-                {t('skills.deleteHubDescription') ||
-                  'Are you sure you want to delete this skills hub? This action cannot be undone and all skills in this hub will be permanently deleted.'}
+                {t('skills.deleteSpaceDescription') ||
+                  'Are you sure you want to delete this skill space? This action cannot be undone and all skills in this space will be permanently deleted.'}
               </DialogDescription>
             </DialogHeader>
             <div className="py-4">
               <p className="text-sm text-text-secondary">
-                {t('skills.deleteHubName') || 'Hub name'}:{' '}
-                <strong>{hubToDelete?.name}</strong>
+                {t('skills.deleteSpaceName') || 'Space name'}:{' '}
+                <strong>{spaceToDelete?.name}</strong>
               </p>
             </div>
             <DialogFooter>
               <Button
                 variant="outline"
                 onClick={() => {
-                  setDeleteHubModalOpen(false);
-                  setHubToDelete(null);
+                  setDeleteSpaceModalOpen(false);
+                  setSpaceToDelete(null);
                 }}
               >
                 {t('common.cancel')}
@@ -916,28 +935,33 @@ const SkillsPage: React.FC = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Rename Hub Modal */}
-        <Dialog open={renameHubModalOpen} onOpenChange={setRenameHubModalOpen}>
+        {/* Rename Space Modal */}
+        <Dialog
+          open={renameSpaceModalOpen}
+          onOpenChange={setRenameSpaceModalOpen}
+        >
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
               <DialogTitle>
-                {t('skills.renameHubTitle') || 'Rename Skills Hub'}
+                {t('skills.renameSpaceTitle') || 'Rename Skill Space'}
               </DialogTitle>
               <DialogDescription>
-                {t('skills.renameHubDescription') ||
-                  'Enter a new name for this skills hub.'}
+                {t('skills.renameSpaceDescription') ||
+                  'Enter a new name for this skill space.'}
               </DialogDescription>
             </DialogHeader>
             <div className="py-4">
               <label className="text-sm font-medium mb-2 block">
-                {t('skills.hubName') || 'Hub Name'}
+                {t('skills.spaceName') || 'Space Name'}
               </label>
               <Input
-                placeholder={t('skills.hubNamePlaceholder') || 'e.g., my-hub'}
-                value={renameHubInput}
-                onChange={(e) => setRenameHubInput(e.target.value)}
+                placeholder={
+                  t('skills.spaceNamePlaceholder') || 'e.g., my-space'
+                }
+                value={renameSpaceInput}
+                onChange={(e) => setRenameSpaceInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && renameHubInput.trim()) {
+                  if (e.key === 'Enter' && renameSpaceInput.trim()) {
                     handleRenameHub();
                   }
                 }}
@@ -947,9 +971,9 @@ const SkillsPage: React.FC = () => {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setRenameHubModalOpen(false);
-                  setHubToRename(null);
-                  setRenameHubInput('');
+                  setRenameSpaceModalOpen(false);
+                  setSpaceToRename(null);
+                  setRenameSpaceInput('');
                 }}
               >
                 {t('common.cancel')}
@@ -957,8 +981,8 @@ const SkillsPage: React.FC = () => {
               <Button
                 onClick={handleRenameHub}
                 disabled={
-                  !renameHubInput.trim() ||
-                  renameHubInput.trim() === hubToRename?.name
+                  !renameSpaceInput.trim() ||
+                  renameSpaceInput.trim() === spaceToRename?.name
                 }
               >
                 {t('common.save') || 'Save'}
@@ -969,8 +993,8 @@ const SkillsPage: React.FC = () => {
 
         {/* Delete Selected Hubs Modal */}
         <Dialog
-          open={deleteHubsModalOpen}
-          onOpenChange={setDeleteHubsModalOpen}
+          open={deleteSpacesModalOpen}
+          onOpenChange={setDeleteSpacesModalOpen}
         >
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
@@ -980,20 +1004,20 @@ const SkillsPage: React.FC = () => {
               </DialogTitle>
               <DialogDescription>
                 {t('skills.deleteSelectedHubsDescription') ||
-                  'Are you sure you want to delete the selected skills hubs? This action cannot be undone and all skills in these hubs will be permanently deleted.'}
+                  'Are you sure you want to delete the selected skills spaces? This action cannot be undone and all skills in these spaces will be permanently deleted.'}
               </DialogDescription>
             </DialogHeader>
             <div className="py-4">
               <p className="text-sm text-text-secondary">
-                {t('skills.selectedHubsCount') || 'Selected hubs'}:{' '}
-                <strong>{selectedHubCount}</strong>
+                {t('skills.selectedHubsCount') || 'Selected spaces'}:{' '}
+                <strong>{selectedSpaceCount}</strong>
               </p>
             </div>
             <DialogFooter>
               <Button
                 variant="outline"
                 onClick={() => {
-                  setDeleteHubsModalOpen(false);
+                  setDeleteSpacesModalOpen(false);
                 }}
               >
                 {t('common.cancel')}
@@ -1008,7 +1032,7 @@ const SkillsPage: React.FC = () => {
     );
   }
 
-  // Inside a hub (skills list page)
+  // Inside a space (skills list page)
   return (
     <article className="size-full flex flex-col" data-testid="skills-list">
       <header className="px-5 pt-8 mb-4">

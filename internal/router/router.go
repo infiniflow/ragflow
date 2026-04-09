@@ -199,13 +199,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Skill search routes
 		skills := v1.Group("/skills")
 		{
-			// Skills Hub management
-			skills.GET("/hubs", r.skillSearchHandler.ListHubs)
-			skills.POST("/hubs", r.skillSearchHandler.CreateHub)
-			skills.GET("/hubs/:hub_id", r.skillSearchHandler.GetHub)
-			skills.PUT("/hubs/:hub_id", r.skillSearchHandler.UpdateHub)
-			skills.DELETE("/hubs/:hub_id", r.skillSearchHandler.DeleteHub)
-			skills.GET("/hub/by-folder", r.skillSearchHandler.GetHubByFolder)
+			// Skill Space management
+			skills.GET("/spaces", r.skillSearchHandler.ListSpaces)
+			skills.POST("/spaces", r.skillSearchHandler.CreateSpace)
+			skills.GET("/spaces/:space_id", r.skillSearchHandler.GetSpace)
+			skills.PUT("/spaces/:space_id", r.skillSearchHandler.UpdateSpace)
+			skills.DELETE("/spaces/:space_id", r.skillSearchHandler.DeleteSpace)
+			skills.GET("/space/by-folder", r.skillSearchHandler.GetSpaceByFolder)
 
 			// Skill search config
 			skills.GET("/config", r.skillSearchHandler.GetConfig)

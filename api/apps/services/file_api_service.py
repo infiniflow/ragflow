@@ -213,8 +213,8 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
     :param auth_header: Authorization header for Go backend API calls
     :return: (success, result) or (success, error_message)
     """
-    def _get_hub_uuid_by_name(tenant_id, hub_name, authorization):
-        """Get hub UUID by hub name from Go backend"""
+    def _get_space_uuid_by_name(tenant_id, space_name, authorization):
+        """Get space UUID by space name from Go backend"""
         try:
             import requests
 
@@ -223,8 +223,8 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
             port = getattr(settings, 'HOST_PORT', 9380) + 4
             service_url = f"http://{host}:{port}"
 
-            # List all hubs and find the one matching the name
-            url = f"{service_url}/api/v1/skills/hubs"
+            # List all spaces and find the one matching the name
+            url = f"{service_url}/api/v1/skills/spaces"
             headers = {"Content-Type": "application/json"}
             if authorization:
                 headers["Authorization"] = authorization
@@ -234,15 +234,15 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
             if response.status_code == 200:
                 data = response.json()
                 if data.get("code") == 0:
-                    hubs = data.get("data", {}).get("hubs", [])
-                    for hub in hubs:
-                        if hub.get("name") == hub_name:
-                            return hub.get("id")
+                    spaces = data.get("data", {}).get("spaces", [])
+                    for space in spaces:
+                        if space.get("name") == space_name:
+                            return space.get("id")
         except Exception as e:
-            logging.warning(f"Error getting hub UUID: {e}")
+            logging.warning(f"Error getting space UUID: {e}")
         return None
 
-    def _delete_skill_index(tenant_id, hub_name, skill_name, authorization):
+    def _delete_skill_index(tenant_id, space_name, skill_name, authorization):
         """Delete skill index from Go backend.
 
         Returns:
@@ -258,11 +258,11 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
             port = getattr(settings, 'HOST_PORT', 9380) + 4
             service_url = f"http://{host}:{port}"
 
-            # Get hub UUID from hub name
-            hub_uuid = _get_hub_uuid_by_name(tenant_id, hub_name, authorization)
-            hub_id = hub_uuid if hub_uuid else hub_name
+            # Get space UUID from space name
+            space_uuid = _get_space_uuid_by_name(tenant_id, space_name, authorization)
+            space_id = space_uuid if space_uuid else space_name
 
-            url = f"{service_url}/api/v1/skills/index?skill_id={quote(skill_name)}&hub_id={quote(hub_id)}"
+            url = f"{service_url}/api/v1/skills/index?skill_id={quote(skill_name)}&space_id={quote(space_id)}"
             headers = {"Content-Type": "application/json"}
             if authorization:
                 headers["Authorization"] = authorization
@@ -273,7 +273,7 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
                     data = response.json()
                     if data.get("code") == 0:
                         logging.info(
-                            f"Successfully deleted skill index: hub={hub_name}, skill={skill_name}, "
+                            f"Successfully deleted skill index: space={space_name}, skill={skill_name}, "
                             f"status={response.status_code}, code=0"
                         )
                         return True
@@ -281,7 +281,7 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
                         app_code = data.get("code", "unknown")
                         app_msg = data.get("message", "no message")
                         logging.error(
-                            f"Failed to delete skill index: hub={hub_name}, skill={skill_name}, "
+                            f"Failed to delete skill index: space={space_name}, skill={skill_name}, "
                             f"status={response.status_code}, app_code={app_code}, app_msg={app_msg}, "
                             f"response={response.text}"
                         )
@@ -289,19 +289,19 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
                 except ValueError as json_err:
                     # JSON decode error - treat as failure
                     logging.error(
-                        f"Failed to parse delete response JSON: hub={hub_name}, skill={skill_name}, "
+                        f"Failed to parse delete response JSON: space={space_name}, skill={skill_name}, "
                         f"error={json_err}, raw_response={response.text}"
                     )
                     return False
             else:
                 logging.error(
-                    f"Failed to delete skill index: hub={hub_name}, skill={skill_name}, "
+                    f"Failed to delete skill index: space={space_name}, skill={skill_name}, "
                     f"status={response.status_code}, response={response.text}"
                 )
                 return False
         except Exception as e:
             logging.error(
-                f"Exception deleting skill index: hub={hub_name}, skill={skill_name}, error={e}"
+                f"Exception deleting skill index: space={space_name}, skill={skill_name}, error={e}"
             )
             return False
 
@@ -324,11 +324,11 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
 
         FileService.delete(file)
 
-    def _find_ancestor_skills_hub(folder_id, tenant_id):
-        """Walk up the folder hierarchy to find an ancestor with source_type == 'skills_hub'.
+    def _find_ancestor_skill_space(folder_id, tenant_id):
+        """Walk up the folder hierarchy to find an ancestor with source_type == 'skill_space'.
 
         Returns:
-            tuple: (success, folder) where folder has source_type == 'skills_hub', or (False, None)
+            tuple: (success, folder) where folder has source_type == 'skill_space', or (False, None)
         """
         visited = set()
         current_id = folder_id
@@ -337,50 +337,50 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
             success, folder = FileService.get_by_id(current_id)
             if not success or not folder:
                 return False, None
-            if folder.source_type == "skills_hub":
+            if folder.source_type == "skill_space":
                 return True, folder
             # Move to parent
             current_id = folder.parent_id
         return False, None
 
-    def _delete_folder_recursive(folder, tenant_id, is_skill_folder=False, hub_name=None, authorization=""):
-        # Determine if this is a hub folder, skill folder, or regular folder
-        current_hub_name = hub_name
-        is_hub_folder = folder.source_type == "skills_hub"
-        
-        # If not already identified as skill folder and no hub name, check parent/ancestors
-        if not is_skill_folder and not current_hub_name and not is_hub_folder:
+    def _delete_folder_recursive(folder, tenant_id, is_skill_folder=False, space_name=None, authorization=""):
+        # Determine if this is a space folder, skill folder, or regular folder
+        current_space_name = space_name
+        is_space_folder = folder.source_type == "skill_space"
+
+        # If not already identified as skill folder and no space name, check parent/ancestors
+        if not is_skill_folder and not current_space_name and not is_space_folder:
             # First check immediate parent
             parent_success, parent_folder = FileService.get_by_id(folder.parent_id)
-            if parent_success and parent_folder and parent_folder.source_type == "skills_hub":
+            if parent_success and parent_folder and parent_folder.source_type == "skill_space":
                 is_skill_folder = True
-                # Use parent folder name as hub name (e.g., "hub11")
-                current_hub_name = parent_folder.name
-                logging.info(f"Identified skill folder '{folder.name}' (parent hub: {current_hub_name})")
+                # Use parent folder name as space name (e.g., "space11")
+                current_space_name = parent_folder.name
+                logging.info(f"Identified skill folder '{folder.name}' (parent space: {current_space_name})")
             else:
-                # Walk up the hierarchy to find skills_hub ancestor
-                ancestor_success, ancestor_folder = _find_ancestor_skills_hub(folder.parent_id, tenant_id)
+                # Walk up the hierarchy to find skill_space ancestor
+                ancestor_success, ancestor_folder = _find_ancestor_skill_space(folder.parent_id, tenant_id)
                 if ancestor_success and ancestor_folder:
                     is_skill_folder = True
-                    current_hub_name = ancestor_folder.name
-                    logging.info(f"Identified skill folder '{folder.name}' (ancestor hub: {current_hub_name})")
-        
-        # If this is a hub folder, extract hub name for children
-        if is_hub_folder:
-            current_hub_name = folder.name
-            logging.info(f"Processing hub folder '{folder.name}' - will delete all skill indexes within")
+                    current_space_name = ancestor_folder.name
+                    logging.info(f"Identified skill folder '{folder.name}' (ancestor space: {current_space_name})")
 
-        # If this is a skill folder (not hub folder), delete its index first
-        if is_skill_folder and current_hub_name and not is_hub_folder:
-            logging.info(f"Deleting skill index for skill '{folder.name}' in hub '{current_hub_name}'")
-            index_deleted = _delete_skill_index(tenant_id, current_hub_name, folder.name, authorization)
+        # If this is a space folder, extract space name for children
+        if is_space_folder:
+            current_space_name = folder.name
+            logging.info(f"Processing space folder '{folder.name}' - will delete all skill indexes within")
+
+        # If this is a skill folder (not space folder), delete its index first
+        if is_skill_folder and current_space_name and not is_space_folder:
+            logging.info(f"Deleting skill index for skill '{folder.name}' in space '{current_space_name}'")
+            index_deleted = _delete_skill_index(tenant_id, current_space_name, folder.name, authorization)
             if not index_deleted:
                 logging.error(
                     f"Aborting folder deletion due to index deletion failure: "
-                    f"folder={folder.name}, hub={current_hub_name}"
+                    f"folder={folder.name}, space={current_space_name}"
                 )
                 raise RuntimeError(
-                    f"Failed to delete skill index for folder '{folder.name}' in hub '{current_hub_name}'. "
+                    f"Failed to delete skill index for folder '{folder.name}' in space '{current_space_name}'. "
                     f"Folder deletion aborted to prevent orphaned indexes."
                 )
 
@@ -389,8 +389,8 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
         
         for sub_file in sub_files:
             if sub_file.type == FileType.FOLDER.value:
-                # Recursively delete subfolder, passing hub_name for skill identification
-                _delete_folder_recursive(sub_file, tenant_id, is_skill_folder, current_hub_name, authorization)
+                # Recursively delete subfolder, passing space_name for skill identification
+                _delete_folder_recursive(sub_file, tenant_id, is_skill_folder, current_space_name, authorization)
             else:
                 # Note: Skill index is already deleted above when deleting the skill folder.
                 # We don't delete index here because skill index uses skill name (folder name) as key,
@@ -423,6 +423,9 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
                 return False, "No authorization."
 
             if file.source_type == FileSource.KNOWLEDGEBASE:
+                continue
+
+            if file.source_type == "skill_space":
                 continue
 
             if file.type == FileType.FOLDER.value:

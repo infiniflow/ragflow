@@ -18,15 +18,15 @@ package entity
 
 import "time"
 
-// Hub status constants
+// Space status constants
 const (
-	HubStatusActive   = "1" // Normal active hub
-	HubStatusDeleted  = "0" // Soft-deleted hub
-	HubStatusDeleting = "2" // Hub is being asynchronously deleted
+	SpaceStatusActive   = "1" // Normal active space
+	SpaceStatusDeleted  = "0" // Soft-deleted space
+	SpaceStatusDeleting = "2" // Space is being asynchronously deleted
 )
 
-// SkillsHub represents a skills hub (library) that contains skills
-type SkillsHub struct {
+// SkillSpace represents a skills space (library) that contains skills
+type SkillSpace struct {
 	ID          string     `gorm:"column:id;primaryKey;size:32" json:"id"`
 	TenantID    string     `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
 	Name        string     `gorm:"column:name;size:128;not null" json:"name"`
@@ -40,27 +40,27 @@ type SkillsHub struct {
 	UpdateTime  *time.Time `gorm:"column:update_time" json:"update_time,omitempty"`
 }
 
-// TableName returns the table name for SkillsHub model
-func (SkillsHub) TableName() string {
-	return "skills_hubs"
+// TableName returns the table name for SkillSpace model
+func (SkillSpace) TableName() string {
+	return "skill_spaces"
 }
 
 // StatusDescription returns a human-readable status string
-func (s *SkillsHub) StatusDescription() string {
+func (s *SkillSpace) StatusDescription() string {
 	switch s.Status {
-	case HubStatusActive:
+	case SpaceStatusActive:
 		return "active"
-	case HubStatusDeleted:
+	case SpaceStatusDeleted:
 		return "deleted"
-	case HubStatusDeleting:
+	case SpaceStatusDeleting:
 		return "deleting"
 	default:
 		return "unknown"
 	}
 }
 
-// ToMap converts SkillsHub to a map for JSON response
-func (s *SkillsHub) ToMap() map[string]interface{} {
+// ToMap converts SkillSpace to a map for JSON response
+func (s *SkillSpace) ToMap() map[string]interface{} {
 	result := map[string]interface{}{
 		"id":          s.ID,
 		"tenant_id":   s.TenantID,

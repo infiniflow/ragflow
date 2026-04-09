@@ -2,7 +2,7 @@ import request from '@/utils/request';
 
 const API_PREFIX = '/api/v1';
 
-export interface SkillsHub {
+export interface SkillSpace {
   id: string;
   tenant_id: string;
   name: string;
@@ -16,14 +16,14 @@ export interface SkillsHub {
   update_time?: string;
 }
 
-export interface CreateHubRequest {
+export interface CreateSpaceRequest {
   name: string;
   description?: string;
   embd_id?: string;
   rerank_id?: string;
 }
 
-export interface UpdateHubRequest {
+export interface UpdateSpaceRequest {
   name?: string;
   description?: string;
   embd_id?: string;
@@ -34,7 +34,7 @@ export interface UpdateHubRequest {
 export interface SkillSearchConfig {
   id: string;
   tenant_id: string;
-  hub_id: string;
+  space_id: string;
   embd_id: string;
   vector_similarity_weight: number;
   similarity_threshold: number;
@@ -50,7 +50,7 @@ export interface SkillSearchConfig {
 
 export interface UpdateConfigRequest {
   tenant_id?: string;
-  hub_id?: string;
+  space_id?: string;
   embd_id: string;
   vector_similarity_weight: number;
   similarity_threshold: number;
@@ -61,7 +61,7 @@ export interface UpdateConfigRequest {
 
 export interface SearchRequest {
   tenant_id?: string;
-  hub_id?: string;
+  space_id?: string;
   query: string;
   page?: number;
   page_size?: number;
@@ -95,12 +95,12 @@ export interface SkillInfo {
 
 export interface IndexSkillsRequest {
   tenant_id?: string;
-  hub_id?: string;
+  space_id?: string;
   skills: SkillInfo[];
   embd_id?: string;
 }
 
-class SkillsHubService {
+class SkillSpaceService {
   private async request<T>(
     method: string,
     url: string,
@@ -113,7 +113,6 @@ class SkillsHubService {
       params,
     });
 
-    // Handle both direct response and response with data property
     const jsonData = response?.data ?? response;
 
     if (jsonData?.code !== 0) {
@@ -123,55 +122,58 @@ class SkillsHubService {
     return jsonData.data;
   }
 
-  // ==================== Skills Hub Management ====================
+  // ==================== Skill Space Management ====================
 
-  // List all skills hubs
-  async listHubs(): Promise<{ hubs: SkillsHub[]; total: number }> {
-    return await this.request<{ hubs: SkillsHub[]; total: number }>(
+  // List all skill spaces
+  async listSpaces(): Promise<{ spaces: SkillSpace[]; total: number }> {
+    return await this.request<{ spaces: SkillSpace[]; total: number }>(
       'GET',
-      `${API_PREFIX}/skills/hubs`,
+      `${API_PREFIX}/skills/spaces`,
     );
   }
 
-  // Create a new skills hub
-  async createHub(request: CreateHubRequest): Promise<SkillsHub> {
-    return await this.request<SkillsHub>(
+  // Create a new skill space
+  async createSpace(request: CreateSpaceRequest): Promise<SkillSpace> {
+    return await this.request<SkillSpace>(
       'POST',
-      `${API_PREFIX}/skills/hubs`,
+      `${API_PREFIX}/skills/spaces`,
       request,
     );
   }
 
-  // Get a skills hub by ID
-  async getHub(hubId: string): Promise<SkillsHub> {
-    return await this.request<SkillsHub>(
+  // Get a skill space by ID
+  async getSpace(spaceId: string): Promise<SkillSpace> {
+    return await this.request<SkillSpace>(
       'GET',
-      `${API_PREFIX}/skills/hubs/${hubId}`,
+      `${API_PREFIX}/skills/spaces/${spaceId}`,
     );
   }
 
-  // Update a skills hub
-  async updateHub(
-    hubId: string,
-    request: UpdateHubRequest,
-  ): Promise<SkillsHub> {
-    return await this.request<SkillsHub>(
+  // Update a skill space
+  async updateSpace(
+    spaceId: string,
+    request: UpdateSpaceRequest,
+  ): Promise<SkillSpace> {
+    return await this.request<SkillSpace>(
       'PUT',
-      `${API_PREFIX}/skills/hubs/${hubId}`,
+      `${API_PREFIX}/skills/spaces/${spaceId}`,
       request,
     );
   }
 
-  // Delete a skills hub
-  async deleteHub(hubId: string): Promise<void> {
-    await this.request<void>('DELETE', `${API_PREFIX}/skills/hubs/${hubId}`);
+  // Delete a skill space
+  async deleteSpace(spaceId: string): Promise<void> {
+    await this.request<void>(
+      'DELETE',
+      `${API_PREFIX}/skills/spaces/${spaceId}`,
+    );
   }
 
-  // Get hub by folder ID
-  async getHubByFolder(folderId: string): Promise<SkillsHub> {
-    return await this.request<SkillsHub>(
+  // Get space by folder ID
+  async getSpaceByFolder(folderId: string): Promise<SkillSpace> {
+    return await this.request<SkillSpace>(
       'GET',
-      `${API_PREFIX}/skills/hub/by-folder`,
+      `${API_PREFIX}/skills/space/by-folder`,
       null,
       { folder_id: folderId },
     );
@@ -180,9 +182,12 @@ class SkillsHubService {
   // ==================== Skill Search Config ====================
 
   // Get skill search config
-  async getConfig(hubId?: string, embdId?: string): Promise<SkillSearchConfig> {
+  async getConfig(
+    spaceId?: string,
+    embdId?: string,
+  ): Promise<SkillSearchConfig> {
     const params: Record<string, string> = {};
-    if (hubId) params.hub_id = hubId;
+    if (spaceId) params.space_id = spaceId;
     if (embdId) params.embd_id = embdId;
 
     return await this.request<SkillSearchConfig>(
@@ -227,9 +232,9 @@ class SkillsHubService {
   }
 
   // Delete skill index
-  async deleteSkillIndex(skillId: string, hubId?: string): Promise<void> {
+  async deleteSkillIndex(skillId: string, spaceId?: string): Promise<void> {
     const params: Record<string, string> = { skill_id: skillId };
-    if (hubId) params.hub_id = hubId;
+    if (spaceId) params.space_id = spaceId;
 
     await this.request<void>(
       'DELETE',
@@ -249,5 +254,5 @@ class SkillsHubService {
   }
 }
 
-export const skillsHubService = new SkillsHubService();
-export default skillsHubService;
+export const skillSpaceService = new SkillSpaceService();
+export default skillSpaceService;

@@ -1,4 +1,4 @@
-// Skill types for Skills Hub
+// Skill types for Skill Space
 
 // ============================================================================
 // Core Skill Types
@@ -19,7 +19,7 @@ export interface Skill {
   _folderId?: string; // Internal: file system folder ID for file operations
 }
 
-export interface SkillsHub {
+export interface SkillSpace {
   id: string;
   name: string;
   folder_id?: string;

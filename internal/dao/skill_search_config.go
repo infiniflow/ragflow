@@ -27,14 +27,14 @@ import (
 // SkillSearchConfigDAO data access object for skill search config
 type SkillSearchConfigDAO struct{}
 
-const defaultSkillHubID = "default"
+const defaultSkillSpaceID = "default"
 
-func normalizeHubID(hubID string) string {
-	hubID = strings.TrimSpace(hubID)
-	if hubID == "" {
-		return defaultSkillHubID
+func normalizeSpaceID(spaceID string) string {
+	spaceID = strings.TrimSpace(spaceID)
+	if spaceID == "" {
+		return defaultSkillSpaceID
 	}
-	return hubID
+	return spaceID
 }
 
 // NewSkillSearchConfigDAO creates a new SkillSearchConfigDAO
@@ -58,9 +58,9 @@ func (dao *SkillSearchConfigDAO) GetByID(id string) (*entity.SkillSearchConfig, 
 }
 
 // GetByTenantID retrieves a skill search config by tenant ID
-func (dao *SkillSearchConfigDAO) GetByTenantID(tenantID, hubID string) (*entity.SkillSearchConfig, error) {
+func (dao *SkillSearchConfigDAO) GetByTenantID(tenantID, spaceID string) (*entity.SkillSearchConfig, error) {
 	var config entity.SkillSearchConfig
-	err := DB.Where("tenant_id = ? AND hub_id = ? AND status = ?", tenantID, normalizeHubID(hubID), "1").First(&config).Error
+	err := DB.Where("tenant_id = ? AND space_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), "1").First(&config).Error
 	if err != nil {
 		return nil, err
 	}
@@ -69,15 +69,15 @@ func (dao *SkillSearchConfigDAO) GetByTenantID(tenantID, hubID string) (*entity.
 
 // GetLatestByTenantID retrieves the latest skill search config by tenant ID (ordered by update_time desc)
 // Prioritizes configs with non-empty embd_id to return user-saved configs over auto-created ones
-func (dao *SkillSearchConfigDAO) GetLatestByTenantID(tenantID, hubID string) (*entity.SkillSearchConfig, error) {
+func (dao *SkillSearchConfigDAO) GetLatestByTenantID(tenantID, spaceID string) (*entity.SkillSearchConfig, error) {
 	var config entity.SkillSearchConfig
 	// First try to get the latest config with non-empty embd_id (user-saved config)
-	err := DB.Where("tenant_id = ? AND hub_id = ? AND status = ? AND embd_id != ?", tenantID, normalizeHubID(hubID), "1", "").Order("update_time desc").First(&config).Error
+	err := DB.Where("tenant_id = ? AND space_id = ? AND status = ? AND embd_id != ?", tenantID, normalizeSpaceID(spaceID), "1", "").Order("update_time desc").First(&config).Error
 	if err == nil {
 		return &config, nil
 	}
 	// If no user-saved config found, get any config
-	err = DB.Where("tenant_id = ? AND hub_id = ? AND status = ?", tenantID, normalizeHubID(hubID), "1").Order("update_time desc").First(&config).Error
+	err = DB.Where("tenant_id = ? AND space_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), "1").Order("update_time desc").First(&config).Error
 	if err != nil {
 		return nil, err
 	}
@@ -85,9 +85,9 @@ func (dao *SkillSearchConfigDAO) GetLatestByTenantID(tenantID, hubID string) (*e
 }
 
 // GetByTenantAndEmbdID retrieves a skill search config by tenant ID and embedding ID
-func (dao *SkillSearchConfigDAO) GetByTenantAndEmbdID(tenantID, hubID, embdID string) (*entity.SkillSearchConfig, error) {
+func (dao *SkillSearchConfigDAO) GetByTenantAndEmbdID(tenantID, spaceID, embdID string) (*entity.SkillSearchConfig, error) {
 	var config entity.SkillSearchConfig
-	err := DB.Where("tenant_id = ? AND hub_id = ? AND embd_id = ? AND status = ?", tenantID, normalizeHubID(hubID), embdID, "1").First(&config).Error
+	err := DB.Where("tenant_id = ? AND space_id = ? AND embd_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), embdID, "1").First(&config).Error
 	if err != nil {
 		return nil, err
 	}
@@ -95,20 +95,20 @@ func (dao *SkillSearchConfigDAO) GetByTenantAndEmbdID(tenantID, hubID, embdID st
 }
 
 // GetOrCreate retrieves existing config or creates default one
-func (dao *SkillSearchConfigDAO) GetOrCreate(tenantID, hubID, embdID string) (*entity.SkillSearchConfig, error) {
-	hubID = normalizeHubID(hubID)
-	config, err := dao.GetByTenantAndEmbdID(tenantID, hubID, embdID)
+func (dao *SkillSearchConfigDAO) GetOrCreate(tenantID, spaceID, embdID string) (*entity.SkillSearchConfig, error) {
+	spaceID = normalizeSpaceID(spaceID)
+	config, err := dao.GetByTenantAndEmbdID(tenantID, spaceID, embdID)
 	if err == nil {
 		return config, nil
 	}
 
 	// Create default config
-	return dao.CreateWithTenantHub(tenantID, hubID, embdID)
+	return dao.CreateWithTenantSpace(tenantID, spaceID, embdID)
 }
 
-// CreateWithTenantHub creates a new config for tenant+hub
-func (dao *SkillSearchConfigDAO) CreateWithTenantHub(tenantID, hubID, embdID string) (*entity.SkillSearchConfig, error) {
-	hubID = normalizeHubID(hubID)
+// CreateWithTenantSpace creates a new config for tenant+space
+func (dao *SkillSearchConfigDAO) CreateWithTenantSpace(tenantID, spaceID, embdID string) (*entity.SkillSearchConfig, error) {
+	spaceID = normalizeSpaceID(spaceID)
 	timestamp := time.Now().UnixMilli()
 	defaultFieldConfig := entity.DefaultFieldConfig()
 	fieldConfigMap := entity.JSONMap{
@@ -133,7 +133,7 @@ func (dao *SkillSearchConfigDAO) CreateWithTenantHub(tenantID, hubID, embdID str
 	defaultConfig := &entity.SkillSearchConfig{
 		ID:                     generateID(),
 		TenantID:               tenantID,
-		HubID:                  hubID,
+		SpaceID:                spaceID,
 		EmbdID:                 embdID,
 		VectorSimilarityWeight: 0.3,
 		SimilarityThreshold:    0.2,
@@ -149,19 +149,19 @@ func (dao *SkillSearchConfigDAO) CreateWithTenantHub(tenantID, hubID, embdID str
 	return defaultConfig, nil
 }
 
-// DeleteAllByTenantHub deletes all configs for a tenant+hub (for cleanup before creating new one)
-func (dao *SkillSearchConfigDAO) DeleteAllByTenantHub(tenantID, hubID string) error {
-	hubID = normalizeHubID(hubID)
+// DeleteAllByTenantSpace deletes all configs for a tenant+space (for cleanup before creating new one)
+func (dao *SkillSearchConfigDAO) DeleteAllByTenantSpace(tenantID, spaceID string) error {
+	spaceID = normalizeSpaceID(spaceID)
 	return DB.Model(&entity.SkillSearchConfig{}).
-		Where("tenant_id = ? AND hub_id = ?", tenantID, hubID).
+		Where("tenant_id = ? AND space_id = ?", tenantID, spaceID).
 		Update("status", "0").Error
 }
 
-// DeleteAllByTenantHubExceptID deletes all active configs for a tenant+hub except the specified ID
-func (dao *SkillSearchConfigDAO) DeleteAllByTenantHubExceptID(tenantID, hubID, exceptID string) error {
-	hubID = normalizeHubID(hubID)
+// DeleteAllByTenantSpaceExceptID deletes all active configs for a tenant+space except the specified ID
+func (dao *SkillSearchConfigDAO) DeleteAllByTenantSpaceExceptID(tenantID, spaceID, exceptID string) error {
+	spaceID = normalizeSpaceID(spaceID)
 	return DB.Model(&entity.SkillSearchConfig{}).
-		Where("tenant_id = ? AND hub_id = ? AND id != ? AND status = ?", tenantID, hubID, exceptID, "1").
+		Where("tenant_id = ? AND space_id = ? AND id != ? AND status = ?", tenantID, spaceID, exceptID, "1").
 		Update("status", "0").Error
 }
 
@@ -172,16 +172,16 @@ func (dao *SkillSearchConfigDAO) Update(id string, updates map[string]interface{
 }
 
 // UpdateByTenantID updates config by tenant ID
-func (dao *SkillSearchConfigDAO) UpdateByTenantID(tenantID, hubID string, updates map[string]interface{}) error {
+func (dao *SkillSearchConfigDAO) UpdateByTenantID(tenantID, spaceID string, updates map[string]interface{}) error {
 	updates["update_time"] = time.Now()
-	result := DB.Model(&entity.SkillSearchConfig{}).Where("tenant_id = ? AND hub_id = ? AND status = ?", tenantID, normalizeHubID(hubID), "1").Updates(updates)
+	result := DB.Model(&entity.SkillSearchConfig{}).Where("tenant_id = ? AND space_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), "1").Updates(updates)
 	return result.Error
 }
 
 // UpdateByTenantAndEmbdID updates config by tenant ID and embedding ID
-func (dao *SkillSearchConfigDAO) UpdateByTenantAndEmbdID(tenantID, hubID, embdID string, updates map[string]interface{}) error {
+func (dao *SkillSearchConfigDAO) UpdateByTenantAndEmbdID(tenantID, spaceID, embdID string, updates map[string]interface{}) error {
 	updates["update_time"] = time.Now()
-	result := DB.Model(&entity.SkillSearchConfig{}).Where("tenant_id = ? AND hub_id = ? AND embd_id = ? AND status = ?", tenantID, normalizeHubID(hubID), embdID, "1").Updates(updates)
+	result := DB.Model(&entity.SkillSearchConfig{}).Where("tenant_id = ? AND space_id = ? AND embd_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), embdID, "1").Updates(updates)
 	return result.Error
 }
 

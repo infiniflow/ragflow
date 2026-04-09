@@ -127,12 +127,12 @@ func (c *RAGFlowClient) ContextSearch(cmd *Command) (ResponseIf, error) {
 
 	// Check if searching skills
 	if path == "skills" || strings.HasPrefix(path, "skills/") {
-		// Parse hub ID from path
-		hubID := "default"
+		// Parse space ID from path
+		spaceID := "default"
 		if strings.HasPrefix(path, "skills/") {
-			hubID = strings.TrimPrefix(path, "skills/")
-			if hubID == "" {
-				hubID = "default"
+			spaceID = strings.TrimPrefix(path, "skills/")
+			if spaceID == "" {
+				spaceID = "default"
 			}
 		}
 
@@ -152,7 +152,7 @@ func (c *RAGFlowClient) ContextSearch(cmd *Command) (ResponseIf, error) {
 			Offset: 0,
 			TopK:   number,
 		}
-		result, err := skillProvider.Search(context.Background(), hubID, searchOptions)
+		result, err := skillProvider.Search(context.Background(), spaceID, searchOptions)
 		if err != nil {
 			return nil, err
 		}

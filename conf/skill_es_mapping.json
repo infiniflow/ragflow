@@ -21,7 +21,7 @@
         "type": "keyword",
         "store": true
       },
-      "hub_id": {
+      "space_id": {
         "type": "keyword",
         "store": true
       },

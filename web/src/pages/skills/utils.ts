@@ -1,4 +1,4 @@
-// Skills Hub - Utility exports
+// Skill Space - Utility exports
 // Re-export validation utilities for external use
 
 export {

@@ -46,7 +46,7 @@ func DefaultFieldConfig() FieldConfig {
 type SkillSearchConfig struct {
 	ID                     string     `gorm:"column:id;primaryKey;size:32" json:"id"`
 	TenantID               string     `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
-	HubID                  string     `gorm:"column:hub_id;size:128;not null;default:'default';index" json:"hub_id"`
+	SpaceID                string     `gorm:"column:space_id;size:128;not null;default:'default';index" json:"space_id"`
 	EmbdID                 string     `gorm:"column:embd_id;size:128;not null" json:"embd_id"`
 	Status                 string     `gorm:"column:status;size:1;default:1" json:"status"`
 	VectorSimilarityWeight float64    `gorm:"column:vector_similarity_weight;default:0.3" json:"vector_similarity_weight"`
@@ -70,7 +70,7 @@ func (s *SkillSearchConfig) ToMap() map[string]interface{} {
 	result := map[string]interface{}{
 		"id":                       s.ID,
 		"tenant_id":                s.TenantID,
-		"hub_id":                   s.HubID,
+		"space_id":                  s.SpaceID,
 		"embd_id":                  s.EmbdID,
 		"vector_similarity_weight": s.VectorSimilarityWeight,
 		"similarity_threshold":     s.SimilarityThreshold,

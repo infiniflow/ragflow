@@ -32,7 +32,7 @@ import (
 type SkillSearchHandler struct {
 	searchService  *service.SkillSearchService
 	indexerService *service.SkillIndexerService
-	hubService     *service.SkillsHubService
+	spaceService   *service.SkillSpaceService
 	docEngine      engine.DocEngine
 }
 
@@ -41,7 +41,7 @@ func NewSkillSearchHandler(docEngine engine.DocEngine) *SkillSearchHandler {
 	return &SkillSearchHandler{
 		searchService:  service.NewSkillSearchService(),
 		indexerService: service.NewSkillIndexerService(),
-		hubService:     service.NewSkillsHubService(),
+		spaceService:   service.NewSkillSpaceService(),
 		docEngine:      docEngine,
 	}
 }
@@ -54,7 +54,7 @@ func NewSkillSearchHandler(docEngine engine.DocEngine) *SkillSearchHandler {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param embd_id query string true "Embedding Model ID"
-// @Param hub_id query string false "Skills Hub ID"
+// @Param space_id query string false "Skill Space ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/skills/config [get]
 func (h *SkillSearchHandler) GetConfig(c *gin.Context) {
@@ -65,9 +65,9 @@ func (h *SkillSearchHandler) GetConfig(c *gin.Context) {
 	}
 
 	embdID := c.Query("embd_id")
-	hubID := c.Query("hub_id")
+	spaceID := c.Query("space_id")
 
-	result, code, err := h.searchService.GetConfig(user.ID, hubID, embdID)
+	result, code, err := h.searchService.GetConfig(user.ID, spaceID, embdID)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return
@@ -147,7 +147,7 @@ func (h *SkillSearchHandler) Search(c *gin.Context) {
 // IndexSkillsRequest represents the request to index skills
 type IndexSkillsRequest struct {
 	Skills []service.SkillInfo `json:"skills" binding:"required"`
-	HubID  string              `json:"hub_id"`
+	SpaceID string             `json:"space_id"`
 	EmbdID string              `json:"embd_id"` // Optional, will use config's embd_id if empty
 }
 
@@ -177,7 +177,7 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 	// If embd_id not provided, get from skill search config
 	embdID := req.EmbdID
 	if embdID == "" {
-		config, code, err := h.searchService.GetConfig(user.ID, req.HubID, "")
+		config, code, err := h.searchService.GetConfig(user.ID, req.SpaceID, "")
 		if err != nil {
 			jsonError(c, code, "failed to get skill search config: "+err.Error())
 			return
@@ -192,26 +192,26 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 	// Ensure index exists before indexing (for both ES and Infinity)
 	logger.Info("Ensuring skill index exists before indexing",
 		zap.String("tenantID", user.ID),
-		zap.String("hubID", req.HubID),
+		zap.String("spaceID", req.SpaceID),
 		zap.String("engineType", h.docEngine.GetType()),
 		zap.Int("skillCount", len(req.Skills)))
 
 	if h.docEngine.GetType() == "elasticsearch" {
-		if err := h.indexerService.EnsureIndex(c.Request.Context(), user.ID, req.HubID, h.docEngine, embdID); err != nil {
+		if err := h.indexerService.EnsureIndex(c.Request.Context(), user.ID, req.SpaceID, h.docEngine, embdID); err != nil {
 			jsonError(c, common.CodeOperatingError, err.Error())
 			return
 		}
 	}
 
-	if err := h.indexerService.BatchIndexSkills(c.Request.Context(), user.ID, req.HubID, req.Skills, h.docEngine, embdID); err != nil {
-		logger.Error(fmt.Sprintf("Failed to batch index skills: tenantID=%s, hubID=%s, error=%v", user.ID, req.HubID, err), err)
+	if err := h.indexerService.BatchIndexSkills(c.Request.Context(), user.ID, req.SpaceID, req.Skills, h.docEngine, embdID); err != nil {
+		logger.Error(fmt.Sprintf("Failed to batch index skills: tenantID=%s, spaceID=%s, error=%v", user.ID, req.SpaceID, err), err)
 		jsonError(c, common.CodeOperatingError, err.Error())
 		return
 	}
 
 	logger.Info("Successfully indexed skills",
 		zap.String("tenantID", user.ID),
-		zap.String("hubID", req.HubID),
+		zap.String("spaceID", req.SpaceID),
 		zap.Int("indexedCount", len(req.Skills)))
 
 	jsonResponse(c, common.CodeSuccess, gin.H{
@@ -221,8 +221,8 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 
 // ReindexRequest represents the request to reindex skills
 type ReindexRequest struct {
-	HubID  string `json:"hub_id" binding:"required"`
-	EmbdID string `json:"embd_id"` // Optional, will use config's embd_id if empty
+	SpaceID string `json:"space_id" binding:"required"`
+	EmbdID  string `json:"embd_id"` // Optional, will use config's embd_id if empty
 }
 
 // Reindex handles the reindex all skills request
@@ -251,7 +251,7 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 	// If embd_id not provided, get from skill search config
 	embdID := req.EmbdID
 	if embdID == "" {
-		config, code, err := h.searchService.GetConfig(user.ID, req.HubID, "")
+		config, code, err := h.searchService.GetConfig(user.ID, req.SpaceID, "")
 		if err != nil {
 			jsonError(c, code, "failed to get skill search config: "+err.Error())
 			return
@@ -263,7 +263,7 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 		}
 	}
 
-	result, err := h.indexerService.ReindexAll(c.Request.Context(), user.ID, req.HubID, h.docEngine, embdID)
+	result, err := h.indexerService.ReindexAll(c.Request.Context(), user.ID, req.SpaceID, h.docEngine, embdID)
 	if err != nil {
 		jsonError(c, common.CodeOperatingError, err.Error())
 		return
@@ -280,7 +280,7 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param skill_id query string true "Skill ID (skill name)"
-// @Param hub_id query string true "Hub ID"
+// @Param space_id query string true "Space ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/skills/index [delete]
 func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
@@ -291,13 +291,13 @@ func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
 	}
 
 	skillID := c.Query("skill_id")
-	hubID := c.Query("hub_id")
+	spaceID := c.Query("space_id")
 	if skillID == "" {
 		jsonError(c, common.CodeDataError, "skill_id is required")
 		return
 	}
 
-	err := h.indexerService.DeleteSkillIndex(c.Request.Context(), user.ID, hubID, skillID, h.docEngine)
+	err := h.indexerService.DeleteSkillIndex(c.Request.Context(), user.ID, spaceID, skillID, h.docEngine)
 	if err != nil {
 		jsonError(c, common.CodeOperatingError, "failed to delete skill index")
 		return
@@ -314,7 +314,7 @@ func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param embd_id query string true "Embedding Model ID"
-// @Param hub_id query string false "Skills Hub ID"
+// @Param space_id query string false "Skill Space ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/skill/search/init [post]
 func (h *SkillSearchHandler) InitializeIndex(c *gin.Context) {
@@ -325,13 +325,13 @@ func (h *SkillSearchHandler) InitializeIndex(c *gin.Context) {
 	}
 
 	embdID := c.Query("embd_id")
-	hubID := c.Query("hub_id")
+	spaceID := c.Query("space_id")
 	if embdID == "" {
 		jsonError(c, common.CodeDataError, "embd_id is required")
 		return
 	}
 
-	if err := h.indexerService.InitializeIndex(c.Request.Context(), user.ID, hubID, h.docEngine, embdID); err != nil {
+	if err := h.indexerService.InitializeIndex(c.Request.Context(), user.ID, spaceID, h.docEngine, embdID); err != nil {
 		jsonError(c, common.CodeOperatingError, err.Error())
 		return
 	}
@@ -339,25 +339,25 @@ func (h *SkillSearchHandler) InitializeIndex(c *gin.Context) {
 	jsonResponse(c, common.CodeSuccess, gin.H{"initialized": true}, "success")
 }
 
-// ==================== Skills Hub Management ====================
+// ==================== Skill Space Management ====================
 
-// ListHubs handles the list skills hubs request
-// @Summary List Skills Hubs
-// @Description List all skills hubs for the current tenant
-// @Tags skills-hub
+// ListSpaces handles the list skill spaces request
+// @Summary List Skill Spaces
+// @Description List all skill spaces for the current tenant
+// @Tags skill-space
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/skills/hubs [get]
-func (h *SkillSearchHandler) ListHubs(c *gin.Context) {
+// @Router /api/v1/skills/spaces [get]
+func (h *SkillSearchHandler) ListSpaces(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	result, code, err := h.hubService.ListHubs(user.ID)
+	result, code, err := h.spaceService.ListSpaces(user.ID)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return
@@ -366,38 +366,38 @@ func (h *SkillSearchHandler) ListHubs(c *gin.Context) {
 	jsonResponse(c, common.CodeSuccess, result, "success")
 }
 
-// CreateHubRequest represents the request to create a skills hub
-type CreateHubRequest struct {
+// CreateSpaceRequest represents the request to create a skill space
+type CreateSpaceRequest struct {
 	Name        string `json:"name" binding:"required"`
 	Description string `json:"description"`
 	EmbdID      string `json:"embd_id"`
 	RerankID    string `json:"rerank_id"`
 }
 
-// CreateHub handles the create skills hub request
-// @Summary Create Skills Hub
-// @Description Create a new skills hub with associated folder
-// @Tags skills-hub
+// CreateSpace handles the create skill space request
+// @Summary Create Skill Space
+// @Description Create a new skill space with associated folder
+// @Tags skill-space
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param request body CreateHubRequest true "hub info"
+// @Param request body CreateSpaceRequest true "space info"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/skills/hubs [post]
-func (h *SkillSearchHandler) CreateHub(c *gin.Context) {
+// @Router /api/v1/skills/spaces [post]
+func (h *SkillSearchHandler) CreateSpace(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	var req CreateHubRequest
+	var req CreateSpaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		jsonError(c, common.CodeDataError, err.Error())
 		return
 	}
 
-	result, code, err := h.hubService.CreateHub(&service.CreateHubRequest{
+	result, code, err := h.spaceService.CreateSpace(&service.CreateSpaceRequest{
 		TenantID:    user.ID,
 		Name:        req.Name,
 		Description: req.Description,
@@ -412,30 +412,30 @@ func (h *SkillSearchHandler) CreateHub(c *gin.Context) {
 	jsonResponse(c, common.CodeSuccess, result, "success")
 }
 
-// GetHub handles the get skills hub request
-// @Summary Get Skills Hub
-// @Description Get a skills hub by ID
-// @Tags skills-hub
+// GetSpace handles the get skill space request
+// @Summary Get Skill Space
+// @Description Get a skill space by ID
+// @Tags skill-space
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param hub_id path string true "Hub ID"
+// @Param space_id path string true "Space ID"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/skills/hubs/{hub_id} [get]
-func (h *SkillSearchHandler) GetHub(c *gin.Context) {
+// @Router /api/v1/skills/spaces/{space_id} [get]
+func (h *SkillSearchHandler) GetSpace(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	hubID := c.Param("hub_id")
-	if hubID == "" {
-		jsonError(c, common.CodeDataError, "hub_id is required")
+	spaceID := c.Param("space_id")
+	if spaceID == "" {
+		jsonError(c, common.CodeDataError, "space_id is required")
 		return
 	}
 
-	result, code, err := h.hubService.GetHub(hubID, user.ID)
+	result, code, err := h.spaceService.GetSpace(spaceID, user.ID)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return
@@ -444,8 +444,8 @@ func (h *SkillSearchHandler) GetHub(c *gin.Context) {
 	jsonResponse(c, common.CodeSuccess, result, "success")
 }
 
-// UpdateHubRequest represents the request to update a skills hub
-type UpdateHubRequest struct {
+// UpdateSpaceRequest represents the request to update a skill space
+type UpdateSpaceRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	EmbdID      string `json:"embd_id"`
@@ -453,37 +453,37 @@ type UpdateHubRequest struct {
 	TopK        int    `json:"top_k"`
 }
 
-// UpdateHub handles the update skills hub request
-// @Summary Update Skills Hub
-// @Description Update a skills hub
-// @Tags skills-hub
+// UpdateSpace handles the update skill space request
+// @Summary Update Skill Space
+// @Description Update a skill space
+// @Tags skill-space
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param hub_id path string true "Hub ID"
-// @Param request body UpdateHubRequest true "hub updates"
+// @Param space_id path string true "Space ID"
+// @Param request body UpdateSpaceRequest true "space updates"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/skills/hubs/{hub_id} [put]
-func (h *SkillSearchHandler) UpdateHub(c *gin.Context) {
+// @Router /api/v1/skills/spaces/{space_id} [put]
+func (h *SkillSearchHandler) UpdateSpace(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	hubID := c.Param("hub_id")
-	if hubID == "" {
-		jsonError(c, common.CodeDataError, "hub_id is required")
+	spaceID := c.Param("space_id")
+	if spaceID == "" {
+		jsonError(c, common.CodeDataError, "space_id is required")
 		return
 	}
 
-	var req UpdateHubRequest
+	var req UpdateSpaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		jsonError(c, common.CodeDataError, err.Error())
 		return
 	}
 
-	result, code, err := h.hubService.UpdateHub(hubID, user.ID, &service.UpdateHubRequest{
+	result, code, err := h.spaceService.UpdateSpace(spaceID, user.ID, &service.UpdateSpaceRequest{
 		Name:        req.Name,
 		Description: req.Description,
 		EmbdID:      req.EmbdID,
@@ -498,33 +498,33 @@ func (h *SkillSearchHandler) UpdateHub(c *gin.Context) {
 	jsonResponse(c, common.CodeSuccess, result, "success")
 }
 
-// DeleteHub handles the delete skills hub request
-// @Summary Delete Skills Hub
-// @Description Delete a skills hub and its associated folder
-// @Tags skills-hub
+// DeleteSpace handles the delete skill space request
+// @Summary Delete Skill Space
+// @Description Delete a skill space and its associated folder
+// @Tags skill-space
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param hub_id path string true "Hub ID"
+// @Param space_id path string true "Space ID"
 // @Success 202 {object} map[string]interface{}
-// @Router /api/v1/skills/hubs/{hub_id} [delete]
-func (h *SkillSearchHandler) DeleteHub(c *gin.Context) {
+// @Router /api/v1/skills/spaces/{space_id} [delete]
+func (h *SkillSearchHandler) DeleteSpace(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	hubID := c.Param("hub_id")
-	if hubID == "" {
-		jsonError(c, common.CodeDataError, "hub_id is required")
+	spaceID := c.Param("space_id")
+	if spaceID == "" {
+		jsonError(c, common.CodeDataError, "space_id is required")
 		return
 	}
 
 	// Get Authorization header for Python API calls
 	authHeader := c.GetHeader("Authorization")
 
-	code, err := h.hubService.DeleteHub(hubID, user.ID, h.docEngine, authHeader)
+	code, err := h.spaceService.DeleteSpace(spaceID, user.ID, h.docEngine, authHeader)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return
@@ -533,22 +533,22 @@ func (h *SkillSearchHandler) DeleteHub(c *gin.Context) {
 	// Return 202 Accepted since deletion is async
 	c.JSON(http.StatusAccepted, gin.H{
 		"code":    0,
-		"data":    gin.H{"deleting": true, "hub_id": hubID},
+		"data":    gin.H{"deleting": true, "space_id": spaceID},
 		"message": "success",
 	})
 }
 
-// GetHubByFolder handles the get skills hub by folder ID request
-// @Summary Get Skills Hub by Folder
-// @Description Get a skills hub by its folder ID
-// @Tags skills-hub
+// GetSpaceByFolder handles the get skill space by folder ID request
+// @Summary Get Skill Space by Folder
+// @Description Get a skill space by its folder ID
+// @Tags skill-space
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
 // @Param folder_id query string true "Folder ID"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/skills/hub/by-folder [get]
-func (h *SkillSearchHandler) GetHubByFolder(c *gin.Context) {
+// @Router /api/v1/skills/space/by-folder [get]
+func (h *SkillSearchHandler) GetSpaceByFolder(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
@@ -561,7 +561,7 @@ func (h *SkillSearchHandler) GetHubByFolder(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.hubService.GetHubByFolderID(folderID, user.ID)
+	result, code, err := h.spaceService.GetSpaceByFolderID(folderID, user.ID)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return

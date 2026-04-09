@@ -1,5 +1,5 @@
 import fileManagerService from '@/services/file-manager-service';
-import skillsHubService from '@/services/skills-hub-service';
+import skillSpaceService from '@/services/skill-space-service';
 import { getAuthorization } from '@/utils/authorization-util';
 import { message } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -9,7 +9,7 @@ import type {
   SkillFileEntry,
   SkillMetadata,
   SkillSearchConfig,
-  SkillsHub,
+  SkillSpace,
 } from './types';
 import {
   filterUploadFiles,
@@ -442,14 +442,14 @@ export const useSkills = () => {
     }
   }, []);
 
-  const fetchHubs = useCallback(async (): Promise<SkillsHub[]> => {
+  const fetchSpaces = useCallback(async (): Promise<SkillSpace[]> => {
     try {
-      const result = await skillsHubService.listHubs();
-      return result.hubs.map((hub) => ({
-        id: hub.id,
-        name: hub.name,
-        create_time: hub.create_time,
-        folder_id: hub.folder_id,
+      const result = await skillSpaceService.listSpaces();
+      return result.spaces.map((space) => ({
+        id: space.id,
+        name: space.name,
+        create_time: space.create_time,
+        folder_id: space.folder_id,
       }));
     } catch (error) {
       console.error('Error fetching skill hubs:', error);
@@ -457,9 +457,9 @@ export const useSkills = () => {
     }
   }, []);
 
-  const ensureSkillsHubFolder = useCallback(
+  const ensureSkillSpaceFolder = useCallback(
     async (
-      hubName: string,
+      spaceName: string,
       createIfMissing = false,
     ): Promise<string | null> => {
       const skillsFolderId = await ensureSkillsFolder();
@@ -472,14 +472,14 @@ export const useSkills = () => {
       if (data.code !== 0) return null;
 
       const hubFolder = (data.data?.files || []).find(
-        (f: any) => f.name === hubName && f.type === 'folder',
+        (f: any) => f.name === spaceName && f.type === 'folder',
       );
       if (hubFolder) return hubFolder.id;
 
       if (!createIfMissing) return null;
 
       const createRes = await fileManagerService.createFolder({
-        name: hubName,
+        name: spaceName,
         type: 'folder',
         parent_id: skillsFolderId,
       });
@@ -490,16 +490,16 @@ export const useSkills = () => {
     [ensureSkillsFolder],
   );
 
-  const createHub = useCallback(
-    async (hubName: string): Promise<{ id: string; name: string } | null> => {
+  const createSpace = useCallback(
+    async (spaceName: string): Promise<{ id: string; name: string } | null> => {
       try {
-        const hub = await skillsHubService.createHub({ name: hubName });
+        const space = await skillSpaceService.createSpace({ name: spaceName });
         message.success(
-          t('skills.hubCreated') || 'Skills Hub created successfully',
+          t('skills.spaceCreated') || 'Skill Space created successfully',
         );
-        return hub;
+        return space;
       } catch (error: any) {
-        console.error('Error creating skill hub:', error);
+        console.error('Error creating skill space:', error);
         message.error(error.message || t('skills.fetchError'));
         return null;
       }
@@ -507,17 +507,17 @@ export const useSkills = () => {
     [t],
   );
 
-  // Delete a skills hub
-  const deleteHub = useCallback(
-    async (hubId: string): Promise<boolean> => {
+  // Delete a skill space
+  const deleteSpace = useCallback(
+    async (spaceId: string): Promise<boolean> => {
       try {
-        await skillsHubService.deleteHub(hubId);
+        await skillSpaceService.deleteSpace(spaceId);
         message.success(
-          t('skills.hubDeleted') || 'Skills Hub deleted successfully',
+          t('skills.spaceDeleted') || 'Skill Space deleted successfully',
         );
         return true;
       } catch (error: any) {
-        console.error('Error deleting skill hub:', error);
+        console.error('Error deleting skill space:', error);
         message.error(error.message || t('skills.fetchError'));
         return false;
       }
@@ -525,17 +525,17 @@ export const useSkills = () => {
     [t],
   );
 
-  // Update a skills hub (rename)
-  const updateHub = useCallback(
-    async (hubId: string, hubName: string): Promise<boolean> => {
+  // Update a skill space (rename)
+  const updateSpace = useCallback(
+    async (spaceId: string, spaceName: string): Promise<boolean> => {
       try {
-        await skillsHubService.updateHub(hubId, { name: hubName });
+        await skillSpaceService.updateSpace(spaceId, { name: spaceName });
         message.success(
-          t('skills.hubUpdated') || 'Skills Hub renamed successfully',
+          t('skills.spaceUpdated') || 'Skill Space renamed successfully',
         );
         return true;
       } catch (error: any) {
-        console.error('Error updating skill hub:', error);
+        console.error('Error updating skill space:', error);
         message.error(error.message || t('skills.fetchError'));
         return false;
       }
@@ -545,18 +545,18 @@ export const useSkills = () => {
 
   // Fetch skills from file system (fallback when search returns empty)
   const fetchSkillsFromFileSystem = useCallback(
-    async (hubName?: string): Promise<{ skills: Skill[]; total: number }> => {
-      if (!hubName) {
+    async (spaceName?: string): Promise<{ skills: Skill[]; total: number }> => {
+      if (!spaceName) {
         return { skills: [], total: 0 };
       }
       try {
-        const hubFolderId = await ensureSkillsHubFolder(hubName, false);
-        if (!hubFolderId) {
+        const spaceFolderId = await ensureSkillSpaceFolder(spaceName, false);
+        if (!spaceFolderId) {
           return { skills: [], total: 0 };
         }
 
         const { data } = await fileManagerService.listFile({
-          parent_id: hubFolderId,
+          parent_id: spaceFolderId,
         });
 
         const skillFolders =
@@ -580,21 +580,21 @@ export const useSkills = () => {
         return { skills: [], total: 0 };
       }
     },
-    [ensureSkillsHubFolder],
+    [ensureSkillSpaceFolder],
   );
 
   // Fetch skills using search API (supports pagination and sorting)
   // Falls back to file system if search returns empty (skills not indexed yet)
   const fetchSkills = useCallback(
     async (
-      hubName?: string,
-      hubId?: string,
+      spaceName?: string,
+      spaceId?: string,
       page = 1,
       pageSize = 50,
       sortBy = 'update_time',
       sortOrder: 'asc' | 'desc' = 'desc',
     ) => {
-      if (!hubName || !hubId) {
+      if (!spaceName || !spaceId) {
         setSkills([]);
         return { skills: [], total: 0 };
       }
@@ -608,7 +608,7 @@ export const useSkills = () => {
             Authorization: getAuthorization(),
           },
           body: JSON.stringify({
-            hub_id: hubId,
+            space_id: spaceId,
             query: '', // Empty query = list all
             page,
             page_size: pageSize,
@@ -681,13 +681,13 @@ export const useSkills = () => {
         console.log(
           '[Skills] Search returned empty, falling back to file system',
         );
-        const fsResult = await fetchSkillsFromFileSystem(hubName);
+        const fsResult = await fetchSkillsFromFileSystem(spaceName);
         setSkills(fsResult.skills);
         return fsResult;
       } catch (error) {
         console.error('Error fetching skills:', error);
         // Fall back to file system on error
-        const fsResult = await fetchSkillsFromFileSystem(hubName);
+        const fsResult = await fetchSkillsFromFileSystem(spaceName);
         setSkills(fsResult.skills);
         return fsResult;
       } finally {
@@ -703,17 +703,17 @@ export const useSkills = () => {
       name: string,
       version: string,
       files: File[],
-      hubName?: string,
-      hubId?: string,
+      spaceName?: string,
+      spaceId?: string,
       embdId?: string,
     ): Promise<boolean> => {
       try {
         setLoading(true);
-        if (!hubName) throw new Error('Hub name is required');
+        if (!spaceName) throw new Error('Space name is required');
 
-        // Use hubName for file system operations, hubId for indexing
-        const normalizedHubName = hubName.trim();
-        const normalizedHubId = hubId?.trim() || normalizedHubName;
+        // Use spaceName for file system operations, spaceId for indexing
+        const normalizedSpaceName = spaceName.trim();
+        const normalizedSpaceId = spaceId?.trim() || normalizedSpaceName;
 
         // Filter out ignored/junk files first
         const filteredFiles = filterUploadFiles(files);
@@ -727,19 +727,19 @@ export const useSkills = () => {
           return false;
         }
 
-        // Get hub folder ID (using hub name for file system)
-        const hubFolderId = await ensureSkillsHubFolder(
-          normalizedHubName,
+        // Get space folder ID (using space name for file system)
+        const spaceFolderId = await ensureSkillSpaceFolder(
+          normalizedSpaceName,
           true,
         );
 
-        if (!hubFolderId) throw new Error('Skills hub not found');
+        if (!spaceFolderId) throw new Error('Skills space not found');
 
         const skillNameNormalized = name.replace(/\s+/g, '-').toLowerCase();
 
         // Check if skill folder exists
         const { data: existingData } = await fileManagerService.listFile({
-          parent_id: hubFolderId,
+          parent_id: spaceFolderId,
         });
 
         let skillFolderId: string;
@@ -774,7 +774,7 @@ export const useSkills = () => {
             const folderRes = await fileManagerService.createFolder({
               name: skillNameNormalized,
               type: 'folder',
-              parent_id: hubFolderId,
+              parent_id: spaceFolderId,
             });
 
             if (folderRes.data.code !== 0) {
@@ -915,7 +915,7 @@ export const useSkills = () => {
               Authorization: getAuthorization(),
             },
             body: JSON.stringify({
-              hub_id: normalizedHubId,
+              space_id: normalizedSpaceId,
               embd_id: embdId,
               skills: [
                 {
@@ -942,7 +942,7 @@ export const useSkills = () => {
         }
 
         message.success(t('skills.uploadSuccess'));
-        await fetchSkills(normalizedHubName, normalizedHubId);
+        await fetchSkills(normalizedSpaceName, normalizedSpaceId);
         return true;
       } catch (error) {
         console.error('Error uploading skill:', error);
@@ -952,7 +952,7 @@ export const useSkills = () => {
         setLoading(false);
       }
     },
-    [t, fetchSkills, ensureSkillsHubFolder],
+    [t, fetchSkills, ensureSkillSpaceFolder],
   );
 
   // Delete a skill
@@ -960,15 +960,15 @@ export const useSkills = () => {
     async (
       skillId: string,
       _skillName?: string,
-      hubId?: string,
-      hubName?: string,
+      spaceId?: string,
+      spaceName?: string,
       folderId?: string,
     ): Promise<boolean> => {
       try {
-        if (!hubId) throw new Error('Hub ID is required');
-        if (!hubName) throw new Error('Hub name is required');
-        const normalizedHubId = hubId.trim();
-        const normalizedHubName = hubName.trim();
+        if (!spaceId) throw new Error('Space ID is required');
+        if (!spaceName) throw new Error('Space name is required');
+        const normalizedSpaceId = spaceId.trim();
+        const normalizedSpaceName = spaceName.trim();
 
         let targetFolderId: string | null = folderId || null;
 
@@ -982,13 +982,13 @@ export const useSkills = () => {
 
         // Fallback: search in file system if not found
         if (!targetFolderId) {
-          const hubFolderId = await ensureSkillsHubFolder(
-            normalizedHubName,
+          const spaceFolderId = await ensureSkillSpaceFolder(
+            normalizedSpaceName,
             false,
           );
-          if (hubFolderId) {
+          if (spaceFolderId) {
             const { data: listData } = await fileManagerService.listFile({
-              parent_id: hubFolderId,
+              parent_id: spaceFolderId,
             });
 
             if (listData.code === 0) {
@@ -1025,7 +1025,7 @@ export const useSkills = () => {
         // Backend uses skillName_version as doc_id (replacing '/' with '_')
         // We need to delete each version's index separately
         console.log(
-          `[deleteSkill] Starting index deletion for skillId: ${skillId}, hubId: ${normalizedHubId}`,
+          `[deleteSkill] Starting index deletion for skillId: ${skillId}, spaceId: ${normalizedSpaceId}`,
         );
         console.log(`[deleteSkill] versionsToDelete:`, versionsToDelete);
 
@@ -1034,9 +1034,12 @@ export const useSkills = () => {
             version === 'latest' ? skillId : `${skillId}/${version}`;
           try {
             console.log(
-              `[deleteSkill] Deleting index: ${indexId} for hub: ${normalizedHubId}`,
+              `[deleteSkill] Deleting index: ${indexId} for space: ${normalizedSpaceId}`,
             );
-            await skillsHubService.deleteSkillIndex(indexId, normalizedHubId);
+            await skillSpaceService.deleteSkillIndex(
+              indexId,
+              normalizedSpaceId,
+            );
             console.log(`[deleteSkill] Successfully deleted index: ${indexId}`);
           } catch (indexError: any) {
             console.warn(
@@ -1056,7 +1059,10 @@ export const useSkills = () => {
               console.log(
                 `[deleteSkill] Trying to delete index with version: ${indexId}`,
               );
-              await skillsHubService.deleteSkillIndex(indexId, normalizedHubId);
+              await skillSpaceService.deleteSkillIndex(
+                indexId,
+                normalizedSpaceId,
+              );
               console.log(
                 `[deleteSkill] Successfully deleted index: ${indexId}`,
               );
@@ -1073,8 +1079,8 @@ export const useSkills = () => {
         if (data.code !== 0) throw new Error('Failed to delete skill');
 
         message.success(t('skills.deleteSuccess'));
-        // Refresh skills list using hub name and hub id
-        await fetchSkills(normalizedHubName, normalizedHubId);
+        // Refresh skills list using space name and space id
+        await fetchSkills(normalizedSpaceName, normalizedSpaceId);
         return true;
       } catch (error) {
         console.error('Error deleting skill:', error);
@@ -1082,7 +1088,7 @@ export const useSkills = () => {
         return false;
       }
     },
-    [t, fetchSkills, ensureSkillsHubFolder, ensureSkillsFolder, skills],
+    [t, fetchSkills, ensureSkillSpaceFolder, ensureSkillsFolder, skills],
   );
 
   // Recursively find file by path in folder structure
@@ -1335,10 +1341,10 @@ export const useSkills = () => {
     loading,
     searchQuery,
     setSearchQuery,
-    fetchHubs,
-    createHub,
-    deleteHub,
-    updateHub,
+    fetchSpaces,
+    createSpace,
+    deleteSpace,
+    updateSpace,
     fetchSkills,
     uploadSkill,
     deleteSkill,
@@ -1349,18 +1355,18 @@ export const useSkills = () => {
 };
 
 // Skill Search Config Hook
-export const useSkillSearchConfig = (hubId?: string) => {
+export const useSkillSearchConfig = (spaceId?: string) => {
   const { t } = useTranslation();
   const [config, setConfig] = useState<SkillSearchConfig | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Fetch config
   const fetchConfig = useCallback(
-    async (embdId?: string, currentHubId?: string) => {
+    async (embdId?: string, currentSpaceId?: string) => {
       try {
-        const targetHubId = currentHubId || hubId;
-        if (!targetHubId) return null;
-        const data = await skillsHubService.getConfig(targetHubId, embdId);
+        const targetSpaceId = currentSpaceId || spaceId;
+        if (!targetSpaceId) return null;
+        const data = await skillSpaceService.getConfig(targetSpaceId, embdId);
         // Cast to local SkillSearchConfig type (structures are compatible)
         setConfig(data as any);
         return data as any;
@@ -1369,7 +1375,7 @@ export const useSkillSearchConfig = (hubId?: string) => {
         return null;
       }
     },
-    [hubId],
+    [spaceId],
   );
 
   // Save config
@@ -1377,10 +1383,10 @@ export const useSkillSearchConfig = (hubId?: string) => {
     async (configData: SkillSearchConfig): Promise<boolean> => {
       try {
         setLoading(true);
-        if (!hubId) throw new Error('Hub ID is required');
-        const data = await skillsHubService.updateConfig({
+        if (!spaceId) throw new Error('Space ID is required');
+        const data = await skillSpaceService.updateConfig({
           ...configData,
-          hub_id: hubId,
+          space_id: spaceId,
         });
         // Cast to local SkillSearchConfig type (structures are compatible)
         setConfig(data as any);
@@ -1394,7 +1400,7 @@ export const useSkillSearchConfig = (hubId?: string) => {
         setLoading(false);
       }
     },
-    [t, hubId],
+    [t, spaceId],
   );
 
   // Reindex all skills
@@ -1402,10 +1408,10 @@ export const useSkillSearchConfig = (hubId?: string) => {
     async (embdId?: string): Promise<boolean> => {
       try {
         setLoading(true);
-        if (!hubId) throw new Error('Hub ID is required');
-        await skillsHubService.reindex({
+        if (!spaceId) throw new Error('Space ID is required');
+        await skillSpaceService.reindex({
           skills: [],
-          hub_id: hubId,
+          space_id: spaceId,
           embd_id: embdId,
         });
         message.success(t('skillSearch.reindexSuccess'));
@@ -1418,31 +1424,31 @@ export const useSkillSearchConfig = (hubId?: string) => {
         setLoading(false);
       }
     },
-    [t, hubId],
+    [t, spaceId],
   );
 
   // Initialize index
   const initializeIndex = useCallback(async (): Promise<boolean> => {
     try {
-      if (!hubId) throw new Error('Hub ID is required');
+      if (!spaceId) throw new Error('Space ID is required');
       // Initialize index is now handled automatically when creating index
       // Call index API directly to ensure index exists
       // embd_id will be fetched from skill search config by backend
-      await skillsHubService.indexSkills({ skills: [], hub_id: hubId });
+      await skillSpaceService.indexSkills({ skills: [], space_id: spaceId });
       return true;
     } catch (error) {
       console.error('Error initializing skill search index:', error);
       return false;
     }
-  }, [hubId]);
+  }, [spaceId]);
 
   // Search skills
   const searchSkills = useCallback(
     async (query: string, page = 1, pageSize = 10) => {
       try {
-        if (!hubId) return { skills: [], total: 0 };
-        const data = await skillsHubService.search({
-          hub_id: hubId,
+        if (!spaceId) return { skills: [], total: 0 };
+        const data = await skillSpaceService.search({
+          space_id: spaceId,
           query,
           page,
           page_size: pageSize,
@@ -1483,7 +1489,7 @@ export const useSkillSearchConfig = (hubId?: string) => {
         return { skills: [], total: 0 };
       }
     },
-    [hubId],
+    [spaceId],
   );
 
   // Get index status

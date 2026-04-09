@@ -39,9 +39,9 @@ import (
 // SkillProvider handles skill operations using /skills API
 // Path structure:
 //   - skills/                            -> List all hubs
-//   - skills/{hub_id}/                   -> List skills in hub
-//   - skills/{hub_id}/{skill_name}/      -> List versions of skill
-//   - skills/{hub_id}/{skill_name}/{version}/ -> Get skill version info
+//   - skills/{space_id}/                   -> List skills in space
+//   - skills/{space_id}/{skill_name}/      -> List versions of skill
+//   - skills/{space_id}/{skill_name}/{version}/ -> Get skill version info
 //
 // Note: Uses Go backend API (useAPIBase=true):
 //   - GET /skills/hubs                   -> List all hubs
@@ -56,7 +56,7 @@ import (
 const (
 	MaxSkillTotalSize = 50 * 1024 * 1024 // 50MB
 	MaxSkillFileSize  = 5 * 1024 * 1024  // 5MB per file
-	DefaultHubID      = "default"
+	DefaultSpaceID      = "default"
 )
 
 // Text file extensions allowed in skills
@@ -158,24 +158,24 @@ func isUUID(s string) bool {
 }
 
 // List lists nodes at the given path
-// Path structure: skills/ or skills/{hub_id}/ or skills/{hub_id}/{skill_name}/...
+// Path structure: skills/ or skills/{space_id}/ or skills/{space_id}/{skill_name}/...
 func (p *SkillProvider) List(ctx stdctx.Context, subPath string, opts *ListOptions) (*Result, error) {
 	if subPath == "" {
 		// List all hubs
-		return p.listHubs(ctx, opts)
+		return p.listSpaces(ctx, opts)
 	}
 
 	parts := SplitPath(subPath)
 	
 	switch len(parts) {
 	case 1:
-		// skills/{hub_id} - list skills in hub
-		return p.listSkillsInHub(ctx, parts[0], opts)
+		// skills/{space_id} - list skills in space
+		return p.listSkillsInSpace(ctx, parts[0], opts)
 	case 2:
-		// skills/{hub_id}/{skill_name} - list versions of skill
+		// skills/{space_id}/{skill_name} - list versions of skill
 		return p.listSkillVersions(ctx, parts[0], parts[1], opts)
 	default:
-		// skills/{hub_id}/{skill_name}/{version}/... - skill content
+		// skills/{space_id}/{skill_name}/{version}/... - skill content
 		return p.listSkillContent(ctx, parts[0], parts[1], parts[2], parts[3:], opts)
 	}
 }
@@ -186,22 +186,22 @@ func (p *SkillProvider) Search(ctx stdctx.Context, subPath string, opts *SearchO
 		return nil, fmt.Errorf("search query is required")
 	}
 
-	// Parse hub from path
-	hubName := ""
+	// Parse space from path
+	spaceName := ""
 	parts := SplitPath(subPath)
 	if len(parts) > 0 {
-		hubName = parts[0]
+		spaceName = parts[0]
 	}
 
-	// Hub ID can be either a name or UUID
+	// Space ID can be either a name or UUID
 	// If it's not "default" and doesn't look like a UUID, try to convert it
-	hubID := hubName
-	if hubID != "" && hubID != "default" && !isUUID(hubID) {
-		hubUUID, err := p.getHubUUIDByName(ctx, hubID)
+	spaceID := spaceName
+	if spaceID != "" && spaceID != "default" && !isUUID(spaceID) {
+		spaceUUID, err := p.getSpaceUUIDByName(ctx, spaceID)
 		if err == nil {
-			hubID = hubUUID
+			spaceID = spaceUUID
 		}
-		// If lookup fails, use the original hubID as-is (it might already be a UUID)
+		// If lookup fails, use the original spaceID as-is (it might already be a UUID)
 	}
 
 	// Build search payload
@@ -215,7 +215,7 @@ func (p *SkillProvider) Search(ctx stdctx.Context, subPath string, opts *SearchO
 	}
 	payload := map[string]interface{}{
 		"query":      opts.Query,
-		"hub_id":     hubID,
+		"space_id":    spaceID,
 		"page":       page,
 		"page_size":  pageSize,
 	}
@@ -262,7 +262,7 @@ func (p *SkillProvider) Search(ctx stdctx.Context, subPath string, opts *SearchO
 		nodes = append(nodes, &Node{
 			Name:      skill.Name,
 			Type:      NodeTypeDirectory,
-			Path:      fmt.Sprintf("skills/%s/%s", hubName, skill.Name),
+			Path:      fmt.Sprintf("skills/%s/%s", spaceName, skill.Name),
 			CreatedAt: createdAt,
 			UpdatedAt: createdAt,
 			Metadata: map[string]interface{}{
@@ -283,28 +283,28 @@ func (p *SkillProvider) Search(ctx stdctx.Context, subPath string, opts *SearchO
 }
 
 // Cat retrieves the content of a skill file at the given path
-// Path structure: skills/{hub_id}/{skill_name}/{version}/.../{file_path}
+// Path structure: skills/{space_id}/{skill_name}/{version}/.../{file_path}
 func (p *SkillProvider) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 	parts := SplitPath(path)
 	if len(parts) < 4 {
-		return nil, fmt.Errorf("invalid file path: %s (expected: skills/{hub}/{skill}/{version}/.../{file})", path)
+		return nil, fmt.Errorf("invalid file path: %s (expected: skills/{space}/{skill}/{version}/.../{file})", path)
 	}
 
-	hubID := parts[0]
+	spaceID := parts[0]
 	skillName := parts[1]
 	version := parts[2]
 	_ = JoinPath(parts[3:]...) // file path within version folder (used for nested directories)
 
-	// Step 1: Get the hub UUID
-	hubUUID, err := p.getHubUUIDByName(ctx, hubID)
+	// Step 1: Get the space UUID
+	spaceUUID, err := p.getSpaceUUIDByName(ctx, spaceID)
 	if err != nil {
-		return nil, fmt.Errorf("hub '%s' not found: %w", hubID, err)
+		return nil, fmt.Errorf("space '%s' not found: %w", spaceID, err)
 	}
 
 	// Step 2: Find the skill's folder_id by searching
 	payload := map[string]interface{}{
 		"query":      skillName,
-		"hub_id":     hubUUID,
+		"space_id":   spaceUUID,
 		"page":       1,
 		"page_size":  10,
 	}
@@ -344,7 +344,7 @@ func (p *SkillProvider) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 	}
 
 	if skillFolderID == "" {
-		return nil, fmt.Errorf("skill '%s' not found in hub '%s'", skillName, hubID)
+		return nil, fmt.Errorf("skill '%s' not found in space '%s'", skillName, spaceID)
 	}
 
 	// Step 3: Find the version folder
@@ -487,9 +487,9 @@ func (p *SkillProvider) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 	return contentResp.Body, nil
 }
 
-// listHubs lists all skills hubs
-func (p *SkillProvider) listHubs(ctx stdctx.Context, opts *ListOptions) (*Result, error) {
-	resp, err := p.httpClient.Request("GET", "/skills/hubs", true, "auto", nil, nil)
+// listHubs lists all skills spaces
+func (p *SkillProvider) listSpaces(ctx stdctx.Context, opts *ListOptions) (*Result, error) {
+	resp, err := p.httpClient.Request("GET", "/skills/spaces", true, "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list hubs: %w", err)
 	}
@@ -498,11 +498,11 @@ func (p *SkillProvider) listHubs(ctx stdctx.Context, opts *ListOptions) (*Result
 		Code int    `json:"code"`
 		Msg  string `json:"message"`
 		Data struct {
-			Hubs []struct {
+			Spaces []struct {
 				ID          string `json:"id"`
 				Name        string `json:"name"`
 				Description string `json:"description"`
-			} `json:"hubs"`
+			} `json:"spaces"`
 		} `json:"data"`
 	}
 
@@ -514,15 +514,15 @@ func (p *SkillProvider) listHubs(ctx stdctx.Context, opts *ListOptions) (*Result
 		return nil, fmt.Errorf("failed to list hubs: %s", result.Msg)
 	}
 
-	nodes := make([]*Node, 0, len(result.Data.Hubs))
-	for _, hub := range result.Data.Hubs {
+	nodes := make([]*Node, 0, len(result.Data.Spaces))
+	for _, space := range result.Data.Spaces {
 		nodes = append(nodes, &Node{
-			Name: hub.Name,
+			Name: space.Name,
 			Type: NodeTypeDirectory,
-			Path: fmt.Sprintf("skills/%s", hub.Name),
+			Path: fmt.Sprintf("skills/%s", space.Name),
 			Metadata: map[string]interface{}{
-				"id":          hub.ID,
-				"description": hub.Description,
+				"id":          space.ID,
+				"description": space.Description,
 			},
 		})
 	}
@@ -533,13 +533,13 @@ func (p *SkillProvider) listHubs(ctx stdctx.Context, opts *ListOptions) (*Result
 	}, nil
 }
 
-// listSkillsInHub lists skills in a specific hub
+// listSkillsInSpace lists skills in a specific space
 // First tries search API (supports pagination & sorting), falls back to file system if search returns empty
-func (p *SkillProvider) listSkillsInHub(ctx stdctx.Context, hubName string, opts *ListOptions) (*Result, error) {
-	// Get hub UUID for search API
-	hubUUID, err := p.getHubUUIDByName(ctx, hubName)
+func (p *SkillProvider) listSkillsInSpace(ctx stdctx.Context, spaceName string, opts *ListOptions) (*Result, error) {
+	// Get space UUID for search API
+	spaceUUID, err := p.getSpaceUUIDByName(ctx, spaceName)
 	if err != nil {
-		return nil, fmt.Errorf("hub '%s' not found: %w", hubName, err)
+		return nil, fmt.Errorf("space '%s' not found: %w", spaceName, err)
 	}
 
 	// Set default limit to 10 if not specified
@@ -551,14 +551,14 @@ func (p *SkillProvider) listSkillsInHub(ctx stdctx.Context, hubName string, opts
 	// Try search API first (supports pagination, sorting, and large collections)
 	payload := map[string]interface{}{
 		"query":      "", // Empty query = list all (match_all)
-		"hub_id":     hubUUID,
+		"space_id":   spaceUUID,
 		"page":       1,
 		"page_size":  limit,
 		"sort_by":    opts.SortBy,
 		"sort_order": opts.SortOrder,
 	}
 
-	logger.Debug("Listing skills via search API", zap.String("hub", hubName), zap.String("hubUUID", hubUUID), zap.Int("limit", limit))
+	logger.Debug("Listing skills via search API", zap.String("space", spaceName), zap.String("spaceUUID", spaceUUID), zap.Int("limit", limit))
 
 	resp, err := p.httpClient.Request("POST", "/skills/search", true, "auto", nil, payload)
 	if err == nil {
@@ -592,7 +592,7 @@ func (p *SkillProvider) listSkillsInHub(ctx stdctx.Context, hubName string, opts
 					nodes = append(nodes, &Node{
 						Name:      skill.Name,
 						Type:      NodeTypeDirectory,
-						Path:      fmt.Sprintf("skills/%s/%s", hubName, skill.Name),
+						Path:      fmt.Sprintf("skills/%s/%s", spaceName, skill.Name),
 						UpdatedAt: updatedAt,
 						Metadata: map[string]interface{}{
 							"id":          skill.SkillID,
@@ -602,7 +602,7 @@ func (p *SkillProvider) listSkillsInHub(ctx stdctx.Context, hubName string, opts
 						},
 					})
 				}
-				logger.Info("Listed skills via SEARCH", zap.String("hub", hubName), zap.Int("count", len(nodes)), zap.Int64("total", result.Data.Total))
+				logger.Info("Listed skills via SEARCH", zap.String("space", spaceName), zap.Int("count", len(nodes)), zap.Int64("total", result.Data.Total))
 				return &Result{
 					Nodes:      nodes,
 					Total:      int(result.Data.Total),
@@ -620,28 +620,28 @@ func (p *SkillProvider) listSkillsInHub(ctx stdctx.Context, hubName string, opts
 	}
 
 	// Fall back to file system listing (for skills not yet indexed)
-	logger.Info("Listing skills via FILE SYSTEM (search unavailable)", zap.String("hub", hubName))
-	return p.listSkillsInHubFromFileSystem(ctx, hubName, opts)
+	logger.Info("Listing skills via FILE SYSTEM (search unavailable)", zap.String("space", spaceName))
+	return p.listSkillsInSpaceFromFileSystem(ctx, spaceName, opts)
 }
 
-// listSkillsInHubFromFileSystem lists skills from file system (fallback when search returns empty)
-func (p *SkillProvider) listSkillsInHubFromFileSystem(ctx stdctx.Context, hubName string, opts *ListOptions) (*Result, error) {
-	// Get the skills hub folder ID from file system
+// listSkillsInSpaceFromFileSystem lists skills from file system (fallback when search returns empty)
+func (p *SkillProvider) listSkillsInSpaceFromFileSystem(ctx stdctx.Context, spaceName string, opts *ListOptions) (*Result, error) {
+	// Get the skills space folder ID from file system
 	skillsFolderID, err := p.getSkillsFolderID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get skills folder: %w", err)
 	}
 	logger.Debug("Got skills folder ID", zap.String("skillsFolderID", skillsFolderID))
 
-	// Find the hub folder
-	hubFolderID, err := p.findFolderID(ctx, skillsFolderID, hubName)
+	// Find the space folder
+	spaceFolderID, err := p.findFolderID(ctx, skillsFolderID, spaceName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find hub folder: %w", err)
+		return nil, fmt.Errorf("failed to find space folder: %w", err)
 	}
-	logger.Debug("Got hub folder ID", zap.String("hubName", hubName), zap.String("hubFolderID", hubFolderID))
+	logger.Debug("Got space folder ID", zap.String("spaceName", spaceName), zap.String("spaceFolderID", spaceFolderID))
 
-	// List all subfolders in the hub folder (each subfolder is a skill)
-	skillsResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", hubFolderID), true, "auto", nil, nil)
+	// List all subfolders in the space folder (each subfolder is a skill)
+	skillsResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", spaceFolderID), true, "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list skills: %w", err)
 	}
@@ -676,7 +676,7 @@ func (p *SkillProvider) listSkillsInHubFromFileSystem(ctx stdctx.Context, hubNam
 			nodes = append(nodes, &Node{
 				Name:      file.Name,
 				Type:      NodeTypeDirectory,
-				Path:      fmt.Sprintf("skills/%s/%s", hubName, file.Name),
+				Path:      fmt.Sprintf("skills/%s/%s", spaceName, file.Name),
 				UpdatedAt: time.UnixMilli(file.UpdateTime),
 				Metadata: map[string]interface{}{
 					"id": file.ID,
@@ -695,7 +695,7 @@ func (p *SkillProvider) listSkillsInHubFromFileSystem(ctx stdctx.Context, hubNam
 		nodes = nodes[:limit]
 	}
 
-	logger.Info("Listed skills via FILE SYSTEM", zap.String("hub", hubName), zap.Int("count", len(nodes)), zap.Int("total", total))
+	logger.Info("Listed skills via FILE SYSTEM", zap.String("space", spaceName), zap.Int("count", len(nodes)), zap.Int("total", total))
 
 	return &Result{
 		Nodes:      nodes,
@@ -778,17 +778,17 @@ func (p *SkillProvider) findFolderID(ctx stdctx.Context, parentID, folderName st
 }
 
 // listSkillVersions lists versions of a skill
-func (p *SkillProvider) listSkillVersions(ctx stdctx.Context, hubID, skillName string, opts *ListOptions) (*Result, error) {
-	// Step 1: Get the hub UUID
-	hubUUID, err := p.getHubUUIDByName(ctx, hubID)
+func (p *SkillProvider) listSkillVersions(ctx stdctx.Context, spaceID, skillName string, opts *ListOptions) (*Result, error) {
+	// Step 1: Get the space UUID
+	spaceUUID, err := p.getSpaceUUIDByName(ctx, spaceID)
 	if err != nil {
-		return nil, fmt.Errorf("hub '%s' not found: %w", hubID, err)
+		return nil, fmt.Errorf("space '%s' not found: %w", spaceID, err)
 	}
 
 	// Step 2: Find the skill's folder_id by searching
 	payload := map[string]interface{}{
 		"query":      skillName,
-		"hub_id":     hubUUID,
+		"space_id":   spaceUUID,
 		"page":       1,
 		"page_size":  10,
 	}
@@ -828,7 +828,7 @@ func (p *SkillProvider) listSkillVersions(ctx stdctx.Context, hubID, skillName s
 	}
 
 	if skillFolderID == "" {
-		return nil, fmt.Errorf("skill '%s' not found in hub '%s'", skillName, hubID)
+		return nil, fmt.Errorf("skill '%s' not found in space '%s'", skillName, spaceID)
 	}
 
 	// Step 3: List the skill folder to get versions (subdirectories)
@@ -866,7 +866,7 @@ func (p *SkillProvider) listSkillVersions(ctx stdctx.Context, hubID, skillName s
 			nodes = append(nodes, &Node{
 				Name:      file.Name,
 				Type:      NodeTypeDirectory,
-				Path:      fmt.Sprintf("skills/%s/%s/%s", hubID, skillName, file.Name),
+				Path:      fmt.Sprintf("skills/%s/%s/%s", spaceID, skillName, file.Name),
 				UpdatedAt: time.UnixMilli(file.UpdateTime),
 				Metadata: map[string]interface{}{
 					"id": file.ID,
@@ -882,21 +882,21 @@ func (p *SkillProvider) listSkillVersions(ctx stdctx.Context, hubID, skillName s
 }
 
 // listSkillContent lists content of a specific skill version
-func (p *SkillProvider) listSkillContent(ctx stdctx.Context, hubID, skillName, version string, extraParts []string, opts *ListOptions) (*Result, error) {
-	// Skill content is stored in file system under skills/{hub}/{skill}/{version}/
+func (p *SkillProvider) listSkillContent(ctx stdctx.Context, spaceID, skillName, version string, extraParts []string, opts *ListOptions) (*Result, error) {
+	// Skill content is stored in file system under skills/{space}/{skill}/{version}/
 	// We need to traverse the file system to find the skill folder and list its contents
 
-	// Step 1: Get the skills hub folder ID
-	hubUUID, err := p.getHubUUIDByName(ctx, hubID)
+	// Step 1: Get the skills space folder ID
+	spaceUUID, err := p.getSpaceUUIDByName(ctx, spaceID)
 	if err != nil {
-		return nil, fmt.Errorf("hub '%s' not found: %w", hubID, err)
+		return nil, fmt.Errorf("space '%s' not found: %w", spaceID, err)
 	}
 
 	// Step 2: Find the skill folder by searching for the skill
 	// First get the skill's folder_id from search
 	payload := map[string]interface{}{
 		"query":      skillName,
-		"hub_id":     hubUUID,
+		"space_id":   spaceUUID,
 		"page":       1,
 		"page_size":  10,
 	}
@@ -936,7 +936,7 @@ func (p *SkillProvider) listSkillContent(ctx stdctx.Context, hubID, skillName, v
 	}
 
 	if skillFolderID == "" {
-		return nil, fmt.Errorf("skill '%s' not found in hub '%s'", skillName, hubID)
+		return nil, fmt.Errorf("skill '%s' not found in space '%s'", skillName, spaceID)
 	}
 
 	// Step 3: List the version folder under the skill folder
@@ -983,7 +983,7 @@ func (p *SkillProvider) listSkillContent(ctx stdctx.Context, hubID, skillName, v
 
 	// Step 4: If there are extra parts, navigate deeper
 	currentFolderID := versionFolderID
-	currentPath := fmt.Sprintf("skills/%s/%s/%s", hubID, skillName, version)
+	currentPath := fmt.Sprintf("skills/%s/%s/%s", spaceID, skillName, version)
 
 	// Check if the last part is a file (for ls on a specific file)
 	var lastFile *struct {
@@ -1123,9 +1123,9 @@ func (p *SkillProvider) listSkillContent(ctx stdctx.Context, hubID, skillName, v
 	}, nil
 }
 
-// getHubUUIDByName gets hub UUID by its name
-func (p *SkillProvider) getHubUUIDByName(ctx stdctx.Context, hubName string) (string, error) {
-	resp, err := p.httpClient.Request("GET", "/skills/hubs", true, "auto", nil, nil)
+// getSpaceUUIDByName gets space UUID by its name
+func (p *SkillProvider) getSpaceUUIDByName(ctx stdctx.Context, spaceName string) (string, error) {
+	resp, err := p.httpClient.Request("GET", "/skills/spaces", true, "auto", nil, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to list hubs: %w", err)
 	}
@@ -1134,10 +1134,10 @@ func (p *SkillProvider) getHubUUIDByName(ctx stdctx.Context, hubName string) (st
 		Code int    `json:"code"`
 		Msg  string `json:"message"`
 		Data struct {
-			Hubs []struct {
+			Spaces []struct {
 				ID   string `json:"id"`
 				Name string `json:"name"`
-			} `json:"hubs"`
+			} `json:"spaces"`
 		} `json:"data"`
 	}
 
@@ -1149,29 +1149,29 @@ func (p *SkillProvider) getHubUUIDByName(ctx stdctx.Context, hubName string) (st
 		return "", fmt.Errorf("failed to list hubs: %s", result.Msg)
 	}
 
-	for _, hub := range result.Data.Hubs {
-		if hub.Name == hubName {
-			return hub.ID, nil
+	for _, space := range result.Data.Spaces {
+		if space.Name == spaceName {
+			return space.ID, nil
 		}
 	}
 
-	return "", fmt.Errorf("hub with name '%s' not found", hubName)
+	return "", fmt.Errorf("space with name '%s' not found", spaceName)
 }
 
 // DeleteSkill deletes a skill and its index
-func (p *SkillProvider) DeleteSkill(ctx stdctx.Context, hubID, skillName string) error {
-	// Get hub UUID
-	hubUUID, err := p.getHubUUIDByName(ctx, hubID)
+func (p *SkillProvider) DeleteSkill(ctx stdctx.Context, spaceID, skillName string) error {
+	// Get space UUID
+	spaceUUID, err := p.getSpaceUUIDByName(ctx, spaceID)
 	if err != nil {
 		return err
 	}
 
 	// Call delete skill index API
-	// API format: DELETE /skills/index?skill_id={skill_name}&hub_id={hub_id}
+	// API format: DELETE /skills/index?skill_id={skill_name}&space_id={space_id}
 	resp, err := p.httpClient.Request("DELETE",
-		fmt.Sprintf("/skills/index?skill_id=%s&hub_id=%s",
+		fmt.Sprintf("/skills/index?skill_id=%s&space_id=%s",
 			url.QueryEscape(skillName),
-			url.QueryEscape(hubUUID)),
+			url.QueryEscape(spaceUUID)),
 		true, "auto", nil, nil)
 	if err != nil {
 		return fmt.Errorf("delete index request failed: %w", err)
@@ -1197,20 +1197,20 @@ func (p *SkillProvider) DeleteSkill(ctx stdctx.Context, hubID, skillName string)
 }
 
 // IndexSkill indexes a skill for search
-func (p *SkillProvider) IndexSkill(ctx stdctx.Context, hubID string, skillInfo map[string]interface{}) error {
-	// Get hub UUID
-	hubUUID, err := p.getHubUUIDByName(ctx, hubID)
+func (p *SkillProvider) IndexSkill(ctx stdctx.Context, spaceID string, skillInfo map[string]interface{}) error {
+	// Get space UUID
+	spaceUUID, err := p.getSpaceUUIDByName(ctx, spaceID)
 	if err != nil {
 		return err
 	}
 
 	// Get default embedding model
-	embdID, _ := p.getDefaultEmbdID(ctx, hubUUID)
+	embdID, _ := p.getDefaultEmbdID(ctx, spaceUUID)
 
 	// Build index request
 	payload := map[string]interface{}{
 		"skills":  []interface{}{skillInfo},
-		"hub_id":  hubUUID,
+		"space_id": spaceUUID,
 		"embd_id": embdID,
 	}
 
@@ -1240,9 +1240,9 @@ func (p *SkillProvider) IndexSkill(ctx stdctx.Context, hubID string, skillInfo m
 }
 
 // getDefaultEmbdID gets the default embedding model ID from skill search config
-func (p *SkillProvider) getDefaultEmbdID(ctx stdctx.Context, hubID string) (string, error) {
+func (p *SkillProvider) getDefaultEmbdID(ctx stdctx.Context, spaceID string) (string, error) {
 	resp, err := p.httpClient.Request("GET",
-		fmt.Sprintf("/skills/config?embd_id=&hub_id=%s", url.QueryEscape(hubID)),
+		fmt.Sprintf("/skills/config?embd_id=&space_id=%s", url.QueryEscape(spaceID)),
 		true, "web", nil, nil)
 	if err != nil {
 		return "", nil
@@ -1273,8 +1273,8 @@ func (p *SkillProvider) getDefaultEmbdID(ctx stdctx.Context, hubID string) (stri
 
 // UploadSkill uploads a skill directory to the server
 // nameOverride: user-specified skill name (overrides SKILL.md metadata)
-func (p *SkillProvider) UploadSkill(ctx stdctx.Context, skillPath string, versionOverride string, hubID string, fileProvider Provider, nameOverride string) error {
-	hubID = normalizeHubID(hubID)
+func (p *SkillProvider) UploadSkill(ctx stdctx.Context, skillPath string, versionOverride string, spaceID string, fileProvider Provider, nameOverride string) error {
+	spaceID = normalizeSpaceID(spaceID)
 
 	// 1. Validate the skill directory
 	result, files, err := ValidateSkillDirectory(skillPath, versionOverride, nameOverride)
@@ -1299,20 +1299,20 @@ func (p *SkillProvider) UploadSkill(ctx stdctx.Context, skillPath string, versio
 		version = "1.0.0"
 	}
 
-	// 2. Ensure skills hub exists
-	hubFolderID, err := p.ensureSkillsHubFolder(ctx, hubID, fileProvider)
+	// 2. Ensure skills space exists
+	spaceFolderID, err := p.ensureSkillsSpaceFolder(ctx, spaceID, fileProvider)
 	if err != nil {
-		return fmt.Errorf("failed to ensure skills hub: %w", err)
+		return fmt.Errorf("failed to ensure skills space: %w", err)
 	}
 
 	// 3. Get or create skill folder
-	skillFolderID, err := p.getOrCreateSkillFolder(ctx, hubID, hubFolderID, skillName, fileProvider)
+	skillFolderID, err := p.getOrCreateSkillFolder(ctx, spaceID, spaceFolderID, skillName, fileProvider)
 	if err != nil {
 		return err
 	}
 
 	// 4. Check if version already exists
-	exists, err := p.versionExists(ctx, hubID, skillName, version, fileProvider)
+	exists, err := p.versionExists(ctx, spaceID, skillName, version, fileProvider)
 	if err != nil {
 		return fmt.Errorf("failed to check version: %w", err)
 	}
@@ -1340,15 +1340,15 @@ func (p *SkillProvider) UploadSkill(ctx stdctx.Context, skillPath string, versio
 	}
 
 	// 7. Index the skill for search
-	if err := p.indexSkillFromUpload(ctx, result, files, hubID, skillFolderID); err != nil {
+	if err := p.indexSkillFromUpload(ctx, result, files, spaceID, skillFolderID); err != nil {
 		return fmt.Errorf("failed to index skill: %w", err)
 	}
 
 	return nil
 }
 
-// ensureSkillsHubFolder ensures the 'skills/<hub>' folder exists
-func (p *SkillProvider) ensureSkillsHubFolder(ctx stdctx.Context, hubID string, fileProvider Provider) (string, error) {
+// ensureSkillsSpaceFolder ensures the 'skills/<space>' folder exists
+func (p *SkillProvider) ensureSkillsSpaceFolder(ctx stdctx.Context, spaceID string, fileProvider Provider) (string, error) {
 	skillsFolderID, err := p.ensureSkillsFolder(ctx, fileProvider)
 	if err != nil {
 		return "", err
@@ -1360,12 +1360,12 @@ func (p *SkillProvider) ensureSkillsHubFolder(ctx stdctx.Context, hubID string, 
 	}
 
 	for _, node := range result.Nodes {
-		if node.Type == NodeTypeDirectory && node.Name == hubID {
+		if node.Type == NodeTypeDirectory && node.Name == spaceID {
 			return GetString(node.Metadata["id"]), nil
 		}
 	}
 
-	return p.createFolder(ctx, skillsFolderID, hubID)
+	return p.createFolder(ctx, skillsFolderID, spaceID)
 }
 
 // ensureSkillsFolder ensures the 'skills' folder exists
@@ -1385,8 +1385,8 @@ func (p *SkillProvider) ensureSkillsFolder(ctx stdctx.Context, fileProvider Prov
 }
 
 // getOrCreateSkillFolder gets existing skill folder or creates new one
-func (p *SkillProvider) getOrCreateSkillFolder(ctx stdctx.Context, hubID, parentID, skillName string, fileProvider Provider) (string, error) {
-	result, err := fileProvider.List(ctx, fmt.Sprintf("skills/%s", hubID), nil)
+func (p *SkillProvider) getOrCreateSkillFolder(ctx stdctx.Context, spaceID, parentID, skillName string, fileProvider Provider) (string, error) {
+	result, err := fileProvider.List(ctx, fmt.Sprintf("skills/%s", spaceID), nil)
 	if err != nil {
 		return "", err
 	}
@@ -1401,8 +1401,8 @@ func (p *SkillProvider) getOrCreateSkillFolder(ctx stdctx.Context, hubID, parent
 }
 
 // versionExists checks if a version already exists
-func (p *SkillProvider) versionExists(ctx stdctx.Context, hubID, skillName, version string, fileProvider Provider) (bool, error) {
-	result, err := fileProvider.List(ctx, fmt.Sprintf("skills/%s/%s", hubID, skillName), nil)
+func (p *SkillProvider) versionExists(ctx stdctx.Context, spaceID, skillName, version string, fileProvider Provider) (bool, error) {
+	result, err := fileProvider.List(ctx, fmt.Sprintf("skills/%s/%s", spaceID, skillName), nil)
 	if err != nil {
 		return false, err
 	}
@@ -1470,7 +1470,7 @@ func (p *SkillProvider) uploadFile(ctx stdctx.Context, file *SkillFile, parentID
 }
 
 // indexSkillFromUpload indexes the skill after upload
-func (p *SkillProvider) indexSkillFromUpload(ctx stdctx.Context, result *SkillValidationResult, files []*SkillFile, hubID string, skillFolderID string) error {
+func (p *SkillProvider) indexSkillFromUpload(ctx stdctx.Context, result *SkillValidationResult, files []*SkillFile, spaceID string, skillFolderID string) error {
 	var contentBuilder strings.Builder
 	for _, file := range files {
 		if !isTextFile(file.Path, "") {
@@ -1502,7 +1502,7 @@ func (p *SkillProvider) indexSkillFromUpload(ctx stdctx.Context, result *SkillVa
 		"version":     result.Version,
 	}
 
-	return p.IndexSkill(ctx, hubID, skillInfo)
+	return p.IndexSkill(ctx, spaceID, skillInfo)
 }
 
 // ============================================================================
@@ -1833,13 +1833,13 @@ func globToRegex(pattern string) string {
 	return regex.String()
 }
 
-// normalizeHubID normalizes hub ID
-func normalizeHubID(hubID string) string {
-	hubID = strings.TrimSpace(hubID)
-	if hubID == "" {
-		return DefaultHubID
+// normalizeSpaceID normalizes space ID
+func normalizeSpaceID(spaceID string) string {
+	spaceID = strings.TrimSpace(spaceID)
+	if spaceID == "" {
+		return DefaultSpaceID
 	}
-	return hubID
+	return spaceID
 }
 
 // normalizeSkillName normalizes skill name
@@ -1926,17 +1926,17 @@ type AddSkillArgs struct {
 	SkillPath string
 	Version   string
 	SkillName string // User-specified skill name (overrides SKILL.md)
-	HubID     string // Skills hub ID
+	SpaceID     string // Skills space ID
 	ShowHelp  bool
 }
 
 // ParseAddSkillArgs parses the add-skill command arguments
-// Format: add-skill <hub> <path> [options]
-// Hub is required
+// Format: add-skill <space> <path> [options]
+// Space is required
 func ParseAddSkillArgs(args []string) (*AddSkillArgs, error) {
 	result := &AddSkillArgs{}
 
-	// Collect non-flag arguments (hub and path)
+	// Collect non-flag arguments (space and path)
 	var nonFlagArgs []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -1960,29 +1960,29 @@ func ParseAddSkillArgs(args []string) (*AddSkillArgs, error) {
 				return nil, fmt.Errorf("name flag requires a value")
 			}
 		default:
-			// Non-flag argument (hub or path)
+			// Non-flag argument (space or path)
 			if !strings.HasPrefix(arg, "-") {
 				nonFlagArgs = append(nonFlagArgs, arg)
 			}
 		}
 	}
 
-	// Parse hub and path from non-flag arguments
+	// Parse space and path from non-flag arguments
 	switch len(nonFlagArgs) {
 	case 0:
 		if !result.ShowHelp {
-			return nil, fmt.Errorf("hub and skill path are required")
+			return nil, fmt.Errorf("space and skill path are required")
 		}
 	case 1:
 		if !result.ShowHelp {
 			return nil, fmt.Errorf("skill path is required")
 		}
 	case 2:
-		// Hub and path provided
-		result.HubID = nonFlagArgs[0]
+		// Space and path provided
+		result.SpaceID = nonFlagArgs[0]
 		result.SkillPath = nonFlagArgs[1]
 	default:
-		return nil, fmt.Errorf("too many arguments: expected <hub> <path>")
+		return nil, fmt.Errorf("too many arguments: expected <space> <path>")
 	}
 
 	return result, nil
@@ -2011,10 +2011,10 @@ func (c *AddSkillCommand) Execute(args []string) error {
 		return fmt.Errorf("%s is not a directory", skillPath)
 	}
 
-	// Upload skill to specified hub (or default if not specified)
+	// Upload skill to specified space (or default if not specified)
 	uploader := NewSkillUploader(c.client, c.fileProvider)
 	uploader.SetSkillProvider(c.skillProvider)
-	err = uploader.UploadSkill(stdctx.Background(), skillPath, parsedArgs.Version, parsedArgs.HubID, parsedArgs.SkillName)
+	err = uploader.UploadSkill(stdctx.Background(), skillPath, parsedArgs.Version, parsedArgs.SpaceID, parsedArgs.SkillName)
 	if err != nil {
 		// Handle version conflict error
 		if conflictErr, ok := err.(*SkillConflictError); ok {
@@ -2028,12 +2028,12 @@ func (c *AddSkillCommand) Execute(args []string) error {
 
 // PrintHelp prints the help message for add-skill command
 func (c *AddSkillCommand) PrintHelp() {
-	fmt.Println(`Usage: add-skill <hub> <path> [options]
+	fmt.Println(`Usage: add-skill <space> <path> [options]
 
 Upload a skill directory to RAGFlow.
 
 Arguments:
-  <hub>                  Skills Hub ID (required)
+  <space>                  Skills Space ID (required)
   <path>                 Path to the skill directory (required)
 
 Options:
@@ -2042,9 +2042,9 @@ Options:
   -h, --help             Show this help message
 
 Examples:
-  add-skill my-hub /path/to/my-skill
-  add-skill my-hub /path/to/my-skill --version 1.0.0
-  add-skill my-hub /path/to/my-skill -v 2.0.0 --name my-custom-name
+  add-skill my-space /path/to/my-skill
+  add-skill my-space /path/to/my-skill --version 1.0.0
+  add-skill my-space /path/to/my-skill -v 2.0.0 --name my-custom-name
 
 The skill directory must contain a SKILL.md file with required frontmatter:
   ---
@@ -2082,17 +2082,17 @@ func NewDeleteSkillCommand(client HTTPClientInterface, skillProvider Provider, f
 // DeleteSkillArgs holds the parsed arguments for delete-skill command
 type DeleteSkillArgs struct {
 	SkillName string
-	HubID     string
+	SpaceID     string
 	ShowHelp  bool
 }
 
 // ParseDeleteSkillArgs parses the delete-skill command arguments
-// Format: delete-skill <hub> <skill-name>
-// Both hub and skill-name are required
+// Format: delete-skill <space> <skill-name>
+// Both space and skill-name are required
 func ParseDeleteSkillArgs(args []string) (*DeleteSkillArgs, error) {
 	result := &DeleteSkillArgs{}
 
-	// Collect non-flag arguments (hub and skill name)
+	// Collect non-flag arguments (space and skill name)
 	var nonFlagArgs []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -2102,29 +2102,29 @@ func ParseDeleteSkillArgs(args []string) (*DeleteSkillArgs, error) {
 			result.ShowHelp = true
 			return result, nil
 		default:
-			// Non-flag argument (hub or skill name)
+			// Non-flag argument (space or skill name)
 			if !strings.HasPrefix(arg, "-") {
 				nonFlagArgs = append(nonFlagArgs, arg)
 			}
 		}
 	}
 
-	// Parse hub and skill name from non-flag arguments
+	// Parse space and skill name from non-flag arguments
 	switch len(nonFlagArgs) {
 	case 0:
 		if !result.ShowHelp {
-			return nil, fmt.Errorf("hub and skill name are required")
+			return nil, fmt.Errorf("space and skill name are required")
 		}
 	case 1:
 		if !result.ShowHelp {
 			return nil, fmt.Errorf("skill name is required")
 		}
 	case 2:
-		// Hub and skill name provided
-		result.HubID = nonFlagArgs[0]
+		// Space and skill name provided
+		result.SpaceID = nonFlagArgs[0]
 		result.SkillName = nonFlagArgs[1]
 	default:
-		return nil, fmt.Errorf("too many arguments: expected <hub> <skill-name>")
+		return nil, fmt.Errorf("too many arguments: expected <space> <skill-name>")
 	}
 
 	return result, nil
@@ -2142,11 +2142,11 @@ func (c *DeleteSkillCommand) Execute(args []string) error {
 		return nil
 	}
 
-	return c.deleteSkill(stdctx.Background(), parsedArgs.SkillName, parsedArgs.HubID)
+	return c.deleteSkill(stdctx.Background(), parsedArgs.SkillName, parsedArgs.SpaceID)
 }
 
 // deleteSkill deletes a skill and its index using SkillProvider
-func (c *DeleteSkillCommand) deleteSkill(ctx stdctx.Context, skillName, hubID string) error {
+func (c *DeleteSkillCommand) deleteSkill(ctx stdctx.Context, skillName, spaceID string) error {
 	if c.skillProvider == nil {
 		return fmt.Errorf("skill provider not available")
 	}
@@ -2160,7 +2160,7 @@ func (c *DeleteSkillCommand) deleteSkill(ctx stdctx.Context, skillName, hubID st
 
 	// Delete index first
 	fmt.Printf("Deleting search index for skill '%s'...\n", skillName)
-	if err := skillProvider.DeleteSkill(ctx, hubID, skillName); err != nil {
+	if err := skillProvider.DeleteSkill(ctx, spaceID, skillName); err != nil {
 		indexErr = fmt.Errorf("failed to delete search index: %w", err)
 		fmt.Printf("✗ %v\n", indexErr)
 	} else {
@@ -2169,8 +2169,8 @@ func (c *DeleteSkillCommand) deleteSkill(ctx stdctx.Context, skillName, hubID st
 
 	// Delete file system folder
 	if c.fileProvider != nil {
-		fmt.Printf("Deleting skill folder '%s/%s'...\n", hubID, skillName)
-		folderPath := fmt.Sprintf("skills/%s/%s", hubID, skillName)
+		fmt.Printf("Deleting skill folder '%s/%s'...\n", spaceID, skillName)
+		folderPath := fmt.Sprintf("skills/%s/%s", spaceID, skillName)
 		if err := c.fileProvider.DeleteFolderByPath(ctx, folderPath); err != nil {
 			folderErr = fmt.Errorf("failed to delete skill folder: %w", err)
 			fmt.Printf("✗ %v\n", folderErr)
@@ -2196,19 +2196,19 @@ func (c *DeleteSkillCommand) deleteSkill(ctx stdctx.Context, skillName, hubID st
 
 // PrintHelp prints the help message for delete-skill command
 func (c *DeleteSkillCommand) PrintHelp() {
-	fmt.Println(`Usage: delete-skill <hub> <skill-name>
+	fmt.Println(`Usage: delete-skill <space> <skill-name>
 
 Delete a skill from RAGFlow and remove its search index.
 
 Arguments:
-  <hub>                  Skills Hub ID (required)
+  <space>                  Skills Space ID (required)
   <skill-name>           Name of the skill to delete (required)
 
 Options:
   -h, --help            Show this help message
 
 Examples:
-  delete-skill my-hub my-skill
+  delete-skill my-space my-skill
   delete-skill hub1 my-awesome-skill`)
 }
 
@@ -2236,28 +2236,28 @@ func (u *SkillUploader) SetSkillProvider(provider Provider) {
 	u.skillProvider = provider
 }
 
-// parseHubFromPath extracts hub ID from a path like "skills/hub1" or "skills"
-// Returns "default" for "skills" (no hub specified)
-func parseHubFromPath(path string) string {
+// parseSpaceFromPath extracts space ID from a path like "skills/space1" or "skills"
+// Returns "default" for "skills" (no space specified)
+func parseSpaceFromPath(path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" || path == "skills" {
-		return DefaultHubID
+		return DefaultSpaceID
 	}
-	// Handle paths like "skills/hub1" or "hub1"
+	// Handle paths like "skills/space1" or "hub1"
 	if strings.HasPrefix(path, "skills/") {
 		path = strings.TrimPrefix(path, "skills/")
 	}
 	if path == "" {
-		return DefaultHubID
+		return DefaultSpaceID
 	}
-	return normalizeHubID(path)
+	return normalizeSpaceID(path)
 }
 
 // UploadSkill uploads a skill directory to the server
 // nameOverride: user-specified skill name (overrides SKILL.md metadata)
 func (u *SkillUploader) UploadSkill(ctx stdctx.Context, skillPath string, versionOverride string, hubPath string, nameOverride string) error {
-	// Parse hub from path
-	hubID := parseHubFromPath(hubPath)
+	// Parse space from path
+	spaceID := parseSpaceFromPath(hubPath)
 
 	// 1. Validate the skill directory
 	fmt.Printf("Validating skill at %s...\n", skillPath)
@@ -2285,23 +2285,23 @@ func (u *SkillUploader) UploadSkill(ctx stdctx.Context, skillPath string, versio
 
 	fmt.Printf("✓ Skill '%s' (v%s) is valid\n", skillName, version)
 
-	// 2. Ensure skills hub exists
-	fmt.Printf("Checking skills hub '%s'...\n", hubID)
-	hubFolderID, err := u.ensureSkillsHubFolder(ctx, hubID)
+	// 2. Ensure skills space exists
+	fmt.Printf("Checking skills space '%s'...\n", spaceID)
+	spaceFolderID, err := u.ensureSkillsSpaceFolder(ctx, spaceID)
 	if err != nil {
-		return fmt.Errorf("failed to ensure skills hub: %w", err)
+		return fmt.Errorf("failed to ensure skills space: %w", err)
 	}
 
 	// 3. Get or create skill folder
 	fmt.Printf("Checking skill '%s'...\n", skillName)
-	skillFolderID, err := u.getOrCreateSkillFolder(ctx, hubID, hubFolderID, skillName)
+	skillFolderID, err := u.getOrCreateSkillFolder(ctx, spaceID, spaceFolderID, skillName)
 	if err != nil {
 		return err
 	}
 
 	// 4. Check if version already exists
 	fmt.Printf("Checking version '%s'...\n", version)
-	exists, err := u.versionExists(ctx, hubID, skillName, version)
+	exists, err := u.versionExists(ctx, spaceID, skillName, version)
 	if err != nil {
 		return fmt.Errorf("failed to check version: %w", err)
 	}
@@ -2334,7 +2334,7 @@ func (u *SkillUploader) UploadSkill(ctx stdctx.Context, skillPath string, versio
 
 	// 7. Index the skill for search
 	fmt.Println("Indexing skill for search...")
-	if err := u.indexSkill(ctx, result, files, hubID, skillFolderID); err != nil {
+	if err := u.indexSkill(ctx, result, files, spaceID, skillFolderID); err != nil {
 		fmt.Printf("⚠ Warning: Failed to index skill for search: %v\n", err)
 	} else {
 		fmt.Println("✓ Skill indexed successfully")
@@ -2343,8 +2343,8 @@ func (u *SkillUploader) UploadSkill(ctx stdctx.Context, skillPath string, versio
 	return nil
 }
 
-// ensureSkillsHubFolder ensures the 'skills/<hub>' folder exists
-func (u *SkillUploader) ensureSkillsHubFolder(ctx stdctx.Context, hubID string) (string, error) {
+// ensureSkillsSpaceFolder ensures the 'skills/<space>' folder exists
+func (u *SkillUploader) ensureSkillsSpaceFolder(ctx stdctx.Context, spaceID string) (string, error) {
 	skillsFolderID, err := u.ensureSkillsFolder(ctx)
 	if err != nil {
 		return "", err
@@ -2356,12 +2356,12 @@ func (u *SkillUploader) ensureSkillsHubFolder(ctx stdctx.Context, hubID string) 
 	}
 
 	for _, node := range result.Nodes {
-		if node.Type == NodeTypeDirectory && node.Name == hubID {
+		if node.Type == NodeTypeDirectory && node.Name == spaceID {
 			return GetString(node.Metadata["id"]), nil
 		}
 	}
 
-	return u.createFolder(ctx, skillsFolderID, hubID)
+	return u.createFolder(ctx, skillsFolderID, spaceID)
 }
 
 // ensureSkillsFolder ensures the 'skills' folder exists
@@ -2381,8 +2381,8 @@ func (u *SkillUploader) ensureSkillsFolder(ctx stdctx.Context) (string, error) {
 }
 
 // getOrCreateSkillFolder gets existing skill folder or creates new one
-func (u *SkillUploader) getOrCreateSkillFolder(ctx stdctx.Context, hubID, parentID, skillName string) (string, error) {
-	result, err := u.fileProvider.List(ctx, fmt.Sprintf("skills/%s", hubID), nil)
+func (u *SkillUploader) getOrCreateSkillFolder(ctx stdctx.Context, spaceID, parentID, skillName string) (string, error) {
+	result, err := u.fileProvider.List(ctx, fmt.Sprintf("skills/%s", spaceID), nil)
 	if err != nil {
 		return "", err
 	}
@@ -2397,8 +2397,8 @@ func (u *SkillUploader) getOrCreateSkillFolder(ctx stdctx.Context, hubID, parent
 }
 
 // versionExists checks if a version already exists
-func (u *SkillUploader) versionExists(ctx stdctx.Context, hubID, skillName, version string) (bool, error) {
-	result, err := u.fileProvider.List(ctx, fmt.Sprintf("skills/%s/%s", hubID, skillName), nil)
+func (u *SkillUploader) versionExists(ctx stdctx.Context, spaceID, skillName, version string) (bool, error) {
+	result, err := u.fileProvider.List(ctx, fmt.Sprintf("skills/%s/%s", spaceID, skillName), nil)
 	if err != nil {
 		return false, err
 	}
@@ -2466,7 +2466,7 @@ func (u *SkillUploader) uploadFile(ctx stdctx.Context, file *SkillFile, parentID
 }
 
 // indexSkill indexes the skill for search
-func (u *SkillUploader) indexSkill(ctx stdctx.Context, result *SkillValidationResult, files []*SkillFile, hubID, skillFolderID string) error {
+func (u *SkillUploader) indexSkill(ctx stdctx.Context, result *SkillValidationResult, files []*SkillFile, spaceID, skillFolderID string) error {
 	if u.skillProvider == nil {
 		return fmt.Errorf("skill provider not available")
 	}
@@ -2507,5 +2507,5 @@ func (u *SkillUploader) indexSkill(ctx stdctx.Context, result *SkillValidationRe
 		"version":     result.Version,
 	}
 
-	return skillProvider.IndexSkill(ctx, hubID, skillInfo)
+	return skillProvider.IndexSkill(ctx, spaceID, skillInfo)
 }

@@ -398,7 +398,7 @@ Commands:
   Skill commands: 
     add-skill <path> [--version 1.0.0]
     delete-skill <skill-name>
-    search skills -q <query> [--hub hub1]
+    search skills -q <query> [--space space1]
   If no command is provided, CLI runs in interactive mode.`)
 }
 
@@ -708,14 +708,14 @@ func (c *CLI) executeFilesystem(input string) error {
 		if len(searchOpts.Dirs) > 0 {
 			searchPath = searchOpts.Dirs[0]
 		}
-		// Check if searching skills (supports: "skills" or "skills/hub1")
+		// Check if searching skills (supports: "skills" or "skills/space1")
 		if searchPath == "skills" || strings.HasPrefix(searchPath, "skills/") {
-			// Parse hub ID from path (e.g., "skills/hub1" -> "hub1")
-			hubID := "default"
+			// Parse space ID from path (e.g., "skills/space1" -> "space1")
+			spaceID := "default"
 			if strings.HasPrefix(searchPath, "skills/") {
-				hubID = strings.TrimPrefix(searchPath, "skills/")
-				if hubID == "" {
-					hubID = "default"
+				spaceID = strings.TrimPrefix(searchPath, "skills/")
+				if spaceID == "" {
+					spaceID = "default"
 				}
 			}
 			// Get skill provider and perform search
@@ -737,7 +737,7 @@ func (c *CLI) executeFilesystem(input string) error {
 				Offset: 0,
 				TopK:   pageSize,
 			}
-			result, err := skillProvider.Search(context.Background(), hubID, searchOptions)
+			result, err := skillProvider.Search(context.Background(), spaceID, searchOptions)
 			if err != nil {
 				return err
 			}
@@ -1400,9 +1400,9 @@ Arguments:
                          Supports:
                            - 'datasets' (all datasets)
                            - 'datasets/<kb_name>' (specific dataset)
-                           - 'skills' (default skills hub)
-                           - 'skills/<hub_name>' (specific skills hub)
-                         Example: skills/hub1
+                           - 'skills' (default skill space)
+                           - 'skills/<space_name>' (specific skill space)
+                         Example: skills/space1
 
 Options:
   -n, --number <num>     Number of results to return (default: 10)
@@ -1415,8 +1415,8 @@ Output:
 Examples:
   search "neural networks"                          # Search all datasets
   search "AI" datasets/kb1                          # Search in kb1
-  search "RAG" skills/hub1 -n 20                    # Search skills in hub1, return 20 results
-  search "data processing" skills                   # Search skills (default hub)
+  search "RAG" skills/space1 -n 20                    # Search skills in hub1, return 20 results
+  search "data processing" skills                   # Search skills (default space)
 `
 	fmt.Println(help)
 }

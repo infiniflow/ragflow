@@ -1,13 +1,64 @@
 {
-  "skill_id": {"type": "varchar", "default": "", "index_type": "secondary"},
-  "hub_id": {"type": "varchar", "default": "", "index_type": "secondary"},
-  "folder_id": {"type": "varchar", "default": ""},
-  "name": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"]},
-  "tags": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"]},
-  "description": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"]},
-  "content": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"]},
-  "version": {"type": "varchar", "default": "1.0.0"},
-  "status": {"type": "varchar", "default": "1"},
-  "create_time": {"type": "bigint", "default": 0},
-  "update_time": {"type": "bigint", "default": 0}
+    "skill_id": {
+        "type": "varchar",
+        "default": "",
+        "index_type": "secondary"
+    },
+    "space_id": {
+        "type": "varchar",
+        "default": "",
+        "index_type": "secondary"
+    },
+    "folder_id": {
+        "type": "varchar",
+        "default": ""
+    },
+    "name": {
+        "type": "varchar",
+        "default": "",
+        "analyzer": [
+            "rag-coarse",
+            "rag-fine"
+        ]
+    },
+    "tags": {
+        "type": "varchar",
+        "default": "",
+        "analyzer": [
+            "rag-coarse",
+            "rag-fine"
+        ]
+    },
+    "description": {
+        "type": "varchar",
+        "default": "",
+        "analyzer": [
+            "rag-coarse",
+            "rag-fine"
+        ]
+    },
+    "content": {
+        "type": "varchar",
+        "default": "",
+        "analyzer": [
+            "rag-coarse",
+            "rag-fine"
+        ]
+    },
+    "version": {
+        "type": "varchar",
+        "default": "1.0.0"
+    },
+    "status": {
+        "type": "varchar",
+        "default": "1"
+    },
+    "create_time": {
+        "type": "bigint",
+        "default": 0
+    },
+    "update_time": {
+        "type": "bigint",
+        "default": 0
+    }
 }
