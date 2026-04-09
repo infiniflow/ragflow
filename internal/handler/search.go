@@ -251,3 +251,95 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 		"message": "success",
 	})
 }
+
+// DeleteSearch delete a search app
+// @Summary Delete Search App
+// @Description Delete a search app by ID
+// @Tags search
+// @Accept json
+// @Produce json
+// @Param search_id path string true "search app ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/searches/{search_id} [delete]
+// Reference: api/apps/restful_apis/search_api.py::delete_search
+// Python implementation details:
+// - Route: @manager.route("/searches/<search_id>", methods=["DELETE"])
+// - Auth: @login_required
+//
+// Python implementation steps:
+// 1. Check deletion permission: if not SearchService.accessible4deletion(search_id, current_user.id):
+// 2. If no permission: return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+// 3. Execute delete: if not SearchService.delete_by_id(search_id):
+// 4. If delete failed: return get_data_error_result(message=f"Failed to delete search App {search_id}")
+// 5. Return success: return get_json_result(data=True)
+//
+// Permission model from Python:
+// - User can delete if: search.created_by == user_id AND search.status == "1" (VALID)
+// - This is stricter than detail view - only creator can delete
+// - Uses SearchService.accessible4deletion() which checks created_by field
+//
+// Error responses from Python:
+// - No authorization: {"data": false, "message": "No authorization.", "code": RetCode.AUTHENTICATION_ERROR}
+// - Delete failed: get_data_error_result(message=f"Failed to delete search App {search_id}")
+// - Exception: server_error_response(e)
+//
+// Go implementation mirrors this flow:
+// 1. Extract user from context (via GetUser, same as Python current_user)
+// 2. Get search_id from path parameter
+// 3. Call service to delete with permission check
+// 4. Handle authorization error (code: RetCode.AUTHENTICATION_ERROR)
+// 5. Handle delete failure error
+// 6. Return success response with data=True
+//
+// Note: Similar handler patterns in:
+// - DeleteDocument (document.go) - uses accessible4deletion check
+// - DeleteDataset (datasets.go) - uses permission check
+// - DeleteMemory (memory.go) - uses permission check
+func (h *SearchHandler) DeleteSearch(c *gin.Context) {
+	// Get current user from context (same as Python current_user)
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	userID := user.ID
+
+	// Get search_id from path parameter (same as Python <search_id>)
+	searchID := c.Param("search_id")
+	if searchID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    nil,
+			"message": "search_id is required",
+		})
+		return
+	}
+
+	// Delete search with permission check
+	err := h.searchService.DeleteSearch(userID, searchID)
+	if err != nil {
+		// Check if it's an authorization error
+		if err.Error() == "no authorization" {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeAuthenticationError,
+				"data":    false,
+				"message": "No authorization.",
+			})
+			return
+		}
+		// Delete failed error
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Return success response (same as Python get_json_result(data=True))
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    true,
+		"message": "success",
+	})
+}
