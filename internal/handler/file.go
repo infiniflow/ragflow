@@ -19,6 +19,8 @@ package handler
 import (
 	"net/http"
 	"ragflow/internal/common"
+	"ragflow/internal/storage"
+	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 
@@ -424,4 +426,87 @@ func (h *FileHandler) MoveFiles(c *gin.Context) {
 		"data":    true,
 		"message": common.CodeSuccess.Message(),
 	})
+}
+
+// Download handles file download
+// @Summary Download File
+// @Description Download a file by ID
+// @Tags file
+// @Accept json
+// @Produce octet-stream
+// @Param file_id path string true "file ID"
+// @Success 200 {file} binary "File stream"
+// @Router /api/v1/files/{file_id} [get]
+func (h *FileHandler) Download(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	userID := user.ID
+
+	fileID := c.Param("id")
+	if fileID == "" {
+		jsonError(c, common.CodeParamError, "id is required")
+		return
+	}
+
+	// Get file metadata and check permission
+	file, err := h.fileService.GetFileContent(userID, fileID)
+	if err != nil {
+		jsonError(c, common.CodeUnauthorized, err.Error())
+		return
+	}
+
+	// Get storage
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		jsonError(c, common.CodeServerError, "storage not initialized")
+		return
+	}
+
+	// Try to get file blob from primary location (parent_id, location)
+	var blob []byte
+	var getErr error
+	if file.Location != nil && *file.Location != "" {
+		blob, getErr = storageImpl.Get(file.ParentID, *file.Location)
+	}
+
+	// If blob is empty, try fallback via file2document
+	if len(blob) == 0 {
+		storageAddr, err := h.fileService.GetStorageAddress(fileID)
+		if err != nil {
+			jsonError(c, common.CodeServerError, "Failed to get file storage address: "+err.Error())
+			return
+		}
+		blob, getErr = storageImpl.Get(storageAddr.Bucket, storageAddr.Name)
+	}
+
+	// Check if we got valid data
+	if len(blob) == 0 {
+		errMsg := "Failed to retrieve file blob"
+		if getErr != nil {
+			errMsg += ": " + getErr.Error()
+		}
+		jsonError(c, common.CodeServerError, errMsg)
+		return
+	}
+
+	// Extract file extension
+	ext := utility.GetFileExtension(file.Name)
+
+	// Determine content type based on extension and file type
+	contentType := utility.GetContentType(ext, file.Type)
+
+	// Set response headers
+	if contentType != "" {
+		c.Header("Content-Type", contentType)
+	}
+	if utility.ShouldForceAttachment(ext, contentType) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("Content-Disposition", "attachment")
+	}
+
+	// Send file data
+	c.Data(http.StatusOK, contentType, blob)
 }

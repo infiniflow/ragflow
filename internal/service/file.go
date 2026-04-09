@@ -22,13 +22,12 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
-	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/logger"
 	"ragflow/internal/storage"
-	"ragflow/internal/util"
+	"ragflow/internal/utility"
 	"strings"
 	"time"
 
@@ -304,7 +303,7 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 			return nil, fmt.Errorf("No file selected!")
 		}
 
-		fileType := util.FilenameType(filename)
+		fileType := utility.FilenameType(filename)
 
 		fileObjNames := s.parseFilePath(filename)
 
@@ -739,8 +738,8 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 		file := filesMap[srcFileIDs[0]]
 		// Check extension for non-folder files
 		if file.Type != FileTypeFolder {
-			oldExt := common.GetFileExtension(file.Name)
-			newExt := common.GetFileExtension(newName)
+			oldExt := utility.GetFileExtension(file.Name)
+			newExt := utility.GetFileExtension(newName)
 			if oldExt != newExt {
 				return false, "The extension of file can't be changed"
 			}
@@ -877,4 +876,73 @@ func (s *FileService) moveEntryRecursive(sourceFile *entity.File, destFolder *en
 	}
 
 	return nil
+}
+
+// GetFileContent gets file metadata and checks permission for download
+// Matches Python's file_api_service.get_file_content function
+func (s *FileService) GetFileContent(uid, fileID string) (*entity.File, error) {
+	file, err := s.fileDAO.GetByID(fileID)
+	if err != nil || file == nil {
+		return nil, fmt.Errorf("Document not found!")
+	}
+	if !s.checkFileTeamPermission(file, uid) {
+		return nil, fmt.Errorf("No authorization.")
+	}
+	return file, nil
+}
+
+// StorageAddress represents bucket and object name for storage
+type StorageAddress struct {
+	Bucket string
+	Name   string
+}
+
+// GetStorageAddress gets storage address for a file (fallback for when direct blob is empty)
+// Matches Python's File2DocumentService.get_storage_address function
+func (s *FileService) GetStorageAddress(fileID string) (*StorageAddress, error) {
+	// Get file2document mapping
+	f2d, err := s.file2DocumentDAO.GetByFileID(fileID)
+	if err != nil || len(f2d) == 0 {
+		return nil, fmt.Errorf("file2document mapping not found")
+	}
+
+	// Get the file
+	if f2d[0].FileID == nil {
+		return nil, fmt.Errorf("file_id is nil in file2document mapping")
+	}
+	file, err := s.fileDAO.GetByID(*f2d[0].FileID)
+	if err != nil || file == nil {
+		return nil, fmt.Errorf("file not found")
+	}
+
+	// If source_type is empty or local, return file's parent_id and location
+	if file.SourceType == "" || entity.FileSource(file.SourceType) == entity.FileSourceLocal {
+		if file.Location == nil || *file.Location == "" {
+			return nil, fmt.Errorf("file location is empty")
+		}
+		return &StorageAddress{
+			Bucket: file.ParentID,
+			Name:   *file.Location,
+		}, nil
+	}
+
+	// Otherwise, use document's kb_id and location
+	if f2d[0].DocumentID == nil {
+		return nil, fmt.Errorf("document_id is required")
+	}
+
+	documentDAO := dao.NewDocumentDAO()
+	doc, err := documentDAO.GetByID(*f2d[0].DocumentID)
+	if err != nil || doc == nil {
+		return nil, fmt.Errorf("document not found")
+	}
+
+	if doc.Location == nil || *doc.Location == "" {
+		return nil, fmt.Errorf("document location is empty")
+	}
+
+	return &StorageAddress{
+		Bucket: doc.KbID,
+		Name:   *doc.Location,
+	}, nil
 }

@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package util
+package utility
 
 import (
 	"path/filepath"
@@ -131,4 +131,102 @@ func GetFileExtension(filename string) string {
 		return strings.ToLower(ext[1:])
 	}
 	return strings.ToLower(ext)
+}
+
+// CONTENT_TYPE_MAP maps file extensions to MIME content types
+var CONTENT_TYPE_MAP = map[string]string{
+	// Office
+	"docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	"doc":  "application/msword",
+	"pdf":  "application/pdf",
+	"csv":  "text/csv",
+	"xls":  "application/vnd.ms-excel",
+	"xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	// Text/code
+	"txt":  "text/plain",
+	"py":   "text/plain",
+	"js":   "text/plain",
+	"java": "text/plain",
+	"c":    "text/plain",
+	"cpp":  "text/plain",
+	"h":    "text/plain",
+	"php":  "text/plain",
+	"go":   "text/plain",
+	"ts":   "text/plain",
+	"sh":   "text/plain",
+	"cs":   "text/plain",
+	"kt":   "text/plain",
+	"sql":  "text/plain",
+	// Web
+	"md":       "text/markdown",
+	"markdown": "text/markdown",
+	"mdx":      "text/markdown",
+	"htm":      "text/html",
+	"html":     "text/html",
+	"json":     "application/json",
+	// Image formats
+	"png":  "image/png",
+	"jpg":  "image/jpeg",
+	"jpeg": "image/jpeg",
+	"gif":  "image/gif",
+	"bmp":  "image/bmp",
+	"tiff": "image/tiff",
+	"tif":  "image/tiff",
+	"webp": "image/webp",
+	"svg":  "image/svg+xml",
+	"ico":  "image/x-icon",
+	"avif": "image/avif",
+	"heic": "image/heic",
+	// PPTX
+	"ppt":  "application/vnd.ms-powerpoint",
+	"pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
+
+// FORCE_ATTACHMENT_EXTENSIONS are extensions that should always be downloaded as attachments
+var FORCE_ATTACHMENT_EXTENSIONS = map[string]bool{
+	"htm":   true,
+	"html":  true,
+	"shtml": true,
+	"xht":   true,
+	"xhtml": true,
+	"xml":   true,
+	"mhtml": true,
+	"svg":   true,
+}
+
+// FORCE_ATTACHMENT_CONTENT_TYPES are content types that should always be downloaded as attachments
+var FORCE_ATTACHMENT_CONTENT_TYPES = map[string]bool{
+	"text/html":             true,
+	"image/svg+xml":         true,
+	"application/xhtml+xml": true,
+	"text/xml":              true,
+	"application/xml":        true,
+	"multipart/related":     true,
+}
+
+// ShouldForceAttachment determines if the file should be forced as attachment
+func ShouldForceAttachment(ext string, contentType string) bool {
+	normalizedExt := strings.ToLower(strings.TrimPrefix(ext, "."))
+	if normalizedExt != "" && FORCE_ATTACHMENT_EXTENSIONS[normalizedExt] {
+		return true
+	}
+	normalizedType := strings.ToLower(contentType)
+	return FORCE_ATTACHMENT_CONTENT_TYPES[normalizedType]
+}
+
+// GetContentType determines the content type based on extension and file type
+// fallbackPrefix is "image" for visual files, "application" for others
+func GetContentType(ext string, fileType string) string {
+	if ext == "" {
+		return ""
+	}
+	normalizedExt := strings.ToLower(strings.TrimPrefix(ext, "."))
+	if contentType, ok := CONTENT_TYPE_MAP[normalizedExt]; ok {
+		return contentType
+	}
+	fallbackPrefix := "application"
+	if fileType == FileTypeVISUAL {
+		fallbackPrefix = "image"
+	}
+	return fallbackPrefix + "/" + normalizedExt
 }
