@@ -1569,17 +1569,59 @@ class RAGFlowClient:
             print("This command is only allowed in USER mode")
             return
 
+        import json
+
         doc_id = command_dict["doc_id"]
         meta_json_str = command_dict["meta"]
 
-        # Send meta as JSON string
+        # Parse JSON string to dict
+        try:
+            meta_fields = json.loads(meta_json_str)
+        except json.JSONDecodeError as e:
+            print(f"Invalid JSON format: {e}")
+            return
+
+        # Step 1: Get document info to find kb_id (dataset_id)
+        response = self.http_client.request(
+            "POST",
+            "/document/infos",
+            json_body={"doc_ids": [doc_id]},
+            use_api_base=False,
+            auth_kind="web"
+        )
+
+        if response.status_code != 200:
+            print(f"Fail to get document info, HTTP {response.status_code}")
+            return
+
+        res_json = response.json()
+        if res_json.get("code") != 0:
+            print(f"Fail to get document info: {res_json.get('message')}")
+            return
+
+        docs = res_json.get("data", [])
+        if not docs:
+            print(f"Document not found: {doc_id}")
+            return
+
+        dataset_id = docs[0].get("kb_id")
+        if not dataset_id:
+            print(f"Dataset ID not found for document: {doc_id}")
+            return
+
+        # Step 2: Update metadata using update_document endpoint
         payload = {
-            "doc_id": doc_id,
-            "meta": meta_json_str,
+            "meta_fields": meta_fields,
         }
 
-        response = self.http_client.request("POST", "/document/set_meta", json_body=payload,
-                                            use_api_base=False, auth_kind="web")
+        response = self.http_client.request(
+            "PUT",
+            f"/api/v1/datasets/{dataset_id}/documents/{doc_id}",
+            json_body=payload,
+            use_api_base=True,
+            auth_kind="web"
+        )
+
         res_json = response.json()
         if response.status_code == 200:
             if res_json.get("code") == 0:
