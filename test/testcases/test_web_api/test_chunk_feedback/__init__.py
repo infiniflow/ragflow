@@ -13,6 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from rag.flow.chunker.token_chunker import TokenChunker, TokenChunkerParam
+"""Chunk feedback tests package.
 
-__all__ = ["TokenChunker", "TokenChunkerParam"]
+Keep this package import side-effect free during pytest collection. Some
+web-api tests intentionally import the local helper module `common.py`, which
+binds `common` in `sys.modules` and can shadow the project-level `common/`
+package. Importing production chunker modules here would therefore make
+collection order affect unrelated tests.
+"""
+
+__all__ = []
