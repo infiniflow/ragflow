@@ -512,7 +512,7 @@ func (s *SkillSpaceService) asyncDeleteSpace(spaceID, folderID, tenantID string,
 		indexName := getSkillIndexName(tenantID, spaceID)
 		logger.Info("Async deleting space index", zap.String("index", indexName), zap.String("spaceID", spaceID))
 		deleteCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		if err := docEngine.DeleteIndex(deleteCtx, indexName); err != nil {
+		if err := docEngine.DropTable(deleteCtx, indexName); err != nil {
 			logger.Warn("Failed to delete space index during async delete", zap.String("index", indexName), zap.Error(err))
 			// Continue with other cleanup steps
 		} else {

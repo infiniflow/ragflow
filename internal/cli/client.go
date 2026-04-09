@@ -215,14 +215,6 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.UnsetToken(cmd)
 	case "show_version":
 		return c.ShowServerVersion(cmd)
-	case "create_index":
-		return c.CreateIndex(cmd)
-	case "drop_index":
-		return c.DropIndex(cmd)
-	case "create_doc_meta_index":
-		return c.CreateDocMetaIndex(cmd)
-	case "drop_doc_meta_index":
-		return c.DropDocMetaIndex(cmd)
 	case "list_available_providers":
 		return c.ListAvailableProviders(cmd)
 	case "show_provider":
@@ -263,6 +255,27 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.UseModel(cmd)
 	case "show_current_model":
 		return c.ShowCurrentModel(cmd)
+	// Dataset, metadata commands
+	case "create_dataset_table":
+		return c.CreateDatasetInDocEngine(cmd)
+	case "drop_dataset_table":
+		return c.DropDatasetInDocEngine(cmd)
+	case "create_metadata_table":
+		return c.CreateMetadataInDocEngine(cmd)
+	case "drop_metadata_table":
+		return c.DropMetadataInDocEngine(cmd)
+	case "insert_dataset_from_file":
+		return c.InsertDatasetFromFile(cmd)
+	case "insert_metadata_from_file":
+		return c.InsertMetadataFromFile(cmd)
+	case "update_chunk":
+		return c.UpdateChunk(cmd)
+	case "set_meta":
+		return c.SetMeta(cmd)
+	case "rm_tags":
+		return c.RmTags(cmd)
+	case "remove_chunks":
+		return c.RemoveChunks(cmd)
 	// ContextEngine commands
 	case "context_list":
 		return c.ContextList(cmd)
@@ -276,16 +289,6 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ContextCat(cmd)
 	case "ce_search":
 		return c.CESearch(cmd)
-	case "insert_dataset_from_file":
-		return c.InsertDatasetFromFile(cmd)
-	case "insert_metadata_from_file":
-		return c.InsertMetadataFromFile(cmd)
-	case "update_chunk":
-		return c.UpdateChunk(cmd)
-	case "set_meta":
-		return c.SetMeta(cmd)
-	case "rm_tags":
-		return c.RmTags(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)

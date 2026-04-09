@@ -162,12 +162,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 			}
 
-			// RESTful dataset chunk routes
-			datasetChunks := v1.Group("/datasets/:dataset_id/documents/:document_id/chunks")
-			{
-				datasetChunks.PUT("/:chunk_id", r.chunkHandler.UpdateChunk)
-			}
-
 			// Author routes
 			authors := v1.Group("/authors")
 			{
@@ -289,9 +283,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			kb.GET("/tags", r.knowledgebaseHandler.ListTagsFromKbs)
 			kb.GET("/get_meta", r.knowledgebaseHandler.GetMeta)
 			kb.GET("/basic_info", r.knowledgebaseHandler.GetBasicInfo)
-			kb.POST("/index", r.knowledgebaseHandler.CreateIndex)
-			kb.DELETE("/index", r.knowledgebaseHandler.DeleteIndex)
-			kb.POST("/insert_from_file", r.knowledgebaseHandler.InsertDatasetFromFile)
+			kb.POST("/doc_engine_table", r.knowledgebaseHandler.CreateDatasetInDocEngine)   // Internal API only for GO
+			kb.DELETE("/doc_engine_table", r.knowledgebaseHandler.DeleteDatasetInDocEngine) // Internal API only for GO
+			kb.POST("/insert_from_file", r.knowledgebaseHandler.InsertDatasetFromFile)      // Internal API only for GO
 
 			// KB ID specific routes
 			kbByID := kb.Group("/:kb_id")
@@ -307,9 +301,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Tenant routes (per-tenant resources)
 		tenant := authorized.Group("/v1/tenant")
 		{
-			tenant.POST("/doc_meta_index", r.tenantHandler.CreateDocMetaIndex)
-			tenant.DELETE("/doc_meta_index", r.tenantHandler.DeleteDocMetaIndex)
-			tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile)
+			tenant.POST("/doc_engine_metadata_table", r.tenantHandler.CreateMetadataInDocEngine)   // Internal API only for GO
+			tenant.DELETE("/doc_engine_metadata_table", r.tenantHandler.DeleteMetadataInDocEngine) // Internal API only for GO
+			tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile)      // Internal API only for GO
 		}
 
 		// Document routes
@@ -326,6 +320,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chunk.POST("/retrieval_test", r.chunkHandler.RetrievalTest)
 			chunk.GET("/get", r.chunkHandler.Get)
 			chunk.POST("/list", r.chunkHandler.List)
+			chunk.POST("/update", r.chunkHandler.UpdateChunk) // Internal API only for GO
+			chunk.POST("/rm", r.chunkHandler.Remove)
 		}
 
 		// LLM routes

@@ -167,7 +167,7 @@ func (s *SkillIndexerService) IndexSkill(ctx context.Context, tenantID, spaceID 
 
 	// For Infinity: ensure table exists with correct dimension BEFORE inserting
 	if docEngine.GetType() == "infinity" {
-		exists, _ := docEngine.IndexExists(ctx, indexName)
+		exists, _ := docEngine.TableExists(ctx, indexName)
 		if !exists {
 			logger.Info(fmt.Sprintf("Creating Infinity table with dimension %d", dimension))
 			if err := s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, dimension); err != nil {
@@ -247,7 +247,7 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, sp
 	if docEngine.GetType() == "infinity" {
 		// For Infinity: must ensure table exists with correct dimension BEFORE inserting
 		logger.Info(fmt.Sprintf("Checking if index exists: %s", indexName))
-		exists, err := docEngine.IndexExists(ctx, indexName)
+		exists, err := docEngine.TableExists(ctx, indexName)
 		if err != nil {
 			logger.Warn(fmt.Sprintf("Error checking index existence: %v", err))
 		}
@@ -431,10 +431,10 @@ func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, spaceID 
 
 	// Delete existing index and recreate with new dimension (for both ES and Infinity)
 	indexName := getSkillIndexName(tenantID, spaceID)
-	exists, _ := docEngine.IndexExists(ctx, indexName)
+	exists, _ := docEngine.TableExists(ctx, indexName)
 	if exists {
 		logger.Info(fmt.Sprintf("ReindexAll: deleting existing index %s", indexName))
-		if err := docEngine.DeleteIndex(ctx, indexName); err != nil {
+		if err := docEngine.DropTable(ctx, indexName); err != nil {
 			logger.Warn(fmt.Sprintf("ReindexAll: failed to delete existing index: %v", err))
 		}
 	}
@@ -841,7 +841,7 @@ func (s *SkillIndexerService) InitializeIndex(ctx context.Context, tenantID, spa
 
 	logger.Info("Checking skill index existence", zap.String("indexName", indexName), zap.String("tenantID", tenantID), zap.String("spaceID", spaceID))
 
-	exists, err := docEngine.IndexExists(ctx, indexName)
+	exists, err := docEngine.TableExists(ctx, indexName)
 	if err != nil {
 		logger.Error("Failed to check index existence", err)
 		return fmt.Errorf("failed to check index existence: %w", err)
@@ -878,22 +878,22 @@ func (s *SkillIndexerService) createIndexWithDimension(ctx context.Context, tena
 
 	// For Infinity: check if table exists and needs recreation (dimension mismatch)
 	if docEngine.GetType() == "infinity" {
-		exists, err := docEngine.IndexExists(ctx, indexName)
+		exists, err := docEngine.TableExists(ctx, indexName)
 		if err != nil {
 			logger.Warn(fmt.Sprintf("Error checking if index exists: %v", err))
 		}
 		if exists {
 			logger.Info(fmt.Sprintf("Index exists, deleting for recreation with dimension %d", dimension),
 				zap.String("indexName", indexName))
-			if err := docEngine.DeleteIndex(ctx, indexName); err != nil {
+			if err := docEngine.DropTable(ctx, indexName); err != nil {
 				logger.Warn(fmt.Sprintf("Failed to delete existing index: %v", err))
 			}
 		}
 	}
 
-	// Use the doc engine's CreateIndex method with skill-specific mapping
+	// Use the doc engine's CreateDataset method with skill-specific mapping
 	// The mapping file is loaded from conf/skill_es_mapping.json or conf/skill_infinity_mapping.json
-	err := docEngine.CreateIndex(ctx, indexName, "skill", dimension, "")
+	err := docEngine.CreateDataset(ctx, indexName, "skill", dimension, "")
 	if err != nil {
 		logger.Error("Failed to create skill index", err)
 		return err
