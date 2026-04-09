@@ -126,8 +126,6 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.PingAdmin(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
-	case "list_user_datasets":
-		return c.ListUserDatasets(cmd)
 	case "list_users":
 		return c.ListUsers(cmd)
 	case "list_services":
@@ -150,8 +148,8 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowAdminVersion(cmd)
 	case "show_user":
 		return c.ShowUser(cmd)
-	case "list_datasets":
-		return c.ListDatasets(cmd)
+	case "list_user_datasets":
+		return c.ListUserDatasets(cmd)
 	case "list_agents":
 		return c.ListAgents(cmd)
 	case "generate_token":
@@ -185,10 +183,15 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.Logout()
 	case "ping":
 		return c.PingServer(cmd)
+	// Configuration commands
+	case "list_configs":
+		return c.ListConfigs(cmd)
+	case "set_log_level":
+		return c.SetLogLevel(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
-	case "list_user_datasets":
-		return c.ListUserDatasets(cmd)
+	case "list_datasets":
+		return c.ListDatasets(cmd)
 	case "search_on_datasets":
 		return c.SearchOnDatasets(cmd)
 	case "create_token":
@@ -247,11 +250,19 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.EnableOrDisableModel(cmd, "disable")
 	case "chat_to_model":
 		return c.ChatToModel(cmd)
+	case "think_chat_to_model":
+		return c.ChatToModel(cmd)
 	case "use_model":
 		return c.UseModel(cmd)
 	case "show_current_model":
 		return c.ShowCurrentModel(cmd)
 	// ContextEngine commands
+	case "context_list":
+		return c.ContextList(cmd)
+	case "context_cat":
+		return c.ContextCat(cmd)
+	case "context_search":
+		return c.ContextSearch(cmd)
 	case "ce_ls":
 		return c.CEList(cmd)
 	case "ce_search":
@@ -260,6 +271,12 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.InsertDatasetFromFile(cmd)
 	case "insert_metadata_from_file":
 		return c.InsertMetadataFromFile(cmd)
+	case "update_chunk":
+		return c.UpdateChunk(cmd)
+	case "set_meta":
+		return c.SetMeta(cmd)
+	case "rm_tags":
+		return c.RmTags(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)

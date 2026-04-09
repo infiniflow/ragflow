@@ -10,7 +10,7 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn<any>) {
     // Manually triggered form updates are synchronized to the canvas
     if (id) {
       values = form?.getValues() || {};
-      let nextValues: any = values;
+      const nextValues: any = values;
 
       updateNodeForm(id, nextValues);
     }
@@ -18,7 +18,7 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn<any>) {
 }
 
 export function useWatchNameFormChange(id?: string, form?: UseFormReturn<any>) {
-  let values = useWatch({ control: form?.control });
+  const values = useWatch({ control: form?.control });
   const updateNodeName = useGraphStore((state) => state.updateNodeName);
 
   useEffect(() => {

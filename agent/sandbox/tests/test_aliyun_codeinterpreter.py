@@ -101,13 +101,15 @@ class TestAliyunCodeInterpreterProvider:
         assert provider.region == "cn-hangzhou"
         assert provider.template_name == ""
 
-    @patch("agent.sandbox.providers.aliyun_codeinterpreter.CodeInterpreterSandbox")
-    def test_create_instance_python(self, mock_sandbox_class):
+    @patch("agent.sandbox.providers.aliyun_codeinterpreter.Template")
+    @patch("agent.sandbox.providers.aliyun_codeinterpreter.Sandbox")
+    def test_create_instance_python(self, mock_sandbox_class, mock_template):
         """Test creating a Python instance."""
         # Mock successful instance creation
         mock_sandbox = MagicMock()
         mock_sandbox.sandbox_id = "01JCED8Z9Y6XQVK8M2NRST5WXY"
-        mock_sandbox_class.return_value = mock_sandbox
+        mock_sandbox_class.create.return_value = mock_sandbox
+        mock_template.get_by_name.return_value = MagicMock()
 
         provider = AliyunCodeInterpreterProvider()
         provider._initialized = True
@@ -119,12 +121,14 @@ class TestAliyunCodeInterpreterProvider:
         assert instance.status == "READY"
         assert instance.metadata["language"] == "python"
 
-    @patch("agent.sandbox.providers.aliyun_codeinterpreter.CodeInterpreterSandbox")
-    def test_create_instance_javascript(self, mock_sandbox_class):
+    @patch("agent.sandbox.providers.aliyun_codeinterpreter.Template")
+    @patch("agent.sandbox.providers.aliyun_codeinterpreter.Sandbox")
+    def test_create_instance_javascript(self, mock_sandbox_class, mock_template):
         """Test creating a JavaScript instance."""
         mock_sandbox = MagicMock()
         mock_sandbox.sandbox_id = "01JCED8Z9Y6XQVK8M2NRST5WXY"
-        mock_sandbox_class.return_value = mock_sandbox
+        mock_sandbox_class.create.return_value = mock_sandbox
+        mock_template.get_by_name.return_value = MagicMock()
 
         provider = AliyunCodeInterpreterProvider()
         provider._initialized = True
@@ -141,7 +145,7 @@ class TestAliyunCodeInterpreterProvider:
         with pytest.raises(RuntimeError, match="Provider not initialized"):
             provider.create_instance("python")
 
-    @patch("agent.sandbox.providers.aliyun_codeinterpreter.CodeInterpreterSandbox")
+    @patch("agent.sandbox.providers.aliyun_codeinterpreter.Sandbox")
     def test_execute_code_success(self, mock_sandbox_class):
         """Test successful code execution."""
         # Mock sandbox instance
@@ -150,7 +154,7 @@ class TestAliyunCodeInterpreterProvider:
             "results": [{"type": "stdout", "text": "Hello, World!"}, {"type": "result", "text": "None"}, {"type": "endOfExecution", "status": "ok"}],
             "contextId": "kernel-12345-67890",
         }
-        mock_sandbox_class.return_value = mock_sandbox
+        mock_sandbox_class.connect.return_value = mock_sandbox
 
         provider = AliyunCodeInterpreterProvider()
         provider._initialized = True
@@ -163,14 +167,14 @@ class TestAliyunCodeInterpreterProvider:
         assert result.exit_code == 0
         assert result.execution_time > 0
 
-    @patch("agent.sandbox.providers.aliyun_codeinterpreter.CodeInterpreterSandbox")
+    @patch("agent.sandbox.providers.aliyun_codeinterpreter.Sandbox")
     def test_execute_code_timeout(self, mock_sandbox_class):
         """Test code execution timeout."""
         from agentrun.utils.exception import ServerError
 
         mock_sandbox = MagicMock()
         mock_sandbox.context.execute.side_effect = ServerError(408, "Request timeout")
-        mock_sandbox_class.return_value = mock_sandbox
+        mock_sandbox_class.connect.return_value = mock_sandbox
 
         provider = AliyunCodeInterpreterProvider()
         provider._initialized = True
@@ -179,14 +183,14 @@ class TestAliyunCodeInterpreterProvider:
         with pytest.raises(TimeoutError, match="Execution timed out"):
             provider.execute_code(instance_id="01JCED8Z9Y6XQVK8M2NRST5WXY", code="while True: pass", language="python", timeout=5)
 
-    @patch("agent.sandbox.providers.aliyun_codeinterpreter.CodeInterpreterSandbox")
+    @patch("agent.sandbox.providers.aliyun_codeinterpreter.Sandbox")
     def test_execute_code_with_error(self, mock_sandbox_class):
         """Test code execution with error."""
         mock_sandbox = MagicMock()
         mock_sandbox.context.execute.return_value = {
             "results": [{"type": "stderr", "text": "Traceback..."}, {"type": "error", "text": "NameError: name 'x' is not defined"}, {"type": "endOfExecution", "status": "error"}]
         }
-        mock_sandbox_class.return_value = mock_sandbox
+        mock_sandbox_class.connect.return_value = mock_sandbox
 
         provider = AliyunCodeInterpreterProvider()
         provider._initialized = True
@@ -196,6 +200,34 @@ class TestAliyunCodeInterpreterProvider:
 
         assert result.exit_code != 0
         assert len(result.stderr) > 0
+
+    @patch("agent.sandbox.providers.aliyun_codeinterpreter.Sandbox")
+    def test_execute_code_uses_structured_result_marker_for_async_javascript(self, mock_sandbox_class):
+        """Test JavaScript wrapper uses the structured result marker and awaits async main."""
+        mock_sandbox = MagicMock()
+        mock_sandbox.context.execute.return_value = {
+            "results": [{"type": "stdout", "text": "__RAGFLOW_RESULT__:eyJwcmVzZW50Ijp0cnVlLCJ2YWx1ZSI6eyJhIjoiYiJ9LCJ0eXBlIjoianNvbiJ9"}],
+            "contextId": "kernel-12345-67890",
+        }
+        mock_sandbox_class.connect.return_value = mock_sandbox
+
+        provider = AliyunCodeInterpreterProvider()
+        provider._initialized = True
+        provider._config = MagicMock()
+
+        result = provider.execute_code(
+            instance_id="01JCED8Z9Y6XQVK8M2NRST5WXY",
+            code="async function main(args) { return { a: 'b' }; }",
+            language="javascript",
+            timeout=10,
+        )
+
+        wrapped_code = mock_sandbox.context.execute.call_args.kwargs["code"]
+        assert "__RAGFLOW_RESULT__:" in wrapped_code
+        assert "await Promise.resolve(main(" in wrapped_code
+        assert result.metadata["result_present"] is True
+        assert result.metadata["result_value"] == {"a": "b"}
+        assert result.metadata["result_type"] == "json"
 
     def test_get_supported_languages(self):
         """Test getting supported languages."""
