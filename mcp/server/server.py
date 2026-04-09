@@ -139,6 +139,7 @@ class RAGFlowConnector:
         id: str | None = None,
         name: str | None = None,
     ):
+        """Fetch one structured page of accessible datasets from the backend API."""
         params = {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc}
         if id:
             params["id"] = id
@@ -162,6 +163,7 @@ class RAGFlowConnector:
         return res_json
 
     async def list_datasets(self, *, api_key: str, page: int = 1, page_size: int = 1000, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None):
+        """Return accessible datasets as newline-delimited JSON for MCP tool descriptions."""
         res_json = await self._fetch_datasets_page(api_key=api_key, page=page, page_size=page_size, orderby=orderby, desc=desc, id=id, name=name)
         result_list = []
         for data in res_json["data"]:
@@ -170,6 +172,7 @@ class RAGFlowConnector:
         return "\n".join(result_list)
 
     async def resolve_dataset_ids(self, *, api_key: str):
+        """Resolve all accessible dataset IDs for MCP retrieval fallback."""
         logging.info("Resolving accessible dataset IDs for MCP retrieval")
         dataset_ids = []
         page = 1
