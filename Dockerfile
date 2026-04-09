@@ -35,26 +35,14 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt update && \
     apt --no-install-recommends install -y ca-certificates; \
     if [ "$NEED_MIRROR" == "1" ]; then \
-        sed -i 's|http://archive.ubuntu.com/ubuntu|https://mirrors.tuna.tsinghua.edu.cn/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
-        sed -i 's|http://security.ubuntu.com/ubuntu|https://mirrors.tuna.tsinghua.edu.cn/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
+        sed -i 's|http://archive.ubuntu.com/ubuntu|https://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
+        sed -i 's|http://security.ubuntu.com/ubuntu|https://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
     fi; \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
     chmod 1777 /tmp && \
     apt update && \
-    apt install -y build-essential && \
-    apt install -y libglib2.0-0 libglx-mesa0 libgl1 && \
-    apt install -y pkg-config libicu-dev libgdiplus && \
-    apt install -y default-jdk && \
-    apt install -y libatk-bridge2.0-0 && \
-    apt install -y libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev && \
-    apt install -y libjemalloc-dev && \
-    apt install -y gnupg unzip curl wget git vim less && \
-    apt install -y ghostscript && \
-    apt install -y pandoc && \
-    apt install -y texlive && \
-    apt install -y fonts-freefont-ttf fonts-noto-cjk && \
-    apt install -y postgresql-client
+    apt install -y build-essential libglib2.0-0 libglx-mesa0 libgl1 pkg-config libicu-dev libgdiplus default-jdk libatk-bridge2.0-0 libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev libjemalloc-dev gnupg unzip curl wget git vim less ghostscript pandoc texlive fonts-freefont-ttf fonts-noto-cjk postgresql-client
 
 # Download resource from GitHub to /usr/share/infinity
 RUN mkdir -p /usr/share/infinity/resource && \
@@ -165,8 +153,8 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
 COPY web web
 COPY docs docs
 RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
-    export NODE_OPTIONS="--max-old-space-size=4096" && \
-    cd web && npm install && npm run build
+    cd web && NODE_OPTIONS="--max-old-space-size=8192" npm install && \
+    NODE_OPTIONS="--max-old-space-size=8192" VITE_BUILD_SOURCEMAP=false VITE_MINIFY=esbuild npm run build
 
 COPY .git /ragflow/.git
 

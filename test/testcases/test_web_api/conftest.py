@@ -18,7 +18,7 @@ from time import sleep
 from ragflow_sdk import RAGFlow
 from configs import HOST_ADDRESS, VERSION
 import pytest
-from common import (
+from test_common import (
     batch_add_chunks,
     batch_create_datasets,
     bulk_upload_documents,
