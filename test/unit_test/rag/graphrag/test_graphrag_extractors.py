@@ -52,6 +52,7 @@ class TestGraphExtractor:
 
 
 class TestCommunityReportsExtractor:
+    @pytest.mark.p2
     @pytest.mark.asyncio
     async def test_call_does_not_use_outer_timeout_shorter_than_llm_timeout(self, monkeypatch):
         extractor = CommunityReportsExtractor(_build_llm_stub())
