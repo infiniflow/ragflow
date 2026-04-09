@@ -77,7 +77,7 @@ const methods = {
   },
   document_rename: {
     url: document_rename,
-    method: 'post',
+    method: 'put',
   },
   document_create: {
     url: document_create,
@@ -250,6 +250,12 @@ export const listDocument = (
 
 export const documentFilter = (kb_id: string) =>
   request.post(api.get_dataset_filter, { kb_id });
+
+export const renameDocument = (
+  datasetId: string,
+  documentId: string,
+  data: { name?: string },
+) => request.put(api.document_rename(datasetId, documentId), { data });
 
 export const getMetaDataService = ({
   kb_id,
