@@ -356,7 +356,7 @@ func (h *FileHandler) DeleteFiles(c *gin.Context) {
 		return
 	}
 
-	success, message := h.fileService.DeleteFiles(user.ID, req.IDs)
+	success, message := h.fileService.DeleteFiles(c.Request.Context(), user.ID, req.IDs)
 	if !success {
 		jsonError(c, common.CodeBadRequest, message)
 		return

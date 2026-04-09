@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/storage"
 	"ragflow/internal/util"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -465,7 +466,7 @@ func (s *FileService) CreateFolder(tenantID, name, parentID, fileType string) (m
 
 // DeleteFiles deletes files by IDs
 // Returns (success, message) where success is true if all files were deleted
-func (s *FileService) DeleteFiles(uid string, fileIDs []string) (bool, string) {
+func (s *FileService) DeleteFiles(ctx context.Context, uid string, fileIDs []string) (bool, string) {
 	for _, fileID := range fileIDs {
 		// 1. Get file
 		file, err := s.fileDAO.GetByID(fileID)
@@ -476,6 +477,11 @@ func (s *FileService) DeleteFiles(uid string, fileIDs []string) (bool, string) {
 		// 2. Check tenant_id
 		if file.TenantID == "" {
 			return false, "Tenant not found!"
+		}
+
+		// Block root-folder deletion (root folders have parent_id == id)
+		if file.ParentID == file.ID {
+			return false, "Root folder cannot be deleted."
 		}
 
 		// 3. Permission check
@@ -490,11 +496,11 @@ func (s *FileService) DeleteFiles(uid string, fileIDs []string) (bool, string) {
 
 		// 5. Delete based on type
 		if file.Type == FileTypeFolder {
-			if err := s.deleteFolderRecursive(file, uid); err != nil {
+			if err := s.deleteFolderRecursive(ctx, file, uid); err != nil {
 				return false, fmt.Sprintf("Failed to delete folder: %v", err)
 			}
 		} else {
-			if err := s.deleteSingleFile(file); err != nil {
+			if err := s.deleteSingleFile(ctx, file); err != nil {
 				return false, fmt.Sprintf("Failed to delete file: %v", err)
 			}
 		}
@@ -566,7 +572,7 @@ func (s *FileService) checkDatasetTeamPermission(ds *entity.Knowledgebase, uid s
 
 // deleteSingleFile deletes a single file (not folder)
 // Matches Python's _delete_single_file function
-func (s *FileService) deleteSingleFile(file *entity.File) error {
+func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) error {
 	// 1. Delete storage object
 	if file.Location != nil && *file.Location != "" {
 		storageImpl := storage.GetStorageFactory().GetStorage()
@@ -597,7 +603,9 @@ func (s *FileService) deleteSingleFile(file *entity.File) error {
 					tenantID := ds.TenantID
 					if tenantID != "" {
 						// Delete from document engine
-						s.deleteDocumentFromEngine(doc, tenantID)
+						if err := s.deleteDocumentFromEngine(ctx, doc, tenantID); err != nil {
+							logger.Logger.Error(fmt.Sprintf("Fail to delete document from engine: %s, error: %v", doc.ID, err))
+						}
 					}
 				}
 
@@ -622,26 +630,28 @@ func (s *FileService) deleteSingleFile(file *entity.File) error {
 }
 
 // deleteDocumentFromEngine deletes a document from the document engine
-func (s *FileService) deleteDocumentFromEngine(doc *entity.Document, tenantID string) {
+func (s *FileService) deleteDocumentFromEngine(ctx context.Context, doc *entity.Document, tenantID string) error {
 	// Get document engine
 	docEngine := engine.Get()
 	if docEngine == nil {
-		return
+		return nil
 	}
 
 	// Build index name: ragflow_<tenant_id>_<kb_id>
 	indexName := fmt.Sprintf("ragflow_%s_%s", tenantID, doc.KbID)
 
-	// Delete document from engine
-	ctx := context.Background()
-	if err := docEngine.DeleteDocument(ctx, indexName, doc.ID); err != nil {
-		logger.Logger.Error(fmt.Sprintf("Fail to delete document from engine: %s, index: %s, error: %v", doc.ID, indexName, err))
+	// Delete document from engine with timeout
+	reqCtx, cancel := context.WithTimeout(ctx, 300*time.Second)
+	defer cancel()
+	if err := docEngine.DeleteDocument(reqCtx, indexName, doc.ID); err != nil {
+		return fmt.Errorf("delete document from engine: %w", err)
 	}
+	return nil
 }
 
 // deleteFolderRecursive recursively deletes a folder and its contents
 // Matches Python's _delete_folder_recursive function
-func (s *FileService) deleteFolderRecursive(folder *entity.File, uid string) error {
+func (s *FileService) deleteFolderRecursive(ctx context.Context, folder *entity.File, uid string) error {
 	// Get all sub-files
 	subFiles, err := s.fileDAO.ListByParentID(folder.ID)
 	if err != nil {
@@ -651,12 +661,12 @@ func (s *FileService) deleteFolderRecursive(folder *entity.File, uid string) err
 	for _, subFile := range subFiles {
 		if subFile.Type == FileTypeFolder {
 			// Recursively delete subfolder
-			if err := s.deleteFolderRecursive(subFile, uid); err != nil {
+			if err := s.deleteFolderRecursive(ctx, subFile, uid); err != nil {
 				return err
 			}
 		} else {
 			// Delete single file
-			if err := s.deleteSingleFile(subFile); err != nil {
+			if err := s.deleteSingleFile(ctx, subFile); err != nil {
 				return err
 			}
 		}
