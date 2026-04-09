@@ -251,6 +251,7 @@ RUN chgrp -R 0 /ragflow \
                 /opt/nltk_data \
                 /opt/ragflow_home \
                 /opt/chrome \
+                /opt/uv \
                 /var/log/nginx \
                 /var/cache/nginx \
                 /var/run \
@@ -259,6 +260,7 @@ RUN chgrp -R 0 /ragflow \
                     /opt/nltk_data \
                     /opt/ragflow_home \
                     /opt/chrome \
+                    /opt/uv \
                     /var/log/nginx \
                     /var/cache/nginx \
                     /var/run \
