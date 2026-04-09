@@ -213,11 +213,16 @@ def by_paddleocr(
                 ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, paddleocr_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
+                parser_config = kwargs.get("parser_config") or {}
+                request_timeout = kwargs.pop("request_timeout", None)
+                if request_timeout is None and isinstance(parser_config, dict):
+                    request_timeout = parser_config.get("paddleocr_request_timeout")
                 sections, tables = pdf_parser.parse_pdf(
                     filepath=filename,
                     binary=binary,
                     callback=callback,
                     parse_method=parse_method,
+                    request_timeout=request_timeout,
                     **kwargs,
                 )
                 return sections, tables, pdf_parser

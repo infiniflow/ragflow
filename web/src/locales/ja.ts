@@ -319,6 +319,10 @@ export default {
       paddleocrOptions: 'PaddleOCRオプション',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'PaddleOCRサービスのAPIエンドポイントURL',
+      paddleocrRequestTimeout: 'Request timeout (seconds)',
+      paddleocrRequestTimeoutTip:
+        'Large PDFs or books may require a higher timeout.',
+      paddleocrRequestTimeoutPlaceholder: '600',
       paddleocrApiUrlPlaceholder: '例: https://paddleocr-server.com/api',
       paddleocrAccessToken: 'AI Studioアクセストークン',
       paddleocrAccessTokenTip: 'PaddleOCR APIのアクセストークン（オプション）',
@@ -612,6 +616,10 @@ export default {
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder: '例：https://paddleocr-server.com/layout-parsing',
+        requestTimeout: 'Request timeout (seconds)',
+        requestTimeoutTip: 'Large PDFs or books may require a higher timeout.',
+        requestTimeoutPlaceholder: '600',
+        requestTimeoutMin: 'Request timeout must be at least 1 second',
         accessToken: 'AI Studio アクセストークン',
         accessTokenPlaceholder: 'AI Studio のトークン（任意）',
         algorithm: 'PaddleOCR アルゴリズム',

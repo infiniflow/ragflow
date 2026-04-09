@@ -166,6 +166,10 @@ export default {
       paddleocrApiUrl: 'URL de API de PaddleOCR',
       paddleocrApiUrlTip:
         'La URL del endpoint de la API para el servicio PaddleOCR',
+      paddleocrRequestTimeout: 'Request timeout (seconds)',
+      paddleocrRequestTimeoutTip:
+        'Large PDFs or books may require a higher timeout.',
+      paddleocrRequestTimeoutPlaceholder: '600',
       paddleocrApiUrlPlaceholder: 'ej: https://servidor-paddleocr.com/api',
       paddleocrAccessToken: 'Token de acceso de AI Studio',
       paddleocrAccessTokenTip:
@@ -402,6 +406,10 @@ export default {
         apiUrl: 'URL de la API de PaddleOCR',
         apiUrlPlaceholder:
           'Por ejemplo: https://paddleocr-server.com/layout-parsing',
+        requestTimeout: 'Request timeout (seconds)',
+        requestTimeoutTip: 'Large PDFs or books may require a higher timeout.',
+        requestTimeoutPlaceholder: '600',
+        requestTimeoutMin: 'Request timeout must be at least 1 second',
         accessToken: 'Token de acceso de AI Studio',
         accessTokenPlaceholder: 'Su token de AI Studio (opcional)',
         algorithm: 'Algoritmo de PaddleOCR',

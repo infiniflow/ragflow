@@ -376,6 +376,9 @@ export default {
       paddleocrOptions: 'PaddleOCR 選項',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'PaddleOCR 服務的 API 端點 URL',
+      paddleocrRequestTimeout: '請求超時（秒）',
+      paddleocrRequestTimeoutTip: '大型 PDF 或書籍可能需要更長的超時時間。',
+      paddleocrRequestTimeoutPlaceholder: '600',
       paddleocrApiUrlPlaceholder:
         '例如：https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio 訪問令牌',
@@ -666,6 +669,10 @@ export default {
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder: '例如：https://paddleocr-server.com/layout-parsing',
+        requestTimeout: '請求超時（秒）',
+        requestTimeoutTip: '大型 PDF 或書籍可能需要更長的超時時間。',
+        requestTimeoutPlaceholder: '600',
+        requestTimeoutMin: '請求超時至少需要 1 秒',
         accessToken: 'AI Studio 存取權杖',
         accessTokenPlaceholder: '您的 AI Studio 權杖（選填）',
         algorithm: 'PaddleOCR 演算法',

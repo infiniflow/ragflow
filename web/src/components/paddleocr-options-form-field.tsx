@@ -57,7 +57,10 @@ export function PaddleOCROptionsFormField({
 
       <RAGFlowFormItem
         name={buildName('paddleocr_access_token')}
-        label={t('knowledgeConfiguration.paddleocrAccessToken', 'AI Studio Access Token')}
+        label={t(
+          'knowledgeConfiguration.paddleocrAccessToken',
+          'AI Studio Access Token',
+        )}
         tooltip={t(
           'knowledgeConfiguration.paddleocrAccessTokenTip',
           'Access token for PaddleOCR API (optional)',
@@ -67,14 +70,19 @@ export function PaddleOCROptionsFormField({
         {(field) => (
           <Input
             {...field}
-            placeholder={t('knowledgeConfiguration.paddleocrAccessTokenPlaceholder')}
+            placeholder={t(
+              'knowledgeConfiguration.paddleocrAccessTokenPlaceholder',
+            )}
           />
         )}
       </RAGFlowFormItem>
 
       <RAGFlowFormItem
         name={buildName('paddleocr_algorithm')}
-        label={t('knowledgeConfiguration.paddleocrAlgorithm', 'PaddleOCR Algorithm')}
+        label={t(
+          'knowledgeConfiguration.paddleocrAlgorithm',
+          'PaddleOCR Algorithm',
+        )}
         tooltip={t(
           'knowledgeConfiguration.paddleocrAlgorithmTip',
           'Algorithm to use for PaddleOCR parsing',
@@ -87,6 +95,32 @@ export function PaddleOCROptionsFormField({
             onChange={field.onChange}
             options={algorithmOptions}
             placeholder={t('common.selectPlaceholder', 'Select value')}
+          />
+        )}
+      </RAGFlowFormItem>
+
+      <RAGFlowFormItem
+        name={buildName('paddleocr_request_timeout')}
+        label={t(
+          'knowledgeConfiguration.paddleocrRequestTimeout',
+          'Request timeout (seconds)',
+        )}
+        tooltip={t(
+          'knowledgeConfiguration.paddleocrRequestTimeoutTip',
+          'Large PDFs or books may require a higher timeout.',
+        )}
+        horizontal={true}
+      >
+        {(field) => (
+          <Input
+            {...field}
+            type="number"
+            min={1}
+            step={1}
+            placeholder={t(
+              'knowledgeConfiguration.paddleocrRequestTimeoutPlaceholder',
+              '600',
+            )}
           />
         )}
       </RAGFlowFormItem>

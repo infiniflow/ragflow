@@ -21,6 +21,7 @@ export const formSchema = z
     parser_config: z
       .object({
         layout_recognize: z.string(),
+        paddleocr_request_timeout: z.coerce.number().int().min(1).optional(),
         chunk_token_num: z.number(),
         delimiter: z.string(),
         enable_children: z.boolean(),

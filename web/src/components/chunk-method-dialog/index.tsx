@@ -113,6 +113,7 @@ export function ChunkMethodDialog({
       parser_config: z.object({
         task_page_size: z.coerce.number().optional(),
         layout_recognize: z.string().optional(),
+        paddleocr_request_timeout: z.coerce.number().int().min(1).optional(),
         chunk_token_num: z.coerce.number().optional(),
         delimiter: z.string().optional(),
         enable_children: z.boolean().optional(),

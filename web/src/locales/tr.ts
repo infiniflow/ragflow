@@ -459,6 +459,10 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       paddleocrOptions: 'PaddleOCR Seçenekleri',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: "PaddleOCR servisi için API uç nokta URL'si",
+      paddleocrRequestTimeout: 'Request timeout (seconds)',
+      paddleocrRequestTimeoutTip:
+        'Large PDFs or books may require a higher timeout.',
+      paddleocrRequestTimeoutPlaceholder: '600',
       paddleocrApiUrlPlaceholder:
         'örn. https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: "AI Studio Erişim Token'ı",
@@ -1237,6 +1241,10 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder: 'Örnek: https://paddleocr-server.com/layout-parsing',
+        requestTimeout: 'Request timeout (seconds)',
+        requestTimeoutTip: 'Large PDFs or books may require a higher timeout.',
+        requestTimeoutPlaceholder: '600',
+        requestTimeoutMin: 'Request timeout must be at least 1 second',
         accessToken: "AI Studio Erişim Token'ı",
         accessTokenPlaceholder: "AI Studio token'ınız (isteğe bağlı)",
         algorithm: 'PaddleOCR Algoritması',

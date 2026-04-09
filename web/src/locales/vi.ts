@@ -360,6 +360,10 @@ export default {
       paddleocrOptions: 'Tùy chọn PaddleOCR',
       paddleocrApiUrl: 'URL API PaddleOCR',
       paddleocrApiUrlTip: 'URL điểm cuối API của dịch vụ PaddleOCR',
+      paddleocrRequestTimeout: 'Request timeout (seconds)',
+      paddleocrRequestTimeoutTip:
+        'Large PDFs or books may require a higher timeout.',
+      paddleocrRequestTimeoutPlaceholder: '600',
       paddleocrApiUrlPlaceholder:
         'Ví dụ: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Token truy cập AI Studio',
@@ -613,6 +617,10 @@ export default {
       paddleocr: {
         apiUrl: 'URL API PaddleOCR',
         apiUrlPlaceholder: 'Ví dụ: https://paddleocr-server.com/layout-parsing',
+        requestTimeout: 'Request timeout (seconds)',
+        requestTimeoutTip: 'Large PDFs or books may require a higher timeout.',
+        requestTimeoutPlaceholder: '600',
+        requestTimeoutMin: 'Request timeout must be at least 1 second',
         accessToken: 'Token truy cập AI Studio',
         accessTokenPlaceholder: 'Token AI Studio của bạn (tùy chọn)',
         algorithm: 'Thuật toán PaddleOCR',

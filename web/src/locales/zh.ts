@@ -415,6 +415,9 @@ export default {
       paddleocrOptions: 'PaddleOCR 选项',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'PaddleOCR 服务的 API 端点 URL',
+      paddleocrRequestTimeout: '请求超时（秒）',
+      paddleocrRequestTimeoutTip: '大型 PDF 或书籍可能需要更长的超时时间。',
+      paddleocrRequestTimeoutPlaceholder: '600',
       paddleocrApiUrlPlaceholder:
         '例如：https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio 访问令牌',
@@ -1174,6 +1177,10 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder: '例如：https://paddleocr-server.com/layout-parsing',
+        requestTimeout: '请求超时（秒）',
+        requestTimeoutTip: '大型 PDF 或书籍可能需要更长的超时时间。',
+        requestTimeoutPlaceholder: '600',
+        requestTimeoutMin: '请求超时至少需要 1 秒',
         accessToken: 'AI Studio访问令牌',
         accessTokenPlaceholder: '您的 AI Studio 令牌（可选）',
         algorithm: 'PaddleOCR算法',
