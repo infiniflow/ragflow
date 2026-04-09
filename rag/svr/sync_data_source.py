@@ -38,6 +38,7 @@ from flask import json
 
 from api.utils.common import hash128
 from api.db.services.connector_service import ConnectorService, SyncLogsService
+from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
 from common.config_utils import show_configs
@@ -143,11 +144,29 @@ class SyncBase:
         SyncLogsService.schedule(task["connector_id"], task["kb_id"], task["poll_range_start"])
 
     async def _run_task_logic(self, task: dict):
-        document_batch_generator = await self._generate(task)
+        generate_output = await self._generate(task)
+        # `_generate()` currently supports two outputs:
+        # 1. `document_batch_generator`
+        # 2. `(document_batch_generator, file_list)`
+        if isinstance(generate_output, tuple):
+            document_batch_generator, file_list = generate_output
+        else:
+            document_batch_generator = generate_output
+            file_list = None
 
-        doc_num = 0
         failed_docs = 0
+        added_docs = 0
+        updated_docs = 0
+        removed_docs = 0
         next_update = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        source_type = f"{self.SOURCE_NAME}/{task['connector_id']}"
+        existing_doc_ids = {
+            doc["id"]
+            for doc in DocumentService.list_doc_headers_by_kb_and_source_type(
+                task["kb_id"],
+                source_type,
+            )
+        }
 
         if task["poll_range_start"]:
             next_update = task["poll_range_start"]
@@ -186,8 +205,12 @@ class SyncBase:
                     task["id"], max_update,
                     len(docs), "\n".join(err), len(err)
                 )
-
-                doc_num += len(docs)
+                changed_doc_ids = set(dids)
+                updated_in_batch = len(changed_doc_ids & existing_doc_ids)
+                added_in_batch = len(changed_doc_ids) - updated_in_batch
+                added_docs += added_in_batch
+                updated_docs += updated_in_batch
+                existing_doc_ids.update(changed_doc_ids)
 
             except Exception as batch_ex:
                 msg = str(batch_ex)
@@ -202,11 +225,26 @@ class SyncBase:
                 continue
 
         prefix = self._get_source_prefix()
+        prefix = f"{prefix} " if prefix else ""
         next_update_info = self._format_window_boundary(next_update)
+        if file_list is not None:
+            removed_docs, _ = ConnectorService.cleanup_stale_documents_for_task(
+                task["id"],
+                task["connector_id"],
+                task["kb_id"],
+                task["tenant_id"],
+                file_list,
+            )
+
+        total_changed_docs = added_docs + updated_docs + removed_docs
+        summary = (
+            f"{prefix}sync summary till {next_update_info}: "
+            f"total={total_changed_docs}, added={added_docs}, "
+            f"updated={updated_docs}, deleted={removed_docs}"
+        )
         if failed_docs > 0:
-            logging.info(f"{prefix}{doc_num} docs synchronized till {next_update_info} ({failed_docs} skipped)")
-        else:
-            logging.info(f"{prefix}{doc_num} docs synchronized till {next_update_info}")
+            summary = f"{summary}, skipped={failed_docs}"
+        logging.info(summary)
 
         SyncLogsService.done(task["id"], task["connector_id"])
         task["poll_range_start"] = next_update
@@ -923,6 +961,10 @@ class Github(SyncBase):
         """
         from common.data_source.connector_runner import ConnectorRunner
 
+        print("\n\n")
+        print(self.conf)
+        print("\n\n")
+
         self.connector = GithubConnector(
             repo_owner=self.conf.get("repository_owner"),
             repositories=self.conf.get("repository_name"),
@@ -938,12 +980,17 @@ class Github(SyncBase):
             {"github_access_token": credentials["github_access_token"]}
         )
 
+        file_list = None
         if task.get("reindex") == "1" or not task.get("poll_range_start"):
             start_time = datetime.fromtimestamp(0, tz=timezone.utc)
             begin_info = "totally"
         else:
             start_time = task.get("poll_range_start")
             begin_info = f"from {start_time}"
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
 
         end_time = datetime.now(timezone.utc)
 
@@ -980,7 +1027,7 @@ class Github(SyncBase):
             task,
         )
 
-        return wrapper()
+        return wrapper(), file_list
 
 class IMAP(SyncBase):
     SOURCE_NAME: str = FileSource.IMAP

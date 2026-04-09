@@ -50,6 +50,8 @@ type DataSourceFeatureVisibility = {
   syncDeletedFiles?: boolean;
 };
 
+type DataSourceFormValues = Record<string, any>;
+
 export const DataSourceFeatureVisibilityMap = {
   [DataSourceKey.GITHUB]: {
     syncDeletedFiles: true,
@@ -221,6 +223,30 @@ export const useDataSourceInfo = () => {
   return { dataSourceInfo };
 };
 
+const isPlainObject = (value: unknown): value is DataSourceFormValues =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export const mergeDataSourceFormValues = (
+  ...values: Array<DataSourceFormValues | undefined>
+): DataSourceFormValues =>
+  values.reduce<DataSourceFormValues>((result, current) => {
+    if (!current) {
+      return result;
+    }
+
+    const next = { ...result };
+
+    Object.entries(current).forEach(([key, value]) => {
+      if (isPlainObject(value) && isPlainObject(next[key])) {
+        next[key] = mergeDataSourceFormValues(next[key], value);
+      } else {
+        next[key] = value;
+      }
+    });
+
+    return next;
+  }, {});
+
 export const DataSourceFormBaseFields = [
   {
     id: 'Id',
@@ -253,8 +279,8 @@ export const getCommonExtraFields = (
   source?: DataSourceKey,
 ): FormFieldConfig[] => [
   {
-    label: '同步删除文件',
-    name: 'sync_deleted_files',
+    label: t('setting.syncDeletedFiles'),
+    name: 'config.sync_deleted_files',
     type: FormFieldType.Checkbox,
     required: false,
     defaultValue: false,
@@ -263,7 +289,9 @@ export const getCommonExtraFields = (
 ];
 
 export const getCommonExtraDefaultValues = () => ({
-  sync_deleted_files: false,
+  config: {
+    sync_deleted_files: false,
+  },
 });
 
 export const DataSourceFormFields = {
