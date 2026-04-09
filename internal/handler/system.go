@@ -165,6 +165,9 @@ func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 		return
 	}
 
+	config := server.GetConfig()
+	config.Log.Level = req.Level
+
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "Log level updated successfully",

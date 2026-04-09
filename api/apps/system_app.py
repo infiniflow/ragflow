@@ -17,25 +17,17 @@ import logging
 from datetime import datetime
 import json
 
-from api.apps import login_required, current_user
+from api.apps import login_required
 
-from api.db.db_models import APIToken
-from api.db.services.api_service import APITokenService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import (
     get_json_result,
-    get_data_error_result,
-    server_error_response,
-    generate_confirmation_token,
 )
-from common.time_utils import current_timestamp, datetime_format
-from common.log_utils import get_log_levels, set_log_level
+
 from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
-from quart import jsonify
-from api.utils.health_utils import run_health_checks, get_oceanbase_status
+from api.utils.health_utils import get_oceanbase_status
 from common import settings
 
 @manager.route("/status", methods=["GET"])  # noqa: F821
@@ -146,18 +138,6 @@ def status():
 
     return get_json_result(data=res)
 
-
-@manager.route("/healthz", methods=["GET"])  # noqa: F821
-def healthz():
-    result, all_ok = run_health_checks()
-    return jsonify(result), (200 if all_ok else 500)
-
-
-@manager.route("/ping", methods=["GET"])  # noqa: F821
-async def ping():
-    return "pong", 200
-
-
 @manager.route("/oceanbase/status", methods=["GET"])  # noqa: F821
 @login_required
 def oceanbase_status():
@@ -194,142 +174,6 @@ def oceanbase_status():
         )
 
 
-@manager.route("/new_token", methods=["POST"])  # noqa: F821
-@login_required
-def new_token():
-    """
-    Generate a new API token.
-    ---
-    tags:
-      - API Tokens
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: query
-        name: name
-        type: string
-        required: false
-        description: Name of the token.
-    responses:
-      200:
-        description: Token generated successfully.
-        schema:
-          type: object
-          properties:
-            token:
-              type: string
-              description: The generated API token.
-    """
-    try:
-        tenants = UserTenantService.query(user_id=current_user.id)
-        if not tenants:
-            return get_data_error_result(message="Tenant not found!")
-
-        tenant_id = [tenant for tenant in tenants if tenant.role == "owner"][0].tenant_id
-        obj = {
-            "tenant_id": tenant_id,
-            "token": generate_confirmation_token(),
-            "beta": generate_confirmation_token().replace("ragflow-", "")[:32],
-            "create_time": current_timestamp(),
-            "create_date": datetime_format(datetime.now()),
-            "update_time": None,
-            "update_date": None,
-        }
-
-        if not APITokenService.save(**obj):
-            return get_data_error_result(message="Fail to new a dialog!")
-
-        return get_json_result(data=obj)
-    except Exception as e:
-        return server_error_response(e)
-
-
-@manager.route("/token_list", methods=["GET"])  # noqa: F821
-@login_required
-def token_list():
-    """
-    List all API tokens for the current user.
-    ---
-    tags:
-      - API Tokens
-    security:
-      - ApiKeyAuth: []
-    responses:
-      200:
-        description: List of API tokens.
-        schema:
-          type: object
-          properties:
-            tokens:
-              type: array
-              items:
-                type: object
-                properties:
-                  token:
-                    type: string
-                    description: The API token.
-                  name:
-                    type: string
-                    description: Name of the token.
-                  create_time:
-                    type: string
-                    description: Token creation time.
-    """
-    try:
-        tenants = UserTenantService.query(user_id=current_user.id)
-        if not tenants:
-            return get_data_error_result(message="Tenant not found!")
-
-        tenant_id = [tenant for tenant in tenants if tenant.role == "owner"][0].tenant_id
-        objs = APITokenService.query(tenant_id=tenant_id)
-        objs = [o.to_dict() for o in objs]
-        for o in objs:
-            if not o["beta"]:
-                o["beta"] = generate_confirmation_token().replace("ragflow-", "")[:32]
-                APITokenService.filter_update([APIToken.tenant_id == tenant_id, APIToken.token == o["token"]], o)
-        return get_json_result(data=objs)
-    except Exception as e:
-        return server_error_response(e)
-
-
-@manager.route("/token/<token>", methods=["DELETE"])  # noqa: F821
-@login_required
-def rm(token):
-    """
-    Remove an API token.
-    ---
-    tags:
-      - API Tokens
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: token
-        type: string
-        required: true
-        description: The API token to remove.
-    responses:
-      200:
-        description: Token removed successfully.
-        schema:
-          type: object
-          properties:
-            success:
-              type: boolean
-              description: Deletion status.
-    """
-    try:
-        tenants = UserTenantService.query(user_id=current_user.id)
-        if not tenants:
-            return get_data_error_result(message="Tenant not found!")
-
-        tenant_id = tenants[0].tenant_id
-        APITokenService.filter_delete([APIToken.tenant_id == tenant_id, APIToken.token == token])
-        return get_json_result(data=True)
-    except Exception as e:
-        return server_error_response(e)
-
-
 @manager.route("/config", methods=["GET"])  # noqa: F821
 def get_config():
     """
@@ -351,56 +195,3 @@ def get_config():
         "registerEnabled": settings.REGISTER_ENABLED,
         "disablePasswordLogin": settings.DISABLE_PASSWORD_LOGIN,
     })
-
-
-@manager.route("/log_levels", methods=["GET"])  # noqa: F821
-@login_required
-async def get_logger_levels():
-    """
-    Get current log levels for all packages.
-    ---
-    tags:
-        - System
-    responses:
-        200:
-            description: Return current log levels
-    """
-    return get_json_result(data=get_log_levels())
-
-
-@manager.route("/log_levels", methods=["PUT"])  # noqa: F821
-@login_required
-async def set_logger_level():
-    """
-    Set log level for a package.
-    ---
-    tags:
-        - System
-    parameters:
-        - in: body
-          name: body
-          required: true
-          schema:
-            type: object
-            properties:
-                pkg_name:
-                    type: string
-                    description: Package name (e.g., "rag.utils.es_conn")
-                level:
-                    type: string
-                    description: Log level (DEBUG, INFO, WARNING, ERROR)
-    responses:
-        200:
-            description: Log level updated successfully
-    """
-    from quart import request
-    data = await request.get_json()
-    if not data or "pkg_name" not in data or "level" not in data:
-        return get_data_error_result(message="pkg_name and level are required")
-    pkg_name = data["pkg_name"]
-    level = data["level"]
-    success = set_log_level(pkg_name, level)
-    if success:
-        return get_json_result(data={"pkg_name": pkg_name, "level": level})
-    else:
-        return get_data_error_result(message=f"Invalid log level: {level}")

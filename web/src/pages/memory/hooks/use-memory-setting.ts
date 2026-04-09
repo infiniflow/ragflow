@@ -12,7 +12,7 @@ export const useFetchMemoryBaseConfiguration = () => {
   const { handleInputChange, searchString, pagination, setPagination } =
     useHandleSearchChange();
 
-  let queryKey: (MemoryApiAction | number)[] = [
+  const queryKey: (MemoryApiAction | number)[] = [
     MemoryApiAction.FetchMemoryDetail,
   ];
 
