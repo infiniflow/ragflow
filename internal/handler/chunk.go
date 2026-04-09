@@ -254,12 +254,9 @@ func (h *ChunkHandler) List(c *gin.Context) {
 // @Tags chunks
 // @Accept json
 // @Produce json
-// @Param dataset_id path string true "Dataset ID"
-// @Param document_id path string true "Document ID"
-// @Param chunk_id path string true "Chunk ID"
 // @Param request body service.UpdateChunkRequest true "update chunk"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id} [put]
+// @Router /v1/chunk/update [post]
 func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -267,20 +264,7 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		return
 	}
 
-	// Get path parameters
-	datasetID := c.Param("dataset_id")
-	documentID := c.Param("document_id")
-	chunkID := c.Param("chunk_id")
-
-	if datasetID == "" || documentID == "" || chunkID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "dataset_id, document_id, and chunk_id are required",
-		})
-		return
-	}
-
-	// Validate allowed update fields
+	// Validate allowed update fields and get IDs from body
 	var rawBody map[string]interface{}
 	if err := json.NewDecoder(c.Request.Body).Decode(&rawBody); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -290,7 +274,35 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		return
 	}
 
-	// Allowed fields for update
+	// Get required ID fields
+	datasetID, ok := rawBody["dataset_id"].(string)
+	if !ok || datasetID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "dataset_id is required",
+		})
+		return
+	}
+	chunkID, ok := rawBody["chunk_id"].(string)
+	if !ok || chunkID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "chunk_id is required",
+		})
+		return
+	}
+
+	// Get document_id from request
+	documentID, ok := rawBody["document_id"].(string)
+	if !ok || documentID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "doc_id is required",
+		})
+		return
+	}
+
+	// Allowed fields for update (exclude ID fields)
 	allowedFields := map[string]bool{
 		"content":              true,
 		"important_keywords":    true,
@@ -301,7 +313,7 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		"tag_feas":             true,
 	}
 	for field := range rawBody {
-		if !allowedFields[field] {
+		if field != "dataset_id" && field != "document_id" && field != "chunk_id" && !allowedFields[field] {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    400,
 				"message": "Update field '" + field + "' is not supported. Updatable fields: content, important_keywords, questions, available, positions, tag_kwd, tag_feas",
@@ -364,5 +376,54 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "chunk updated successfully",
+	})
+}
+
+// Remove handles chunk removal requests
+// @Summary Remove Chunks
+// @Description Remove chunks from a document
+// @Tags chunks
+// @Accept json
+// @Produce json
+// @Param request body service.RemoveChunksRequest true "remove chunks request"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/chunk/rm [post]
+func (h *ChunkHandler) Remove(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.RemoveChunksRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if req.DocID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "doc_id is required",
+		})
+		return
+	}
+
+	deletedCount, err := h.chunkService.RemoveChunks(&req, user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    deletedCount,
+		"message": "success",
 	})
 }

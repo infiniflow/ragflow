@@ -17,7 +17,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import bulk_upload_documents, delete_document, list_documents
+from test_common import bulk_upload_documents, delete_document, list_documents
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
@@ -63,7 +63,7 @@ class TestDocumentsDeletion:
         if res["code"] != 0:
             assert res["message"] == expected_message, res
 
-        res = list_documents(WebApiAuth, {"kb_id": kb_id})
+        res = list_documents(WebApiAuth, {"id": kb_id})
         assert len(res["data"]["docs"]) == remaining, res
         assert res["data"]["total"] == remaining, res
 
@@ -124,12 +124,12 @@ def test_delete_100(WebApiAuth, add_dataset, tmp_path):
     documents_num = 100
     kb_id = add_dataset
     document_ids = bulk_upload_documents(WebApiAuth, kb_id, documents_num, tmp_path)
-    res = list_documents(WebApiAuth, {"kb_id": kb_id})
+    res = list_documents(WebApiAuth, {"id": kb_id})
     assert res["data"]["total"] == documents_num, res
 
     for doc_id in document_ids:
         res = delete_document(WebApiAuth, {"doc_id": doc_id})
         assert res["code"] == 0, res
 
-    res = list_documents(WebApiAuth, {"kb_id": kb_id})
+    res = list_documents(WebApiAuth, {"id": kb_id})
     assert res["data"]["total"] == 0, res
