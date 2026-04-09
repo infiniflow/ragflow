@@ -762,7 +762,7 @@ class Parser(ProcessBase):
 
             sections = [line.strip() for line in content.splitlines() if line and line.strip()]
             if conf.get("remove_toc"):
-                sections = remove_toc_word(sections, outlines)
+                sections = remove_toc_word(sections, [])
 
             if conf.get("output_format") == "json":
                 self.set_output(
