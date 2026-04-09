@@ -28,8 +28,6 @@ import (
 	"ragflow/internal/utility"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // KnowledgebaseService service class for managing dataset operations
@@ -147,7 +145,7 @@ func (s *KnowledgebaseService) CreateKB(req *CreateKBRequest, tenantID string) (
 	parserConfig["llm_id"] = tenant.LLMID
 
 	// Generate KB ID
-	kbID := strings.ReplaceAll(uuid.New().String(), "-", "")
+	kbID := common.GenerateUUID()
 
 	// Create knowledge base model
 	now := time.Now().Unix()
@@ -549,11 +547,6 @@ func mergeParserConfig(base, override map[string]interface{}) map[string]interfa
 	}
 
 	return result
-}
-
-// GenerateUUID generates a UUID string without dashes
-func GenerateUUID() string {
-	return strings.ReplaceAll(uuid.New().String(), "-", "")
 }
 
 // GetUserByToken gets user by authorization token
