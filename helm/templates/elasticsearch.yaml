@@ -53,28 +53,6 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- end }}
-      initContainers:
-      - name: fix-data-volume-permissions
-        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.elasticsearch.initContainers.alpine.repository) }}:{{ .Values.elasticsearch.initContainers.alpine.tag }}
-        {{- with .Values.elasticsearch.initContainers.alpine.pullPolicy }}
-        imagePullPolicy: {{ . }}
-        {{- end }}
-        command:
-        - sh
-        - -c
-        - "chown -R 1000:0 /usr/share/elasticsearch/data"
-        volumeMounts:
-          - mountPath: /usr/share/elasticsearch/data
-            name: es-data
-      - name: sysctl
-        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.elasticsearch.initContainers.busybox.repository) }}:{{ .Values.elasticsearch.initContainers.busybox.tag }}
-        {{- with .Values.elasticsearch.initContainers.busybox.pullPolicy }}
-        imagePullPolicy: {{ . }}
-        {{- end }}
-        securityContext:
-          privileged: true
-          runAsUser: 0
-        command: ["sysctl", "-w", "vm.max_map_count=262144"]
       containers:
       - name: elasticsearch
         image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.elasticsearch.image.repository) }}:{{ .Values.elasticsearch.image.tag }}
@@ -98,15 +76,6 @@ spec:
         resources:
           {{- . | toYaml | nindent 10 }}
         {{- end }}
-        securityContext:
-          capabilities:
-            add:
-              - "IPC_LOCK"
-          runAsUser: 1000
-          # NOTE: fsGroup doesn't seem to
-          # work so use init container instead
-          # fsGroup: 1000
-          allowPrivilegeEscalation: false
       volumes:
         - name: es-data
           persistentVolumeClaim:

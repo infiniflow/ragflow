@@ -46,7 +46,7 @@ spec:
           - "--enable-adminserver"
         {{- end }}
         ports:
-          - containerPort: 80
+          - containerPort: 8080
             name: http
           - containerPort: 9380
             name: http-api
