@@ -762,6 +762,7 @@ export default {
         '以英文逗號分隔的倉庫 slug，例如：repo-one,repo-two',
       bitbucketProjectsTip: '以英文逗號分隔的項目鍵，例如：PROJ1,PROJ2',
       connectorNameTip: '為連接器填寫一個有意義的名稱',
+      syncDeletedFiles: '同步刪除文件',
     },
     message: {
       registered: '註冊成功',
