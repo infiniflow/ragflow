@@ -91,7 +91,11 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
     tar xzf "/deps/uv-${uv_arch}-unknown-linux-gnu.tar.gz" \
     && cp "uv-${uv_arch}-unknown-linux-gnu/"* /usr/local/bin/ \
     && rm -rf "uv-${uv_arch}-unknown-linux-gnu" \
-    && uv python install 3.12
+  
+
+    
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python
+RUN uv python install 3.12
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
     UV_HTTP_TIMEOUT=200 \

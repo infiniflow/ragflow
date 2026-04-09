@@ -95,5 +95,5 @@ data:
         #gzip  on;
         client_max_body_size 128M;
 
-        include /etc/nginx/conf.d/ragflow.conf;
+        include /etc/nginx/ragflow-helm.conf;
     }
