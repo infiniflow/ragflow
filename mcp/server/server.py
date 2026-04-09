@@ -128,12 +128,12 @@ class RAGFlowConnector:
         self._document_metadata_cache[dataset_id] = (doc_id_meta_list, self._get_expiry_timestamp())
         self._document_metadata_cache.move_to_end(dataset_id)
 
-    async def list_datasets(
+    async def _fetch_datasets_page(
         self,
         *,
         api_key: str,
-        page: int = 1,
-        page_size: int = 1000,
+        page: int,
+        page_size: int,
         orderby: str = "create_time",
         desc: bool = True,
         id: str | None = None,
@@ -141,59 +141,50 @@ class RAGFlowConnector:
     ):
         params = {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc}
         if id:
-            params['id'] = id
-        if name :
-            params['name'] = name
-            
+            params["id"] = id
+        if name:
+            params["name"] = name
+
         res = await self._get("/datasets", params, api_key=api_key)
         if not res or res.status_code != 200:
-            raise Exception([types.TextContent(type="text", text="Cannot process this operation.")])
+            error_message = None
+            if res is not None:
+                try:
+                    error_message = res.json().get("message")
+                except Exception:
+                    error_message = None
+            raise Exception([types.TextContent(type="text", text=error_message or "Cannot process this operation.")])
 
-        res = res.json()
-        if res.get("code") == 0:
-            result_list = []
-            for data in res["data"]:
-                d = {"description": data["description"], "id": data["id"]}
-                result_list.append(json.dumps(d, ensure_ascii=False))
-            return "\n".join(result_list)
-        return ""
+        res_json = res.json()
+        if res_json.get("code") != 0:
+            raise Exception([types.TextContent(type="text", text=res_json.get("message", "Cannot process this operation."))])
+
+        return res_json
+
+    async def list_datasets(self, *, api_key: str, page: int = 1, page_size: int = 1000, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None):
+        res_json = await self._fetch_datasets_page(api_key=api_key, page=page, page_size=page_size, orderby=orderby, desc=desc, id=id, name=name)
+        result_list = []
+        for data in res_json["data"]:
+            d = {"description": data["description"], "id": data["id"]}
+            result_list.append(json.dumps(d, ensure_ascii=False))
+        return "\n".join(result_list)
 
     async def resolve_dataset_ids(self, *, api_key: str):
+        logging.info("Resolving accessible dataset IDs for MCP retrieval")
         dataset_ids = []
         page = 1
 
         while True:
-            params = {
-                "page": page,
-                "page_size": self._DATASET_PAGE_SIZE,
-                "orderby": "create_time",
-                "desc": True,
-            }
-            res = await self._get("/datasets", params, api_key=api_key)
-            if not res or res.status_code != 200:
-                error_message = None
-                if res is not None:
-                    try:
-                        error_message = res.json().get("message")
-                    except Exception:
-                        error_message = None
-                logging.warning(
-                    "resolve_dataset_ids failed to fetch /datasets page=%s status=%s message=%s",
-                    page,
-                    getattr(res, "status_code", None),
-                    error_message,
+            logging.debug("resolve_dataset_ids fetching /datasets page=%s page_size=%s", page, self._DATASET_PAGE_SIZE)
+            try:
+                res_json = await self._fetch_datasets_page(
+                    api_key=api_key,
+                    page=page,
+                    page_size=self._DATASET_PAGE_SIZE,
                 )
-                raise Exception([types.TextContent(type="text", text="Cannot process this operation.")])
-
-            res_json = res.json()
-            if res_json.get("code") != 0:
-                logging.warning(
-                    "resolve_dataset_ids received error response page=%s code=%s message=%s",
-                    page,
-                    res_json.get("code"),
-                    res_json.get("message"),
-                )
-                raise Exception([types.TextContent(type="text", text=res_json.get("message", "Cannot process this operation."))])
+            except Exception as exc:
+                logging.warning("resolve_dataset_ids failed to fetch /datasets page=%s error=%s", page, exc)
+                raise
 
             datasets = res_json.get("data", [])
             logging.debug("resolve_dataset_ids received %s datasets from page=%s", len(datasets), page)
