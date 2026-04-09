@@ -27,9 +27,11 @@ export function useEditableField(
   // Auto-focus when entering edit mode
   useEffect(() => {
     if (isEditing) {
-      requestAnimationFrame(() => {
+      const frameId = requestAnimationFrame(() => {
         inputRef.current?.focus();
       });
+
+      return () => cancelAnimationFrame(frameId);
     }
   }, [isEditing]);
 
