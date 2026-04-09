@@ -235,7 +235,6 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 		"name":          search.Name,
 		"description":   search.Description,
 		"created_by":    search.CreatedBy,
-		"status":        search.Status,
 		"create_time":   search.CreateTime,
 		"update_time":   search.UpdateTime,
 		"search_config": search.SearchConfig,
