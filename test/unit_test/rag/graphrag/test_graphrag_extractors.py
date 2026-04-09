@@ -30,6 +30,7 @@ def _build_llm_stub():
 
 
 class TestGraphExtractor:
+    @pytest.mark.p2
     @pytest.mark.asyncio
     async def test_process_single_content_passes_task_id_to_gleaning_calls(self, monkeypatch):
         extractor = GraphExtractor(_build_llm_stub(), entity_types=["person"])
