@@ -15,13 +15,11 @@
 #
 import datetime
 import json
-import logging
 import re
 from io import BytesIO
 
 import xxhash
-from peewee import OperationalError
-from pydantic import BaseModel, Field, validator, ValidationError
+from pydantic import BaseModel, Field, validator
 from quart import request, send_file
 
 from api.constants import FILE_NAME_LEN_LIMIT
@@ -35,10 +33,8 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
 from api.db.services.tenant_llm_service import TenantLLMService
-from api.utils import validation_utils
-from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_request_json, get_result, server_error_response, token_required
+from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_request_json, get_result, server_error_response, token_required
 from api.utils.image_utils import store_chunk_image
-from api.utils.validation_utils import format_validation_error_message, UpdateDocumentReq
 from common import settings
 from common.constants import FileSource, LLMType, ParserType, RetCode, TaskStatus
 from common.metadata_utils import convert_conditions, meta_filter
@@ -183,215 +179,6 @@ async def upload(dataset_id, tenant_id):
         renamed_doc["run"] = "UNSTART"
         renamed_doc_list.append(renamed_doc)
     return get_result(data=renamed_doc_list)
-
-
-def _update_document_name_only(document_id, req_doc_name):
-    """Update document name only (without validation)."""
-    if not DocumentService.update_by_id(document_id, {"name": req_doc_name}):
-        return get_error_data_result(message="Database error (Document rename)!")
-
-    informs = File2DocumentService.get_by_document_id(document_id)
-    if informs:
-        e, file = FileService.get_by_id(informs[0].file_id)
-        FileService.update_by_id(file.id, {"name": req_doc_name})
-    return None
-
-def _update_chunk_method_only(req, doc, dataset_id, tenant_id):
-    """Update chunk method only (without validation)."""
-    if doc.parser_id.lower() != req["chunk_method"].lower():
-        # if chunk method changed
-        e = DocumentService.update_by_id(
-            doc.id,
-            {
-                "parser_id": req["chunk_method"],
-                "progress": 0,
-                "progress_msg": "",
-                "run": TaskStatus.UNSTART.value,
-            },
-        )
-        if not e:
-            return get_error_data_result(message="Document not found!")
-    if not req.get("parser_config"):
-        req["parser_config"] = get_parser_config(req["chunk_method"], req.get("parser_config"))
-        DocumentService.update_parser_config(doc.id, req["parser_config"])
-    if doc.token_num > 0:
-        e = DocumentService.increment_chunk_num(
-            doc.id,
-            doc.kb_id,
-            doc.token_num * -1,
-            doc.chunk_num * -1,
-            doc.process_duration * -1,
-        )
-        if not e:
-            return get_error_data_result(message="Document not found!")
-        settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), dataset_id)
-    return None
-
-def _update_document_status_only(status:int, doc, kb):
-    """Update document status only (without validation)."""
-    if doc.status is None or (int(doc.status) != status):
-        try:
-            if not DocumentService.update_by_id(doc.id, {"status": str(status)}):
-                return get_error_data_result(message="Database error (Document update)!")
-            settings.docStoreConn.update({"doc_id": doc.id}, {"available_int": status}, search.index_name(kb.tenant_id), doc.kb_id)
-        except Exception as e:
-            return server_error_response(e)
-    return None
-
-
-@manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PUT"])  # noqa: F821
-@token_required
-async def update_doc(tenant_id, dataset_id, document_id):
-    """
-    Update a document within a dataset.
-    ---
-    tags:
-      - Documents
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: path
-        name: document_id
-        type: string
-        required: true
-        description: ID of the document to update.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-      - in: body
-        name: body
-        description: Document update parameters.
-        required: true
-        schema:
-          type: object
-          properties:
-            name:
-              type: string
-              description: New name of the document.
-            parser_config:
-              type: object
-              description: Parser configuration.
-            chunk_method:
-              type: string
-              description: Chunking method.
-            enabled:
-              type: boolean
-              description: Document status.
-    responses:
-      200:
-        description: Document updated successfully.
-        schema:
-          type: object
-    """
-    req = await get_request_json()
-    
-    # Verify ownership and existence of dataset and document
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
-    e, kb = KnowledgebaseService.get_by_id(dataset_id)
-    if not e:
-        return get_error_data_result(message="Can't find this dataset!")
-
-    # Prepare data for validation
-    docs = DocumentService.query(kb_id=dataset_id, id=document_id)
-    if not docs:
-        return get_error_data_result(message="The dataset doesn't own the document.")
-
-    # Validate document update request parameters
-    try:
-        update_doc_req = UpdateDocumentReq(**req)
-    except ValidationError as e:
-        return get_error_data_result(message=format_validation_error_message(e), code=RetCode.DATA_ERROR)
-
-    doc = docs[0]
-
-    # further check with inner status (from DB)
-    error_msg, error_code = _validate_document_update_fields(update_doc_req, doc, req)
-    if error_msg:
-        return get_error_data_result(message=error_msg, code=error_code)
-
-    # All validations passed, now perform all updates
-    # meta_fields provided, then update it
-    if update_doc_req.meta_fields:
-        if not DocMetadataService.update_document_metadata(document_id, update_doc_req.meta_fields):
-            return get_error_data_result(message="Failed to update metadata")
-    # doc name provided from request and diff with existing value, update
-    if "name" in req and req["name"] != doc.name:
-        if error := _update_document_name_only(document_id, req["name"]):
-            return error
-
-    # parser config provided (already validated in UpdateDocumentReq), update it
-    if update_doc_req.parser_config:
-        DocumentService.update_parser_config(doc.id, req["parser_config"])
-
-    # chunk method provided - the update method will check if it's different with existing one
-    if update_doc_req.chunk_method:
-        if error := _update_chunk_method_only(req, doc, dataset_id, tenant_id):
-            return error
-
-    if "enabled" in req: # already checked in UpdateDocumentReq - it's int if it's present
-        # "enabled" flag provided, the update method will check if it's changed and then update if so
-        if error := _update_document_status_only(int(req["enabled"]), doc, kb):
-            return error
-
-    try:
-        ok, doc = DocumentService.get_by_id(doc.id)
-        if not ok:
-            return get_error_data_result(message="Dataset created failed")
-    except OperationalError as e:
-        logging.exception(e)
-        return get_error_data_result(message="Database operation failed")
-
-    key_mapping = {
-        "chunk_num": "chunk_count",
-        "kb_id": "dataset_id",
-        "token_num": "token_count",
-        "parser_id": "chunk_method",
-    }
-    run_mapping = {
-        "0": "UNSTART",
-        "1": "RUNNING",
-        "2": "CANCEL",
-        "3": "DONE",
-        "4": "FAIL",
-    }
-    renamed_doc = {}
-    for key, value in doc.to_dict().items():
-        new_key = key_mapping.get(key, key)
-        renamed_doc[new_key] = value
-        if key == "run":
-            renamed_doc["run"] = run_mapping.get(str(value))
-
-    return get_result(data=renamed_doc)
-
-def _validate_document_update_fields(update_doc_req:UpdateDocumentReq, doc, req):
-    """Validate document update fields in a single method."""
-    # Validate immutable fields
-    error_msg, error_code = validation_utils.validate_immutable_fields(update_doc_req, doc)
-    if error_msg:
-        return error_msg, error_code
-
-    # Validate document name if present
-    if "name" in req and req["name"] != doc.name:
-        docs_from_name = DocumentService.query(name=req["name"], kb_id=doc.kb_id)
-        error_msg, error_code = validation_utils.validate_document_name(req["name"], doc, docs_from_name)
-        if error_msg:
-            return error_msg, error_code
-
-    # Validate chunk method if present
-    if "chunk_method" in req:
-        error_msg, error_code = validation_utils.validate_chunk_method(doc, req["chunk_method"])
-        if error_msg:
-            return error_msg, error_code
-
-    return None, None
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
 @token_required
