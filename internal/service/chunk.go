@@ -1009,3 +1009,83 @@ func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error
 
 	return nil
 }
+
+// RemoveChunksRequest request for removing chunks
+type RemoveChunksRequest struct {
+	DocID      string   `json:"doc_id"`
+	ChunkIDs   []string `json:"chunk_ids,omitempty"`
+	DeleteAll  bool     `json:"delete_all,omitempty"`
+}
+
+// RemoveChunks removes chunks from the dataset table.
+// If ChunkIDs is empty and DeleteAll is true, removes all chunks for the document.
+// Otherwise removes only the specified chunks.
+func (s *ChunkService) RemoveChunks(req *RemoveChunksRequest, userID string) (int64, error) {
+	if s.docEngine == nil {
+		return 0, fmt.Errorf("doc engine not initialized")
+	}
+
+	if req.DocID == "" {
+		return 0, fmt.Errorf("doc_id is required")
+	}
+
+	ctx := context.Background()
+
+	// Get user's tenants
+	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get user tenants: %w", err)
+	}
+	if len(tenants) == 0 {
+		return 0, fmt.Errorf("user has no accessible tenants")
+	}
+
+	// Verify document exists and belongs to a dataset (do this first to get doc.KbID)
+	docDAO := dao.NewDocumentDAO()
+	doc, err := docDAO.GetByID(req.DocID)
+	if err != nil || doc == nil {
+		return 0, fmt.Errorf("document not found")
+	}
+
+	// Find the tenant that owns this document
+	var targetTenantID string
+	for _, tenant := range tenants {
+		kb, err := s.kbDAO.GetByIDAndTenantID(doc.KbID, tenant.TenantID)
+		if err == nil && kb != nil {
+			targetTenantID = tenant.TenantID
+			break
+		}
+	}
+	if targetTenantID == "" {
+		return 0, fmt.Errorf("user does not have access to this document")
+	}
+
+	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
+
+	// Build condition
+	condition := make(map[string]interface{})
+	switch {
+	case len(req.ChunkIDs) > 0 && req.DeleteAll:
+		return 0, fmt.Errorf("chunk_ids and delete_all are mutually exclusive")
+	case len(req.ChunkIDs) > 0:
+		// Delete specific chunks - convert []string to []interface{} for buildFilterFromCondition
+		chunkIDsIf := make([]interface{}, len(req.ChunkIDs))
+		for i, id := range req.ChunkIDs {
+			chunkIDsIf[i] = id
+		}
+		condition["id"] = chunkIDsIf
+		condition["doc_id"] = req.DocID
+	case req.DeleteAll:
+		// Delete all chunks for this document
+		condition["doc_id"] = req.DocID
+	default:
+		return 0, fmt.Errorf("either chunk_ids or delete_all must be provided")
+	}
+
+	deletedCount, err := s.docEngine.Delete(ctx, condition, indexName, doc.KbID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete chunks: %w", err)
+	}
+
+	return deletedCount, nil
+}
