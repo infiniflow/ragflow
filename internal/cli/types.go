@@ -47,6 +47,7 @@ const (
 	TokenPassword
 	TokenDataset
 	TokenDatasets
+	TokenDatasetTable
 	TokenOf
 	TokenAgents
 	TokenRole
@@ -103,7 +104,8 @@ const (
 	TokenTokens
 	TokenUnset
 	TokenIndex
-	TokenVectorSize
+	TokenVector
+	TokenSize
 	TokenDocMeta
 	TokenName // For ALTER PROVIDER <name> NAME <new_name>
 	TokenInstance
@@ -117,12 +119,21 @@ const (
 	TokenInsert
 	TokenFile
 	TokenMetadata
+	TokenTable
 	TokenUpdate
 	TokenRemove
 	TokenChunk
+	TokenChunks
 	TokenDocument
 	TokenTag
-
+	TokenLog
+	TokenLevel
+	TokenDebug
+	TokenInfo
+	TokenWarn
+	TokenError
+	TokenFatal
+	TokenPanic
 	// Literals
 	TokenIdentifier
 	TokenQuotedString

@@ -17,7 +17,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import list_datasets
+from test_common import list_datasets
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 from utils import is_sorted

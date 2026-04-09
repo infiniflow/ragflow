@@ -26,6 +26,17 @@ const inspectorBabelPlugin = (): import('vite').Plugin => ({
   },
 });
 
+type MinifyValue = boolean | 'esbuild' | 'terser';
+
+function resolveMinify(value: string | undefined): MinifyValue {
+  if (value === undefined) return 'terser';
+  const lower = value.toLowerCase();
+  if (lower === 'false') return false;
+  if (lower === 'esbuild') return 'esbuild';
+  if (lower === 'terser') return 'terser';
+  return 'terser';
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -229,7 +240,7 @@ export default defineConfig(({ mode }) => {
         plugins: [],
         treeshake: true,
       },
-      minify: 'terser',
+      minify: resolveMinify(env.VITE_MINIFY),
       terserOptions: {
         compress: {
           drop_console: true, // delete console
@@ -246,7 +257,7 @@ export default defineConfig(({ mode }) => {
           comments: false, // Delete comments
         },
       },
-      sourcemap: true,
+      sourcemap: env.VITE_BUILD_SOURCEMAP !== 'false',
       cssCodeSplit: true,
       target: 'es2015',
     },
