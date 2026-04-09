@@ -26,8 +26,8 @@ import (
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 )
 
-// CreateIndex creates an index
-func (e *elasticsearchEngine) CreateIndex(ctx context.Context, indexName, datasetID string, vectorSize int, parserID string) error {
+// CreateDataset creates an index
+func (e *elasticsearchEngine) CreateDataset(ctx context.Context, indexName, datasetID string, vectorSize int, parserID string) error {
 	// Elasticsearch doesn't support vector_size or parser_id in the same way
 	// Build mapping for ES (if needed)
 	// TODO
@@ -40,7 +40,7 @@ func (e *elasticsearchEngine) CreateIndex(ctx context.Context, indexName, datase
 	}
 
 	// Check if index already exists
-	exists, err := e.IndexExists(ctx, indexName)
+	exists, err := e.TableExists(ctx, indexName)
 	if err != nil {
 		return fmt.Errorf("failed to check index existence: %w", err)
 	}
@@ -88,14 +88,14 @@ func (e *elasticsearchEngine) CreateIndex(ctx context.Context, indexName, datase
 	return nil
 }
 
-// DeleteIndex deletes an index
-func (e *elasticsearchEngine) DeleteIndex(ctx context.Context, indexName string) error {
+// DropTable deletes an index
+func (e *elasticsearchEngine) DropTable(ctx context.Context, indexName string) error {
 	if indexName == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}
 
 	// Check if index exists
-	exists, err := e.IndexExists(ctx, indexName)
+	exists, err := e.TableExists(ctx, indexName)
 	if err != nil {
 		return fmt.Errorf("failed to check index existence: %w", err)
 	}
@@ -121,8 +121,8 @@ func (e *elasticsearchEngine) DeleteIndex(ctx context.Context, indexName string)
 	return nil
 }
 
-// IndexExists checks if index exists
-func (e *elasticsearchEngine) IndexExists(ctx context.Context, indexName string) (bool, error) {
+// TableExists checks if index exists
+func (e *elasticsearchEngine) TableExists(ctx context.Context, indexName string) (bool, error) {
 	if indexName == "" {
 		return false, fmt.Errorf("index name cannot be empty")
 	}
@@ -146,8 +146,8 @@ func (e *elasticsearchEngine) IndexExists(ctx context.Context, indexName string)
 	return false, fmt.Errorf("elasticsearch returned error: %s", res.Status())
 }
 
-// CreateDocMetaIndex creates the document metadata index
-func (e *elasticsearchEngine) CreateDocMetaIndex(ctx context.Context, indexName string) error {
+// CreateMetadata creates the document metadata index
+func (e *elasticsearchEngine) CreateMetadata(ctx context.Context, indexName string) error {
 	// TODO
 	return nil
 }
@@ -175,4 +175,10 @@ func (e *elasticsearchEngine) UpdateDataset(ctx context.Context, condition map[s
 func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, kbID string, metaFields map[string]interface{}, tenantID string) error {
 	// TODO
 	return nil
+}
+
+// Delete deletes rows from either a dataset index or metadata index
+func (e *elasticsearchEngine) Delete(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
+	// TODO
+	return 0, nil
 }
