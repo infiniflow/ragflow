@@ -245,28 +245,6 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
       }
     }, [value]);
 
-    /*
-    useEffect(() => {
-      const container = containerRef.current;
-      setTimeout(() => {
-        // initCropArea();
-        if (imageToCrop && container && isCropModalOpen) {
-          container.addEventListener(
-            'wheel',
-            handleWheel as unknown as EventListener,
-            { passive: false },
-          );
-          return () => {
-            container.removeEventListener(
-              'wheel',
-              handleWheel as unknown as EventListener,
-            );
-          };
-        }
-      }, 100);
-    }, [handleWheel, imageToCrop, isCropModalOpen]);
-    */
-
     return (
       <div className="flex justify-start items-end space-x-2">
         <div className="relative group">
