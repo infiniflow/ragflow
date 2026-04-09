@@ -235,30 +235,6 @@ func (s *SearchService) GetSearchDetail(userID string, searchID string) (*entity
 }
 
 // DeleteSearch deletes a search app by ID
-// Reference: api/apps/restful_apis/search_api.py::delete_search
-// Python implementation steps:
-// 1. Check deletion permission: if not SearchService.accessible4deletion(search_id, current_user.id):
-// 2. If no permission: return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-// 3. Execute delete: if not SearchService.delete_by_id(search_id):
-// 4. If delete failed: return get_data_error_result(message=f"Failed to delete search App {search_id}")
-// 5. Return success: return get_json_result(data=True)
-//
-// Permission model from Python accessible4deletion:
-// - User can delete if: search.created_by == user_id AND search.status == "1" (VALID)
-// - This is stricter than detail view - only creator can delete
-// - Uses SearchService.accessible4deletion() which checks created_by field
-//
-// Error handling from Python:
-// - No authorization: {"data": false, "message": "No authorization.", "code": RetCode.AUTHENTICATION_ERROR}
-// - Delete failed: get_data_error_result(message=f"Failed to delete search App {search_id}")
-// - Exception: server_error_response(e)
-//
-// Returns: error if deletion fails
-//
-// Note: Similar deletion pattern used in:
-// - delete_document (document_api.py) - uses accessible4deletion check
-// - delete_dataset (dataset_api.py) - uses accessible4deletion check
-// - delete_memory (memory_api.py) - uses permission check
 func (s *SearchService) DeleteSearch(userID string, searchID string) error {
 	// Step 1: Check deletion permission (same as Python SearchService.accessible4deletion)
 	// Python: cls.model.select().where(cls.model.id == search_id, cls.model.created_by == user_id, cls.model.status == StatusEnum.VALID.value).first()
