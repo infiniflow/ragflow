@@ -2,6 +2,10 @@ import importlib
 import sys
 from types import ModuleType
 
+import pytest
+
+pytestmark = pytest.mark.p2
+
 
 def test_chunk_feedback_package_import_is_safe_when_common_is_shadowed(monkeypatch):
     shadow_common = ModuleType("common")
