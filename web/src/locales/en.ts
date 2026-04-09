@@ -18,6 +18,7 @@ export default {
       name: 'Name',
       save: 'Save',
       namePlaceholder: 'Please input name',
+      descriptionPlaceholder: 'Enter description',
       next: 'Next',
       create: 'Create',
       edit: 'Edit',

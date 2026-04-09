@@ -18,6 +18,7 @@ export default {
       name: '名称',
       save: '保存',
       namePlaceholder: '请输入名称',
+      descriptionPlaceholder: '请输入描述',
       next: '下一步',
       create: '创建',
       edit: '编辑',
