@@ -29,7 +29,7 @@ import (
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
-	// "time"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -640,11 +640,10 @@ func (s *FileService) deleteDocumentFromEngine(ctx context.Context, doc *entity.
 	// Build index name: ragflow_<tenant_id>_<kb_id>
 	indexName := fmt.Sprintf("ragflow_%s_%s", tenantID, doc.KbID)
 
-
 	// Delete document from engine with timeout
-	// reqCtx, cancel := context.WithTimeout(ctx, 300*time.Second)
-	// defer cancel()
-	if err := docEngine.DeleteDocument(ctx, indexName, doc.ID); err != nil {
+	reqCtx, cancel := context.WithTimeout(ctx, 300*time.Second)
+	defer cancel()
+	if err := docEngine.DeleteDocument(reqCtx, indexName, doc.ID); err != nil {
 		return fmt.Errorf("delete document from engine: %w", err)
 	}
 	return nil
