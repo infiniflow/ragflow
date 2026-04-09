@@ -21,7 +21,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
-from common import bulk_upload_documents, delete_document, list_documents
+from test_common import bulk_upload_documents, delete_document, list_documents
 
 
 class _DummyManager:

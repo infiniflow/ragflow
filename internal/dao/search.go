@@ -124,3 +124,24 @@ func (dao *SearchDAO) GetByID(id string) (*entity.Search, error) {
 	}
 	return &search, nil
 }
+
+// GetByNameAndTenant gets search by name and tenant ID
+func (dao *SearchDAO) GetByNameAndTenant(name string, tenantID string) ([]*entity.Search, error) {
+	var searches []*entity.Search
+	err := DB.Where("name = ? AND tenant_id = ? AND status = ?", name, tenantID, "1").Find(&searches).Error
+	return searches, err
+}
+
+// Create creates a new search
+func (dao *SearchDAO) Create(search *entity.Search) error {
+	return DB.Create(search).Error
+}
+
+// QueryByTenantIDAndID checks if a search exists with given tenant_id and id
+// Reference: Python SearchService.query(tenant_id=tenant.tenant_id, id=search_id)
+// Used for permission verification in detail API
+func (dao *SearchDAO) QueryByTenantIDAndID(tenantID string, searchID string) ([]*entity.Search, error) {
+	var searches []*entity.Search
+	err := DB.Where("tenant_id = ? AND id = ? AND status = ?", tenantID, searchID, "1").Find(&searches).Error
+	return searches, err
+}
