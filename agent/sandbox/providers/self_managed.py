@@ -70,7 +70,7 @@ class SelfManagedProvider(SandboxProvider):
             # Try to fall back to SANDBOX_HOST from settings if we are using localhost
             if "localhost" in self.endpoint or "127.0.0.1" in self.endpoint:
                 try:
-                    from api import settings
+                    from common import settings
                     if settings.SANDBOX_HOST and settings.SANDBOX_HOST not in self.endpoint:
                         original_endpoint = self.endpoint
                         self.endpoint = f"http://{settings.SANDBOX_HOST}:9385"

@@ -400,3 +400,27 @@ func ReadPasswordFallback() (string, error) {
 	}
 	return strings.TrimSpace(password), nil
 }
+
+// FlattenMap recursively flattens a nested map into dot-notation keys
+func FlattenMap(data map[string]interface{}, prefix string, result *[]map[string]interface{}) {
+	for key, value := range data {
+		// Build the current key path
+		currentKey := key
+		if prefix != "" {
+			currentKey = prefix + "." + key
+		}
+
+		// Check if the value is another nested map
+		if nestedMap, ok := value.(map[string]interface{}); ok {
+			// Recursively process the nested map
+			FlattenMap(nestedMap, currentKey, result)
+		} else {
+			// Leaf node: append to result slice
+			resultItem := map[string]interface{}{
+				"key":   currentKey,
+				"value": value,
+			}
+			*result = append(*result, resultItem)
+		}
+	}
+}

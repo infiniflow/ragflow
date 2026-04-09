@@ -6841,14 +6841,14 @@ Failure
 
 ### Check system health
 
-**GET** `/v1/system/healthz`
+**GET** `/api/v1/system/healthz`
 
 Check the health status of RAGFlow’s dependencies (database, Redis, document engine, object storage).
 
 #### Request
 
 - Method: GET
-- URL: `/v1/system/healthz`
+- URL: `/api/v1/system/healthz`
 - Headers:
   - 'Content-Type: application/json'
   (no Authorization required)
@@ -6857,7 +6857,7 @@ Check the health status of RAGFlow’s dependencies (database, Redis, document e
 
 ```bash
 curl --request GET
-     --url http://{address}/v1/system/healthz
+     --url http://{address}/api/v1/system/healthz
      --header 'Content-Type: application/json'
 ```
 

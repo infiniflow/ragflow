@@ -702,7 +702,7 @@ wheels = [
 
 [[package]]
 name = "azure-identity"
-version = "1.17.1"
+version = "1.25.3"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "azure-core" },
@@ -711,9 +711,9 @@ dependencies = [
     { name = "msal-extensions" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/51/c9/f7e3926686a89670ce641b360bd2da9a2d7a12b3e532403462d99f81e9d5/azure-identity-1.17.1.tar.gz", hash = "sha256:32ecc67cc73f4bd0595e4f64b1ca65cd05186f4fe6f98ed2ae9f1aa32646efea" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/c5/0e/3a63efb48aa4a5ae2cfca61ee152fbcb668092134d3eb8bfda472dd5c617/azure_identity-1.25.3.tar.gz", hash = "sha256:ab23c0d63015f50b630ef6c6cf395e7262f439ce06e5d07a64e874c724f8d9e6" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/49/83/a777861351e7b99e7c84ff3b36bab35e87b6e5d36e50b6905e148c696515/azure_identity-1.17.1-py3-none-any.whl", hash = "sha256:db8d59c183b680e763722bfe8ebc45930e6c57df510620985939f7f3191e0382" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/49/9a/417b3a533e01953a7c618884df2cb05a71e7b68bdbce4fbdb62349d2a2e8/azure_identity-1.25.3-py3-none-any.whl", hash = "sha256:f4d0b956a8146f30333e071374171f3cfa7bdb8073adb8c3814b65567aa7447c" },
 ]
 
 [[package]]
@@ -4481,15 +4481,6 @@ wheels = [
 ]
 
 [[package]]
-name = "nvidia-nccl-cu12"
-version = "2.29.7"
-source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/20/cc/f48875411d1f176bce58e6343fd5d4131fc1db5420719ff25944bdc006c6/nvidia_nccl_cu12-2.29.7-py3-none-manylinux_2_18_aarch64.whl", hash = "sha256:0cf032ee22b560447daf0456108a75e32bd74a4de6c6b64725637a359fa48cd8" },
-    { url = "https://mirrors.aliyun.com/pypi/packages/31/1e/9e366f36efc550f07d6737f199e3f6bffafdf28795d007f10a77dd274f5c/nvidia_nccl_cu12-2.29.7-py3-none-manylinux_2_18_x86_64.whl", hash = "sha256:ecd0a012051abc20c1aa87328841efa8cade3ced65803046e38c2f03c0891fea" },
-]
-
-[[package]]
 name = "oauthlib"
 version = "3.3.1"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
@@ -6690,7 +6681,7 @@ requires-dist = [
     { name = "arxiv", specifier = "==2.1.3" },
     { name = "asana", specifier = ">=5.2.2" },
     { name = "atlassian-python-api", specifier = "==4.0.7" },
-    { name = "azure-identity", specifier = "==1.17.1" },
+    { name = "azure-identity", specifier = "==1.25.3" },
     { name = "azure-storage-file-datalake", specifier = "==12.16.0" },
     { name = "beartype", specifier = ">=0.20.0,<1.0.0" },
     { name = "bio", specifier = "==1.7.1" },
@@ -6796,7 +6787,7 @@ requires-dist = [
     { name = "webdriver-manager", specifier = "==4.0.1" },
     { name = "wikipedia", specifier = "==1.4.0" },
     { name = "word2number", specifier = "==1.1" },
-    { name = "xgboost", specifier = "==3.2.0" },
+    { name = "xgboost", specifier = "==1.6.0" },
     { name = "xpinyin", specifier = "==0.7.6" },
     { name = "yfinance", specifier = "==0.2.65" },
     { name = "zhipuai", specifier = "==2.0.1" },
@@ -8739,20 +8730,19 @@ wheels = [
 
 [[package]]
 name = "xgboost"
-version = "3.2.0"
+version = "1.6.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "numpy" },
-    { name = "nvidia-nccl-cu12", marker = "sys_platform == 'linux'" },
     { name = "scipy" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/91/bb/1eb0242409d22db725d7a88088e6cfd6556829fb0736f9ff69aa9f1e9455/xgboost-3.2.0.tar.gz", hash = "sha256:99b0e9a2a64896cdaf509c5e46372d336c692406646d20f2af505003c0c5d70d" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/77/89/92b399140a7688443fc182b54240822c903e906121d63446eb2f84350e99/xgboost-1.6.0.tar.gz", hash = "sha256:9c944c2495cb426b8a365021565755c39ee0b53156cf5e53a4346bdad2e3b734" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/2d/49/6e4cdd877c24adf56cb3586bc96d93d4dcd780b5ea1efb32e1ee0de08bae/xgboost-3.2.0-py3-none-macosx_10_15_x86_64.whl", hash = "sha256:2f661966d3e322536d9c448090a870fcba1e32ee5760c10b7c46bac7a342079a" },
-    { url = "https://mirrors.aliyun.com/pypi/packages/93/f1/c09ef1add609453aa3ba5bafcd0d1c1a805c1263c0b60138ec968f8ec296/xgboost-3.2.0-py3-none-macosx_12_0_arm64.whl", hash = "sha256:eabbd40d474b8dbf6cb3536325f9150b9e6f0db32d18de9914fb3227d0bef5b7" },
-    { url = "https://mirrors.aliyun.com/pypi/packages/96/9f/d9914a7b8df842832850b1a18e5f47aaa071c217cdd1da2ae9deb291018b/xgboost-3.2.0-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:852eabc6d3b3702a59bf78dbfdcd1cb9c4d3a3b6e5ed1f8781d8b9512354fdd2" },
-    { url = "https://mirrors.aliyun.com/pypi/packages/79/98/679de17c2caa4fd3b0b4386ecf7377301702cb0afb22930a07c142fcb1d8/xgboost-3.2.0-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:99b4a6bbcb47212fec5cf5fbe12347215f073c08967431b0122cfbd1ee70312c" },
-    { url = "https://mirrors.aliyun.com/pypi/packages/1f/3d/1661dd114a914a67e3f7ab66fa1382e7599c2a8c340f314ad30a3e2b4d08/xgboost-3.2.0-py3-none-win_amd64.whl", hash = "sha256:0d169736fd836fc13646c7ab787167b3a8110351c2c6bc770c755ee1618f0442" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/f1/71/abca2240b5d19aa3e90c8228cf307962fc9f598acc3c623fb49db83b4092/xgboost-1.6.0-py3-none-macosx_10_15_x86_64.macosx_11_0_x86_64.macosx_12_0_x86_64.whl", hash = "sha256:5f7fd61024c41d0c424a8272dfd27797a0393a616b717c05c0f981a49a47b4fd" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/49/d0/85c9c40e7ca1a4bc05278c1e57a89c43ab846be4cb5227871ca7605921a6/xgboost-1.6.0-py3-none-macosx_12_0_arm64.whl", hash = "sha256:ad27c6a72f6abef6d20e67f957fb25553bb09a6d1c4eaf08cb8ee7efca288255" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/c3/be/18970943eb7e9d9ded5e37e87c1dc02c8a961416f725f2734629f26d69d5/xgboost-1.6.0-py3-none-manylinux2014_aarch64.whl", hash = "sha256:b1d532b8d548dd3acb4bd5f56632339e48167d9e2ec0eda2d8d6b4cd772e03b4" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/bf/64/c467a20848adc3d1c3f45d60df9c7cd0c40a548fd534a9f842a35114039d/xgboost-1.6.0-py3-none-manylinux2014_x86_64.whl", hash = "sha256:640b9649104f22f0dc43c7202d22cde5531cc303801a9c75cad3f2b6e413dcf7" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/64/51/3e33a4df0ca66474e7f4e357328a5c7b35fb52cbc48b312c64d276d37da8/xgboost-1.6.0-py3-none-win_amd64.whl", hash = "sha256:e2f9baca0b7cbc208ad4fbafa4cd70b50b292717ee8ba817a3ba7a0fe49de958" },
 ]
 
 [[package]]
