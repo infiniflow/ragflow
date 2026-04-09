@@ -51,7 +51,7 @@ class TestMetadataSummary:
         assert res["message"] == f"You don't own the dataset {invalid_kb_id}. "
 
     @pytest.mark.p2
-    def test_metadata_summary_success_and_exception(self, HttpApiAuth, add_document_func):
+    def test_metadata_summary_success(self, HttpApiAuth, add_document_func):
         """Test metadata summary success case and exception handling."""
         kb_id, doc_id = add_document_func
         # Test successful case

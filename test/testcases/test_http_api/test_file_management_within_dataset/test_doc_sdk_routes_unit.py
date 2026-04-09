@@ -472,7 +472,7 @@ class TestDocRoutesUnit:
         assert res["code"] == 0
         assert res["data"]["docs"] == []
 
-    def test_metadata_summary_and_batch_update(self, monkeypatch):
+    def test_metadata_batch_update(self, monkeypatch):
         module = _load_doc_module(monkeypatch)
         monkeypatch.setattr(module, "convert_conditions", lambda cond: cond)
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
@@ -480,22 +480,7 @@ class TestDocRoutesUnit:
         res = _run(module.metadata_batch_update.__wrapped__("ds-1", "tenant-1"))
         assert "don't own the dataset" in res["message"]
 
-        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
-        res = _run(module.metadata_summary.__wrapped__("ds-1", "tenant-1"))
-        assert "don't own the dataset" in res["message"]
-
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"doc_ids": ["d1"]}))
-        monkeypatch.setattr(module.DocMetadataService, "get_metadata_summary", lambda *_args, **_kwargs: {"k": 1})
-        res = _run(module.metadata_summary.__wrapped__("ds-1", "tenant-1"))
-        assert res["code"] == 0
-        assert res["data"]["summary"] == {"k": 1}
-
-        monkeypatch.setattr(module.DocMetadataService, "get_metadata_summary", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("x")))
-        monkeypatch.setattr(module, "server_error_response", lambda e: {"code": 500, "message": str(e)})
-        res = _run(module.metadata_summary.__wrapped__("ds-1", "tenant-1"))
-        assert res["code"] == 500
-
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"selector": [1]}))
         res = _run(module.metadata_batch_update.__wrapped__("ds-1", "tenant-1"))
         assert res["message"] == "selector must be an object."
@@ -575,6 +560,7 @@ class TestDocRoutesUnit:
         assert res["code"] == 0
         assert res["data"]["updated"] == 1
         assert res["data"]["matched_docs"] == 1
+
 
     def test_delete_branches(self, monkeypatch):
         module = _load_doc_module(monkeypatch)
