@@ -985,6 +985,7 @@ export default {
       selectModelPlaceholder: 'Выберите модель',
       configureModelTitle: 'Настроить модель',
       connectorNameTip: 'Укажите понятное имя для коннектора',
+      syncDeletedFiles: 'Синхронизировать удалённые файлы',
       confluenceIsCloudTip:
         'Отметьте, если это экземпляр Confluence Cloud, снимите для Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:

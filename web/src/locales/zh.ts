@@ -1085,6 +1085,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       bitbucketRepositorySlugsTip:
         '用英文逗号分隔的仓库 slug，例如：repo-one,repo-two',
       connectorNameTip: '为连接器命名',
+      syncDeletedFiles: '同步删除文件',
       githubDescription:
         '连接 GitHub，可同步 Pull Request 与 Issue 内容用于检索。',
       airtableDescription: '连接 Airtable，同步指定工作区下指定表格中的文件。',

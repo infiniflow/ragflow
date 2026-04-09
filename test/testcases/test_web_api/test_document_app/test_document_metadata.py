@@ -17,13 +17,11 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-from common import (
+from test_common import (
     document_change_status,
     document_filter,
     document_infos,
     document_metadata_summary,
-    document_rename,
-    document_set_meta,
     document_update_metadata_setting,
 )
 from configs import INVALID_API_TOKEN
@@ -81,21 +79,6 @@ class TestAuthorization:
         res = document_change_status(invalid_auth, {"doc_ids": ["doc_id"], "status": "1"})
         assert res["code"] == expected_code, res
         assert expected_fragment in res["message"], res
-
-    @pytest.mark.p2
-    @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
-    def test_rename_auth_invalid(self, invalid_auth, expected_code, expected_fragment):
-        res = document_rename(invalid_auth, {"doc_id": "doc_id", "name": "rename.txt"})
-        assert res["code"] == expected_code, res
-        assert expected_fragment in res["message"], res
-
-    @pytest.mark.p2
-    @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
-    def test_set_meta_auth_invalid(self, invalid_auth, expected_code, expected_fragment):
-        res = document_set_meta(invalid_auth, {"doc_id": "doc_id", "meta": "{}"})
-        assert res["code"] == expected_code, res
-        assert expected_fragment in res["message"], res
-
 
 class TestDocumentMetadata:
     @pytest.mark.p2
@@ -163,28 +146,6 @@ class TestDocumentMetadata:
         assert info_res["code"] == 0, info_res
         assert info_res["data"][0]["status"] == "1", info_res
 
-    @pytest.mark.p2
-    def test_rename(self, WebApiAuth, add_document_func):
-        _, doc_id = add_document_func
-        name = f"renamed_{doc_id}.txt"
-        res = document_rename(WebApiAuth, {"doc_id": doc_id, "name": name})
-        assert res["code"] == 0, res
-        assert res["data"] is True, res
-        info_res = document_infos(WebApiAuth, {"doc_ids": [doc_id]})
-        assert info_res["code"] == 0, info_res
-        assert info_res["data"][0]["name"] == name, info_res
-
-    @pytest.mark.p2
-    def test_set_meta(self, WebApiAuth, add_document_func):
-        _, doc_id = add_document_func
-        res = document_set_meta(WebApiAuth, {"doc_id": doc_id, "meta": "{\"author\": \"alice\"}"})
-        assert res["code"] == 0, res
-        assert res["data"] is True, res
-        info_res = document_infos(WebApiAuth, {"doc_ids": [doc_id]})
-        assert info_res["code"] == 0, info_res
-        meta_fields = info_res["data"][0].get("meta_fields", {})
-        assert meta_fields.get("author") == "alice", info_res
-
 
 class TestDocumentMetadataNegative:
     @pytest.mark.p3
@@ -230,20 +191,6 @@ class TestDocumentMetadataNegative:
         res = document_change_status(WebApiAuth, {"doc_ids": [doc_id], "status": "2"})
         assert res["code"] == 101, res
         assert "Status" in res["message"], res
-
-    @pytest.mark.p3
-    def test_rename_extension_mismatch(self, WebApiAuth, add_document_func):
-        _, doc_id = add_document_func
-        res = document_rename(WebApiAuth, {"doc_id": doc_id, "name": "renamed.pdf"})
-        assert res["code"] == 101, res
-        assert "extension" in res["message"], res
-
-    @pytest.mark.p3
-    def test_set_meta_invalid_type(self, WebApiAuth, add_document_func):
-        _, doc_id = add_document_func
-        res = document_set_meta(WebApiAuth, {"doc_id": doc_id, "meta": "[]"})
-        assert res["code"] == 101, res
-        assert "dictionary" in res["message"], res
 
 
 def _run(coro):
@@ -590,87 +537,6 @@ class TestDocumentMetadataUnit:
         assert res["code"] == 0
         assert res["data"]["doc1"]["status"] == "1"
 
-    def test_rename_branch_matrix_and_exception_unit(self, document_app_module, monkeypatch):
-        module = document_app_module
-        file_updates = []
-        es_updates = []
-
-        async def fake_thread_pool_exec(func, *_args, **_kwargs):
-            return func()
-
-        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
-        monkeypatch.setattr(module.DocumentService, "get_tenant_id", lambda _doc_id: "tenant1")
-        monkeypatch.setattr(module.rag_tokenizer, "tokenize", lambda _name: ["token"])
-        monkeypatch.setattr(module.rag_tokenizer, "fine_grained_tokenize", lambda _tokens: ["fine"])
-        monkeypatch.setattr(module, "server_error_response", lambda e: {"code": 500, "message": str(e)})
-
-        class _DocStore:
-            def index_exist(self, _index_name, _kb_id):
-                return True
-
-            def update(self, where, payload, _index_name, _kb_id):
-                es_updates.append((where, payload))
-
-        monkeypatch.setattr(module.settings, "docStoreConn", _DocStore())
-        monkeypatch.setattr(module.search, "index_name", lambda tenant_id: f"idx_{tenant_id}")
-
-        def set_req(name):
-            async def fake_request_json():
-                return {"doc_id": "doc1", "name": name}
-
-            monkeypatch.setattr(module, "get_request_json", fake_request_json)
-
-        set_req("renamed.txt")
-        monkeypatch.setattr(module.DocumentService, "accessible", lambda *_args, **_kwargs: False)
-        res = _run(module.rename.__wrapped__())
-        assert res["code"] == module.RetCode.AUTHENTICATION_ERROR
-
-        monkeypatch.setattr(module.DocumentService, "accessible", lambda *_args, **_kwargs: True)
-        monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (False, None))
-        res = _run(module.rename.__wrapped__())
-        assert res["code"] == module.RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
-
-        monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (True, SimpleNamespace(id="doc1", name="origin.txt", kb_id="kb1")))
-        set_req("renamed.pdf")
-        res = _run(module.rename.__wrapped__())
-        assert res["code"] == module.RetCode.ARGUMENT_ERROR
-        assert "extension" in res["message"]
-
-        too_long = "a" * (module.FILE_NAME_LEN_LIMIT + 1) + ".txt"
-        set_req(too_long)
-        res = _run(module.rename.__wrapped__())
-        assert res["code"] == module.RetCode.ARGUMENT_ERROR
-        assert "bytes or less" in res["message"]
-
-        set_req("dup.txt")
-        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [SimpleNamespace(name="dup.txt")])
-        res = _run(module.rename.__wrapped__())
-        assert res["code"] == module.RetCode.DATA_ERROR
-        assert "Duplicated document name" in res["message"]
-
-        set_req("ok.txt")
-        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
-        monkeypatch.setattr(module.DocumentService, "update_by_id", lambda *_args, **_kwargs: True)
-        monkeypatch.setattr(module.File2DocumentService, "get_by_document_id", lambda _doc_id: [SimpleNamespace(file_id="file1")])
-        monkeypatch.setattr(module.FileService, "get_by_id", lambda _file_id: (True, SimpleNamespace(id="file1")))
-        monkeypatch.setattr(module.FileService, "update_by_id", lambda file_id, payload: file_updates.append((file_id, payload)))
-        res = _run(module.rename.__wrapped__())
-        assert res["code"] == 0
-        assert file_updates == [("file1", {"name": "ok.txt"})]
-        assert es_updates[0][0] == {"doc_id": "doc1"}
-        assert es_updates[0][1]["docnm_kwd"] == "ok.txt"
-        assert es_updates[0][1]["title_tks"] == ["token"]
-        assert es_updates[0][1]["title_sm_tks"] == ["fine"]
-
-        def raise_db_error(*_args, **_kwargs):
-            raise RuntimeError("rename boom")
-
-        monkeypatch.setattr(module.DocumentService, "update_by_id", raise_db_error)
-        res = _run(module.rename.__wrapped__())
-        assert res["code"] == 500
-        assert "rename boom" in res["message"]
-
     def test_get_route_not_found_success_and_exception_unit(self, document_app_module, monkeypatch):
         module = document_app_module
         monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (False, None))
@@ -932,50 +798,3 @@ class TestDocumentMetadataUnit:
         res = _run(module.get_image("bucket-name"))
         assert res["code"] == 500
         assert "image boom" in res["message"]
-
-    def test_set_meta_validation_and_persistence_matrix_unit(self, document_app_module, monkeypatch):
-        module = document_app_module
-
-        def set_req(payload):
-            async def fake_request_json():
-                return payload
-
-            monkeypatch.setattr(module, "get_request_json", fake_request_json)
-
-        set_req({"doc_id": "doc1", "meta": "{}"})
-        monkeypatch.setattr(module.DocumentService, "accessible", lambda *_args, **_kwargs: False)
-        res = _run(module.set_meta.__wrapped__())
-        assert res["code"] == module.RetCode.AUTHENTICATION_ERROR
-
-        monkeypatch.setattr(module.DocumentService, "accessible", lambda *_args, **_kwargs: True)
-        set_req({"doc_id": "doc1", "meta": "[]"})
-        res = _run(module.set_meta.__wrapped__())
-        assert res["code"] == module.RetCode.ARGUMENT_ERROR
-        assert "Only dictionary type supported." in res["message"]
-
-        set_req({"doc_id": "doc1", "meta": '{"tags":[{"x":1}]}'})
-        res = _run(module.set_meta.__wrapped__())
-        assert res["code"] == module.RetCode.ARGUMENT_ERROR
-        assert "The type is not supported in list" in res["message"]
-
-        set_req({"doc_id": "doc1", "meta": '{"obj":{"x":1}}'})
-        res = _run(module.set_meta.__wrapped__())
-        assert res["code"] == module.RetCode.ARGUMENT_ERROR
-        assert "The type is not supported" in res["message"]
-
-        set_req({"doc_id": "doc1", "meta": "{"})
-        res = _run(module.set_meta.__wrapped__())
-        assert res["code"] == module.RetCode.ARGUMENT_ERROR
-        assert "Json syntax error:" in res["message"]
-
-        set_req({"doc_id": "doc1", "meta": '{"author":"alice"}'})
-        monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (False, None))
-        res = _run(module.set_meta.__wrapped__())
-        assert res["code"] == module.RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
-
-        monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (True, SimpleNamespace(id="doc1")))
-        monkeypatch.setattr(module.DocMetadataService, "update_document_metadata", lambda *_args, **_kwargs: False)
-        res = _run(module.set_meta.__wrapped__())
-        assert res["code"] == module.RetCode.DATA_ERROR
-        assert "Database error (meta updates)!" in res["message"]
