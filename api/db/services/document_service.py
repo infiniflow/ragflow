@@ -66,6 +66,7 @@ class DocumentService(CommonService):
             cls.model.progress_msg,
             cls.model.process_begin_at,
             cls.model.process_duration,
+            cls.model.llm_token_num,
             cls.model.suffix,
             cls.model.run,
             cls.model.status,
@@ -541,9 +542,16 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
+    def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration, llm_token_num=0):
+        update_fields = dict(
+            token_num=cls.model.token_num + token_num,
+            chunk_num=cls.model.chunk_num + chunk_num,
+            process_duration=cls.model.process_duration + duration,
+        )
+        if llm_token_num > 0:
+            update_fields["llm_token_num"] = cls.model.llm_token_num + llm_token_num
         num = (
-            cls.model.update(token_num=cls.model.token_num + token_num, chunk_num=cls.model.chunk_num + chunk_num, process_duration=cls.model.process_duration + duration)
+            cls.model.update(**update_fields)
             .where(cls.model.id == doc_id)
             .execute()
         )

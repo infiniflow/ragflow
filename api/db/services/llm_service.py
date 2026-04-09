@@ -85,6 +85,7 @@ def get_init_tenant_llm(user_id):
 class LLMBundle(LLM4Tenant):
     def __init__(self, tenant_id: str, model_config: dict, lang="Chinese", **kwargs):
         super().__init__(tenant_id, model_config, lang, **kwargs)
+        self.cumulated_tokens = 0
 
     def bind_tools(self, toolcall_session, tools):
         if not self.is_tools:
@@ -393,8 +394,11 @@ class LLMBundle(LLM4Tenant):
         if not self.verbose_tool_use:
             txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)
 
-        if used_tokens and not TenantLLMService.increase_usage_by_id(self.model_config["id"], used_tokens):
-            logging.error("LLMBundle.async_chat can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.model_config["llm_name"], used_tokens))
+        if used_tokens:
+            # Safe: single-threaded asyncio event loop, += not interrupted between awaits
+            self.cumulated_tokens += used_tokens
+            if not TenantLLMService.increase_usage_by_id(self.model_config["id"], used_tokens):
+                logging.error("LLMBundle.async_chat can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.model_config["llm_name"], used_tokens))
 
         if generation:
             generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
@@ -441,8 +445,10 @@ class LLMBundle(LLM4Tenant):
                     generation.update(output={"error": str(e)})
                     generation.end()
                 raise
-            if total_tokens and not TenantLLMService.increase_usage_by_id(self.model_config["id"], total_tokens):
-                logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.model_config["llm_name"], total_tokens))
+            if total_tokens:
+                self.cumulated_tokens += total_tokens
+                if not TenantLLMService.increase_usage_by_id(self.model_config["id"], total_tokens):
+                    logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.model_config["llm_name"], total_tokens))
             if generation:
                 generation.update(output={"output": ans}, usage_details={"total_tokens": total_tokens})
                 generation.end()
@@ -484,8 +490,10 @@ class LLMBundle(LLM4Tenant):
                     generation.update(output={"error": str(e)})
                     generation.end()
                 raise
-            if total_tokens and not TenantLLMService.increase_usage_by_id(self.model_config["id"], total_tokens):
-                logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.model_config["llm_name"], total_tokens))
+            if total_tokens:
+                self.cumulated_tokens += total_tokens
+                if not TenantLLMService.increase_usage_by_id(self.model_config["id"], total_tokens):
+                    logging.error("LLMBundle.async_chat_streamly_delta can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.model_config["llm_name"], total_tokens))
             if generation:
                 generation.update(output={"output": ans}, usage_details={"total_tokens": total_tokens})
                 generation.end()
