@@ -625,15 +625,12 @@ class Parser(ProcessBase):
             if abstract_idx is not None:
                 bboxes[abstract_idx]["abstract"] = True
 
-        print(conf.get("vlm"))
-
-        if conf.get("vlm"):
-            enhance_media_sections_with_vision(
-                bboxes,
-                self._canvas._tenant_id,
-                conf["vlm"],
-                callback=self.callback,
-            )
+        enhance_media_sections_with_vision(
+            bboxes,
+            self._canvas._tenant_id,
+            conf.get("vlm"),
+            callback=self.callback,
+        )
 
         # Emit the requested final PDF output format.
         if conf.get("output_format") == "json":
@@ -769,13 +766,12 @@ class Parser(ProcessBase):
                             "doc_type_kwd": "table",
                         }
                     )
-            if conf.get("vlm"):
-                enhance_media_sections_with_vision(
-                    sections,
-                    self._canvas._tenant_id,
-                    conf["vlm"],
-                    callback=self.callback,
-                )
+            enhance_media_sections_with_vision(
+                sections,
+                self._canvas._tenant_id,
+                conf.get("vlm"),
+                callback=self.callback,
+            )
 
             self.set_output("json", sections)
 
@@ -895,13 +891,12 @@ class Parser(ProcessBase):
                 json_result["doc_type_kwd"] = "image" if json_result.get("image") is not None else "text"
                 json_results.append(json_result)
 
-            if conf.get("vlm"):
-                enhance_media_sections_with_vision(
-                    json_results,
-                    self._canvas._tenant_id,
-                    conf["vlm"],
-                    callback=self.callback,
-                )
+            enhance_media_sections_with_vision(
+                json_results,
+                self._canvas._tenant_id,
+                conf.get("vlm"),
+                callback=self.callback,
+            )
             self.set_output("json", json_results)
         else:
             self.set_output("text", "\n".join([section_text for section_text, _ in sections]))
