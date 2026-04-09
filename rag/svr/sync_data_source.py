@@ -961,10 +961,6 @@ class Github(SyncBase):
         """
         from common.data_source.connector_runner import ConnectorRunner
 
-        print("\n\n")
-        print(self.conf)
-        print("\n\n")
-
         self.connector = GithubConnector(
             repo_owner=self.conf.get("repository_owner"),
             repositories=self.conf.get("repository_name"),
