@@ -43,6 +43,8 @@ import memory.utils.es_conn as memory_es_conn
 import memory.utils.infinity_conn as memory_infinity_conn
 import memory.utils.ob_conn as memory_ob_conn
 
+TIMEZONE = os.getenv("TZ", "Asia/Shanghai")
+
 LLM = None
 LLM_FACTORY = None
 LLM_BASE_URL = None

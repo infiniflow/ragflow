@@ -29,6 +29,7 @@ from api.db.services.document_service import DocMetadataService
 from api.utils.common import hash128
 from common.misc_utils import get_uuid
 from common.constants import TaskStatus
+from common.settings import TIMEZONE
 from common.time_utils import current_timestamp, timestamp_to_date
 
 class ConnectorService(CommonService):
@@ -179,14 +180,14 @@ class SyncLogsService(CommonService):
         else:
             database_type = os.getenv("DB_TYPE", "mysql")
             if "postgres" in database_type.lower():
-                interval_expr = SQL("make_interval(mins => t2.refresh_freq)")
+                expr = SQL(f"NOW() AT TIME ZONE '{TIMEZONE}' - make_interval(mins => t2.refresh_freq)")
             else:
-                interval_expr = SQL("INTERVAL `t2`.`refresh_freq` MINUTE")
+                expr = SQL("NOW() - INTERVAL `t2`.`refresh_freq` MINUTE")
             query = query.where(
                 Connector.input_type == InputType.POLL,
                 Connector.status == TaskStatus.SCHEDULE,
                 cls.model.status == TaskStatus.SCHEDULE,
-                cls.model.update_date < (fn.NOW() - interval_expr)
+                cls.model.update_date < expr
             )
 
         query = query.distinct().order_by(cls.model.update_time.desc())
