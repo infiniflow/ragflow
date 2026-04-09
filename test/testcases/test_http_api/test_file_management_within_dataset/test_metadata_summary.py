@@ -46,13 +46,12 @@ class TestMetadataSummary:
         invalid_kb_id = "invalid_" + kb_id
         # Call with a dataset that the user doesn't have access to
         res = metadata_summary(HttpApiAuth, invalid_kb_id)
-        # Should succeed with valid access
         assert res["code"] == 102, res
         assert res["message"] == f"You don't own the dataset {invalid_kb_id}. "
 
     @pytest.mark.p2
     def test_metadata_summary_success(self, HttpApiAuth, add_document_func):
-        """Test metadata summary success case and exception handling."""
+        """Test metadata summary success case"""
         kb_id, doc_id = add_document_func
         # Test successful case
         res = metadata_summary(HttpApiAuth, kb_id)
