@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from types import SimpleNamespace
 
 import pytest
-from common import list_documents
+from test_common import list_documents
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 from utils import is_sorted

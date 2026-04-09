@@ -1,4 +1,4 @@
-import { FormFieldType } from '@/components/dynamic-form';
+import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
@@ -45,6 +45,29 @@ export enum DataSourceKey {
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
 }
+
+type DataSourceFeatureVisibility = {
+  syncDeletedFiles?: boolean;
+};
+
+type DataSourceFormValues = Record<string, any>;
+
+export const DataSourceFeatureVisibilityMap = {
+  [DataSourceKey.GITHUB]: {
+    syncDeletedFiles: true,
+  },
+};
+
+const isDataSourceFeatureVisible = (
+  source?: DataSourceKey,
+  feature?: keyof DataSourceFeatureVisibility,
+) => {
+  if (!source || !feature) {
+    return false;
+  }
+
+  return Boolean(DataSourceFeatureVisibilityMap[source]?.[feature]);
+};
 
 export const generateDataSourceInfo = (t: TFunction) => {
   return {
@@ -200,6 +223,30 @@ export const useDataSourceInfo = () => {
   return { dataSourceInfo };
 };
 
+const isPlainObject = (value: unknown): value is DataSourceFormValues =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export const mergeDataSourceFormValues = (
+  ...values: Array<DataSourceFormValues | undefined>
+): DataSourceFormValues =>
+  values.reduce<DataSourceFormValues>((result, current) => {
+    if (!current) {
+      return result;
+    }
+
+    const next = { ...result };
+
+    Object.entries(current).forEach(([key, value]) => {
+      if (isPlainObject(value) && isPlainObject(next[key])) {
+        next[key] = mergeDataSourceFormValues(next[key], value);
+      } else {
+        next[key] = value;
+      }
+    });
+
+    return next;
+  }, {});
+
 export const DataSourceFormBaseFields = [
   {
     id: 'Id',
@@ -227,6 +274,26 @@ export const DataSourceFormBaseFields = [
     })),
   },
 ];
+
+export const getCommonExtraFields = (
+  source?: DataSourceKey,
+): FormFieldConfig[] => [
+  {
+    label: t('setting.syncDeletedFiles'),
+    name: 'config.sync_deleted_files',
+    type: FormFieldType.Checkbox,
+    required: false,
+    defaultValue: false,
+    shouldRender: () => isDataSourceFeatureVisible(source, 'syncDeletedFiles'),
+  },
+];
+
+export const getCommonExtraDefaultValues = () => ({
+  config: {
+    sync_deleted_files: false,
+  },
+});
+
 export const DataSourceFormFields = {
   [DataSourceKey.RSS]: [
     {
