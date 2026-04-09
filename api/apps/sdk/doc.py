@@ -1737,22 +1737,31 @@ async def retrieval_test(tenant_id):
     if not isinstance(kb_ids, list):
         return get_error_data_result("`dataset_ids` should be a list")
     if not kb_ids:
+        logging.info("Retrieval request omitted dataset_ids; resolving accessible datasets for user=%s", tenant_id)
         joined_tenant_ids = [tenant_id]
         joined_tenant_ids.extend(t["tenant_id"] for t in TenantService.get_joined_tenants_by_user_id(tenant_id))
-        kbs_data, _ = KnowledgebaseService.get_list(
-            list(dict.fromkeys(joined_tenant_ids)),
-            tenant_id,
-            1,
-            RETRIEVAL_DATASET_LIST_PAGE_SIZE,
-            "create_time",
-            True,
-            None,
-            None,
-            "",
-            None,
-        )
-        kb_ids = [kb["id"] for kb in kbs_data]
+        kb_ids = []
+        page_number = 1
+        deduped_joined_tenant_ids = list(dict.fromkeys(joined_tenant_ids))
+        while True:
+            kbs_data, total = KnowledgebaseService.get_list(
+                deduped_joined_tenant_ids,
+                tenant_id,
+                page_number,
+                RETRIEVAL_DATASET_LIST_PAGE_SIZE,
+                "create_time",
+                True,
+                None,
+                None,
+                "",
+                None,
+            )
+            kb_ids.extend(kb["id"] for kb in kbs_data)
+            if not kbs_data or len(kb_ids) >= total:
+                break
+            page_number += 1
         if not kb_ids:
+            logging.info("Retrieval request found no accessible datasets for user=%s", tenant_id)
             return get_error_data_result("No accessible datasets found.")
     for id in kb_ids:
         if not KnowledgebaseService.accessible(kb_id=id, user_id=tenant_id):
