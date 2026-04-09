@@ -223,4 +223,12 @@ RUN chmod +x ./entrypoint*.sh
 COPY --from=builder /ragflow/web/dist /ragflow/web/dist
 
 COPY --from=builder /ragflow/VERSION /ragflow/VERSION
+
+# OpenShift-compatible permissions: arbitrary UID with GID 0 must read/write mounted venv and read app files
+RUN mkdir -p ${RAGFLOW_DATA_DIR} \
+    && chown -R 1000:0 /ragflow ${RAGFLOW_DATA_DIR} \
+    && chmod -R g=u /ragflow ${RAGFLOW_DATA_DIR}
+
+USER 1000
+
 ENTRYPOINT ["./entrypoint.sh"]
