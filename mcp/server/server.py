@@ -58,6 +58,7 @@ JSON_RESPONSE = True
 class RAGFlowConnector:
     _MAX_DATASET_CACHE = 32
     _CACHE_TTL = 300
+    _DATASET_PAGE_SIZE = 1000
 
     _dataset_metadata_cache: OrderedDict[str, tuple[dict, float | int]] = OrderedDict()  # "dataset_id" -> (metadata, expiry_ts)
     _document_metadata_cache: OrderedDict[str, tuple[list[tuple[str, dict]], float | int]] = OrderedDict()  # "dataset_id" -> ([(document_id, doc_metadata)], expiry_ts)
@@ -157,6 +158,34 @@ class RAGFlowConnector:
             return "\n".join(result_list)
         return ""
 
+    async def resolve_dataset_ids(self, *, api_key: str):
+        dataset_ids = []
+        page = 1
+
+        while True:
+            params = {
+                "page": page,
+                "page_size": self._DATASET_PAGE_SIZE,
+                "orderby": "create_time",
+                "desc": True,
+            }
+            res = await self._get("/datasets", params, api_key=api_key)
+            if not res or res.status_code != 200:
+                raise Exception([types.TextContent(type="text", text="Cannot process this operation.")])
+
+            res_json = res.json()
+            if res_json.get("code") != 0:
+                raise Exception([types.TextContent(type="text", text=res_json.get("message", "Cannot process this operation."))])
+
+            datasets = res_json.get("data", [])
+            dataset_ids.extend(data["id"] for data in datasets if data.get("id"))
+            total = res_json.get("total", len(dataset_ids))
+            if not datasets or len(dataset_ids) >= total:
+                break
+            page += 1
+
+        return list(dict.fromkeys(dataset_ids))
+
     async def retrieval(
         self,
         *,
@@ -176,21 +205,12 @@ class RAGFlowConnector:
         if document_ids is None:
             document_ids = []
 
-        # If no dataset_ids provided or empty list, get all available dataset IDs
         if not dataset_ids:
-            dataset_list_str = await self.list_datasets(api_key=api_key)
-            dataset_ids = []
-
-            # Parse the dataset list to extract IDs
-            if dataset_list_str:
-                for line in dataset_list_str.strip().split("\n"):
-                    if line.strip():
-                        try:
-                            dataset_info = json.loads(line.strip())
-                            dataset_ids.append(dataset_info["id"])
-                        except (json.JSONDecodeError, KeyError):
-                            # Skip malformed lines
-                            continue
+            logging.info("MCP retrieval omitted dataset_ids; resolving accessible datasets")
+            dataset_ids = await self.resolve_dataset_ids(api_key=api_key)
+            if not dataset_ids:
+                logging.info("MCP retrieval found no accessible datasets for current user")
+                raise Exception([types.TextContent(type="text", text="No accessible datasets found.")])
 
         data_json = {
             "page": page,
@@ -521,22 +541,6 @@ async def call_tool(
         top_k = arguments.get("top_k", 1024)
         rerank_id = arguments.get("rerank_id")
         force_refresh = arguments.get("force_refresh", False)
-
-        # If no dataset_ids provided or empty list, get all available dataset IDs
-        if not dataset_ids:
-            dataset_list_str = await connector.list_datasets(api_key=api_key)
-            dataset_ids = []
-
-            # Parse the dataset list to extract IDs
-            if dataset_list_str:
-                for line in dataset_list_str.strip().split("\n"):
-                    if line.strip():
-                        try:
-                            dataset_info = json.loads(line.strip())
-                            dataset_ids.append(dataset_info["id"])
-                        except (json.JSONDecodeError, KeyError):
-                            # Skip malformed lines
-                            continue
 
         return await connector.retrieval(
             api_key=api_key,

@@ -33,7 +33,6 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
 from api.db.services.tenant_llm_service import TenantLLMService
-from api.db.services.user_service import TenantService
 from api.utils import validation_utils
 from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_request_json, get_result, server_error_response, token_required
 from api.utils.image_utils import store_chunk_image
@@ -48,7 +47,6 @@ from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import cross_languages, keyword_extraction
 
 MAXIMUM_OF_UPLOADING_FILES = 256
-RETRIEVAL_DATASET_LIST_PAGE_SIZE = 100000
 
 
 class Chunk(BaseModel):
@@ -1454,8 +1452,8 @@ async def retrieval_test(tenant_id):
               type: array
               items:
                 type: string
-              required: false
-              description: Optional list of dataset IDs to search in. If omitted or empty, all accessible datasets are searched.
+              required: true
+              description: List of dataset IDs to search in.
             question:
               type: string
               required: true
@@ -1516,41 +1514,11 @@ async def retrieval_test(tenant_id):
                     description: Similarity score.
     """
     req = await get_request_json()
-    if "question" not in req:
-        return get_error_data_result("`question` is required.")
-
-    kb_ids = req.get("dataset_ids")
-    if kb_ids is None:
-        kb_ids = []
+    if not req.get("dataset_ids"):
+        return get_error_data_result("`dataset_ids` is required.")
+    kb_ids = req["dataset_ids"]
     if not isinstance(kb_ids, list):
         return get_error_data_result("`dataset_ids` should be a list")
-    if not kb_ids:
-        logging.info("Retrieval request omitted dataset_ids; resolving accessible datasets for user=%s", tenant_id)
-        joined_tenant_ids = [tenant_id]
-        joined_tenant_ids.extend(t["tenant_id"] for t in TenantService.get_joined_tenants_by_user_id(tenant_id))
-        kb_ids = []
-        page_number = 1
-        deduped_joined_tenant_ids = list(dict.fromkeys(joined_tenant_ids))
-        while True:
-            kbs_data, total = KnowledgebaseService.get_list(
-                deduped_joined_tenant_ids,
-                tenant_id,
-                page_number,
-                RETRIEVAL_DATASET_LIST_PAGE_SIZE,
-                "create_time",
-                True,
-                None,
-                None,
-                "",
-                None,
-            )
-            kb_ids.extend(kb["id"] for kb in kbs_data)
-            if not kbs_data or len(kb_ids) >= total:
-                break
-            page_number += 1
-        if not kb_ids:
-            logging.info("Retrieval request found no accessible datasets for user=%s", tenant_id)
-            return get_error_data_result("No accessible datasets found.")
     for id in kb_ids:
         if not KnowledgebaseService.accessible(kb_id=id, user_id=tenant_id):
             return get_error_data_result(f"You don't own the dataset {id}.")
@@ -1561,6 +1529,8 @@ async def retrieval_test(tenant_id):
             message='Datasets use different embedding models."',
             code=RetCode.DATA_ERROR,
         )
+    if "question" not in req:
+        return get_error_data_result("`question` is required.")
     page = int(req.get("page", 1))
     size = int(req.get("page_size", 30))
     question = req["question"]
