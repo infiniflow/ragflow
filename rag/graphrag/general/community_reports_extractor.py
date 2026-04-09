@@ -19,7 +19,6 @@ import pandas as pd
 
 from api.db.services.task_service import has_canceled
 from common.exceptions import TaskCanceledException
-from common.connection_utils import timeout
 from rag.graphrag.general import leiden
 from rag.graphrag.general.community_report_prompt import COMMUNITY_REPORT_PROMPT
 from rag.graphrag.general.extractor import Extractor
@@ -64,7 +63,6 @@ class CommunityReportsExtractor(Extractor):
         res_str = []
         res_dict = []
         over, token_count = 0, 0
-        @timeout(120)
         async def extract_community_report(community):
             nonlocal res_str, res_dict, over, token_count
             if task_id:
