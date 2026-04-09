@@ -90,15 +90,9 @@ class RAGFlowPdfParser:
         self.tbl_det = TableStructureRecognizer()
 
         self.updown_cnt_mdl = xgb.Booster()
-        # xgboost model is very small. It's nonsense to use it on GPU.
-        # try:
-        #     pip_install_torch()
-        #     import torch.cuda
-
-        #     if torch.cuda.is_available():
-        #         self.updown_cnt_mdl.set_param({"device": "cuda"})
-        # except Exception:
-        #     logging.info("No torch found.")
+        # xgboost model is very small; using CPU explicitly
+        self.updown_cnt_mdl.set_param({"device": "cpu"})
+        logging.info("updown_cnt_mdl initialized on CPU")
         try:
             model_dir = os.path.join(get_project_base_directory(), "rag/res/deepdoc")
             self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
