@@ -368,3 +368,60 @@ func (h *FileHandler) DeleteFiles(c *gin.Context) {
 		"message": common.CodeSuccess.Message(),
 	})
 }
+
+// MoveFileRequest represents the request body for move files operation
+type MoveFileRequest struct {
+	SrcFileIDs []string `json:"src_file_ids" binding:"required,min=1"`
+	DestFileID string   `json:"dest_file_id"`
+	NewName    string   `json:"new_name" binding:"max=255"`
+}
+
+// MoveFiles moves and/or renames files
+// @Summary Move Files
+// @Description Move and/or rename files. Follows Linux mv semantics:
+//   - dest_file_id only: move files to a new folder (names unchanged)
+//   - new_name only: rename a single file in place (no storage operation)
+//   - both: move and rename simultaneously
+// @Tags file
+// @Accept json
+// @Produce json
+// @Param body body MoveFileRequest true "Move file request"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/files/move [post]
+func (h *FileHandler) MoveFiles(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req MoveFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeBadRequest, err.Error())
+		return
+	}
+
+	// Validate: at least one of dest_file_id or new_name must be provided
+	if req.DestFileID == "" && req.NewName == "" {
+		jsonError(c, common.CodeParamError, "At least one of dest_file_id or new_name must be provided")
+		return
+	}
+
+	// Validate: new_name can only be used with a single file
+	if req.NewName != "" && len(req.SrcFileIDs) > 1 {
+		jsonError(c, common.CodeParamError, "new_name can only be used with a single file")
+		return
+	}
+
+	success, message := h.fileService.MoveFiles(user.ID, req.SrcFileIDs, req.DestFileID, req.NewName)
+	if !success {
+		jsonError(c, common.CodeBadRequest, message)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    true,
+		"message": common.CodeSuccess.Message(),
+	})
+}

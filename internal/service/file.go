@@ -22,6 +22,7 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
@@ -675,6 +676,204 @@ func (s *FileService) deleteFolderRecursive(ctx context.Context, folder *entity.
 	// Delete the folder itself
 	if err := s.fileDAO.Delete(folder.ID); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// MoveFileReq represents the request body for move files operation
+type MoveFileReq struct {
+	SrcFileIDs []string `json:"src_file_ids" binding:"required,min=1"`
+	DestFileID string   `json:"dest_file_id"`
+	NewName    string   `json:"new_name"`
+}
+
+// MoveFiles moves and/or renames files
+// Follows Linux mv semantics:
+// - new_name only: rename in place (no storage operation)
+// - dest_file_id only: move to new folder (keep names)
+// - both: move and rename simultaneously
+func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID string, newName string) (bool, string) {
+	// 1. Get all source files
+	files, err := s.fileDAO.GetByIDs(srcFileIDs)
+	if err != nil || len(files) == 0 {
+		return false, "Source files not found!"
+	}
+
+	// Create a map for quick lookup
+	filesMap := make(map[string]*entity.File)
+	for _, f := range files {
+		filesMap[f.ID] = f
+	}
+
+	// 2. Validate all source files
+	for _, fileID := range srcFileIDs {
+		file, ok := filesMap[fileID]
+		if !ok {
+			return false, "File or folder not found!"
+		}
+		if file.TenantID == "" {
+			return false, "Tenant not found!"
+		}
+		// 3. Permission check
+		if !s.checkFileTeamPermission(file, uid) {
+			return false, "No authorization."
+		}
+	}
+
+	// 4. Validate destination folder if provided
+	var destFolder *entity.File
+	if destFileID != "" {
+		destFolder, err = s.fileDAO.GetByID(destFileID)
+		if err != nil || destFolder == nil {
+			return false, "Parent folder not found!"
+		}
+	}
+
+	// 5. Validate new_name if provided
+	if newName != "" {
+		if len(srcFileIDs) > 1 {
+			return false, "new_name can only be used with a single file"
+		}
+
+		file := filesMap[srcFileIDs[0]]
+		// Check extension for non-folder files
+		if file.Type != FileTypeFolder {
+			oldExt := common.GetFileExtension(file.Name)
+			newExt := common.GetFileExtension(newName)
+			if oldExt != newExt {
+				return false, "The extension of file can't be changed"
+			}
+		}
+
+		// Check for duplicate names in target folder
+		targetParentID := file.ParentID
+		if destFolder != nil {
+			targetParentID = destFolder.ID
+		}
+		existingFiles := s.fileDAO.Query(newName, targetParentID)
+		for _, f := range existingFiles {
+			if f.Name == newName {
+				return false, "Duplicated file name in the same folder."
+			}
+		}
+	}
+
+	// 6. Perform the move operation
+	if destFolder != nil {
+		// Move to destination folder
+		for _, file := range files {
+			if err := s.moveEntryRecursive(file, destFolder, newName); err != nil {
+				return false, err.Error()
+			}
+		}
+	} else {
+		// Pure rename: no storage operation needed
+		if len(srcFileIDs) == 0 {
+			return false, "Source files not found!"
+		}
+		file := filesMap[srcFileIDs[0]]
+		if !s.fileDAO.UpdateByID(file.ID, map[string]interface{}{"name": newName}) {
+			return false, "Database error (File rename)!"
+		}
+
+		// Update associated document name if exists
+		informs, err := s.file2DocumentDAO.GetByFileID(file.ID)
+		if err == nil && len(informs) > 0 && informs[0].DocumentID != nil {
+			docID := *informs[0].DocumentID
+			documentDAO := dao.NewDocumentDAO()
+			if !documentDAO.UpdateByID(docID, map[string]interface{}{"name": newName}) {
+				return false, "Database error (Document rename)!"
+			}
+		}
+	}
+
+	return true, ""
+}
+
+// moveEntryRecursive recursively moves a file or folder entry
+func (s *FileService) moveEntryRecursive(sourceFile *entity.File, destFolder *entity.File, overrideName string) error {
+	effectiveName := overrideName
+	if effectiveName == "" {
+		effectiveName = sourceFile.Name
+	}
+
+	if sourceFile.Type == FileTypeFolder {
+		// Handle folder move
+		existingFolders := s.fileDAO.Query(effectiveName, destFolder.ID)
+		var newFolder *entity.File
+		if len(existingFolders) > 0 {
+			newFolder = existingFolders[0]
+		} else {
+			// Create new folder
+			newFolder, _ = s.fileDAO.CreateFolder(destFolder.ID, sourceFile.TenantID, effectiveName, FileTypeFolder)
+		}
+
+		// Recursively move sub-files
+		subFiles, err := s.fileDAO.ListAllFilesByParentID(sourceFile.ID)
+		if err != nil {
+			return err
+		}
+		for _, subFile := range subFiles {
+			if err := s.moveEntryRecursive(subFile, newFolder, ""); err != nil {
+				return err
+			}
+		}
+
+		// Delete the source folder
+		return s.fileDAO.Delete(sourceFile.ID)
+	}
+
+	// Handle non-folder file move
+	needStorageMove := destFolder.ID != sourceFile.ParentID
+	updates := map[string]interface{}{}
+
+	if needStorageMove {
+		// Get storage
+		storageImpl := storage.GetStorageFactory().GetStorage()
+		if storageImpl == nil {
+			return fmt.Errorf("storage not initialized")
+		}
+
+		// Calculate new location
+		newLocation := effectiveName
+		for storageImpl.ObjExist(destFolder.ID, newLocation) {
+			newLocation += "_"
+		}
+
+		// Perform storage move (copy + delete)
+		if sourceFile.Location == nil || *sourceFile.Location == "" {
+			return fmt.Errorf("file location is empty")
+		}
+
+		if !storageImpl.Move(sourceFile.ParentID, *sourceFile.Location, destFolder.ID, newLocation) {
+			return fmt.Errorf("move file failed at storage layer")
+		}
+
+		updates["parent_id"] = destFolder.ID
+		updates["location"] = newLocation
+	}
+
+	if overrideName != "" {
+		updates["name"] = overrideName
+	}
+
+	if len(updates) > 0 {
+		if !s.fileDAO.UpdateByID(sourceFile.ID, updates) {
+			return fmt.Errorf("database error (File update)")
+		}
+	}
+
+	// Update associated document name if renamed
+	if overrideName != "" {
+		informs, err := s.file2DocumentDAO.GetByFileID(sourceFile.ID)
+		if err == nil && len(informs) > 0 && informs[0].DocumentID != nil {
+			docID := *informs[0].DocumentID
+			documentDAO := dao.NewDocumentDAO()
+			if !documentDAO.UpdateByID(docID, map[string]interface{}{"name": overrideName}) {
+				return fmt.Errorf("database error (Document rename)")
+			}
+		}
 	}
 
 	return nil

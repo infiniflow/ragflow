@@ -221,6 +221,23 @@ func (dao *FileDAO) GetAllIDsByTenantID(tenantID string) ([]string, error) {
 	return ids, err
 }
 
+// GetByIDs gets files by multiple IDs
+func (dao *FileDAO) GetByIDs(ids []string) ([]*entity.File, error) {
+	var files []*entity.File
+	if len(ids) == 0 {
+		return files, nil
+	}
+	err := DB.Where("id IN ?", ids).Find(&files).Error
+	return files, err
+}
+
+// ListAllFilesByParentID lists all files by parent folder ID
+func (dao *FileDAO) ListAllFilesByParentID(parentID string) ([]*entity.File, error) {
+	var files []*entity.File
+	err := DB.Where("parent_id = ? AND id != ?", parentID, parentID).Find(&files).Error
+	return files, err
+}
+
 // GetByParentIDAndName gets file by parent folder ID and name
 func (dao *FileDAO) GetByParentIDAndName(parentID, name string) (*entity.File, error) {
 	var file entity.File
