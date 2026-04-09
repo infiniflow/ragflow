@@ -153,7 +153,7 @@ type CreateSearchResponse struct {
 // Error handling from Python:
 // - Name not string: "Search name must be string."
 // - Name empty: "Search name can't be empty."
-// - Name too long: "Search name length is X which is large than 255."
+// - Name too long: "Search name length is X which is larger than 255."
 // - Tenant not found: "Authorized identity."
 // - Save failure: generic get_data_error_result()
 //
