@@ -320,7 +320,7 @@ docker build --platform linux/amd64 \
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.12 # instala os módulos Python dependentes do RAGFlow
-   uv run download_deps.py
+   uv run python3 download_deps.py
    pre-commit install
    ```
 3. Inicie os serviços dependentes (MinIO, Elasticsearch, Redis e MySQL) usando Docker Compose:

@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/logger"
 
 	"ragflow/internal/service/nlp"
+	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 )
 
@@ -854,4 +855,237 @@ func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksR
 		Chunks: chunks,
 		Doc:    docInfo,
 	}, nil
+}
+
+// UpdateChunkRequest request for updating a chunk
+type UpdateChunkRequest struct {
+	DatasetID    string                   `json:"dataset_id"`
+	DocumentID   string                   `json:"document_id"`
+	ChunkID      string                   `json:"chunk_id"`
+	Content      *string                  `json:"content,omitempty"`
+	ImportantKwd []string                 `json:"important_keywords,omitempty"`
+	Questions    []string                 `json:"questions,omitempty"`
+	Available    *bool                    `json:"available,omitempty"`
+	Positions    []interface{}             `json:"positions,omitempty"`
+	TagKwd       []string                 `json:"tag_kwd,omitempty"`
+	TagFeas      interface{}              `json:"tag_feas,omitempty"`
+}
+
+// UpdateChunk updates a chunk fields
+func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error {
+	if s.docEngine == nil {
+		return fmt.Errorf("doc engine not initialized")
+	}
+
+	if req.ChunkID == "" {
+		return fmt.Errorf("chunk_id is required")
+	}
+
+	ctx := context.Background()
+
+	// Get user's tenants
+	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	if err != nil {
+		return fmt.Errorf("failed to get user tenants: %w", err)
+	}
+	if len(tenants) == 0 {
+		return fmt.Errorf("user has no accessible tenants")
+	}
+
+	// Find the tenant that owns this dataset
+	var targetTenantID string
+	for _, tenant := range tenants {
+		kb, err := s.kbDAO.GetByIDAndTenantID(req.DatasetID, tenant.TenantID)
+		if err == nil && kb != nil {
+			targetTenantID = tenant.TenantID
+			break
+		}
+	}
+	if targetTenantID == "" {
+		return fmt.Errorf("user does not have access to this dataset")
+	}
+
+	// Verify document belongs to dataset
+	docDAO := dao.NewDocumentDAO()
+	doc, err := docDAO.GetByID(req.DocumentID)
+	if err != nil || doc == nil {
+		return fmt.Errorf("document not found")
+	}
+	if doc.KbID != req.DatasetID {
+		return fmt.Errorf("document does not belong to this dataset")
+	}
+
+	// Fetch existing chunk first (like Python does)
+	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
+	existingChunk, err := s.docEngine.GetChunk(ctx, indexName, req.ChunkID, []string{req.DatasetID})
+	if err != nil {
+		return fmt.Errorf("failed to get existing chunk: %w", err)
+	}
+
+	existing, ok := existingChunk.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid chunk format")
+	}
+
+	// Build update dict like Python does (doc.py:1476-1523)
+	d := make(map[string]interface{})
+
+	// Content - use new value or existing
+	if req.Content != nil {
+		d["content_with_weight"] = *req.Content
+	} else {
+		if v, ok := existing["content_with_weight"].(string); ok {
+			d["content_with_weight"] = v
+		} else if v, ok := existing["content"].(string); ok {
+			d["content_with_weight"] = v
+		} else {
+			d["content_with_weight"] = ""
+		}
+	}
+
+	// Tokenize content
+	contentStr := d["content_with_weight"].(string)
+	d["content_ltks"], _ = tokenizer.Tokenize(contentStr)
+	d["content_sm_ltks"], _ = tokenizer.FineGrainedTokenize(d["content_ltks"].(string))
+
+	// Important keywords - convert []string to []interface{} for transformChunkFields
+	if req.ImportantKwd != nil {
+		impKwd := make([]interface{}, len(req.ImportantKwd))
+		for i, v := range req.ImportantKwd {
+			impKwd[i] = v
+		}
+		d["important_kwd"] = impKwd
+	}
+
+	// Questions
+	if req.Questions != nil {
+		// Filter out empty questions and trim
+		filteredQuestions := []string{}
+		for _, q := range req.Questions {
+			q = strings.TrimSpace(q)
+			if q != "" {
+				filteredQuestions = append(filteredQuestions, q)
+			}
+		}
+		d["question_kwd"] = filteredQuestions
+	}
+
+	// Available
+	if req.Available != nil {
+		if *req.Available {
+			d["available_int"] = 1
+		} else {
+			d["available_int"] = 0
+		}
+	}
+
+	// Positions
+	if req.Positions != nil {
+		d["position_int"] = req.Positions
+	}
+
+	// Tag keywords
+	if req.TagKwd != nil {
+		d["tag_kwd"] = req.TagKwd
+	}
+
+	// Tag features
+	if req.TagFeas != nil {
+		d["tag_feas"] = req.TagFeas
+	}
+
+	// Always include id
+	d["id"] = req.ChunkID
+
+	// Call update
+	condition := map[string]interface{}{
+		"id": req.ChunkID,
+	}
+
+	err = s.docEngine.UpdateDataset(ctx, condition, d, indexName, req.DatasetID)
+	if err != nil {
+		return fmt.Errorf("failed to update chunk: %w", err)
+	}
+
+	return nil
+}
+
+// RemoveChunksRequest request for removing chunks
+type RemoveChunksRequest struct {
+	DocID      string   `json:"doc_id"`
+	ChunkIDs   []string `json:"chunk_ids,omitempty"`
+	DeleteAll  bool     `json:"delete_all,omitempty"`
+}
+
+// RemoveChunks removes chunks from the dataset table.
+// If ChunkIDs is empty and DeleteAll is true, removes all chunks for the document.
+// Otherwise removes only the specified chunks.
+func (s *ChunkService) RemoveChunks(req *RemoveChunksRequest, userID string) (int64, error) {
+	if s.docEngine == nil {
+		return 0, fmt.Errorf("doc engine not initialized")
+	}
+
+	if req.DocID == "" {
+		return 0, fmt.Errorf("doc_id is required")
+	}
+
+	ctx := context.Background()
+
+	// Get user's tenants
+	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get user tenants: %w", err)
+	}
+	if len(tenants) == 0 {
+		return 0, fmt.Errorf("user has no accessible tenants")
+	}
+
+	// Verify document exists and belongs to a dataset (do this first to get doc.KbID)
+	docDAO := dao.NewDocumentDAO()
+	doc, err := docDAO.GetByID(req.DocID)
+	if err != nil || doc == nil {
+		return 0, fmt.Errorf("document not found")
+	}
+
+	// Find the tenant that owns this document
+	var targetTenantID string
+	for _, tenant := range tenants {
+		kb, err := s.kbDAO.GetByIDAndTenantID(doc.KbID, tenant.TenantID)
+		if err == nil && kb != nil {
+			targetTenantID = tenant.TenantID
+			break
+		}
+	}
+	if targetTenantID == "" {
+		return 0, fmt.Errorf("user does not have access to this document")
+	}
+
+	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
+
+	// Build condition
+	condition := make(map[string]interface{})
+	switch {
+	case len(req.ChunkIDs) > 0 && req.DeleteAll:
+		return 0, fmt.Errorf("chunk_ids and delete_all are mutually exclusive")
+	case len(req.ChunkIDs) > 0:
+		// Delete specific chunks - convert []string to []interface{} for buildFilterFromCondition
+		chunkIDsIf := make([]interface{}, len(req.ChunkIDs))
+		for i, id := range req.ChunkIDs {
+			chunkIDsIf[i] = id
+		}
+		condition["id"] = chunkIDsIf
+		condition["doc_id"] = req.DocID
+	case req.DeleteAll:
+		// Delete all chunks for this document
+		condition["doc_id"] = req.DocID
+	default:
+		return 0, fmt.Errorf("either chunk_ids or delete_all must be provided")
+	}
+
+	deletedCount, err := s.docEngine.Delete(ctx, condition, indexName, doc.KbID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete chunks: %w", err)
+	}
+
+	return deletedCount, nil
 }

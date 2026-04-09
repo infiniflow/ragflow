@@ -59,7 +59,8 @@ class RetrievalParam(ToolParamBase):
         self.keywords_similarity_weight = 0.5
         self.top_n = 8
         self.top_k = 1024
-        self.kb_ids = []
+        self.dataset_ids = []
+        self.kb_ids = []  # Deprecated: keep for backward compatibility
         self.memory_ids = []
         self.kb_vars = []
         self.rerank_id = ""
@@ -85,9 +86,14 @@ class RetrievalParam(ToolParamBase):
 class Retrieval(ToolBase, ABC):
     component_name = "Retrieval"
 
+    @property
+    def _dataset_ids(self):
+        """Get dataset IDs with backward compatibility for kb_ids."""
+        return self._param.dataset_ids or getattr(self._param, "kb_ids", None) or []
+
     async def _retrieve_kb(self, query_text: str):
         kb_ids: list[str] = []
-        for id in self._param.kb_ids:
+        for id in self._dataset_ids:
             if id.find("@") < 0:
                 kb_ids.append(id)
                 continue
@@ -324,7 +330,7 @@ class Retrieval(ToolBase, ABC):
             return await self._retrieve_kb(kwargs["query"])
         elif hasattr(self._param, "retrieval_from") and self._param.retrieval_from == "memory":
             return await self._retrieve_memory(kwargs["query"])
-        elif self._param.kb_ids:
+        elif self._dataset_ids:
             return await self._retrieve_kb(kwargs["query"])
         elif hasattr(self._param, "memory_ids") and self._param.memory_ids:
             return await self._retrieve_memory(kwargs["query"])

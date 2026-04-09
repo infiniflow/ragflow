@@ -444,6 +444,34 @@ func (h *KnowledgebaseHandler) RemoveTags(c *gin.Context) {
 		return
 	}
 
+	// Get KB to find tenant_id and build index name
+	kb, err := h.kbService.GetByID(kbID)
+	if err != nil {
+		jsonError(c, common.CodeDataError, "knowledge base not found")
+		return
+	}
+
+	// Build index name prefix: ragflow_<tenant_id>
+	indexName := "ragflow_" + kb.TenantID
+
+	// For each tag, call UpdateChunk to remove it from documents
+	for _, tag := range req.Tags {
+		condition := map[string]interface{}{
+			"tag_kwd": tag,
+			"kb_id":   kbID,
+		}
+		newValue := map[string]interface{}{
+			"remove": map[string]interface{}{
+				"tag_kwd": tag,
+			},
+		}
+		err := h.kbService.RemoveTag(condition, newValue, indexName, kbID)
+		if err != nil {
+			jsonError(c, common.CodeServerError, "Failed to remove tag: "+err.Error())
+			return
+		}
+	}
+
 	jsonResponse(c, common.CodeSuccess, true, "success")
 }
 
@@ -626,24 +654,24 @@ func (h *KnowledgebaseHandler) GetBasicInfo(c *gin.Context) {
 	jsonResponse(c, common.CodeSuccess, map[string]interface{}{}, "success")
 }
 
-// CreateIndex handles the create index request for a knowledge base
-// @Summary Create Index
-// @Description Create the Infinity index/table for a knowledge base
+// CreateDatasetInDocEngine handles the create dataset request for a knowledge base
+// @Summary Create Dataset in Doc Engine
+// @Description Create the Infinity table for a knowledge base
 // @Tags knowledgebase
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param request body service.CreateIndexRequest true "create index request"
+// @Param request body service.CreateDatasetTableRequest true "create dataset request"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/kb/index [post]
-func (h *KnowledgebaseHandler) CreateIndex(c *gin.Context) {
+// @Router /v1/kb/doc_engine_table [post]
+func (h *KnowledgebaseHandler) CreateDatasetInDocEngine(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	var req service.CreateIndexRequest
+	var req service.CreateDatasetTableRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		jsonError(c, common.CodeDataError, err.Error())
 		return
@@ -655,7 +683,7 @@ func (h *KnowledgebaseHandler) CreateIndex(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.kbService.CreateIndex(&req)
+	result, code, err := h.kbService.CreateDatasetInDocEngine(&req)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return
@@ -664,29 +692,29 @@ func (h *KnowledgebaseHandler) CreateIndex(c *gin.Context) {
 	jsonResponse(c, common.CodeSuccess, result, "success")
 }
 
-// DeleteIndexRequest represents the request for deleting an index
-type DeleteIndexRequest struct {
+// DeleteDatasetInDocEngineRequest represents the request for deleting a dataset table
+type DeleteDatasetInDocEngineRequest struct {
 	KBID string `json:"kb_id" binding:"required"`
 }
 
-// DeleteIndex handles the delete index request for a knowledge base
-// @Summary Delete Index
-// @Description Delete the Infinity index/table for a knowledge base
+// DeleteDatasetInDocEngine handles the delete dataset request for a knowledge base
+// @Summary Delete Dataset in Doc Engine
+// @Description Delete the Infinity table for a knowledge base
 // @Tags knowledgebase
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param request body DeleteIndexRequest true "delete index request"
+// @Param request body DeleteDatasetInDocEngineRequest true "delete dataset request"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/kb/index [delete]
-func (h *KnowledgebaseHandler) DeleteIndex(c *gin.Context) {
+// @Router /v1/kb/doc_engine_table [delete]
+func (h *KnowledgebaseHandler) DeleteDatasetInDocEngine(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	var req DeleteIndexRequest
+	var req DeleteDatasetInDocEngineRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		jsonError(c, common.CodeDataError, err.Error())
 		return
@@ -698,7 +726,7 @@ func (h *KnowledgebaseHandler) DeleteIndex(c *gin.Context) {
 		return
 	}
 
-	code, err := h.kbService.DeleteIndex(req.KBID)
+	code, err := h.kbService.DeleteDatasetInDocEngine(req.KBID)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return

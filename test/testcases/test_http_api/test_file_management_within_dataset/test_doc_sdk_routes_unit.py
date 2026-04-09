@@ -22,6 +22,8 @@ from types import ModuleType, SimpleNamespace
 import numpy as np
 import pytest
 
+from api.db import FileType
+
 
 class _DummyManager:
     def route(self, *_args, **_kwargs):
@@ -69,7 +71,7 @@ class _DummyDoc:
         progress=0,
         process_duration=0,
         parser_id="naive",
-        doc_type=1,
+        doc_type=FileType.OTHER,
         status=True,
         run=0,
     ):
@@ -363,122 +365,6 @@ class TestDocRoutesUnit:
         res = _run(module.upload.__wrapped__("ds-1", "tenant-1"))
         assert res["code"] == module.RetCode.SERVER_ERROR
         assert res["message"] == "upload failed"
-
-    def test_update_doc_guards_and_error_paths(self, monkeypatch):
-        module = _load_doc_module(monkeypatch)
-        doc = _DummyDoc()
-        monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [])
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({}))
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert res["message"] == "You don't own the dataset."
-
-        monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [1])
-        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (False, None))
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert res["message"] == "Can't find this dataset!"
-
-        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, SimpleNamespace(tenant_id="tenant-1")))
-        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert "doesn't own the document" in res["message"]
-
-        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [doc])
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"chunk_count": 100}))
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert "chunk_count" in res["message"]
-
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"token_count": 100}))
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert "token_count" in res["message"]
-
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"progress": 100}))
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert "progress" in res["message"]
-
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"meta_fields": []}))
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert res["message"] == "meta_fields must be a dictionary"
-
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"meta_fields": {"k": "v"}}))
-        monkeypatch.setattr(module.DocMetadataService, "update_document_metadata", lambda *_args, **_kwargs: False)
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert res["message"] == "Failed to update metadata"
-
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"name": "a" * (module.FILE_NAME_LEN_LIMIT + 1)}))
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert res["code"] == module.RetCode.ARGUMENT_ERROR
-        assert "bytes or less" in res["message"]
-
-        monkeypatch.setattr(module.DocumentService, "update_by_id", lambda *_args, **_kwargs: False)
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"name": "new.txt"}))
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert "Document rename" in res["message"]
-
-    def test_update_doc_chunk_method_enabled_and_db_error(self, monkeypatch):
-        module = _load_doc_module(monkeypatch)
-        visual_doc = _DummyDoc(parser_id="naive", doc_type=module.FileType.VISUAL)
-        kb = SimpleNamespace(tenant_id="tenant-1")
-        monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [1])
-        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, kb))
-        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [visual_doc])
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"chunk_method": "naive"}))
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert res["message"] == "Not supported yet!"
-
-        doc = _DummyDoc(token_num=2, chunk_num=1, parser_id="naive")
-        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [doc])
-        monkeypatch.setattr(module.DocumentService, "update_by_id", lambda *_args, **_kwargs: False)
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"chunk_method": "manual"}))
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert res["message"] == "Document not found!"
-
-        monkeypatch.setattr(module.DocumentService, "update_by_id", lambda *_args, **_kwargs: True)
-        monkeypatch.setattr(module.DocumentService, "update_parser_config", lambda *_args, **_kwargs: None)
-        monkeypatch.setattr(module.DocumentService, "increment_chunk_num", lambda *_args, **_kwargs: False)
-        _patch_docstore(monkeypatch, module, delete=lambda *_args, **_kwargs: None)
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"chunk_method": "manual"}))
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert res["message"] == "Document not found!"
-
-        monkeypatch.setattr(module.DocumentService, "increment_chunk_num", lambda *_args, **_kwargs: True)
-        doc_for_enabled = _DummyDoc(status=False)
-        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [doc_for_enabled])
-        monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _id: (True, doc_for_enabled))
-        monkeypatch.setattr(module.DocumentService, "update_by_id", lambda *_args, **_kwargs: False)
-        _patch_docstore(monkeypatch, module, update=lambda *_args, **_kwargs: None, delete=lambda *_args, **_kwargs: None)
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"enabled": True}))
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert "Document update" in res["message"]
-
-        monkeypatch.setattr(module.DocumentService, "update_by_id", lambda *_args, **_kwargs: True)
-        _patch_docstore(monkeypatch, module, update=lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")), delete=lambda *_args, **_kwargs: None)
-        monkeypatch.setattr(module, "server_error_response", lambda e: {"code": 500, "message": str(e)})
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert res["code"] == 500
-        assert "boom" in res["message"]
-
-        monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _id: (False, None))
-        _patch_docstore(monkeypatch, module, update=lambda *_args, **_kwargs: None, delete=lambda *_args, **_kwargs: None)
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert res["message"] == "Dataset created failed"
-
-        # cover token reset + docStore deletion branch
-        doc_reset = _DummyDoc(token_num=3, chunk_num=2, parser_id="naive", run=0)
-        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [doc_reset])
-        monkeypatch.setattr(module.DocumentService, "update_by_id", lambda *_args, **_kwargs: True)
-        monkeypatch.setattr(module.DocumentService, "increment_chunk_num", lambda *_args, **_kwargs: True)
-        monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _id: (True, doc_reset))
-        _patch_docstore(monkeypatch, module, delete=lambda *_args, **_kwargs: None, update=lambda *_args, **_kwargs: None)
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"chunk_method": "manual"}))
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert res["code"] == 0
-
-        def _raise_operational_error(_id):
-            raise module.OperationalError("db down")
-
-        monkeypatch.setattr(module.DocumentService, "get_by_id", _raise_operational_error)
-        res = _run(module.update_doc.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert res["message"] == "Database operation failed"
 
     def test_download_and_download_doc_errors(self, monkeypatch):
         module = _load_doc_module(monkeypatch)

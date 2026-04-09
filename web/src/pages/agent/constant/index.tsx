@@ -27,6 +27,10 @@ export * from './pipeline';
 
 import { ModelVariableType } from '@/constants/knowledge';
 import { t } from 'i18next';
+import {
+  buildDefaultCodeOutput,
+  serializeCodeOutputContract,
+} from '../form/code-form/utils';
 
 // DuckDuckGo's channel options
 export enum Channel {
@@ -412,7 +416,7 @@ export const initialIterationValues = {
 export const initialIterationStartValues = {
   outputs: {
     item: {
-      type: 'unkown',
+      type: 'unknown',
     },
     index: {
       type: 'integer',
@@ -427,7 +431,7 @@ export const initialCodeValues = {
     arg1: '',
     arg2: '',
   },
-  outputs: {},
+  outputs: serializeCodeOutputContract(buildDefaultCodeOutput()),
 };
 
 export const initialWaitingDialogueValues = {};

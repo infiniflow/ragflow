@@ -15,18 +15,14 @@
 #
 import datetime
 import json
-import logging
-import pathlib
 import re
 from io import BytesIO
 
 import xxhash
-from peewee import OperationalError
 from pydantic import BaseModel, Field, validator
 from quart import request, send_file
 
 from api.constants import FILE_NAME_LEN_LIMIT
-from api.db import FileType
 from api.db.db_models import APIToken, Document, File, Task
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from api.db.services.doc_metadata_service import DocMetadataService
@@ -37,7 +33,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
 from api.db.services.tenant_llm_service import TenantLLMService
-from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_request_json, get_result, server_error_response, token_required
+from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_request_json, get_result, server_error_response, token_required
 from api.utils.image_utils import store_chunk_image
 from common import settings
 from common.constants import FileSource, LLMType, ParserType, RetCode, TaskStatus
@@ -183,186 +179,6 @@ async def upload(dataset_id, tenant_id):
         renamed_doc["run"] = "UNSTART"
         renamed_doc_list.append(renamed_doc)
     return get_result(data=renamed_doc_list)
-
-
-@manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PUT"])  # noqa: F821
-@token_required
-async def update_doc(tenant_id, dataset_id, document_id):
-    """
-    Update a document within a dataset.
-    ---
-    tags:
-      - Documents
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: path
-        name: document_id
-        type: string
-        required: true
-        description: ID of the document to update.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-      - in: body
-        name: body
-        description: Document update parameters.
-        required: true
-        schema:
-          type: object
-          properties:
-            name:
-              type: string
-              description: New name of the document.
-            parser_config:
-              type: object
-              description: Parser configuration.
-            chunk_method:
-              type: string
-              description: Chunking method.
-            enabled:
-              type: boolean
-              description: Document status.
-    responses:
-      200:
-        description: Document updated successfully.
-        schema:
-          type: object
-    """
-    req = await get_request_json()
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
-    e, kb = KnowledgebaseService.get_by_id(dataset_id)
-    if not e:
-        return get_error_data_result(message="Can't find this dataset!")
-    doc = DocumentService.query(kb_id=dataset_id, id=document_id)
-    if not doc:
-        return get_error_data_result(message="The dataset doesn't own the document.")
-    doc = doc[0]
-    if "chunk_count" in req:
-        if req["chunk_count"] != doc.chunk_num:
-            return get_error_data_result(message="Can't change `chunk_count`.")
-    if "token_count" in req:
-        if req["token_count"] != doc.token_num:
-            return get_error_data_result(message="Can't change `token_count`.")
-    if "progress" in req:
-        if req["progress"] != doc.progress:
-            return get_error_data_result(message="Can't change `progress`.")
-
-    if "meta_fields" in req:
-        if not isinstance(req["meta_fields"], dict):
-            return get_error_data_result(message="meta_fields must be a dictionary")
-        if not DocMetadataService.update_document_metadata(document_id, req["meta_fields"]):
-            return get_error_data_result(message="Failed to update metadata")
-
-    if "name" in req and req["name"] != doc.name:
-        if not isinstance(req["name"], str):
-            return server_error_response(AttributeError(f"'{type(req['name']).__name__}' object has no attribute 'encode'"))
-        if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-            return get_result(
-                message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.",
-                code=RetCode.ARGUMENT_ERROR,
-            )
-        if pathlib.Path(req["name"].lower()).suffix != pathlib.Path(doc.name.lower()).suffix:
-            return get_result(
-                message="The extension of file can't be changed",
-                code=RetCode.ARGUMENT_ERROR,
-            )
-        for d in DocumentService.query(name=req["name"], kb_id=doc.kb_id):
-            if d.name == req["name"]:
-                return get_error_data_result(message="Duplicated document name in the same dataset.")
-        if not DocumentService.update_by_id(document_id, {"name": req["name"]}):
-            return get_error_data_result(message="Database error (Document rename)!")
-
-        informs = File2DocumentService.get_by_document_id(document_id)
-        if informs:
-            e, file = FileService.get_by_id(informs[0].file_id)
-            FileService.update_by_id(file.id, {"name": req["name"]})
-
-    if "parser_config" in req:
-        DocumentService.update_parser_config(doc.id, req["parser_config"])
-    if "chunk_method" in req:
-        valid_chunk_method = {"naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one", "knowledge_graph", "email", "tag"}
-        if req.get("chunk_method") not in valid_chunk_method:
-            return get_error_data_result(f"`chunk_method` {req['chunk_method']} doesn't exist")
-
-        if doc.type == FileType.VISUAL or re.search(r"\.(ppt|pptx|pages)$", doc.name):
-            return get_error_data_result(message="Not supported yet!")
-
-        if doc.parser_id.lower() != req["chunk_method"].lower():
-            e = DocumentService.update_by_id(
-                doc.id,
-                {
-                    "parser_id": req["chunk_method"],
-                    "progress": 0,
-                    "progress_msg": "",
-                    "run": TaskStatus.UNSTART.value,
-                },
-            )
-            if not e:
-                return get_error_data_result(message="Document not found!")
-        if not req.get("parser_config"):
-            req["parser_config"] = get_parser_config(req["chunk_method"], req.get("parser_config"))
-            DocumentService.update_parser_config(doc.id, req["parser_config"])
-        if doc.token_num > 0:
-            e = DocumentService.increment_chunk_num(
-                doc.id,
-                doc.kb_id,
-                doc.token_num * -1,
-                doc.chunk_num * -1,
-                doc.process_duration * -1,
-            )
-            if not e:
-                return get_error_data_result(message="Document not found!")
-            settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), dataset_id)
-
-    if "enabled" in req:
-        status = int(req["enabled"])
-        if doc.status != req["enabled"]:
-            try:
-                if not DocumentService.update_by_id(doc.id, {"status": str(status)}):
-                    return get_error_data_result(message="Database error (Document update)!")
-                settings.docStoreConn.update({"doc_id": doc.id}, {"available_int": status}, search.index_name(kb.tenant_id), doc.kb_id)
-            except Exception as e:
-                return server_error_response(e)
-
-    try:
-        ok, doc = DocumentService.get_by_id(doc.id)
-        if not ok:
-            return get_error_data_result(message="Dataset created failed")
-    except OperationalError as e:
-        logging.exception(e)
-        return get_error_data_result(message="Database operation failed")
-
-    key_mapping = {
-        "chunk_num": "chunk_count",
-        "kb_id": "dataset_id",
-        "token_num": "token_count",
-        "parser_id": "chunk_method",
-    }
-    run_mapping = {
-        "0": "UNSTART",
-        "1": "RUNNING",
-        "2": "CANCEL",
-        "3": "DONE",
-        "4": "FAIL",
-    }
-    renamed_doc = {}
-    for key, value in doc.to_dict().items():
-        new_key = key_mapping.get(key, key)
-        renamed_doc[new_key] = value
-        if key == "run":
-            renamed_doc["run"] = run_mapping.get(str(value))
-
-    return get_result(data=renamed_doc)
-
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
 @token_required

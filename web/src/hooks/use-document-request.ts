@@ -15,8 +15,11 @@ import {
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
-import kbService, { listDocument } from '@/services/knowledge-service';
-import api, { api_host, ExternalApi } from '@/utils/api';
+import kbService, {
+  listDocument,
+  renameDocument,
+} from '@/services/knowledge-service';
+import api, { restAPIv1, webAPI } from '@/utils/api';
 import { getSearchValue } from '@/utils/common-util';
 import { buildChunkHighlights } from '@/utils/document-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -134,8 +137,8 @@ export const useFetchDocumentList = () => {
       }
       const ret = await listDocument(
         {
-          kb_id: knowledgeId || id,
-          keywords: debouncedSearchString,
+          id: knowledgeId || id,
+          ext: { keywords: debouncedSearchString },
           page_size: pagination.pageSize,
           page: pagination.current,
         },
@@ -209,7 +212,7 @@ export const useGetDocumentFilter = (): {
       }
     },
   });
-  const handleOnpenChange = (e: boolean) => {
+  const handleOpenChange = (e: boolean) => {
     if (e) {
       const currentOpen = open + 1;
       setOpen(currentOpen);
@@ -221,7 +224,7 @@ export const useGetDocumentFilter = (): {
       suffix: {},
       metadata: {},
     },
-    onOpenChange: handleOnpenChange,
+    onOpenChange: handleOpenChange,
   };
 };
 // update document status
@@ -336,12 +339,13 @@ export const useSaveDocumentName = () => {
     mutationFn: async ({
       name,
       documentId,
+      kbId,
     }: {
       name: string;
       documentId: string;
+      kbId: string;
     }) => {
-      const { data } = await kbService.document_rename({
-        doc_id: documentId,
+      const { data } = await renameDocument(kbId, documentId, {
         name: name,
       });
       if (data.code === 0) {
@@ -469,8 +473,8 @@ export const useGetDocumentUrl = (documentId?: string) => {
   const getDocumentUrl = useCallback(
     (id?: string) => {
       return auth
-        ? `${ExternalApi}/v1/documents/${id || documentId}`
-        : `${api_host}/document/get/${id || documentId}`;
+        ? `${restAPIv1}/documents/${id || documentId}`
+        : `${webAPI}/document/get/${id || documentId}`;
     },
     [documentId, auth],
   );
