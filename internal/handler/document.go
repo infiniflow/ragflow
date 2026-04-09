@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -461,10 +462,18 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 
 	err := h.documentService.SetDocumentMetadata(req.DocID, meta)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    1,
-			"message": "Failed to set metadata: " + err.Error(),
-		})
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "no such document") || strings.Contains(errMsg, "document not found") {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    1,
+				"message": errMsg,
+			})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    1,
+				"message": "Failed to set metadata: " + errMsg,
+			})
+		}
 		return
 	}
 
