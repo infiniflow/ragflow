@@ -194,9 +194,10 @@ USER root
 
 WORKDIR /ragflow
 
-# Copy Python environment and packages
-ENV VIRTUAL_ENV=/ragflow/.venv
-COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+# Python venv on writable volume mount path
+ENV RAGFLOW_DATA_DIR=/ragflow-data
+ENV VIRTUAL_ENV=${RAGFLOW_DATA_DIR}/.venv
+COPY --from=builder /ragflow/.venv ${VIRTUAL_ENV}
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 ENV PYTHONPATH=/ragflow/
