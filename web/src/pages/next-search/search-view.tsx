@@ -14,7 +14,6 @@ import {
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { IReference } from '@/interfaces/database/chat';
 import { cn } from '@/lib/utils';
-import { citationMarkerReg } from '@/utils/citation-utils';
 import { isEmpty } from 'lodash';
 import { ListTree, Search, X } from 'lucide-react';
 import { Dispatch, SetStateAction, useEffect, useState } from 'react';
@@ -28,9 +27,6 @@ import MarkdownContent from './markdown-content';
 import MindMapDrawer from './mindmap-drawer';
 import { RAGFlowLogo } from './ragflow-log';
 import RetrievalDocuments from './retrieval-documents';
-
-const getDirectionText = (content: string) =>
-  content.replace(/<[^>]+>/g, ' ').replace(citationMarkerReg, '');
 
 export default function SearchingView({
   setIsSearching,
@@ -207,36 +203,6 @@ export default function SearchingView({
                             <HighLightMarkdown>
                               {chunk.content_with_weight}
                             </HighLightMarkdown>
-                            {/* <Popover>
-                              <PopoverTrigger asChild>
-                                <div
-                                  dangerouslySetInnerHTML={{
-                                    __html: DOMPurify.sanitize(
-                                      `${
-                                        chunk.highlight ??
-                                        chunk.content_with_weight ??
-                                        ''
-                                      }...`,
-                                    ),
-                                  }}
-                                  className="text-sm text-text-primary mb-1"
-                                  dir={getDirAttribute(
-                                    getDirectionText(
-                                      chunk.highlight ??
-                                        chunk.content_with_weight ??
-                                        '',
-                                    ),
-                                  )}
-                                ></div>
-                              </PopoverTrigger>
-                              <PopoverContent className="text-text-primary !w-full max-w-lg ">
-                                <div className="max-h-96 overflow-auto scrollbar-thin">
-                                  <HighLightMarkdown>
-                                    {chunk.content_with_weight}
-                                  </HighLightMarkdown>
-                                </div>
-                              </PopoverContent>
-                            </Popover> */}
                           </div>
                           <div
                             className="flex gap-2 items-center text-xs text-text-secondary border p-1 rounded-lg w-fit mt-3"
