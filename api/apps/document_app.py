@@ -15,7 +15,6 @@
 #
 import json
 import os.path
-import pathlib
 import re
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -49,7 +48,7 @@ from common.file_utils import get_project_base_directory
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
 from common.misc_utils import get_uuid, thread_pool_exec
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
-from rag.nlp import rag_tokenizer, search
+from rag.nlp import search
 
 
 def _is_safe_download_filename(name: str) -> bool:
@@ -665,61 +664,6 @@ async def run():
         return await thread_pool_exec(_run_sync)
     except Exception as e:
         return server_error_response(e)
-
-
-@manager.route("/rename", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("doc_id", "name")
-async def rename():
-    req = await get_request_json()
-    uid = current_user.id
-    try:
-
-        def _rename_sync():
-            if not DocumentService.accessible(req["doc_id"], uid):
-                return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-
-            e, doc = DocumentService.get_by_id(req["doc_id"])
-            if not e:
-                return get_data_error_result(message="Document not found!")
-            if pathlib.Path(req["name"].lower()).suffix != pathlib.Path(doc.name.lower()).suffix:
-                return get_json_result(data=False, message="The extension of file can't be changed", code=RetCode.ARGUMENT_ERROR)
-            if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-                return get_json_result(data=False, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=RetCode.ARGUMENT_ERROR)
-
-            for d in DocumentService.query(name=req["name"], kb_id=doc.kb_id):
-                if d.name == req["name"]:
-                    return get_data_error_result(message="Duplicated document name in the same dataset.")
-
-            if not DocumentService.update_by_id(req["doc_id"], {"name": req["name"]}):
-                return get_data_error_result(message="Database error (Document rename)!")
-
-            informs = File2DocumentService.get_by_document_id(req["doc_id"])
-            if informs:
-                e, file = FileService.get_by_id(informs[0].file_id)
-                FileService.update_by_id(file.id, {"name": req["name"]})
-
-            tenant_id = DocumentService.get_tenant_id(req["doc_id"])
-            title_tks = rag_tokenizer.tokenize(req["name"])
-            es_body = {
-                "docnm_kwd": req["name"],
-                "title_tks": title_tks,
-                "title_sm_tks": rag_tokenizer.fine_grained_tokenize(title_tks),
-            }
-            if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
-                settings.docStoreConn.update(
-                    {"doc_id": req["doc_id"]},
-                    es_body,
-                    search.index_name(tenant_id),
-                    doc.kb_id,
-                )
-            return get_json_result(data=True)
-
-        return await thread_pool_exec(_rename_sync)
-
-    except Exception as e:
-        return server_error_response(e)
-
 
 @manager.route("/get/<doc_id>", methods=["GET"])  # noqa: F821
 @login_required
