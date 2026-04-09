@@ -1,8 +1,6 @@
 # Copyright (c) 2024 Microsoft Corporation.
 # Licensed under the MIT License
 
-from common.misc_utils import thread_pool_exec
-
 """
 Reference:
  - [graphrag](https://github.com/microsoft/graphrag)
@@ -109,7 +107,7 @@ class GraphExtractor(Extractor):
         }
         hint_prompt = perform_variable_replacements(self._extraction_prompt, variables=variables)
         async with chat_limiter:
-            response = await thread_pool_exec(self._chat,hint_prompt,[{"role": "user", "content": "Output:"}],{},task_id)
+            response = await self._async_chat(hint_prompt, [{"role": "user", "content": "Output:"}], {}, task_id)
         token_count += num_tokens_from_string(hint_prompt + response)
 
         results = response or ""
@@ -119,7 +117,7 @@ class GraphExtractor(Extractor):
         for i in range(self._max_gleanings):
             history.append({"role": "user", "content": CONTINUE_PROMPT})
             async with chat_limiter:
-                response = await thread_pool_exec(self._chat, "", history, {})
+                response = await self._async_chat("", history, {})
             token_count += num_tokens_from_string("\n".join([m["content"] for m in history]) + response)
             results += response or ""
 
@@ -129,7 +127,7 @@ class GraphExtractor(Extractor):
             history.append({"role": "assistant", "content": response})
             history.append({"role": "user", "content": LOOP_PROMPT})
             async with chat_limiter:
-                continuation = await thread_pool_exec(self._chat, "", history)
+                continuation = await self._async_chat("", history)
             token_count += num_tokens_from_string("\n".join([m["content"] for m in history]) + response)
             if continuation != "Y":
                 break
