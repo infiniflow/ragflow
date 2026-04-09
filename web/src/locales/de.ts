@@ -1011,6 +1011,7 @@ Beispiel: Virtual Hosted Style`,
         'Kommagetrennte Repository-Slugs, z. B.: repo-one,repo-two',
       connectorNameTip:
         'Geben Sie einen aussagekräftigen Namen für den Connector an',
+      syncDeletedFiles: 'Gelöschte Dateien synchronisieren',
       boxDescription:
         'Verbinden Sie Ihr Box-Laufwerk, um Dateien und Ordner zu synchronisieren.',
       githubDescription:
