@@ -177,11 +177,7 @@ class RAGFlowConnector:
         while True:
             logging.debug("resolve_dataset_ids fetching /datasets page=%s page_size=%s", page, self._DATASET_PAGE_SIZE)
             try:
-                res_json = await self._fetch_datasets_page(
-                    api_key=api_key,
-                    page=page,
-                    page_size=self._DATASET_PAGE_SIZE,
-                )
+                res_json = await self._fetch_datasets_page(api_key=api_key, page=page, page_size=self._DATASET_PAGE_SIZE)
             except Exception as exc:
                 logging.warning("resolve_dataset_ids failed to fetch /datasets page=%s error=%s", page, exc)
                 raise
