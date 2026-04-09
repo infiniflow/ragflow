@@ -22,18 +22,29 @@ import (
 
 // DeltaSeconds calculates seconds elapsed from a given date string to now.
 //
+// Supports multiple time formats:
+//   - "YYYY-MM-DD HH:MM:SS" (e.g., "2024-01-01 12:00:00")
+//   - ISO 8601 / RFC3339 (e.g., "2026-04-09T18:55:46+08:00")
+//
 // Args:
-//   dateString: Date string in "YYYY-MM-DD HH:MM:SS" format
+//   dateString: Date string in supported format
 //
 // Returns:
 //   float64: Number of seconds between the given date and current time
 //
 // Example:
 //   DeltaSeconds("2024-01-01 12:00:00")
-//   // Returns: 3600.0 (if current time is 2024-01-01 13:00:00)
+//   DeltaSeconds("2026-04-09T18:55:46+08:00")
 func DeltaSeconds(dateString string) (float64, error) {
+	// Try RFC3339 format first (ISO 8601 with timezone, e.g., "2026-04-09T18:55:46+08:00")
+	dt, err := time.Parse(time.RFC3339, dateString)
+	if err == nil {
+		return time.Since(dt).Seconds(), nil
+	}
+
+	// Try custom format without timezone (e.g., "2024-01-01 12:00:00")
 	const layout = "2006-01-02 15:04:05"
-	dt, err := time.ParseInLocation(layout, dateString, time.Local)
+	dt, err = time.ParseInLocation(layout, dateString, time.Local)
 	if err != nil {
 		return 0, err
 	}
