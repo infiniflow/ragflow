@@ -171,20 +171,41 @@ class RAGFlowConnector:
             }
             res = await self._get("/datasets", params, api_key=api_key)
             if not res or res.status_code != 200:
+                error_message = None
+                if res is not None:
+                    try:
+                        error_message = res.json().get("message")
+                    except Exception:
+                        error_message = None
+                logging.warning(
+                    "resolve_dataset_ids failed to fetch /datasets page=%s status=%s message=%s",
+                    page,
+                    getattr(res, "status_code", None),
+                    error_message,
+                )
                 raise Exception([types.TextContent(type="text", text="Cannot process this operation.")])
 
             res_json = res.json()
             if res_json.get("code") != 0:
+                logging.warning(
+                    "resolve_dataset_ids received error response page=%s code=%s message=%s",
+                    page,
+                    res_json.get("code"),
+                    res_json.get("message"),
+                )
                 raise Exception([types.TextContent(type="text", text=res_json.get("message", "Cannot process this operation."))])
 
             datasets = res_json.get("data", [])
+            logging.debug("resolve_dataset_ids received %s datasets from page=%s", len(datasets), page)
             dataset_ids.extend(data["id"] for data in datasets if data.get("id"))
             total = res_json.get("total", len(dataset_ids))
             if not datasets or len(dataset_ids) >= total:
                 break
             page += 1
 
-        return list(dict.fromkeys(dataset_ids))
+        resolved = list(dict.fromkeys(dataset_ids))
+        logging.info("resolve_dataset_ids resolved %s accessible dataset IDs", len(resolved))
+        return resolved
 
     async def retrieval(
         self,
