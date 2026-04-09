@@ -116,9 +116,18 @@ class PaddleOCROcrModel(Base, PaddleOCRParser):
             # lower-case keys (UI), upper-case PADDLEOCR_* (env auto-provision), env vars
             return config.get(key, config.get(env_key, os.environ.get(env_key, default)))
 
+        def _resolve_int_config(key: str, env_key: str, default: int = 600) -> int:
+            raw_value = _resolve_config(key, env_key, default)
+            try:
+                timeout = int(raw_value)
+            except (TypeError, ValueError):
+                timeout = default
+            return timeout if timeout > 0 else default
+
         self.paddleocr_api_url = _resolve_config("paddleocr_api_url", "PADDLEOCR_API_URL", "")
         self.paddleocr_algorithm = _resolve_config("paddleocr_algorithm", "PADDLEOCR_ALGORITHM", "PaddleOCR-VL")
         self.paddleocr_access_token = _resolve_config("paddleocr_access_token", "PADDLEOCR_ACCESS_TOKEN", None)
+        self.paddleocr_request_timeout = _resolve_int_config("paddleocr_request_timeout", "PADDLEOCR_REQUEST_TIMEOUT", 600)
 
         # Redact sensitive config keys before logging
         redacted_config = {}
@@ -134,6 +143,7 @@ class PaddleOCROcrModel(Base, PaddleOCRParser):
             api_url=self.paddleocr_api_url,
             access_token=self.paddleocr_access_token,
             algorithm=self.paddleocr_algorithm,
+            request_timeout=self.paddleocr_request_timeout,
         )
 
     def check_available(self) -> tuple[bool, str]:
