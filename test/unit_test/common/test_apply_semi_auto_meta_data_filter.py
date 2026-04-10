@@ -2,6 +2,8 @@ import pytest
 from common.metadata_utils import apply_meta_data_filter
 from unittest.mock import MagicMock, AsyncMock, patch
 
+pytestmark = [pytest.mark.p2]
+
 @pytest.mark.asyncio
 async def test_apply_meta_data_filter_semi_auto_key():
     meta_data_filter = {
@@ -56,16 +58,21 @@ async def test_apply_meta_data_filter_semi_auto_key_and_operator():
 # --- Tests for https://github.com/infiniflow/ragflow/issues/13987 ---
 
 @pytest.mark.asyncio
-async def test_auto_filter_empty_metas_returns_base_doc_ids():
-    """When metas is empty (no metadata tags), auto mode should return base_doc_ids
-    without calling the LLM, so that normal retrieval proceeds unfiltered."""
+async def test_auto_filter_empty_metas_returns_none():
+    """When metas is empty (no metadata tags), auto mode should return None
+    without calling the LLM, so that normal retrieval proceeds unfiltered.
+
+    Downstream callers (retrieval.py, dialog_service.py, chunk_app.py) pass
+    the result as ``doc_ids=result`` to ``retriever.retrieval()``, and
+    ``get_filters`` in ``rag/nlp/search.py`` skips the doc_id filter when
+    ``doc_ids is None``."""
     meta_data_filter = {"method": "auto"}
     metas = {}
     question = "anything"
 
     with patch("rag.prompts.generator.gen_meta_filter", new_callable=AsyncMock) as mock_gen:
         result = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl=MagicMock())
-        assert result == []
+        assert result is None
         mock_gen.assert_not_called()
 
 
@@ -87,9 +94,10 @@ async def test_auto_filter_empty_metas_preserves_base_doc_ids():
 
 
 @pytest.mark.asyncio
-async def test_auto_filter_no_match_falls_back_to_unfiltered():
+async def test_auto_filter_no_match_falls_back_to_none():
     """When auto mode generates conditions that match no documents, the
-    function should return the base_doc_ids (fallback) instead of None."""
+    function should return None (no restriction) so downstream search
+    proceeds without a doc_id filter."""
     meta_data_filter = {"method": "auto"}
     metas = {"author": {"alice": ["doc1"]}}
     question = "find bob"
@@ -102,9 +110,8 @@ async def test_auto_filter_no_match_falls_back_to_unfiltered():
         result = await apply_meta_data_filter(
             meta_data_filter, metas, question, chat_mdl=MagicMock(),
         )
-        # Should return empty list (no restriction), NOT None
-        assert result is not None
-        assert result == []
+        # Should return None (no restriction) so retrieval proceeds normally
+        assert result is None
 
 
 @pytest.mark.asyncio
@@ -127,9 +134,9 @@ async def test_auto_filter_with_match_returns_matched_docs():
 
 
 @pytest.mark.asyncio
-async def test_auto_filter_empty_conditions_returns_base():
+async def test_auto_filter_empty_conditions_returns_none():
     """When gen_meta_filter returns empty conditions, the function should
-    return the base_doc_ids without filtering."""
+    return None (no restriction) without filtering."""
     meta_data_filter = {"method": "auto"}
     metas = {"author": {"alice": ["doc1"]}}
     question = "hello"
@@ -139,13 +146,13 @@ async def test_auto_filter_empty_conditions_returns_base():
         result = await apply_meta_data_filter(
             meta_data_filter, metas, question, chat_mdl=MagicMock(),
         )
-        assert result == []
+        assert result is None
 
 
 @pytest.mark.asyncio
 async def test_semi_auto_filter_empty_metas_falls_back():
     """When semi_auto mode has selected keys but metas is empty, the function
-    should return the base_doc_ids without error."""
+    should return None (no restriction) without error."""
     meta_data_filter = {
         "method": "semi_auto",
         "semi_auto": ["key1"],
@@ -157,15 +164,15 @@ async def test_semi_auto_filter_empty_metas_falls_back():
         result = await apply_meta_data_filter(
             meta_data_filter, metas, question, chat_mdl=MagicMock(),
         )
-        assert result is not None
-        assert result == []
+        assert result is None
         mock_gen.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_semi_auto_filter_no_match_falls_back():
     """When semi_auto mode generates conditions that match no documents,
-    the function should fall back instead of returning None."""
+    the function should return None (no restriction) instead of an empty
+    list, so downstream search proceeds without a doc_id filter."""
     meta_data_filter = {
         "method": "semi_auto",
         "semi_auto": ["author"],
@@ -181,5 +188,4 @@ async def test_semi_auto_filter_no_match_falls_back():
         result = await apply_meta_data_filter(
             meta_data_filter, metas, question, chat_mdl=MagicMock(),
         )
-        assert result is not None
-        assert result == []
+        assert result is None
