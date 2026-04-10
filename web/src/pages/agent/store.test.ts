@@ -2,15 +2,6 @@ import { Edge } from '@xyflow/react';
 import { Operator } from './constant';
 import useGraphStore from './store';
 
-const createNode = (
-  id: string,
-  label: Operator,
-  options: Partial<ReturnType<typeof baseNode>> = {},
-) => ({
-  ...baseNode(id, label),
-  ...options,
-});
-
 function baseNode(id: string, label: Operator) {
   return {
     id,
@@ -23,6 +14,15 @@ function baseNode(id: string, label: Operator) {
     },
   };
 }
+
+const createNode = (
+  id: string,
+  label: Operator,
+  options: Partial<ReturnType<typeof baseNode>> = {},
+) => ({
+  ...baseNode(id, label),
+  ...options,
+});
 
 const createEdge = (
   id: string,
