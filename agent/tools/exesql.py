@@ -62,11 +62,11 @@ class ExeSQLParam(ToolParamBase):
         if self.db_type != "trino":
             self.check_empty(self.password, "Database password")
         self.check_positive_integer(self.max_records, "Maximum number of records")
-        if self.database == "rag_flow":
-            if self.host == "ragflow-mysql":
-                raise ValueError("For the security reason, it dose not support database named rag_flow.")
-            if self.password == "infini_rag_flow":
-                raise ValueError("For the security reason, it dose not support database named rag_flow.")
+        # if self.database == "rag_flow":
+        #     if self.host == "ragflow-mysql":
+        #         raise ValueError("For the security reason, it dose not support database named rag_flow.")
+        #     if self.password == "infini_rag_flow":
+        #         raise ValueError("For the security reason, it dose not support database named rag_flow.")
 
     def get_input_form(self) -> dict[str, dict]:
         return {
@@ -255,6 +255,10 @@ class ExeSQL(ToolBase, ABC):
                 if not single_sql:
                     continue
                 single_sql = re.sub(r"\[ID:[0-9]+\]", "", single_sql)
+                if re.match(r"^(insert|update|delete)\b", single_sql, flags=re.IGNORECASE):
+                    sql_res.append({"content": "For security reasons, INSERT, UPDATE, and DELETE statements are not supported."})
+                    formalized_content.append("For security reasons, INSERT, UPDATE, and DELETE statements are not supported.")
+                    continue
                 cursor.execute(single_sql)
                 if cursor.rowcount == 0:
                     sql_res.append({"content": "No record in the database!"})
