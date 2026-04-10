@@ -23,7 +23,6 @@ import logging
 import os
 import signal
 import sys
-import traceback
 import threading
 import uuid
 import faulthandler
@@ -147,8 +146,8 @@ if __name__ == '__main__':
     try:
         logging.info(f"RAGFlow server is ready after {time.time() - start_ts}s initialization.")
         app.run(host=settings.HOST_IP, port=settings.HOST_PORT, use_reloader=RuntimeConfig.DEBUG, debug=RuntimeConfig.DEBUG)
-    except Exception:
-        traceback.print_exc()
+    except Exception as e:
+        logging.exception(f"Unhandled exception: {e}")
         stop_event.set()
         stop_event.wait(1)
         os.kill(os.getpid(), signal.SIGKILL)
