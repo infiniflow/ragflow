@@ -47,7 +47,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
 
         callback(0.1, "USE Sequence2Txt LLM to transcription the audio")
         seq2txt_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.SPEECH2TEXT)
-        seq2txt_mdl = LLMBundle(tenant_id, seq2txt_model_config, lang=lang)
+        seq2txt_mdl = LLMBundle(tenant_id, seq2txt_model_config, lang=lang, biz_type="document", biz_id=kwargs.get("doc_id", ""))
         ans = seq2txt_mdl.transcription(tmp_path)
         callback(0.8, "Sequence2Txt LLM respond: %s ..." % ans[:32])
 

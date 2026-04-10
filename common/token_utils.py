@@ -16,6 +16,8 @@
 
 
 import os
+from dataclasses import dataclass
+
 import tiktoken
 
 from common.file_utils import get_project_base_directory
@@ -24,6 +26,22 @@ tiktoken_cache_dir = get_project_base_directory()
 os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache_dir
 # encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
 encoder = tiktoken.get_encoding("cl100k_base")
+
+
+@dataclass
+class LLMUsage:
+    """Token usage and billing information for LLM calls.
+
+    Replaces bare int total_tokens across the codebase, carrying prompt/completion token
+    breakdown and cost in a unified structure.
+    - Chat mode: prompt_tokens / completion_tokens / cost are all populated.
+    - Embedding / Rerank mode: completion_tokens=0, cost defaults to 0.
+    - Native SDK mode (Mistral, Baidu, etc.): only total_tokens is set, others default to 0.
+    """
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    cost: float = 0.0
 
 
 def num_tokens_from_string(string: str) -> int:

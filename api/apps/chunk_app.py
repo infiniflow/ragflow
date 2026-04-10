@@ -184,7 +184,7 @@ async def set():
                     embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embd_id)
                 else:
                     embd_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.EMBEDDING)
-            embd_mdl = LLMBundle(tenant_id, embd_model_config)
+            embd_mdl = LLMBundle(tenant_id, embd_model_config, biz_type="document", biz_id=req["doc_id"])
 
             _d = d
             if doc.parser_id == ParserType.QA:
@@ -375,7 +375,7 @@ async def create():
                     embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embd_id)
                 else:
                     embd_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.EMBEDDING)
-            embd_mdl = LLMBundle(tenant_id, embd_model_config)
+            embd_mdl = LLMBundle(tenant_id, embd_model_config, biz_type="document", biz_id=req["doc_id"])
 
             if image_base64:
                 d["img_id"] = "{}-{}".format(doc.kb_id, chunck_id)
@@ -426,6 +426,13 @@ async def retrieval_test():
         local_doc_ids = list(doc_ids) if doc_ids else []
         tenant_ids = []
 
+        if req.get("search_id", ""):
+            biz_id = req.get("search_id")
+            biz_type = "search"
+        else:
+            biz_id = kb_ids[0]
+            biz_type = "kb_retrieval"
+
         meta_data_filter = {}
         chat_mdl = None
         if req.get("search_id", ""):
@@ -437,12 +444,12 @@ async def retrieval_test():
                     chat_model_config = get_model_config_by_type_and_name(user_id, LLMType.CHAT, search_config["chat_id"])
                 else:
                     chat_model_config = get_tenant_default_model_by_type(user_id, LLMType.CHAT)
-                chat_mdl = LLMBundle(user_id, chat_model_config)
+                chat_mdl = LLMBundle(user_id, chat_model_config, biz_type=biz_type, biz_id=biz_id)
         else:
             meta_data_filter = req.get("meta_data_filter") or {}
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_model_config = get_tenant_default_model_by_type(user_id, LLMType.CHAT)
-                chat_mdl = LLMBundle(user_id, chat_model_config)
+                chat_mdl = LLMBundle(user_id, chat_model_config, biz_type=biz_type, biz_id=biz_id)
 
         if meta_data_filter:
             metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
@@ -473,19 +480,19 @@ async def retrieval_test():
             embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         else:
             embd_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.EMBEDDING)
-        embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
+        embd_mdl = LLMBundle(kb.tenant_id, embd_model_config, biz_type=biz_type, biz_id=biz_id)
 
         rerank_mdl = None
         if req.get("tenant_rerank_id"):
             rerank_model_config = get_model_config_by_id(req["tenant_rerank_id"])
-            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
+            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config, biz_type=biz_type, biz_id=biz_id)
         elif req.get("rerank_id"):
             rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK.value, req["rerank_id"])
-            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
+            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config, biz_type=biz_type, biz_id=biz_id)
 
         if req.get("keyword", False):
             default_chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
-            chat_mdl = LLMBundle(kb.tenant_id, default_chat_model_config)
+            chat_mdl = LLMBundle(kb.tenant_id, default_chat_model_config, biz_type=biz_type, biz_id=biz_id)
             _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
@@ -510,7 +517,7 @@ async def retrieval_test():
                                                    tenant_ids,
                                                    kb_ids,
                                                    embd_mdl,
-                                                   LLMBundle(kb.tenant_id, default_chat_model_config))
+                                                   LLMBundle(kb.tenant_id, default_chat_model_config, biz_type=biz_type, biz_id=biz_id))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
         ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)

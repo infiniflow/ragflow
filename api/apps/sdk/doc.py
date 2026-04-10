@@ -1587,22 +1587,22 @@ async def retrieval_test(tenant_id):
             embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
         else:
             embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
-        embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
+        embd_mdl = LLMBundle(kb.tenant_id, embd_model_config, biz_type="kb_retrieval", biz_id=kb_ids[0])
 
         rerank_mdl = None
         if req.get("tenant_rerank_id"):
             rerank_model_config = get_model_config_by_id(req["tenant_rerank_id"])
-            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
+            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config, biz_type="kb_retrieval", biz_id=kb_ids[0])
         elif req.get("rerank_id"):
             rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK, req["rerank_id"])
-            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
+            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config, biz_type="kb_retrieval", biz_id=kb_ids[0])
 
         if langs:
             question = await cross_languages(kb.tenant_id, None, question, langs)
 
         if req.get("keyword", False):
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
-            chat_mdl = LLMBundle(kb.tenant_id, chat_model_config)
+            chat_mdl = LLMBundle(kb.tenant_id, chat_model_config, biz_type="kb_retrieval", biz_id=kb_ids[0])
             question += await keyword_extraction(chat_mdl, question)
 
         ranks = await settings.retriever.retrieval(
@@ -1622,14 +1622,14 @@ async def retrieval_test(tenant_id):
         )
         if toc_enhance:
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
-            chat_mdl = LLMBundle(kb.tenant_id, chat_model_config)
+            chat_mdl = LLMBundle(kb.tenant_id, chat_model_config, biz_type="kb_retrieval", biz_id=kb_ids[0])
             cks = await settings.retriever.retrieval_by_toc(question, ranks["chunks"], tenant_ids, chat_mdl, size)
             if cks:
                 ranks["chunks"] = cks
         ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
         if use_kg:
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
-            ck = await settings.kg_retriever.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, chat_model_config))
+            ck = await settings.kg_retriever.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, chat_model_config, biz_type="kb_retrieval", biz_id=kb_ids[0]))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 

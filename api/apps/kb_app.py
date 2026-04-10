@@ -956,7 +956,7 @@ async def check_embedding():
         embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embd_id)
     else:
         return get_error_data_result("`tenant_embd_id` or `embd_id` is required.")
-    emb_mdl = LLMBundle(tenant_id, embd_model_config)
+    emb_mdl = LLMBundle(tenant_id, embd_model_config, biz_type="kb_check", biz_id=kb_id)
     samples = sample_random_chunks_with_vectors(settings.docStoreConn, tenant_id=tenant_id, kb_id=kb_id, n=n)
 
     results, eff_sims = [], []

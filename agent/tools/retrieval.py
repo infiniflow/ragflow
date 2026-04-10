@@ -122,12 +122,18 @@ class Retrieval(ToolBase, ABC):
         if embd_nms:
             tenant_id = self._canvas.get_tenant_id()
             embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embd_nms[0])
-            embd_mdl = LLMBundle(tenant_id, embd_model_config)
+            embd_mdl = LLMBundle(tenant_id, embd_model_config,
+                                 biz_type="agent",
+                                 biz_id=self._canvas._id,
+                                 session_id=self._canvas.get_history_id())
 
         rerank_mdl = None
         if self._param.rerank_id:
             rerank_model_config = get_model_config_by_type_and_name(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
-            rerank_mdl = LLMBundle(kbs[0].tenant_id, rerank_model_config)
+            rerank_mdl = LLMBundle(kbs[0].tenant_id, rerank_model_config,
+                                   biz_type="agent",
+                                   biz_id=self._canvas._id,
+                                   session_id=self._canvas.get_history_id())
 
         vars = self.get_input_elements_from_text(query_text)
         vars = {k: o["value"] for k, o in vars.items()}
@@ -170,7 +176,10 @@ class Retrieval(ToolBase, ABC):
             if self._param.meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 tenant_id = self._canvas.get_tenant_id()
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-                chat_mdl = LLMBundle(tenant_id, chat_model_config)
+                chat_mdl = LLMBundle(tenant_id, chat_model_config,
+                                     biz_type="agent",
+                                     biz_id=self._canvas._id,
+                                     session_id=self._canvas.get_history_id())
 
             doc_ids = await apply_meta_data_filter(
                 self._param.meta_data_filter,
@@ -182,7 +191,8 @@ class Retrieval(ToolBase, ABC):
             )
 
         if self._param.cross_languages:
-            query = await cross_languages(kbs[0].tenant_id, None, query, self._param.cross_languages)
+            query = await cross_languages(kbs[0].tenant_id, None, query, self._param.cross_languages,
+                                          biz_type="agent", biz_id=self._canvas._id, session_id=self._canvas.get_history_id())
 
         if kbs:
             query = re.sub(r"^user[:：\s]*", "", query, flags=re.IGNORECASE)
@@ -206,7 +216,10 @@ class Retrieval(ToolBase, ABC):
             if self._param.toc_enhance:
                 tenant_id = self._canvas._tenant_id
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-                chat_mdl = LLMBundle(tenant_id, chat_model_config)
+                chat_mdl = LLMBundle(tenant_id, chat_model_config,
+                                     biz_type="agent",
+                                     biz_id=self._canvas._id,
+                                     session_id=self._canvas.get_history_id())
                 cks = await settings.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs],
                                                           chat_mdl, self._param.top_n)
                 if self.check_if_canceled("Retrieval processing"):
@@ -222,7 +235,10 @@ class Retrieval(ToolBase, ABC):
                                                      [kb.tenant_id for kb in kbs],
                                                      kb_ids,
                                                      embd_mdl,
-                                                     LLMBundle(tenant_id, chat_model_config))
+                                                     LLMBundle(tenant_id, chat_model_config,
+                                                               biz_type="agent",
+                                                               biz_id=self._canvas._id,
+                                                               session_id=self._canvas.get_history_id()))
                 if self.check_if_canceled("Retrieval processing"):
                     return
                 if ck["content_with_weight"]:
@@ -233,7 +249,10 @@ class Retrieval(ToolBase, ABC):
         if self._param.use_kg and kbs:
             chat_model_config = get_tenant_default_model_by_type(kbs[0].tenant_id, LLMType.CHAT)
             ck = await settings.kg_retriever.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl,
-                                                 LLMBundle(kbs[0].tenant_id, chat_model_config))
+                                                 LLMBundle(kbs[0].tenant_id, chat_model_config,
+                                                           biz_type="agent",
+                                                           biz_id=self._canvas._id,
+                                                           session_id=self._canvas.get_history_id()))
             if self.check_if_canceled("Retrieval processing"):
                 return
             if ck["content_with_weight"]:
