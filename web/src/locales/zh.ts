@@ -18,6 +18,7 @@ export default {
       name: '名称',
       save: '保存',
       namePlaceholder: '请输入名称',
+      descriptionPlaceholder: '请输入描述',
       next: '下一步',
       create: '创建',
       edit: '编辑',
@@ -33,6 +34,8 @@ export default {
       languagePlaceholder: '请选择语言',
       copy: '复制',
       copied: '复制成功',
+      viewMore: '查看更多',
+      viewLess: '收起',
       comingSoon: '即将推出',
       download: '下载',
       close: '关闭',
@@ -177,6 +180,7 @@ export default {
       searchKnowledgePlaceholder: '搜索',
       noMoreData: '没有更多数据了',
       parserRequired: '分块方法必填',
+      dataFlowRequired: '数据流必填',
     },
     knowledgeDetails: {
       metadata: {
@@ -929,6 +933,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       bitbucketRepositorySlugsTip:
         '用英文逗号分隔的仓库 slug，例如：repo-one,repo-two',
       connectorNameTip: '为连接器命名',
+      syncDeletedFiles: '同步删除文件',
       githubDescription:
         '连接 GitHub，可同步 Pull Request 与 Issue 内容用于检索。',
       airtableDescription: '连接 Airtable，同步指定工作区下指定表格中的文件。',
@@ -1108,7 +1113,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       FishAudioModelNameMessage: '请为你的TTS模型起名',
       addFishAudioAK: 'Fish Audio API KEY',
       FishAudioAKMessage: '请输入 API KEY',
-      addFishAudioRefID: 'FishAudio Refrence ID',
+      addFishAudioRefID: 'FishAudio Reference ID',
       FishAudioRefIDMessage: '请输入引用模型的ID（留空表示使用默认模型）',
       GoogleModelIDMessage: '请输入 model ID!',
       addGoogleProjectID: 'Project ID',
@@ -1299,6 +1304,10 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tab: '制表符',
       space: '空格',
       delimiters: '分隔符',
+      one: 'One',
+      oneChunkTitle: 'Note',
+      oneChunkDescription:
+        '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
       merge: '合并',
       split: '拆分',
       script: '脚本',
@@ -1818,6 +1827,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       categoryName: '分类名称',
       nextStep: '下一步',
       insertVariableTip: `输入 / 插入变量`,
+      mergePath: '合并路径',
+      mergePathTip:
+        '开启后，紧跟在变量后面的点号后缀会合并为路径查询，例如 {node@result.name}。',
       setting: '设置',
       settings: {
         agentSetting: 'Agent设置',
@@ -1927,17 +1939,31 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tokenizerRequired: '请先添加Tokenizer节点',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的向量嵌入）。',
-      splitter: '按字符分割',
-      splitterDescription:
+      tokenChunker: '按 Token 分块',
+      tokenChunkerDescription:
         '根据分词器长度将文本拆分成块，并带有可选的分隔符和重叠。',
-      hierarchicalMergerDescription:
+      titleChunkerDescription:
         '使用正则表达式规则按标题层次结构将文档拆分成多个部分，以实现更精细的控制。',
-      hierarchicalMerger: '按标题分割',
+      titleChunker: '按标题分块',
       extractor: '提取器',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
       outputFormat: '输出格式',
       fileFormats: '文件类型',
+      fileFormatOptions: {
+        pdf: 'PDF',
+        spreadsheet: '表格',
+        image: '图片',
+        email: '邮件',
+        markdown: 'Markdown',
+        'text&code': '文本与代码',
+        html: 'HTML',
+        doc: 'DOC',
+        docx: 'DOCX',
+        slides: 'PPTX',
+        audio: '音频',
+        video: '视频',
+      },
       fields: '字段',
       addParser: '增加解析器',
       hierarchy: '层次结构',

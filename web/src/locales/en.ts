@@ -18,6 +18,7 @@ export default {
       name: 'Name',
       save: 'Save',
       namePlaceholder: 'Please input name',
+      descriptionPlaceholder: 'Enter description',
       next: 'Next',
       create: 'Create',
       edit: 'Edit',
@@ -43,6 +44,8 @@ export default {
       languagePlaceholder: 'select your language',
       copy: 'Copy',
       copied: 'Copied',
+      viewMore: 'View more',
+      viewLess: 'View less',
       comingSoon: 'Coming soon',
       download: 'Download',
       close: 'Close',
@@ -208,6 +211,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       searchKnowledgePlaceholder: 'Search',
       noMoreData: `That's all. Nothing more.`,
       parserRequired: 'Chunk method is required',
+      dataFlowRequired: 'Data flow is required',
     },
     knowledgeDetails: {
       metadata: {
@@ -252,11 +256,11 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         deleteManageFieldAllWarn:
           'This field and all its corresponding values will be deleted from all associated files.',
         deleteManageValueAllWarn:
-          'This value will be deleted from from all associated files.',
+          'This value will be deleted from all associated files.',
         deleteManageFieldSingleWarn:
-          'This field and all its corresponding values will be deleted from this files.',
+          'This field and all its corresponding values will be deleted from this file.',
         deleteManageValueSingleWarn:
-          'This value will be deleted from this files.',
+          'This value will be deleted from this file.',
         deleteSettingFieldWarn: `This field will be deleted; existing metadata won't be affected.`,
         deleteSettingValueWarn: `This value will be deleted; existing metadata won't be affected.`,
       },
@@ -979,6 +983,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       selectModelPlaceholder: 'Select model',
       configureModelTitle: 'Configure model',
       connectorNameTip: 'A descriptive name for the connector',
+      syncDeletedFiles: 'Sync deleted files',
       confluenceIsCloudTip:
         'Check if this is a Confluence Cloud instance, uncheck for Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
@@ -1550,6 +1555,10 @@ Example: Virtual Hosted Style`,
       tab: 'Tab',
       space: 'Space',
       delimiters: 'Delimiters',
+      one: 'One',
+      oneChunkTitle: 'Note',
+      oneChunkDescription:
+        'All parsed sections will be merged in order into a single chunk.',
       enableChildrenDelimiters: 'Child chunk are used for retrieval',
       merge: 'Merge',
       split: 'Split',
@@ -2078,6 +2087,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       }`,
       datatype: 'MINE type of the HTTP request',
       insertVariableTip: `Enter / Insert variables`,
+      mergePath: 'Merge path',
+      mergePathTip:
+        'When enabled, a dot suffix immediately after a variable is merged into a path query, such as {node@result.name}.',
       historyVersion: 'Version history',
       version: {
         created: 'Created',
@@ -2228,12 +2240,12 @@ This process aggregates variables from multiple branches into a single variable 
       tokenizerRequired: 'Please add the Indexer node first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
-      splitter: 'Token',
-      splitterDescription:
+      tokenChunker: 'Token Chunker',
+      tokenChunkerDescription:
         'Split text into chunks by token length with optional delimiters and overlap.',
-      hierarchicalMergerDescription:
+      titleChunkerDescription:
         'Split documents into sections by title hierarchy with regex rules for finer control.',
-      hierarchicalMerger: 'Title',
+      titleChunker: 'Title Chunker',
       extractor: 'Transformer',
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
@@ -2244,8 +2256,11 @@ This process aggregates variables from multiple branches into a single variable 
         spreadsheet: 'Spreadsheet',
         image: 'Image',
         email: 'Email',
-        'text&markdown': 'Text & Markup',
-        word: 'Word',
+        markdown: 'Markdown',
+        'text&code': 'Text & Code',
+        html: 'HTML',
+        doc: 'DOC',
+        docx: 'DOCX',
         slides: 'PPTX',
         audio: 'Audio',
         video: 'Video',

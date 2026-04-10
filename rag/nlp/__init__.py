@@ -1336,7 +1336,7 @@ def _build_cks(sections, delimiter):
                 # ③ normal text content → accumulate
                 seg += sub_sec
         else:
-            # no custom delimiter: emit the text as a single chunk
+             
             if text and text.strip():
                 t = text.strip()
                 cks.append({

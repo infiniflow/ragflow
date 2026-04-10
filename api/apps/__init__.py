@@ -121,11 +121,12 @@ def _load_user():
             g.user = user[0]
             return user[0]
     except Exception as e_auth:
-        logging.warning(f"load_user got exception {e_auth}")
+        logging.warning(f"load_user from jwt got exception {e_auth}")
         try:
             authorization = request.headers.get("Authorization")
             if len(authorization.split()) == 2:
-                objs = APIToken.query(token=authorization.split()[1])
+                token = authorization.split()[1]
+                objs = APIToken.query(token=token)
                 if objs:
                     user = UserService.query(id=objs[0].tenant_id, status=StatusEnum.VALID.value)
                     if user:
@@ -134,8 +135,30 @@ def _load_user():
                             return None
                         g.user = user[0]
                         return user[0]
+                    else:
+                        logging.warning(f"load_user: No user found for tenant_id={objs[0].tenant_id} from APIToken")
+                else:
+                    logging.warning(f"load_user: No APIToken found for token={token[:10]}...")
         except Exception as e_api_token:
-            logging.warning(f"load_user got exception {e_api_token}")
+            logging.warning(f"load_user from api token got exception {e_api_token}")
+        # Fallback: try raw authorization value as access_token (for login tokens sent without JWT)
+        try:
+            authorization = request.headers.get("Authorization")
+            if authorization and len(authorization.split()) == 1:
+                # Single value without "Bearer " prefix - try as raw access_token
+                access_token = authorization.strip()
+                if access_token and len(access_token) >= 32:
+                    user = UserService.query(
+                        access_token=access_token, status=StatusEnum.VALID.value
+                    )
+                    if user:
+                        if not user[0].access_token or not user[0].access_token.strip():
+                            logging.warning(f"User {user[0].email} has empty access_token in database")
+                            return None
+                        g.user = user[0]
+                        return user[0]
+        except Exception as e_raw_token:
+            logging.warning(f"load_user raw token fallback got exception {e_raw_token}")
 
 
 current_user = LocalProxy(_load_user)

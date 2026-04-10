@@ -27,6 +27,10 @@ export * from './pipeline';
 
 import { ModelVariableType } from '@/constants/knowledge';
 import { t } from 'i18next';
+import {
+  buildDefaultCodeOutput,
+  serializeCodeOutputContract,
+} from '../form/code-form/utils';
 
 // DuckDuckGo's channel options
 export enum Channel {
@@ -412,7 +416,7 @@ export const initialIterationValues = {
 export const initialIterationStartValues = {
   outputs: {
     item: {
-      type: 'unkown',
+      type: 'unknown',
     },
     index: {
       type: 'integer',
@@ -427,7 +431,7 @@ export const initialCodeValues = {
     arg1: '',
     arg2: '',
   },
-  outputs: {},
+  outputs: serializeCodeOutputContract(buildDefaultCodeOutput()),
 };
 
 export const initialWaitingDialogueValues = {};
@@ -684,8 +688,8 @@ export const RestrictedUpstreamMap = {
   [Operator.VariableAssigner]: [Operator.Begin],
   [Operator.VariableAggregator]: [Operator.Begin],
   [Operator.Parser]: [Operator.Begin], // pipeline
-  [Operator.Splitter]: [Operator.Begin],
-  [Operator.HierarchicalMerger]: [Operator.Begin],
+  [Operator.TokenChunker]: [Operator.Begin],
+  [Operator.TitleChunker]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
   [Operator.Extractor]: [Operator.Begin],
   [Operator.File]: [Operator.Begin],
@@ -732,8 +736,8 @@ export const NodeMap = {
   [Operator.File]: 'fileNode',
   [Operator.Parser]: 'parserNode',
   [Operator.Tokenizer]: 'tokenizerNode',
-  [Operator.Splitter]: 'splitterNode',
-  [Operator.HierarchicalMerger]: 'splitterNode',
+  [Operator.TokenChunker]: 'chunkerNode',
+  [Operator.TitleChunker]: 'chunkerNode',
   [Operator.Extractor]: 'contextNode',
   [Operator.DataOperations]: 'dataOperationsNode',
   [Operator.ListOperations]: 'listOperationsNode',
@@ -775,8 +779,8 @@ export const NoDebugOperatorsList = [
   Operator.File,
   Operator.Parser,
   Operator.Tokenizer,
-  Operator.Splitter,
-  Operator.HierarchicalMerger,
+  Operator.TokenChunker,
+  Operator.TitleChunker,
   Operator.Extractor,
   Operator.Tool,
 ];
@@ -785,8 +789,8 @@ export const NoCopyOperatorsList = [
   Operator.File,
   Operator.Parser,
   Operator.Tokenizer,
-  Operator.Splitter,
-  Operator.HierarchicalMerger,
+  Operator.TokenChunker,
+  Operator.TitleChunker,
   Operator.Extractor,
 ];
 

@@ -70,8 +70,8 @@ export enum DataflowOperator {
   Note = 'Note',
   Parser = 'Parser',
   Tokenizer = 'Tokenizer',
-  Splitter = 'Splitter',
-  HierarchicalMerger = 'HierarchicalMerger',
+  TokenChunker = 'TokenChunker',
+  TitleChunker = 'TitleChunker',
   Extractor = 'Extractor',
 }
 
@@ -117,8 +117,8 @@ export enum Operator {
   File = 'File', // pipeline
   Parser = 'Parser',
   Tokenizer = 'Tokenizer',
-  Splitter = 'Splitter',
-  HierarchicalMerger = 'HierarchicalMerger',
+  TokenChunker = 'TokenChunker',
+  TitleChunker = 'TitleChunker',
   Extractor = 'Extractor',
   Loop = 'Loop',
   LoopStart = 'LoopItem',

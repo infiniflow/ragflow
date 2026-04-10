@@ -84,10 +84,19 @@ func (c *HTTPClient) BuildURL(path string, useAPIBase bool) string {
 // Headers builds the request headers
 func (c *HTTPClient) Headers(authKind string, extra map[string]string) map[string]string {
 	headers := make(map[string]string)
-	if c.APIToken != "" {
-		headers["Authorization"] = fmt.Sprintf("Bearer %s", c.APIToken)
-	} else if c.LoginToken != "" {
-		headers["Authorization"] = c.LoginToken
+
+	switch authKind {
+	case "api":
+		if c.APIToken != "" {
+			headers["Authorization"] = fmt.Sprintf("Bearer %s", c.APIToken)
+		} else if c.LoginToken != "" {
+			// Fallback to login token for API requests (user mode)
+			headers["Authorization"] = fmt.Sprintf("Bearer %s", c.LoginToken)
+		}
+	case "web", "admin":
+		if c.LoginToken != "" {
+			headers["Authorization"] = c.LoginToken
+		}
 	}
 
 	for k, v := range extra {
@@ -325,4 +334,51 @@ func (c *HTTPClient) RequestJSON(method, path string, useAPIBase bool, authKind 
 		return nil, err
 	}
 	return resp.JSON()
+}
+
+// RequestStream makes an HTTP request for SSE streaming and returns the response body reader
+func (c *HTTPClient) RequestStream(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}) (io.ReadCloser, float64, error) {
+	url := c.BuildURL(path, useAPIBase)
+	mergedHeaders := c.Headers(authKind, headers)
+
+	var body io.Reader
+	if jsonBody != nil {
+		jsonData, err := json.Marshal(jsonBody)
+		if err != nil {
+			return nil, 0, err
+		}
+		body = bytes.NewReader(jsonData)
+		if mergedHeaders == nil {
+			mergedHeaders = make(map[string]string)
+		}
+		mergedHeaders["Content-Type"] = "application/json"
+	}
+	// Add Accept header for SSE
+	if mergedHeaders == nil {
+		mergedHeaders = make(map[string]string)
+	}
+	mergedHeaders["Accept"] = "text/event-stream"
+
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	for k, v := range mergedHeaders {
+		req.Header.Set(k, v)
+	}
+
+	startTime := time.Now()
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	duration := time.Since(startTime).Seconds()
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, duration, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	return resp.Body, duration, nil
 }

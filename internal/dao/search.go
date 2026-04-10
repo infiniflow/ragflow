@@ -124,3 +124,39 @@ func (dao *SearchDAO) GetByID(id string) (*entity.Search, error) {
 	}
 	return &search, nil
 }
+
+// GetByNameAndTenant gets search by name and tenant ID
+func (dao *SearchDAO) GetByNameAndTenant(name string, tenantID string) ([]*entity.Search, error) {
+	var searches []*entity.Search
+	err := DB.Where("name = ? AND tenant_id = ? AND status = ?", name, tenantID, "1").Find(&searches).Error
+	return searches, err
+}
+
+// Create creates a new search
+func (dao *SearchDAO) Create(search *entity.Search) error {
+	return DB.Create(search).Error
+}
+
+// QueryByTenantIDAndID checks if a search exists with given tenant_id and id
+// Reference: Python SearchService.query(tenant_id=tenant.tenant_id, id=search_id)
+// Used for permission verification in detail API
+func (dao *SearchDAO) QueryByTenantIDAndID(tenantID string, searchID string) ([]*entity.Search, error) {
+	var searches []*entity.Search
+	err := DB.Where("tenant_id = ? AND id = ? AND status = ?", tenantID, searchID, "1").Find(&searches).Error
+	return searches, err
+}
+
+// DeleteByID deletes a search by ID (soft delete by setting status to "0")
+// Reference: Python common_service.py::delete_by_id
+func (dao *SearchDAO) DeleteByID(id string) error {
+	return DB.Model(&entity.Search{}).Where("id = ?", id).Update("status", "0").Error
+}
+
+// Accessible4Deletion checks if a search can be deleted by a specific user
+// Reference: Python search_service.py::accessible4deletion
+// Returns true if the search exists, is valid, and was created by the user
+func (dao *SearchDAO) Accessible4Deletion(searchID string, userID string) bool {
+	var search entity.Search
+	err := DB.Where("id = ? AND created_by = ? AND status = ?", searchID, userID, "1").First(&search).Error
+	return err == nil
+}

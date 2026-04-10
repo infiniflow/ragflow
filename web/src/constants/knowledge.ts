@@ -95,3 +95,8 @@ export enum DocumentParserType {
 }
 
 export const TagRenameId = 'tagRename';
+
+export enum ParseType {
+  BuiltIn = 1,
+  Pipeline = 2,
+}

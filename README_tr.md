@@ -88,6 +88,7 @@ Demomuzu [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyeb
 
 ## 🔥 Son Güncellemeler
 
+- 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — OpenClaw üzerinden RAGFlow veri setlerine erişmek için resmi bir skill sağlar.
 - 2025-12-26 Yapay zeka ajanı için 'Bellek' desteği eklendi.
 - 2025-11-19 Gemini 3 Pro desteği eklendi.
 - 2025-11-12 Confluence, S3, Notion, Discord, Google Drive'dan veri senkronizasyonu desteği eklendi.
@@ -323,7 +324,7 @@ docker build --platform linux/amd64 \
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.12 # RAGFlow'un bağımlı Python modüllerini yükler
-   uv run download_deps.py
+   uv run python3 download_deps.py
    pre-commit install
    ```
 3. Bağımlı hizmetleri (MinIO, Elasticsearch, Redis ve MySQL) Docker Compose kullanarak başlatın:
