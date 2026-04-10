@@ -332,12 +332,15 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		"top_k":                    chat.TopK,
 		"do_refer":                 chat.DoRefer,
 		"rerank_id":                chat.RerankID,
-		"kb_ids":                   chat.KBIDs,
 		"dataset_ids":              chat.DatasetIDs,
 		"kb_names":                 chat.KBNames,
 		"status":                   chat.Status,
 		"create_time":              chat.CreateTime,
+		"create_date":              chat.CreateDate,
 		"update_time":              chat.UpdateTime,
+		"update_date":              chat.UpdateDate,
+		"tenant_llm_id":            chat.TenantLLMID,
+		"tenant_rerank_id":         chat.TenantRerankID,
 	}
 
 	// Return success response
