@@ -145,3 +145,18 @@ func (dao *SearchDAO) QueryByTenantIDAndID(tenantID string, searchID string) ([]
 	err := DB.Where("tenant_id = ? AND id = ? AND status = ?", tenantID, searchID, "1").Find(&searches).Error
 	return searches, err
 }
+
+// DeleteByID deletes a search by ID (soft delete by setting status to "0")
+// Reference: Python common_service.py::delete_by_id
+func (dao *SearchDAO) DeleteByID(id string) error {
+	return DB.Model(&entity.Search{}).Where("id = ?", id).Update("status", "0").Error
+}
+
+// Accessible4Deletion checks if a search can be deleted by a specific user
+// Reference: Python search_service.py::accessible4deletion
+// Returns true if the search exists, is valid, and was created by the user
+func (dao *SearchDAO) Accessible4Deletion(searchID string, userID string) bool {
+	var search entity.Search
+	err := DB.Where("id = ? AND created_by = ? AND status = ?", searchID, userID, "1").First(&search).Error
+	return err == nil
+}

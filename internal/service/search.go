@@ -233,3 +233,20 @@ func (s *SearchService) GetSearchDetail(userID string, searchID string) (*entity
 
 	return search, nil
 }
+
+// DeleteSearch deletes a search app by ID
+func (s *SearchService) DeleteSearch(userID string, searchID string) error {
+	// Step 1: Check deletion permission (same as Python SearchService.accessible4deletion)
+	// Python: cls.model.select().where(cls.model.id == search_id, cls.model.created_by == user_id, cls.model.status == StatusEnum.VALID.value).first()
+	if !s.searchDAO.Accessible4Deletion(searchID, userID) {
+		return fmt.Errorf("no authorization")
+	}
+
+	// Step 2: Execute delete (same as Python SearchService.delete_by_id)
+	// Python: cls.model.delete().where(cls.model.id == pid).execute()
+	if err := s.searchDAO.DeleteByID(searchID); err != nil {
+		return fmt.Errorf("failed to delete search App %s: %w", searchID, err)
+	}
+
+	return nil
+}
