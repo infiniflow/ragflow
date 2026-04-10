@@ -187,10 +187,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
 
-			chats := v1.Group("/chats")
-			{
-				chats.GET("", r.chatHandler.ListChats)
-			}
+		chats := v1.Group("/chats")
+		{
+			chats.GET("", r.chatHandler.ListChats)
+			chats.GET("/:chat_id", r.chatHandler.GetChat)
+		}
 
 		searches := v1.Group("/searches")
 		{
