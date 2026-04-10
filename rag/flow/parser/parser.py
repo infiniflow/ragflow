@@ -969,10 +969,6 @@ class Parser(ProcessBase):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a text or code file.")
         conf = self._param.setups["text&code"]
         self.set_output("output_format", conf["output_format"])
-
-        print("\n\n")
-        print(conf.get("output_format"))
-        print("\n\n")
         
         sections = TxtParser()(
             name,
@@ -983,10 +979,6 @@ class Parser(ProcessBase):
         if conf.get("output_format") == "json":
             self.set_output("json", [{"text": section[0], "doc_type_kwd": "text"} for section in sections if section[0]])
             return
-
-        print("\n", "-"*150, "\n")
-        print(sections)
-        print("\n", "-"*150, "\n")
 
         self.set_output("text", "\n".join([section[0] for section in sections if section[0]]))
 
