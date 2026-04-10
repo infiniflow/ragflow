@@ -274,7 +274,7 @@ func (c *SkillInstallCommand) installSkill(ctx stdctx.Context, spaceID string, b
 		version = "1.0.0"
 	}
 
-	return uploader.UploadSkill(ctx, skillDir, version, fmt.Sprintf("skills/%s", spaceID), "")
+	return uploader.UploadSkill(ctx, skillDir, version, fmt.Sprintf("skills/%s", spaceID), bundle.Name)
 }
 
 // skillExists checks if a skill already exists
