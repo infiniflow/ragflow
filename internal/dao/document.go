@@ -63,9 +63,8 @@ func (dao *DocumentDAO) Update(document *entity.Document) error {
 }
 
 // UpdateByID updates document by ID with the given fields
-func (dao *DocumentDAO) UpdateByID(id string, updates map[string]interface{}) bool {
-	result := DB.Model(&entity.Document{}).Where("id = ?", id).Updates(updates)
-	return result.RowsAffected > 0
+func (dao *DocumentDAO) UpdateByID(id string, updates map[string]interface{}) error {
+	return DB.Model(&entity.Document{}).Where("id = ?", id).Updates(updates).Error
 }
 
 // Delete delete document

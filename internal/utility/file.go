@@ -180,6 +180,22 @@ var CONTENT_TYPE_MAP = map[string]string{
 	// PPTX
 	"ppt":  "application/vnd.ms-powerpoint",
 	"pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	// Video formats
+	"mp4":  "video/mp4",
+	"mov":  "video/quicktime",
+	"avi":  "video/x-msvideo",
+	"mpg":  "video/mpeg",
+	"mpeg": "video/mpeg",
+	"mkv":  "video/x-matroska",
+	"wmv":  "video/x-ms-wmv",
+	"webm": "video/webm",
+	"rm":   "application/vnd.rn-realmedia",
+	"rmvb": "application/vnd.rn-realmedia",
+	"dat":  "video/mpeg",
+	"asx":  "video/x-ms-asf",
+	"wvx":  "video/x-ms-wvx",
+	"mpe":  "video/mpeg",
+	"mpa":  "video/mpeg",
 }
 
 // FORCE_ATTACHMENT_EXTENSIONS are extensions that should always be downloaded as attachments

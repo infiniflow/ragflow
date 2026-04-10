@@ -18,6 +18,7 @@ package handler
 
 import (
 	"net/http"
+	"net/url"
 	"ragflow/internal/common"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -504,7 +505,8 @@ func (h *FileHandler) Download(c *gin.Context) {
 	}
 	if utility.ShouldForceAttachment(ext, contentType) {
 		c.Header("X-Content-Type-Options", "nosniff")
-		c.Header("Content-Disposition", "attachment")
+		encodedName := url.QueryEscape(file.Name)
+		c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+encodedName)
 	}
 
 	// Send file data

@@ -585,7 +585,10 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 
 	// 2. Handle associated documents
 	informs, err := s.file2DocumentDAO.GetByFileID(file.ID)
-	if err == nil && len(informs) > 0 {
+	if err != nil {
+		return fmt.Errorf("failed to get file2document mappings: %w", err)
+	}
+	if len(informs) > 0 {
 		documentDAO := dao.NewDocumentDAO()
 		datasetDAO := dao.NewKnowledgebaseDAO()
 
@@ -618,10 +621,12 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 		}
 
 		// Delete file2document mapping (outside the loop, called once - matching Python behavior)
-		s.file2DocumentDAO.DeleteByFileID(file.ID)
+		if err := s.file2DocumentDAO.DeleteByFileID(file.ID); err != nil {
+			return fmt.Errorf("failed to delete file2document mapping: %w", err)
+		}
 	}
 
-	// 3. Delete file record (unconditional, matching Python)
+	// 3. Delete file record
 	if err := s.fileDAO.Delete(file.ID); err != nil {
 		return err
 	}
@@ -643,7 +648,8 @@ func (s *FileService) deleteDocumentFromEngine(ctx context.Context, doc *entity.
 	// Delete document from engine with timeout
 	reqCtx, cancel := context.WithTimeout(ctx, 300*time.Second)
 	defer cancel()
-	if err := docEngine.DeleteDocument(reqCtx, indexName, doc.ID); err != nil {
+	condition := map[string]interface{}{"doc_id": doc.ID}
+	if _, err := docEngine.Delete(reqCtx, condition, indexName, doc.KbID); err != nil {
 		return fmt.Errorf("delete document from engine: %w", err)
 	}
 	return nil
@@ -727,6 +733,10 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 		if err != nil || destFolder == nil {
 			return false, "Parent folder not found!"
 		}
+		// Check destination folder permission
+		if !s.checkFileTeamPermission(destFolder, uid) {
+			return false, "No authorization to write to destination folder."
+		}
 	}
 
 	// 5. Validate new_name if provided
@@ -756,6 +766,17 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 				return false, "Duplicated file name in the same folder."
 			}
 		}
+	} else if destFolder != nil {
+		// Plain move (no rename): check for duplicate names in destination folder
+		for _, file := range files {
+			existingFiles := s.fileDAO.Query(file.Name, destFolder.ID)
+			for _, f := range existingFiles {
+				// Ignore the source file itself
+				if f.ID != file.ID {
+					return false, "Duplicated file name in the same folder."
+				}
+			}
+		}
 	}
 
 	// 6. Perform the move operation
@@ -768,11 +789,14 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 		}
 	} else {
 		// Pure rename: no storage operation needed
+		if newName == "" {
+			return false, "new_name is required for rename"
+		}
 		if len(srcFileIDs) == 0 {
 			return false, "Source files not found!"
 		}
 		file := filesMap[srcFileIDs[0]]
-		if !s.fileDAO.UpdateByID(file.ID, map[string]interface{}{"name": newName}) {
+		if err := s.fileDAO.UpdateByID(file.ID, map[string]interface{}{"name": newName}); err != nil {
 			return false, "Database error (File rename)!"
 		}
 
@@ -781,7 +805,7 @@ func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID stri
 		if err == nil && len(informs) > 0 && informs[0].DocumentID != nil {
 			docID := *informs[0].DocumentID
 			documentDAO := dao.NewDocumentDAO()
-			if !documentDAO.UpdateByID(docID, map[string]interface{}{"name": newName}) {
+			if err := documentDAO.UpdateByID(docID, map[string]interface{}{"name": newName}); err != nil {
 				return false, "Database error (Document rename)!"
 			}
 		}
@@ -802,10 +826,18 @@ func (s *FileService) moveEntryRecursive(sourceFile *entity.File, destFolder *en
 		existingFolders := s.fileDAO.Query(effectiveName, destFolder.ID)
 		var newFolder *entity.File
 		if len(existingFolders) > 0 {
+			// Prevent moving a folder into itself (self-target merge)
+			if existingFolders[0].ID == sourceFile.ID {
+				return fmt.Errorf("cannot move folder into itself")
+			}
 			newFolder = existingFolders[0]
 		} else {
 			// Create new folder
-			newFolder, _ = s.fileDAO.CreateFolder(destFolder.ID, sourceFile.TenantID, effectiveName, FileTypeFolder)
+			var err error
+			newFolder, err = s.fileDAO.CreateFolder(destFolder.ID, sourceFile.TenantID, effectiveName, FileTypeFolder)
+			if err != nil {
+				return fmt.Errorf("failed to create destination folder: %w", err)
+			}
 		}
 
 		// Recursively move sub-files
@@ -858,8 +890,8 @@ func (s *FileService) moveEntryRecursive(sourceFile *entity.File, destFolder *en
 	}
 
 	if len(updates) > 0 {
-		if !s.fileDAO.UpdateByID(sourceFile.ID, updates) {
-			return fmt.Errorf("database error (File update)")
+		if err := s.fileDAO.UpdateByID(sourceFile.ID, updates); err != nil {
+			return fmt.Errorf("database error (File update): %w", err)
 		}
 	}
 
@@ -869,8 +901,8 @@ func (s *FileService) moveEntryRecursive(sourceFile *entity.File, destFolder *en
 		if err == nil && len(informs) > 0 && informs[0].DocumentID != nil {
 			docID := *informs[0].DocumentID
 			documentDAO := dao.NewDocumentDAO()
-			if !documentDAO.UpdateByID(docID, map[string]interface{}{"name": overrideName}) {
-				return fmt.Errorf("database error (Document rename)")
+			if err := documentDAO.UpdateByID(docID, map[string]interface{}{"name": overrideName}); err != nil {
+				return fmt.Errorf("database error (Document rename): %w", err)
 			}
 		}
 	}

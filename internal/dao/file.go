@@ -308,10 +308,9 @@ func (dao *FileDAO) Query(name string, parentID string) []*entity.File {
 	return files
 }
 
-// UpdateByID updates file by ID
-func (dao *FileDAO) UpdateByID(id string, updates map[string]interface{}) bool {
-	result := DB.Model(&entity.File{}).Where("id = ?", id).Updates(updates)
-	return result.RowsAffected > 0
+// UpdateByID updates file by ID with the given fields
+func (dao *FileDAO) UpdateByID(id string, updates map[string]interface{}) error {
+	return DB.Model(&entity.File{}).Where("id = ?", id).Updates(updates).Error
 }
 
 // Delete deletes a file by ID (hard delete)
@@ -395,7 +394,9 @@ func (dao *FileDAO) InitDatasetDocs(rootID, tenantID string, file2DocumentDAO *F
 		}
 
 		for _, doc := range documents {
-			dao.addFileFromKB(&doc, datasetFolderForDataset.ID, tenantID, file2DocumentDAO)
+			if err := dao.addFileFromKB(&doc, datasetFolderForDataset.ID, tenantID, file2DocumentDAO); err != nil {
+				return err
+			}
 		}
 	}
 
