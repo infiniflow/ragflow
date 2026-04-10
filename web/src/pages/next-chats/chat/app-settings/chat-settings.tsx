@@ -102,9 +102,20 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     const llmSettingEnabledValues = setLLMSettingEnabledValues(
       data.llm_setting,
     );
-    const nextData = {
+    const merged = {
       ...data,
       ...llmSettingEnabledValues,
+    };
+    // Align with backend default (dialog_service / db_models): missing key means true.
+    const nextData = {
+      ...merged,
+      prompt_config: merged.prompt_config
+        ? {
+            ...merged.prompt_config,
+            include_document_metadata:
+              merged.prompt_config.include_document_metadata ?? true,
+          }
+        : merged.prompt_config,
     };
 
     if (!isEmpty(data)) {
