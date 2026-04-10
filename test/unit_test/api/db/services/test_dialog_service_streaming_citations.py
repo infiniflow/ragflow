@@ -22,11 +22,9 @@ from types import SimpleNamespace
 
 import pytest
 
-warnings.filterwarnings(
-    "ignore",
-    message="pkg_resources is deprecated as an API.*",
-    category=UserWarning,
-)
+pytestmark = [
+    pytest.mark.filterwarnings("ignore:pkg_resources is deprecated as an API.*:UserWarning"),
+]
 
 
 def _install_cv2_stub_if_unavailable():
