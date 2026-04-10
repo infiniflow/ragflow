@@ -204,6 +204,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				file.POST("", r.fileHandler.UploadFile)
 				file.GET("", r.fileHandler.ListFiles)
+				file.DELETE("", r.fileHandler.DeleteFiles)
+				file.POST("/move", r.fileHandler.MoveFiles)
+				file.GET("/:id", r.fileHandler.Download)
 			}
 
 			// provider pool route group
