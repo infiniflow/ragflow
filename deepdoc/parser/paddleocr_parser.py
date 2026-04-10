@@ -295,11 +295,11 @@ class PaddleOCRParser(RAGFlowPdfParser):
         # Process response
         sections = self._transfer_to_sections(result, algorithm=cfg.algorithm, parse_method=parse_method)
         if callback:
-            callback(0.9, f"[PaddleOCR] done, sections: {len(sections)}")
+            callback(0.78, f"[PaddleOCR] done, sections: {len(sections)}")
 
         tables = self._transfer_to_tables(result)
         if callback:
-            callback(1.0, f"[PaddleOCR] done, tables: {len(tables)}")
+            callback(0.8, f"[PaddleOCR] done, tables: {len(tables)}")
 
         return sections, tables
 
@@ -384,7 +384,7 @@ class PaddleOCRParser(RAGFlowPdfParser):
             raise RuntimeError(f"[PaddleOCR] response is not JSON: {exc}") from exc
 
         if callback:
-            callback(0.8, "[PaddleOCR] response received")
+            callback(0.75, "[PaddleOCR] response received")
 
         # Validate response format
         if response_data.get("errorCode") != 0 or not isinstance(response_data.get("result"), dict):

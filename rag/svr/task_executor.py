@@ -342,6 +342,12 @@ async def build_chunks(task, progress_callback):
 
     if task["parser_config"].get("auto_keywords", 0):
         st = timer()
+        logging.info(
+            "[LLM][keywords] start model=%s chunks=%d topn=%d",
+            task["llm_id"],
+            len(docs),
+            task["parser_config"]["auto_keywords"],
+        )
         progress_callback(msg="Start to generate keywords for every chunk ...")
         chat_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.CHAT, task["llm_id"])
         chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
@@ -372,10 +378,23 @@ async def build_chunks(task, progress_callback):
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
-        progress_callback(msg="Keywords generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+        elapsed = timer() - st
+        logging.info(
+            "[LLM][keywords] done model=%s chunks=%d elapsed=%.2fs",
+            chat_mdl.llm_name,
+            len(docs),
+            elapsed,
+        )
+        progress_callback(msg="Keywords generation {} chunks completed in {:.2f}s".format(len(docs), elapsed))
 
     if task["parser_config"].get("auto_questions", 0):
         st = timer()
+        logging.info(
+            "[LLM][questions] start model=%s chunks=%d topn=%d",
+            task["llm_id"],
+            len(docs),
+            task["parser_config"]["auto_questions"],
+        )
         progress_callback(msg="Start to generate questions for every chunk ...")
         chat_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.CHAT, task["llm_id"])
         chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
@@ -405,10 +424,25 @@ async def build_chunks(task, progress_callback):
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
-        progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+        elapsed = timer() - st
+        logging.info(
+            "[LLM][questions] done model=%s chunks=%d elapsed=%.2fs",
+            chat_mdl.llm_name,
+            len(docs),
+            elapsed,
+        )
+        progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), elapsed))
 
     if task["parser_config"].get("enable_metadata", False) and task["parser_config"].get("metadata"):
         st = timer()
+        metadata_schema = turn2jsonschema(task["parser_config"]["metadata"])
+        schema_fields = len(metadata_schema.get("properties", {}))
+        logging.info(
+            "[LLM][metadata] start model=%s chunks=%d fields=%d",
+            task["llm_id"],
+            len(docs),
+            schema_fields,
+        )
         progress_callback(msg="Start to generate meta-data for every chunk ...")
         chat_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.CHAT, task["llm_id"])
         chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
@@ -421,9 +455,7 @@ async def build_chunks(task, progress_callback):
                     progress_callback(-1, msg="Task has been canceled.")
                     return
                 async with chat_limiter:
-                    cached = await gen_metadata(chat_mdl,
-                                                turn2jsonschema(task["parser_config"]["metadata"]),
-                                                d["content_with_weight"])
+                    cached = await gen_metadata(chat_mdl, metadata_schema, d["content_with_weight"])
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "metadata",
                               task["parser_config"]["metadata"])
             if cached:
@@ -435,7 +467,7 @@ async def build_chunks(task, progress_callback):
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
-            logging.error("Error in doc_question_proposal", exc_info=e)
+            logging.error("Error in gen_metadata_task", exc_info=e)
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -449,7 +481,15 @@ async def build_chunks(task, progress_callback):
             existing_meta = existing_meta if isinstance(existing_meta, dict) else {}
             metadata = update_metadata_to(metadata, existing_meta)
             DocMetadataService.update_document_metadata(task["doc_id"], metadata)
-        progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+        elapsed = timer() - st
+        logging.info(
+            "[LLM][metadata] done model=%s chunks=%d collected_fields=%d elapsed=%.2fs",
+            chat_mdl.llm_name,
+            len(docs),
+            len(metadata),
+            elapsed,
+        )
+        progress_callback(msg="Metadata generation {} chunks completed in {:.2f}s".format(len(docs), elapsed))
 
     if task["kb_parser_config"].get("tag_kb_ids", []):
         progress_callback(msg="Start to tag for every chunk ...")
@@ -586,6 +626,13 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
             c = "None"
         cnts.append(c)
 
+    logging.info(
+        "[LLM][embedding] start model=%s chunks=%d batch_size=%d",
+        getattr(mdl, "llm_name", ""),
+        len(cnts),
+        settings.EMBEDDING_BATCH_SIZE,
+    )
+
     tk_count = 0
     if len(tts) == len(cnts):
         vts, c = await thread_pool_exec(mdl.encode, tts[0:1])
@@ -606,7 +653,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         else:
             cnts_ = np.concatenate((cnts_, vts), axis=0)
         tk_count += c
-        callback(prog=0.7 + 0.2 * (i + 1) / len(cnts), msg="")
+        callback(prog=0.8 + 0.15 * (i + 1) / len(cnts), msg="")
     cnts = cnts_
     filename_embd_weight = parser_config.get("filename_embd_weight", 0.1)  # due to the db support none value
     if not filename_embd_weight:
@@ -623,6 +670,13 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         v = vects[i].tolist()
         vector_size = len(v)
         d["q_%d_vec" % len(v)] = v
+    logging.info(
+        "[LLM][embedding] done model=%s chunks=%d tokens=%d vector_size=%d",
+        getattr(mdl, "llm_name", ""),
+        len(cnts),
+        tk_count,
+        vector_size,
+    )
     return tk_count, vector_size
 
 
