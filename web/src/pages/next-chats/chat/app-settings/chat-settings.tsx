@@ -49,6 +49,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       prompt_config: {
         quote: true,
         keyword: false,
+        include_document_metadata: true,
         tts: false,
         use_kg: false,
         refine_multiturn: true,

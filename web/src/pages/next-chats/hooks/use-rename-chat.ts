@@ -27,6 +27,7 @@ export const useRenameChat = () => {
       dataset_ids: [],
       prompt_config: {
         empty_response: '',
+        include_document_metadata: true,
         prologue: t('chat.setAnOpenerInitial'),
         quote: true,
         keyword: false,

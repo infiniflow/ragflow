@@ -270,6 +270,7 @@ def test_async_chat_uses_all_docs_when_no_doc_ids_selected(monkeypatch):
         prompt_config={
             "quote": False,
             "keyword": False,
+            "include_document_metadata": True,
             "tts": False,
             "empty_response": "",
             "system": "Use only this knowledge: {knowledge}",
@@ -298,7 +299,7 @@ def test_async_chat_uses_all_docs_when_no_doc_ids_selected(monkeypatch):
     monkeypatch.setattr(
         dialog_service,
         "kb_prompt",
-        lambda kbinfos, _max_tokens: ["Chunk text from dataset."] if kbinfos["chunks"] else [],
+        lambda kbinfos, _max_tokens, include_document_metadata=True: ["Chunk text from dataset."] if kbinfos["chunks"] else [],
     )
     monkeypatch.setattr(dialog_service, "message_fit_in", lambda msg, _max_tokens: (0, msg))
 
@@ -314,3 +315,174 @@ def test_async_chat_uses_all_docs_when_no_doc_ids_selected(monkeypatch):
     assert retriever.calls[0]["kwargs"]["doc_ids"] is None
     assert "Chunk text from dataset." in chat_model.calls[0]["system_prompt"]
     assert result[0]["answer"] == "stub answer"
+
+
+@pytest.mark.p2
+def test_async_chat_skips_disabled_metadata_filter_and_omits_document_metadata(monkeypatch, force_es_engine):
+    retriever = _StubAsyncRetriever(
+        {
+            "total": 1,
+            "chunks": [
+                {
+                    "chunk_id": "chunk-1",
+                    "content_ltks": "chunk text",
+                    "content_with_weight": "Chunk text from dataset.",
+                    "doc_id": "doc-1",
+                    "docnm_kwd": "doc.txt",
+                    "kb_id": "kb-1",
+                    "important_kwd": [],
+                    "positions": [],
+                    "vector": [0.1, 0.2],
+                }
+            ],
+            "doc_aggs": [],
+        }
+    )
+    chat_model = _StubChatModel(["stub answer"])
+    dialog = SimpleNamespace(
+        kb_ids=["kb-1"],
+        llm_id="chat-model",
+        tenant_id="tenant-id",
+        llm_setting={},
+        similarity_threshold=0.1,
+        vector_similarity_weight=0.2,
+        top_n=8,
+        top_k=32,
+        meta_data_filter={"method": "disabled", "manual": [{"key": "author", "op": "=", "value": "bob"}]},
+        prompt_config={
+            "quote": False,
+            "keyword": False,
+            "include_document_metadata": False,
+            "tts": False,
+            "empty_response": "",
+            "system": "Use only this knowledge: {knowledge}",
+            "parameters": [{"key": "knowledge", "optional": False}],
+            "reasoning": False,
+            "toc_enhance": False,
+            "use_kg": False,
+        },
+    )
+    applied_filters = []
+    kb_prompt_calls = []
+
+    monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
+    monkeypatch.setattr(dialog_service.TenantLLMService, "llm_id2llm_type", lambda _llm_id: "chat")
+    monkeypatch.setattr(
+        dialog_service.TenantLLMService,
+        "get_model_config",
+        lambda *_args, **_kwargs: {"llm_factory": "unit", "max_tokens": 4096},
+    )
+    monkeypatch.setattr(dialog_service.TenantLangfuseService, "filter_by_tenant", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        dialog_service,
+        "get_models",
+        lambda _dialog: ([SimpleNamespace(tenant_id="tenant-id")], object(), None, chat_model, None),
+    )
+    monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_field_map", lambda _kb_ids: {})
+    monkeypatch.setattr(dialog_service, "label_question", lambda _question, _kbs: None)
+    monkeypatch.setattr(
+        dialog_service,
+        "apply_meta_data_filter",
+        lambda *_args, **_kwargs: applied_filters.append((_args, _kwargs)),
+    )
+    monkeypatch.setattr(dialog_service.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kb_ids: {"author": {"bob": ["doc-1"]}})
+    monkeypatch.setattr(
+        dialog_service,
+        "kb_prompt",
+        lambda kbinfos, _max_tokens, include_document_metadata=True: kb_prompt_calls.append(include_document_metadata) or ["Chunk text from dataset."],
+    )
+    monkeypatch.setattr(dialog_service, "message_fit_in", lambda msg, _max_tokens: (0, msg))
+
+    async def _collect():
+        items = []
+        async for item in dialog_service.async_chat(dialog, [{"role": "user", "content": "What does the dataset say?"}], stream=False):
+            items.append(item)
+        return items
+
+    result = asyncio.run(_collect())
+
+    assert result[0]["answer"] == "stub answer"
+    assert applied_filters == []
+    assert kb_prompt_calls == [False]
+    assert retriever.calls[0]["kwargs"]["doc_ids"] is None
+
+
+@pytest.mark.p2
+def test_async_chat_can_include_document_metadata_in_prompt(monkeypatch, force_es_engine):
+    retriever = _StubAsyncRetriever(
+        {
+            "total": 1,
+            "chunks": [
+                {
+                    "chunk_id": "chunk-1",
+                    "content_ltks": "chunk text",
+                    "content_with_weight": "Chunk text from dataset.",
+                    "doc_id": "doc-1",
+                    "docnm_kwd": "doc.txt",
+                    "kb_id": "kb-1",
+                    "important_kwd": [],
+                    "positions": [],
+                    "vector": [0.1, 0.2],
+                }
+            ],
+            "doc_aggs": [],
+        }
+    )
+    chat_model = _StubChatModel(["stub answer"])
+    dialog = SimpleNamespace(
+        kb_ids=["kb-1"],
+        llm_id="chat-model",
+        tenant_id="tenant-id",
+        llm_setting={},
+        similarity_threshold=0.1,
+        vector_similarity_weight=0.2,
+        top_n=8,
+        top_k=32,
+        meta_data_filter=None,
+        prompt_config={
+            "quote": False,
+            "keyword": False,
+            "include_document_metadata": True,
+            "tts": False,
+            "empty_response": "",
+            "system": "Use only this knowledge: {knowledge}",
+            "parameters": [{"key": "knowledge", "optional": False}],
+            "reasoning": False,
+            "toc_enhance": False,
+            "use_kg": False,
+        },
+    )
+    kb_prompt_calls = []
+
+    monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
+    monkeypatch.setattr(dialog_service.TenantLLMService, "llm_id2llm_type", lambda _llm_id: "chat")
+    monkeypatch.setattr(
+        dialog_service.TenantLLMService,
+        "get_model_config",
+        lambda *_args, **_kwargs: {"llm_factory": "unit", "max_tokens": 4096},
+    )
+    monkeypatch.setattr(dialog_service.TenantLangfuseService, "filter_by_tenant", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        dialog_service,
+        "get_models",
+        lambda _dialog: ([SimpleNamespace(tenant_id="tenant-id")], object(), None, chat_model, None),
+    )
+    monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_field_map", lambda _kb_ids: {})
+    monkeypatch.setattr(dialog_service, "label_question", lambda _question, _kbs: None)
+    monkeypatch.setattr(
+        dialog_service,
+        "kb_prompt",
+        lambda kbinfos, _max_tokens, include_document_metadata=True: kb_prompt_calls.append(include_document_metadata) or ["Chunk text from dataset."],
+    )
+    monkeypatch.setattr(dialog_service, "message_fit_in", lambda msg, _max_tokens: (0, msg))
+
+    async def _collect():
+        items = []
+        async for item in dialog_service.async_chat(dialog, [{"role": "user", "content": "What does the dataset say?"}], stream=False):
+            items.append(item)
+        return items
+
+    result = asyncio.run(_collect())
+
+    assert result[0]["answer"] == "stub answer"
+    assert kb_prompt_calls == [True]

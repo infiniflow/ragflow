@@ -122,6 +122,11 @@ export default function ChatBasicSetting() {
         tooltip={t('keywordTip')}
       ></SwitchFormField>
       <SwitchFormField
+        name={'prompt_config.include_document_metadata'}
+        label={t('includeDocumentMetadata')}
+        tooltip={t('includeDocumentMetadataTip')}
+      ></SwitchFormField>
+      <SwitchFormField
         name={'prompt_config.tts'}
         label={t('tts')}
         tooltip={t('ttsTip')}
