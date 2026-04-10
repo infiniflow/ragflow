@@ -928,6 +928,7 @@ The above is the content you need to summarize.`,
       selectModelPlaceholder: 'Изберете модел',
       configureModelTitle: 'Конфигуриране на модел',
       connectorNameTip: 'Описателно име за конектора',
+      syncDeletedFiles: 'Синхронизирай изтритите файлове',
       confluenceIsCloudTip:
         'Отметнете, ако това е Confluence Cloud инстанция, махнете за Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:

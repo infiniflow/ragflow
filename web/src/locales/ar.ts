@@ -860,6 +860,7 @@ export default {
       selectModelPlaceholder: 'حدد النموذج',
       configureModelTitle: 'تكوين النموذج',
       connectorNameTip: 'اسم وصفي للموصل',
+      syncDeletedFiles: 'مزامنة الملفات المحذوفة',
       confluenceIsCloudTip:
         'تحقق مما إذا كان هذا هو مثيل Confluence Cloud، قم بإلغاء تحديد Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
