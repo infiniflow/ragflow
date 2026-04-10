@@ -12,7 +12,7 @@
     },
     "canvas_type": "Ingestion Pipeline",
     "canvas_category": "dataflow_canvas",
-"dsl": {
+        "dsl": {
             "components": {
                 "Extractor:PublicPlumsKiss": {
                     "downstream": [
@@ -37,7 +37,7 @@
                             "presence_penalty": 0.4,
                             "prompts": [
                                 {
-                                    "content": "Text to Summarize:\n[Insert text here]",
+                                    "content": "Text to Summarize:\n{TokenChunker:FancyCitiesStick@chunks}",
                                     "role": "user"
                                 }
                             ],
@@ -409,7 +409,7 @@
                         "dragging": false,
                         "id": "Parser:HipSignsRhyme",
                         "measured": {
-                            "height": 57,
+                            "height": 197,
                             "width": 200
                         },
                         "position": {
@@ -424,6 +424,7 @@
                     {
                         "data": {
                             "form": {
+                                "children_delimiters": [],
                                 "chunk_token_size": 512,
                                 "delimiter_mode": "token_size",
                                 "delimiters": [
@@ -452,6 +453,7 @@
                             "x": 616.9952409420641,
                             "y": 195.39629819663406
                         },
+                        "selected": false,
                         "sourcePosition": "right",
                         "targetPosition": "left",
                         "type": "chunkerNode"
@@ -473,7 +475,7 @@
                                 },
                                 "presencePenaltyEnabled": true,
                                 "presence_penalty": 0.4,
-                                "prompts": "Text to Summarize:\n[Insert text here]",
+                                "prompts": "Text to Summarize:\n{TokenChunker:FancyCitiesStick@chunks}",
                                 "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
                                 "temperature": 0.1,
                                 "temperatureEnabled": true,
@@ -493,7 +495,7 @@
                             "x": 916.9952409420641,
                             "y": 195.39629819663406
                         },
-                        "selected": false,
+                        "selected": true,
                         "sourcePosition": "right",
                         "targetPosition": "left",
                         "type": "contextNode"
@@ -544,7 +546,7 @@
                             "x": 735.9586746349814,
                             "y": 315.614230763182
                         },
-                        "selected": true,
+                        "selected": false,
                         "sourcePosition": "right",
                         "targetPosition": "left",
                         "type": "noteNode"
@@ -552,6 +554,7 @@
                 ]
             },
             "history": [],
+            "messages": [],
             "path": [],
             "retrieval": [],
             "variables": []

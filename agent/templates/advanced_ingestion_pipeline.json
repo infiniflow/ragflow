@@ -37,7 +37,7 @@
                             "presence_penalty": 0.4,
                             "prompts": [
                                 {
-                                    "content": "Text to Summarize:\n[Insert text here]",
+                                    "content": "Text to Summarize:\n{Extractor:SunnyCooksSpend@chunks}",
                                     "role": "user"
                                 }
                             ],
@@ -76,7 +76,7 @@
                             "presence_penalty": 0.4,
                             "prompts": [
                                 {
-                                    "content": "Text to Summarize:\n[Insert text here]",
+                                    "content": "Text to Summarize:\n{TokenChunker:SixtyShirtsFeel@chunks}",
                                     "role": "user"
                                 }
                             ],
@@ -115,7 +115,7 @@
                             "presence_penalty": 0.4,
                             "prompts": [
                                 {
-                                    "content": "Text Content\n[Insert text here]",
+                                    "content": "Text Content\n{Extractor:EasyToesFail@chunks}",
                                     "role": "user"
                                 }
                             ],
@@ -371,6 +371,7 @@
                             "isHovered": false
                         },
                         "id": "xy-edge__Extractor:EasyToesFailstart-Extractor:SunnyCooksSpendend",
+                        "selected": false,
                         "source": "Extractor:EasyToesFail",
                         "sourceHandle": "start",
                         "target": "Extractor:SunnyCooksSpend",
@@ -577,7 +578,7 @@
                                 },
                                 "presencePenaltyEnabled": true,
                                 "presence_penalty": 0.4,
-                                "prompts": "Text to Summarize:\n[Insert text here]",
+                                "prompts": "Text to Summarize:\n{TokenChunker:SixtyShirtsFeel@chunks}",
                                 "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
                                 "temperature": 0.1,
                                 "temperatureEnabled": true,
@@ -620,7 +621,7 @@
                                 },
                                 "presencePenaltyEnabled": true,
                                 "presence_penalty": 0.4,
-                                "prompts": "Text Content\n[Insert text here]",
+                                "prompts": "Text Content\n{Extractor:EasyToesFail@chunks}",
                                 "sys_prompt": "Role\nYou are a text analyzer.\n\nTask\nExtract the most important keywords/phrases of a given piece of text content.\n\nRequirements\n- Summarize the text content, and give the top 5 important keywords/phrases.\n- The keywords MUST be in the same language as the given piece of text content.\n- The keywords are delimited by ENGLISH COMMA.\n- Output keywords ONLY.",
                                 "temperature": 0.1,
                                 "temperatureEnabled": true,
@@ -663,7 +664,7 @@
                                 },
                                 "presencePenaltyEnabled": true,
                                 "presence_penalty": 0.4,
-                                "prompts": "Text to Summarize:\n[Insert text here]",
+                                "prompts": "Text to Summarize:\n{Extractor:SunnyCooksSpend@chunks}",
                                 "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
                                 "temperature": 0.1,
                                 "temperatureEnabled": true,
@@ -684,7 +685,7 @@
                             "x": 594.401162655802,
                             "y": 536.2317513894384
                         },
-                        "selected": false,
+                        "selected": true,
                         "sourcePosition": "right",
                         "targetPosition": "left",
                         "type": "contextNode"
@@ -713,7 +714,7 @@
                             "x": 911.3724897632962,
                             "y": 186.00527380751004
                         },
-                        "selected": true,
+                        "selected": false,
                         "sourcePosition": "right",
                         "targetPosition": "left",
                         "type": "tokenizerNode"
