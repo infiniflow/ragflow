@@ -47,7 +47,7 @@ func NewChatHandler(chatService *service.ChatService, userService *service.UserS
 // @Accept json
 // @Produce json
 // @Success 200 {object} service.ListChatsResponse
-// @Router /v1/dialog/list [get]
+// @Router /api/v1/chats [get]
 func (h *ChatHandler) ListChats(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -254,6 +254,99 @@ func (h *ChatHandler) RemoveChats(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"data":    true,
+		"message": "success",
+	})
+}
+
+// GetChat get chat detail
+// @Summary Get Chat Detail
+// @Description Get detail of a chat by ID
+// @Tags chat
+// @Accept json
+// @Produce json
+// @Param chat_id path string true "chat ID"
+// @Success 200 {object} service.GetChatResponse
+// @Router /api/v1/chats/{chat_id} [get]
+// Reference: api/apps/restful_apis/chat_api.py::get_chat
+// Python implementation details:
+// - Route: @manager.route("/chats/<chat_id>", methods=["GET"])
+func (h *ChatHandler) GetChat(c *gin.Context) {
+	// Get current user from context (same as Python current_user)
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	userID := user.ID
+
+	// Get chat_id from path parameter (same as Python <chat_id>)
+	chatID := c.Param("chat_id")
+	if chatID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    nil,
+			"message": "chat_id is required",
+		})
+		return
+	}
+
+	// Get chat detail with permission check
+	chat, err := h.chatService.GetChat(userID, chatID)
+	if err != nil {
+		errMsg := err.Error()
+		// Check if it's an authorization error
+		if errMsg == "no authorization" {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeAuthenticationError,
+				"data":    false,
+				"message": "No authorization.",
+			})
+			return
+		}
+		// Not found error
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Build response (same as Python _build_chat_response)
+	// The service already returns GetChatResponse with DatasetIDs and KBNames
+	result := map[string]interface{}{
+		"id":                       chat.ID,
+		"tenant_id":                chat.TenantID,
+		"name":                     chat.Name,
+		"description":              chat.Description,
+		"icon":                     chat.Icon,
+		"language":                 chat.Language,
+		"llm_id":                   chat.LLMID,
+		"llm_setting":              chat.LLMSetting,
+		"prompt_type":              chat.PromptType,
+		"prompt_config":            chat.PromptConfig,
+		"meta_data_filter":         chat.MetaDataFilter,
+		"similarity_threshold":     chat.SimilarityThreshold,
+		"vector_similarity_weight": chat.VectorSimilarityWeight,
+		"top_n":                    chat.TopN,
+		"top_k":                    chat.TopK,
+		"do_refer":                 chat.DoRefer,
+		"rerank_id":                chat.RerankID,
+		"dataset_ids":              chat.DatasetIDs,
+		"kb_names":                 chat.KBNames,
+		"status":                   chat.Status,
+		"create_time":              chat.CreateTime,
+		"create_date":              chat.CreateDate,
+		"update_time":              chat.UpdateTime,
+		"update_date":              chat.UpdateDate,
+		"tenant_llm_id":            chat.TenantLLMID,
+		"tenant_rerank_id":         chat.TenantRerankID,
+	}
+
+	// Return success response
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    result,
 		"message": "success",
 	})
 }
