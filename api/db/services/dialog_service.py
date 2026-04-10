@@ -550,6 +550,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         questions = [await cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
 
     if is_metadata_filter_enabled(dialog.meta_data_filter):
+        logging.debug("Metadata filter enabled for chat retrieval; applying filter.")
         metas = DocMetadataService.get_flatted_meta_by_kbs(dialog.kb_ids)
         attachments = await apply_meta_data_filter(
             dialog.meta_data_filter,
@@ -558,6 +559,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             chat_mdl,
             attachments,
         )
+    else:
+        logging.debug("Metadata filter disabled/empty for chat retrieval; skipping filter.")
 
     if prompt_config.get("keyword", False):
         questions[-1] += await keyword_extraction(chat_mdl, questions[-1])
@@ -1390,8 +1393,11 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
 
     if is_metadata_filter_enabled(meta_data_filter):
+        logging.debug("Metadata filter enabled for ask retrieval; applying filter.")
         metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
+    else:
+        logging.debug("Metadata filter disabled/empty for ask retrieval; skipping filter.")
 
     kbinfos = await retriever.retrieval(
         question=question,
@@ -1481,8 +1487,11 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         rerank_mdl = LLMBundle(tenant_id, rerank_model_config)
 
     if is_metadata_filter_enabled(meta_data_filter):
+        logging.debug("Metadata filter enabled for mindmap retrieval; applying filter.")
         metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
+    else:
+        logging.debug("Metadata filter disabled/empty for mindmap retrieval; skipping filter.")
 
     ranks = await settings.retriever.retrieval(
         question=question,
