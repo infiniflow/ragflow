@@ -248,13 +248,17 @@ def update_metadata_to(metadata, meta):
     if not isinstance(meta, dict):
         return metadata
 
+    def _is_supported_scalar(value):
+        # bool is a subclass of int in Python, exclude it explicitly.
+        return isinstance(value, (str, int, float)) and not isinstance(value, bool)
+
     for k, v in meta.items():
         if isinstance(v, list):
-            v = [vv for vv in v if isinstance(vv, str)]
+            v = [vv for vv in v if _is_supported_scalar(vv)]
             if not v:
                 continue
             v = dedupe_list(v)
-        if not isinstance(v, list) and not isinstance(v, str):
+        if not isinstance(v, list) and not _is_supported_scalar(v):
             continue
         if k not in metadata:
             metadata[k] = v

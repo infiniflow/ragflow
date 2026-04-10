@@ -419,11 +419,14 @@ export const useManageMetaDataModal = (
   const handleSaveSettings = useCallback(
     async (callback: () => void, builtInMetadata?: IBuiltInMetadataItem[]) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
-      const { data: res } = await kbService.kbUpdateMetaData({
+      const payload = {
         kb_id: id,
         metadata: data,
-        built_in_metadata: builtInMetadata || [],
-      });
+        ...(builtInMetadata !== undefined
+          ? { built_in_metadata: builtInMetadata }
+          : {}),
+      };
+      const { data: res } = await kbService.kbUpdateMetaData(payload);
       if (res.code === 0) {
         message.success(t('message.operated'));
         callback?.();
@@ -441,11 +444,14 @@ export const useManageMetaDataModal = (
     async (callback: () => void, builtInMetadata?: IBuiltInMetadataItem[]) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
       if (otherData?.documentId) {
-        const { data: res } = await kbService.documentUpdateMetaData({
+        const payload = {
           doc_id: otherData.documentId,
           metadata: data,
-          built_in_metadata: builtInMetadata || [],
-        });
+          ...(builtInMetadata !== undefined
+            ? { built_in_metadata: builtInMetadata }
+            : {}),
+        };
+        const { data: res } = await kbService.documentUpdateMetaData(payload);
         if (res.code === 0) {
           message.success(t('message.operated'));
           callback?.();
