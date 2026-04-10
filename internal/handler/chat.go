@@ -56,8 +56,32 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 	}
 	userID := user.ID
 
+	// Parse query parameters
+	keywords := c.Query("keywords")
+
+	page := 0
+	if pageStr := c.Query("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	pageSize := 0
+	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
+		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 {
+			pageSize = ps
+		}
+	}
+
+	orderby := c.DefaultQuery("orderby", "create_time")
+
+	desc := true
+	if descStr := c.Query("desc"); descStr != "" {
+		desc = descStr != "false"
+	}
+
 	// List chats - default to valid status "1" (same as Python StatusEnum.VALID.value)
-	result, err := h.chatService.ListChats(userID, "1")
+	result, err := h.chatService.ListChats(userID, keywords, "1", page, pageSize, orderby, desc)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
