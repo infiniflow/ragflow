@@ -30,9 +30,10 @@ warnings.filterwarnings(
 
 
 def _install_cv2_stub_if_unavailable():
+    original_cv2 = sys.modules.get("cv2")
     try:
         import cv2  # noqa: F401
-        return
+        return original_cv2, False
     except Exception:
         pass
 
@@ -59,12 +60,22 @@ def _install_cv2_stub_if_unavailable():
 
     stub.__getattr__ = _module_getattr
     sys.modules["cv2"] = stub
+    return original_cv2, True
 
 
-_install_cv2_stub_if_unavailable()
+_ORIGINAL_CV2, _INSTALLED_CV2_STUB = _install_cv2_stub_if_unavailable()
 
 from api.db.services import dialog_service
 
+
+@pytest.fixture(scope="module", autouse=True)
+def _restore_cv2_module_state():
+    yield
+    if _INSTALLED_CV2_STUB:
+        if _ORIGINAL_CV2 is None:
+            sys.modules.pop("cv2", None)
+        else:
+            sys.modules["cv2"] = _ORIGINAL_CV2
 
 class _StubStreamingChatModel:
     def __init__(self, *, streamed_outputs, final_answer):
