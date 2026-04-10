@@ -36,7 +36,14 @@ def generate_time_range_filter(
     time_range_filter = ""
     if start is not None:
         time_start = datetime.fromtimestamp(start, tz=timezone.utc).isoformat()
-        time_range_filter += f" and {GoogleFields.MODIFIED_TIME.value} > '{time_start}'"
+        # Use both modifiedTime and createdTime to catch newly uploaded files
+        # whose modifiedTime predates the last sync (Google Drive preserves the
+        # original modifiedTime on upload, but createdTime always reflects when
+        # the file was added to Drive).
+        time_range_filter += (
+            f" and ({GoogleFields.MODIFIED_TIME.value} > '{time_start}'"
+            f" or {GoogleFields.CREATED_TIME.value} > '{time_start}')"
+        )
     if end is not None:
         time_stop = datetime.fromtimestamp(end, tz=timezone.utc).isoformat()
         time_range_filter += f" and {GoogleFields.MODIFIED_TIME.value} <= '{time_stop}'"
