@@ -20,6 +20,7 @@ import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import urllib.parse
 from pathlib import Path
+
 from http_client import HttpClient
 from lark import Tree
 from user import encrypt_password, login_user
@@ -1564,6 +1565,30 @@ class RAGFlowClient:
         else:
             print(f"Fail to update chunk, HTTP {response.status_code}")
 
+
+    def _get_documents_by_ids(self, ids:list[str]):
+        response = self.http_client.request(
+            "POST",
+            "/document/infos",
+            json_body={"doc_ids": ids},
+            use_api_base=False,
+            auth_kind="web"
+        )
+
+        if response.status_code != 200:
+            return f"Fail to get document info, HTTP {response.status_code}", None
+
+        res_json = response.json()
+        if res_json.get("code") != 0:
+            return f"Fail to get document info: {res_json.get('message')}", None
+
+        docs = res_json.get("data", [])
+        if not docs:
+            return f"Document not found: {ids}", None
+
+        return None, docs
+
+
     def set_metadata(self, command_dict):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
@@ -1582,26 +1607,13 @@ class RAGFlowClient:
             return
 
         # Step 1: Get document info to find kb_id (dataset_id)
-        response = self.http_client.request(
-            "POST",
-            "/document/infos",
-            json_body={"doc_ids": [doc_id]},
-            use_api_base=False,
-            auth_kind="web"
-        )
-
-        if response.status_code != 200:
-            print(f"Fail to get document info, HTTP {response.status_code}")
+        doc_error_msg, docs = self._get_documents_by_ids([doc_id])
+        if doc_error_msg:
+            print(doc_error_msg)
             return
 
-        res_json = response.json()
-        if res_json.get("code") != 0:
-            print(f"Fail to get document info: {res_json.get('message')}")
-            return
-
-        docs = res_json.get("data", [])
-        if not docs:
-            print(f"Document not found: {doc_id}")
+        if len(docs) == 0:
+            print(f"no document found for {doc_id}")
             return
 
         dataset_id = docs[0].get("kb_id")
@@ -1616,7 +1628,7 @@ class RAGFlowClient:
 
         response = self.http_client.request(
             "PUT",
-            f"/api/v1/datasets/{dataset_id}/documents/{doc_id}",
+            f"/datasets/{dataset_id}/documents/{doc_id}",
             json_body=payload,
             use_api_base=True,
             auth_kind="web"
