@@ -169,16 +169,19 @@ def add_graph_templates():
 
     for fnm in sorted(os.listdir(dir)):
         if not fnm.endswith(".json"):
+            logging.debug("Skipping non-json template file in %s: %s", dir, fnm)
             continue
+        template_path = os.path.join(dir, fnm)
         try:
-            with open(os.path.join(dir, fnm), "r", encoding="utf-8") as f:
+            with open(template_path, "r", encoding="utf-8") as f:
                 cnvs = normalize_canvas_template_categories(json.load(f))
+            logging.info("Loaded and normalized template file: %s", template_path)
             try:
                 CanvasTemplateService.save(**cnvs)
             except Exception:
                 CanvasTemplateService.update_by_id(cnvs["id"], cnvs)
         except Exception as e:
-            logging.exception(f"Add agent templates error: {e}")
+            logging.exception("Add agent templates error for %s: %s", template_path, e)
 
 
 def init_web_data():
