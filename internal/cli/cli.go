@@ -395,10 +395,10 @@ Configuration File:
 Commands:
   SQL commands (use quotes): "LIST USERS", "CREATE USER 'email' 'password'", etc.
   Filesystem commands (no quotes): ls datasets, search "keyword", cat path, etc.
-  Skill commands: 
-    add-skill <path> [--version 1.0.0]
-    delete-skill <skill-name>
-    search skills -q <query> [--space space1]
+  Skill commands:
+    install-skill <space> <path|url> [options]  Install a skill from local path or remote URL
+    uninstall-skill <space> <skill-name>         Remove an installed skill
+    search skills -q <query> [--space space1]   Search skills in a space
   If no command is provided, CLI runs in interactive mode.`)
 }
 
@@ -772,7 +772,7 @@ func (c *CLI) executeFilesystem(input string) error {
 
 		fmt.Println(string(content))
 		return nil
-	case "add-skill":
+	case "install-skill":
 		// Get the file provider and skill provider from the engine
 		fileProvider, ok := c.contextEngine.GetProvider("files").(*filesystem.FileProvider)
 		if !ok {
@@ -784,9 +784,9 @@ func (c *CLI) executeFilesystem(input string) error {
 		}
 		// Create adapter for HTTPClient
 		httpAdapter := &httpClientAdapter{client: c.client.HTTPClient}
-		cmd := filesystem.NewAddSkillCommand(httpAdapter, fileProvider, skillProvider)
+		cmd := filesystem.NewInstallSkillCommand(httpAdapter, fileProvider, skillProvider)
 		return cmd.Execute(cmdArgs)
-	case "delete-skill":
+	case "uninstall-skill":
 		skillProvider := c.contextEngine.GetProvider("skills")
 		if skillProvider == nil {
 			return fmt.Errorf("skill provider not available")
@@ -798,7 +798,36 @@ func (c *CLI) executeFilesystem(input string) error {
 		// Create adapter for HTTPClient
 		httpAdapter := &httpClientAdapter{client: c.client.HTTPClient}
 		fileProv, _ := fileProvider.(*filesystem.FileProvider)
-		cmd := filesystem.NewDeleteSkillCommand(httpAdapter, skillProvider, fileProv)
+		cmd := filesystem.NewUninstallSkillCommand(httpAdapter, skillProvider, fileProv)
+		return cmd.Execute(cmdArgs)
+	case "add-skill":
+		fmt.Println("⚠ Warning: 'add-skill' is deprecated. Use 'install-skill' instead.")
+		// Forward to install-skill
+		fileProvider, ok := c.contextEngine.GetProvider("files").(*filesystem.FileProvider)
+		if !ok {
+			return fmt.Errorf("file provider not available")
+		}
+		skillProvider := c.contextEngine.GetProvider("skills")
+		if skillProvider == nil {
+			return fmt.Errorf("skill provider not available")
+		}
+		httpAdapter := &httpClientAdapter{client: c.client.HTTPClient}
+		cmd := filesystem.NewInstallSkillCommand(httpAdapter, fileProvider, skillProvider)
+		return cmd.Execute(cmdArgs)
+	case "delete-skill":
+		fmt.Println("⚠ Warning: 'delete-skill' is deprecated. Use 'uninstall-skill' instead.")
+		// Forward to uninstall-skill
+		skillProvider := c.contextEngine.GetProvider("skills")
+		if skillProvider == nil {
+			return fmt.Errorf("skill provider not available")
+		}
+		fileProvider := c.contextEngine.GetProvider("files")
+		if fileProvider == nil {
+			return fmt.Errorf("file provider not available")
+		}
+		httpAdapter := &httpClientAdapter{client: c.client.HTTPClient}
+		fileProv, _ := fileProvider.(*filesystem.FileProvider)
+		cmd := filesystem.NewUninstallSkillCommand(httpAdapter, skillProvider, fileProv)
 		return cmd.Execute(cmdArgs)
 	default:
 		return fmt.Errorf("unknown filesystem command: %s", cmdType)

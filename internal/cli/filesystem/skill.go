@@ -1902,317 +1902,6 @@ func GetString(v interface{}) string {
 }
 
 // ============================================================================
-// AddSkill Command Handler
-// ============================================================================
-
-// AddSkillCommand handles the add-skill command
-type AddSkillCommand struct {
-	client        HTTPClientInterface
-	fileProvider  *FileProvider
-	skillProvider Provider
-}
-
-// NewAddSkillCommand creates a new command handler
-func NewAddSkillCommand(client HTTPClientInterface, fileProvider *FileProvider, skillProvider Provider) *AddSkillCommand {
-	return &AddSkillCommand{
-		client:        client,
-		fileProvider:  fileProvider,
-		skillProvider: skillProvider,
-	}
-}
-
-// AddSkillArgs holds the parsed arguments for add-skill command
-type AddSkillArgs struct {
-	SkillPath string
-	Version   string
-	SkillName string // User-specified skill name (overrides SKILL.md)
-	SpaceID     string // Skills space ID
-	ShowHelp  bool
-}
-
-// ParseAddSkillArgs parses the add-skill command arguments
-// Format: add-skill <space> <path> [options]
-// Space is required
-func ParseAddSkillArgs(args []string) (*AddSkillArgs, error) {
-	result := &AddSkillArgs{}
-
-	// Collect non-flag arguments (space and path)
-	var nonFlagArgs []string
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-
-		switch arg {
-		case "-h", "--help":
-			result.ShowHelp = true
-			return result, nil
-		case "-v", "--version":
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-				result.Version = args[i+1]
-				i++
-			} else {
-				return nil, fmt.Errorf("version flag requires a value")
-			}
-		case "-n", "--name":
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-				result.SkillName = args[i+1]
-				i++
-			} else {
-				return nil, fmt.Errorf("name flag requires a value")
-			}
-		default:
-			// Non-flag argument (space or path)
-			if !strings.HasPrefix(arg, "-") {
-				nonFlagArgs = append(nonFlagArgs, arg)
-			}
-		}
-	}
-
-	// Parse space and path from non-flag arguments
-	switch len(nonFlagArgs) {
-	case 0:
-		if !result.ShowHelp {
-			return nil, fmt.Errorf("space and skill path are required")
-		}
-	case 1:
-		if !result.ShowHelp {
-			return nil, fmt.Errorf("skill path is required")
-		}
-	case 2:
-		// Space and path provided
-		result.SpaceID = nonFlagArgs[0]
-		result.SkillPath = nonFlagArgs[1]
-	default:
-		return nil, fmt.Errorf("too many arguments: expected <space> <path>")
-	}
-
-	return result, nil
-}
-
-// Execute runs the add-skill command
-func (c *AddSkillCommand) Execute(args []string) error {
-	// Parse arguments
-	parsedArgs, err := ParseAddSkillArgs(args)
-	if err != nil {
-		return err
-	}
-
-	if parsedArgs.ShowHelp {
-		c.PrintHelp()
-		return nil
-	}
-
-	// Validate skill path
-	skillPath := parsedArgs.SkillPath
-	info, err := os.Stat(skillPath)
-	if err != nil {
-		return fmt.Errorf("cannot access path %s: %w", skillPath, err)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("%s is not a directory", skillPath)
-	}
-
-	// Upload skill to specified space (or default if not specified)
-	uploader := NewSkillUploader(c.client, c.fileProvider)
-	uploader.SetSkillProvider(c.skillProvider)
-	err = uploader.UploadSkill(stdctx.Background(), skillPath, parsedArgs.Version, parsedArgs.SpaceID, parsedArgs.SkillName)
-	if err != nil {
-		// Handle version conflict error
-		if conflictErr, ok := err.(*SkillConflictError); ok {
-			return fmt.Errorf("%s", conflictErr.Error())
-		}
-		return err
-	}
-
-	return nil
-}
-
-// PrintHelp prints the help message for add-skill command
-func (c *AddSkillCommand) PrintHelp() {
-	fmt.Println(`Usage: add-skill <space> <path> [options]
-
-Upload a skill directory to RAGFlow.
-
-Arguments:
-  <space>                  Skills Space ID (required)
-  <path>                 Path to the skill directory (required)
-
-Options:
-  -v, --version string   Specify the skill version (default: from SKILL.md or 1.0.0)
-  -n, --name string      Specify the skill name (overrides SKILL.md metadata)
-  -h, --help             Show this help message
-
-Examples:
-  add-skill my-space /path/to/my-skill
-  add-skill my-space /path/to/my-skill --version 1.0.0
-  add-skill my-space /path/to/my-skill -v 2.0.0 --name my-custom-name
-
-The skill directory must contain a SKILL.md file with required frontmatter:
-  ---
-  name: my-skill
-  description: A brief description
-  ---
-
-Validation rules:
-  - Total size must not exceed 50MB
-  - Individual files must not exceed 5MB
-  - Only text files are allowed
-  - Skill name must be lowercase alphanumeric with hyphens/underscores`)
-}
-
-// ============================================================================
-// Delete Skill Command Handler
-// ============================================================================
-
-// DeleteSkillCommand handles the delete-skill command
-type DeleteSkillCommand struct {
-	client        HTTPClientInterface
-	skillProvider Provider
-	fileProvider  *FileProvider
-}
-
-// NewDeleteSkillCommand creates a new delete skill command handler
-func NewDeleteSkillCommand(client HTTPClientInterface, skillProvider Provider, fileProvider *FileProvider) *DeleteSkillCommand {
-	return &DeleteSkillCommand{
-		client:        client,
-		skillProvider: skillProvider,
-		fileProvider:  fileProvider,
-	}
-}
-
-// DeleteSkillArgs holds the parsed arguments for delete-skill command
-type DeleteSkillArgs struct {
-	SkillName string
-	SpaceID     string
-	ShowHelp  bool
-}
-
-// ParseDeleteSkillArgs parses the delete-skill command arguments
-// Format: delete-skill <space> <skill-name>
-// Both space and skill-name are required
-func ParseDeleteSkillArgs(args []string) (*DeleteSkillArgs, error) {
-	result := &DeleteSkillArgs{}
-
-	// Collect non-flag arguments (space and skill name)
-	var nonFlagArgs []string
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-
-		switch arg {
-		case "-h", "--help":
-			result.ShowHelp = true
-			return result, nil
-		default:
-			// Non-flag argument (space or skill name)
-			if !strings.HasPrefix(arg, "-") {
-				nonFlagArgs = append(nonFlagArgs, arg)
-			}
-		}
-	}
-
-	// Parse space and skill name from non-flag arguments
-	switch len(nonFlagArgs) {
-	case 0:
-		if !result.ShowHelp {
-			return nil, fmt.Errorf("space and skill name are required")
-		}
-	case 1:
-		if !result.ShowHelp {
-			return nil, fmt.Errorf("skill name is required")
-		}
-	case 2:
-		// Space and skill name provided
-		result.SpaceID = nonFlagArgs[0]
-		result.SkillName = nonFlagArgs[1]
-	default:
-		return nil, fmt.Errorf("too many arguments: expected <space> <skill-name>")
-	}
-
-	return result, nil
-}
-
-// Execute runs the delete-skill command
-func (c *DeleteSkillCommand) Execute(args []string) error {
-	parsedArgs, err := ParseDeleteSkillArgs(args)
-	if err != nil {
-		return err
-	}
-
-	if parsedArgs.ShowHelp {
-		c.PrintHelp()
-		return nil
-	}
-
-	return c.deleteSkill(stdctx.Background(), parsedArgs.SkillName, parsedArgs.SpaceID)
-}
-
-// deleteSkill deletes a skill and its index using SkillProvider
-func (c *DeleteSkillCommand) deleteSkill(ctx stdctx.Context, skillName, spaceID string) error {
-	if c.skillProvider == nil {
-		return fmt.Errorf("skill provider not available")
-	}
-
-	skillProvider, ok := c.skillProvider.(*SkillProvider)
-	if !ok {
-		return fmt.Errorf("invalid skill provider type")
-	}
-
-	var indexErr, folderErr error
-
-	// Delete index first
-	fmt.Printf("Deleting search index for skill '%s'...\n", skillName)
-	if err := skillProvider.DeleteSkill(ctx, spaceID, skillName); err != nil {
-		indexErr = fmt.Errorf("failed to delete search index: %w", err)
-		fmt.Printf("✗ %v\n", indexErr)
-	} else {
-		fmt.Printf("✓ Search index deleted\n")
-	}
-
-	// Delete file system folder
-	if c.fileProvider != nil {
-		fmt.Printf("Deleting skill folder '%s/%s'...\n", spaceID, skillName)
-		folderPath := fmt.Sprintf("skills/%s/%s", spaceID, skillName)
-		if err := c.fileProvider.DeleteFolderByPath(ctx, folderPath); err != nil {
-			folderErr = fmt.Errorf("failed to delete skill folder: %w", err)
-			fmt.Printf("✗ %v\n", folderErr)
-		} else {
-			fmt.Printf("✓ Skill folder deleted\n")
-		}
-	}
-
-	// Return error if any deletion failed
-	if indexErr != nil && folderErr != nil {
-		return fmt.Errorf("failed to delete skill '%s': index deletion failed (%v), folder deletion failed (%v)", skillName, indexErr, folderErr)
-	}
-	if indexErr != nil {
-		return fmt.Errorf("failed to delete skill '%s': %w", skillName, indexErr)
-	}
-	if folderErr != nil {
-		return fmt.Errorf("failed to delete skill '%s': %w", skillName, folderErr)
-	}
-
-	fmt.Printf("✓ Successfully deleted skill '%s'\n", skillName)
-	return nil
-}
-
-// PrintHelp prints the help message for delete-skill command
-func (c *DeleteSkillCommand) PrintHelp() {
-	fmt.Println(`Usage: delete-skill <space> <skill-name>
-
-Delete a skill from RAGFlow and remove its search index.
-
-Arguments:
-  <space>                  Skills Space ID (required)
-  <skill-name>           Name of the skill to delete (required)
-
-Options:
-  -h, --help            Show this help message
-
-Examples:
-  delete-skill my-space my-skill
-  delete-skill hub1 my-awesome-skill`)
-}
-
-// ============================================================================
 // Skill Uploader
 // ============================================================================
 
@@ -2221,6 +1910,7 @@ type SkillUploader struct {
 	client        HTTPClientInterface
 	fileProvider  *FileProvider
 	skillProvider Provider
+	force         bool // Force mode: overwrite existing versions
 }
 
 // NewSkillUploader creates a new uploader
@@ -2234,6 +1924,11 @@ func NewSkillUploader(client HTTPClientInterface, fileProvider *FileProvider) *S
 // SetSkillProvider sets the skill provider
 func (u *SkillUploader) SetSkillProvider(provider Provider) {
 	u.skillProvider = provider
+}
+
+// SetForce sets the force mode (overwrite existing versions)
+func (u *SkillUploader) SetForce(force bool) {
+	u.force = force
 }
 
 // parseSpaceFromPath extracts space ID from a path like "skills/space1" or "skills"
@@ -2306,7 +2001,17 @@ func (u *SkillUploader) UploadSkill(ctx stdctx.Context, skillPath string, versio
 		return fmt.Errorf("failed to check version: %w", err)
 	}
 	if exists {
-		return &SkillConflictError{Type: "version", Name: skillName, Version: version}
+		if u.force {
+			// Force mode: delete existing version folder
+			fmt.Printf("Force mode: removing existing version '%s'...\n", version)
+			versionPath := fmt.Sprintf("skills/%s/%s/%s", spaceID, skillName, version)
+			if err := u.deleteVersionFolder(ctx, versionPath); err != nil {
+				return fmt.Errorf("failed to remove existing version: %w", err)
+			}
+			fmt.Printf("✓ Existing version '%s' removed\n", version)
+		} else {
+			return &SkillConflictError{Type: "version", Name: skillName, Version: version}
+		}
 	}
 
 	// 5. Create version folder
@@ -2409,6 +2114,11 @@ func (u *SkillUploader) versionExists(ctx stdctx.Context, spaceID, skillName, ve
 		}
 	}
 	return false, nil
+}
+
+// deleteVersionFolder deletes a version folder by path
+func (u *SkillUploader) deleteVersionFolder(ctx stdctx.Context, versionPath string) error {
+	return u.fileProvider.DeleteFolderByPath(ctx, versionPath)
 }
 
 // createFolder creates a new folder and returns its ID
