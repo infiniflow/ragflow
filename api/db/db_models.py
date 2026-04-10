@@ -1063,6 +1063,7 @@ class CanvasTemplate(DataBaseModel):
     title = JSONField(null=True, default=dict, help_text="Canvas title")
     description = JSONField(null=True, default=dict, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
+    canvas_types = JSONField(null=True, default=list, help_text="Canvas types")
     canvas_category = CharField(max_length=32, null=False, default="agent_canvas", help_text="Canvas category: agent_canvas|dataflow_canvas", index=True)
     dsl = JSONField(null=True, default={})
 
@@ -1615,6 +1616,7 @@ def migrate_db():
     alter_db_column_type(migrator, "canvas_template", "description", JSONField(null=True, default=dict, help_text="Canvas description"))
     alter_db_add_column(migrator, "user_canvas", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))
     alter_db_add_column(migrator, "canvas_template", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))
+    alter_db_add_column(migrator, "canvas_template", "canvas_types", JSONField(null=True, default=list, help_text="Canvas types"))
     alter_db_add_column(migrator, "knowledgebase", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
     alter_db_add_column(migrator, "document", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "graphrag_task_id", CharField(max_length=32, null=True, help_text="Gragh RAG task ID", index=True))
