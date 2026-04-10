@@ -375,6 +375,25 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def list_doc_headers_by_kb_and_source_type(cls, kb_id, source_type, page_size=500):
+        fields = [cls.model.id, cls.model.kb_id, cls.model.source_type, cls.model.name]
+        docs = cls.model.select(*fields).where(
+            cls.model.kb_id == kb_id,
+            cls.model.source_type == source_type,
+        ).order_by(cls.model.create_time.asc())
+        offset = 0
+        res = []
+        while True:
+            doc_batch = docs.offset(offset).limit(page_size)
+            _temp = list(doc_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += page_size
+        return res
+
+    @classmethod
+    @DB.connection_context()
     def get_all_docs_by_creator_id(cls, creator_id):
         fields = [cls.model.id, cls.model.kb_id, cls.model.token_num, cls.model.chunk_num, Knowledgebase.tenant_id]
         docs = cls.model.select(*fields).join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id)).where(cls.model.created_by == creator_id)
