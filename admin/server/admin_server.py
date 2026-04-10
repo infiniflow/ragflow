@@ -75,7 +75,7 @@ if __name__ == '__main__':
             application=app,
             threaded=True,
             use_reloader=False,
-            use_debugger=True,
+            use_debugger=False,
         )
     except Exception:
         traceback.print_exc()
