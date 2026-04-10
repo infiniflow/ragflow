@@ -303,7 +303,10 @@ function transformTokenChunkerParams(params: TokenChunkerFormSchemaType) {
   const imageTableContextWindow = Number(image_table_context_window || 0);
   return {
     ...rest,
-    overlapped_percent: Number(params.overlapped_percent) / 100,
+    overlapped_percent:
+      params.delimiter_mode === 'one'
+        ? 0
+        : Number(params.overlapped_percent) / 100,
     delimiters:
       params.delimiter_mode === 'delimiter'
         ? transformObjectArrayToPureArray(params.delimiters, 'value')
