@@ -97,6 +97,7 @@ export const util = {
       return {
         key: item.field,
         description: item.description,
+        type: item.valueType || DEFAULT_VALUE_TYPE,
         enum: item.values,
       };
     });
@@ -113,13 +114,20 @@ export const util = {
           description: item.description,
           values: item.enum || [],
           restrictDefinedValues: !!item.enum?.length,
-          valueType: DEFAULT_VALUE_TYPE,
+          valueType: item.type || DEFAULT_VALUE_TYPE,
         } as IMetaDataTableData;
       });
     }
     const properties = data.properties || {};
     return Object.entries(properties).map(([key, property]) => {
-      const valueType = 'string';
+      const valueType =
+        property.type === 'array'
+          ? metadataValueTypeEnum.list
+          : property.type === 'number'
+            ? metadataValueTypeEnum.number
+            : property.format === 'date-time'
+              ? metadataValueTypeEnum.time
+              : metadataValueTypeEnum.string;
       const values = property.enum || property.items?.enum || [];
       return {
         field: key,
@@ -414,7 +422,7 @@ export const useManageMetaDataModal = (
       const { data: res } = await kbService.kbUpdateMetaData({
         kb_id: id,
         metadata: data,
-        builtInMetadata: builtInMetadata || [],
+        built_in_metadata: builtInMetadata || [],
       });
       if (res.code === 0) {
         message.success(t('message.operated'));
@@ -430,12 +438,13 @@ export const useManageMetaDataModal = (
   );
 
   const handleSaveSingleFileSettings = useCallback(
-    async (callback: () => void) => {
+    async (callback: () => void, builtInMetadata?: IBuiltInMetadataItem[]) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
       if (otherData?.documentId) {
         const { data: res } = await kbService.documentUpdateMetaData({
           doc_id: otherData.documentId,
           metadata: data,
+          built_in_metadata: builtInMetadata || [],
         });
         if (res.code === 0) {
           message.success(t('message.operated'));
@@ -468,7 +477,7 @@ export const useManageMetaDataModal = (
           return handleSaveSettings(callback, builtInMetadata);
 
         case MetadataType.SingleFileSetting:
-          return handleSaveSingleFileSettings(callback);
+          return handleSaveSingleFileSettings(callback, builtInMetadata);
         default:
           handleSaveManage(callback);
           break;

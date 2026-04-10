@@ -192,9 +192,17 @@ async def update_metadata_setting():
         return get_data_error_result(
             message="Database error (Knowledgebase rename)!")
     kb = kb.to_dict()
-    kb["parser_config"]["metadata"] = req["metadata"]
-    kb["parser_config"]["enable_metadata"] = req.get("enable_metadata", True)
-    KnowledgebaseService.update_by_id(kb["id"], kb)
+    parser_config = kb.get("parser_config") or {}
+    parser_config["metadata"] = req["metadata"]
+    if "enable_metadata" in req:
+        parser_config["enable_metadata"] = req.get("enable_metadata")
+
+    built_in_metadata = req.get("built_in_metadata")
+    if built_in_metadata is not None:
+        parser_config["built_in_metadata"] = built_in_metadata
+
+    KnowledgebaseService.update_by_id(kb["id"], {"parser_config": parser_config})
+    kb["parser_config"] = parser_config
     return get_json_result(data=kb)
 
 

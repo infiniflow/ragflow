@@ -281,12 +281,29 @@ def metadata_schema(metadata: dict|list|None) -> Dict[str, Any]:
         if not key:
             continue
 
+        value_type = item.get("type") or "string"
         prop_schema = {
             "description": item.get("description", "")
         }
-        if "enum" in item and item["enum"]:
-            prop_schema["enum"] = item["enum"]
+
+        if value_type == "list":
+            prop_schema["type"] = "array"
+            prop_schema["items"] = {"type": "string"}
+            if "enum" in item and item["enum"]:
+                prop_schema["items"]["enum"] = item["enum"]
+        elif value_type == "number":
+            prop_schema["type"] = "number"
+            if "enum" in item and item["enum"]:
+                prop_schema["enum"] = item["enum"]
+        elif value_type == "time":
             prop_schema["type"] = "string"
+            prop_schema["format"] = "date-time"
+            if "enum" in item and item["enum"]:
+                prop_schema["enum"] = item["enum"]
+        else:
+            prop_schema["type"] = "string"
+            if "enum" in item and item["enum"]:
+                prop_schema["enum"] = item["enum"]
 
         properties[key] = prop_schema
 
@@ -322,6 +339,8 @@ def _is_metadata_list(obj: list) -> bool:
             return False
         if "descriptions" in item and not isinstance(item["descriptions"], str):
             return False
+        if "type" in item and item["type"] not in {"string", "list", "time", "number"}:
+            return False
     return True
 
 
@@ -335,6 +354,7 @@ def turn2jsonschema(obj: dict | list) -> Dict[str, Any]:
             normalized_item = {
                 "key": item.get("key"),
                 "description": description,
+                "type": item.get("type", "string"),
             }
             if "enum" in item:
                 normalized_item["enum"] = item["enum"]

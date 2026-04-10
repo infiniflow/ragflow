@@ -485,7 +485,15 @@ async def update_metadata_setting():
     if not e:
         return get_data_error_result(message="Document not found!")
 
-    DocumentService.update_parser_config(doc.id, {"metadata": req["metadata"]})
+    update_payload = {"metadata": req["metadata"]}
+    if "enable_metadata" in req:
+        update_payload["enable_metadata"] = req.get("enable_metadata")
+
+    built_in_metadata = req.get("built_in_metadata")
+    if built_in_metadata is not None:
+        update_payload["built_in_metadata"] = built_in_metadata
+
+    DocumentService.update_parser_config(doc.id, update_payload)
     e, doc = DocumentService.get_by_id(doc.id)
     if not e:
         return get_data_error_result(message="Document not found!")
@@ -655,6 +663,7 @@ async def run():
                         doc.parser_config["llm_id"] = kb.parser_config.get("llm_id")
                         doc.parser_config["enable_metadata"] = kb.parser_config.get("enable_metadata", False)
                         doc.parser_config["metadata"] = kb.parser_config.get("metadata", {})
+                        doc.parser_config["built_in_metadata"] = kb.parser_config.get("built_in_metadata", [])
                         DocumentService.update_parser_config(doc.id, doc.parser_config)
                     doc_dict = doc.to_dict()
                     DocumentService.run(tenant_id, doc_dict, kb_table_num_map)

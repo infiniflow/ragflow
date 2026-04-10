@@ -86,9 +86,10 @@ type UpdateKBRequest struct {
 
 // UpdateMetadataSettingRequest represents the request for updating metadata settings
 type UpdateMetadataSettingRequest struct {
-	KBID           string                 `json:"kb_id" binding:"required"`
-	Metadata       map[string]interface{} `json:"metadata" binding:"required"`
-	EnableMetadata *bool                  `json:"enable_metadata,omitempty"`
+	KBID            string      `json:"kb_id" binding:"required"`
+	Metadata        interface{} `json:"metadata" binding:"required"`
+	EnableMetadata  *bool       `json:"enable_metadata,omitempty"`
+	BuiltInMetadata interface{} `json:"built_in_metadata,omitempty"`
 }
 
 // ListKbsRequest represents the request for listing knowledge bases
@@ -360,11 +361,13 @@ func (s *KnowledgebaseService) UpdateMetadataSetting(req *UpdateMetadataSettingR
 	}
 
 	parserConfig["metadata"] = req.Metadata
-	enableMetadata := true
 	if req.EnableMetadata != nil {
-		enableMetadata = *req.EnableMetadata
+		parserConfig["enable_metadata"] = *req.EnableMetadata
 	}
-	parserConfig["enable_metadata"] = enableMetadata
+
+	if req.BuiltInMetadata != nil {
+		parserConfig["built_in_metadata"] = req.BuiltInMetadata
+	}
 
 	if err := s.kbDAO.UpdateParserConfig(req.KBID, parserConfig); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update metadata setting: %w", err)

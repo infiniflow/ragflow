@@ -13,6 +13,7 @@ export type IMetaDataReturnJSONType = Record<
 export interface IMetaDataReturnJSONSettingItem {
   key: string;
   description?: string;
+  type?: MetadataValueType;
   enum?: string[];
 }
 export interface IMetaDataJsonSchemaProperty {
