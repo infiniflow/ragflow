@@ -893,6 +893,9 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       crossLanguage: 'Sprachübergreifende Suche',
       crossLanguageTip:
         'Wählen Sie eine oder mehrere Sprachen für die sprachübergreifende Suche aus. Wenn keine Sprache ausgewählt ist, sucht das System mit der ursprünglichen Abfrage.',
+      includeDocumentMetadata: 'Dokumentmetadaten einschließen',
+      includeDocumentMetadataTip:
+        'Ob Metadaten abgerufener Dokumente in den an das Modell gesendeten Wissenskontext aufgenommen werden sollen.',
       createChat: 'Chat erstellen',
       metadata: 'Metadaten',
       metadataTip:

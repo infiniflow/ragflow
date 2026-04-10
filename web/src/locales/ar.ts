@@ -807,6 +807,9 @@ export default {
       crossLanguage: 'البحث عبر اللغات',
       crossLanguageTip:
         'حدد لغة واحدة أو أكثر للبحث بين اللغات. إذا لم يتم تحديد أي لغة، فسيقوم النظام بالبحث باستخدام الاستعلام الأصلي.',
+      includeDocumentMetadata: 'تضمين بيانات تعريف المستند',
+      includeDocumentMetadataTip:
+        'ما إذا كان سيتم تضمين بيانات تعريف المستندات المسترجعة في سياق المعرفة المرسل إلى النموذج.',
       createChat: 'إنشاء دردشة',
       metadata: 'بيانات التعريف',
       metadataTip:

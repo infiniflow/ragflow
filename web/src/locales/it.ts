@@ -680,6 +680,9 @@ Quanto sopra è il contenuto che devi riassumere.`,
       tavilyApiKeyHelp: 'Come ottenerla?',
       crossLanguage: 'Ricerca cross-lingua',
       crossLanguageTip: `Seleziona una o più lingue per la ricerca cross-lingua. Se non viene selezionata nessuna lingua, il sistema cerca con la query originale.`,
+      includeDocumentMetadata: 'Includi i metadati del documento',
+      includeDocumentMetadataTip:
+        'Indica se includere i metadati dei documenti recuperati nel contesto di conoscenza inviato al modello.',
       createChat: 'Crea chat',
       metadata: 'Metadati',
       metadataTip:

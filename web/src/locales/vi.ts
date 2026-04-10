@@ -519,6 +519,9 @@ export default {
         'Áp dụng LLM (Mô hình ngôn ngữ lớn) để phân tích câu hỏi của người dùng, trích xuất các từ khóa sẽ được nhấn mạnh trong quá trình tính toán độ liên quan. Hoạt động tốt với các truy vấn dài nhưng sẽ làm tăng thời gian phản hồi.',
       languageTip:
         'Cho phép viết lại câu với ngôn ngữ được chỉ định, hoặc sử dụng câu hỏi mới nhất nếu không chọn ngôn ngữ nào.',
+      includeDocumentMetadata: 'Bao gồm metadata tài liệu',
+      includeDocumentMetadataTip:
+        'Có bao gồm metadata của các tài liệu được truy xuất trong ngữ cảnh tri thức gửi tới mô hình hay không.',
     },
     setting: {
       profile: 'Hồ sơ',

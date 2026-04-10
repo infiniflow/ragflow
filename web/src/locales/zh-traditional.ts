@@ -558,6 +558,9 @@ export default {
       tavilyApiKeyHelp: '如何獲取？',
       crossLanguage: '跨語言搜尋',
       crossLanguageTip: `選擇一種或多種語言進行跨語言搜尋。如果沒有選擇語言，系統將使用原始查詢進行搜尋。 `,
+      includeDocumentMetadata: '包含文件中繼資料',
+      includeDocumentMetadataTip:
+        '是否將檢索到的文件中繼資料包含在傳送給模型的知識上下文中。',
     },
     setting: {
       profile: '概述',

@@ -936,6 +936,9 @@ export default {
       crossLanguage: 'Кросс-языковой поиск',
       crossLanguagePlaceholder: 'Выберите значение',
       crossLanguageTip: `Выберите один или несколько языков для кросс-языкового поиска. Если не выбрано — поиск по исходному запросу.`,
+      includeDocumentMetadata: 'Включать метаданные документа',
+      includeDocumentMetadataTip:
+        'Нужно ли включать метаданные найденных документов в контекст знаний, отправляемый модели.',
       createChat: 'Создать чат',
       metadata: 'Метаданные',
       metadataTip:

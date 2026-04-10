@@ -843,6 +843,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       crossLanguage: '跨语言搜索',
       crossLanguagePlaceholder: '请选择',
       crossLanguageTip: `选择一种或多种语言进行跨语言搜索。如果未选择任何语言，系统将使用原始查询进行搜索。`,
+      includeDocumentMetadata: '包含文档元数据',
+      includeDocumentMetadataTip:
+        '是否将检索到的文档元数据包含在发送给模型的知识上下文中。',
       metadata: '元数据',
       metadataTip:
         '元数据过滤是使用元数据属性（例如标签、类别或访问权限）来优化和控制系统内相关信息检索的过程。',

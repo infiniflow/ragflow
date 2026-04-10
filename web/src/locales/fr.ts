@@ -477,6 +477,9 @@ export default {
       tavilyApiKeyHelp: 'Comment l’obtenir ?',
       crossLanguage: 'Recherche inter-langues',
       crossLanguageTip: `Sélectionnez une ou plusieurs langues pour la recherche inter-langues. Si aucune langue n’est sélectionnée, le système recherche avec la requête originale.`,
+      includeDocumentMetadata: 'Inclure les métadonnées du document',
+      includeDocumentMetadataTip:
+        'Indique s’il faut inclure les métadonnées des documents récupérés dans le contexte de connaissance envoyé au modèle.',
     },
     language: {
       english: 'Anglais',

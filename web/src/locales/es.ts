@@ -297,6 +297,9 @@ export default {
       multiTurnTip:
         'En conversaciones de múltiples rondas, la consulta a la base de conocimiento se optimiza. El gran modelo se llamará para consumir tokens adicionales.',
       description: 'Description of assistant',
+      includeDocumentMetadata: 'Incluir metadatos del documento',
+      includeDocumentMetadataTip:
+        'Indica si se deben incluir los metadatos de los documentos recuperados en el contexto de conocimiento enviado al modelo.',
     },
     setting: {
       profile: 'Perfil',

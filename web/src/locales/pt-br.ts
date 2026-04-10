@@ -467,6 +467,9 @@ export default {
         'Isso otimiza as consultas dos usuários usando o contexto em uma conversa de múltiplas rodadas. Quando ativado, consumirá tokens adicionais do LLM.',
       howUseId: 'Como usar o ID do chat?',
       description: 'Descrição do assistente',
+      includeDocumentMetadata: 'Incluir metadados do documento',
+      includeDocumentMetadataTip:
+        'Define se os metadados dos documentos recuperados devem ser incluídos no contexto de conhecimento enviado ao modelo.',
     },
     setting: {
       profile: 'Perfil',

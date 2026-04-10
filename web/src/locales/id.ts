@@ -471,6 +471,9 @@ export default {
         'Dalam percakapan multi-putaran, kueri ke basis pengetahuan dioptimalkan. Model besar akan dipanggil untuk mengonsumsi token tambahan.',
       languageSelectionTip: 'Pilih bahasa yang digunakan dalam percakapan.',
       description: 'Description of assistant',
+      includeDocumentMetadata: 'Sertakan metadata dokumen',
+      includeDocumentMetadataTip:
+        'Apakah metadata dokumen yang diambil akan disertakan dalam konteks pengetahuan yang dikirim ke model.',
     },
     setting: {
       profile: 'Profil',
