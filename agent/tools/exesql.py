@@ -62,11 +62,11 @@ class ExeSQLParam(ToolParamBase):
         if self.db_type != "trino":
             self.check_empty(self.password, "Database password")
         self.check_positive_integer(self.max_records, "Maximum number of records")
-        # if self.database == "rag_flow":
-        #     if self.host == "ragflow-mysql":
-        #         raise ValueError("For the security reason, it dose not support database named rag_flow.")
-        #     if self.password == "infini_rag_flow":
-        #         raise ValueError("For the security reason, it dose not support database named rag_flow.")
+        if self.database == "rag_flow":
+            if self.host == "ragflow-mysql":
+                raise ValueError("For the security reason, it dose not support database named rag_flow.")
+            if self.password == "infini_rag_flow":
+                raise ValueError("For the security reason, it dose not support database named rag_flow.")
 
     def get_input_form(self) -> dict[str, dict]:
         return {
