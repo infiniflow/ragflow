@@ -1303,6 +1303,10 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tab: '制表符',
       space: '空格',
       delimiters: '分隔符',
+      one: 'One',
+      oneChunkTitle: 'Note',
+      oneChunkDescription:
+        '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
       merge: '合并',
       split: '拆分',
       script: '脚本',
