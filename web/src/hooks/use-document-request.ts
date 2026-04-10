@@ -2,6 +2,7 @@ import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-f
 import { post } from '@/utils/next-request';
 
 import message from '@/components/ui/message';
+import { RunningStatus } from '@/constants/knowledge';
 import { ResponseType } from '@/interfaces/database/base';
 import { IReferenceChunk } from '@/interfaces/database/chat';
 import {
@@ -25,7 +26,7 @@ import { buildChunkHighlights } from '@/utils/document-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { get } from 'lodash';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
 import { useParams } from 'react-router';
 import {
@@ -36,6 +37,7 @@ import {
   useGetKnowledgeSearchParams,
   useSetPaginationParams,
 } from './route-hook';
+import { KnowledgeApiAction } from './use-knowledge-request';
 
 export const enum DocumentApiAction {
   UploadDocument = 'uploadDocument',
@@ -104,7 +106,7 @@ export const useFetchDocumentList = () => {
     useHandleFilterSubmit();
   const [docs, setDocs] = useState<IDocumentInfo[]>([]);
   const isLoop = useMemo(() => {
-    return docs.some((doc) => doc.run === '1');
+    return docs.some((doc) => doc.run === RunningStatus.RUNNING);
   }, [docs]);
 
   const { data, isFetching: loading } = useQuery<{
@@ -172,6 +174,12 @@ export const useFetchDocumentList = () => {
     },
     [handleInputChange, setPagination],
   );
+
+  useEffect(() => {
+    queryClient.invalidateQueries({
+      queryKey: [KnowledgeApiAction.FetchKnowledgeDetail],
+    });
+  }, [data.docs, queryClient]);
 
   return {
     loading,
