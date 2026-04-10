@@ -102,7 +102,6 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     const llmSettingEnabledValues = setLLMSettingEnabledValues(
       data.llm_setting,
     );
-    // Align with backend default (dialog_service / db_models): missing key means true.
     const nextData = {
       ...data,
       prompt_config: {
