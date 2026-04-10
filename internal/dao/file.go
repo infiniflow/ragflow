@@ -226,6 +226,23 @@ func (dao *FileDAO) GetAllIDsByTenantID(tenantID string) ([]string, error) {
 	return ids, err
 }
 
+// GetByIDs gets files by multiple IDs
+func (dao *FileDAO) GetByIDs(ids []string) ([]*entity.File, error) {
+	var files []*entity.File
+	if len(ids) == 0 {
+		return files, nil
+	}
+	err := DB.Where("id IN ?", ids).Find(&files).Error
+	return files, err
+}
+
+// ListAllFilesByParentID lists all files by parent folder ID
+func (dao *FileDAO) ListAllFilesByParentID(parentID string) ([]*entity.File, error) {
+	var files []*entity.File
+	err := DB.Where("parent_id = ? AND id != ?", parentID, parentID).Find(&files).Error
+	return files, err
+}
+
 // GetByParentIDAndName gets file by parent folder ID and name
 func (dao *FileDAO) GetByParentIDAndName(parentID, name string) (*entity.File, error) {
 	var file entity.File
@@ -296,21 +313,52 @@ func (dao *FileDAO) Query(name string, parentID string) []*entity.File {
 	return files
 }
 
+// Delete deletes a file by ID (hard delete)
+func (dao *FileDAO) Delete(id string) error {
+	return DB.Unscoped().Where("id = ?", id).Delete(&entity.File{}).Error
+}
+
+// GetDatasetIDByFileID gets dataset ID by file ID
+func (dao *FileDAO) GetDatasetIDByFileID(fileID string) ([]string, error) {
+	var datasetIDs []string
+	rows, err := DB.Model(&entity.File{}).
+		Select("knowledgebase.id").
+		Joins("JOIN file2document ON file2document.file_id = ?", fileID).
+		Joins("JOIN document ON document.id = file2document.document_id").
+		Joins("JOIN knowledgebase ON knowledgebase.id = document.kb_id").
+		Where("file.id = ?", fileID).
+		Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var kbID string
+		if err := rows.Scan(&kbID); err != nil {
+			continue
+		}
+		datasetIDs = append(datasetIDs, kbID)
+	}
+
+	return datasetIDs, nil
+}
+
 // generateUUID generates a UUID
 func generateUUID() string {
 	id := uuid.New().String()
 	return strings.ReplaceAll(id, "-", "")
 }
 
-// KnowledgebaseFolderName is the folder name for knowledgebase
-const KnowledgebaseFolderName = ".knowledgebase"
+// DatasetFolderName is the folder name for dataset
+const DatasetFolderName = ".knowledgebase"
 
-// InitKnowledgebaseDocs initializes knowledgebase documents for tenant
-// This matches Python's FileService.init_knowledgebase_docs method
-func (dao *FileDAO) InitKnowledgebaseDocs(rootID, tenantID string, file2DocumentDAO *File2DocumentDAO) error {
+// InitDatasetDocs initializes dataset documents for tenant
+// This matches Python's FileService.init_dataset_docs method
+func (dao *FileDAO) InitDatasetDocs(rootID, tenantID string, file2DocumentDAO *File2DocumentDAO) error {
 	var count int64
 	err := DB.Model(&entity.File{}).
-		Where("name = ? AND parent_id = ?", KnowledgebaseFolderName, rootID).
+		Where("name = ? AND parent_id = ?", DatasetFolderName, rootID).
 		Count(&count).Error
 	if err != nil {
 		return err
@@ -320,41 +368,43 @@ func (dao *FileDAO) InitKnowledgebaseDocs(rootID, tenantID string, file2Document
 		return nil
 	}
 
-	kbFolder, err := dao.newAFileFromKB(tenantID, KnowledgebaseFolderName, rootID)
+	datasetFolder, err := dao.newAFileFromDataset(tenantID, DatasetFolderName, rootID)
 	if err != nil {
 		return err
 	}
 
-	var knowledgebases []entity.Knowledgebase
+	var datasets []entity.Knowledgebase
 	err = DB.Select("id", "name").
 		Where("tenant_id = ?", tenantID).
-		Find(&knowledgebases).Error
+		Find(&datasets).Error
 	if err != nil {
 		return err
 	}
 
-	for _, kb := range knowledgebases {
-		kbFolderForKB, err := dao.newAFileFromKB(tenantID, kb.Name, kbFolder.ID)
+	for _, ds := range datasets {
+		datasetFolderForDataset, err := dao.newAFileFromDataset(tenantID, ds.Name, datasetFolder.ID)
 		if err != nil {
 			continue
 		}
 
 		var documents []entity.Document
-		err = DB.Where("kb_id = ?", kb.ID).Find(&documents).Error
+		err = DB.Where("kb_id = ?", ds.ID).Find(&documents).Error
 		if err != nil {
 			continue
 		}
 
 		for _, doc := range documents {
-			dao.addFileFromKB(&doc, kbFolderForKB.ID, tenantID, file2DocumentDAO)
+			if err := dao.addFileFromKB(&doc, datasetFolderForDataset.ID, tenantID, file2DocumentDAO); err != nil {
+				return err
+			}
 		}
 	}
 
 	return nil
 }
 
-// newAFileFromKB creates a new file from knowledgebase
-func (dao *FileDAO) newAFileFromKB(tenantID, name, parentID string) (*entity.File, error) {
+// newAFileFromDataset creates a new file from knowledgebase
+func (dao *FileDAO) newAFileFromDataset(tenantID, name, parentID string) (*entity.File, error) {
 	var existingFiles []*entity.File
 	err := DB.Where("tenant_id = ? AND parent_id = ? AND name = ?", tenantID, parentID, name).Find(&existingFiles).Error
 	if err != nil {
@@ -384,7 +434,7 @@ func (dao *FileDAO) newAFileFromKB(tenantID, name, parentID string) (*entity.Fil
 }
 
 // addFileFromKB adds a file record from knowledgebase document
-func (dao *FileDAO) addFileFromKB(doc *entity.Document, kbFolderID, tenantID string, file2DocumentDAO *File2DocumentDAO) error {
+func (dao *FileDAO) addFileFromKB(doc *entity.Document, datasetFolderID, tenantID string, file2DocumentDAO *File2DocumentDAO) error {
 	var f2dCount int64
 	err := DB.Model(&entity.File2Document{}).
 		Where("document_id = ?", doc.ID).
@@ -410,7 +460,7 @@ func (dao *FileDAO) addFileFromKB(doc *entity.Document, kbFolderID, tenantID str
 	fileID := generateUUID()
 	file := &entity.File{
 		ID:         fileID,
-		ParentID:   kbFolderID,
+		ParentID:   datasetFolderID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
 		Name:       docName,

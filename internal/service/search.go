@@ -17,6 +17,8 @@
 package service
 
 import (
+	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
@@ -129,4 +131,122 @@ func (s *SearchService) toSearchAppResponse(search *entity.Search) map[string]in
 	// We need to handle the extra fields manually
 
 	return result
+}
+
+// CreateSearchResponse create search response
+// Reference: api/apps/restful_apis/search_api.py::create - returns {"search_id": req["id"]}
+type CreateSearchResponse struct {
+	SearchID string `json:"search_id"` // UUID format
+}
+
+// CreateSearch creates a new search app
+// Reference: api/apps/restful_apis/search_api.py::create
+// Python implementation steps:
+// 1. Get JSON request body with name (required) and description (optional)
+// 2. Validate name is string, non-empty, and max 255 bytes
+// 3. Generate unique name using duplicate_name(SearchService.query, name, tenant_id)
+// 4. Generate UUID for search ID
+// 5. Set fields: id, name, description, tenant_id, created_by
+// 6. Save to database within DB.atomic() transaction
+// 7. Return {search_id: id} on success
+//
+// Error handling from Python:
+// - Name not string: "Search name must be string."
+// - Name empty: "Search name can't be empty."
+// - Name too long: "Search name length is X which is larger than 255."
+// - Tenant not found: "Authorized identity."
+// - Save failure: generic get_data_error_result()
+//
+// Note: Go implementation validates these in handler layer for cleaner separation
+// Note: Similar pattern in: CreateMemory (memory.go), CreateDataset (datasets.go)
+func (s *SearchService) CreateSearch(userID string, name string, description *string) (*CreateSearchResponse, error) {
+	// Generate UUID for search ID (same as Python get_uuid())
+	searchID := common.GenerateUUID()
+
+	// Generate unique name (same as Python duplicate_name)
+	uniqueName, err := common.DuplicateName(func(name string, tid string) bool {
+		existing, _ := s.searchDAO.GetByNameAndTenant(name, tid)
+		return len(existing) > 0
+	}, name, userID)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Create search entity
+	search := &entity.Search{
+		ID:           searchID,
+		TenantID:     userID,
+		Name:         uniqueName,
+		CreatedBy:    userID,
+		SearchConfig: make(entity.JSONMap),
+	}
+
+	if description != nil {
+		search.Description = description
+	}
+
+	// Set default status ("1" = valid/active, same as Python StatusEnum.VALID.value)
+	status := "1"
+	search.Status = &status
+
+	// Save to database
+	if err := s.searchDAO.Create(search); err != nil {
+		return nil, fmt.Errorf("failed to create search: %w", err)
+	}
+
+	return &CreateSearchResponse{
+		SearchID: searchID,
+	}, nil
+}
+
+func (s *SearchService) GetSearchDetail(userID string, searchID string) (*entity.Search, error) {
+	// Step 1: Get user tenants (same as Python UserTenantService.query(user_id=current_user.id))
+	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user tenants: %w", err)
+	}
+
+	// Step 2: Check if user has permission to access this search
+	// Python: for tenant in tenants: if SearchService.query(tenant_id=tenant.tenant_id, id=search_id): break
+	hasPermission := false
+	for _, tenant := range tenants {
+		searches, err := s.searchDAO.QueryByTenantIDAndID(tenant.TenantID, searchID)
+		if err != nil {
+			continue // Try next tenant
+		}
+		if len(searches) > 0 {
+			hasPermission = true
+			break
+		}
+	}
+
+	if !hasPermission {
+		return nil, fmt.Errorf("has no permission for this operation")
+	}
+
+	// Step 3: Get search detail (same as Python SearchService.get_detail(search_id))
+	search, err := s.searchDAO.GetByID(searchID)
+	if err != nil {
+		return nil, fmt.Errorf("can't find this Search App!")
+	}
+
+	return search, nil
+}
+
+// DeleteSearch deletes a search app by ID
+func (s *SearchService) DeleteSearch(userID string, searchID string) error {
+	// Step 1: Check deletion permission (same as Python SearchService.accessible4deletion)
+	// Python: cls.model.select().where(cls.model.id == search_id, cls.model.created_by == user_id, cls.model.status == StatusEnum.VALID.value).first()
+	if !s.searchDAO.Accessible4Deletion(searchID, userID) {
+		return fmt.Errorf("no authorization")
+	}
+
+	// Step 2: Execute delete (same as Python SearchService.delete_by_id)
+	// Python: cls.model.delete().where(cls.model.id == pid).execute()
+	if err := s.searchDAO.DeleteByID(searchID); err != nil {
+		return fmt.Errorf("failed to delete search App %s: %w", searchID, err)
+	}
+
+	return nil
 }
