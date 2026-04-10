@@ -467,16 +467,11 @@ async def build_chunks(task, progress_callback):
             if doc.get("metadata_obj"):
                 metadata = update_metadata_to(metadata, doc["metadata_obj"])
                 del doc["metadata_obj"]
-        if metadata:
+        if metadata or built_in_metadata:
             existing_meta = DocMetadataService.get_document_metadata(task["doc_id"])
             existing_meta = existing_meta if isinstance(existing_meta, dict) else {}
             merged_meta = update_metadata_to(existing_meta, metadata)
             merged_meta = update_metadata_to(merged_meta, built_in_metadata)
-            DocMetadataService.update_document_metadata(task["doc_id"], merged_meta)
-        elif built_in_metadata:
-            existing_meta = DocMetadataService.get_document_metadata(task["doc_id"])
-            existing_meta = existing_meta if isinstance(existing_meta, dict) else {}
-            merged_meta = update_metadata_to(existing_meta, built_in_metadata)
             DocMetadataService.update_document_metadata(task["doc_id"], merged_meta)
         progress_callback(msg="Metadata generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
