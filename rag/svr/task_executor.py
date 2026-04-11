@@ -81,6 +81,10 @@ from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
 
 BATCH_SIZE = 64
+EMBEDDING_PROGRESS_START = 0.8
+EMBEDDING_PROGRESS_END = 0.95
+INDEXING_PROGRESS_START = EMBEDDING_PROGRESS_END
+INDEXING_PROGRESS_END = 1.0
 
 FACTORY = {
     "general": naive,
@@ -653,7 +657,12 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         else:
             cnts_ = np.concatenate((cnts_, vts), axis=0)
         tk_count += c
-        callback(prog=0.8 + 0.15 * (i + 1) / len(cnts), msg="")
+        processed = min(i + len(vts), len(cnts))
+        callback(
+            prog=EMBEDDING_PROGRESS_START
+            + (EMBEDDING_PROGRESS_END - EMBEDDING_PROGRESS_START) * processed / len(cnts),
+            msg="",
+        )
     cnts = cnts_
     filename_embd_weight = parser_config.get("filename_embd_weight", 0.1)  # due to the db support none value
     if not filename_embd_weight:
@@ -979,14 +988,24 @@ async def insert_chunks(task_id, task_tenant_id, task_dataset_id, chunks, progre
             return False
 
     for b in range(0, len(chunks), settings.DOC_BULK_SIZE):
-        doc_store_result = await thread_pool_exec(settings.docStoreConn.insert, chunks[b:b + settings.DOC_BULK_SIZE],
-                                                   search.index_name(task_tenant_id), task_dataset_id, )
+        chunk_batch = chunks[b:b + settings.DOC_BULK_SIZE]
+        doc_store_result = await thread_pool_exec(
+            settings.docStoreConn.insert,
+            chunk_batch,
+            search.index_name(task_tenant_id),
+            task_dataset_id,
+        )
         task_canceled = has_canceled(task_id)
         if task_canceled:
             progress_callback(-1, msg="Task has been canceled.")
             return False
         if b % 128 == 0:
-            progress_callback(prog=0.8 + 0.1 * (b + 1) / len(chunks), msg="")
+            processed = min(b + len(chunk_batch), len(chunks))
+            progress_callback(
+                prog=INDEXING_PROGRESS_START
+                + (INDEXING_PROGRESS_END - INDEXING_PROGRESS_START) * processed / len(chunks),
+                msg="",
+            )
         if doc_store_result:
             error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
             progress_callback(-1, msg=error_message)

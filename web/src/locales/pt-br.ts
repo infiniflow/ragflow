@@ -330,6 +330,9 @@ export default {
         'Algoritmo a ser usado para a análise do PaddleOCR',
       paddleocrSelectAlgorithm: 'Selecionar algoritmo',
       paddleocrModelNamePlaceholder: 'ex: paddleocr-do-ambiente-1',
+      paddleocrPresetManaged:
+        'Essas configurações são definidas pelo preset do modelo PaddleOCR selecionado.',
+      paddleocrPresetManagedValue: 'Definido pelo preset',
     },
     chunk: {
       chunk: 'Fragmento',
