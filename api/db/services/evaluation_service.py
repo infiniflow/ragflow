@@ -568,7 +568,6 @@ class EvaluationService(CommonService):
 
     # ==================== Results & Analysis ====================
 
-    @classmethod
 
     @classmethod
     def list_runs(cls, dataset_id: str = None, page: int = 1, page_size: int = 20):
