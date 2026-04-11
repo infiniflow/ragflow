@@ -40,6 +40,7 @@ from api.utils.api_utils import (
 )
 from agent.canvas import Canvas
 from agent.dsl_migration import normalize_chunker_dsl
+from agent.scenario_planner import ScenarioPlanner
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken, Task
 
@@ -56,6 +57,20 @@ from api.db.services.canvas_service import completion as agent_completion
 @login_required
 def templates():
     return get_json_result(data=[c.to_dict() for c in CanvasTemplateService.get_all()])
+
+
+@manager.route('/scenario_plan', methods=['POST'])  # noqa: F821
+@validate_request("title", "scenario")
+@login_required
+async def scenario_plan():
+    req = await get_request_json()
+    planner = ScenarioPlanner()
+    draft = planner.plan(
+        title=req["title"],
+        scenario=req["scenario"],
+        canvas_category=req.get("canvas_category", CanvasCategory.Agent),
+    )
+    return get_json_result(data=draft)
 
 
 @manager.route('/rm', methods=['POST'])  # noqa: F821
