@@ -103,6 +103,7 @@ def message_fit_in(msg, max_length=4000):
 def kb_prompt(kbinfos, max_tokens, hash_id=False):
     from api.db.services.document_service import DocumentService
     from api.db.services.doc_metadata_service import DocMetadataService
+    from api.db.services.knowledgebase_service import KnowledgebaseService
 
     knowledges = [get_value(ck, "content", "content_with_weight") for ck in kbinfos["chunks"]]
     kwlg_len = len(knowledges)
@@ -120,10 +121,22 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
 
     docs = DocumentService.get_by_ids([get_value(ck, "doc_id", "document_id") for ck in kbinfos["chunks"][:chunks_num]])
 
+    # Build a set of KB IDs that have metadata enabled, to avoid including
+    # metadata in the prompt when the dataset owner has disabled it.
+    kb_ids = {d.kb_id for d in docs}
+    kb_meta_enabled = set()
+    for kb_id in kb_ids:
+        _, kb = KnowledgebaseService.get_by_id(kb_id)
+        if kb and kb.parser_config.get("enable_metadata", False):
+            kb_meta_enabled.add(kb_id)
+
     docs_with_meta = {}
     for d in docs:
-        meta = DocMetadataService.get_document_metadata(d.id)
-        docs_with_meta[d.id] = meta if meta else {}
+        if d.kb_id in kb_meta_enabled:
+            meta = DocMetadataService.get_document_metadata(d.id)
+            docs_with_meta[d.id] = meta if meta else {}
+        else:
+            docs_with_meta[d.id] = {}
     docs = docs_with_meta
 
     def draw_node(k, line):
