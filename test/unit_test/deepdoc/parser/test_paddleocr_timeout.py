@@ -8,6 +8,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
@@ -92,6 +94,7 @@ PaddleOCRConfig = PADDLEOCR_MODULE.PaddleOCRConfig
 PaddleOCROcrModel = OCR_MODEL_MODULE.PaddleOCROcrModel
 
 
+@pytest.mark.p1
 def test_paddleocr_model_reads_request_timeout_from_json_config(monkeypatch):
     captured = {}
 
@@ -125,6 +128,7 @@ def test_paddleocr_model_reads_request_timeout_from_json_config(monkeypatch):
     assert model.paddleocr_request_timeout == 1800
 
 
+@pytest.mark.p1
 def test_paddleocr_parse_pdf_forwards_request_timeout_to_http_call(monkeypatch):
     parser = PaddleOCRParser(api_url="https://paddleocr.example.com", request_timeout=600)
 
@@ -153,6 +157,7 @@ def test_paddleocr_parse_pdf_forwards_request_timeout_to_http_call(monkeypatch):
     assert tables == []
 
 
+@pytest.mark.p1
 def test_paddleocr_send_request_uses_configured_timeout(monkeypatch):
     parser = PaddleOCRParser(api_url="https://paddleocr.example.com", request_timeout=600)
 

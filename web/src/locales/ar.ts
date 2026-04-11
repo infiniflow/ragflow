@@ -442,9 +442,9 @@ export default {
       paddleocrApiUrl: 'عنوان URL لواجهة برمجة تطبيقات PaddleOCR',
       paddleocrApiUrlTip:
         'عنوان URL لنقطة نهاية واجهة برمجة التطبيقات لخدمة PaddleOCR',
-      paddleocrRequestTimeout: 'Request timeout (seconds)',
+      paddleocrRequestTimeout: 'مهلة الطلب (بالثواني)',
       paddleocrRequestTimeoutTip:
-        'Large PDFs or books may require a higher timeout.',
+        'قد تتطلب ملفات PDF الكبيرة أو الكتب مهلة أعلى.',
       paddleocrRequestTimeoutPlaceholder: '600',
       paddleocrApiUrlPlaceholder:
         'على سبيل المثال https://paddleocr-server.com/layout-parsing',
@@ -1133,10 +1133,10 @@ export default {
         apiUrl: 'عنوان URL لواجهة برمجة تطبيقات PaddleOCR',
         apiUrlPlaceholder:
           'على سبيل المثال: https://paddleocr-server.com/layout-parsing',
-        requestTimeout: 'Request timeout (seconds)',
-        requestTimeoutTip: 'Large PDFs or books may require a higher timeout.',
+        requestTimeout: 'مهلة الطلب (بالثواني)',
+        requestTimeoutTip: 'قد تتطلب ملفات PDF الكبيرة أو الكتب مهلة أعلى.',
         requestTimeoutPlaceholder: '600',
-        requestTimeoutMin: 'Request timeout must be at least 1 second',
+        requestTimeoutMin: 'يجب ألا تقل مهلة الطلب عن ثانية واحدة',
         accessToken: 'رمز الوصول إلى استوديو الذكاء الاصطناعي',
         accessTokenPlaceholder: 'رمز AI Studio الخاص بك (اختياري)',
         algorithm: 'خوارزمية PaddleOCR',

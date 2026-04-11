@@ -215,8 +215,17 @@ def by_paddleocr(
                 pdf_parser = ocr_model.mdl
                 parser_config = kwargs.get("parser_config") or {}
                 request_timeout = kwargs.pop("request_timeout", None)
+                timeout_source = "request_timeout"
                 if request_timeout is None and isinstance(parser_config, dict):
                     request_timeout = parser_config.get("paddleocr_request_timeout")
+                    timeout_source = "parser_config.paddleocr_request_timeout"
+                if request_timeout is None:
+                    timeout_source = "parser default"
+                logging.getLogger(__name__).debug(
+                    "Resolved PaddleOCR request timeout=%s (source=%s)",
+                    request_timeout,
+                    timeout_source,
+                )
                 sections, tables = pdf_parser.parse_pdf(
                     filepath=filename,
                     binary=binary,

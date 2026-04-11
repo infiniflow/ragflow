@@ -121,8 +121,24 @@ class PaddleOCROcrModel(Base, PaddleOCRParser):
             try:
                 timeout = int(raw_value)
             except (TypeError, ValueError):
-                timeout = default
-            return timeout if timeout > 0 else default
+                logging.getLogger(__name__).warning(
+                    "Invalid PaddleOCR request timeout %r for %s/%s; fallback to default=%d",
+                    raw_value,
+                    key,
+                    env_key,
+                    default,
+                )
+                return default
+            if timeout <= 0:
+                logging.getLogger(__name__).warning(
+                    "Non-positive PaddleOCR request timeout %r for %s/%s; fallback to default=%d",
+                    timeout,
+                    key,
+                    env_key,
+                    default,
+                )
+                return default
+            return timeout
 
         self.paddleocr_api_url = _resolve_config("paddleocr_api_url", "PADDLEOCR_API_URL", "")
         self.paddleocr_algorithm = _resolve_config("paddleocr_algorithm", "PADDLEOCR_ALGORITHM", "PaddleOCR-VL")
