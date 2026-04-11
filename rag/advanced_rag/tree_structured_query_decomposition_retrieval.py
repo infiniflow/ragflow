@@ -29,7 +29,7 @@ class TreeStructuredQueryDecompositionRetrieval:
                  prompt_config: dict,
                  kb_retrieve: partial = None,
                  kg_retrieve: partial = None,
-                 internet_enabled: bool = True,
+                 internet_enabled: bool = False,
                  ):
         self.chat_mdl = chat_mdl
         self.prompt_config = prompt_config
