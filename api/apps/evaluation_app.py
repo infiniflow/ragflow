@@ -1,3 +1,4 @@
+import logging
 #
 #  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
@@ -356,22 +357,24 @@ async def get_run_results(run_id):
         return server_error_response(e)
 
 
-@manager.route('/run/list', methods=['GET'])  # noqa: F821
+@manager.route("/run/list", methods=["GET"])  # noqa: F821
 @login_required
 async def list_evaluation_runs():
     """
     List evaluation runs.
-    
+
     Query params:
     - dataset_id: Filter by dataset (optional)
-    - dialog_id: Filter by dialog (optional)
     - page: Page number (default: 1)
     - page_size: Items per page (default: 20)
     """
     try:
         dataset_id = request.args.get("dataset_id")
-        page = int(request.args.get("page", 1))
-        page_size = int(request.args.get("page_size", 20))
+        try:
+            page = max(1, int(request.args.get("page", 1)))
+            page_size = min(100, max(1, int(request.args.get("page_size", 20))))
+        except ValueError:
+            return get_data_error_result(message="Invalid page or page_size parameter")
         logging.info(f"list_runs: user={current_user.id} dataset_id={dataset_id} page={page}")
         return get_json_result(data=EvaluationService.list_runs(dataset_id, page, page_size, current_user.id))
     except Exception as e:
