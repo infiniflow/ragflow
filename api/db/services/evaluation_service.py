@@ -570,10 +570,13 @@ class EvaluationService(CommonService):
 
 
     @classmethod
-    def list_runs(cls, dataset_id: str = None, page: int = 1, page_size: int = 20):
+    def list_runs(cls, dataset_id: str = None, page: int = 1, page_size: int = 20, user_id: str = None):
         """List evaluation runs, optionally filtered by dataset"""
         try:
             query = EvaluationRun.select()
+            if user_id:
+                query = query.where(EvaluationRun.created_by == user_id)
+            logging.info(f"list_runs: dataset_id={dataset_id} user_id={user_id} page={page}")
             if dataset_id:
                 query = query.where(EvaluationRun.dataset_id == dataset_id)
             query = query.order_by(EvaluationRun.create_time.desc())
@@ -585,9 +588,16 @@ class EvaluationService(CommonService):
             return {"total": 0, "runs": []}
 
     @classmethod
-    def delete_run(cls, run_id: str) -> bool:
+    def delete_run(cls, run_id: str, user_id: str = None) -> bool:
         """Delete an evaluation run and its results"""
         try:
+            run = EvaluationRun.get_by_id(run_id)
+            if not run:
+                return False
+            if user_id and run.created_by != user_id:
+                logging.warning(f"delete_run: unauthorized user={user_id} run={run_id}")
+                return False
+            logging.info(f"delete_run: run_id={run_id} user_id={user_id}")
             EvaluationResult.delete().where(EvaluationResult.run_id == run_id).execute()
             return EvaluationRun.delete().where(EvaluationRun.id == run_id).execute() > 0
         except Exception as e:

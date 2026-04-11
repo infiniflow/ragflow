@@ -373,7 +373,7 @@ async def list_evaluation_runs():
         page = int(request.args.get("page", 1))
         page_size = int(request.args.get("page_size", 20))
         logging.info(f"list_runs: user={current_user.id} dataset_id={dataset_id} page={page}")
-        return get_json_result(data=EvaluationService.list_runs(dataset_id, page, page_size))
+        return get_json_result(data=EvaluationService.list_runs(dataset_id, page, page_size, current_user.id))
     except Exception as e:
         return server_error_response(e)
 
@@ -384,7 +384,7 @@ async def delete_evaluation_run(run_id):
     """Delete an evaluation run"""
     try:
         logging.info(f"delete_run: user={current_user.id} run_id={run_id}")
-        if not EvaluationService.delete_run(run_id):
+        if not EvaluationService.delete_run(run_id, current_user.id):
             return get_data_error_result(message=f"Run {run_id} not found or deletion failed")
         return get_json_result(data={"run_id": run_id})
     except Exception as e:
