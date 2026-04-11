@@ -369,8 +369,10 @@ async def list_evaluation_runs():
     - page_size: Items per page (default: 20)
     """
     try:
-        # TODO: Implement list_runs in EvaluationService
-        return get_json_result(data={"runs": [], "total": 0})
+        dataset_id = request.args.get("dataset_id")
+        page = int(request.args.get("page", 1))
+        page_size = int(request.args.get("page_size", 20))
+        return get_json_result(data=EvaluationService.list_runs(dataset_id, page, page_size))
     except Exception as e:
         return server_error_response(e)
 
@@ -380,7 +382,8 @@ async def list_evaluation_runs():
 async def delete_evaluation_run(run_id):
     """Delete an evaluation run"""
     try:
-        # TODO: Implement delete_run in EvaluationService
+        if not EvaluationService.delete_run(run_id):
+            return get_error_data_result(message=f"Run {run_id} not found or deletion failed")
         return get_json_result(data={"run_id": run_id})
     except Exception as e:
         return server_error_response(e)

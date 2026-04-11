@@ -569,6 +569,31 @@ class EvaluationService(CommonService):
     # ==================== Results & Analysis ====================
 
     @classmethod
+
+    @classmethod
+    def list_runs(cls, dataset_id: str = None, page: int = 1, page_size: int = 20):
+        """List evaluation runs, optionally filtered by dataset"""
+        try:
+            query = EvaluationRun.select()
+            if dataset_id:
+                query = query.where(EvaluationRun.dataset_id == dataset_id)
+            query = query.order_by(EvaluationRun.create_time.desc())
+            total = query.count()
+            runs = query.paginate(page, page_size)
+            return {"total": total, "runs": [r.to_dict() for r in runs]}
+        except Exception as e:
+            logging.error(f"Error listing evaluation runs: {e}")
+            return {"total": 0, "runs": []}
+
+    @classmethod
+    def delete_run(cls, run_id: str) -> bool:
+        """Delete an evaluation run and its results"""
+        try:
+            EvaluationResult.delete().where(EvaluationResult.run_id == run_id).execute()
+            return EvaluationRun.delete().where(EvaluationRun.id == run_id).execute() > 0
+        except Exception as e:
+            logging.error(f"Error deleting evaluation run {run_id}: {e}")
+            return False
     def get_run_results(cls, run_id: str) -> Dict[str, Any]:
         """Get results for an evaluation run"""
         try:
