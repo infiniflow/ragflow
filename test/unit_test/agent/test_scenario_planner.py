@@ -24,6 +24,8 @@ def test_plan_defaults_to_qa_basic():
     )
 
     assert draft["archetype"] == "qa_basic"
+    assert draft["mode"] == "create"
+    assert draft["operations"] == [{"type": "create_draft", "archetype": "qa_basic"}]
     assert "dsl" in draft
     assert draft["dsl"]["path"] == ["begin"]
     assert "Agent:DraftAnswer" in draft["dsl"]["components"]
@@ -85,6 +87,8 @@ def test_plan_can_modify_existing_dsl_with_notification():
     )
 
     assert edited["archetype"] == "modify_existing"
+    assert edited["mode"] == "modify"
+    assert any(op["type"] == "append_notification" for op in edited["operations"])
     components = edited["dsl"]["components"]
     assert any(component["obj"]["component_name"] == "Message" for component in components.values())
     assert any("Notify" in component_id for component_id in components.keys())
@@ -104,5 +108,24 @@ def test_plan_can_modify_existing_dsl_with_human_review():
     )
 
     assert edited["archetype"] == "modify_existing"
+    assert any(op["type"] == "insert_human_review" for op in edited["operations"])
     components = edited["dsl"]["components"]
     assert any(component["obj"]["component_name"] == "UserFillUp" for component in components.values())
+
+
+def test_plan_reports_noop_for_unsupported_edit():
+    planner = ScenarioPlanner()
+    base = planner.plan(
+        title="Base Draft",
+        scenario="Answer questions about an internal handbook.",
+    )["dsl"]
+
+    edited = planner.plan(
+        title="Edited Draft",
+        scenario="Change the whole graph into a fully autonomous planner.",
+        existing_dsl=base,
+    )
+
+    assert edited["mode"] == "modify"
+    assert edited["operations"] == [{"type": "no_op", "target": ""}]
+    assert edited["warnings"]

@@ -50,17 +50,20 @@ class ScenarioPlanner:
         existing_dsl: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         if existing_dsl:
-            dsl = self._modify_existing_dsl(existing_dsl, scenario)
+            dsl, operations, warnings = self._modify_existing_dsl(existing_dsl, scenario)
             return {
                 "title": title,
                 "canvas_type": canvas_category,
+                "mode": "modify",
                 "archetype": "modify_existing",
                 "summary": "Modify an existing workflow draft based on natural-language instructions.",
                 "reason": "Detected an existing DSL payload; applying incremental graph edits.",
                 "warnings": [
                     "Only a minimal edit set is supported in V1.",
                     "Users should review node wiring before execution.",
+                    *warnings,
                 ],
+                "operations": operations,
                 "dsl": dsl,
             }
 
@@ -70,20 +73,24 @@ class ScenarioPlanner:
         return {
             "title": title,
             "canvas_type": canvas_category,
+            "mode": "create",
             "archetype": match.archetype,
             "summary": self.ARCHETYPE_DESCRIPTIONS[match.archetype],
             "reason": match.reason,
             "warnings": match.warnings,
+            "operations": [{"type": "create_draft", "archetype": match.archetype}],
             "dsl": dsl,
         }
 
-    def _modify_existing_dsl(self, existing_dsl: Dict[str, Any], instruction: str) -> Dict[str, Any]:
+    def _modify_existing_dsl(self, existing_dsl: Dict[str, Any], instruction: str) -> tuple[Dict[str, Any], List[Dict[str, str]], List[str]]:
         dsl = deepcopy(existing_dsl)
         components = dsl.setdefault("components", {})
         graph = dsl.setdefault("graph", {})
         edges = graph.setdefault("edges", [])
         nodes = graph.setdefault("nodes", [])
         instruction_l = (instruction or "").strip().lower()
+        operations: List[Dict[str, str]] = []
+        warnings: List[str] = []
 
         last_message_id = None
         last_agent_id = None
@@ -95,8 +102,10 @@ class ScenarioPlanner:
                 last_agent_id = component_id
 
         base_id = (last_message_id or last_agent_id or "begin").replace(":", "_")
+        matched_any = False
 
         if any(token in instruction_l for token in ("notify", "notification", "alert")):
+            matched_any = True
             new_message_id = f"Message:{base_id}Notify"
             if new_message_id not in components:
                 components[new_message_id] = self._message_component(
@@ -109,8 +118,10 @@ class ScenarioPlanner:
                         downstream.append(new_message_id)
                 edges.append(self._edge(last_agent_id or "begin", new_message_id))
                 nodes.append(self._node(new_message_id, "Message", len(nodes)))
+                operations.append({"type": "append_notification", "target": new_message_id})
 
         if any(token in instruction_l for token in ("review", "approve", "human", "feedback")):
+            matched_any = True
             fillup_id = f"UserFillUp:{base_id}Review"
             if fillup_id not in components:
                 components[fillup_id] = self._user_fillup_component(
@@ -124,8 +135,10 @@ class ScenarioPlanner:
                         downstream.append(fillup_id)
                 edges.append(self._edge(last_agent_id or "begin", fillup_id))
                 nodes.append(self._node(fillup_id, "UserFillUp", len(nodes)))
+                operations.append({"type": "insert_human_review", "target": fillup_id})
 
         if any(token in instruction_l for token in ("add analysis", "analyze", "summarize", "summary")):
+            matched_any = True
             new_agent_id = f"Agent:{base_id}Analysis"
             if new_agent_id not in components:
                 upstream_id = last_message_id or last_agent_id or "begin"
@@ -142,8 +155,15 @@ class ScenarioPlanner:
                         upstream_downstream.append(new_agent_id)
                 edges.append(self._edge(upstream_id, new_agent_id))
                 nodes.append(self._node(new_agent_id, "Agent", len(nodes)))
+                operations.append({"type": "append_analysis", "target": new_agent_id})
 
-        return dsl
+        if not matched_any:
+            warnings.append(
+                "No supported edit operation was detected. V1 currently supports notification, review, and analysis-oriented edits."
+            )
+            operations.append({"type": "no_op", "target": ""})
+
+        return dsl, operations, warnings
 
     def _node(self, component_id: str, label: str, index: int) -> Dict[str, Any]:
         return {
