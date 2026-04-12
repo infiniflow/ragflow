@@ -1025,16 +1025,18 @@ async def forget_reset_password():
     new_pwd = req.get("new_password")
     new_pwd2 = req.get("confirm_new_password")
 
+    # Guard first, before any decryption that would crash on None values
+    if not all([email, new_pwd, new_pwd2]):
+        return get_json_result(data=False, code=RetCode.ARGUMENT_ERROR, message="email and passwords are required")
+
+    # Single Redis call — removed the preceding redundant discarded call
+    if not REDIS_CONN.get(_verified_key(email)):
+        return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="email not verified")
+
     new_pwd_base64 = decrypt(new_pwd)
     new_pwd_string = base64.b64decode(new_pwd_base64).decode('utf-8')
     new_pwd2_string = base64.b64decode(decrypt(new_pwd2)).decode('utf-8')
 
-    REDIS_CONN.get(_verified_key(email))
-    if not REDIS_CONN.get(_verified_key(email)):
-        return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="email not verified")
-
-    if not all([email, new_pwd, new_pwd2]):
-        return get_json_result(data=False, code=RetCode.ARGUMENT_ERROR, message="email and passwords are required")
 
     if new_pwd_string != new_pwd2_string:
         return get_json_result(data=False, code=RetCode.ARGUMENT_ERROR, message="passwords do not match")
