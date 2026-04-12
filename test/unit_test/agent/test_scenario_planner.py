@@ -227,6 +227,45 @@ def test_plan_can_modify_existing_dsl_with_human_review():
     assert target_id in {node["id"] for node in graph["nodes"]}
 
 
+def test_plan_human_review_uses_tail_anchor_when_no_predecessor_exists():
+    planner = ScenarioPlanner()
+    existing = {
+        "components": {
+            "begin": {
+                "downstream": [],
+                "obj": {"component_name": "Begin", "params": {}},
+                "upstream": [],
+            },
+            "Message:Output": planner._message_component(
+                ["Existing output."],
+                upstream=["begin"],
+            ),
+        },
+        "graph": {
+            "nodes": [
+                {"id": "begin"},
+                {"id": "Message:Output"},
+            ],
+            "edges": [],
+        },
+    }
+
+    edited = planner.plan(
+        title="Edited Draft",
+        scenario="Insert a human review step before continuing.",
+        existing_dsl=existing,
+    )
+
+    target_id = next(op["target"] for op in edited["operations"] if op["type"] == "insert_human_review")
+    components = edited["dsl"]["components"]
+
+    assert components[target_id]["upstream"] == ["Message:Output"]
+    assert components[target_id]["downstream"] == []
+    assert target_id in components["Message:Output"]["downstream"]
+    assert ("Message:Output", target_id) in _edge_pairs(edited["dsl"])
+    assert ("begin", target_id) not in _edge_pairs(edited["dsl"])
+
+
 def test_plan_reports_noop_for_unsupported_edit():
     planner = ScenarioPlanner()
     base = planner.plan(
@@ -489,6 +528,8 @@ def test_plan_raises_clear_error_for_missing_builder(monkeypatch):
         ({"components": {}, "graph": {"edges": [], "nodes": []}}, "begin node"),
         ({"components": {"begin": {}}, "graph": {"edges": [], "nodes": [{"id": "Agent:DraftAnswer"}]}}, "begin node"),
         ({"components": {"begin": []}, "graph": {"edges": [], "nodes": [{"id": "begin"}]}}, "dict component entries"),
+        ({"components": {"begin": {"obj": []}}, "graph": {"edges": [], "nodes": [{"id": "begin"}]}}, "object metadata"),
+        ({"components": {"begin": {"obj": {"params": []}}}, "graph": {"edges": [], "nodes": [{"id": "begin"}]}}, "params must be objects"),
         ({"components": {"begin": {}}, "graph": {"edges": [1], "nodes": [{"id": "begin"}]}}, "dict graph.edges entries"),
         ({"components": {"begin": {}}, "graph": {"edges": [], "nodes": [1]}}, "dict graph.nodes entries"),
         ({"components": {"begin": {"downstream": "Message:Output"}}, "graph": {"edges": [], "nodes": [{"id": "begin"}]}}, "list upstream/downstream"),

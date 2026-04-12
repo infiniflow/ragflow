@@ -121,6 +121,13 @@ class ScenarioPlanner:
             raise ValueError("existing_dsl must be a valid canvas DSL with graph.edges and graph.nodes as lists")
         if not all(isinstance(component, dict) for component in components.values()):
             raise ValueError("existing_dsl must be a valid canvas DSL with dict component entries")
+        for component in components.values():
+            obj = component.get("obj", {})
+            if obj is not None and not isinstance(obj, dict):
+                raise ValueError("existing_dsl components must use object metadata")
+            params = obj.get("params", {}) if isinstance(obj, dict) else {}
+            if params is not None and not isinstance(params, dict):
+                raise ValueError("existing_dsl component params must be objects")
         if not all(isinstance(node, dict) for node in nodes):
             raise ValueError("existing_dsl must be a valid canvas DSL with dict graph.nodes entries")
         if not all(isinstance(edge, dict) for edge in edges):
@@ -167,14 +174,15 @@ class ScenarioPlanner:
             fillup_id = f"UserFillUp:{base_id}Review"
             if fillup_id not in components:
                 applied_any = True
-                review_downstream = [tail_id] if tail_id and tail_id != "begin" else []
+                insert_before_tail = bool(tail_id and tail_id != "begin" and predecessor_ids)
+                review_downstream = [tail_id] if insert_before_tail else []
                 review_upstream = predecessor_ids or ([tail_id] if tail_id and tail_id != "begin" else ["begin"])
                 components[fillup_id] = self._user_fillup_component(
                     tips="Review the current output and provide feedback before continuing.",
                     downstream=review_downstream,
                     upstream=review_upstream,
                 )
-                if tail_id and tail_id != "begin" and predecessor_ids:
+                if insert_before_tail:
                     for predecessor_id in predecessor_ids:
                         downstream = components[predecessor_id].setdefault("downstream", [])
                         downstream[:] = [fillup_id if item == tail_id else item for item in downstream]
@@ -182,7 +190,7 @@ class ScenarioPlanner:
                     components[tail_id]["upstream"] = [fillup_id]
                     edges.append(self._edge(fillup_id, tail_id))
                 else:
-                    anchor = "begin"
+                    anchor = tail_id if tail_id and tail_id != "begin" else "begin"
                     if anchor in components:
                         downstream = components[anchor].setdefault("downstream", [])
                         if fillup_id not in downstream:

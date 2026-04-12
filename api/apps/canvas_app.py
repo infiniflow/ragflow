@@ -83,6 +83,12 @@ async def scenario_plan():
             existing_dsl=existing_dsl,
         )
     except ValueError as e:
+        logging.warning(
+            "scenario_plan validation_failed user_id=%s mode=%s error=%s",
+            current_user.id,
+            requested_mode,
+            str(e),
+        )
         return get_data_error_result(message=str(e))
     logging.info(
         "scenario_plan result user_id=%s mode=%s archetype=%s operations=%s",

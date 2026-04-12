@@ -17,6 +17,7 @@ import asyncio
 import importlib.util
 import inspect
 import json
+import logging
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -298,3 +299,20 @@ def test_scenario_plan_route_maps_planner_value_error_to_data_error(monkeypatch)
 
     assert res["code"] == 102
     assert res["message"] == "bad existing_dsl"
+
+
+def test_scenario_plan_route_logs_validation_failure(monkeypatch, caplog):
+    module = _load_canvas_module(monkeypatch)
+
+    class _Planner:
+        def plan(self, **_kwargs):
+            raise ValueError("bad existing_dsl")
+
+    monkeypatch.setattr(module, "ScenarioPlanner", _Planner)
+    _set_request_json(monkeypatch, module, {"title": "Draft", "scenario": "Add a notification step", "existing_dsl": {"components": {}, "graph": {}}})
+
+    with caplog.at_level(logging.WARNING):
+        res = _run(inspect.unwrap(module.scenario_plan)())
+
+    assert res["code"] == 102
+    assert "scenario_plan validation_failed user_id=user-1 mode=modify error=bad existing_dsl" in caplog.text
