@@ -22,6 +22,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { MultiSelect } from '@/components/ui/multi-select';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
@@ -376,8 +377,13 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                         showSelectAll={false}
                         placeholder="Please select"
                         maxCount={20}
-                        defaultValue={field.value || []}
-                        {...field}
+                        defaultValue={
+                          Array.isArray(field.value) ? field.value : []
+                        }
+                        value={Array.isArray(field.value) ? field.value : []}
+                        name={field.name}
+                        ref={field.ref}
+                        onBlur={field.onBlur}
                       />
                     </FormControl>
                     <FormMessage />

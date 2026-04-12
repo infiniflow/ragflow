@@ -28,7 +28,7 @@ export default function ChatBasicSetting() {
   const form = useFormContext();
   const emptyResponseValue = form.watch('prompt_config.empty_response');
   const prologueValue = form.watch('prompt_config.prologue');
-  const kbIds = (useWatch({ control: form.control, name: 'kb_ids' }) ||
+  const kbIds = (useWatch({ control: form.control, name: 'dataset_ids' }) ||
     []) as string[];
   const metadataInclude = useWatch({
     control: form.control,
@@ -133,7 +133,7 @@ export default function ChatBasicSetting() {
           render={({ field }) => (
             <FormItem>
               <FormLabel tooltip="Select which metadata fields to display with each chunk">
-                {t('chat.metadataKeys')}
+                {t('metadataKeys')}
               </FormLabel>
               <FormControl className="bg-bg-input">
                 <MultiSelect
@@ -142,8 +142,11 @@ export default function ChatBasicSetting() {
                   showSelectAll={false}
                   placeholder="Please select"
                   maxCount={20}
-                  defaultValue={field.value || []}
-                  {...field}
+                  defaultValue={Array.isArray(field.value) ? field.value : []}
+                  value={Array.isArray(field.value) ? field.value : []}
+                  name={field.name}
+                  ref={field.ref}
+                  onBlur={field.onBlur}
                 />
               </FormControl>
               <FormMessage />
