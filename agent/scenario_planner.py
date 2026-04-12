@@ -116,12 +116,12 @@ class ScenarioPlanner:
         graph = dsl.get("graph")
         if not isinstance(components, dict) or not isinstance(graph, dict):
             raise ValueError("existing_dsl must be a valid canvas DSL with dict components and graph sections")
-        if "begin" not in components:
-            raise ValueError("existing_dsl must be a valid canvas DSL with a begin node")
         edges = graph.get("edges")
         nodes = graph.get("nodes")
         if not isinstance(edges, list) or not isinstance(nodes, list):
             raise ValueError("existing_dsl must be a valid canvas DSL with graph.edges and graph.nodes as lists")
+        if "begin" not in components or not any(node.get("id") == "begin" for node in nodes if isinstance(node, dict)):
+            raise ValueError("existing_dsl must be a valid canvas DSL with a begin node in both components and graph.nodes")
         instruction_l = (instruction or "").strip().lower()
         operations: List[Dict[str, str]] = []
         warnings: List[str] = []
@@ -151,12 +151,14 @@ class ScenarioPlanner:
             matched_any = True
             fillup_id = f"UserFillUp:{base_id}Review"
             if fillup_id not in components:
+                review_downstream = [tail_id] if tail_id and tail_id != "begin" else []
+                review_upstream = predecessor_ids or ([tail_id] if tail_id and tail_id != "begin" else ["begin"])
                 components[fillup_id] = self._user_fillup_component(
                     tips="Review the current output and provide feedback before continuing.",
-                    downstream=[tail_id] if tail_id else [],
-                    upstream=predecessor_ids or [tail_id or "begin"],
+                    downstream=review_downstream,
+                    upstream=review_upstream,
                 )
-                if tail_id and predecessor_ids:
+                if tail_id and tail_id != "begin" and predecessor_ids:
                     for predecessor_id in predecessor_ids:
                         downstream = components[predecessor_id].setdefault("downstream", [])
                         downstream[:] = [fillup_id if item == tail_id else item for item in downstream]
@@ -164,7 +166,7 @@ class ScenarioPlanner:
                     components[tail_id]["upstream"] = [fillup_id]
                     edges.append(self._edge(fillup_id, tail_id))
                 else:
-                    anchor = tail_id or "begin"
+                    anchor = "begin"
                     if anchor in components:
                         downstream = components[anchor].setdefault("downstream", [])
                         if fillup_id not in downstream:
@@ -211,7 +213,12 @@ class ScenarioPlanner:
             upstream = component.get("upstream", []) or []
             if upstream:
                 return self._get_output_reference(components, upstream[0])
-        return f"{{{component_id}@content}}"
+        params = component.get("obj", {}).get("params", {})
+        outputs = params.get("outputs")
+        if isinstance(outputs, dict) and outputs:
+            preferred_field = "content" if "content" in outputs else next(iter(outputs))
+            return f"{{{component_id}@{preferred_field}}}"
+        return f"{{{component_id}@result}}"
 
     def _get_tail_component_id(self, components: Dict[str, Dict[str, Any]]) -> Optional[str]:
         """Return a deterministic tail node, preferring the main Message:Output when multiple tails exist."""
@@ -219,7 +226,8 @@ class ScenarioPlanner:
         if not tails:
             return None
         for tail in tails:
-            if tail == "Message:Output" or "Message:Output" in tail:
+            component_name = components.get(tail, {}).get("obj", {}).get("component_name")
+            if component_name == "Message" and (tail == "Message:Output" or tail.startswith("Message:Output")):
                 return tail
         return tails[-1]
 

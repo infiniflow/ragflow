@@ -201,6 +201,11 @@ packages = [
     'sdk.python.ragflow_sdk',
 ]
 
+[tool.setuptools.package-data]
+agent = [
+    "templates/scenario_planner/*.json",
+]
+
 [tool.ruff]
 line-length = 200
 exclude = [".venv", "rag/svr/discord_svr.py"]

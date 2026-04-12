@@ -235,8 +235,8 @@ def test_scenario_plan_route_create_and_modify(monkeypatch):
             planner_calls.append(kwargs)
             return {
                 "title": kwargs["title"],
-                "mode": "modify" if kwargs.get("existing_dsl") else "create",
-                "archetype": "modify_existing" if kwargs.get("existing_dsl") else "qa_basic",
+                "mode": "modify" if kwargs.get("existing_dsl") is not None else "create",
+                "archetype": "modify_existing" if kwargs.get("existing_dsl") is not None else "qa_basic",
                 "operations": [{"type": "stub"}],
                 "warnings": [],
                 "dsl": {"components": {}, "graph": {}},
@@ -257,10 +257,28 @@ def test_scenario_plan_route_create_and_modify(monkeypatch):
     assert res["data"]["mode"] == "modify"
     assert planner_calls[-1]["existing_dsl"] == existing
 
+    empty_existing = {}
+    _set_request_json(monkeypatch, module, {"title": "Draft", "scenario": "Refine the existing flow", "existing_dsl": empty_existing})
+    res = _run(inspect.unwrap(module.scenario_plan)())
+    assert res["code"] == 0
+    assert res["data"]["mode"] == "modify"
+    assert planner_calls[-1]["existing_dsl"] is empty_existing
+
 
 def test_scenario_plan_route_rejects_non_object_existing_dsl(monkeypatch):
     module = _load_canvas_module(monkeypatch)
-    _set_request_json(monkeypatch, module, {"title": "Draft", "scenario": "Add a notification step", "existing_dsl": "not-a-dict"})
+    planner_calls = []
+
+    class _Planner:
+        def plan(self, **kwargs):
+            planner_calls.append(kwargs)
+            return {"mode": "create"}
+
+    monkeypatch.setattr(module, "ScenarioPlanner", _Planner)
+
+    _set_request_json(monkeypatch, module, {"title": "Draft", "scenario": "Add a notification step", "existing_dsl": "not-a-dsl"})
     res = _run(inspect.unwrap(module.scenario_plan)())
+
     assert res["code"] == 102
-    assert "existing_dsl must be a JSON object" in res["message"]
+    assert "JSON object" in res["message"]
+    assert planner_calls == []

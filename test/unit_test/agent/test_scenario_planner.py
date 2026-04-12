@@ -13,12 +13,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from copy import deepcopy
+
 import pytest
 
 from agent.scenario_planner import ScenarioPlanner
 
 
 pytestmark = pytest.mark.p2
+
+
+def _edge_pairs(dsl):
+    return {(edge["source"], edge["target"]) for edge in dsl["graph"]["edges"]}
 
 
 def test_plan_defaults_to_qa_basic():
@@ -84,6 +90,10 @@ def test_plan_can_modify_existing_dsl_with_notification():
         title="Base Draft",
         scenario="Answer questions about an internal handbook.",
     )["dsl"]
+    base_snapshot = deepcopy(base)
+    base_components = base["components"]
+    base_nodes = base["graph"]["nodes"]
+    base_edges = base["graph"]["edges"]
 
     edited = planner.plan(
         title="Edited Draft",
@@ -93,10 +103,21 @@ def test_plan_can_modify_existing_dsl_with_notification():
 
     assert edited["archetype"] == "modify_existing"
     assert edited["mode"] == "modify"
-    assert any(op["type"] == "append_notification" for op in edited["operations"])
+    op = next(op for op in edited["operations"] if op["type"] == "append_notification")
+    target_id = op["target"]
     components = edited["dsl"]["components"]
-    assert any(component["obj"]["component_name"] == "Message" for component in components.values())
-    assert any("Notify" in component_id for component_id in components.keys())
+    graph = edited["dsl"]["graph"]
+
+    assert base == base_snapshot
+    assert target_id not in base_components
+    assert len(components) == len(base_components) + 1
+    assert len(graph["nodes"]) == len(base_nodes) + 1
+    assert len(graph["edges"]) == len(base_edges) + 1
+    assert components[target_id]["obj"]["component_name"] == "Message"
+    assert components[target_id]["upstream"] == ["Message:Output"]
+    assert target_id in components["Message:Output"]["downstream"]
+    assert ("Message:Output", target_id) in _edge_pairs(edited["dsl"])
+    assert target_id in {node["id"] for node in graph["nodes"]}
 
 
 def test_plan_can_modify_existing_dsl_with_human_review():
@@ -105,6 +126,12 @@ def test_plan_can_modify_existing_dsl_with_human_review():
         title="Research Draft",
         scenario="Research the market, compare sources, and produce a short report.",
     )["dsl"]
+    base_snapshot = deepcopy(base)
+    base_components = base["components"]
+    base_nodes = base["graph"]["nodes"]
+    base_edges = base["graph"]["edges"]
+    tail_id = "Message:Output"
+    predecessor_ids = list(base_components[tail_id]["upstream"])
 
     edited = planner.plan(
         title="Research Draft",
@@ -113,9 +140,27 @@ def test_plan_can_modify_existing_dsl_with_human_review():
     )
 
     assert edited["archetype"] == "modify_existing"
-    assert any(op["type"] == "insert_human_review" for op in edited["operations"])
+    op = next(op for op in edited["operations"] if op["type"] == "insert_human_review")
+    target_id = op["target"]
     components = edited["dsl"]["components"]
-    assert any(component["obj"]["component_name"] == "UserFillUp" for component in components.values())
+    graph = edited["dsl"]["graph"]
+
+    assert base == base_snapshot
+    assert target_id not in base_components
+    assert len(components) == len(base_components) + 1
+    assert len(graph["nodes"]) == len(base_nodes) + 1
+    assert len(graph["edges"]) == len(base_edges) + 1
+    assert components[target_id]["obj"]["component_name"] == "UserFillUp"
+    assert components[target_id]["upstream"] == predecessor_ids
+    assert components[target_id]["downstream"] == [tail_id]
+    assert components[tail_id]["upstream"] == [target_id]
+    for predecessor_id in predecessor_ids:
+        assert target_id in components[predecessor_id]["downstream"]
+        assert tail_id not in components[predecessor_id]["downstream"]
+        assert (predecessor_id, target_id) in _edge_pairs(edited["dsl"])
+        assert (predecessor_id, tail_id) not in _edge_pairs(edited["dsl"])
+    assert (target_id, tail_id) in _edge_pairs(edited["dsl"])
+    assert target_id in {node["id"] for node in graph["nodes"]}
 
 
 def test_plan_reports_noop_for_unsupported_edit():
@@ -142,6 +187,10 @@ def test_plan_can_modify_existing_dsl_with_analysis():
         title="Base Draft",
         scenario="Answer questions about an internal handbook.",
     )["dsl"]
+    base_snapshot = deepcopy(base)
+    base_components = base["components"]
+    base_nodes = base["graph"]["nodes"]
+    base_edges = base["graph"]["edges"]
 
     edited = planner.plan(
         title="Edited Draft",
@@ -150,12 +199,24 @@ def test_plan_can_modify_existing_dsl_with_analysis():
     )
 
     assert edited["mode"] == "modify"
-    assert any(op["type"] == "append_analysis" for op in edited["operations"])
-    analysis_nodes = [cid for cid in edited["dsl"]["components"] if cid.endswith("Analysis")]
-    assert analysis_nodes
-    prompts = edited["dsl"]["components"][analysis_nodes[0]]["obj"]["params"]["prompts"]
+    op = next(op for op in edited["operations"] if op["type"] == "append_analysis")
+    target_id = op["target"]
+    components = edited["dsl"]["components"]
+    graph = edited["dsl"]["graph"]
+    prompts = components[target_id]["obj"]["params"]["prompts"]
+
+    assert base == base_snapshot
+    assert target_id not in base_components
+    assert len(components) == len(base_components) + 1
+    assert len(graph["nodes"]) == len(base_nodes) + 1
+    assert len(graph["edges"]) == len(base_edges) + 1
+    assert components[target_id]["upstream"] == ["Message:Output"]
+    assert target_id in components["Message:Output"]["downstream"]
+    assert ("Message:Output", target_id) in _edge_pairs(edited["dsl"])
+    assert target_id in {node["id"] for node in graph["nodes"]}
     assert "Original request: {sys.query}" in prompts[0]["content"]
-    assert "@content" in prompts[0]["content"]
+    assert "{Agent:DraftAnswer@content}" in prompts[0]["content"]
+    assert "{Message:Output@content}" not in prompts[0]["content"]
 
 
 def test_plan_raises_clear_error_for_missing_builder(monkeypatch):
@@ -175,12 +236,21 @@ def test_plan_raises_clear_error_for_missing_builder(monkeypatch):
         planner.plan(title="Broken", scenario="test")
 
 
-def test_plan_rejects_invalid_existing_dsl_structure():
+@pytest.mark.parametrize(
+    ("invalid_dsl", "message"),
+    [
+        ({}, "dict components and graph sections"),
+        ({"components": {}, "graph": {"edges": [], "nodes": []}}, "begin node"),
+        ({"components": {"begin": {}}, "graph": {"edges": {}, "nodes": []}}, "graph.edges and graph.nodes as lists"),
+        ({"components": {"begin": {}}, "graph": {"edges": [], "nodes": {}}}, "graph.edges and graph.nodes as lists"),
+    ],
+)
+def test_plan_rejects_invalid_existing_dsl_structure(invalid_dsl, message):
     planner = ScenarioPlanner()
 
-    with pytest.raises(ValueError, match="existing_dsl must be a valid canvas DSL"):
+    with pytest.raises(ValueError, match=message):
         planner.plan(
             title="Broken",
             scenario="Add a notification step",
-            existing_dsl={},
+            existing_dsl=invalid_dsl,
         )
