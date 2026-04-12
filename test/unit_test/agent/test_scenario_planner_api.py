@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
+import pytest
 
 class _DummyManager:
     def route(self, *_args, **_kwargs):
@@ -222,6 +223,9 @@ def _load_canvas_module(monkeypatch):
     return module
 
 
+pytestmark = pytest.mark.p2
+
+
 def test_scenario_plan_route_create_and_modify(monkeypatch):
     module = _load_canvas_module(monkeypatch)
     planner_calls = []
@@ -252,3 +256,11 @@ def test_scenario_plan_route_create_and_modify(monkeypatch):
     assert res["code"] == 0
     assert res["data"]["mode"] == "modify"
     assert planner_calls[-1]["existing_dsl"] == existing
+
+
+def test_scenario_plan_route_rejects_non_object_existing_dsl(monkeypatch):
+    module = _load_canvas_module(monkeypatch)
+    _set_request_json(monkeypatch, module, {"title": "Draft", "scenario": "Add a notification step", "existing_dsl": "not-a-dict"})
+    res = _run(inspect.unwrap(module.scenario_plan)())
+    assert res["code"] == 102
+    assert "existing_dsl must be a JSON object" in res["message"]

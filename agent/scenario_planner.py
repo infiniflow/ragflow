@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Scenario planner for drafting RAGFlow canvas DSL from natural language."""
+"""Scenario planner for drafting and editing RAGFlow canvas DSL from natural language."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ class ScenarioPlanner:
         canvas_category: str = "Agent",
         existing_dsl: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        if existing_dsl:
+        if existing_dsl is not None:
             dsl, operations, warnings = self._modify_existing_dsl(existing_dsl, scenario)
             return {
                 "title": title,
@@ -92,16 +92,9 @@ class ScenarioPlanner:
         operations: List[Dict[str, str]] = []
         warnings: List[str] = []
 
-        last_message_id = None
-        last_agent_id = None
-        for component_id, component in components.items():
-            name = component.get("obj", {}).get("component_name")
-            if name == "Message":
-                last_message_id = component_id
-            elif name == "Agent":
-                last_agent_id = component_id
-
-        base_id = (last_message_id or last_agent_id or "begin").replace(":", "_")
+        tail_id = self._get_tail_component_id(components)
+        predecessor_ids = self._get_predecessor_ids(components, tail_id)
+        base_id = (tail_id or "begin").replace(":", "_")
         matched_any = False
 
         if any(token in instruction_l for token in ("notify", "notification", "alert")):
@@ -110,13 +103,13 @@ class ScenarioPlanner:
             if new_message_id not in components:
                 components[new_message_id] = self._message_component(
                     ["A notification step should be configured here."],
-                    [last_agent_id or "begin"],
+                    [tail_id or "begin"],
                 )
-                if last_agent_id and last_agent_id in components:
-                    downstream = components[last_agent_id].setdefault("downstream", [])
+                if tail_id and tail_id in components:
+                    downstream = components[tail_id].setdefault("downstream", [])
                     if new_message_id not in downstream:
                         downstream.append(new_message_id)
-                edges.append(self._edge(last_agent_id or "begin", new_message_id))
+                edges.append(self._edge(tail_id or "begin", new_message_id))
                 nodes.append(self._node(new_message_id, "Message", len(nodes)))
                 operations.append({"type": "append_notification", "target": new_message_id})
 
@@ -126,14 +119,23 @@ class ScenarioPlanner:
             if fillup_id not in components:
                 components[fillup_id] = self._user_fillup_component(
                     tips="Review the current output and provide feedback before continuing.",
-                    downstream=[],
-                    upstream=[last_agent_id or "begin"],
+                    downstream=[tail_id] if tail_id else [],
+                    upstream=predecessor_ids or [tail_id or "begin"],
                 )
-                if last_agent_id and last_agent_id in components:
-                    downstream = components[last_agent_id].setdefault("downstream", [])
-                    if fillup_id not in downstream:
-                        downstream.append(fillup_id)
-                edges.append(self._edge(last_agent_id or "begin", fillup_id))
+                if tail_id and predecessor_ids:
+                    for predecessor_id in predecessor_ids:
+                        downstream = components[predecessor_id].setdefault("downstream", [])
+                        downstream[:] = [fillup_id if item == tail_id else item for item in downstream]
+                        self._replace_edge_target(edges, predecessor_id, tail_id, fillup_id)
+                    components[tail_id]["upstream"] = [fillup_id]
+                    edges.append(self._edge(fillup_id, tail_id))
+                else:
+                    anchor = tail_id or "begin"
+                    if anchor in components:
+                        downstream = components[anchor].setdefault("downstream", [])
+                        if fillup_id not in downstream:
+                            downstream.append(fillup_id)
+                    edges.append(self._edge(anchor, fillup_id))
                 nodes.append(self._node(fillup_id, "UserFillUp", len(nodes)))
                 operations.append({"type": "insert_human_review", "target": fillup_id})
 
@@ -141,7 +143,7 @@ class ScenarioPlanner:
             matched_any = True
             new_agent_id = f"Agent:{base_id}Analysis"
             if new_agent_id not in components:
-                upstream_id = last_message_id or last_agent_id or "begin"
+                upstream_id = tail_id or "begin"
                 components[new_agent_id] = self._agent_component(
                     prompts=[{"role": "user", "content": "{sys.query}"}],
                     sys_prompt="This is an appended analysis step. Users should refine the prompt and attach tools if needed.",
@@ -164,6 +166,26 @@ class ScenarioPlanner:
             operations.append({"type": "no_op", "target": ""})
 
         return dsl, operations, warnings
+
+    def _get_tail_component_id(self, components: Dict[str, Dict[str, Any]]) -> Optional[str]:
+        tails = [component_id for component_id, component in components.items() if not component.get("downstream")]
+        return tails[-1] if tails else None
+
+    def _get_predecessor_ids(self, components: Dict[str, Dict[str, Any]], target_id: Optional[str]) -> List[str]:
+        if not target_id:
+            return []
+        predecessors = []
+        for component_id, component in components.items():
+            downstream = component.get("downstream", []) or []
+            if target_id in downstream:
+                predecessors.append(component_id)
+        return predecessors
+
+    def _replace_edge_target(self, edges: List[Dict[str, Any]], source_id: str, old_target: str, new_target: str) -> None:
+        for edge in edges:
+            if edge.get("source") == source_id and edge.get("target") == old_target:
+                edge["target"] = new_target
+                edge["id"] = f"xy-edge__{source_id}{edge.get('sourceHandle', 'start')}-{new_target}{edge.get('targetHandle', 'end')}"
 
     def _node(self, component_id: str, label: str, index: int) -> Dict[str, Any]:
         return {

@@ -13,7 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import pytest
+
 from agent.scenario_planner import ScenarioPlanner
+
+
+pytestmark = pytest.mark.p2
 
 
 def test_plan_defaults_to_qa_basic():
@@ -129,3 +134,20 @@ def test_plan_reports_noop_for_unsupported_edit():
     assert edited["mode"] == "modify"
     assert edited["operations"] == [{"type": "no_op", "target": ""}]
     assert edited["warnings"]
+
+
+def test_plan_can_modify_existing_dsl_with_analysis():
+    planner = ScenarioPlanner()
+    base = planner.plan(
+        title="Base Draft",
+        scenario="Answer questions about an internal handbook.",
+    )["dsl"]
+
+    edited = planner.plan(
+        title="Edited Draft",
+        scenario="Add analysis after the current flow.",
+        existing_dsl=base,
+    )
+
+    assert edited["mode"] == "modify"
+    assert any(op["type"] == "append_analysis" for op in edited["operations"])

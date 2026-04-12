@@ -64,12 +64,30 @@ def templates():
 @login_required
 async def scenario_plan():
     req = await get_request_json()
+    existing_dsl = req.get("existing_dsl")
+    if existing_dsl is not None and not isinstance(existing_dsl, dict):
+        return get_data_error_result(message="existing_dsl must be a JSON object.")
+
+    requested_mode = "modify" if existing_dsl is not None else "create"
+    logging.info(
+        "scenario_plan request user_id=%s mode=%s title=%s",
+        current_user.id,
+        requested_mode,
+        req.get("title", ""),
+    )
     planner = ScenarioPlanner()
     draft = planner.plan(
         title=req["title"],
         scenario=req["scenario"],
         canvas_category=req.get("canvas_category", CanvasCategory.Agent),
-        existing_dsl=req.get("existing_dsl"),
+        existing_dsl=existing_dsl,
+    )
+    logging.info(
+        "scenario_plan result user_id=%s mode=%s archetype=%s operations=%s",
+        current_user.id,
+        draft.get("mode"),
+        draft.get("archetype"),
+        len(draft.get("operations", []) or []),
     )
     return get_json_result(data=draft)
 
