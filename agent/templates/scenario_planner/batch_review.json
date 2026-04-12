@@ -1,0 +1,253 @@
+{
+  "id": 0,
+  "title": {
+    "en": "batch_review",
+    "zh": "batch_review"
+  },
+  "description": {
+    "en": "Iteration-based batch processing workflow for repeated items.",
+    "zh": "Iteration-based batch processing workflow for repeated items."
+  },
+  "canvas_type": "Agent",
+  "dsl": {
+    "components": {
+      "begin": {
+        "downstream": [
+          "Iteration:Items"
+        ],
+        "obj": {
+          "component_name": "Begin",
+          "params": {
+            "enablePrologue": true,
+            "inputs": {
+              "task_instructions": {
+                "name": "Task Instructions",
+                "optional": false,
+                "options": [],
+                "type": "line"
+              }
+            },
+            "mode": "conversational",
+            "prologue": "Hi! Upload or provide the items you want to process in batch."
+          }
+        },
+        "upstream": []
+      },
+      "Iteration:Items": {
+        "downstream": [],
+        "obj": {
+          "component_name": "Iteration",
+          "params": {
+            "items_ref": "sys.files",
+            "outputs": {
+              "evaluation": {
+                "ref": "Agent:ReviewItem@content",
+                "type": "Array<string>"
+              }
+            }
+          }
+        },
+        "upstream": [
+          "begin"
+        ]
+      },
+      "IterationItem:Current": {
+        "downstream": [
+          "Agent:ReviewItem"
+        ],
+        "obj": {
+          "component_name": "IterationItem",
+          "params": {
+            "outputs": {
+              "index": {
+                "type": "integer"
+              },
+              "item": {
+                "type": "unknown"
+              }
+            }
+          }
+        },
+        "parent_id": "Iteration:Items",
+        "upstream": []
+      },
+      "Agent:ReviewItem": {
+        "downstream": [
+          "Message:ItemOutput"
+        ],
+        "obj": {
+          "component_name": "Agent",
+          "params": {
+            "cite": true,
+            "delay_after_error": 1,
+            "description": "",
+            "exception_default_value": "",
+            "exception_goto": [],
+            "exception_method": "",
+            "frequencyPenaltyEnabled": false,
+            "frequency_penalty": 0.7,
+            "llm_id": "qwen-turbo@Tongyi-Qianwen",
+            "maxTokensEnabled": false,
+            "max_retries": 3,
+            "max_rounds": 1,
+            "max_tokens": 512,
+            "mcp": [],
+            "message_history_window_size": 12,
+            "outputs": {
+              "content": {
+                "type": "string",
+                "value": ""
+              },
+              "structured": {}
+            },
+            "presencePenaltyEnabled": false,
+            "presence_penalty": 0.4,
+            "prompts": [
+              {
+                "role": "user",
+                "content": "Task:{begin@task_instructions}\nCurrent item:{IterationItem:Current@item}\nOriginal scenario:{sys.query}"
+              }
+            ],
+            "sys_prompt": "You are the per-item batch processor. Review each item independently and produce a concise structured result.",
+            "temperature": 0.1,
+            "temperatureEnabled": false,
+            "tools": [],
+            "topPEnabled": false,
+            "top_p": 0.3,
+            "user_prompt": "",
+            "visual_files_var": ""
+          }
+        },
+        "upstream": [
+          "IterationItem:Current"
+        ],
+        "parent_id": "Iteration:Items"
+      },
+      "Message:ItemOutput": {
+        "downstream": [],
+        "obj": {
+          "component_name": "Message",
+          "params": {
+            "content": [
+              "{Agent:ReviewItem@content}"
+            ]
+          }
+        },
+        "upstream": [
+          "Agent:ReviewItem"
+        ],
+        "parent_id": "Iteration:Items"
+      }
+    },
+    "globals": {
+      "sys.conversation_turns": 0,
+      "sys.date": "",
+      "sys.files": [],
+      "sys.history": [],
+      "sys.query": "",
+      "sys.user_id": ""
+    },
+    "graph": {
+      "edges": [
+        {
+          "id": "xy-edge__beginstart-Iteration:Itemsend",
+          "source": "begin",
+          "sourceHandle": "start",
+          "target": "Iteration:Items",
+          "targetHandle": "end",
+          "data": {
+            "isHovered": false
+          }
+        },
+        {
+          "id": "xy-edge__IterationItem:Currentstart-Agent:ReviewItemend",
+          "source": "IterationItem:Current",
+          "sourceHandle": "start",
+          "target": "Agent:ReviewItem",
+          "targetHandle": "end",
+          "data": {
+            "isHovered": false
+          }
+        },
+        {
+          "id": "xy-edge__Agent:ReviewItemstart-Message:ItemOutputend",
+          "source": "Agent:ReviewItem",
+          "sourceHandle": "start",
+          "target": "Message:ItemOutput",
+          "targetHandle": "end",
+          "data": {
+            "isHovered": false
+          }
+        }
+      ],
+      "nodes": [
+        {
+          "id": "begin",
+          "data": {
+            "label": "Begin",
+            "name": "begin"
+          },
+          "position": {
+            "x": 120,
+            "y": 160
+          }
+        },
+        {
+          "id": "Iteration:Items",
+          "data": {
+            "label": "Iteration",
+            "name": "Iteration:Items"
+          },
+          "position": {
+            "x": 380,
+            "y": 160
+          }
+        },
+        {
+          "id": "IterationItem:Current",
+          "data": {
+            "label": "IterationItem",
+            "name": "IterationItem:Current"
+          },
+          "position": {
+            "x": 640,
+            "y": 160
+          }
+        },
+        {
+          "id": "Agent:ReviewItem",
+          "data": {
+            "label": "Agent",
+            "name": "Agent:ReviewItem"
+          },
+          "position": {
+            "x": 900,
+            "y": 160
+          }
+        },
+        {
+          "id": "Message:ItemOutput",
+          "data": {
+            "label": "Message",
+            "name": "Message:ItemOutput"
+          },
+          "position": {
+            "x": 1160,
+            "y": 160
+          }
+        }
+      ]
+    },
+    "history": [],
+    "messages": [],
+    "path": [
+      "begin"
+    ],
+    "retrieval": {
+      "chunks": [],
+      "doc_aggs": []
+    },
+    "variables": {}
+  },
+  "avatar": ""
+}
