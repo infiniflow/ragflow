@@ -119,8 +119,19 @@ class ScenarioPlanner:
         nodes = graph.get("nodes")
         if not isinstance(edges, list) or not isinstance(nodes, list):
             raise ValueError("existing_dsl must be a valid canvas DSL with graph.edges and graph.nodes as lists")
+        if not all(isinstance(component, dict) for component in components.values()):
+            raise ValueError("existing_dsl must be a valid canvas DSL with dict component entries")
+        if not all(isinstance(node, dict) for node in nodes):
+            raise ValueError("existing_dsl must be a valid canvas DSL with dict graph.nodes entries")
+        if not all(isinstance(edge, dict) for edge in edges):
+            raise ValueError("existing_dsl must be a valid canvas DSL with dict graph.edges entries")
         if "begin" not in components or not any(node.get("id") == "begin" for node in nodes if isinstance(node, dict)):
             raise ValueError("existing_dsl must be a valid canvas DSL with a begin node in both components and graph.nodes")
+        for component in components.values():
+            downstream = component.get("downstream", [])
+            upstream = component.get("upstream", [])
+            if not isinstance(downstream, list) or not isinstance(upstream, list):
+                raise ValueError("existing_dsl must be a valid canvas DSL with list upstream/downstream component links")
         instruction_l = (instruction or "").strip().lower()
         operations: List[Dict[str, str]] = []
         warnings: List[str] = []
@@ -219,16 +230,26 @@ class ScenarioPlanner:
 
         return dsl, operations, warnings
 
-    def _get_output_reference(self, components: Dict[str, Dict[str, Any]], component_id: str) -> str:
+    def _get_output_reference(
+        self,
+        components: Dict[str, Dict[str, Any]],
+        component_id: str,
+        visited: Optional[set[str]] = None,
+    ) -> str:
+        if visited is None:
+            visited = set()
         if component_id == "begin":
             return "{sys.query}"
+        if component_id in visited:
+            return "{sys.query}"
+        visited.add(component_id)
         component = components.get(component_id, {})
         obj = component.get("obj", {})
         component_name = obj.get("component_name")
         if component_name == "Message":
             upstream = component.get("upstream", []) or []
             if upstream:
-                return self._get_output_reference(components, upstream[0])
+                return self._get_output_reference(components, upstream[0], visited)
         params = obj.get("params", {})
         outputs = params.get("outputs")
         if isinstance(outputs, dict) and outputs:
@@ -236,7 +257,7 @@ class ScenarioPlanner:
             return f"{{{component_id}@{preferred_field}}}"
         upstream = component.get("upstream", []) or []
         if upstream:
-            return self._get_output_reference(components, upstream[0])
+            return self._get_output_reference(components, upstream[0], visited)
         return "{sys.query}"
 
     def _get_tail_component_id(self, components: Dict[str, Dict[str, Any]]) -> Optional[str]:

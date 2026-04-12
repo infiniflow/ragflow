@@ -423,6 +423,24 @@ def test_plan_analysis_avoids_result_placeholder_for_outputless_tail():
     assert "Analyze the following output:\n{sys.query}" in prompt
 
 
+def test_output_reference_returns_query_when_upstream_cycle_is_detected():
+    planner = ScenarioPlanner()
+    components = {
+        "Agent:A": {
+            "downstream": [],
+            "obj": {"component_name": "Agent", "params": {}},
+            "upstream": ["Agent:B"],
+        },
+        "Agent:B": {
+            "downstream": [],
+            "obj": {"component_name": "Agent", "params": {}},
+            "upstream": ["Agent:A"],
+        },
+    }
+
+    assert planner._get_output_reference(components, "Agent:A") == "{sys.query}"
+
+
 def test_load_template_uses_cached_payload(monkeypatch):
     planner = ScenarioPlanner()
     ScenarioPlanner._load_template_payload.cache_clear()
@@ -470,6 +488,10 @@ def test_plan_raises_clear_error_for_missing_builder(monkeypatch):
         ({}, "dict components and graph sections"),
         ({"components": {}, "graph": {"edges": [], "nodes": []}}, "begin node"),
         ({"components": {"begin": {}}, "graph": {"edges": [], "nodes": [{"id": "Agent:DraftAnswer"}]}}, "begin node"),
+        ({"components": {"begin": []}, "graph": {"edges": [], "nodes": [{"id": "begin"}]}}, "dict component entries"),
+        ({"components": {"begin": {}}, "graph": {"edges": [1], "nodes": [{"id": "begin"}]}}, "dict graph.edges entries"),
+        ({"components": {"begin": {}}, "graph": {"edges": [], "nodes": [1]}}, "dict graph.nodes entries"),
+        ({"components": {"begin": {"downstream": "Message:Output"}}, "graph": {"edges": [], "nodes": [{"id": "begin"}]}}, "list upstream/downstream"),
         ({"components": {"begin": {}}, "graph": {"edges": {}, "nodes": []}}, "graph.edges and graph.nodes as lists"),
         ({"components": {"begin": {}}, "graph": {"edges": [], "nodes": {}}}, "graph.edges and graph.nodes as lists"),
     ],

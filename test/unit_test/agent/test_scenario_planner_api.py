@@ -282,3 +282,19 @@ def test_scenario_plan_route_rejects_non_object_existing_dsl(monkeypatch):
     assert res["code"] == 102
     assert "JSON object" in res["message"]
     assert planner_calls == []
+
+
+def test_scenario_plan_route_maps_planner_value_error_to_data_error(monkeypatch):
+    module = _load_canvas_module(monkeypatch)
+
+    class _Planner:
+        def plan(self, **_kwargs):
+            raise ValueError("bad existing_dsl")
+
+    monkeypatch.setattr(module, "ScenarioPlanner", _Planner)
+
+    _set_request_json(monkeypatch, module, {"title": "Draft", "scenario": "Add a notification step", "existing_dsl": {"components": {}, "graph": {}}})
+    res = _run(inspect.unwrap(module.scenario_plan)())
+
+    assert res["code"] == 102
+    assert res["message"] == "bad existing_dsl"

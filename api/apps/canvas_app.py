@@ -75,12 +75,15 @@ async def scenario_plan():
         requested_mode,
     )
     planner = ScenarioPlanner()
-    draft = planner.plan(
-        title=req["title"],
-        scenario=req["scenario"],
-        canvas_category=req.get("canvas_category", CanvasCategory.Agent),
-        existing_dsl=existing_dsl,
-    )
+    try:
+        draft = planner.plan(
+            title=req["title"],
+            scenario=req["scenario"],
+            canvas_category=req.get("canvas_category", CanvasCategory.Agent),
+            existing_dsl=existing_dsl,
+        )
+    except ValueError as e:
+        return get_data_error_result(message=str(e))
     logging.info(
         "scenario_plan result user_id=%s mode=%s archetype=%s operations=%s",
         current_user.id,
