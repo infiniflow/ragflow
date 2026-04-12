@@ -208,17 +208,21 @@ class ScenarioPlanner:
         if component_id == "begin":
             return "{sys.query}"
         component = components.get(component_id, {})
-        component_name = component.get("obj", {}).get("component_name")
+        obj = component.get("obj", {})
+        component_name = obj.get("component_name")
         if component_name == "Message":
             upstream = component.get("upstream", []) or []
             if upstream:
                 return self._get_output_reference(components, upstream[0])
-        params = component.get("obj", {}).get("params", {})
+        params = obj.get("params", {})
         outputs = params.get("outputs")
         if isinstance(outputs, dict) and outputs:
             preferred_field = "content" if "content" in outputs else next(iter(outputs))
             return f"{{{component_id}@{preferred_field}}}"
-        return f"{{{component_id}@result}}"
+        upstream = component.get("upstream", []) or []
+        if upstream:
+            return self._get_output_reference(components, upstream[0])
+        return "{sys.query}"
 
     def _get_tail_component_id(self, components: Dict[str, Dict[str, Any]]) -> Optional[str]:
         """Return a deterministic tail node, preferring the main Message:Output when multiple tails exist."""

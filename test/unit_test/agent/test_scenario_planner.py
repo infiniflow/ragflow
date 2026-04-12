@@ -120,6 +120,30 @@ def test_plan_can_modify_existing_dsl_with_notification():
     assert target_id in {node["id"] for node in graph["nodes"]}
 
 
+def test_plan_notification_prefers_message_output_tail_for_multi_terminal_graph():
+    planner = ScenarioPlanner()
+    base = planner.plan(
+        title="Monitor Draft",
+        scenario="Monitor a website, detect changes, and notify me if anything changes.",
+    )["dsl"]
+
+    edited = planner.plan(
+        title="Edited Monitor Draft",
+        scenario="Add a notification step after the current flow.",
+        existing_dsl=base,
+    )
+
+    op = next(op for op in edited["operations"] if op["type"] == "append_notification")
+    target_id = op["target"]
+    components = edited["dsl"]["components"]
+
+    assert components[target_id]["upstream"] == ["Message:Output"]
+    assert target_id in components["Message:Output"]["downstream"]
+    assert target_id not in components["Message:NoChange"]["downstream"]
+    assert ("Message:Output", target_id) in _edge_pairs(edited["dsl"])
+    assert ("Message:NoChange", target_id) not in _edge_pairs(edited["dsl"])
+
+
 def test_plan_can_modify_existing_dsl_with_human_review():
     planner = ScenarioPlanner()
     base = planner.plan(
@@ -219,6 +243,116 @@ def test_plan_can_modify_existing_dsl_with_analysis():
     assert "{Message:Output@content}" not in prompts[0]["content"]
 
 
+def test_output_reference_falls_back_to_upstream_or_query():
+    planner = ScenarioPlanner()
+    components = {
+        "Agent:WithOutput": planner._agent_component(
+            prompts=[{"role": "user", "content": "{sys.query}"}],
+            sys_prompt="Draft an answer.",
+            downstream=["Switch:Decision"],
+        ),
+        "Switch:Decision": {
+            "downstream": [],
+            "obj": {
+                "component_name": "Switch",
+                "params": {},
+            },
+            "upstream": ["Agent:WithOutput"],
+        },
+        "Switch:NoUpstream": {
+            "downstream": [],
+            "obj": {
+                "component_name": "Switch",
+                "params": {},
+            },
+            "upstream": [],
+        },
+    }
+
+    assert planner._get_output_reference(components, "Switch:Decision") == "{Agent:WithOutput@content}"
+    assert planner._get_output_reference(components, "Switch:NoUpstream") == "{sys.query}"
+
+
+def test_plan_analysis_uses_user_fillup_output_reference():
+    planner = ScenarioPlanner()
+    existing = {
+        "components": {
+            "begin": {
+                "downstream": ["UserFillUp:Review"],
+                "obj": {"component_name": "Begin", "params": {}},
+                "upstream": [],
+            },
+            "UserFillUp:Review": planner._user_fillup_component(
+                tips="Review the draft.",
+                downstream=[],
+                upstream=["begin"],
+            ),
+        },
+        "graph": {
+            "nodes": [
+                {"id": "begin"},
+                {"id": "UserFillUp:Review"},
+            ],
+            "edges": [
+                {"source": "begin", "target": "UserFillUp:Review"},
+            ],
+        },
+    }
+
+    edited = planner.plan(
+        title="Edited Draft",
+        scenario="Add analysis after the current flow.",
+        existing_dsl=existing,
+    )
+
+    op = next(op for op in edited["operations"] if op["type"] == "append_analysis")
+    target_id = op["target"]
+    prompt = edited["dsl"]["components"][target_id]["obj"]["params"]["prompts"][0]["content"]
+
+    assert "{UserFillUp:Review@instructions}" in prompt
+    assert "{UserFillUp:Review@content}" not in prompt
+
+
+def test_plan_analysis_avoids_result_placeholder_for_outputless_tail():
+    planner = ScenarioPlanner()
+    existing = {
+        "components": {
+            "begin": {
+                "downstream": ["Switch:Decision"],
+                "obj": {"component_name": "Begin", "params": {}},
+                "upstream": [],
+            },
+            "Switch:Decision": {
+                "downstream": [],
+                "obj": {"component_name": "Switch", "params": {}},
+                "upstream": ["begin"],
+            },
+        },
+        "graph": {
+            "nodes": [
+                {"id": "begin"},
+                {"id": "Switch:Decision"},
+            ],
+            "edges": [
+                planner._edge("begin", "Switch:Decision"),
+            ],
+        },
+    }
+
+    edited = planner.plan(
+        title="Edited Draft",
+        scenario="Add analysis after the current flow.",
+        existing_dsl=existing,
+    )
+
+    op = next(op for op in edited["operations"] if op["type"] == "append_analysis")
+    target_id = op["target"]
+    prompt = edited["dsl"]["components"][target_id]["obj"]["params"]["prompts"][0]["content"]
+
+    assert "@result" not in prompt
+    assert "Analyze the following output:\n{sys.query}" in prompt
+
+
 def test_plan_raises_clear_error_for_missing_builder(monkeypatch):
     planner = ScenarioPlanner()
 
@@ -241,6 +375,7 @@ def test_plan_raises_clear_error_for_missing_builder(monkeypatch):
     [
         ({}, "dict components and graph sections"),
         ({"components": {}, "graph": {"edges": [], "nodes": []}}, "begin node"),
+        ({"components": {"begin": {}}, "graph": {"edges": [], "nodes": [{"id": "Agent:DraftAnswer"}]}}, "begin node"),
         ({"components": {"begin": {}}, "graph": {"edges": {}, "nodes": []}}, "graph.edges and graph.nodes as lists"),
         ({"components": {"begin": {}}, "graph": {"edges": [], "nodes": {}}}, "graph.edges and graph.nodes as lists"),
     ],
