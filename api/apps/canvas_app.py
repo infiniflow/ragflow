@@ -70,10 +70,9 @@ async def scenario_plan():
 
     requested_mode = "modify" if existing_dsl is not None else "create"
     logging.info(
-        "scenario_plan request user_id=%s mode=%s title=%s",
+        "scenario_plan request user_id=%s mode=%s",
         current_user.id,
         requested_mode,
-        req.get("title", ""),
     )
     planner = ScenarioPlanner()
     draft = planner.plan(

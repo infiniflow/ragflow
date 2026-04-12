@@ -56,7 +56,7 @@ class ScenarioPlanner:
         existing_dsl: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         mode = "modify" if existing_dsl is not None else "create"
-        logger.info("scenario_planner plan start title=%s mode=%s", title, mode)
+        logger.info("scenario_planner plan start mode=%s", mode)
         if existing_dsl is not None:
             dsl, operations, warnings = self._modify_existing_dsl(existing_dsl, scenario)
             result = {
@@ -75,8 +75,7 @@ class ScenarioPlanner:
                 "dsl": dsl,
             }
             logger.info(
-                "scenario_planner plan complete title=%s mode=%s archetype=%s operations=%s warnings=%s",
-                title,
+                "scenario_planner plan complete mode=%s archetype=%s operations=%s warnings=%s",
                 mode,
                 result["archetype"],
                 len(result.get("operations", []) or []),
@@ -102,8 +101,7 @@ class ScenarioPlanner:
             "dsl": dsl,
         }
         logger.info(
-            "scenario_planner plan complete title=%s mode=%s archetype=%s operations=%s warnings=%s",
-            title,
+            "scenario_planner plan complete mode=%s archetype=%s operations=%s warnings=%s",
             mode,
             result["archetype"],
             len(result.get("operations", []) or []),
@@ -126,15 +124,13 @@ class ScenarioPlanner:
         instruction_l = (instruction or "").strip().lower()
         operations: List[Dict[str, str]] = []
         warnings: List[str] = []
-
-        tail_id = self._get_tail_component_id(components)
-        predecessor_ids = self._get_predecessor_ids(components, tail_id)
-        base_id = (tail_id or "begin").replace(":", "_")
         recognized_any = False
         applied_any = False
 
         if any(token in instruction_l for token in ("notify", "notification", "alert")):
             recognized_any = True
+            tail_id = self._get_tail_component_id(components)
+            base_id = (tail_id or "begin").replace(":", "_")
             new_message_id = f"Message:{base_id}Notify"
             if new_message_id not in components:
                 applied_any = True
@@ -154,6 +150,9 @@ class ScenarioPlanner:
 
         if any(token in instruction_l for token in ("review", "approve", "human", "feedback")):
             recognized_any = True
+            tail_id = self._get_tail_component_id(components)
+            predecessor_ids = self._get_predecessor_ids(components, tail_id)
+            base_id = (tail_id or "begin").replace(":", "_")
             fillup_id = f"UserFillUp:{base_id}Review"
             if fillup_id not in components:
                 applied_any = True
@@ -185,6 +184,8 @@ class ScenarioPlanner:
 
         if any(token in instruction_l for token in ("add analysis", "analyze", "summarize", "summary")):
             recognized_any = True
+            tail_id = self._get_tail_component_id(components)
+            base_id = (tail_id or "begin").replace(":", "_")
             new_agent_id = f"Agent:{base_id}Analysis"
             if new_agent_id not in components:
                 applied_any = True

@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 from copy import deepcopy
+import logging
 from pathlib import Path
 
 import pytest
@@ -41,6 +42,20 @@ def test_plan_defaults_to_qa_basic():
     assert "dsl" in draft
     assert draft["dsl"]["path"] == ["begin"]
     assert "Agent:DraftAnswer" in draft["dsl"]["components"]
+
+
+def test_plan_logs_without_raw_title(caplog):
+    planner = ScenarioPlanner()
+
+    with caplog.at_level(logging.INFO, logger="agent.scenario_planner"):
+        planner.plan(
+            title="Secret Strategy 2027",
+            scenario="Answer questions about an internal handbook.",
+        )
+
+    assert "Secret Strategy 2027" not in caplog.text
+    assert "scenario_planner plan start mode=create" in caplog.text
+    assert "scenario_planner plan complete mode=create archetype=qa_basic" in caplog.text
 
 
 def test_plan_selects_interactive_research():
@@ -119,6 +134,30 @@ def test_plan_can_modify_existing_dsl_with_notification():
     assert target_id in components["Message:Output"]["downstream"]
     assert ("Message:Output", target_id) in _edge_pairs(edited["dsl"])
     assert target_id in {node["id"] for node in graph["nodes"]}
+
+
+def test_plan_multi_edit_refreshes_tail_between_supported_operations():
+    planner = ScenarioPlanner()
+    base = planner.plan(
+        title="Base Draft",
+        scenario="Answer questions about an internal handbook.",
+    )["dsl"]
+
+    edited = planner.plan(
+        title="Edited Draft",
+        scenario="Add a notification step and summarize after the current flow.",
+        existing_dsl=base,
+    )
+
+    notification_id = next(op["target"] for op in edited["operations"] if op["type"] == "append_notification")
+    analysis_id = next(op["target"] for op in edited["operations"] if op["type"] == "append_analysis")
+    components = edited["dsl"]["components"]
+
+    assert components[notification_id]["upstream"] == ["Message:Output"]
+    assert components[analysis_id]["upstream"] == [notification_id]
+    assert analysis_id in components[notification_id]["downstream"]
+    assert ("Message:Output", notification_id) in _edge_pairs(edited["dsl"])
+    assert (notification_id, analysis_id) in _edge_pairs(edited["dsl"])
 
 
 def test_plan_notification_prefers_message_output_tail_for_multi_terminal_graph():
