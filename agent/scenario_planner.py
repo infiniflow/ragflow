@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 DEFAULT_LLM_ID = "qwen-turbo@Tongyi-Qianwen"
@@ -42,7 +42,28 @@ class ScenarioPlanner:
         "batch_review": "Iteration-based batch processing workflow for repeated items.",
     }
 
-    def plan(self, title: str, scenario: str, canvas_category: str = "Agent") -> Dict[str, Any]:
+    def plan(
+        self,
+        title: str,
+        scenario: str,
+        canvas_category: str = "Agent",
+        existing_dsl: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        if existing_dsl:
+            dsl = self._modify_existing_dsl(existing_dsl, scenario)
+            return {
+                "title": title,
+                "canvas_type": canvas_category,
+                "archetype": "modify_existing",
+                "summary": "Modify an existing workflow draft based on natural-language instructions.",
+                "reason": "Detected an existing DSL payload; applying incremental graph edits.",
+                "warnings": [
+                    "Only a minimal edit set is supported in V1.",
+                    "Users should review node wiring before execution.",
+                ],
+                "dsl": dsl,
+            }
+
         match = self._classify(scenario)
         builder = getattr(self, f"_build_{match.archetype}")
         dsl = builder(scenario)
@@ -54,6 +75,87 @@ class ScenarioPlanner:
             "reason": match.reason,
             "warnings": match.warnings,
             "dsl": dsl,
+        }
+
+    def _modify_existing_dsl(self, existing_dsl: Dict[str, Any], instruction: str) -> Dict[str, Any]:
+        dsl = deepcopy(existing_dsl)
+        components = dsl.setdefault("components", {})
+        graph = dsl.setdefault("graph", {})
+        edges = graph.setdefault("edges", [])
+        nodes = graph.setdefault("nodes", [])
+        instruction_l = (instruction or "").strip().lower()
+
+        last_message_id = None
+        last_agent_id = None
+        for component_id, component in components.items():
+            name = component.get("obj", {}).get("component_name")
+            if name == "Message":
+                last_message_id = component_id
+            elif name == "Agent":
+                last_agent_id = component_id
+
+        base_id = (last_message_id or last_agent_id or "begin").replace(":", "_")
+
+        if any(token in instruction_l for token in ("notify", "notification", "alert")):
+            new_message_id = f"Message:{base_id}Notify"
+            if new_message_id not in components:
+                components[new_message_id] = self._message_component(
+                    ["A notification step should be configured here."],
+                    [last_agent_id or "begin"],
+                )
+                if last_agent_id and last_agent_id in components:
+                    downstream = components[last_agent_id].setdefault("downstream", [])
+                    if new_message_id not in downstream:
+                        downstream.append(new_message_id)
+                edges.append(self._edge(last_agent_id or "begin", new_message_id))
+                nodes.append(self._node(new_message_id, "Message", len(nodes)))
+
+        if any(token in instruction_l for token in ("review", "approve", "human", "feedback")):
+            fillup_id = f"UserFillUp:{base_id}Review"
+            if fillup_id not in components:
+                components[fillup_id] = self._user_fillup_component(
+                    tips="Review the current output and provide feedback before continuing.",
+                    downstream=[],
+                    upstream=[last_agent_id or "begin"],
+                )
+                if last_agent_id and last_agent_id in components:
+                    downstream = components[last_agent_id].setdefault("downstream", [])
+                    if fillup_id not in downstream:
+                        downstream.append(fillup_id)
+                edges.append(self._edge(last_agent_id or "begin", fillup_id))
+                nodes.append(self._node(fillup_id, "UserFillUp", len(nodes)))
+
+        if any(token in instruction_l for token in ("add analysis", "analyze", "summarize", "summary")):
+            new_agent_id = f"Agent:{base_id}Analysis"
+            if new_agent_id not in components:
+                upstream_id = last_message_id or last_agent_id or "begin"
+                components[new_agent_id] = self._agent_component(
+                    prompts=[{"role": "user", "content": "{sys.query}"}],
+                    sys_prompt="This is an appended analysis step. Users should refine the prompt and attach tools if needed.",
+                    downstream=[],
+                )
+                components[new_agent_id]["upstream"] = [upstream_id]
+                if upstream_id in components:
+                    upstream_component = components[upstream_id]
+                    upstream_downstream = upstream_component.setdefault("downstream", [])
+                    if new_agent_id not in upstream_downstream:
+                        upstream_downstream.append(new_agent_id)
+                edges.append(self._edge(upstream_id, new_agent_id))
+                nodes.append(self._node(new_agent_id, "Agent", len(nodes)))
+
+        return dsl
+
+    def _node(self, component_id: str, label: str, index: int) -> Dict[str, Any]:
+        return {
+            "id": component_id,
+            "data": {
+                "label": label,
+                "name": component_id,
+            },
+            "position": {
+                "x": 120 + index * 260,
+                "y": 160,
+            },
         }
 
     def _classify(self, scenario: str) -> ScenarioMatch:
@@ -94,19 +196,8 @@ class ScenarioPlanner:
 
     def _base_dsl(self, components: Dict[str, Dict[str, Any]], edges: List[Dict[str, Any]]) -> Dict[str, Any]:
         nodes = []
-        x = 120
-        for component_id, component in components.items():
-            nodes.append(
-                {
-                    "id": component_id,
-                    "data": {
-                        "label": component["obj"]["component_name"],
-                        "name": component_id,
-                    },
-                    "position": {"x": x, "y": 160},
-                }
-            )
-            x += 260
+        for index, (component_id, component) in enumerate(components.items()):
+            nodes.append(self._node(component_id, component["obj"]["component_name"], index))
 
         return {
             "components": components,

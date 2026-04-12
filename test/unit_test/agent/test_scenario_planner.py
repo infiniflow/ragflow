@@ -69,3 +69,40 @@ def test_plan_selects_batch_review():
     assert "Iteration:Items" in components
     assert "IterationItem:Current" in components
     assert components["Agent:ReviewItem"]["parent_id"] == "Iteration:Items"
+
+
+def test_plan_can_modify_existing_dsl_with_notification():
+    planner = ScenarioPlanner()
+    base = planner.plan(
+        title="Base Draft",
+        scenario="Answer questions about an internal handbook.",
+    )["dsl"]
+
+    edited = planner.plan(
+        title="Edited Draft",
+        scenario="Add a notification step after the current flow.",
+        existing_dsl=base,
+    )
+
+    assert edited["archetype"] == "modify_existing"
+    components = edited["dsl"]["components"]
+    assert any(component["obj"]["component_name"] == "Message" for component in components.values())
+    assert any("Notify" in component_id for component_id in components.keys())
+
+
+def test_plan_can_modify_existing_dsl_with_human_review():
+    planner = ScenarioPlanner()
+    base = planner.plan(
+        title="Research Draft",
+        scenario="Research the market, compare sources, and produce a short report.",
+    )["dsl"]
+
+    edited = planner.plan(
+        title="Research Draft",
+        scenario="Insert a human review step before continuing.",
+        existing_dsl=base,
+    )
+
+    assert edited["archetype"] == "modify_existing"
+    components = edited["dsl"]["components"]
+    assert any(component["obj"]["component_name"] == "UserFillUp" for component in components.values())

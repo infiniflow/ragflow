@@ -69,6 +69,7 @@ async def scenario_plan():
         title=req["title"],
         scenario=req["scenario"],
         canvas_category=req.get("canvas_category", CanvasCategory.Agent),
+        existing_dsl=req.get("existing_dsl"),
     )
     return get_json_result(data=draft)
 
