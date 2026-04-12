@@ -151,3 +151,20 @@ def test_plan_can_modify_existing_dsl_with_analysis():
 
     assert edited["mode"] == "modify"
     assert any(op["type"] == "append_analysis" for op in edited["operations"])
+
+
+def test_plan_raises_clear_error_for_missing_builder(monkeypatch):
+    planner = ScenarioPlanner()
+
+    monkeypatch.setattr(
+        planner,
+        "_classify",
+        lambda scenario: type(
+            "Match",
+            (),
+            {"archetype": "missing_builder", "reason": "test", "warnings": []},
+        )(),
+    )
+
+    with pytest.raises(ValueError, match="No builder implemented for archetype: missing_builder"):
+        planner.plan(title="Broken", scenario="test")

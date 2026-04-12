@@ -19,10 +19,12 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+import logging
 from typing import Any, Dict, List, Optional
 
 
 DEFAULT_LLM_ID = "qwen-turbo@Tongyi-Qianwen"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -49,12 +51,14 @@ class ScenarioPlanner:
         canvas_category: str = "Agent",
         existing_dsl: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        mode = "modify" if existing_dsl is not None else "create"
+        logger.info("scenario_planner plan start title=%s mode=%s", title, mode)
         if existing_dsl is not None:
             dsl, operations, warnings = self._modify_existing_dsl(existing_dsl, scenario)
-            return {
+            result = {
                 "title": title,
                 "canvas_type": canvas_category,
-                "mode": "modify",
+                "mode": mode,
                 "archetype": "modify_existing",
                 "summary": "Modify an existing workflow draft based on natural-language instructions.",
                 "reason": "Detected an existing DSL payload; applying incremental graph edits.",
@@ -66,14 +70,26 @@ class ScenarioPlanner:
                 "operations": operations,
                 "dsl": dsl,
             }
+            logger.info(
+                "scenario_planner plan complete title=%s mode=%s archetype=%s operations=%s warnings=%s",
+                title,
+                mode,
+                result["archetype"],
+                len(result.get("operations", []) or []),
+                len(result.get("warnings", []) or []),
+            )
+            return result
 
         match = self._classify(scenario)
-        builder = getattr(self, f"_build_{match.archetype}")
+        builder = getattr(self, f"_build_{match.archetype}", None)
+        if builder is None:
+            logger.error("scenario_planner missing builder for archetype=%s", match.archetype)
+            raise ValueError(f"No builder implemented for archetype: {match.archetype}")
         dsl = builder(scenario)
-        return {
+        result = {
             "title": title,
             "canvas_type": canvas_category,
-            "mode": "create",
+            "mode": mode,
             "archetype": match.archetype,
             "summary": self.ARCHETYPE_DESCRIPTIONS[match.archetype],
             "reason": match.reason,
@@ -81,6 +97,15 @@ class ScenarioPlanner:
             "operations": [{"type": "create_draft", "archetype": match.archetype}],
             "dsl": dsl,
         }
+        logger.info(
+            "scenario_planner plan complete title=%s mode=%s archetype=%s operations=%s warnings=%s",
+            title,
+            mode,
+            result["archetype"],
+            len(result.get("operations", []) or []),
+            len(result.get("warnings", []) or []),
+        )
+        return result
 
     def _modify_existing_dsl(self, existing_dsl: Dict[str, Any], instruction: str) -> tuple[Dict[str, Any], List[Dict[str, str]], List[str]]:
         dsl = deepcopy(existing_dsl)
@@ -245,7 +270,9 @@ class ScenarioPlanner:
             "components": components,
             "globals": {
                 "sys.conversation_turns": 0,
+                "sys.date": "",
                 "sys.files": [],
+                "sys.history": [],
                 "sys.query": "",
                 "sys.user_id": "",
             },
