@@ -112,10 +112,16 @@ class ScenarioPlanner:
 
     def _modify_existing_dsl(self, existing_dsl: Dict[str, Any], instruction: str) -> tuple[Dict[str, Any], List[Dict[str, str]], List[str]]:
         dsl = deepcopy(existing_dsl)
-        components = dsl.setdefault("components", {})
-        graph = dsl.setdefault("graph", {})
-        edges = graph.setdefault("edges", [])
-        nodes = graph.setdefault("nodes", [])
+        components = dsl.get("components")
+        graph = dsl.get("graph")
+        if not isinstance(components, dict) or not isinstance(graph, dict):
+            raise ValueError("existing_dsl must be a valid canvas DSL with dict components and graph sections")
+        if "begin" not in components:
+            raise ValueError("existing_dsl must be a valid canvas DSL with a begin node")
+        edges = graph.get("edges")
+        nodes = graph.get("nodes")
+        if not isinstance(edges, list) or not isinstance(nodes, list):
+            raise ValueError("existing_dsl must be a valid canvas DSL with graph.edges and graph.nodes as lists")
         instruction_l = (instruction or "").strip().lower()
         operations: List[Dict[str, str]] = []
         warnings: List[str] = []
@@ -172,8 +178,9 @@ class ScenarioPlanner:
             new_agent_id = f"Agent:{base_id}Analysis"
             if new_agent_id not in components:
                 upstream_id = tail_id or "begin"
+                tail_output_ref = self._get_output_reference(components, upstream_id)
                 components[new_agent_id] = self._agent_component(
-                    prompts=[{"role": "user", "content": "{sys.query}"}],
+                    prompts=[{"role": "user", "content": f"Analyze the following output:\n{tail_output_ref}\n\nOriginal request: {{sys.query}}"}],
                     sys_prompt="This is an appended analysis step. Users should refine the prompt and attach tools if needed.",
                     downstream=[],
                 )
@@ -195,9 +202,26 @@ class ScenarioPlanner:
 
         return dsl, operations, warnings
 
+    def _get_output_reference(self, components: Dict[str, Dict[str, Any]], component_id: str) -> str:
+        if component_id == "begin":
+            return "{sys.query}"
+        component = components.get(component_id, {})
+        component_name = component.get("obj", {}).get("component_name")
+        if component_name == "Message":
+            upstream = component.get("upstream", []) or []
+            if upstream:
+                return self._get_output_reference(components, upstream[0])
+        return f"{{{component_id}@content}}"
+
     def _get_tail_component_id(self, components: Dict[str, Dict[str, Any]]) -> Optional[str]:
+        """Return a deterministic tail node, preferring the main Message:Output when multiple tails exist."""
         tails = [component_id for component_id, component in components.items() if not component.get("downstream")]
-        return tails[-1] if tails else None
+        if not tails:
+            return None
+        for tail in tails:
+            if tail == "Message:Output" or "Message:Output" in tail:
+                return tail
+        return tails[-1]
 
     def _get_predecessor_ids(self, components: Dict[str, Dict[str, Any]], target_id: Optional[str]) -> List[str]:
         if not target_id:
@@ -214,19 +238,6 @@ class ScenarioPlanner:
             if edge.get("source") == source_id and edge.get("target") == old_target:
                 edge["target"] = new_target
                 edge["id"] = f"xy-edge__{source_id}{edge.get('sourceHandle', 'start')}-{new_target}{edge.get('targetHandle', 'end')}"
-
-    def _node(self, component_id: str, label: str, index: int) -> Dict[str, Any]:
-        return {
-            "id": component_id,
-            "data": {
-                "label": label,
-                "name": component_id,
-            },
-            "position": {
-                "x": 120 + index * 260,
-                "y": 160,
-            },
-        }
 
     def _classify(self, scenario: str) -> ScenarioMatch:
         text = (scenario or "").strip().lower()
@@ -263,32 +274,6 @@ class ScenarioPlanner:
             reason="No complex orchestration keyword detected; using a minimal QA skeleton.",
             warnings=[],
         )
-
-    def _base_dsl(self, components: Dict[str, Dict[str, Any]], edges: List[Dict[str, Any]]) -> Dict[str, Any]:
-        nodes = []
-        for index, (component_id, component) in enumerate(components.items()):
-            nodes.append(self._node(component_id, component["obj"]["component_name"], index))
-
-        return {
-            "components": components,
-            "globals": {
-                "sys.conversation_turns": 0,
-                "sys.date": "",
-                "sys.files": [],
-                "sys.history": [],
-                "sys.query": "",
-                "sys.user_id": "",
-            },
-            "graph": {
-                "edges": edges,
-                "nodes": nodes,
-            },
-            "history": [],
-            "messages": [],
-            "path": ["begin"],
-            "retrieval": {"chunks": [], "doc_aggs": []},
-            "variables": {},
-        }
 
     def _load_template(self, template_name: str) -> Dict[str, Any]:
         template_path = TEMPLATE_ROOT / f"{template_name}.json"

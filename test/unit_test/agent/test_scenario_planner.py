@@ -151,6 +151,11 @@ def test_plan_can_modify_existing_dsl_with_analysis():
 
     assert edited["mode"] == "modify"
     assert any(op["type"] == "append_analysis" for op in edited["operations"])
+    analysis_nodes = [cid for cid in edited["dsl"]["components"] if cid.endswith("Analysis")]
+    assert analysis_nodes
+    prompts = edited["dsl"]["components"][analysis_nodes[0]]["obj"]["params"]["prompts"]
+    assert "Original request: {sys.query}" in prompts[0]["content"]
+    assert "@content" in prompts[0]["content"]
 
 
 def test_plan_raises_clear_error_for_missing_builder(monkeypatch):
@@ -168,3 +173,14 @@ def test_plan_raises_clear_error_for_missing_builder(monkeypatch):
 
     with pytest.raises(ValueError, match="No builder implemented for archetype: missing_builder"):
         planner.plan(title="Broken", scenario="test")
+
+
+def test_plan_rejects_invalid_existing_dsl_structure():
+    planner = ScenarioPlanner()
+
+    with pytest.raises(ValueError, match="existing_dsl must be a valid canvas DSL"):
+        planner.plan(
+            title="Broken",
+            scenario="Add a notification step",
+            existing_dsl={},
+        )
