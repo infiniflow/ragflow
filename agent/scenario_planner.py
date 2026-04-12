@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from functools import lru_cache
 import logging
 import json
 from pathlib import Path
@@ -129,12 +130,14 @@ class ScenarioPlanner:
         tail_id = self._get_tail_component_id(components)
         predecessor_ids = self._get_predecessor_ids(components, tail_id)
         base_id = (tail_id or "begin").replace(":", "_")
-        matched_any = False
+        recognized_any = False
+        applied_any = False
 
         if any(token in instruction_l for token in ("notify", "notification", "alert")):
-            matched_any = True
+            recognized_any = True
             new_message_id = f"Message:{base_id}Notify"
             if new_message_id not in components:
+                applied_any = True
                 components[new_message_id] = self._message_component(
                     ["A notification step should be configured here."],
                     [tail_id or "begin"],
@@ -146,11 +149,14 @@ class ScenarioPlanner:
                 edges.append(self._edge(tail_id or "begin", new_message_id))
                 nodes.append(self._node(new_message_id, "Message", len(nodes)))
                 operations.append({"type": "append_notification", "target": new_message_id})
+            else:
+                operations.append({"type": "already_present", "target": new_message_id})
 
         if any(token in instruction_l for token in ("review", "approve", "human", "feedback")):
-            matched_any = True
+            recognized_any = True
             fillup_id = f"UserFillUp:{base_id}Review"
             if fillup_id not in components:
+                applied_any = True
                 review_downstream = [tail_id] if tail_id and tail_id != "begin" else []
                 review_upstream = predecessor_ids or ([tail_id] if tail_id and tail_id != "begin" else ["begin"])
                 components[fillup_id] = self._user_fillup_component(
@@ -174,11 +180,14 @@ class ScenarioPlanner:
                     edges.append(self._edge(anchor, fillup_id))
                 nodes.append(self._node(fillup_id, "UserFillUp", len(nodes)))
                 operations.append({"type": "insert_human_review", "target": fillup_id})
+            else:
+                operations.append({"type": "already_present", "target": fillup_id})
 
         if any(token in instruction_l for token in ("add analysis", "analyze", "summarize", "summary")):
-            matched_any = True
+            recognized_any = True
             new_agent_id = f"Agent:{base_id}Analysis"
             if new_agent_id not in components:
+                applied_any = True
                 upstream_id = tail_id or "begin"
                 tail_output_ref = self._get_output_reference(components, upstream_id)
                 components[new_agent_id] = self._agent_component(
@@ -195,8 +204,13 @@ class ScenarioPlanner:
                 edges.append(self._edge(upstream_id, new_agent_id))
                 nodes.append(self._node(new_agent_id, "Agent", len(nodes)))
                 operations.append({"type": "append_analysis", "target": new_agent_id})
+            else:
+                operations.append({"type": "already_present", "target": new_agent_id})
 
-        if not matched_any:
+        if recognized_any and not applied_any:
+            warnings.append("Requested edit matched a supported operation, but no graph changes were applied.")
+            operations.append({"type": "no_op", "target": ""})
+        elif not recognized_any:
             warnings.append(
                 "No supported edit operation was detected. V1 currently supports notification, review, and analysis-oriented edits."
             )
@@ -287,12 +301,17 @@ class ScenarioPlanner:
             warnings=[],
         )
 
-    def _load_template(self, template_name: str) -> Dict[str, Any]:
+    @staticmethod
+    @lru_cache(maxsize=8)
+    def _load_template_payload(template_name: str) -> Dict[str, Any]:
         template_path = TEMPLATE_ROOT / f"{template_name}.json"
         if not template_path.exists():
             raise ValueError(f"Scenario planner template not found: {template_name}")
         payload = json.loads(template_path.read_text(encoding="utf-8"))
-        return deepcopy(payload.get("dsl", payload))
+        return payload.get("dsl", payload)
+
+    def _load_template(self, template_name: str) -> Dict[str, Any]:
+        return deepcopy(self._load_template_payload(template_name))
 
     def _edge(self, source: str, target: str, source_handle: str = "start", target_handle: str = "end") -> Dict[str, Any]:
         return {

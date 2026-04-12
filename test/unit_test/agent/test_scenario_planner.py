@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 
@@ -205,6 +206,36 @@ def test_plan_reports_noop_for_unsupported_edit():
     assert edited["warnings"]
 
 
+def test_plan_reports_already_present_when_recognized_edit_is_skipped():
+    planner = ScenarioPlanner()
+    base = planner.plan(
+        title="Research Draft",
+        scenario="Research the market, compare sources, and produce a short report.",
+    )["dsl"]
+    first_edit = planner.plan(
+        title="Research Draft",
+        scenario="Insert a human review step before continuing.",
+        existing_dsl=base,
+    )
+    first_snapshot = deepcopy(first_edit["dsl"])
+    review_target = next(op for op in first_edit["operations"] if op["type"] == "insert_human_review")["target"]
+
+    second_edit = planner.plan(
+        title="Research Draft",
+        scenario="Insert a human review step before continuing.",
+        existing_dsl=first_edit["dsl"],
+    )
+
+    assert second_edit["dsl"] == first_snapshot
+    assert {"type": "already_present", "target": review_target} in second_edit["operations"]
+    assert {"type": "no_op", "target": ""} in second_edit["operations"]
+    assert second_edit["warnings"] == [
+        "Only a minimal edit set is supported in V1.",
+        "Users should review node wiring before execution.",
+        "Requested edit matched a supported operation, but no graph changes were applied.",
+    ]
+
+
 def test_plan_can_modify_existing_dsl_with_analysis():
     planner = ScenarioPlanner()
     base = planner.plan(
@@ -351,6 +382,30 @@ def test_plan_analysis_avoids_result_placeholder_for_outputless_tail():
 
     assert "@result" not in prompt
     assert "Analyze the following output:\n{sys.query}" in prompt
+
+
+def test_load_template_uses_cached_payload(monkeypatch):
+    planner = ScenarioPlanner()
+    ScenarioPlanner._load_template_payload.cache_clear()
+
+    original_read_text = Path.read_text
+    calls = {"count": 0}
+
+    def tracked_read_text(self, *args, **kwargs):
+        if self.name == "qa_basic.json":
+            calls["count"] += 1
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", tracked_read_text)
+
+    first = planner._load_template("qa_basic")
+    second = planner._load_template("qa_basic")
+
+    assert calls["count"] == 1
+    assert first == second
+    assert first is not second
+
+    ScenarioPlanner._load_template_payload.cache_clear()
 
 
 def test_plan_raises_clear_error_for_missing_builder(monkeypatch):
