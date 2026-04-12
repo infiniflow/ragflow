@@ -549,7 +549,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     if prompt_config.get("cross_languages"):
         questions = [await cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
 
-    if dialog.meta_data_filter:
+    if dialog.meta_data_filter and dialog.meta_data_filter.get("method") != "disabled":
         metas = DocMetadataService.get_flatted_meta_by_kbs(dialog.kb_ids)
         attachments = await apply_meta_data_filter(
             dialog.meta_data_filter,
@@ -1385,7 +1385,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     max_tokens = chat_mdl.max_length
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
 
-    if meta_data_filter:
+    if meta_data_filter and meta_data_filter.get("method") != "disabled":
         metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
 
@@ -1472,7 +1472,7 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         rerank_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.RERANK, rerank_id)
         rerank_mdl = LLMBundle(tenant_id, rerank_model_config)
 
-    if meta_data_filter:
+    if meta_data_filter and meta_data_filter.get("method") != "disabled":
         metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
 
