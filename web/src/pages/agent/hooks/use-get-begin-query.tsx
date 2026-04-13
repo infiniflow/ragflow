@@ -182,11 +182,11 @@ function splitOperatorOutputValue(value?: string) {
   return { nodeId, output };
 }
 
-function filterPdfDownloadOutputOptions(
+function filterDocGeneratorDownloadOutputOptions(
   groups: Array<{
     options: Array<{ value?: string } & Record<string, any>>;
   }>,
-  allowPdfDownloadOutput: boolean,
+  allowDocGeneratorDownloadOutput: boolean,
   getOperatorTypeFromId: (nodeId?: string) => string | undefined,
 ) {
   return groups.map((group) => ({
@@ -197,7 +197,7 @@ function filterPdfDownloadOutputOptions(
         output === 'download' &&
         getOperatorTypeFromId(nodeId) === Operator.DocGenerator
       ) {
-        return allowPdfDownloadOutput;
+        return allowDocGeneratorDownloadOutput;
       }
 
       return true;
@@ -317,16 +317,17 @@ export function useBuildQueryVariableOptions({
     [AgentVariableType.Begin]: globalWithBeginVariableOptions,
     [AgentVariableType.Conversation]: conversationOptions,
   };
-  const allowPdfDownloadOutput = node?.data?.label === Operator.Message;
+  const allowDocGeneratorDownloadOutput =
+    node?.data?.label === Operator.Message;
 
   const nextOptions = useMemo(() => {
-    return filterPdfDownloadOutputOptions(
+    return filterDocGeneratorDownloadOutputOptions(
       [...globalWithBeginVariableOptions, ...conversationOptions, ...options],
-      allowPdfDownloadOutput,
+      allowDocGeneratorDownloadOutput,
       getOperatorTypeFromId,
     );
   }, [
-    allowPdfDownloadOutput,
+    allowDocGeneratorDownloadOutput,
     conversationOptions,
     getOperatorTypeFromId,
     globalWithBeginVariableOptions,
@@ -341,9 +342,9 @@ export function useBuildQueryVariableOptions({
       variablesExceptOperatorOutputs?.map((x) => AgentVariableOptionsMap[x]) ??
       [];
 
-    return filterPdfDownloadOutputOptions(
+    return filterDocGeneratorDownloadOutputOptions(
       [...flatten(variablesExceptOperatorOutputsOptions), ...nodeOutputOptions],
-      allowPdfDownloadOutput,
+      allowDocGeneratorDownloadOutput,
       getOperatorTypeFromId,
     );
   }

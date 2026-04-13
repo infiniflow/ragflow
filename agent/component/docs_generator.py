@@ -1,5 +1,4 @@
 import logging
-import base64
 import json
 import os
 import re
@@ -13,6 +12,8 @@ from xml.sax.saxutils import escape
 
 from agent.component.base import ComponentParamBase
 from api.utils.api_utils import timeout
+from common import settings
+from common.misc_utils import get_uuid
 from .message import Message
 
 
@@ -83,36 +84,37 @@ class DocGenerator(Message, ABC):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
+        file_path = None
         try:
             content = self._resolve_content(kwargs)
             output_format = self._param.output_format or "pdf"
 
             try:
                 if output_format == "pdf":
-                    file_path, doc_base64 = self._generate_pdf(content)
+                    file_path, file_bytes = self._generate_pdf(content)
                     mime_type = "application/pdf"
                 elif output_format == "docx":
-                    file_path, doc_base64 = self._generate_docx(content)
+                    file_path, file_bytes = self._generate_docx(content)
                     mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 elif output_format == "txt":
-                    file_path, doc_base64 = self._generate_txt(content)
+                    file_path, file_bytes = self._generate_txt(content)
                     mime_type = "text/plain"
                 elif output_format == "markdown":
-                    file_path, doc_base64 = self._generate_markdown(content)
+                    file_path, file_bytes = self._generate_markdown(content)
                     mime_type = "text/markdown"
                 elif output_format == "html":
-                    file_path, doc_base64 = self._generate_html(content)
+                    file_path, file_bytes = self._generate_html(content)
                     mime_type = "text/html"
                 else:
                     raise Exception(f"Unsupported output format: {output_format}")
 
                 filename = os.path.basename(file_path)
-                if not os.path.exists(file_path):
-                    raise Exception("Document file was not created")
-
-                file_size = os.path.getsize(file_path)
-                if file_size == 0:
+                if not file_bytes:
                     raise Exception("Document file is empty")
+
+                file_size = len(file_bytes)
+                doc_id = get_uuid()
+                settings.STORAGE_IMPL.put(self._canvas.get_tenant_id(), doc_id, file_bytes)
 
                 logging.info(
                     "Successfully generated %s: %s (Size: %s bytes)",
@@ -122,8 +124,8 @@ class DocGenerator(Message, ABC):
                 )
 
                 download_info = {
+                    "doc_id": doc_id,
                     "filename": filename,
-                    "base64": doc_base64,
                     "mime_type": mime_type,
                     "size": file_size,
                 }
@@ -139,6 +141,9 @@ class DocGenerator(Message, ABC):
             logging.exception("Error in DocGenerator._invoke")
             self.set_output("_ERROR", f"Document generation failed: {str(e)}")
             raise
+        finally:
+            if file_path and os.path.exists(file_path):
+                os.remove(file_path)
 
     def _resolve_content(self, kwargs: dict) -> str:
         content = self._param.content or ""
@@ -189,13 +194,13 @@ class DocGenerator(Message, ABC):
     def _get_timestamp_text(self) -> str:
         return f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
 
-    def _write_bytes_output(self, content: bytes, extension: str) -> tuple[str, str]:
+    def _write_bytes_output(self, content: bytes, extension: str) -> tuple[str, bytes]:
         output_directory = self._get_output_directory()
         filename = self._build_output_filename(extension)
         file_path = os.path.join(output_directory, filename)
         with open(file_path, "wb") as f:
             f.write(content)
-        return file_path, base64.b64encode(content).decode("utf-8")
+        return file_path, content
 
     def _build_markdown_source(self, content: str, include_timestamp_in_body: bool = False) -> str:
         if not (include_timestamp_in_body and self._param.add_timestamp):
@@ -213,7 +218,7 @@ class DocGenerator(Message, ABC):
         extension: str,
         include_timestamp_in_body: bool = False,
         extra_args: list[str] | None = None,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, bytes]:
         import pypandoc
 
         output_directory = self._get_output_directory()
@@ -235,7 +240,7 @@ class DocGenerator(Message, ABC):
         with open(file_path, "rb") as f:
             file_bytes = f.read()
 
-        return file_path, base64.b64encode(file_bytes).decode("utf-8")
+        return file_path, file_bytes
 
     def _generate_pandoc_text_output(
         self,
@@ -243,7 +248,7 @@ class DocGenerator(Message, ABC):
         target_format: str,
         extension: str,
         include_timestamp_in_body: bool = True,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, bytes]:
         import pypandoc
 
         markdown_content = self._build_markdown_source(
@@ -387,13 +392,13 @@ class DocGenerator(Message, ABC):
         buffer.seek(0)
         return PdfReader(buffer).pages[0]
 
-    def _apply_pdf_overlay(self, file_path: str) -> tuple[str, str]:
+    def _apply_pdf_overlay(self, file_path: str) -> tuple[str, bytes]:
         from pypdf import PdfReader, PdfWriter
 
         if not self._should_apply_pdf_overlay():
             with open(file_path, "rb") as f:
                 file_bytes = f.read()
-            return file_path, base64.b64encode(file_bytes).decode("utf-8")
+            return file_path, file_bytes
 
         reader = PdfReader(file_path)
         writer = PdfWriter()
@@ -415,7 +420,7 @@ class DocGenerator(Message, ABC):
         os.replace(temp_file, file_path)
         with open(file_path, "rb") as f:
             file_bytes = f.read()
-        return file_path, base64.b64encode(file_bytes).decode("utf-8")
+        return file_path, file_bytes
 
     def _clear_docx_container(self, container):
         element = container._element
@@ -496,7 +501,7 @@ class DocGenerator(Message, ABC):
 
         return page_width - left_margin - right_margin
 
-    def _decorate_docx(self, file_path: str) -> tuple[str, str]:
+    def _decorate_docx(self, file_path: str) -> tuple[str, bytes]:
         from docx import Document
         from docx.enum.text import WD_TAB_ALIGNMENT
         from docx.shared import Pt
@@ -566,12 +571,12 @@ class DocGenerator(Message, ABC):
         document.save(file_path)
         with open(file_path, "rb") as f:
             file_bytes = f.read()
-        return file_path, base64.b64encode(file_bytes).decode("utf-8")
+        return file_path, file_bytes
 
     def thoughts(self) -> str:
         return f"Generating {self._param.output_format.upper()} document with markdown conversion..."
 
-    def _generate_pdf(self, content: str) -> tuple[str, str]:
+    def _generate_pdf(self, content: str) -> tuple[str, bytes]:
         try:
             engine = self._select_pdf_engine()
             header_path = self._write_temp_tex(self._build_pdf_heading_overrides())
@@ -595,7 +600,7 @@ class DocGenerator(Message, ABC):
         except Exception as e:
             raise Exception(f"PDF generation failed: {str(e)}")
 
-    def _generate_docx(self, content: str) -> tuple[str, str]:
+    def _generate_docx(self, content: str) -> tuple[str, bytes]:
         try:
             file_path, _ = self._generate_pandoc_binary_output(
                 content,
@@ -608,19 +613,19 @@ class DocGenerator(Message, ABC):
         except Exception as e:
             raise Exception(f"DOCX generation failed: {str(e)}")
 
-    def _generate_txt(self, content: str) -> tuple[str, str]:
+    def _generate_txt(self, content: str) -> tuple[str, bytes]:
         try:
             return self._generate_pandoc_text_output(content, "plain", "txt")
         except Exception as e:
             raise Exception(f"TXT generation failed: {str(e)}")
 
-    def _generate_markdown(self, content: str) -> tuple[str, str]:
+    def _generate_markdown(self, content: str) -> tuple[str, bytes]:
         try:
             return self._generate_pandoc_text_output(content, "markdown", "md")
         except Exception as e:
             raise Exception(f"Markdown generation failed: {str(e)}")
 
-    def _generate_html(self, content: str) -> tuple[str, str]:
+    def _generate_html(self, content: str) -> tuple[str, bytes]:
         try:
             return self._generate_pandoc_text_output(content, "html", "html")
         except Exception as e:

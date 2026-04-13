@@ -69,7 +69,7 @@ class Message(ComponentBase):
     @staticmethod
     def _is_download_info(value: Any) -> bool:
         return isinstance(value, dict) and all(
-            key in value for key in ("filename", "base64", "mime_type")
+            key in value for key in ("doc_id", "filename", "mime_type")
         )
 
     def _extract_downloads(self, value: Any) -> list[dict[str, Any]]:
@@ -245,8 +245,9 @@ class Message(ComponentBase):
         template = _jinja2_sandbox.from_string(rand_cnt)
         try:
             content = template.render(kwargs)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning(f"Jinja2 template rendering failed: {e}")
+            content = rand_cnt  # fallback to unrendered content
 
         if self.check_if_canceled("Message processing"):
             return

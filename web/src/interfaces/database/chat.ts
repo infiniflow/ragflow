@@ -2,8 +2,8 @@ import { MessageType } from '@/constants/chat';
 import { IAttachment } from '@/hooks/use-send-message';
 
 export interface IDocumentDownloadInfo {
+  doc_id: string;
   filename: string;
-  base64: string;
   mime_type: string;
   size?: number;
 }
