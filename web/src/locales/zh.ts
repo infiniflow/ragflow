@@ -180,6 +180,7 @@ export default {
       searchKnowledgePlaceholder: '搜索',
       noMoreData: '没有更多数据了',
       parserRequired: '分块方法必填',
+      dataFlowRequired: '数据流必填',
     },
     knowledgeDetails: {
       metadata: {

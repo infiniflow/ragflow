@@ -263,7 +263,10 @@ export const getMetaDataService = ({
 }: {
   kb_id: string;
   doc_ids?: string[];
-}) => request.post(api.getMetaData, { data: { kb_id, doc_ids } });
+}) =>
+  request.get(api.getMetaData(kb_id), {
+    params: doc_ids?.length ? { doc_ids: doc_ids.join(',') } : undefined,
+  });
 export const updateMetaData = ({
   kb_id,
   doc_ids,

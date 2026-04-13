@@ -59,7 +59,7 @@ type ListChatsResponse struct {
 }
 
 // ListChats list chats for a user
-func (s *ChatService) ListChats(userID string, status string) (*ListChatsResponse, error) {
+func (s *ChatService) ListChats(userID, status, keywords string, page, pageSize int, orderby string, desc bool) (*ListChatsResponse, error) {
 	// Get tenant IDs by user ID
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
 	if err != nil {
@@ -79,6 +79,21 @@ func (s *ChatService) ListChats(userID string, status string) (*ListChatsRespons
 	chats, err := s.chatDAO.ListByTenantID(tenantID, status)
 	if err != nil {
 		return nil, err
+	}
+
+	total := int64(len(chats))
+
+	if page > 0 && pageSize > 0 {
+		start := (page - 1) * pageSize
+		end := start + pageSize
+		if start < int(total) {
+			if end > int(total) {
+				end = int(total)
+			}
+			chats = chats[start:end]
+		} else {
+			chats = []*entity.Chat{}
+		}
 	}
 
 	// Enrich with knowledge base names
