@@ -72,13 +72,20 @@ tenant_model (depends on tenant_model_provider and tenant_model_instance)
 python mysql_migration.py [OPTIONS]
 ```
 
-| Option | Short | Description |
-|--------|-------|-------------|
-| `--config` | `-c` | Path to YAML config file (required) |
-| `--stages` | `-s` | Comma-separated list of stages to run |
-| `--list-stages` | `-l` | List available stages and exit |
-| `--execute` | `-e` | Execute full migration (create tables and migrate data) |
-| `--create-table-only` | - | Only create target tables, skip data migration |
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--host` | - | MySQL host | `localhost` |
+| `--port` | - | MySQL port | `3306` |
+| `--user` | - | MySQL user | `root` |
+| `--password` | - | MySQL password | (empty) |
+| `--database` | - | MySQL database name | `rag_flow` |
+| `--config` | `-c` | Path to YAML config file | - |
+| `--stages` | `-s` | Comma-separated list of stages to run | - |
+| `--list-stages` | `-l` | List available stages and exit | - |
+| `--execute` | `-e` | Execute full migration (create tables and migrate data) | `False` |
+| `--create-table-only` | - | Only create target tables, skip data migration | `False` |
+
+> **Note**: MySQL connection can be configured via command line arguments (`--host`, `--port`, `--user`, `--password`, `--database`) or via a YAML config file (`--config`). Command line arguments take precedence over config file values.
 
 ### Execution Modes
 
@@ -86,7 +93,11 @@ The script has three mutually exclusive modes:
 
 1. **Dry-Run Mode** (default): Check only, no database writes
    ```bash
+   # Using config file
    python mysql_migration.py --stages tenant_model_provider --config config.yaml
+   
+   # Using command line MySQL connection
+   python mysql_migration.py --stages tenant_model_provider --host localhost --port 3306 --user root
    ```
 
 2. **Create Table Only Mode**: Create target tables without migrating data
@@ -129,7 +140,10 @@ mysql:
 # List all available stages
 python mysql_migration.py --list-stages
 
-# Dry run single stage
+# Dry run single stage using command line MySQL connection
+python mysql_migration.py --stages tenant_model_provider --host localhost --port 3306 --user root --password secret
+
+# Dry run single stage using config file
 python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml
 
 # Create tables only for multiple stages
@@ -137,6 +151,9 @@ python mysql_migration.py --stages tenant_model_provider,tenant_model_instance -
 
 # Execute full migration for all stages (in dependency order)
 python mysql_migration.py --stages tenant_model_provider,tenant_model_instance,tenant_model --config /path/to/config.yaml --execute
+
+# Use config file with command line password override
+python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --password mypassword --execute
 ```
 
 ## Output Interpretation
