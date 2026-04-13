@@ -43,7 +43,7 @@ from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import cross_languages, keyword_extraction
-from common.string_utils import remove_redundant_spaces
+from common.string_utils import is_content_empty, remove_redundant_spaces
 from common.constants import RetCode, LLMType, ParserType, PAGERANK_FLD
 from common import settings
 from api.apps import login_required, current_user
@@ -140,6 +140,8 @@ async def set():
         raise TypeError("expected string or bytes-like object")
     if isinstance(content_with_weight, bytes):
         content_with_weight = content_with_weight.decode("utf-8", errors="ignore")
+    if is_content_empty(content_with_weight):
+        return get_data_error_result(message="`content_with_weight` is required")
     d = {
         "id": req["chunk_id"],
         "content_with_weight": content_with_weight}
