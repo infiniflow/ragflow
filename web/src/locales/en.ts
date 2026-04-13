@@ -1680,7 +1680,7 @@ Example: Virtual Hosted Style`,
       searXNGDescription:
         'A component that searches via your provided SearXNG instance URL. Specify TopN and the instance URL.',
       pDFGenerator: 'Docs Generator',
-      Description: `Generate file from markdown content.`,
+      pDFGeneratorDescription: `Generate file from markdown content.`,
       subtitle: 'Subtitle',
       logoImage: 'Logo Image',
       logoPosition: 'Logo Position',

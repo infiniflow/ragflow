@@ -906,8 +906,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         '此組件透過您提供的 SearXNG 實例 URL 進行搜尋。請設定 Top N 和實例 URL。',
-      pPDFGenerator: '文檔生成器',
-      pPDFGeneratorDescription: `從 Markdown 內容生成文件。`,
+      pDFGenerator: '文檔生成器',
+      pDFGeneratorDescription: `從 Markdown 內容生成文件。`,
       subtitle: '副標題',
       logoImage: '標誌圖片',
       logoPosition: '標誌位置',
