@@ -65,8 +65,6 @@ class PDFGenerator(Message, ABC):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
-        import traceback
-
         try:
             content = self._resolve_content(kwargs)
             output_format = self._param.output_format or "pdf"
@@ -98,7 +96,7 @@ class PDFGenerator(Message, ABC):
                 if file_size == 0:
                     raise Exception(f"Document file is empty: {file_path}")
 
-                print(
+                logging.info(
                     f"Successfully generated {output_format.upper()}: "
                     f"{file_path} (Size: {file_size} bytes)"
                 )
@@ -114,26 +112,18 @@ class PDFGenerator(Message, ABC):
                 return download_info
 
             except Exception as e:
-                error_msg = (
-                    f"Error generating {output_format}: {str(e)}\n"
-                    f"{traceback.format_exc()}"
-                )
-                print(error_msg)
+                logging.exception("Error generating %s document", output_format)
                 self.set_output("_ERROR", f"Document generation failed: {str(e)}")
                 raise
 
         except Exception as e:
-            error_msg = (
-                f"Error in PDFGenerator._invoke: {str(e)}\n"
-                f"{traceback.format_exc()}"
-            )
-            print(error_msg)
+            logging.exception("Error in PDFGenerator._invoke")
             self.set_output("_ERROR", f"Document generation failed: {str(e)}")
             raise
 
     def _resolve_content(self, kwargs: dict) -> str:
         content = self._param.content or ""
-        print(f"Starting PDF generation, content length: {len(content)} chars")
+        logging.info("Starting PDF generation, content length: %s chars", len(content))
 
         if content and self._canvas.is_reff(content.strip()):
             matches = re.findall(self.variable_ref_patt, content, flags=re.DOTALL)
@@ -150,14 +140,14 @@ class PDFGenerator(Message, ABC):
                     else:
                         content = content.replace("{" + match + "}", str(var_value))
                 except Exception as e:
-                    print(f"Error resolving variable {match}: {str(e)}")
+                    logging.warning("Error resolving variable %s: %s", match, str(e))
                     content = content.replace("{" + match + "}", f"[ERROR: {str(e)}]")
 
         if content:
             try:
                 content, _ = self.get_kwargs(content, kwargs)
             except Exception as e:
-                print(f"Error processing content with get_kwargs: {str(e)}")
+                logging.warning("Error processing content with get_kwargs: %s", str(e))
 
         if not content:
             content = kwargs.get("content", "")
