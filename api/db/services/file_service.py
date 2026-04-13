@@ -26,6 +26,8 @@ from pathlib import Path
 from typing import Union
 from urllib.parse import urlparse
 
+logger = logging.getLogger(__name__)
+
 import xxhash
 from peewee import fn
 
@@ -628,31 +630,54 @@ class FileService(CommonService):
         return errors
 
     _ALLOWED_SCHEMES = {"http", "https"}
-    _PRIVATE_NETWORKS = [
-        ipaddress.ip_network("10.0.0.0/8"),
-        ipaddress.ip_network("172.16.0.0/12"),
-        ipaddress.ip_network("192.168.0.0/16"),
-        ipaddress.ip_network("127.0.0.0/8"),
-        ipaddress.ip_network("169.254.0.0/16"),
-        ipaddress.ip_network("::1/128"),
-        ipaddress.ip_network("fc00::/7"),
-    ]
 
     @staticmethod
     def _validate_url_for_crawl(url: str) -> None:
-        """Raise ValueError if the URL is not safe to fetch (SSRF guard)."""
+        """Raise ValueError if the URL is not safe to fetch (SSRF guard).
+
+        Checks performed in order:
+        1. Scheme must be http or https.
+        2. Hostname must be present.
+        3. All addresses returned by DNS must be public (not private, reserved,
+           loopback, link-local, or multicast).
+        """
         parsed = urlparse(url)
         if parsed.scheme not in FileService._ALLOWED_SCHEMES:
-            raise ValueError(f"Disallowed URL scheme: {parsed.scheme!r}. Only http and https are allowed.")
+            logger.warning(
+                "SSRF guard blocked URL with disallowed scheme: scheme=%r hostname=%r",
+                parsed.scheme, parsed.hostname,
+            )
+            raise ValueError(
+                f"Disallowed URL scheme: {parsed.scheme!r}. Only http and https are allowed."
+            )
         hostname = parsed.hostname
         if not hostname:
+            logger.warning("SSRF guard blocked URL with missing host: url=%r", url)
             raise ValueError("URL is missing a host.")
         try:
-            resolved_ip = ipaddress.ip_address(socket.gethostbyname(hostname))
+            addr_infos = socket.getaddrinfo(hostname, None)
         except socket.gaierror as exc:
+            logger.warning(
+                "SSRF guard blocked URL: could not resolve hostname=%r reason=%s",
+                hostname, exc,
+            )
             raise ValueError(f"Could not resolve hostname {hostname!r}: {exc}") from exc
-        if any(resolved_ip in net for net in FileService._PRIVATE_NETWORKS):
-            raise ValueError(f"URL resolves to a private or reserved address ({resolved_ip}), which is not allowed.")
+        for _family, _type, _proto, _canonname, sockaddr in addr_infos:
+            ip = ipaddress.ip_address(sockaddr[0])
+            if (
+                ip.is_private
+                or ip.is_reserved
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_multicast
+            ):
+                logger.warning(
+                    "SSRF guard blocked URL: hostname=%r resolved to disallowed address=%s",
+                    hostname, ip,
+                )
+                raise ValueError(
+                    f"URL resolves to a private or reserved address ({ip}), which is not allowed."
+                )
 
     @staticmethod
     def upload_info(user_id, file, url: str|None=None):
