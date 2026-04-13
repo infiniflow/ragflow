@@ -423,29 +423,6 @@ async def doc_infos():
     return get_json_result(data=docs_list)
 
 
-@manager.route("/metadata/summary", methods=["POST"])  # noqa: F821
-@login_required
-async def metadata_summary():
-    req = await get_request_json()
-    kb_id = req.get("kb_id")
-    doc_ids = req.get("doc_ids")
-    if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-
-    tenants = UserTenantService.query(user_id=current_user.id)
-    for tenant in tenants:
-        if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
-            break
-    else:
-        return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
-
-    try:
-        summary = DocMetadataService.get_metadata_summary(kb_id, doc_ids)
-        return get_json_result(data={"summary": summary})
-    except Exception as e:
-        return server_error_response(e)
-
-
 @manager.route("/metadata/update", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_ids")

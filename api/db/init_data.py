@@ -168,7 +168,8 @@ def add_graph_templates():
 
     for fnm in os.listdir(dir):
         try:
-            cnvs = json.load(open(os.path.join(dir, fnm), "r",encoding="utf-8"))
+            with open(os.path.join(dir, fnm), "r", encoding="utf-8") as f:
+                cnvs = json.load(f)
             try:
                 CanvasTemplateService.save(**cnvs)
             except Exception:

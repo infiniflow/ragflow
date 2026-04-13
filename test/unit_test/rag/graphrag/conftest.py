@@ -28,6 +28,10 @@ _modules_to_mock = [
     "common.settings",
     "common.doc_store",
     "common.doc_store.doc_store_base",
+    "api.db.services",
+    "api.db.services.task_service",
+    "rag.graphrag.general.leiden",
+    "rag.llm.chat_model",
     "rag.nlp",
     "rag.nlp.search",
     "rag.nlp.rag_tokenizer",
@@ -40,3 +44,7 @@ for mod_name in _modules_to_mock:
 
 # Ensure `from common.connection_utils import timeout` returns a no-op decorator
 sys.modules["common.connection_utils"].timeout = lambda *a, **kw: (lambda fn: fn)
+sys.modules["api.db.services.task_service"].has_canceled = lambda *_a, **_kw: False
+sys.modules["rag.graphrag.general.leiden"].run = lambda *_a, **_kw: {}
+sys.modules["rag.graphrag.general.leiden"].add_community_info2graph = lambda *_a, **_kw: None
+sys.modules["rag.llm.chat_model"].Base = object
