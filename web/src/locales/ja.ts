@@ -821,7 +821,7 @@ export default {
       searXNGDescription:
         'SearXNGのインスタンスURLを提供して検索を行うコンポーネント。TopNとインスタンスURLを指定してください。',
       pDFGenerator: 'ドキュメント生成',
-      pDFGeneratorDescription: `マークダウン形式のコンテンツからドキュメント（PDF、DOCX、TXT）を生成するコンポーネント。カスタムスタイル、画像、テーブルをサポート。サポート：**太字**、*斜体*、# 見出し、- リスト、| 構文のテーブル。`,
+      pDFGeneratorDescription: `Markdown コンテンツからファイルを生成します。`,
       subtitle: 'サブタイトル',
       logoImage: 'ロゴ画像',
       logoPosition: 'ロゴ位置',

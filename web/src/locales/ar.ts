@@ -1518,8 +1518,7 @@ export default {
       searXNGDescription:
         'مكون يبحث عبر عنوان URL لمثيل SearXNG المقدم. حدد TopN وعنوان URL للمثيل.',
       pDFGenerator: 'مولد المستندات',
-      pDFGeneratorDescription:
-        'مكون يقوم بإنشاء المستندات (PDF، DOCX، TXT) من محتوى بتنسيق تخفيض السعر مع تصميم وصور وجداول قابلة للتخصيص. يدعم: **غامق**، *مائل*، # عناوين، - قوائم، جداول مع | بناء الجملة.',
+      pDFGeneratorDescription: 'ينشئ ملفًا من محتوى Markdown.',
       subtitle: 'الترجمة',
       logoImage: 'صورة الشعار',
       logoPosition: 'موقف الشعار',

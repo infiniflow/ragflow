@@ -1625,7 +1625,7 @@ Beispiel: Virtual Hosted Style`,
       searXNGDescription:
         'Eine Komponente, die auf https://searxng.org/ sucht und Ihnen ermöglicht, die Anzahl der Suchergebnisse mit TopN anzugeben. Sie ergänzt die vorhandenen Wissensdatenbanken.',
       pDFGenerator: 'Dokumentengenerator',
-      pDFGeneratorDescription: `Eine Komponente, die Dokumente (PDF, DOCX, TXT) aus markdown-formatierten Inhalten mit anpassbarem Stil, Bildern und Tabellen generiert. Unterstützt: **fett**, *kursiv*, # Überschriften, - Listen, Tabellen mit | Syntax.`,
+      pDFGeneratorDescription: `Erzeugt eine Datei aus Markdown-Inhalten.`,
       subtitle: 'Untertitel',
       logoImage: 'Logo-Bild',
       logoPosition: 'Logo-Position',

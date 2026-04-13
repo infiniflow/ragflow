@@ -970,7 +970,7 @@ Quanto sopra è il contenuto che devi riassumere.`,
       searXNGDescription:
         'Un componente che cerca tramite lURL dellistanza SearXNG fornita. Specifica TopN e lURL dellistanza.',
       pDFGenerator: 'Generatore Documenti',
-      pDFGeneratorDescription: `Un componente che genera documenti (PDF, DOCX, TXT) da contenuti formattati in markdown con stile personalizzabile, immagini e tabelle. Supporta: **grassetto**, *corsivo*, # titoli, - elenchi, tabelle con sintassi |.`,
+      pDFGeneratorDescription: `Genera file da contenuto Markdown.`,
       subtitle: 'Sottotitolo',
       logoImage: 'Immagine Logo',
       logoPosition: 'Posizione Logo',

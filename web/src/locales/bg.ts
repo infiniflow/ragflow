@@ -1570,7 +1570,7 @@ The above is the content you need to summarize.`,
       searXNGDescription:
         'Компонент, който търси чрез вашия SearXNG инстанция URL. Укажете TopN и URL на инстанцията.',
       pDFGenerator: 'Генератор на документи',
-      pDFGeneratorDescription: `Компонент, който генерира документи (PDF, DOCX, TXT) от markdown-форматирано съдържание с персонализирано стилизиране, изображения и таблици.`,
+      pDFGeneratorDescription: `Генерира файл от Markdown съдържание.`,
       subtitle: 'Подзаглавие',
       logoImage: 'Лого изображение',
       logoPosition: 'Позиция на логото',

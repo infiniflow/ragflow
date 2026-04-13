@@ -853,7 +853,7 @@ export default {
       searXNGDescription:
         'Một thành phần tìm kiếm thông qua URL phiên bản SearXNG bạn cung cấp. Chỉ định TopN và URL phiên bản.',
       pDFGenerator: 'Trình tạo Tài liệu',
-      pDFGeneratorDescription: `Một thành phần tạo tài liệu (PDF, DOCX, TXT) từ nội dung định dạng markdown với kiểu tùy chỉnh, hình ảnh và bảng. Hỗ trợ: **in đậm**, *in nghiêng*, # tiêu đề, - danh sách, bảng với cú pháp |.`,
+      pDFGeneratorDescription: `Tạo tệp từ nội dung Markdown.`,
       subtitle: 'Phụ đề',
       logoImage: 'Hình ảnh Logo',
       logoPosition: 'Vị trí Logo',

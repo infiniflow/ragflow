@@ -811,7 +811,7 @@ export default {
       searXNGDescription:
         'Komponen yang melakukan pencarian menggunakan URL instance SearXNG yang Anda berikan. Spesifikasikan TopN dan URL instance.',
       pDFGenerator: 'Pembuat Dokumen',
-      pDFGeneratorDescription: `Komponen yang menghasilkan dokumen (PDF, DOCX, TXT) dari konten berformat markdown dengan gaya yang dapat disesuaikan, gambar, dan tabel. Mendukung: **tebal**, *miring*, # judul, - daftar, tabel dengan sintaks |.`,
+      pDFGeneratorDescription: `Menghasilkan file dari konten Markdown.`,
       subtitle: 'Subjudul',
       logoImage: 'Gambar Logo',
       logoPosition: 'Posisi Logo',
