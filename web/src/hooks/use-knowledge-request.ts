@@ -77,7 +77,7 @@ export const useTestRetrieval = () => {
 
   const mutation = useMutation<INextTestingResult, Error, typeof queryParams>({
     mutationFn: async (params) => {
-      const { data } = await kbService.retrieval_test(params);
+      const { data } = await kbService.retrievalTest(params);
       const result = data?.data ?? {};
       return { ...result, isRuned: true };
     },
@@ -405,7 +405,7 @@ export const useFetchKnowledgeBaseConfiguration = (props?: {
     gcTime: 0,
     queryFn: async () => {
       if (isEdit) {
-        const { data } = await kbService.get_kb_detail({
+        const { data } = await kbService.getKbDetail({
           kb_id: knowledgeBaseId,
         });
         return data?.data ?? {};
@@ -620,7 +620,7 @@ export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
     mutationKey: ['testChunk'], // This method is invalid
     gcTime: 0,
     mutationFn: async (values: any) => {
-      const { data } = await kbService.retrieval_test({
+      const { data } = await kbService.retrievalTest({
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
         page,
@@ -664,7 +664,7 @@ export const useTestChunkAllRetrieval = (): ResponsePostType<ITestingResult> & {
     mutationKey: ['testChunkAll'], // This method is invalid
     gcTime: 0,
     mutationFn: async (values: any) => {
-      const { data } = await kbService.retrieval_test({
+      const { data } = await kbService.retrievalTest({
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
         doc_ids: [],
