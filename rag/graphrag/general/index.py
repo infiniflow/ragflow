@@ -20,6 +20,7 @@ import os
 
 import networkx as nx
 
+from api.db.services.checkpoint_service import save_checkpoint, load_checkpoint, clear_checkpoint
 from api.db.services.document_service import DocumentService
 from api.db.services.task_service import has_canceled
 from common.exceptions import TaskCanceledException
@@ -43,6 +44,7 @@ from common.misc_utils import thread_pool_exec
 from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import RedisDistributedLock
 from common import settings
+from common.doc_store.doc_store_base import OrderByExpr
 
 
 async def run_graphrag(
@@ -155,9 +157,15 @@ async def run_graphrag_for_kb(
     max_parallel_docs: int = 4,
 ) -> dict:
     tenant_id, kb_id = row["tenant_id"], row["kb_id"]
+    task_id = row.get("id", "")
     enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
     start = asyncio.get_running_loop().time()
     fields_for_chunks = ["content_with_weight", "doc_id"]
+
+    # CHECKPOINT: load previously completed doc_ids so we can skip them on resume
+    checkpointed_docs = load_checkpoint(task_id) if task_id else set()
+    if checkpointed_docs:
+        callback(msg=f"[GraphRAG] Resuming from checkpoint: {len(checkpointed_docs)} docs already completed")
 
     if not doc_ids:
         logging.info(f"Fetching all docs for {kb_id}")
@@ -232,6 +240,15 @@ async def run_graphrag_for_kb(
             callback(msg=f"Task {row['id']} cancelled, stopping execution.")
             raise TaskCanceledException(f"Task {row['id']} was cancelled")
 
+        # CHECKPOINT: try to load existing subgraph from doc store instead of re-generating
+        if doc_id in checkpointed_docs:
+            existing_sg = await _load_subgraph_from_store(tenant_id, kb_id, doc_id)
+            if existing_sg:
+                subgraphs[doc_id] = existing_sg
+                callback(msg=f"[GraphRAG] doc:{doc_id} loaded from checkpoint, skipping LLM extraction.")
+                return
+            callback(msg=f"[GraphRAG] doc:{doc_id} checkpointed but subgraph not found in store, regenerating.")
+
         chunks = all_doc_chunks.get(doc_id, [])
         if not chunks:
             callback(msg=f"[GraphRAG] doc:{doc_id} has no available chunks, skip generation.")
@@ -269,6 +286,9 @@ async def run_graphrag_for_kb(
                     return
                 if sg:
                     subgraphs[doc_id] = sg
+                    # CHECKPOINT: persist progress after each successful subgraph build
+                    if task_id:
+                        save_checkpoint(task_id, doc_id)
                     callback(msg=f"{msg} done")
                 else:
                     failed_docs.append((doc_id, "subgraph is empty"))
@@ -338,6 +358,9 @@ async def run_graphrag_for_kb(
         kb_lock.release()
 
     if not with_resolution and not with_community:
+        # CHECKPOINT: clear checkpoint on successful completion (no resolution/community path)
+        if task_id:
+            clear_checkpoint(task_id)
         now = asyncio.get_running_loop().time()
         callback(msg=f"[GraphRAG] KB merge done in {now - start:.2f}s. ok={len(ok_docs)} / total={len(doc_ids)}")
         return {"ok_docs": ok_docs, "failed_docs": failed_docs, "total_docs": len(doc_ids), "total_chunks": total_chunks, "seconds": now - start}
@@ -381,6 +404,10 @@ async def run_graphrag_for_kb(
     finally:
         kb_lock.release()
 
+    # CHECKPOINT: clear checkpoint on successful completion
+    if task_id:
+        clear_checkpoint(task_id)
+
     now = asyncio.get_running_loop().time()
     callback(msg=f"[GraphRAG] GraphRAG for KB {kb_id} done in {now - start:.2f} seconds. ok={len(ok_docs)} failed={len(failed_docs)} total_docs={len(doc_ids)} total_chunks={total_chunks}")
     return {
@@ -390,6 +417,34 @@ async def run_graphrag_for_kb(
         "total_chunks": total_chunks,
         "seconds": now - start,
     }
+
+
+# CHECKPOINT: load a previously saved subgraph from doc store to avoid re-running LLM extraction
+async def _load_subgraph_from_store(tenant_id: str, kb_id: str, doc_id: str):
+    """Load a subgraph from the doc store if it was persisted in a previous run."""
+    try:
+        fields = ["content_with_weight"]
+        condition = {
+            "knowledge_graph_kwd": ["subgraph"],
+            "source_id": doc_id,
+            "removed_kwd": "N",
+        }
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            fields, [], condition, [], OrderByExpr(),
+            0, 1, search.index_name(tenant_id), [kb_id]
+        )
+        field_map = settings.docStoreConn.get_fields(res, fields)
+        for cid in field_map:
+            content = field_map[cid].get("content_with_weight", "")
+            if content:
+                data = json.loads(content)
+                sg = nx.node_link_graph(data, edges="edges")
+                sg.graph["source_id"] = [doc_id]
+                return sg
+    except Exception:
+        logging.exception(f"Failed to load subgraph from store for doc {doc_id}")
+    return None
 
 
 async def generate_subgraph(

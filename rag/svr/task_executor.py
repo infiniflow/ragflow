@@ -40,6 +40,7 @@ from rag.utils.base64_image import image2id
 from rag.utils.raptor_utils import should_skip_raptor, get_skip_reason
 from common.log_utils import init_root_logger
 from common.config_utils import show_configs
+from api.db.services.checkpoint_service import save_checkpoint, load_checkpoint, clear_checkpoint
 from rag.graphrag.general.index import run_graphrag_for_kb
 from rag.graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text, \
@@ -771,9 +772,15 @@ async def run_dataflow(task: dict):
 @timeout(3600)
 async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_size, callback=None, doc_ids=[]):
     fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
+    task_id = row.get("id", "")
 
     raptor_config = kb_parser_config.get("raptor", {})
     vctr_nm = "q_%d_vec" % vector_size
+
+    # CHECKPOINT: load previously completed doc_ids so we can skip them on resume
+    checkpointed_docs = load_checkpoint(task_id) if task_id else set()
+    if checkpointed_docs:
+        callback(msg=f"[RAPTOR] Resuming from checkpoint: {len(checkpointed_docs)} docs already completed")
 
     res = []
     tk_count = 0
@@ -825,6 +832,12 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
 
     if raptor_config.get("scope", "file") == "file":
         for x, doc_id in enumerate(doc_ids):
+            # CHECKPOINT: skip docs that were already completed in a previous run
+            if doc_id in checkpointed_docs:
+                callback(msg=f"[RAPTOR] doc:{doc_id} already checkpointed, skipping.")
+                callback(prog=(x + 1.) / len(doc_ids))
+                continue
+
             chunks = []
             skipped_chunks = 0
             for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
@@ -836,16 +849,19 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
                     logging.warning(f"RAPTOR: Chunk missing vector field '{vctr_nm}' in doc {doc_id}, skipping")
                     continue
                 chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
-            
+
             if skipped_chunks > 0:
                 callback(msg=f"[WARN] Skipped {skipped_chunks} chunks without vector field '{vctr_nm}' for doc {doc_id}. Consider re-parsing the document with the current embedding model.")
-            
+
             if not chunks:
                 logging.warning(f"RAPTOR: No valid chunks with vectors found for doc {doc_id}")
                 callback(msg=f"[WARN] No valid chunks with vectors found for doc {doc_id}, skipping")
                 continue
-                
+
             await generate(chunks, doc_id)
+            # CHECKPOINT: persist progress after each successful doc
+            if task_id:
+                save_checkpoint(task_id, doc_id)
             callback(prog=(x + 1.) / len(doc_ids))
     else:
         chunks = []
@@ -870,6 +886,10 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
             return res, tk_count
 
         await generate(chunks, fake_doc_id)
+
+    # CHECKPOINT: clear checkpoint on successful completion
+    if task_id:
+        clear_checkpoint(task_id)
 
     return res, tk_count
 
