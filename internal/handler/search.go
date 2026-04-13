@@ -309,3 +309,115 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 		"message": "success",
 	})
 }
+
+// UpdateSearch update a search app
+// @Summary Update Search App
+// @Description Update a search app by ID
+// @Tags search
+// @Accept json
+// @Produce json
+// @Param search_id path string true "search app ID"
+// @Param request body service.UpdateSearchRequest true "search update parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/searches/{search_id} [put]
+func (h *SearchHandler) UpdateSearch(c *gin.Context) {
+	// Get current user from context (same as Python current_user)
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	userID := user.ID
+
+	// Get search_id from path parameter (same as Python <search_id>)
+	searchID := c.Param("search_id")
+	if searchID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    nil,
+			"message": "search_id is required",
+		})
+		return
+	}
+
+	// Parse request body
+	var req service.UpdateSearchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    nil,
+			"message": "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	// Validate name (same as Python validation)
+	if err := common.ValidateName(req.Name); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Update search
+	updatedSearch, err := h.searchService.UpdateSearch(userID, searchID, &req)
+	if err != nil {
+		errMsg := err.Error()
+		switch errMsg {
+		case "no authorization":
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeAuthenticationError,
+				"data":    false,
+				"message": "No authorization.",
+			})
+		case "duplicated search name":
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeDataError,
+				"data":    nil,
+				"message": "Duplicated search name.",
+			})
+		default:
+			// Check if it's a "cannot find search" error
+			if len(errMsg) > 18 && errMsg[:18] == "cannot find search" {
+				c.JSON(http.StatusOK, gin.H{
+					"code":    common.CodeDataError,
+					"data":    false,
+					"message": errMsg,
+				})
+			} else {
+				c.JSON(http.StatusOK, gin.H{
+					"code":    common.CodeDataError,
+					"data":    nil,
+					"message": errMsg,
+				})
+			}
+		}
+		return
+	}
+
+	// Convert to response format (same as Python updated_search.to_dict())
+	result := map[string]interface{}{
+		"id":            updatedSearch.ID,
+		"tenant_id":     updatedSearch.TenantID,
+		"name":          updatedSearch.Name,
+		"description":   updatedSearch.Description,
+		"created_by":    updatedSearch.CreatedBy,
+		"status":        updatedSearch.Status,
+		"create_time":   updatedSearch.CreateTime,
+		"update_time":   updatedSearch.UpdateTime,
+		"search_config": updatedSearch.SearchConfig,
+	}
+
+	if updatedSearch.Avatar != nil {
+		result["avatar"] = *updatedSearch.Avatar
+	}
+
+	// Return success response
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    result,
+		"message": "success",
+	})
+}
