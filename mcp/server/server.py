@@ -654,7 +654,7 @@ def create_starlette_app():
         )
 
     return Starlette(
-        debug=True,
+        debug=False,
         routes=routes,
         middleware=middleware,
         lifespan=streamablehttp_lifespan,
