@@ -964,8 +964,8 @@ class Github(SyncBase):
         self.connector = GithubConnector(
             repo_owner=self.conf.get("repository_owner"),
             repositories=self.conf.get("repository_name"),
-            include_prs=self.conf.get("include_pull_requests", False),
-            include_issues=self.conf.get("include_issues", False),
+            include_prs=self.conf.get("include_pull_requests", True),
+            include_issues=self.conf.get("include_issues", True),
         )
 
         credentials = self.conf.get("credentials", {})

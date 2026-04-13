@@ -870,18 +870,18 @@ export const DataSourceFormFields = {
       required: true,
     },
     {
-      label: 'Inlcude Pull Requests',
+      label: 'Include Pull Requests',
       name: 'config.include_pull_requests',
       type: FormFieldType.Checkbox,
       required: false,
-      defaultValue: false,
+      defaultValue: true,
     },
     {
-      label: 'Inlcude Issues',
+      label: 'Include Issues',
       name: 'config.include_issues',
       type: FormFieldType.Checkbox,
       required: false,
-      defaultValue: false,
+      defaultValue: true,
     },
   ],
   [DataSourceKey.IMAP]: [
@@ -1354,8 +1354,8 @@ export const DataSourceFormDefaultValues = {
     config: {
       repository_owner: '',
       repository_name: '',
-      include_pull_requests: false,
-      include_issues: false,
+      include_pull_requests: true,
+      include_issues: true,
       credentials: {
         github_access_token: '',
       },
