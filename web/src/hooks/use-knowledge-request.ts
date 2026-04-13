@@ -1,5 +1,6 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
+import { ParseType } from '@/constants/knowledge';
 import { ResponsePostType } from '@/interfaces/database/base';
 import { IDataset, IDatasetListResult } from '@/interfaces/database/dataset';
 import {
@@ -208,7 +209,7 @@ export const useCreateKnowledge = () => {
       name: string;
       embedding_model?: string;
       chunk_method?: string;
-      parseType?: number;
+      parseType?: ParseType;
       pipeline_id?: string | null;
       ext?: {
         language?: string;

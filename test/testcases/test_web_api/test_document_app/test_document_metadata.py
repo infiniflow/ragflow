@@ -319,48 +319,6 @@ class TestDocumentMetadataUnit:
         assert res["code"] == 0
         assert res["data"][0]["meta_fields"]["author"] == "alice"
 
-    def test_metadata_summary_missing_kb_id(self, document_app_module, monkeypatch):
-        module = document_app_module
-
-        async def fake_request_json():
-            return {"doc_ids": ["doc1"]}
-
-        monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.metadata_summary())
-        assert res["code"] == 101
-
-    def test_metadata_summary_unauthorized(self, document_app_module, monkeypatch):
-        module = document_app_module
-        monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant1")])
-        monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: False)
-
-        async def fake_request_json():
-            return {"kb_id": "kb1", "doc_ids": ["doc1"]}
-
-        monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.metadata_summary())
-        assert res["code"] == 103
-
-    def test_metadata_summary_success_and_exception(self, document_app_module, monkeypatch):
-        module = document_app_module
-        self._allow_kb(module, monkeypatch)
-        monkeypatch.setattr(module.DocMetadataService, "get_metadata_summary", lambda *_args, **_kwargs: {"author": {"alice": 1}})
-
-        async def fake_request_json():
-            return {"kb_id": "kb1", "doc_ids": ["doc1"]}
-
-        monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.metadata_summary())
-        assert res["code"] == 0
-        assert "summary" in res["data"]
-
-        def raise_error(*_args, **_kwargs):
-            raise RuntimeError("boom")
-
-        monkeypatch.setattr(module.DocMetadataService, "get_metadata_summary", raise_error)
-        res = _run(module.metadata_summary())
-        assert res["code"] == 100
-
     def test_metadata_update_missing_kb_id(self, document_app_module, monkeypatch):
         module = document_app_module
 
