@@ -186,6 +186,11 @@ async def update():
 @login_required
 @validate_request("kb_id", "metadata")
 async def update_metadata_setting():
+    """Update dataset-level auto-metadata settings.
+
+    Persists metadata schema configuration, optional metadata enable switch,
+    and optional built-in metadata selections into the dataset parser config.
+    """
     req = await get_request_json()
     if not KnowledgebaseService.accessible(req["kb_id"], current_user.id):
         return get_json_result(

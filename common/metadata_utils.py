@@ -237,6 +237,11 @@ def dedupe_list(values: list) -> list:
 
 
 def update_metadata_to(metadata, meta):
+    """Merge incoming metadata payload into an existing metadata mapping.
+
+    Supports JSON-string or dict inputs. Accepted values include string/number
+    scalars and lists of those scalars, with list de-duplication applied.
+    """
     if not meta:
         return metadata
     if isinstance(meta, str):
@@ -276,6 +281,11 @@ def update_metadata_to(metadata, meta):
 
 
 def metadata_schema(metadata: dict|list|None) -> Dict[str, Any]:
+    """Convert metadata field definitions into a JSON Schema object.
+
+    Each field item may define `type`, `description`, and optional `enum`
+    constraints. The function returns an object schema with strict properties.
+    """
     if not metadata:
         return {}
     properties = {}
@@ -349,6 +359,11 @@ def _is_metadata_list(obj: list) -> bool:
 
 
 def turn2jsonschema(obj: dict | list) -> Dict[str, Any]:
+    """Normalize metadata settings into a JSON Schema object.
+
+    Accepts either an existing JSON Schema dict or legacy metadata list format
+    and returns a JSON Schema representation used by metadata extraction flow.
+    """
     if isinstance(obj, dict) and _is_json_schema(obj):
         return obj
     if isinstance(obj, list) and _is_metadata_list(obj):

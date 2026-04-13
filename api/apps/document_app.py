@@ -454,6 +454,11 @@ async def metadata_update():
 @login_required
 @validate_request("doc_id", "metadata")
 async def update_metadata_setting():
+    """Update document-level auto-metadata settings.
+
+    Persists metadata schema configuration and optional switches
+    (`enable_metadata`, `built_in_metadata`) into document parser config.
+    """
     req = await get_request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)

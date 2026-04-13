@@ -239,11 +239,18 @@ async def collect():
 
 
 async def get_storage_binary(bucket, name):
+    """Fetch document binary content from object storage asynchronously."""
     return await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, name)
 
 
 @timeout(60 * 80, 1)
 async def build_chunks(task, progress_callback):
+    """Parse a document task and build enriched chunks for indexing.
+
+    This routine loads source content, applies parser-specific chunking, runs
+    optional enrichment (keywords/questions/metadata), and persists document
+    metadata generated during parsing.
+    """
     if task["size"] > settings.DOC_MAXIMUM_SIZE:
         set_progress(task["id"], prog=-1, msg="File size exceeds( <= %dMb )" %
                                               (int(settings.DOC_MAXIMUM_SIZE / 1024 / 1024)))
