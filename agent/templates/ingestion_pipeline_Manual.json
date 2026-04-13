@@ -6,7 +6,7 @@
     "zh": "手册"
     },
     "description": {
-    "en": "This template segments the parsed file based on the structure of a manual. It is suitable for documents with clearly defined sections and operational guidance, such as product manuals, user guides, installation instructions, and technical documentation.",
+    "en": "This template segments parsed files based on the structure of a manual. It is suitable for documents with clearly defined sections and operational guidance, such as product manuals, user guides, installation instructions, and technical documentation.",
     "de": "Diese Vorlage segmentiert die geparste Datei anhand der Struktur eines Handbuchs. Sie eignet sich für Dokumente mit klar definierten Abschnitten und Handlungsanweisungen, wie Produkthandbücher, Benutzerhandbücher, Installationsanleitungen und technische Dokumentationen.",
     "zh": "此模板将解析后的文件按手册结构进行切片，适用于具有清晰章节层级和操作说明的文档类型，如产品手册、用户指南、安装说明和技术文档。"
     },
