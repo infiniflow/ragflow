@@ -5,7 +5,6 @@ export interface IDocumentDownloadInfo {
   filename: string;
   base64: string;
   mime_type: string;
-  path?: string;
   size?: number;
 }
 

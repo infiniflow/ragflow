@@ -16,6 +16,22 @@ from api.utils.api_utils import timeout
 from .message import Message
 
 
+def sanitize_filename(name: str, extension: str) -> str:
+    if not name:
+        return f"file.{extension}"
+
+    name = str(name).strip()
+    name = re.sub(r'[\\/\x00-\x1f\?\#\%\*\:\|\<\>"]', " ", name)
+    name = re.sub(r"\s+", " ", name).strip(" .")
+
+    if not name:
+        return f"file.{extension}"
+
+    base, _ = os.path.splitext(name)
+    base = base[:180].rstrip() or "file"
+    return f"{base}.{extension}"
+
+
 class DocGeneratorParam(ComponentParamBase):
     """
     Define the Docs Generator component parameters.
@@ -44,6 +60,8 @@ class DocGeneratorParam(ComponentParamBase):
             ["pdf", "docx", "txt", "markdown", "html"],
         )
         self.check_positive_number(self.font_size, "[DocGenerator] Font size")
+        if self.font_size < 12:
+            raise ValueError("[DocGenerator] Font size must be greater than or equal to 12")
 
 
 class DocGenerator(Message, ABC):
@@ -90,20 +108,21 @@ class DocGenerator(Message, ABC):
 
                 filename = os.path.basename(file_path)
                 if not os.path.exists(file_path):
-                    raise Exception(f"Document file was not created: {file_path}")
+                    raise Exception("Document file was not created")
 
                 file_size = os.path.getsize(file_path)
                 if file_size == 0:
-                    raise Exception(f"Document file is empty: {file_path}")
+                    raise Exception("Document file is empty")
 
                 logging.info(
-                    f"Successfully generated {output_format.upper()}: "
-                    f"{file_path} (Size: {file_size} bytes)"
+                    "Successfully generated %s: %s (Size: %s bytes)",
+                    output_format.upper(),
+                    filename,
+                    file_size,
                 )
 
                 download_info = {
                     "filename": filename,
-                    "path": file_path,
                     "base64": doc_base64,
                     "mime_type": mime_type,
                     "size": file_size,
@@ -162,14 +181,7 @@ class DocGenerator(Message, ABC):
         import uuid
 
         if self._param.filename:
-            filename = self._param.filename.strip()
-            base_name, extension = os.path.splitext(filename)
-            expected_extension = f".{output_format.lower()}"
-            if extension.lower() == expected_extension:
-                return filename
-            if extension:
-                return f"{base_name}{expected_extension}"
-            return f"{filename}{expected_extension}"
+            return sanitize_filename(self._param.filename, output_format.lower())
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         return f"document_{timestamp}_{uuid.uuid4().hex[:8]}.{output_format}"

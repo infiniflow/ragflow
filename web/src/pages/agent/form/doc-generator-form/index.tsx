@@ -34,7 +34,7 @@ function DocGeneratorForm({ node }: INextOperatorForm) {
     watermark_text: z.string().optional(),
     add_page_numbers: z.boolean(),
     add_timestamp: z.boolean(),
-    font_size: z.number(),
+    font_size: z.coerce.number().min(12, 'Font size must be at least 12'),
     outputs: z.object({
       download: z.object({ type: z.string() }),
     }),
@@ -142,7 +142,15 @@ function DocGeneratorForm({ node }: INextOperatorForm) {
                       <Input
                         {...field}
                         type="number"
-                        onChange={(e) => field.onChange(Number(e.target.value))}
+                        min={12}
+                        onChange={(e) => field.onChange(e.target.value)}
+                        onBlur={(e) => {
+                          field.onBlur();
+                          const value = Number(e.target.value);
+                          field.onChange(
+                            Number.isFinite(value) && value >= 12 ? value : 12,
+                          );
+                        }}
                       />
                     </FormControl>
                     <FormMessage />

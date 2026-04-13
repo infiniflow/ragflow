@@ -21,7 +21,7 @@ export const useValues = (node?: Node) => {
       watermark_text: nextValues.watermark_text,
       add_page_numbers: nextValues.add_page_numbers,
       add_timestamp: nextValues.add_timestamp,
-      font_size: nextValues.font_size,
+      font_size: Math.max(12, Number(nextValues.font_size) || 12),
       outputs: initialDocGeneratorValues.outputs,
     };
   }, [node?.data.form]);
