@@ -77,7 +77,7 @@ const methods = {
   },
   document_rename: {
     url: document_rename,
-    method: 'put',
+    method: 'patch',
   },
   document_create: {
     url: document_create,
@@ -255,7 +255,7 @@ export const renameDocument = (
   datasetId: string,
   documentId: string,
   data: { name?: string },
-) => request.put(api.document_rename(datasetId, documentId), { data });
+) => request.patch(api.document_rename(datasetId, documentId), { data });
 
 export const getMetaDataService = ({
   kb_id,
