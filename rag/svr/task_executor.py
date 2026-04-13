@@ -437,6 +437,7 @@ async def build_chunks(task, progress_callback):
                 built_in_metadata["update_time"] = str(update_time)
 
     metadata_setting = task["parser_config"].get("metadata")
+    metadata_schema = turn2jsonschema(metadata_setting) if metadata_setting else {}
     if task["parser_config"].get("enable_metadata", False) and (metadata_setting or built_in_metadata):
         st = timer()
         progress_callback(msg="Start to generate meta-data for every chunk ...")
@@ -448,14 +449,12 @@ async def build_chunks(task, progress_callback):
                     progress_callback(-1, msg="Task has been canceled.")
                     return
                 async with chat_limiter:
-                    cached = await gen_metadata(chat_mdl,
-                                                turn2jsonschema(metadata_setting),
-                                                d["content_with_weight"])
+                    cached = await gen_metadata(chat_mdl, metadata_schema, d["content_with_weight"])
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "metadata", metadata_setting)
             if cached:
                 d["metadata_obj"] = cached
 
-        if metadata_setting:
+        if metadata_setting and metadata_schema.get("properties"):
             chat_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.CHAT, task["llm_id"])
             chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
             tasks = []
@@ -469,6 +468,8 @@ async def build_chunks(task, progress_callback):
                     t.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
                 raise
+        elif metadata_setting:
+            logging.warning("Skip metadata generation for doc %s due to invalid metadata schema", task["doc_id"])
         metadata = {}
         for doc in docs:
             if doc.get("metadata_obj"):

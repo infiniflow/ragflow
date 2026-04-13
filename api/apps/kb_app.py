@@ -204,6 +204,9 @@ async def update_metadata_setting():
             message="Database error (Knowledgebase rename)!")
     kb = kb.to_dict()
     parser_config = kb.get("parser_config") or {}
+    metadata_schema = turn2jsonschema(req["metadata"])
+    if req["metadata"] and not metadata_schema.get("properties"):
+        return get_data_error_result(message="Invalid metadata schema.")
     parser_config["metadata"] = req["metadata"]
     if "enable_metadata" in req:
         parser_config["enable_metadata"] = req.get("enable_metadata")
@@ -212,7 +215,8 @@ async def update_metadata_setting():
     if built_in_metadata is not None:
         parser_config["built_in_metadata"] = built_in_metadata
 
-    KnowledgebaseService.update_by_id(kb["id"], {"parser_config": parser_config})
+    if not KnowledgebaseService.update_by_id(kb["id"], {"parser_config": parser_config}):
+        return get_data_error_result(message="Failed to persist metadata settings.")
     kb["parser_config"] = parser_config
     return get_json_result(data=kb)
 
