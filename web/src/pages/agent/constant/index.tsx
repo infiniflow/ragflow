@@ -416,7 +416,7 @@ export const initialIterationValues = {
 export const initialIterationStartValues = {
   outputs: {
     item: {
-      type: 'unkown',
+      type: 'unknown',
     },
     index: {
       type: 'integer',

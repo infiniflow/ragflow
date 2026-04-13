@@ -19,7 +19,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-from common import plugin_llm_tools
+from test_common import plugin_llm_tools
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 

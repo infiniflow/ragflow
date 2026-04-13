@@ -7,7 +7,7 @@ services:
     runtime: runc
     privileged: true
     ports:
-      - "${EXECUTOR_PORT:-9385}:9385"
+      - "${SANDBOX_EXECUTOR_MANAGER_PORT:-9385}:9385"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:

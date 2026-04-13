@@ -82,6 +82,10 @@ const PreprocessOptionConfigsMap: Partial<
     { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
     { value: PreprocessValue.section_title },
   ],
+  [FileType.Doc]: [
+    { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
+    { value: PreprocessValue.section_title },
+  ],
   [FileType.Docx]: [
     { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
     { value: PreprocessValue.section_title },
