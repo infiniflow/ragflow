@@ -1626,8 +1626,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       searXNG: 'SearXNG',
       searXNGDescription:
         "Sağlanan SearXNG örnek URL'si üzerinden arama yapan bir bileşen.",
-      pDFGenerator: 'Belge Oluşturucu',
-      pDFGeneratorDescription: `Markdown içeriğinden bir dosya oluşturur.`,
+      docGenerator: 'Belge Oluşturucu',
+      docGeneratorDescription: `Markdown içeriğinden bir dosya oluşturur.`,
       subtitle: 'Alt başlık',
       logoImage: 'Logo Görüntüsü',
       logoPosition: 'Logo Konumu',

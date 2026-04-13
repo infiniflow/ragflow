@@ -25,12 +25,7 @@ import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
 import { isEmpty } from 'lodash';
 import { Atom, ChevronDown, ChevronUp } from 'lucide-react';
-import {
-  DocumentDownloadButton,
-  extractDocumentDownloadInfos,
-  mergeDocumentDownloadInfos,
-  removeDocumentDownloadInfos,
-} from '../document-download-button';
+import { DocumentDownloadButton } from '../document-download-button';
 import MarkdownContent from '../next-markdown-content';
 import { RAGFlowAvatar } from '../ragflow-avatar';
 import SvgIcon from '../svg-icon';
@@ -103,23 +98,11 @@ function MessageItem({
     return Object.values(docs);
   }, [reference?.doc_aggs]);
 
-  // Extract PDF download info from message content
   const documentDownloadInfos = useMemo(
-    () =>
-      mergeDocumentDownloadInfos(
-        item.downloads,
-        extractDocumentDownloadInfos(item.content),
-      ),
-    [item.content, item.downloads],
+    () => item.downloads ?? [],
+    [item.downloads],
   );
-
-  // If we have document download info, extract the remaining text
-  const messageContent = useMemo(() => {
-    if (!documentDownloadInfos.length) return item.content;
-
-    // Remove the JSON part from the content to avoid showing it
-    return removeDocumentDownloadInfos(item.content, documentDownloadInfos);
-  }, [item.content, documentDownloadInfos]);
+  const messageContent = item.content;
 
   const handleRegenerateMessage = useCallback(() => {
     regenerateMessage?.(item);

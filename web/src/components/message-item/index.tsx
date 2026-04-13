@@ -10,12 +10,7 @@ import { memo, useCallback, useMemo } from 'react';
 
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { cn } from '@/lib/utils';
-import {
-  DocumentDownloadButton,
-  extractDocumentDownloadInfos,
-  mergeDocumentDownloadInfos,
-  removeDocumentDownloadInfos,
-} from '../document-download-button';
+import { DocumentDownloadButton } from '../document-download-button';
 import MarkdownContent from '../markdown-content';
 import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
 import { ReferenceImageList } from '../next-message-item/reference-image-list';
@@ -68,23 +63,11 @@ const MessageItem = ({
     return reference?.doc_aggs ?? [];
   }, [reference?.doc_aggs]);
 
-  // Extract PDF download info from message content
   const documentDownloadInfos = useMemo(
-    () =>
-      mergeDocumentDownloadInfos(
-        item.downloads,
-        extractDocumentDownloadInfos(item.content),
-      ),
-    [item.content, item.downloads],
+    () => item.downloads ?? [],
+    [item.downloads],
   );
-
-  // If we have document download info, extract the remaining text
-  const messageContent = useMemo(() => {
-    if (!documentDownloadInfos.length) return item.content;
-
-    // Remove the JSON part from the content to avoid showing it
-    return removeDocumentDownloadInfos(item.content, documentDownloadInfos);
-  }, [item.content, documentDownloadInfos]);
+  const messageContent = item.content;
 
   const handleRegenerateMessage = useCallback(() => {
     regenerateMessage?.(item);

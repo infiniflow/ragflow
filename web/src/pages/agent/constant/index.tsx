@@ -696,7 +696,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Loop]: [Operator.Begin],
   [Operator.LoopStart]: [Operator.Begin],
   [Operator.ExitLoop]: [Operator.Begin],
-  [Operator.PDFGenerator]: [Operator.Begin],
+  [Operator.DocGenerator]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -747,7 +747,7 @@ export const NodeMap = {
   [Operator.LoopStart]: 'loopStartNode',
   [Operator.ExitLoop]: 'exitLoopNode',
   [Operator.ExcelProcessor]: 'ragNode',
-  [Operator.PDFGenerator]: 'ragNode',
+  [Operator.DocGenerator]: 'ragNode',
 };
 
 export enum BeginQueryType {
@@ -963,7 +963,7 @@ export enum AgentVariableType {
   Conversation = 'conversation',
 }
 
-export const initialPDFGeneratorValues = {
+export const initialDocGeneratorValues = {
   output_format: 'pdf',
   content: '',
   filename: '',

@@ -22,7 +22,7 @@ import { PromptEditor } from '../components/prompt-editor';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-form-change';
 
-function PDFGeneratorForm({ node }: INextOperatorForm) {
+function DocGeneratorForm({ node }: INextOperatorForm) {
   const values = useValues(node);
 
   const FormSchema = z.object({
@@ -243,4 +243,4 @@ function PDFGeneratorForm({ node }: INextOperatorForm) {
   );
 }
 
-export default memo(PDFGeneratorForm);
+export default memo(DocGeneratorForm);

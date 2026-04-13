@@ -16,7 +16,7 @@ from api.utils.api_utils import timeout
 from .message import Message
 
 
-class PDFGeneratorParam(ComponentParamBase):
+class DocGeneratorParam(ComponentParamBase):
     """
     Define the Docs Generator component parameters.
     """
@@ -37,18 +37,18 @@ class PDFGeneratorParam(ComponentParamBase):
         }
 
     def check(self):
-        self.check_empty(self.content, "[PDFGenerator] Content")
+        self.check_empty(self.content, "[DocGenerator] Content")
         self.check_valid_value(
             self.output_format,
-            "[PDFGenerator] Output format",
+            "[DocGenerator] Output format",
             ["pdf", "docx", "txt", "markdown", "html"],
         )
-        self.check_positive_number(self.font_size, "[PDFGenerator] Font size")
+        self.check_positive_number(self.font_size, "[DocGenerator] Font size")
 
 
-class PDFGenerator(Message, ABC):
-    component_name = "PDFGenerator"
-    _default_output_directory = os.path.join(tempfile.gettempdir(), "pdf_outputs")
+class DocGenerator(Message, ABC):
+    component_name = "DocGenerator"
+    _default_output_directory = os.path.join(tempfile.gettempdir(), "doc_outputs")
     _overlay_margin = 36
     _overlay_font_size = 9
     _pdf_main_font = "Noto Sans CJK SC"
@@ -117,13 +117,13 @@ class PDFGenerator(Message, ABC):
                 raise
 
         except Exception as e:
-            logging.exception("Error in PDFGenerator._invoke")
+            logging.exception("Error in DocGenerator._invoke")
             self.set_output("_ERROR", f"Document generation failed: {str(e)}")
             raise
 
     def _resolve_content(self, kwargs: dict) -> str:
         content = self._param.content or ""
-        logging.info("Starting PDF generation, content length: %s chars", len(content))
+        logging.info("Starting document generation, content length: %s chars", len(content))
 
         if content and self._canvas.is_reff(content.strip()):
             matches = re.findall(self.variable_ref_patt, content, flags=re.DOTALL)

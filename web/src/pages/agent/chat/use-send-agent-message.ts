@@ -86,6 +86,7 @@ export function findMessageFromList(eventList: IEventList) {
     content: nextContent,
     audio_binary: audioBinary,
     attachment: workflowFinished?.data?.outputs?.attachment || {},
+    downloads: workflowFinished?.data?.outputs?.downloads || [],
   };
 }
 

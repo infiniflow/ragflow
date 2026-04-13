@@ -1,19 +1,19 @@
 import { useMemo } from 'react';
 import { Node } from 'reactflow';
-import { initialPDFGeneratorValues } from '../../constant';
+import { initialDocGeneratorValues } from '../../constant';
 
 export const useValues = (node?: Node) => {
   const values = useMemo(() => {
     const supportedOutputFormats = ['pdf', 'docx', 'txt', 'markdown', 'html'];
     const nextValues = {
-      ...initialPDFGeneratorValues,
+      ...initialDocGeneratorValues,
       ...(node?.data.form ?? {}),
     };
 
     return {
       output_format: supportedOutputFormats.includes(nextValues.output_format)
         ? nextValues.output_format
-        : initialPDFGeneratorValues.output_format,
+        : initialDocGeneratorValues.output_format,
       content: nextValues.content,
       filename: nextValues.filename,
       header_text: nextValues.header_text,
@@ -22,7 +22,7 @@ export const useValues = (node?: Node) => {
       add_page_numbers: nextValues.add_page_numbers,
       add_timestamp: nextValues.add_timestamp,
       font_size: nextValues.font_size,
-      outputs: initialPDFGeneratorValues.outputs,
+      outputs: initialDocGeneratorValues.outputs,
     };
   }, [node?.data.form]);
 

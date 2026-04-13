@@ -852,8 +852,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Một thành phần tìm kiếm thông qua URL phiên bản SearXNG bạn cung cấp. Chỉ định TopN và URL phiên bản.',
-      pDFGenerator: 'Trình tạo Tài liệu',
-      pDFGeneratorDescription: `Tạo tệp từ nội dung Markdown.`,
+      docGenerator: 'Trình tạo Tài liệu',
+      docGeneratorDescription: `Tạo tệp từ nội dung Markdown.`,
       subtitle: 'Phụ đề',
       logoImage: 'Hình ảnh Logo',
       logoPosition: 'Vị trí Logo',

@@ -1517,8 +1517,8 @@ export default {
       searXNG: 'احرق XNG',
       searXNGDescription:
         'مكون يبحث عبر عنوان URL لمثيل SearXNG المقدم. حدد TopN وعنوان URL للمثيل.',
-      pDFGenerator: 'مولد المستندات',
-      pDFGeneratorDescription: 'ينشئ ملفًا من محتوى Markdown.',
+      docGenerator: 'مولد المستندات',
+      docGeneratorDescription: 'ينشئ ملفًا من محتوى Markdown.',
       subtitle: 'الترجمة',
       logoImage: 'صورة الشعار',
       logoPosition: 'موقف الشعار',

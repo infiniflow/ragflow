@@ -611,8 +611,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Un componente que busca a través de la URL de la instancia SearXNG que proporcionas. Especifica TopN y la URL de la instancia.',
-      pDFGenerator: 'Generador de Documentos',
-      pDFGeneratorDescription: `Genera un archivo a partir de contenido Markdown.`,
+      docGenerator: 'Generador de Documentos',
+      docGeneratorDescription: `Genera un archivo a partir de contenido Markdown.`,
       subtitle: 'Subtítulo',
       logoImage: 'Imagen Logo',
       logoPosition: 'Posición Logo',

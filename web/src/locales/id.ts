@@ -810,8 +810,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Komponen yang melakukan pencarian menggunakan URL instance SearXNG yang Anda berikan. Spesifikasikan TopN dan URL instance.',
-      pDFGenerator: 'Pembuat Dokumen',
-      pDFGeneratorDescription: `Menghasilkan file dari konten Markdown.`,
+      docGenerator: 'Pembuat Dokumen',
+      docGeneratorDescription: `Menghasilkan file dari konten Markdown.`,
       subtitle: 'Subjudul',
       logoImage: 'Gambar Logo',
       logoPosition: 'Posisi Logo',

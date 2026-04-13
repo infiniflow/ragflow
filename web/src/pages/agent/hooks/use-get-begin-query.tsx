@@ -173,6 +173,38 @@ export function useBuildBeginDynamicVariableOptions() {
 
 const Env = 'env.';
 
+function splitOperatorOutputValue(value?: string) {
+  if (!value) {
+    return {};
+  }
+
+  const [nodeId, output] = value.split('@');
+  return { nodeId, output };
+}
+
+function filterPdfDownloadOutputOptions(
+  groups: Array<{
+    options: Array<{ value?: string } & Record<string, any>>;
+  }>,
+  allowPdfDownloadOutput: boolean,
+  getOperatorTypeFromId: (nodeId?: string) => string | undefined,
+) {
+  return groups.map((group) => ({
+    ...group,
+    options: group.options.filter((option) => {
+      const { nodeId, output } = splitOperatorOutputValue(option.value);
+      if (
+        output === 'download' &&
+        getOperatorTypeFromId(nodeId) === Operator.DocGenerator
+      ) {
+        return allowPdfDownloadOutput;
+      }
+
+      return true;
+    }),
+  }));
+}
+
 export function useBuildGlobalWithBeginVariableOptions() {
   const { data } = useFetchAgent();
   const dynamicBeginOptions = useBuildBeginDynamicVariableOptions();
@@ -270,6 +302,9 @@ export function useBuildQueryVariableOptions({
 } & BuildQueryVariableOptions = {}) {
   const node = useContext(AgentFormContext) || n;
   const nodes = useGraphStore((state) => state.nodes);
+  const getOperatorTypeFromId = useGraphStore(
+    (state) => state.getOperatorTypeFromId,
+  );
 
   const options = useBuildVariableOptions(node?.id, node?.parentId);
 
@@ -282,14 +317,21 @@ export function useBuildQueryVariableOptions({
     [AgentVariableType.Begin]: globalWithBeginVariableOptions,
     [AgentVariableType.Conversation]: conversationOptions,
   };
+  const allowPdfDownloadOutput = node?.data?.label === Operator.Message;
 
   const nextOptions = useMemo(() => {
-    return [
-      ...globalWithBeginVariableOptions,
-      ...conversationOptions,
-      ...options,
-    ];
-  }, [conversationOptions, globalWithBeginVariableOptions, options]);
+    return filterPdfDownloadOutputOptions(
+      [...globalWithBeginVariableOptions, ...conversationOptions, ...options],
+      allowPdfDownloadOutput,
+      getOperatorTypeFromId,
+    );
+  }, [
+    allowPdfDownloadOutput,
+    conversationOptions,
+    getOperatorTypeFromId,
+    globalWithBeginVariableOptions,
+    options,
+  ]);
 
   // Which options are entirely under external control?
   if (!isEmpty(nodeIds) || !isEmpty(variablesExceptOperatorOutputs)) {
@@ -299,10 +341,11 @@ export function useBuildQueryVariableOptions({
       variablesExceptOperatorOutputs?.map((x) => AgentVariableOptionsMap[x]) ??
       [];
 
-    return [
-      ...flatten(variablesExceptOperatorOutputsOptions),
-      ...nodeOutputOptions,
-    ];
+    return filterPdfDownloadOutputOptions(
+      [...flatten(variablesExceptOperatorOutputsOptions), ...nodeOutputOptions],
+      allowPdfDownloadOutput,
+      getOperatorTypeFromId,
+    );
   }
   return nextOptions;
 }

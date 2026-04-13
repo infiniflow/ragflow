@@ -820,8 +820,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'SearXNGのインスタンスURLを提供して検索を行うコンポーネント。TopNとインスタンスURLを指定してください。',
-      pDFGenerator: 'ドキュメント生成',
-      pDFGeneratorDescription: `Markdown コンテンツからファイルを生成します。`,
+      docGenerator: 'ドキュメント生成',
+      docGeneratorDescription: `Markdown コンテンツからファイルを生成します。`,
       subtitle: 'サブタイトル',
       logoImage: 'ロゴ画像',
       logoPosition: 'ロゴ位置',
