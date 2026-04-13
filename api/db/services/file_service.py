@@ -15,13 +15,16 @@
 #
 import asyncio
 import base64
+import ipaddress
 import logging
 import re
+import socket
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Union
+from urllib.parse import urlparse
 
 import xxhash
 from peewee import fn
@@ -624,6 +627,33 @@ class FileService(CommonService):
 
         return errors
 
+    _ALLOWED_SCHEMES = {"http", "https"}
+    _PRIVATE_NETWORKS = [
+        ipaddress.ip_network("10.0.0.0/8"),
+        ipaddress.ip_network("172.16.0.0/12"),
+        ipaddress.ip_network("192.168.0.0/16"),
+        ipaddress.ip_network("127.0.0.0/8"),
+        ipaddress.ip_network("169.254.0.0/16"),
+        ipaddress.ip_network("::1/128"),
+        ipaddress.ip_network("fc00::/7"),
+    ]
+
+    @staticmethod
+    def _validate_url_for_crawl(url: str) -> None:
+        """Raise ValueError if the URL is not safe to fetch (SSRF guard)."""
+        parsed = urlparse(url)
+        if parsed.scheme not in FileService._ALLOWED_SCHEMES:
+            raise ValueError(f"Disallowed URL scheme: {parsed.scheme!r}. Only http and https are allowed.")
+        hostname = parsed.hostname
+        if not hostname:
+            raise ValueError("URL is missing a host.")
+        try:
+            resolved_ip = ipaddress.ip_address(socket.gethostbyname(hostname))
+        except socket.gaierror as exc:
+            raise ValueError(f"Could not resolve hostname {hostname!r}: {exc}") from exc
+        if any(resolved_ip in net for net in FileService._PRIVATE_NETWORKS):
+            raise ValueError(f"URL resolves to a private or reserved address ({resolved_ip}), which is not allowed.")
+
     @staticmethod
     def upload_info(user_id, file, url: str|None=None):
         def structured(filename, filetype, blob, content_type):
@@ -646,6 +676,7 @@ class FileService(CommonService):
             }
 
         if url:
+            FileService._validate_url_for_crawl(url)
             from crawl4ai import (
                 AsyncWebCrawler,
                 BrowserConfig,
