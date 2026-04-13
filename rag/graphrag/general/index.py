@@ -421,21 +421,31 @@ async def run_graphrag_for_kb(
 
 # CHECKPOINT: load a previously saved subgraph from doc store to avoid re-running LLM extraction
 async def _load_subgraph_from_store(tenant_id: str, kb_id: str, doc_id: str):
-    """Load a subgraph from the doc store if it was persisted in a previous run."""
+    """Load a subgraph from the doc store if it was persisted in a previous run.
+
+    Follows the same query pattern as does_graph_contains(): filter by
+    knowledge_graph_kwd only, then match source_id in Python. This avoids
+    ambiguity in how the doc store backend handles list-valued fields in
+    query conditions.
+    """
     try:
-        fields = ["content_with_weight"]
+        fields = ["content_with_weight", "source_id"]
         condition = {
             "knowledge_graph_kwd": ["subgraph"],
-            "source_id": doc_id,
             "removed_kwd": "N",
         }
         res = await thread_pool_exec(
             settings.docStoreConn.search,
             fields, [], condition, [], OrderByExpr(),
-            0, 1, search.index_name(tenant_id), [kb_id]
+            0, 1000, search.index_name(tenant_id), [kb_id]
         )
         field_map = settings.docStoreConn.get_fields(res, fields)
         for cid in field_map:
+            source_ids = field_map[cid].get("source_id") or []
+            if isinstance(source_ids, str):
+                source_ids = [source_ids]
+            if doc_id not in source_ids:
+                continue
             content = field_map[cid].get("content_with_weight", "")
             if content:
                 data = json.loads(content)
