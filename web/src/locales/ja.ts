@@ -820,9 +820,7 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'SearXNGのインスタンスURLを提供して検索を行うコンポーネント。TopNとインスタンスURLを指定してください。',
-      pdfGenerator: 'ドキュメント生成',
       pDFGenerator: 'ドキュメント生成',
-      pdfGeneratorDescription: `マークダウン形式のコンテンツからドキュメント（PDF、DOCX、TXT）を生成するコンポーネント。カスタムスタイル、画像、テーブルをサポート。サポート：**太字**、*斜体*、# 見出し、- リスト、| 構文のテーブル。`,
       pDFGeneratorDescription: `マークダウン形式のコンテンツからドキュメント（PDF、DOCX、TXT）を生成するコンポーネント。カスタムスタイル、画像、テーブルをサポート。サポート：**太字**、*斜体*、# 見出し、- リスト、| 構文のテーブル。`,
       subtitle: 'サブタイトル',
       logoImage: 'ロゴ画像',

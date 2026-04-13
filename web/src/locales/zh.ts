@@ -1442,10 +1442,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       searXNG: 'SearXNG',
       searXNGDescription:
         '该组件通过您提供的 SearXNG 实例地址进行搜索。请设置 Top N 和实例 URL。',
-      pdfGenerator: '文档生成器',
       pDFGenerator: '文档生成器',
-      pdfGeneratorDescription: `该组件从 markdown 格式的内容生成文档（PDF、DOCX、TXT），支持自定义样式、图片和表格。支持：**粗体**、*斜体*、# 标题、- 列表、使用 | 语法的表格。`,
-      pDFGeneratorDescription: `该组件从 markdown 格式的内容生成文档（PDF、DOCX、TXT），支持自定义样式、图片和表格。支持：**粗体**、*斜体*、# 标题、- 列表、使用 | 语法的表格。`,
+      pDFGeneratorDescription: `从 Markdown 内容生成文件。`,
       subtitle: '副标题',
       logoImage: '标志图片',
       logoPosition: '标志位置',
