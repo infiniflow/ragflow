@@ -67,6 +67,9 @@ async def scenario_plan():
     existing_dsl = req.get("existing_dsl")
     if existing_dsl is not None and not isinstance(existing_dsl, dict):
         return get_data_error_result(message="existing_dsl must be a JSON object.")
+    canvas_category = req.get("canvas_category", CanvasCategory.Agent)
+    if canvas_category not in {CanvasCategory.Agent, CanvasCategory.DataFlow}:
+        return get_data_error_result(message="canvas_category must be one of: agent_canvas, dataflow_canvas.")
 
     requested_mode = "modify" if existing_dsl is not None else "create"
     logging.info(
@@ -79,7 +82,7 @@ async def scenario_plan():
         draft = planner.plan(
             title=req["title"],
             scenario=req["scenario"],
-            canvas_category=req.get("canvas_category", CanvasCategory.Agent),
+            canvas_category=canvas_category,
             existing_dsl=existing_dsl,
         )
     except ValueError as e:

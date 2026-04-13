@@ -37,6 +37,7 @@ def test_plan_defaults_to_qa_basic():
     )
 
     assert draft["archetype"] == "qa_basic"
+    assert draft["canvas_type"] == "Agent"
     assert draft["mode"] == "create"
     assert draft["operations"] == [{"type": "create_draft", "archetype": "qa_basic"}]
     assert "dsl" in draft
@@ -134,6 +135,47 @@ def test_plan_can_modify_existing_dsl_with_notification():
     assert target_id in components["Message:Output"]["downstream"]
     assert ("Message:Output", target_id) in _edge_pairs(edited["dsl"])
     assert target_id in {node["id"] for node in graph["nodes"]}
+
+
+def test_plan_notification_updates_begin_downstream_when_no_tail_exists():
+    planner = ScenarioPlanner()
+    existing = {
+        "components": {
+            "begin": {
+                "downstream": ["Agent:Loop"],
+                "obj": {"component_name": "Begin", "params": {}},
+                "upstream": ["Agent:Loop"],
+            },
+            "Agent:Loop": {
+                "downstream": ["begin"],
+                "obj": {"component_name": "Agent", "params": {"outputs": {"content": {"type": "string", "value": ""}}}},
+                "upstream": ["begin"],
+            },
+        },
+        "graph": {
+            "nodes": [
+                {"id": "begin"},
+                {"id": "Agent:Loop"},
+            ],
+            "edges": [
+                planner._edge("begin", "Agent:Loop"),
+                planner._edge("Agent:Loop", "begin"),
+            ],
+        },
+    }
+
+    edited = planner.plan(
+        title="Edited Draft",
+        scenario="Add a notification step after the current flow.",
+        existing_dsl=existing,
+    )
+
+    target_id = next(op["target"] for op in edited["operations"] if op["type"] == "append_notification")
+    components = edited["dsl"]["components"]
+
+    assert components[target_id]["upstream"] == ["begin"]
+    assert target_id in components["begin"]["downstream"]
+    assert ("begin", target_id) in _edge_pairs(edited["dsl"])
 
 
 def test_plan_multi_edit_refreshes_tail_between_supported_operations():
@@ -528,7 +570,9 @@ def test_plan_raises_clear_error_for_missing_builder(monkeypatch):
         ({"components": {}, "graph": {"edges": [], "nodes": []}}, "begin node"),
         ({"components": {"begin": {}}, "graph": {"edges": [], "nodes": [{"id": "Agent:DraftAnswer"}]}}, "begin node"),
         ({"components": {"begin": []}, "graph": {"edges": [], "nodes": [{"id": "begin"}]}}, "dict component entries"),
+        ({"components": {"begin": {"obj": None}}, "graph": {"edges": [], "nodes": [{"id": "begin"}]}}, "object metadata"),
         ({"components": {"begin": {"obj": []}}, "graph": {"edges": [], "nodes": [{"id": "begin"}]}}, "object metadata"),
+        ({"components": {"begin": {"obj": {"params": None}}}, "graph": {"edges": [], "nodes": [{"id": "begin"}]}}, "params must be objects"),
         ({"components": {"begin": {"obj": {"params": []}}}, "graph": {"edges": [], "nodes": [{"id": "begin"}]}}, "params must be objects"),
         ({"components": {"begin": {}}, "graph": {"edges": [1], "nodes": [{"id": "begin"}]}}, "dict graph.edges entries"),
         ({"components": {"begin": {}}, "graph": {"edges": [], "nodes": [1]}}, "dict graph.nodes entries"),

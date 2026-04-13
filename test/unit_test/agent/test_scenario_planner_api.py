@@ -43,7 +43,7 @@ def _set_request_json(monkeypatch, module, payload):
 
 def _load_canvas_module(monkeypatch):
     repo_root = Path(__file__).resolve().parents[3]
-    sys.path.insert(0, str(repo_root))
+    monkeypatch.syspath_prepend(str(repo_root))
 
     common_pkg = ModuleType("common")
     common_pkg.__path__ = [str(repo_root / "common")]
@@ -316,3 +316,22 @@ def test_scenario_plan_route_logs_validation_failure(monkeypatch, caplog):
 
     assert res["code"] == 102
     assert "scenario_plan validation_failed user_id=user-1 mode=modify error=bad existing_dsl" in caplog.text
+
+
+def test_scenario_plan_route_rejects_invalid_canvas_category(monkeypatch):
+    module = _load_canvas_module(monkeypatch)
+    planner_calls = []
+
+    class _Planner:
+        def plan(self, **kwargs):
+            planner_calls.append(kwargs)
+            return {"mode": "create"}
+
+    monkeypatch.setattr(module, "ScenarioPlanner", _Planner)
+    _set_request_json(monkeypatch, module, {"title": "Draft", "scenario": "Answer questions", "canvas_category": "bad_canvas"})
+
+    res = _run(inspect.unwrap(module.scenario_plan)())
+
+    assert res["code"] == 102
+    assert "canvas_category must be one of" in res["message"]
+    assert planner_calls == []

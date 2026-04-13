@@ -48,6 +48,13 @@ class ScenarioPlanner:
         "batch_review": "Iteration-based batch processing workflow for repeated items.",
     }
 
+    CANVAS_TYPE_BY_CATEGORY = {
+        "Agent": "Agent",
+        "agent_canvas": "Agent",
+        "DataFlow": "Ingestion Pipeline",
+        "dataflow_canvas": "Ingestion Pipeline",
+    }
+
     def plan(
         self,
         title: str,
@@ -61,7 +68,7 @@ class ScenarioPlanner:
             dsl, operations, warnings = self._modify_existing_dsl(existing_dsl, scenario)
             result = {
                 "title": title,
-                "canvas_type": canvas_category,
+                "canvas_type": existing_dsl.get("canvas_type") or self._canvas_type_for_category(canvas_category),
                 "mode": mode,
                 "archetype": "modify_existing",
                 "summary": "Modify an existing workflow draft based on natural-language instructions.",
@@ -91,7 +98,7 @@ class ScenarioPlanner:
         dsl = builder(scenario)
         result = {
             "title": title,
-            "canvas_type": canvas_category,
+            "canvas_type": self._canvas_type_for_category(canvas_category),
             "mode": mode,
             "archetype": match.archetype,
             "summary": self.ARCHETYPE_DESCRIPTIONS[match.archetype],
@@ -123,10 +130,10 @@ class ScenarioPlanner:
             raise ValueError("existing_dsl must be a valid canvas DSL with dict component entries")
         for component in components.values():
             obj = component.get("obj", {})
-            if obj is not None and not isinstance(obj, dict):
+            if not isinstance(obj, dict):
                 raise ValueError("existing_dsl components must use object metadata")
-            params = obj.get("params", {}) if isinstance(obj, dict) else {}
-            if params is not None and not isinstance(params, dict):
+            params = obj.get("params", {})
+            if not isinstance(params, dict):
                 raise ValueError("existing_dsl component params must be objects")
         if not all(isinstance(node, dict) for node in nodes):
             raise ValueError("existing_dsl must be a valid canvas DSL with dict graph.nodes entries")
@@ -152,15 +159,16 @@ class ScenarioPlanner:
             new_message_id = f"Message:{base_id}Notify"
             if new_message_id not in components:
                 applied_any = True
+                anchor = tail_id or "begin"
                 components[new_message_id] = self._message_component(
                     ["A notification step should be configured here."],
-                    [tail_id or "begin"],
+                    [anchor],
                 )
-                if tail_id and tail_id in components:
-                    downstream = components[tail_id].setdefault("downstream", [])
+                if anchor in components:
+                    downstream = components[anchor].setdefault("downstream", [])
                     if new_message_id not in downstream:
                         downstream.append(new_message_id)
-                edges.append(self._edge(tail_id or "begin", new_message_id))
+                edges.append(self._edge(anchor, new_message_id))
                 nodes.append(self._node(new_message_id, "Message", len(nodes)))
                 operations.append({"type": "append_notification", "target": new_message_id})
             else:
@@ -342,6 +350,9 @@ class ScenarioPlanner:
 
     def _load_template(self, template_name: str) -> Dict[str, Any]:
         return deepcopy(self._load_template_payload(template_name))
+
+    def _canvas_type_for_category(self, canvas_category: str) -> str:
+        return self.CANVAS_TYPE_BY_CATEGORY.get(str(canvas_category), "Agent")
 
     def _edge(self, source: str, target: str, source_handle: str = "start", target_handle: str = "end") -> Dict[str, Any]:
         return {
