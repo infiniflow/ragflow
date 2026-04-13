@@ -204,9 +204,6 @@ async def update_metadata_setting():
             message="Database error (Knowledgebase rename)!")
     kb = kb.to_dict()
     parser_config = kb.get("parser_config") or {}
-    metadata_schema = turn2jsonschema(req["metadata"])
-    if req["metadata"] and not metadata_schema.get("properties"):
-        return get_data_error_result(message="Invalid metadata schema.")
     parser_config["metadata"] = req["metadata"]
     if "enable_metadata" in req:
         parser_config["enable_metadata"] = req.get("enable_metadata")
