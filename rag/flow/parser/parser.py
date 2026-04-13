@@ -936,6 +936,7 @@ class Parser(ProcessBase):
             delimiter=conf.get("delimiter"),
             return_section_images=True,
         )
+
         if conf.get("output_format") == "json":
             json_results = []
 
@@ -954,6 +955,16 @@ class Parser(ProcessBase):
                 json_result["doc_type_kwd"] = "image" if json_result.get("image") is not None else "text"
                 json_results.append(json_result)
 
+            for table in tables:
+                table_text = table[0][1] if table and table[0] else ""
+                if table_text:
+                    json_results.append(
+                        {
+                            "text": table_text,
+                            "doc_type_kwd": "table",
+                        }
+                    )
+
             enhance_media_sections_with_vision(
                 json_results,
                 self._canvas._tenant_id,
@@ -962,17 +973,15 @@ class Parser(ProcessBase):
             )
             self.set_output("json", json_results)
         else:
-            self.set_output("text", "\n".join([section_text for section_text, _ in sections]))
+            texts = [section_text for section_text, _ in sections if section_text]
+            texts.extend(table[0][1] for table in tables if table and table[0] and table[0][1])
+            self.set_output("text", "\n".join(texts))
 
     def _code(self, name, blob, **kwargs):
         """Parse text and source code files as plain text chunks."""
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a text or code file.")
         conf = self._param.setups["text&code"]
         self.set_output("output_format", conf["output_format"])
-
-        print("\n\n")
-        print(conf.get("output_format"))
-        print("\n\n")
         
         sections = TxtParser()(
             name,
@@ -983,10 +992,6 @@ class Parser(ProcessBase):
         if conf.get("output_format") == "json":
             self.set_output("json", [{"text": section[0], "doc_type_kwd": "text"} for section in sections if section[0]])
             return
-
-        print("\n", "-"*150, "\n")
-        print(sections)
-        print("\n", "-"*150, "\n")
 
         self.set_output("text", "\n".join([section[0] for section in sections if section[0]]))
 
