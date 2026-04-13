@@ -788,6 +788,25 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
 
 async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):
+    """Answer a natural-language question by generating and executing SQL against the document index.
+
+    Detects the active document engine (Infinity, OceanBase, or Elasticsearch), asks the
+    chat model to produce the appropriate SQL, injects a validated kb_id filter, executes
+    the query, and returns formatted results with optional source citations.
+
+    Args:
+        question: Natural-language question from the user.
+        field_map: Mapping of field names to types describing the indexed document schema.
+        tenant_id: Tenant identifier used to derive the target index/table name.
+        chat_mdl: LLM bundle used to generate SQL from the question.
+        quota: Whether to enforce token-quota checks (default True).
+        kb_ids: Optional list of knowledge-base UUIDs to restrict the query scope.
+
+    Returns:
+        A tuple ``(answer_text, references)`` where *answer_text* is the formatted
+        response string and *references* is a dict of supporting document chunks,
+        or ``None`` if SQL generation or execution fails.
+    """
     logging.debug(f"use_sql: Question: {question}")
 
     # Determine which document engine we're using
@@ -822,13 +841,20 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
     expected_doc_name_column = "docnm" if doc_engine == "infinity" else "docnm_kwd"
 
     def has_source_columns(columns):
+        """Return True if the result set contains the columns needed to build source citations."""
         normalized_names = {str(col.get("name", "")).lower() for col in columns}
         return "doc_id" in normalized_names and bool({"docnm_kwd", "docnm"} & normalized_names)
 
     def is_aggregate_sql(sql_text):
+        """Return True if *sql_text* contains an aggregate function (COUNT, SUM, AVG, MAX, MIN, DISTINCT)."""
         return bool(re.search(r"(count|sum|avg|max|min|distinct)\s*\(", (sql_text or "").lower()))
 
     def normalize_sql(sql):
+        """Strip LLM artefacts from *sql* and return a clean, executable SQL string.
+
+        Removes ``<think>`` reasoning blocks, Chinese reasoning markers, markdown
+        code fences, and trailing semicolons that some engines reject.
+        """
         logging.debug(f"use_sql: Raw SQL from LLM: {repr(sql[:500])}")
         # Remove think blocks if present (format: </think>...)
         sql = re.sub(r"</think>\n.*?\n\s*", "", sql, flags=re.DOTALL)
@@ -840,6 +866,12 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         return sql.rstrip().rstrip(';').strip()
 
     def add_kb_filter(sql):
+        """Inject a validated kb_id WHERE filter into *sql* for ES/OceanBase engines.
+
+        Infinity encodes the knowledge-base scope in the table name, so this
+        function is a no-op for that engine.  All kb_id values are validated as
+        canonical UUIDs before interpolation to prevent SQL injection.
+        """
         # Add kb_id filter for ES/OS only (Infinity already has it in table name)
         if doc_engine == "infinity" or not kb_ids:
             return sql
@@ -864,6 +896,7 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         return sql
 
     def is_row_count_question(q: str) -> bool:
+        """Return True if *q* is asking for a total row count of a dataset or table."""
         q = (q or "").lower()
         if not re.search(r"\bhow many rows\b|\bnumber of rows\b|\brow count\b", q):
             return False
