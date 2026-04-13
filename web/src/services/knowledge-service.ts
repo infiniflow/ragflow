@@ -27,7 +27,6 @@ const {
   switch_chunk,
   rm_chunk,
   retrieval_test,
-  document_rename,
   document_run,
   document_upload,
   web_crawl,
@@ -74,10 +73,6 @@ const methods = {
   document_rm: {
     url: document_rm,
     method: 'post',
-  },
-  document_rename: {
-    url: document_rename,
-    method: 'patch',
   },
   document_create: {
     url: document_create,
