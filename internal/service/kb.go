@@ -28,8 +28,6 @@ import (
 	"ragflow/internal/utility"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // KnowledgebaseService service class for managing dataset operations
@@ -147,7 +145,7 @@ func (s *KnowledgebaseService) CreateKB(req *CreateKBRequest, tenantID string) (
 	parserConfig["llm_id"] = tenant.LLMID
 
 	// Generate KB ID
-	kbID := strings.ReplaceAll(uuid.New().String(), "-", "")
+	kbID := common.GenerateUUID()
 
 	// Create knowledge base model
 	now := time.Now().Unix()
@@ -191,23 +189,23 @@ func (s *KnowledgebaseService) CreateKB(req *CreateKBRequest, tenantID string) (
 	return &CreateKBResponse{KBID: kbID}, common.CodeSuccess, nil
 }
 
-// CreateIndexRequest represents the request for creating an index
-type CreateIndexRequest struct {
+// CreateDatasetTableRequest represents the request for creating a dataset table
+type CreateDatasetTableRequest struct {
 	KBID       string `json:"kb_id" binding:"required"`
 	VectorSize int    `json:"vector_size" binding:"required"`
 	ParserID   string `json:"parser_id,omitempty"`
 }
 
-// CreateIndexResponse represents the response for creating an index
-type CreateIndexResponse struct {
+// CreateDatasetInDocEngineResponse represents the response for creating a dataset table
+type CreateDatasetInDocEngineResponse struct {
 	KBID       string `json:"kb_id"`
-	IndexName  string `json:"index_name"`
+	TableName  string `json:"table_name"`
 	VectorSize int    `json:"vector_size"`
 }
 
-// CreateIndex creates an index in the document engine for a knowledge base
-func (s *KnowledgebaseService) CreateIndex(req *CreateIndexRequest) (*CreateIndexResponse, common.ErrorCode, error) {
-	// Get KB to find tenant_id for building index name
+// CreateDatasetInDocEngine creates a table in the document engine for a knowledge base
+func (s *KnowledgebaseService) CreateDatasetInDocEngine(req *CreateDatasetTableRequest) (*CreateDatasetInDocEngineResponse, common.ErrorCode, error) {
+	// Get KB to find tenant_id for building table name
 	kb, err := s.kbDAO.GetByID(req.KBID)
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("knowledge base not found: %s", req.KBID)
@@ -219,38 +217,38 @@ func (s *KnowledgebaseService) CreateIndex(req *CreateIndexRequest) (*CreateInde
 		return nil, common.CodeDataError, fmt.Errorf("vector_size must be positive")
 	}
 
-	// Build index name prefix: ragflow_<tenant_id>
-	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+	// Build table name prefix: ragflow_<tenant_id>
+	tableName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 
-	// Call document engine to create index
-	// Full table name will be built as "{indexName}_{kb_id}"
-	err = s.docEngine.CreateIndex(context.Background(), indexName, req.KBID, vecSize, req.ParserID)
+	// Call document engine to create table
+	// Full table name will be built as "{tableName}_{kb_id}"
+	err = s.docEngine.CreateDataset(context.Background(), tableName, req.KBID, vecSize, req.ParserID)
 	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to create index: %w", err)
+		return nil, common.CodeServerError, fmt.Errorf("failed to create dataset: %w", err)
 	}
 
-	return &CreateIndexResponse{
+	return &CreateDatasetInDocEngineResponse{
 		KBID:       req.KBID,
-		IndexName:  indexName,
+		TableName:  tableName,
 		VectorSize: vecSize,
 	}, common.CodeSuccess, nil
 }
 
-// DeleteIndex deletes the index in the document engine for a knowledge base
-func (s *KnowledgebaseService) DeleteIndex(kbID string) (common.ErrorCode, error) {
-	// Get KB to find tenant_id for building index name
+// DeleteDatasetInDocEngine deletes the table in the document engine for a knowledge base
+func (s *KnowledgebaseService) DeleteDatasetInDocEngine(kbID string) (common.ErrorCode, error) {
+	// Get KB to find tenant_id for building table name
 	kb, err := s.kbDAO.GetByID(kbID)
 	if err != nil {
 		return common.CodeDataError, fmt.Errorf("knowledge base not found: %s", kbID)
 	}
 
-	// Build index name: ragflow_<tenant_id>_<kb_id>
-	indexName := fmt.Sprintf("ragflow_%s_%s", kb.TenantID, kbID)
+	// Build table name: ragflow_<tenant_id>_<kb_id>
+	tableName := fmt.Sprintf("ragflow_%s_%s", kb.TenantID, kbID)
 
-	// Call document engine to delete index
-	err = s.docEngine.DeleteIndex(context.Background(), indexName)
+	// Call document engine to delete table
+	err = s.docEngine.DropTable(context.Background(), tableName)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("failed to delete index: %w", err)
+		return common.CodeServerError, fmt.Errorf("failed to delete table: %w", err)
 	}
 
 	return common.CodeSuccess, nil
@@ -549,11 +547,6 @@ func mergeParserConfig(base, override map[string]interface{}) map[string]interfa
 	}
 
 	return result
-}
-
-// GenerateUUID generates a UUID string without dashes
-func GenerateUUID() string {
-	return strings.ReplaceAll(uuid.New().String(), "-", "")
 }
 
 // GetUserByToken gets user by authorization token

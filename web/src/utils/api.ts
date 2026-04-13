@@ -83,7 +83,8 @@ export default {
   unbindPipelineTask: ({ kb_id, type }: { kb_id: string; type: string }) =>
     `${webAPI}/kb/unbind_task?kb_id=${kb_id}&pipeline_task_type=${type}`,
   pipelineRerun: `${webAPI}/canvas/rerun`,
-  getMetaData: `${webAPI}/document/metadata/summary`,
+  getMetaData: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
   updateMetaData: `${webAPI}/document/metadata/update`,
   kbUpdateMetaData: `${webAPI}/kb/update_metadata_setting`,
   documentUpdateMetaData: `${webAPI}/document/update_metadata_setting`,
@@ -109,7 +110,8 @@ export default {
   document_change_status: `${webAPI}/document/change_status`,
   document_rm: `${webAPI}/document/rm`,
   document_delete: `${webAPI}/api/document`,
-  document_rename: `${webAPI}/document/rename`,
+  document_rename: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
   document_create: `${webAPI}/document/create`,
   document_run: `${webAPI}/document/run`,
   document_change_parser: `${webAPI}/document/change_parser`,

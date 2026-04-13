@@ -253,7 +253,18 @@ class ESConnection(ESConnectionBase):
 
         if limit > 0 and not use_search_after:
             s = s[offset:offset + limit]
+        # Filter _source to only requested fields for efficiency, and add vector
+        # fields to "fields" param so they appear in hit.fields when ES 9.x
+        # exclude_source_vectors is enabled (dense_vector not in _source).
+        if select_fields:
+            s = s.source(select_fields)
         q = s.to_dict()
+        # ES 9.x: dense_vector fields excluded from _source; request them via fields.
+        # Note: knn does NOT have a "fields" parameter - adding it inside the knn
+        # object causes BadRequestError on ES 9.x. We add "fields" at top level.
+        vector_fields = [f for f in (select_fields or []) if f.endswith("_vec")]
+        if vector_fields:
+            q["fields"] = vector_fields
         self.logger.debug(f"ESConnection.search {str(index_names)} query: " + json.dumps(q))
 
         for i in range(ATTEMPT_TIME):
@@ -565,8 +576,24 @@ class ESConnection(ESConnectionBase):
         res_fields = {}
         if not fields:
             return {}
-        for d in self._get_source(res):
-            m = {n: d.get(n) for n in fields if d.get(n) is not None}
+        hits = res.get("hits", {}).get("hits", [])
+        for hit in hits:
+            doc_id = hit.get("_id")
+            d = hit.get("_source", {})
+            # Also extract fields from ES "fields" response (used by dense_vector in ES 9.x)
+            hit_fields = hit.get("fields", {})
+            m = {}
+            for n in fields:
+                # First check _source
+                if d.get(n) is not None:
+                    m[n] = d.get(n)
+                # Then check fields (ES 9.x stores dense_vector here, not in _source)
+                elif n in hit_fields:
+                    vals = hit_fields[n]
+                    # ES fields response wraps dense_vector in 2 levels: [[v1,v2,...]] -> [v1,v2,...]
+                    if isinstance(vals, list) and len(vals) == 1:
+                        vals = vals[0]
+                    m[n] = vals
             for n, v in m.items():
                 if isinstance(v, list):
                     m[n] = v
@@ -580,5 +607,5 @@ class ESConnection(ESConnectionBase):
                 #     m[n] = remove_redundant_spaces(m[n])
 
             if m:
-                res_fields[d["id"]] = m
+                res_fields[doc_id] = m
         return res_fields
