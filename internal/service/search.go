@@ -149,16 +149,6 @@ type CreateSearchResponse struct {
 // 5. Set fields: id, name, description, tenant_id, created_by
 // 6. Save to database within DB.atomic() transaction
 // 7. Return {search_id: id} on success
-//
-// Error handling from Python:
-// - Name not string: "Search name must be string."
-// - Name empty: "Search name can't be empty."
-// - Name too long: "Search name length is X which is larger than 255."
-// - Tenant not found: "Authorized identity."
-// - Save failure: generic get_data_error_result()
-//
-// Note: Go implementation validates these in handler layer for cleaner separation
-// Note: Similar pattern in: CreateMemory (memory.go), CreateDataset (datasets.go)
 func (s *SearchService) CreateSearch(userID string, name string, description *string) (*CreateSearchResponse, error) {
 	// Generate UUID for search ID (same as Python get_uuid())
 	searchID := common.GenerateUUID()
@@ -238,15 +228,105 @@ func (s *SearchService) GetSearchDetail(userID string, searchID string) (*entity
 func (s *SearchService) DeleteSearch(userID string, searchID string) error {
 	// Step 1: Check deletion permission (same as Python SearchService.accessible4deletion)
 	// Python: cls.model.select().where(cls.model.id == search_id, cls.model.created_by == user_id, cls.model.status == StatusEnum.VALID.value).first()
-	if !s.searchDAO.Accessible4Deletion(searchID, userID) {
+
+	status, err := s.searchDAO.Accessible4Deletion(searchID, userID)
+	if err != nil {
+		return fmt.Errorf("failed to check deletion permission: %w", err)
+	}
+
+	if !status {
 		return fmt.Errorf("no authorization")
 	}
 
 	// Step 2: Execute delete (same as Python SearchService.delete_by_id)
 	// Python: cls.model.delete().where(cls.model.id == pid).execute()
-	if err := s.searchDAO.DeleteByID(searchID); err != nil {
+	if err = s.searchDAO.DeleteByID(searchID); err != nil {
 		return fmt.Errorf("failed to delete search App %s: %w", searchID, err)
 	}
 
 	return nil
+}
+
+// UpdateSearchRequest update search request
+// Reference: api/apps/restful_apis/search_api.py::update
+// Required fields: name, search_config
+// Optional fields: description
+// Immutable fields: search_id, tenant_id, created_by, update_time, id (will be removed)
+type UpdateSearchRequest struct {
+	Name         string                 `json:"name" binding:"required"`
+	Description  *string                `json:"description,omitempty"`
+	SearchConfig map[string]interface{} `json:"search_config" binding:"required"`
+}
+
+func (s *SearchService) UpdateSearch(userID string, searchID string, req *UpdateSearchRequest) (*entity.Search, error) {
+	// Step 1: Check update permission (same as delete - uses accessible4deletion)
+	// Only creator can update
+
+	status, err := s.searchDAO.Accessible4Deletion(searchID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check deletion permission: %w", err)
+	}
+
+	if !status {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	// Step 2: Get existing search
+	// Python: search_app = SearchService.query(tenant_id=current_user.id, id=search_id)[0]
+	search, err := s.searchDAO.GetByTenantIDAndID(userID, searchID)
+	if err != nil {
+		return nil, fmt.Errorf("cannot find search %s", searchID)
+	}
+
+	// Step 3: Check for duplicate name (if name changed)
+	// Python: if req["name"].lower() != search_app.name.lower() and len(SearchService.query(...)) >= 1
+	trimmedName := req.Name
+	if search.Name != trimmedName {
+		existing, _ := s.searchDAO.GetByNameAndTenant(trimmedName, userID)
+		if len(existing) > 0 {
+			return nil, fmt.Errorf("duplicated search name")
+		}
+	}
+
+	// Step 4: Merge search_config
+	// Python: req["search_config"] = {**current_config, **new_config}
+	currentConfig := search.SearchConfig
+	if currentConfig == nil {
+		currentConfig = make(entity.JSONMap)
+	}
+	mergedConfig := make(entity.JSONMap)
+	// Copy current config
+	for k, v := range currentConfig {
+		mergedConfig[k] = v
+	}
+	// Merge new config
+	for k, v := range req.SearchConfig {
+		mergedConfig[k] = v
+	}
+
+	// Step 5: Prepare updates (excluding immutable fields)
+	// Python removes: search_id, tenant_id, created_by, update_time, id
+	updates := map[string]interface{}{
+		"name":          trimmedName,
+		"search_config": mergedConfig,
+	}
+
+	if req.Description != nil {
+		updates["description"] = *req.Description
+	}
+
+	// Step 6: Execute update
+	// Python: SearchService.update_by_id(search_id, req)
+	if err = s.searchDAO.UpdateByID(searchID, updates); err != nil {
+		return nil, fmt.Errorf("failed to update search: %w", err)
+	}
+
+	// Step 7: Fetch updated search
+	// Python: e, updated_search = SearchService.get_by_id(search_id)
+	updatedSearch, err := s.searchDAO.GetByID(searchID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch updated search: %w", err)
+	}
+
+	return updatedSearch, nil
 }
