@@ -1,0 +1,11 @@
+{
+  "label": "Developer guides",
+  "position": 5,
+  "link": {
+    "type": "generated-index",
+    "description": "Guides for hardcore developers"
+  },
+  "customProps": {
+    "sidebarIcon": "LucideWrench"
+  }
+}

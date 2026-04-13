@@ -1,0 +1,52 @@
+{
+  "name": "xAI",
+  "tags": "LLM",
+  "url": "https://api.x.ai/v1",
+  "url_suffix": {
+    "chat": "chat/completions"
+  },
+  "models": [
+    {
+      "name": "grok-4",
+      "max_tokens": 256000,
+      "model_types": ["llm"],
+      "features": {}
+    },
+    {
+      "name": "grok-3",
+      "max_tokens": 131072,
+      "model_types": ["llm"],
+      "features": {}
+    },
+    {
+      "name": "grok-3-fast",
+      "max_tokens": 131072,
+      "model_types": ["llm"],
+      "features": {}
+    },
+    {
+      "name": "grok-3-mini",
+      "max_tokens": 131072,
+      "model_types": ["llm"],
+      "features": {}
+    },
+    {
+      "name": "grok-3-mini-mini-fast",
+      "max_tokens": 131072,
+      "model_types": ["llm"],
+      "features": {}
+    },
+    {
+      "name": "grok-2-vision",
+      "max_tokens": 32768,
+      "model_types": ["vlm"],
+      "features": {
+        "multimodal": {
+          "enabled": true,
+          "input_modalities": ["image"],
+          "output_modalities": ["text"]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,2794 @@
+export default {
+  translation: {
+    common: {
+      confirm: 'Confirm',
+      back: 'Back',
+      noResults: 'No results found',
+      selectPlaceholder: 'Select value',
+      selectAll: 'Select all',
+      delete: 'Delete',
+      deleteModalTitle: 'Are you sure to delete it ?',
+      deleteThem: 'Are you sure to delete them ?',
+      ok: 'Ok',
+      cancel: 'Cancel',
+      yes: 'Yes',
+      no: 'No',
+      total: 'Total',
+      rename: 'Rename',
+      name: 'Name',
+      save: 'Save',
+      namePlaceholder: 'Please input name',
+      descriptionPlaceholder: 'Enter description',
+      next: 'Next',
+      create: 'Create',
+      edit: 'Edit',
+      upload: 'Upload',
+      english: 'English',
+      portugueseBr: 'Portuguese (Brazil)',
+      chinese: 'Simplified Chinese',
+      traditionalChinese: 'Traditional Chinese',
+      russian: 'Russian',
+      indonesian: 'Indonesian',
+      indonesia: 'Indonesian',
+      spanish: 'Spanish',
+      vietnamese: 'Vietnamese',
+      japanese: 'Japanese',
+      german: 'German',
+      french: 'French',
+      italian: 'Italian',
+      bulgarian: 'Bulgarian',
+      arabic: 'Arabic',
+      turkish: 'Turkish',
+      language: 'Language',
+      languageMessage: 'Please input your language!',
+      languagePlaceholder: 'select your language',
+      copy: 'Copy',
+      copied: 'Copied',
+      viewMore: 'View more',
+      viewLess: 'View less',
+      comingSoon: 'Coming soon',
+      download: 'Download',
+      close: 'Close',
+      preview: 'Preview',
+      move: 'Move',
+      warn: 'Warn',
+      action: 'Action',
+      s: 'S',
+      pleaseSelect: 'Please select',
+      pleaseInput: 'Please input',
+      submit: 'Submit',
+      clear: 'Clear',
+      embedIntoSite: 'Embed into webpage',
+      openInNewTab: 'Chat in new tab',
+      previousPage: 'Previous',
+      nextPage: 'Next',
+      add: 'Add',
+      remove: 'Remove',
+      search: 'Search',
+      noDataFound: 'No data found.',
+      noData: 'No data available',
+      promptPlaceholder: `Please input or use / to quickly insert variables.`,
+      mcp: {
+        namePlaceholder: 'My MCP server',
+        nameRequired:
+          'It must be 1–64 characters long and can only contain letters, numbers, hyphens, and underscores.',
+        urlPlaceholder: 'https://api.example.com/v1/mcp',
+        tokenPlaceholder: 'e.g. eyJhbGciOiJIUzI1Ni...',
+      },
+      selected: 'Selected',
+      seeAll: 'See all',
+      bulkOperate: 'Bulk operate',
+    },
+    login: {
+      loginTitle: 'Sign in to your account',
+      signUpTitle: 'Create an account',
+      login: 'Sign in',
+      signUp: 'Sign up',
+      loginDescription: 'We’re so excited to see you again!',
+      registerDescription: 'Glad to have you on board!',
+      emailLabel: 'Email',
+      emailPlaceholder: 'Please input email',
+      passwordLabel: 'Password',
+      passwordPlaceholder: 'Please input password',
+      rememberMe: 'Remember me',
+      signInTip: 'Don’t have an account?',
+      signUpTip: 'Already have an account?',
+      nicknameLabel: 'Nickname',
+      nicknamePlaceholder: 'Please input nickname',
+      register: 'Create an account',
+      continue: 'Continue',
+      title: 'A leading RAG engine for LLM context',
+      start: "Let's get started",
+      description:
+        'Sign up for free to explore top RAG technology. Create datasets and AIs to empower your business.',
+      review: 'from 500+ reviews',
+      seeAll: 'See all',
+    },
+    header: {
+      knowledgeBase: 'Dataset',
+      chat: 'Chat',
+      register: 'Register',
+      signin: 'Sign in',
+      home: 'Home',
+      setting: 'User settings',
+      logout: 'Log out',
+      fileManager: 'File',
+      flow: 'Agent',
+      search: 'Search',
+      welcome: 'Welcome to',
+      dataset: 'Dataset',
+      memories: 'Memory',
+    },
+    memories: {
+      llmTooltip:
+        'Analyzes conversation content, extracts key information, and generates structured memory summaries.',
+      embeddingModelTooltip:
+        'Converts text into numerical vectors for meaning similarity search and memory retrieval.',
+      embeddingModelError:
+        'Memory type is required and "raw" cannot be deleted.',
+      memoryTypeTooltip: `Raw: The raw dialogue content between the user and the agent (Required by default).
+Semantic Memory: General knowledge and facts about the user and world.
+Episodic Memory: Time-stamped records of specific events and experiences.
+Procedural Memory: Learned skills, habits, and automated procedures.`,
+      raw: 'raw',
+      semantic: 'semantic',
+      episodic: 'episodic',
+      procedural: 'procedural',
+      editName: 'Edit name',
+      memory: 'Memory',
+      createMemory: 'Create memory',
+      name: 'Name',
+      memoryNamePlaceholder: 'memory name',
+      memoryType: 'Memory type',
+      embeddingModel: 'Embedding model',
+      selectModel: 'Select model',
+      llm: 'LLM',
+      delMemoryWarn: `After deletion, all messages in this memory will be deleted and cannot be retrieved by agents.`,
+    },
+    memory: {
+      taskLogDialog: {
+        title: 'Memory',
+        startTime: 'Start time',
+        status: 'Status',
+        details: 'Details',
+
+        success: 'Success',
+        running: 'Running',
+        failed: 'Failed',
+      },
+
+      messages: {
+        forget: 'Forget',
+        forgetMessageTip: 'Are you sure you want to forget?',
+        messageDescription:
+          'Memory extract is configured with Prompts and Temperature from Advanced Settings.',
+        copied: 'Copied!',
+        contentEmbed: 'Content embed',
+        content: 'Content',
+        delMessageWarn: `After forgetting, this message will not be retrieved by agents.`,
+        forgetMessage: 'Forget message',
+        sessionId: 'Session ID',
+        agent: 'Agent',
+        type: 'Type',
+        validDate: 'Valid date',
+        forgetAt: 'Forget at',
+        source: 'Source',
+        enable: 'Enable',
+        action: 'Action',
+      },
+      config: {
+        descriptionPlaceholder: 'Describe your memory',
+        memorySizeTooltip: `Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes).
+Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default limit holds ~500 such messages.`,
+        avatar: 'Avatar',
+        description: 'Description',
+        memorySize: 'Memory size',
+        advancedSettings: 'Advanced settings',
+        permission: 'Permission',
+        onlyMe: 'Only me',
+        team: 'Team',
+        storageType: 'Storage type',
+        storageTypePlaceholder: 'Please select storage type',
+        forgetPolicy: 'Forget policy',
+        temperature: 'Temperature',
+        systemPrompt: 'System prompt',
+        systemPromptPlaceholder: 'Please enter system prompt',
+        userPrompt: 'User prompt',
+        userPromptPlaceholder: 'Please enter user prompt',
+      },
+      sideBar: {
+        messages: 'Messages',
+        configuration: 'Configuration',
+      },
+    },
+    knowledgeList: {
+      welcome: 'Welcome back',
+      description: 'Which datasets will you use today?',
+      createKnowledgeBase: 'Create dataset',
+      name: 'Name',
+      namePlaceholder: 'Please input name.',
+      doc: 'Docs',
+      searchKnowledgePlaceholder: 'Search',
+      noMoreData: `That's all. Nothing more.`,
+      parserRequired: 'Chunk method is required',
+      dataFlowRequired: 'Data flow is required',
+    },
+    knowledgeDetails: {
+      metadata: {
+        fields: 'fields',
+        selectFiles: 'Selected {{count}} files',
+        type: 'Type',
+        fieldNameInvalid: 'Field name can only contain letters or underscores.',
+        builtIn: 'Built-in',
+        generation: 'Generation',
+        toMetadataSetting: 'Generation settings',
+        toMetadataSettingTip: 'Set auto-metadata in Configuration.',
+        descriptionTip:
+          'Provide descriptions or examples to guide LLM extract values for this field. If left empty, it will rely on the field name.',
+        restrictDefinedValuesTip:
+          'Enum Mode: Restricts LLM extraction to match preset values only. Define values below.',
+        valueExists:
+          'Value already exists. Confirm to merge duplicates and combine all associated files.',
+        fieldNameExists:
+          'Field name already exists. Confirm to merge duplicates and combine all associated files.',
+        valueSingleExists:
+          'Value already exists. Confirm to merge duplicates .',
+        fieldSingleNameExists:
+          'Field name already exists. Confirm to merge duplicates .',
+        fieldExists: 'Field already exists.',
+        fieldSetting: 'Field settings',
+        changesAffectNewParses: 'Changes affect new parses only.',
+        // editMetadataForDataset: 'View and edit metadata for ',
+        restrictDefinedValues: 'Restrict to defined values',
+        metadataGenerationSettings: 'Metadata generation settings',
+        // manageMetadataForDataset: 'Manage metadata for this dataset',
+        manageMetadata: 'Manage metadata',
+        metadata: 'Metadata',
+        values: 'Values',
+        value: 'Value',
+        action: 'Action',
+        field: 'Field',
+        description: 'Description',
+        fieldName: 'Field name',
+        editMetadata: 'Edit metadata',
+        addMetadata: 'Add metadata',
+        deleteWarn: 'This {{field}} will be removed from all associated files',
+        deleteManageFieldAllWarn:
+          'This field and all its corresponding values will be deleted from all associated files.',
+        deleteManageValueAllWarn:
+          'This value will be deleted from all associated files.',
+        deleteManageFieldSingleWarn:
+          'This field and all its corresponding values will be deleted from this file.',
+        deleteManageValueSingleWarn:
+          'This value will be deleted from this file.',
+        deleteSettingFieldWarn: `This field will be deleted; existing metadata won't be affected.`,
+        deleteSettingValueWarn: `This value will be deleted; existing metadata won't be affected.`,
+      },
+      redoAll: 'Clear existing chunks',
+      applyAutoMetadataSettings: 'Apply global auto-metadata settings',
+      parseFileTip: 'Are you sure to parse?',
+      parseFile: 'Parse file',
+      emptyMetadata: 'No metadata',
+      metadataField: 'Metadata field',
+      systemAttribute: 'System attribute',
+      localUpload: 'Local upload',
+      fileSize: 'File size',
+      fileType: 'File type',
+      uploadedBy: 'Uploaded by',
+      notGenerated: 'Not generated',
+      generatedOn: 'Generated on ',
+      subbarFiles: 'Files',
+      generateKnowledgeGraph:
+        'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
+      generateRaptor:
+        'Performs recursive clustering and summarization of document chunks to build a hierarchical tree structure, enabling more context-aware retrieval across lengthy documents.',
+      generate: 'Generate',
+      raptor: 'RAPTOR',
+      processingType: 'Processing type',
+      dataPipeline: 'Switch or configure ingestion pipeline.',
+      operations: 'Operations',
+      taskId: 'Task ID',
+      duration: 'Duration',
+      details: 'Details',
+      status: 'Status',
+      task: 'Task',
+      startDate: 'Start date',
+      source: 'Source',
+      fileName: 'File name',
+      datasetLogs: 'Dataset',
+      fileLogs: 'File',
+      overview: 'Logs',
+      success: 'Success',
+      failed: 'Failed',
+      completed: 'Completed',
+      datasetLog: 'Dataset log',
+      created: 'Created',
+      learnMore: 'Built-in pipeline introduction',
+      general: 'General',
+      chunkMethodTab: 'Chunk method',
+      testResults: 'Results',
+      testSetting: 'Setting',
+      retrievalTesting: 'Retrieval testing',
+      retrievalTestingDescription:
+        'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM.',
+      Parse: 'Parse',
+      dataset: 'Dataset',
+      testing: 'Retrieval testing',
+      files: 'files',
+      configuration: 'Configuration',
+      knowledgeGraph: 'Knowledge graph',
+      name: 'Name',
+      namePlaceholder: 'Please input name!',
+      doc: 'Docs',
+      datasetDescription:
+        'Please wait for your files to finish parsing before starting an AI-powered chat.',
+      addFile: 'Add file',
+      searchFiles: 'Search your files',
+      localFiles: 'Local files',
+      emptyFiles: 'Create empty file',
+      webCrawl: 'Web crawl',
+      chunkNumber: 'Chunks',
+      uploadDate: 'Upload date',
+      chunkMethod: 'Chunking method',
+      enabled: 'Enable',
+      disabled: 'Disable',
+      action: 'Action',
+      parsingStatus: 'Parsing status',
+      parsingStatusTip:
+        'Document parsing time varies based on several factors. Enabling features like Knowledge Graph, RAPTOR, Auto Question Extraction, or Auto Keyword Extraction will significantly increase processing time. If the progress bar stalls, please consult these two FAQs: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
+      processBeginAt: 'Begin at',
+      processDuration: 'Duration',
+      progressMsg: 'Progress',
+      noTestResultsForRuned:
+        'No relevant results found. Try adjusting your query or parameters.',
+      noTestResultsForNotRuned:
+        'No test has been run yet. Results will appear here.',
+      testingDescription:
+        'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
+      similarityThreshold: 'Similarity threshold',
+      similarityThresholdTip:
+        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 0.2. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
+      vectorSimilarityWeight: 'Vector similarity weight',
+      vectorSimilarityWeightTip:
+        'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
+      keywordSimilarityWeight: 'Keyword similarity weight',
+      keywordSimilarityWeightTip:
+        'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
+      testText: 'Test text',
+      testTextPlaceholder: 'Input your question here!',
+      testingLabel: 'Run',
+      similarity: 'Hybrid similarity',
+      termSimilarity: 'Term similarity',
+      vectorSimilarity: 'Vector similarity',
+      hits: 'Hits',
+      view: 'View',
+      filesSelected: 'Files selected',
+      upload: 'Upload',
+      run: 'Parse',
+      runningStatus0: 'Pending',
+      runningStatus1: 'Parsing',
+      runningStatus2: 'Cancelled',
+      runningStatus3: 'Success',
+      runningStatus4: 'Fail',
+      pageRanges: 'Page ranges',
+      pageRangesTip:
+        'Range of pages to be parsed; pages outside this range will not be processed.',
+      fromPlaceholder: 'from',
+      fromMessage: 'Missing start page number',
+      toPlaceholder: 'to',
+      toMessage: 'Missing end page number (excluded)',
+      layoutRecognize: 'PDF parser',
+      layoutRecognizeTip:
+        'Use a visual model for PDF layout analysis to effectively locate document titles, text blocks, images, and tables. If the naive option is chosen, only the plain text in the PDF will be retrieved. Please note that this option currently works ONLY for PDF documents.',
+      taskPageSize: 'Task page size',
+      taskPageSizeMessage: 'Please input your task page size!',
+      taskPageSizeTip: `During layout recognition, a PDF file is split into chunks and processed in parallel to increase processing speed. This parameter sets the size of each chunk. A larger chunk size reduces the likelihood of splitting continuous text between pages.`,
+      addPage: 'Add page',
+      greaterThan: 'The current value must be greater than to!',
+      greaterThanPrevious:
+        'The current value must be greater than the previous to!',
+      selectFiles: 'Select files',
+      changeSpecificCategory: 'Change specific category',
+      uploadTitle: 'Drag and drop your file here to upload',
+      uploadDescription:
+        'Supports single or batch file upload. For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. For cloud.ragflow.io, the total file size limit per upload is 10MB, with each file not exceeding 10MB and a maximum of 128 files per account.',
+      chunk: 'Chunk',
+      bulk: 'Bulk',
+      cancel: 'Cancel',
+      close: 'Close',
+      rerankModel: 'Rerank model',
+      rerankPlaceholder: 'Select value',
+      rerankTip: `Optional. If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity. Please be aware that using a rerank model will significantly increase the system's response time. If you wish to use a rerank model, ensure you use a SaaS reranker; if you prefer a locally deployed rerank model, ensure you start RAGFlow with docker-compose-gpu.yml.`,
+      topK: 'Top-K',
+      topKTip: `Used together with the Rerank model, this setting defines the number of text chunks to be sent to the specified reranking model.`,
+      delimiter: `Delimiter for text`,
+      delimiterTip:
+        'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
+      enableChildrenDelimiter: 'Child chunk are used for retrieval',
+      childrenDelimiter: 'Delimiter for text',
+      childrenDelimiterTip:
+        'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
+
+      html4excel: 'Excel to HTML',
+      html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dev/enable_excel2html for details.`,
+      autoKeywords: 'Auto-keyword',
+      autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoQuestions: 'Auto-question',
+      autoQuestionsTip: `Automatically extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      redo: 'Do you want to clear the existing {{chunkNum}} chunks?',
+      setMetaData: 'Set metadata',
+      pleaseInputJson: 'Please enter JSON',
+      documentMetaTips: `<p>The metadata is in Json format(it's not searchable). It will be added into prompt for LLM if any chunks of this document are included in the prompt.</p>
+<p>Examples:</p>
+<b>The metadata is:</b><br>
+<code>
+  {
+      "Author": "Alex Dowson",
+      "Date": "2024-11-12"
+  }
+</code><br>
+<b>The prompt will be:</b><br>
+<p>Document: the_name_of_document</p>
+<p>Author: Alex Dowson</p>
+<p>Date: 2024-11-12</p>
+<p>Relevant fragments as following:</p>
+<ul>
+<li>  Here is the chunk content....</li>
+<li>  Here is the chunk content....</li>
+</ul>
+`,
+      metaData: 'Meta data',
+      deleteDocumentConfirmContent:
+        'The document is associated with the knowledge graph. After deletion, the related node and relationship information will be deleted, but the graph will not be updated immediately. The update graph action is performed during the process of parsing the new document that carries the knowledge graph extraction task.',
+      plainText: 'Naive',
+      reRankModelWaring: 'Re-rank model is very time consuming.',
+    },
+    knowledgeConfiguration: {
+      randomSeedTip:
+        'Seed is the starting point for a pseudo-random algorithm that ensures reproducibility of the same output across different runs.',
+      datasetDescription: 'Describe your dataset',
+      overlappedPercentTip: 'The overlapped percent between two nearby chunks',
+      globalIndexModelTip:
+        'Used to generate Knowledge graphs, RAPTOR, auto-metadata, auto-keyword and auto-question. Model performance will affects generation quality.',
+      globalIndexModel: 'Indexing model',
+      settings: 'Settings',
+      autoMetadataTip: `Automatically generate metadata. Applies to new files during parsing. Existing files require re-parsing to update (chunks remain preserved). Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'.`,
+      imageTableContextWindow: 'Image & table context window',
+      imageTableContextWindowTip:
+        'Captures N tokens of text above and below the image & table to provide richer background context.',
+      autoMetadata: 'Auto metadata',
+      mineruOptions: 'MinerU options',
+      mineruParseMethod: 'Parse method',
+      mineruParseMethodTip:
+        'Method for parsing PDF: auto (automatic detection), txt (text extraction), ocr (optical character recognition)',
+      mineruFormulaEnable: 'Formula recognition',
+      mineruFormulaEnableTip:
+        'Enable formula recognition. Note: This may not work correctly for Cyrillic documents.',
+      mineruTableEnable: 'Table recognition',
+      mineruTableEnableTip: 'Enable table recognition and extraction.',
+      paddleocrOptions: 'PaddleOCR Options',
+      paddleocrApiUrl: 'PaddleOCR API URL',
+      paddleocrApiUrlTip: 'The API endpoint URL for PaddleOCR service',
+      paddleocrApiUrlPlaceholder:
+        'e.g. https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'AI Studio Access Token',
+      paddleocrAccessTokenTip: 'Access token for PaddleOCR API (optional)',
+      paddleocrAccessTokenPlaceholder: 'Your AI Studio token (optional)',
+      paddleocrAlgorithm: 'PaddleOCR Algorithm',
+      paddleocrAlgorithmTip: 'Algorithm to use for PaddleOCR parsing',
+      paddleocrSelectAlgorithm: 'Select Algorithm',
+      paddleocrModelNamePlaceholder: 'e.g. paddleocr-from-env-1',
+      overlappedPercent: 'Overlapped percent(%)',
+      generationScopeTip:
+        'Determines whether RAPTOR is generated for the entire dataset or for a single file.',
+      scopeDataset: 'Dataset',
+      generationScope: 'Generation scope',
+      scopeSingleFile: 'Single file',
+      autoParse: 'Auto parse',
+      rebuildTip:
+        'Re-downloads files from the linked data source and parses them again.',
+      baseInfo: 'Basic',
+      globalIndex: 'Global index',
+      dataSource: 'Data source',
+      linkSourceSetTip: 'Manage data source linkage with this dataset',
+      linkDataSource: 'Link data source',
+      tocExtraction: 'PageIndex',
+      tocExtractionTip:
+        " For existing chunks, generate a hierarchical table of contents (one directory per file). During queries, when Directory Enhancement is activated, the system will use a large model to determine which directory items are relevant to the user's question, thereby identifying the relevant chunks.",
+      deleteGenerateModalContent: `
+        <p>Deleting the generated <strong class='text-text-primary'>{{type}}</strong>  results
+        will remove all derived entities and relationships from this dataset.
+        Your original files will remain intact.<p>
+        <br/>
+        Do you want to continue?
+      `,
+      extractRaptor: 'Extract Raptor',
+      extractKnowledgeGraph: 'Extract knowledge graph',
+      filterPlaceholder: 'please input filter',
+      fileFilterTip: '',
+      fileFilter: 'File filter',
+      setDefaultTip: '',
+      setDefault: 'Set as default',
+      editLinkDataPipeline: 'Edit ingestion pipeline',
+      linkPipelineSetTip: 'Manage ingestion pipeline linkage with this dataset',
+      default: 'Default',
+      dataPipeline: 'Switch or configure ingestion pipeline.',
+      linkDataPipeline: 'Link ingestion pipeline',
+      enableAutoGenerate: 'Enable auto generate',
+      teamPlaceholder: 'Please select a team.',
+      dataFlowPlaceholder: 'Please select a pipeline.',
+      buildItFromScratch: 'Build it from scratch',
+      dataFlow: 'Pipeline',
+      parseType: 'Parse type',
+      manualSetup: 'Pipeline',
+      builtIn: 'Built-in',
+      titleDescription:
+        'Update your dataset configuration here, particularly the LLM and prompts.',
+      name: 'Dataset name',
+      photo: 'Dataset photo',
+      photoTip: 'You can upload an image up to 4 MB.',
+      description: 'Description',
+      language: 'Document language',
+      languageMessage: 'Please input your language!',
+      languagePlaceholder: 'Please input your language!',
+      permissions: 'Permissions',
+      embeddingModel: 'Embedding model',
+      chunkTokenNumber: 'Recommended chunk size',
+      chunkTokenNumberMessage: 'Chunk token number for text is required',
+      embeddingModelTip:
+        'The default embedding model used by the dataset. Once the dataset has chunks, when switching the embedding model, the system randomly samples a few chunks for a compatibility check, re-embeds them with the new embedding model, and computes cosine similarity between the new and old vectors. Switching is allowed only when the average similarity of the sample is ≥ 0.9. Otherwise, you must delete all chunks in the dataset before you can change it.',
+      permissionsTip:
+        "If it is set to 'Team', all your team members will be able to manage the dataset.",
+      chunkTokenNumberTip:
+        'It kind of sets the token threshold for a creating a chunk. A segment with fewer tokens than this threshold will be combined with the following segments until the token count exceeds the threshold, at which point a chunk is created. No new chunk is created unless a delimiter is encountered, even if the threshold is exceeded.',
+      chunkMethod: 'Chunking method',
+      chunkMethodTip: 'View the tips on the right.',
+      upload: 'Upload',
+      english: 'English',
+      chinese: 'Chinese',
+      portugueseBr: 'Portuguese (Brazil)',
+      embeddingModelPlaceholder: 'Please select a embedding model.',
+      chunkMethodPlaceholder: 'Please select a chunking method.',
+      parserLabel: {
+        naive: 'General',
+        qa: 'Q&A',
+        resume: 'Resume',
+        manual: 'Manual',
+        table: 'Table',
+        paper: 'Paper',
+        book: 'Book',
+        laws: 'Laws',
+        presentation: 'Presentation',
+        picture: 'Picture',
+        one: 'One',
+        audio: 'Audio',
+        email: 'Email',
+        tag: 'Tag',
+      },
+      save: 'Save',
+      me: 'Only me',
+      team: 'Team',
+      cancel: 'Cancel',
+      methodTitle: 'Chunking method description',
+      methodExamples: 'Examples',
+      methodExamplesDescription:
+        'The following screenshots are provided for clarification.',
+      dialogueExamplesTitle: 'view',
+      methodEmpty:
+        'This will display a visual explanation of the dataset categories',
+      book: `<p>Supported file formats are <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
+      For each book in PDF, please set the <i>page ranges</i> to remove unwanted information and reduce analysis time.</p>`,
+      laws: `<p>Supported file formats are <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
+      Legal documents typically follow a rigorous writing format. We use text feature to identify split point.
+      </p><p>
+      The chunk has a granularity consistent with 'ARTICLE', ensuring all upper level text is included in the chunk.
+      </p>`,
+      manual: `<p>Only <b>PDF</b> is supported.</p><p>
+      We assume that the manual has a hierarchical section structure, using the lowest section titles as basic unit for chunking documents. Therefore, figures and tables in the same section will not be separated, which may result in larger chunk sizes.
+      </p>`,
+      naive: `<p>Supported file formats are <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPTX, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
+      <p>This method chunks files using a 'naive' method: </p>
+      <p>
+      <ul>
+      <li>Use vision detection model to split the texts into smaller segments.</li>
+      <li>Then, combine adjacent segments until the token count exceeds the threshold specified by 'Chunk token number for text', at which point a chunk is created.</li></ul></p>`,
+      paper: `<p>Only <b>PDF</b> file is supported.</p><p>
+      Papers will be split by section, such as <i>abstract, 1.1, 1.2</i>. </p><p>
+      This approach enables the LLM to summarize the paper more effectively and to provide more comprehensive, understandable responses.
+      However, it also increases the context for AI conversations and adds to the computational cost for the LLM. So during a conversation, consider reducing the value of ‘<b>topN</b>’.</p>`,
+      presentation: `<p>Supported file formats are <b>PDF</b>, <b>PPTX</b>.</p><p>
+      Every page in the slides is treated as a chunk, with its thumbnail image stored.</p><p>
+      <i>This chunking method is automatically applied to all uploaded PPT files, so you do not need to specify it manually.</i></p>`,
+      qa: `
+      <p>
+      This chunking method supports <b>XLSX</b> and <b>CSV/TXT</b> file formats.
+    </p>
+    <ul>
+    <li>
+      If a file is in <b>XLSX</b> or <b>XLS (Excel 97-2003)</b> format, it should contain two columns without headers: one for questions and the other for answers, with the question column preceding the answer column. Multiple sheets are
+      acceptable, provided the columns are properly structured.
+    </li>
+    <li>
+      If a file is in <b>CSV/TXT</b> format, it must be UTF-8 encoded with TAB as the delimiter to separate questions and answers.
+    </li>
+    </ul>
+    <p>
+      <i>
+        Lines of texts that fail to follow the above rules will be ignored, and
+        each Q&A pair will be considered a distinct chunk.
+      </i>
+    </p>
+      `,
+      resume: `<p>Supported file formats are <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.
+      </p><p>
+      Résumés of various forms are parsed and organized into structured data to facilitate candidate search for recruiters.
+      </p>
+      `,
+      table: `<p>Supported file formats are <b>XLSX</b> and <b>CSV/TXT</b>.</p><p>
+      Here are some prerequisites and tips:
+      <ul>
+    <li>For CSV or TXT file, the delimiter between columns must be <em><b>TAB</b></em>.</li>
+    <li>The first row must be column headers.</li>
+    <li>Column headers must be meaningful terms to aid your LLM's understanding.
+    It is good practice to juxtapose synonyms separated by a slash <i>'/'</i> and to enumerate values using brackets, for example: <i>'Gender/Sex (male, female)'</i>.<p>
+    Here are some examples of headers:<ol>
+        <li>supplier/vendor<b>'TAB'</b>Color (Yellow, Blue, Brown)<b>'TAB'</b>Sex/Gender (male, female)<b>'TAB'</b>size (M, L, XL, XXL)</li>
+        </ol>
+        </p>
+    </li>
+    <li>Every row in table will be treated as a chunk.</li>
+    </ul>`,
+      picture: `
+    <p>Image files are supported, with video support coming soon.</p><p>
+    This method employs an OCR model to extract texts from images.
+    </p><p>
+    If the text extracted by the OCR model is deemed insufficient, a specified visual LLM will be used to provide a description of the image.
+    </p>`,
+      one: `
+    <p>Supported file formats are <b>DOCX, XLSX, XLS (Excel 97-2003), PDF, TXT</b>.
+    </p><p>
+    This method treats each document in its entirety as a chunk.
+    </p><p>
+    Applicable when you require the LLM to summarize the entire document, provided it can handle that amount of context length.
+    </p>`,
+      knowledgeGraph: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>
+
+<p>This approach chunks files using the 'naive'/'General' method. It splits a document into segments and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number for text', at which point a chunk is created.</p>
+<p>The chunks are then fed to the LLM to extract entities and relationships for a knowledge graph and a mind map.</p>
+<p>Ensure that you set the <b>Entity types</b>.</p>`,
+      tag: `<p>A dataset using the 'Tag' chunking method functions as a tag set. Other datasets use it to tag their chunks, and queries to these datasets are also tagged using this tag set.</p>
+<p>A tag set will <b>NOT</b> be directly involved in a Retrieval-Augmented Generation (RAG) process.</p>
+<p>Each chunk in this dataset is an independent description-tag pair.</p>
+<p>Supported file formats include <b>XLSX</b> and <b>CSV/TXT</b>:</p>
+<p>If a file is in <b>XLSX</b> format, it should contain two columns without headers: one for tag descriptions and the other for tag names, with the Description column preceding the Tag column. Multiple sheets are acceptable, provided the columns are properly structured.</p>
+<p>If a file is in <b>CSV/TXT</b> format, it must be UTF-8 encoded with TAB as the delimiter to separate descriptions and tags.</p>
+<p>In a Tag column, <b>comma</b> is used to separate tags.</p>
+<i>Lines of texts that fail to follow the above rules will be ignored.</i>
+`,
+      useRaptor: 'RAPTOR',
+      useRaptorTip:
+        'RAPTOR can be used for multi-hop question-answering tasks. Navigate to the Files page, click Generate > RAPTOR to enable it. See https://ragflow.io/docs/dev/enable_raptor for details.',
+      prompt: 'Prompt',
+      promptTip:
+        'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
+      promptMessage: 'Prompt is required',
+      promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
+      {cluster_content}
+The above is the content you need to summarize.`,
+      maxToken: 'Max token',
+      maxTokenTip: 'The maximum number of tokens per generated summary chunk.',
+      maxTokenMessage: 'Max token is required',
+      threshold: 'Threshold',
+      thresholdTip:
+        'In RAPTOR, chunks are clustered by their semantic similarity. The Threshold parameter sets the minimum similarity required for chunks to be grouped together. A higher Threshold means fewer chunks in each cluster, while a lower one means more.',
+      thresholdMessage: 'Threshold is required',
+      maxCluster: 'Max cluster',
+      maxClusterTip: 'The maximum number of clusters to create.',
+      maxClusterMessage: 'Max cluster is required',
+      randomSeed: 'Random seed',
+      randomSeedMessage: 'Random seed is required',
+      entityTypes: 'Entity types',
+      vietnamese: 'Vietnamese',
+      pageRank: 'Page rank',
+      pageRankTip: `You can assign a higher PageRank score to specific datasets during retrieval. The corresponding score is added to the hybrid similarity scores of retrieved chunks from these datasets, increasing their ranking. See https://ragflow.io/docs/dev/set_page_rank for details.`,
+      tagName: 'Tag',
+      frequency: 'Frequency',
+      searchTags: 'Search tags',
+      tagCloud: 'Cloud',
+      tagTable: 'Table',
+      tagSet: 'Tag sets',
+      tagSetTip: `
+     <p> Select one or multiple tag datasets to auto-tag chunks in your dataset. See https://ragflow.io/docs/dev/use_tag_sets for details.</p>
+<p>The user query will also be auto-tagged.</p>
+This auto-tagging feature enhances retrieval by adding another layer of domain-specific knowledge to the existing dataset.
+<p>Difference between auto-tag and auto-keyword:</p>
+<ul>
+  <li>A tag dataset is a user-defined close set, whereas keywords extracted by the LLM can be regarded as an open set.</li>
+  <li>You must upload tag sets in specified formats before running the auto-tag feature.</li>
+  <li>The auto-keyword feature is dependent on the LLM and consumes a significant number of tokens.</li>
+</ul>
+      `,
+      topnTags: 'Top-N tags',
+      tags: 'Tags',
+      addTag: 'Add tag',
+      useGraphRag: 'Knowledge graph',
+      useGraphRagTip:
+        'Construct a knowledge graph over file chunks of the current dataset to enhance multi-hop question-answering involving nested logic. See https://ragflow.io/docs/dev/construct_knowledge_graph for details.',
+      graphRagMethod: 'Method',
+      graphRagMethodTip: `
+      Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>
+      General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships`,
+      resolution: 'Entity resolution',
+      resolutionTip: `An entity deduplication switch. When enabled, the LLM will combine similar entities - e.g., '2025' and 'the year of 2025', or 'IT' and 'Information Technology' - to construct a more accurate graph`,
+      community: 'Community reports',
+      communityTip:
+        'In a knowledge graph, a community is a cluster of entities linked by relationships. You can have the LLM generate an abstract for each community, known as a community report. See here for more information: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
+      theDocumentBeingParsedCannotBeDeleted:
+        'The document being parsed cannot be deleted',
+      lastWeek: 'from last week',
+    },
+    chunk: {
+      type: 'Type',
+      docType: {
+        image: 'Image',
+        table: 'Table',
+        text: 'Text',
+      },
+      size: 'Size',
+      uploadedTime: 'Uploaded time',
+      chunk: 'Chunk',
+      bulk: 'Bulk',
+      selectAll: 'Select all',
+      enabledSelected: 'Enable selected',
+      disabledSelected: 'Disable selected',
+      deleteSelected: 'Delete selected',
+      search: 'Search',
+      all: 'All',
+      enabled: 'Enabled',
+      disabled: 'Disabled',
+      keyword: 'Keyword',
+      image: 'Image',
+      imageUploaderTitle: 'Upload a new image to update this image chunk',
+      function: 'Function',
+      chunkMessage: 'Please input value!',
+      full: 'Full text',
+      ellipse: 'Ellipse',
+      graph: 'Knowledge graph',
+      mind: 'Mind map',
+      question: 'Question',
+      questionTip: `If there are given questions, the embedding of the chunk will be based on them.`,
+      chunkResult: 'Chunk result',
+      chunkResultTip: `View the chunked segments used for embedding and retrieval.`,
+      enable: 'Enable',
+      disable: 'Disable',
+      delete: 'Delete',
+    },
+    chat: {
+      messagePlaceholder: 'Type your message here...',
+      exit: 'Exit',
+      multipleModels: 'Multiple models',
+      applyModelConfigs: 'Apply model configs',
+      conversations: 'Conversations',
+      chatApps: 'Chat apps',
+      newConversation: 'New conversation',
+      createAssistant: 'Create an assistant',
+      assistantSetting: 'Assistant settings',
+      promptEngine: 'Prompt engine',
+      modelSetting: 'Model settings',
+      chat: 'Chat',
+      newChat: 'New chat',
+      send: 'Send',
+      sendPlaceholder: 'Message the assistant...',
+      chatConfiguration: 'Chat configuration',
+      chatConfigurationDescription:
+        ' Set up a chat assistant for your selected datasets (datasets) here! 💕',
+      assistantName: 'Assistant name',
+      assistantNameMessage: 'Assistant name is required',
+      namePlaceholder: 'e.g. Resume Jarvis',
+      assistantAvatar: 'Assistant avatar',
+      language: 'Language',
+      emptyResponse: 'Empty response',
+      emptyResponseTip: `Set this as a response if no results are retrieved from the datasets for your query, or leave this field blank to allow the LLM to improvise when nothing is found.`,
+      emptyResponseMessage: `Empty response will be triggered when nothing relevant is retrieved from datasets. You must clear the 'Empty response' field if no dataset is selected.`,
+      emptyResponsePlaceholder:
+        'The answer you are looking for is not found in the dataset!',
+      setAnOpener: 'Opening greeting',
+      setAnOpenerInitial: `Hi! I'm your assistant. What can I do for you?`,
+      setAnOpenerTip: 'Set an opening greeting for users.',
+      knowledgeBases: 'Datasets',
+      knowledgeBasesPlaceholder: 'Select value',
+      knowledgeBasesMessage: 'Please select',
+      knowledgeBasesTip:
+        'Select the datasets to associate with this chat assistant. An empty dataset will not appear in the dropdown list.',
+      system: 'System prompt',
+      systemPlaceholder: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
+
+**Essential Rules:**
+  - Your answer must be derived **solely** from this dataset: {knowledge}.
+  - **When information is available**: Summarize the content to give a detailed answer.
+  - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the knowledge base!"
+  - **Always consider** the entire conversation history.`,
+      systemInitialValue: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
+
+      **Essential Rules:**
+        - Your answer must be derived **solely** from this dataset: \`{knowledge}\`.
+        - **When information is available**: Summarize the content to give a detailed answer.
+        - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the dataset!"
+        - **Always consider** the entire conversation history.`,
+      systemMessage: 'Please input!',
+      systemTip:
+        'Your prompts or instructions for the LLM, including but not limited to its role, the desired length, tone, and language of its answers. If your model has native support for reasoning, you can add //no_thinking add the prompt to stop reasoning.',
+      topN: 'Top N',
+      topNTip: `Not all chunks with similarity score above the 'similarity threshold' will be sent to the LLM. This selects 'Top N' chunks from the retrieved ones.`,
+      variable: 'Variable',
+      variableTip: `Used together with RAGFlow's chat assistant management APIs, variables can help develop more flexible system prompt strategies. The defined variables will be used by 'System prompt' as part of the prompts for the LLM. {knowledge} is a reserved special variable representing chunks retrieved from specified dataset(s), and all variables should be enclosed in curly braces {} in the 'System prompt'. See https://ragflow.io/docs/dev/set_chat_variables for details.`,
+      add: 'Add',
+      key: 'Key',
+      optional: 'Optional',
+      operation: 'Operation',
+      model: 'Model',
+      modelTip: 'Large language chat model',
+      modelMessage: 'Please select!',
+      modelEnabledTools: 'Enabled tools',
+      modelEnabledToolsTip:
+        'Please select one or more tools for the chat model to use. It takes no effect for models not supporting tool call.',
+      freedom: 'Creativity',
+      improvise: 'Improvise',
+      precise: 'Precise',
+      balance: 'Balance',
+      custom: 'Custom',
+      freedomTip: `A shortcut to 'Temperature', 'Top P', 'Presence penalty', and 'Frequency penalty' settings, indicating the freedom level of the model. This parameter has three options: Select 'Improvise' to produce more creative responses; select 'Precise' (default) to produce more conservative responses; 'Balance' is a middle ground between 'Improvise' and 'Precise'.`,
+      temperature: 'Temperature',
+      temperatureMessage: 'Temperature is required',
+      temperatureTip: `This parameter controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses.`,
+      topP: 'Top P',
+      topPMessage: 'Top P is required',
+      topPTip:
+        'Also known as "nucleus sampling", this parameter sets a threshold for selecting a smaller set of the most likely words to sample from, cutting off the less probable ones.',
+      presencePenalty: 'Presence penalty',
+      presencePenaltyMessage: 'Presence penalty is required',
+      presencePenaltyTip:
+        'This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation.',
+      frequencyPenalty: 'Frequency penalty',
+      frequencyPenaltyMessage: 'Frequency penalty is required',
+      frequencyPenaltyTip:
+        'Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently.',
+      maxTokens: 'Max tokens',
+      maxTokensMessage: 'Max tokens is required',
+      maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. Defaults to 512.`,
+      maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
+      maxTokensMinMessage: 'Max tokens cannot be less than 0.',
+      quote: 'Show quote',
+      quoteTip: 'Whether to display the original text as a reference.',
+      selfRag: 'Self-RAG',
+      selfRagTip: 'Please refer to: https://huggingface.co/papers/2310.11511',
+      overview: 'Chat ID',
+      pv: 'Number of messages',
+      uv: 'Active user number',
+      speed: 'Token output speed',
+      tokens: 'Consume the token number',
+      round: 'Session Interaction Number',
+      thumbUp: 'customer satisfaction',
+      preview: 'Preview',
+      embedded: 'Embedded',
+      serviceApiEndpoint: 'Service API endpoint',
+      apiKey: 'API KEY',
+      apiReference: 'API documents',
+      dateRange: 'Date range:',
+      backendServiceApi: 'API server',
+      createNewKey: 'Create new key',
+      created: 'Created',
+      action: 'Action',
+      embedModalTitle: 'Embed into webpage',
+      published: 'Published',
+      publishedTooltip:
+        'Use the published version for this embed. When enabled, the generated URL includes release=true.',
+      embedType: 'Embed type',
+      fullscreenChat: 'Fullscreen chat (traditional iframe)',
+      floatingWidget: 'Floating widget (Intercom-style)',
+      theme: 'Theme',
+      light: 'Light',
+      dark: 'Dark',
+      enableStreaming: 'Enable streaming responses',
+      comingSoon: 'Coming soon',
+      fullScreenTitle: 'Full embed',
+      fullScreenDescription:
+        'Embed the following iframe into your website at the desired location',
+      partialTitle: 'Partial embed',
+      extensionTitle: 'Chrome extension',
+      tokenError: 'Please create API key first.',
+      betaError:
+        'Please acquire a RAGFlow API key from the System Settings page first.',
+      searching: 'Searching...',
+      parsing: 'Parsing',
+      uploading: 'Uploading',
+      uploadFailed: 'Upload failed',
+      regenerate: 'Regenerate',
+      read: 'Read content',
+      tts: 'Text to speech',
+      ttsTip:
+        'Ensure you select a TTS model on the Settings page before enabling this toggle to play text as audio.',
+      relatedQuestion: 'Related question',
+      answerTitle: 'R',
+      multiTurn: 'Multi-turn optimization',
+      multiTurnTip:
+        'This optimizes user queries using context in a multi-round conversation. When enabled, it will consume additional LLM tokens.',
+      howUseId: 'How to use chat ID?',
+      description: 'Description of assistant',
+      descriptionPlaceholder: "I'm a chat assistant.",
+      useKnowledgeGraph: 'Use knowledge graph',
+      useKnowledgeGraphTip:
+        'Whether to use knowledge graph(s) in the specified dataset(s) during retrieval for multi-hop question answering. When enabled, this would involve iterative searches across entity, relationship, and community report chunks, greatly increasing retrieval time.',
+      keyword: 'Keyword analysis',
+      keywordTip: `Use LLM to analyze user's questions, extract keywords which will be emphasize during the relevance computation. Works well with lengthy queries but will increase response time.`,
+      languageTip:
+        'Allows sentence rewriting with the specified language or defaults to the latest question if not selected.',
+      avatarHidden: 'Hide avatar',
+      locale: 'Locale',
+      selectLanguage: 'Select a language',
+      reasoning: 'Reasoning',
+      reasoningTip: `Whether to enable a reasoning workflow during question answering, as seen in models like Deepseek-R1 or OpenAI o1. When enabled, this allows the model to access external knowledge and tackle complex questions in a step-by-step manner, leveraging techniques like chain-of-thought reasoning. This approach enhances the model's ability to provide accurate responses by breaking down problems into manageable steps, improving performance on tasks that require logical reasoning and multi-step thinking.`,
+      tavilyApiKeyTip:
+        'If an API key is correctly set here, Tavily-based web searches will be used to supplement dataset retrieval.',
+      tavilyApiKeyMessage: 'Please enter your Tavily API Key',
+      tavilyApiKeyHelp: 'How to get it?',
+      crossLanguage: 'Cross-language search',
+      crossLanguagePlaceholder: 'Select value',
+      crossLanguageTip: `Select one or more languages for cross‑language search. If no language is selected, the system searches with the original query.`,
+      createChat: 'Create chat',
+      metadata: 'Meta data',
+      metadataTip:
+        'Metadata filtering is the process of using metadata attributes (such as tags, categories, or access permissions) to refine and control the retrieval of relevant information within a system.',
+      conditions: 'Conditions',
+      metadataKeys: 'Filterable items',
+      addCondition: 'Add condition',
+      meta: {
+        disabled: 'Disabled',
+        auto: 'Automatic',
+        manual: 'Manual',
+        semi_auto: 'Semi-automatic',
+      },
+      cancel: 'Cancel',
+      chatSetting: 'Chat setting',
+      tocEnhance: 'PageIndex',
+      tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach mimics human information-searching behavior in books.`,
+      batchDeleteSessions: 'Batch delete',
+      deleteSelectedConfirm: 'Delete the selected {{count}} session(s)?',
+    },
+    setting: {
+      Verify: 'Verify',
+      keyValid: 'Your API key is valid.',
+      keyInvalid: 'Your API key is invalid.',
+      deleteModel: 'Delete model',
+      bedrockCredentialsHint:
+        'Tip: Leave Access Key / Secret Key blank to use AWS IAM authentication.',
+      awsAuthModeAccessKeySecret: 'Access Key',
+      awsAuthModeIamRole: 'IAM Role',
+      awsAuthModeAssumeRole: 'Assume Role',
+      awsAccessKeyId: 'AWS Access Key ID',
+      awsSecretAccessKey: 'AWS Secret Access Key',
+      awsRoleArn: 'AWS Role ARN',
+      awsRoleArnMessage: 'Please enter AWS Role ARN',
+      awsAssumeRoleTip:
+        'If you select this mode, the Amazon EC2 instance will assume its existing role to access AWS services. No additional credentials are required.',
+      modelEmptyTip:
+        'No models available. <br>Please add models from the panel on the right.',
+      sourceEmptyTip: 'No data sources added yet. Select one below to connect.',
+      seconds: 'seconds',
+      minutes: 'minutes',
+      edit: 'Edit',
+      cropTip:
+        'Drag the selection area to choose the cropping position of the image, and scroll to zoom in/out',
+      cropImage: 'Crop image',
+      selectModelPlaceholder: 'Select model',
+      configureModelTitle: 'Configure model',
+      connectorNameTip: 'A descriptive name for the connector',
+      syncDeletedFiles: 'Sync deleted files',
+      confluenceIsCloudTip:
+        'Check if this is a Confluence Cloud instance, uncheck for Confluence Server/Data Center',
+      confluenceWikiBaseUrlTip:
+        'The base URL of your Confluence instance (e.g., https://your-domain.atlassian.net/wiki)',
+      confluenceSpaceKeyTip:
+        'Optional: Specify a space key to limit syncing to a specific space. Leave empty to sync all accessible spaces. For multiple spaces, separate with commas (e.g., DEV,DOCS,HR)',
+      s3PrefixTip: `Specify the folder path within your S3 bucket to fetch files from.
+Example: general/v2/`,
+      S3CompatibleEndpointUrlTip: `Required for S3 compatible Storage Box. Specify the S3-compatible endpoint URL.
+Example: https://fsn1.your-objectstorage.com`,
+      S3CompatibleAddressingStyleTip: `Required for S3 compatible Storage Box. Specify the S3-compatible addressing style.
+Example: Virtual Hosted Style`,
+      addDataSourceModalTitle: 'Create your {{name}} connector',
+      deleteSourceModalTitle: 'Delete data source',
+      deleteSourceModalContent: `
+      <p>Are you sure you want to delete this data source link?</p>`,
+      deleteSourceModalConfirmText: 'Confirm',
+      errorMsg: 'Error message',
+      newDocs: 'New docs',
+      timeStarted: 'Time started',
+      log: 'Log',
+      rssDescription:
+        'Connect to a public RSS or Atom feed and sync feed entries into your knowledge base.',
+      confluenceDescription:
+        'Integrate your Confluence workspace to search documentation.',
+      s3Description:
+        'Connect to your AWS S3 bucket to import and sync stored files.',
+      google_cloud_storageDescription:
+        'Connect your Google Cloud Storage bucket to import and sync files.',
+      r2Description:
+        'Connect your Cloudflare R2 bucket to import and sync files.',
+      oci_storageDescription:
+        'Connect your Oracle Cloud Object Storage bucket to import and sync files.',
+      discordDescription:
+        'Link your Discord server to access and analyze chat data.',
+      notionDescription:
+        'Sync pages and databases from Notion for knowledge retrieval.',
+      google_driveDescription:
+        'Connect your Google Drive via OAuth and sync specific folders or drives.',
+      gmailDescription: 'Connect your Gmail via OAuth to sync emails.',
+      webdavDescription: 'Connect to WebDAV servers to sync files.',
+      webdavRemotePathTip:
+        'Optional: Specify a folder path on the WebDAV server (e.g., /Documents). Leave empty to sync from root.',
+      google_driveTokenTip:
+        'Upload the OAuth token JSON generated from the OAuth helper or Google Cloud Console. You may also upload a client_secret JSON from an "installed" or "web" application. If this is your first sync, a browser window will open to complete the OAuth consent. If the JSON already contains a refresh token, it will be reused automatically.',
+      google_drivePrimaryAdminTip:
+        'Email address that has access to the Drive content being synced',
+      zendeskDescription:
+        'Connect your Zendesk to sync tickets, articles, and other content.',
+      google_driveMyDriveEmailsTip:
+        'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
+      google_driveSharedFoldersTip:
+        'Comma-separated Google Drive folder links to crawl.',
+      gmailPrimaryAdminTip:
+        'Primary admin email with Gmail / Workspace access, used to enumerate domain users and as the default sync account.',
+      gmailTokenTip:
+        'Upload the OAuth JSON generated from Google Console. If it only contains client credentials, run the browser-based verification once to mint long-lived refresh tokens.',
+      dropboxDescription:
+        'Connect your Dropbox to sync files and folders from a chosen account.',
+      bitbucketDescription: 'Connect Bitbucket to sync PR content.',
+      bitbucketTopWorkspaceTip:
+        'The Bitbucket workspace to index (e.g., "atlassian" from https://bitbucket.org/atlassian/workspace ).',
+      bitbucketRepositorySlugsTip:
+        'Comma separated repository slugs. E.g., repo-one,repo-two',
+      bitbucketProjectsTip: 'Comma separated project keys. E.g., PROJ1,PROJ2',
+      bitbucketWorkspaceTip:
+        'This connector will index all repositories in the workspace.',
+      boxDescription: 'Connect your Box drive to sync files and folders.',
+
+      githubDescription:
+        'Connect GitHub to sync pull requests and issues for retrieval.',
+      airtableDescription:
+        'Connect to Airtable and synchronize files from a specified table within a designated workspace.',
+      dingtalkAITableDescription:
+        'Connect to Dingtalk AI Table and synchronize records from a specified table.',
+      gitlabDescription:
+        'Connect GitLab to sync repositories, issues, merge requests, and related documentation.',
+      asanaDescription:
+        'Connect to Asana and synchronize files from a specified workspace.',
+      imapDescription:
+        'Connect to your IMAP mailbox to sync emails for knowledge retrieval.',
+      dropboxAccessTokenTip:
+        'Generate a long-lived access token in the Dropbox App Console with files.metadata.read, files.content.read, and sharing.read scopes.',
+      moodleDescription:
+        'Connect to your Moodle LMS to sync course content, forums, and resources.',
+      moodleUrlTip:
+        'The base URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
+      moodleTokenTip:
+        'Generate a web service token in Moodle: Go to Site administration → Server → Web services → Manage tokens. The user must be enrolled in the courses you want to sync.',
+      seafileDescription:
+        'Connect to your SeaFile server to synchronise files and documents from your libraries.',
+      seafileUrlTip:
+        'The full URL of your SeaFile server including the protocol. Example: https://seafile.example.com - Do not include a trailing slash or any path after the domain.',
+      seafileAccountScopeTip:
+        'Syncs all libraries visible to the Account API Token below.',
+      seafileTokenPanelHeading: 'Provide one of these authentication methods:',
+      seafileTokenPanelAccountBullet: '- grants access to all your libraries.',
+      seafileTokenPanelLibraryBullet:
+        '— scoped to a single library only (more secure).',
+      seafileValidationAccountTokenRequired:
+        'Account API Token is required for Entire Account scope',
+      seafileValidationTokenRequired:
+        'Provide either an Account API Token or a Library Token',
+      seafileValidationLibraryIdRequired: 'Library ID is required',
+      seafileValidationDirectoryPathRequired: 'Directory Path is required',
+      seafileSyncScopeTip:
+        'Controls what gets synchronised: ' +
+        '(1) Entire Account - Syncs all libraries your token has access to. Requires an Account API Token. ' +
+        '(2) Single Library - Syncs all files within one specific library. Requires the Library ID and either an Account API Token or a Library API Token. ' +
+        '(3) Specific Directory - Syncs only files within a specific folder inside a library. Requires the Library ID, the folder path within that library, and either an Account API Token or a Library API Token.',
+      seafileTokenTip:
+        'Your account-level SeaFile API token. ' +
+        'Grants access to all libraries visible to your account. ' +
+        'Required when sync scope is "Entire Account". ' +
+        'For "Single Library" or "Specific Directory" you can use this token or a Library API Token instead.',
+      seafileRepoTokenTip:
+        'A library-scoped API token that only grants access to one specific library. ' +
+        'Can be used instead of the Account API Token for "Single Library" and "Specific Directory" sync scopes.',
+      seafileRepoIdTip:
+        'The unique identifier (UUID) of the SeaFile library you want to synchronise. ' +
+        'You can find it in your browser address bar when you open the library in the SeaFile web interface. ' +
+        'Example: 7a9e1b3c-4d5f-6a7b-8c9d-0e1f2a3b4c5d. ' +
+        'Required when sync scope is "Single Library" or "Specific Directory".',
+      seafileSyncPathTip:
+        'The absolute path of the folder to synchronise within the library specified by the Library ID above. ' +
+        'Must start with a forward slash. ' +
+        'All files and subfolders under this path will be included recursively. ' +
+        'Example: /Documents/Reports. ' +
+        'Important: The folder must exist inside the specified library. ' +
+        'Paths outside the library are not supported. ' +
+        'Only used when sync scope is "Specific Directory".',
+      seafileIncludeSharedTip:
+        'When enabled, libraries that other users have shared with you are included in the synchronisation. ' +
+        'When disabled, only libraries owned by your account are synchronised. ' +
+        'Only applies when sync scope is "Entire Account".',
+      seafileBatchSizeTip:
+        'The number of documents processed and returned per batch during synchronisation. ' +
+        'A smaller value uses less memory but may be slower overall. ' +
+        'Default: 100.',
+      jiraDescription:
+        'Connect your Jira workspace to sync issues, comments, and attachments.',
+      jiraBaseUrlTip:
+        'Base URL of your Jira site (e.g., https://your-domain.atlassian.net).',
+      jiraProjectKeyTip:
+        'Optional: limit syncing to a single project key (e.g., ENG).',
+      jiraJqlTip:
+        'Optional JQL filter. Leave blank to rely on project/time filters.',
+      jiraBatchSizeTip:
+        'Maximum number of issues requested from Jira per batch.',
+      jiraCommentsTip:
+        'Include Jira comments in the generated markdown document.',
+      jiraAttachmentsTip:
+        'Download attachments as separate documents during sync.',
+      jiraAttachmentSizeTip:
+        'Attachments larger than this number of bytes will be skipped.',
+      jiraLabelsTip:
+        'Labels that should be skipped while indexing (comma separated).',
+      jiraBlacklistTip:
+        'Comments whose author email matches these entries will be ignored.',
+      jiraScopedTokenTip:
+        'Enable this when using scoped Atlassian tokens (api.atlassian.com).',
+      jiraEmailTip: 'Email associated with the Jira account/API token.',
+      jiraTokenTip:
+        'API token generated from https://id.atlassian.com/manage-profile/security/api-tokens.',
+      jiraPasswordTip:
+        'Optional password for Jira Server/Data Center environments.',
+      mysqlDescription:
+        'Connect to MySQL database to sync data from tables using SQL queries.',
+      mysqlQueryTip:
+        'SQL query to extract data from your database (e.g., SELECT * FROM products WHERE status = "active").',
+      mysqlContentColumnsTip:
+        'Comma-separated column names whose values will be combined as document content for vectorization.',
+      mysqlMetadataColumnsTip:
+        'Comma-separated column names to store as document metadata (not vectorized, but searchable).',
+      mysqlIdColumnTip:
+        'Column to use as unique document ID. If not specified, a hash of the content will be used.',
+      mysqlTimestampColumnTip:
+        'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      postgresqlDescription:
+        'Connect to PostgreSQL database to sync data from tables using SQL queries.',
+      postgresqlQueryTip:
+        "SQL query to extract data from your database (e.g., SELECT * FROM products WHERE status = 'active').",
+      postgresqlContentColumnsTip:
+        'Comma-separated column names whose values will be combined as document content for vectorization.',
+      postgresqlMetadataColumnsTip:
+        'Comma-separated column names to store as document metadata (not vectorized, but searchable).',
+      postgresqlIdColumnTip:
+        'Column to use as unique document ID. If not specified, a hash of the content will be used.',
+      postgresqlTimestampColumnTip:
+        'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      availableSourcesDescription: 'Select a data source to add',
+      availableSources: 'Available sources',
+      datasourceDescription: 'Manage your data source and connections',
+      save: 'Save',
+      search: 'Search',
+      availableModels: 'Available models',
+      profile: 'Profile',
+      avatar: 'Avatar',
+      avatarTip: 'This will be displayed on your profile.',
+      profileDescription: 'Update your photo and personal details here.',
+      maxTokens: 'Max tokens',
+      maxTokensMessage: 'Max tokens is required',
+      maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. Defaults to 512.`,
+      maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
+      maxTokensMinMessage: 'Max tokens cannot be less than 0.',
+      password: 'Password',
+      passwordDescription:
+        'Please enter your current password to change your password.',
+      model: 'Model providers',
+      systemModelDescription: 'Please complete these settings before beginning',
+      dataSources: 'Data sources',
+      team: 'Team',
+      system: 'System',
+      logout: 'Log out',
+      api: 'API',
+      username: 'Name',
+      usernameMessage: 'Please input your username!',
+      photo: 'Your photo',
+      photoDescription: 'This will be displayed on your profile.',
+      colorSchema: 'Color schema',
+      colorSchemaMessage: 'Please select your color schema!',
+      colorSchemaPlaceholder: 'select your color schema',
+      bright: 'Bright',
+      dark: 'Dark',
+      timezone: 'Time zone',
+      timezoneMessage: 'Please input your timezone!',
+      timezonePlaceholder: 'select your timezone',
+      email: 'Email',
+      emailDescription: 'Once registered, E-mail cannot be changed.',
+      currentPassword: 'Current password',
+      currentPasswordMessage: 'Please input your password!',
+      newPassword: 'New password',
+      changePassword: 'Change password',
+      newPasswordMessage: 'Please input your password!',
+      newPasswordDescription:
+        'Your new password must be more than 8 characters.',
+      confirmPassword: 'Confirm new password',
+      confirmPasswordMessage: 'Please confirm your password!',
+      confirmPasswordNonMatchMessage:
+        'The new password that you entered do not match!',
+      cancel: 'Cancel',
+      addedModels: 'Added models',
+      modelsToBeAdded: 'Models to be added',
+      addTheModel: 'Add',
+      apiKey: 'API-Key',
+      apiKeyMessage: 'Please enter the API key',
+      apiKeyTip:
+        'The API key can be obtained by registering the corresponding LLM supplier.',
+      showMoreModels: 'View models',
+      hideModels: 'Hide models',
+      baseUrl: 'Base-Url',
+      baseUrlTip:
+        'If your API key is from OpenAI, just ignore it. Any other intermediate providers will give this base url with the API key.',
+      tongyiBaseUrlTip:
+        'For Chinese users, no need to fill in or use https://dashscope.aliyuncs.com/compatible-mode/v1. For international users, use https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'For Chinese users, no need to fill in or use https://api.siliconflow.cn/v1. For international users, use https://api.siliconflow.com/v1',
+      tongyiBaseUrlPlaceholder: '(International users only, please see tip)',
+      minimaxBaseUrlTip:
+        'International users only: use https://api.minimax.io/v1',
+      minimaxBaseUrlPlaceholder:
+        '(International users only, fill in https://api.minimax.io/v1)',
+      modify: 'Modify',
+      systemModelSettings: 'Set default models',
+      chatModel: 'LLM',
+      chatModelTip: 'The default LLM for each newly created dataset.',
+      embeddingModel: 'Embedding',
+      embeddingModelTip:
+        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+      img2txtModel: 'VLM',
+      img2txtModelTip:
+        'The default VLM for each newly created dataset. It describes a picture or video. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+      sequence2txtModel: 'ASR',
+      sequence2txtModelTip:
+        'The default ASR model for each newly created dataset. Use this model to translate voices to corresponding text.',
+      rerankModel: 'Rerank',
+      rerankModelTip: `The default rerank model for reranking chunks. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.`,
+      ttsModel: 'TTS',
+      ttsModelTip:
+        'The default text-to-speech model. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+      workspace: 'workspace',
+      upgrade: 'Upgrade',
+      addLlmTitle: 'Add LLM',
+      editLlmTitle: 'Edit {{name}} model',
+      editModel: 'Edit model',
+      modelName: 'Model name',
+      modelID: 'Model ID',
+      modelUid: 'Model UID',
+      modelNameMessage: 'Please input your model name!',
+      modelType: 'Model type',
+      modelTypeMessage: 'Please input your model type!',
+      addLlmBaseUrl: 'Base url',
+      baseUrlNameMessage: 'Please input your base url!',
+      paddleocr: {
+        apiUrl: 'PaddleOCR API URL',
+        apiUrlPlaceholder:
+          'For example: https://paddleocr-server.com/layout-parsing',
+        accessToken: 'AI Studio Access Token',
+        accessTokenPlaceholder: 'Your AI Studio token (optional)',
+        algorithm: 'PaddleOCR Algorithm',
+        selectAlgorithm: 'Select Algorithm',
+        modelNamePlaceholder: 'For example: paddleocr-from-env-1',
+        modelNameRequired: 'Model name is required',
+        apiUrlRequired: 'PaddleOCR API URL is required',
+      },
+      vision: 'Does it support Vision?',
+      ollamaLink: 'How to integrate {{name}}',
+      FishAudioLink: 'How to use FishAudio',
+      TencentCloudLink: 'How to use TencentCloud ASR',
+      volcModelNameMessage: 'Please input your model name!',
+      addEndpointID: 'EndpointID of the model',
+      endpointIDMessage: 'Please input your EndpointID of the model',
+      addArkApiKey: 'VOLC ARK_API_KEY',
+      ArkApiKeyMessage: 'Please input your ARK_API_KEY',
+      bedrockModelNameMessage: 'Please input your model name!',
+      addBedrockEngineAK: 'ACCESS KEY',
+      bedrockAKMessage: 'Please input your ACCESS KEY',
+      addBedrockSK: 'SECRET KEY',
+      bedrockSKMessage: 'Please input your SECRET KEY',
+      bedrockRegion: 'AWS region',
+      bedrockRegionMessage: 'Please select!',
+      'us-east-2': 'US East (Ohio)',
+      'us-east-1': 'US East (N. Virginia)',
+      'us-west-1': 'US West (N. California)',
+      'us-west-2': 'US West (Oregon)',
+      'af-south-1': 'Africa (Cape Town)',
+      'ap-east-1': 'Asia Pacific (Hong Kong)',
+      'ap-south-2': 'Asia Pacific (Hyderabad)',
+      'ap-southeast-3': 'Asia Pacific (Jakarta)',
+      'ap-southeast-5': 'Asia Pacific (Malaysia)',
+      'ap-southeast-4': 'Asia Pacific (Melbourne)',
+      'ap-south-1': 'Asia Pacific (Mumbai)',
+      'ap-northeast-3': 'Asia Pacific (Osaka)',
+      'ap-northeast-2': 'Asia Pacific (Seoul)',
+      'ap-southeast-1': 'Asia Pacific (Singapore)',
+      'ap-southeast-2': 'Asia Pacific (Sydney)',
+      'ap-east-2': 'Asia Pacific (Taipei)',
+      'ap-southeast-7': 'Asia Pacific (Thailand)',
+      'ap-northeast-1': 'Asia Pacific (Tokyo)',
+      'ca-central-1': 'Canada (Central)',
+      'ca-west-1': 'Canada West (Calgary)',
+      'eu-central-1': 'Europe (Frankfurt)',
+      'eu-west-1': 'Europe (Ireland)',
+      'eu-west-2': 'Europe (London)',
+      'eu-south-1': 'Europe (Milan)',
+      'eu-west-3': 'Europe (Paris)',
+      'eu-south-2': 'Europe (Spain)',
+      'eu-north-1': 'Europe (Stockholm)',
+      'eu-central-2': 'Europe (Zurich)',
+      'il-central-1': 'Israel (Tel Aviv)',
+      'mx-central-1': 'Mexico (Central)',
+      'me-south-1': 'Middle East (Bahrain)',
+      'me-central-1': 'Middle East (UAE)',
+      'sa-east-1': 'South America (São Paulo)',
+      'us-gov-east-1': 'AWS GovCloud (US-East)',
+      'us-gov-west-1': 'AWS GovCloud (US-West)',
+      addTencentCloudSID: 'TencentCloud Secret ID',
+      TencentCloudSIDMessage: 'Please input your Secret ID',
+      addTencentCloudSK: 'TencentCloud Secret Key',
+      TencentCloudSKMessage: 'Please input your Secret Key',
+      SparkModelNameMessage: 'Please select Spark model',
+      addSparkAPIPassword: 'Spark APIPassword',
+      SparkAPIPasswordMessage: 'please input your APIPassword',
+      addSparkAPPID: 'Spark APP ID',
+      SparkAPPIDMessage: 'please input your APP ID',
+      addSparkAPISecret: 'Spark APISecret',
+      SparkAPISecretMessage: 'please input your APISecret',
+      addSparkAPIKey: 'Spark APIKey',
+      SparkAPIKeyMessage: 'please input your APIKey',
+      yiyanModelNameMessage: 'Please input model name',
+      addyiyanAK: 'yiyan API KEY',
+      yiyanAKMessage: 'Please input your API KEY',
+      addyiyanSK: 'yiyan Secret KEY',
+      yiyanSKMessage: 'Please input your Secret KEY',
+      FishAudioModelNameMessage:
+        'Please give your speech synthesis model a name',
+      addFishAudioAK: 'Fish Audio API KEY',
+      addFishAudioAKMessage: 'Please input your API KEY',
+      addFishAudioRefID: 'FishAudio Reference ID',
+      addFishAudioRefIDMessage:
+        'Please input the Reference ID (leave blank to use the default model).',
+      GoogleModelIDMessage: 'Please input your model ID!',
+      addGoogleProjectID: 'Project ID',
+      GoogleProjectIDMessage: 'Please input your Project ID',
+      addGoogleServiceAccountKey:
+        'Service Account Key(Leave blank if you use Application Default Credentials)',
+      GoogleServiceAccountKeyMessage:
+        'Please input Google Cloud Service Account Key in base64 format',
+      addGoogleRegion: 'Google Cloud Region',
+      GoogleRegionMessage: 'Please input Google Cloud Region',
+      modelProvidersWarn: `Please add both embedding model and LLM in <b>Settings > Model providers</b> first. Then, set them in 'Set default models'.`,
+      apiVersion: 'API-Version',
+      apiVersionMessage: 'Please input API version',
+      add: 'Add',
+      updateDate: 'Date',
+      role: 'State',
+      invite: 'Invite member',
+      agree: 'Accept',
+      refuse: 'Decline',
+      teamMembers: 'Team members',
+      joinedTeams: 'Joined teams',
+      sureDelete: 'Are you sure to remove this member?',
+      quit: 'Quit',
+      sureQuit: 'Are you sure you want to quit the team you joined?',
+      secretKey: 'Secret key',
+      publicKey: 'Public key',
+      secretKeyMessage: 'Please enter the secret key',
+      publicKeyMessage: 'Please enter the public key',
+      hostMessage: 'Please enter the host',
+      configuration: 'Configuration',
+      langfuseDescription:
+        'Traces, evals, prompt management and metrics to debug and improve your LLM application.',
+      viewLangfuseSDocumentation: "View Langfuse's documentation",
+      view: 'View',
+      modelsToBeAddedTooltip:
+        'If your model provider is not listed but claims to be "OpenAI-compatible", select the OpenAI-API-compatible card to add the relevant model(s). ',
+      mcp: 'MCP',
+      mineru: {
+        modelNameRequired: 'Model name is required',
+        apiServerRequired: 'MinerU API Server Configuration is required',
+        serverUrlBackendLimit:
+          'MinerU Server URL Address is only available for the HTTP client backend',
+        apiserver: 'MinerU API Server Configuration',
+        outputDir: 'MinerU Output Directory Path',
+        backend: 'MinerU Processing Backend Type',
+        serverUrl: 'MinerU Server URL Address',
+        deleteOutput: 'Delete Output Files After Processing',
+        selectBackend: 'Select processing backend',
+        backendOptions: {
+          pipeline: 'Standard Pipeline Processing',
+          vlmTransformers: 'Vision Language Model with Transformers',
+          vlmVllmEngine: 'Vision Language Model with vLLM Engine',
+          vlmHttpClient: 'Vision Language Model via HTTP Client',
+          vlmMlxEngine: 'Vision Language Model with MLX Engine',
+          vlmVllmAsyncEngine:
+            'Vision Language Model with vLLM Async Engine (Experimental)',
+          vlmLmdeployEngine:
+            'Vision Language Model with LMDeploy Engine (Experimental)',
+        },
+      },
+      modelTypes: {
+        chat: 'Chat',
+        embedding: 'Embedding',
+        rerank: 'Rerank',
+        sequence2text: 'sequence2text',
+        tts: 'TTS',
+        image2text: 'OCR',
+        speech2text: 'ASR',
+      },
+      showToc: 'Show content',
+      hideToc: 'Hide content',
+    },
+    message: {
+      registered: 'Registered!',
+      logout: 'logout',
+      logged: 'logged!',
+      pleaseSelectChunk: 'Please select chunk!',
+      registerDisabled: 'User registration is disabled',
+      modified: 'Modified',
+      created: 'Created',
+      deleted: 'Deleted',
+      renamed: 'Renamed',
+      operated: 'Operated',
+      updated: 'Updated',
+      uploaded: 'Uploaded',
+      200: 'The server successfully returns the requested data.',
+      201: 'Create or modify data successfully.',
+      202: 'A request has been queued in the background (asynchronous task).',
+      204: 'Data deleted successfully.',
+      400: 'There was an error in the request issued, and the server did not create or modify data.',
+      401: 'Please sign in again.',
+      403: 'The user is authorized, but access is prohibited.',
+      404: 'The request was made for a record that does not exist, and the server did not perform the operation.',
+      406: 'The requested format is not available.',
+      410: 'The requested resource has been permanently deleted and will not be available again.',
+      413: 'The total size of the files uploaded at once is too large.',
+      422: 'When creating an object, a validation error occurred.',
+      500: 'A server error occurred, please check the server.',
+      502: 'Gateway error.',
+      503: 'The service is unavailable and the server is temporarily overloaded or undergoing maintenance.',
+      504: 'Gateway timeout.',
+      requestError: 'Request error',
+      networkAnomalyDescription:
+        'There is an abnormality in your network and you cannot connect to the server.',
+      networkAnomaly: 'network anomaly',
+      hint: 'hint',
+    },
+    fileManager: {
+      uploadFolderTitle: 'Upload folder',
+      folder: 'Folder',
+      files: 'Files',
+      name: 'Name',
+      uploadDate: 'Upload date',
+      knowledgeBase: 'Dataset',
+      size: 'Size',
+      action: 'Action',
+      addToKnowledge: 'Link to dataset',
+      pleaseSelect: 'Please select',
+      newFolder: 'New folder',
+      file: 'File',
+      uploadFile: 'Upload file',
+      parseOnCreation: 'Parse on creation',
+      directory: 'Directory',
+      uploadTitle: 'Drag and drop your file here to upload',
+      uploadDescription:
+        'Supports single or batch file upload. For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. For cloud.ragflow.io, the total file size limit per upload is 10MB, with each file not exceeding 10MB and a maximum of 128 files per account.',
+      local: 'Local uploads',
+      s3: 'S3 uploads',
+      preview: 'Preview',
+      fileError: 'File error',
+      uploadLimit:
+        'Each file must not exceed 10MB, and the total number of files must not exceed 128.',
+      destinationFolder: 'Destination folder',
+      pleaseUploadAtLeastOneFile: 'Please upload at least one file',
+    },
+    flow: {
+      preprocess: {
+        preprocess: 'Preprocess',
+        mainContent: 'Main content',
+        abstract: 'Abstract',
+        author: 'Author',
+        sectionTitle: 'Section title',
+      },
+      autoPlay: 'Auto play audio',
+      downloadFileTypeTip: 'The file type to download',
+      downloadFileType: 'Download file type',
+      formatTypeError: 'Format or type error',
+      variableNameMessage:
+        'Variable name can only contain letters and underscores and numbers',
+      variableDescription: 'Variable description',
+      defaultValue: 'Default value',
+      conversationVariable: 'Conversation variable',
+      recommended: 'Recommended',
+      customerSupport: 'Customer support',
+      marketing: 'Marketing',
+      consumerApp: 'Consumer app',
+      other: 'Other',
+      ingestionPipeline: 'Ingestion pipeline',
+      agents: 'Agents',
+      publishedAt: 'Published at',
+      days: 'Days',
+      beginInput: 'Begin input',
+      ref: 'Variable',
+      stockCode: 'Stock code',
+      apiKeyPlaceholder:
+        'YOUR_API_KEY (obtained from https://serpapi.com/manage-api-key)',
+      flowStart: 'Start',
+      flowNum: 'N',
+      test: 'Test',
+      extractDepth: 'Extract depth',
+      format: 'Format',
+      basic: 'basic',
+      advanced: 'advanced',
+      general: 'general',
+      searchDepth: 'Search depth',
+      tavilyTopic: 'Tavily topic',
+      maxResults: 'Max results',
+      includeAnswer: 'Include answer',
+      includeRawContent: 'Include raw content',
+      includeImages: 'Include images',
+      includeImageDescriptions: 'Include image descriptions',
+      includeDomains: 'Include domains',
+      ExcludeDomains: 'Exclude domains',
+      Days: 'Days',
+      comma: 'Comma',
+      semicolon: 'Semicolon',
+      period: 'Period',
+      lineBreak: 'Line break',
+      tab: 'Tab',
+      space: 'Space',
+      delimiters: 'Delimiters',
+      one: 'One',
+      oneChunkTitle: 'Note',
+      oneChunkDescription:
+        'All parsed sections will be merged in order into a single chunk.',
+      enableChildrenDelimiters: 'Child chunk are used for retrieval',
+      merge: 'Merge',
+      split: 'Split',
+      script: 'Script',
+      iterationItemDescription:
+        'It represents the current element in the iteration, which can be referenced and manipulated in subsequent steps.',
+      guidingQuestion: 'Guidance question',
+      onFailure: 'On failure',
+      userPromptDefaultValue:
+        'This is the order you need to send to the agent.',
+      search: 'Search',
+      communication: 'Communication',
+      developer: 'Developer',
+      typeCommandORsearch: 'Type a command or search...',
+      builtIn: 'Built-in',
+      ExceptionDefaultValue: 'Exception default value',
+      exceptionMethod: 'Exception method',
+      maxRounds: 'Max reflection rounds',
+      delayAfterError: 'Delay after error',
+      maxRetries: 'Max retry rounds',
+      advancedSettings: 'Advanced settings',
+      addTools: 'Add tools',
+      sysPromptDefaultValue: `
+      <role>
+        You are a helpful assistant, an AI assistant specialized in problem-solving for the user.
+        If a specific domain is provided, adapt your expertise to that domain; otherwise, operate as a generalist.
+      </role>
+      <instructions>
+        1. Understand the user’s request.
+        2. Decompose it into logical subtasks.
+        3. Execute each subtask step by step, reasoning transparently.
+        4. Validate accuracy and consistency.
+        5. Summarize the final result clearly.
+      </instructions>`,
+      singleLineText: 'Single-line text',
+      multimodalModels: 'Multimodal models',
+      textOnlyModels: 'Text-only models',
+      allModels: 'All models',
+      codeExecDescription: 'Write your custom Python or Javascript logic.',
+      stringTransformDescription:
+        'Modifies text content. Currently supports: Splitting or concatenating text.',
+      foundation: 'Foundation',
+      tools: 'Tools',
+      dataManipulation: 'Data manipulation',
+      flow: 'Flow',
+      dialog: 'Dialogue',
+      cite: 'Cite',
+      citeTip: 'citeTip',
+      name: 'Name',
+      nameMessage: 'Please input name',
+      lastSavedAt: 'Last saved at',
+      description: 'Description',
+      descriptionMessage: 'This is an agent for a specific task.',
+      examples: 'Examples',
+      to: 'To',
+      msg: 'Messages',
+      msgTip:
+        'Output the variable content of the upstream component or the text entered by yourself.',
+      messagePlaceholder: `Please enter your message content, use '/' to quickly insert variables.`,
+      messageMsg: 'Please input message or delete this field.',
+      addField: 'Add option',
+      addMessage: 'Add message',
+      loop: 'Loop',
+      loopDescription:
+        'Loop is the upper limit of the number of loops of the current component, when the number of loops exceeds the value of loop, it means that the component can not complete the current task, please re-optimize agent',
+      exitLoop: 'Exit loop',
+      exitLoopDescription: `Equivalent to "break". This node has no configuration items. When the loop body reaches this node, the loop terminates.`,
+      loopVariables: 'Loop variables',
+      maximumLoopCount: 'Maximum loop count',
+      loopTerminationCondition: 'Loop termination condition',
+      yes: 'Yes',
+      no: 'No',
+      key: 'Key',
+      componentId: 'Component ID',
+      add: 'Add',
+      operation: 'operation',
+      run: 'Run',
+      save: 'Save',
+      title: 'ID:',
+      beginDescription: 'This is where the flow begins.',
+      answerDescription: `A component that serves as the interface between human and bot, receiving user inputs and displaying the agent's responses.`,
+      retrievalDescription: `A component that retrieves information from specified datasets (datasets). Ensure that the datasets you select use the same embedding model.`,
+      generateDescription: `A component that prompts the LLM to generate responses. Ensure the prompt is set correctly.`,
+      categorizeDescription: `A component that uses the LLM to classify user inputs into predefined categories. Ensure you specify the name, description, and examples for each category, along with the corresponding next component.`,
+      relevantDescription: `A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result.`,
+      rewriteQuestionDescription: `A component that rewrites a user query from the Interact component, based on the context of previous dialogues.`,
+      messageDescription:
+        'This component returns the final data output of the workflow along with predefined message content. ',
+      keywordDescription: `A component that retrieves top N search results from user's input. Ensure the TopN value is set properly before use.`,
+      switchDescription: `A component that evaluates conditions based on the output of previous components and directs the flow of execution accordingly. It allows for complex branching logic by defining cases and specifying actions for each case or default action if no conditions are met.`,
+      wikipediaDescription: `A component that searches from wikipedia.org, using TopN to specify the number of search results. It supplements the existing datasets.`,
+      promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
+        {input}
+  The above is the content you need to summarize.`,
+      createGraph: 'Create agent',
+      createFromTemplates: 'Create from template',
+      retrieval: 'Retrieval',
+      generate: 'Generate',
+      answer: 'Interact',
+      categorize: 'Categorize',
+      rewriteQuestion: 'Rewrite',
+      rewrite: 'Rewrite',
+      begin: 'Begin',
+      message: 'Message',
+      blank: 'Blank',
+      createFromNothing: 'Create your agent from scratch',
+      addItem: 'Add item',
+      addSubItem: 'Add sub item',
+      nameRequiredMsg: 'Name is required',
+      nameRepeatedMsg: 'The name cannot be repeated',
+      keywordExtract: 'Keyword',
+      keywordExtractDescription: `A component that extracts keywords from a user query, with Top N specifying the number of keywords to extract.`,
+      baidu: 'Baidu',
+      baiduDescription: `A component that searches from baidu.com, using TopN to specify the number of search results. It supplements the existing datasets.`,
+      duckDuckGo: 'DuckDuckGo',
+      duckDuckGoDescription:
+        'A component that searches from duckduckgo.com, allowing you to specify the number of search results using TopN. It supplements the existing datasets.',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        'A component that searches via your provided SearXNG instance URL. Specify TopN and the instance URL.',
+      pdfGenerator: 'Docs Generator',
+      pDFGenerator: 'Docs Generator',
+      pdfGeneratorDescription: `A component that generates documents (PDF, DOCX, TXT) from markdown-formatted content with customizable styling, images, and tables. Supports: **bold**, *italic*, # headings, - lists, tables with | syntax.`,
+      pDFGeneratorDescription: `A component that generates documents (PDF, DOCX, TXT) from markdown-formatted content with customizable styling, images, and tables. Supports: **bold**, *italic*, # headings, - lists, tables with | syntax.`,
+      subtitle: 'Subtitle',
+      logoImage: 'Logo Image',
+      logoPosition: 'Logo Position',
+      logoWidth: 'Logo Width',
+      logoHeight: 'Logo Height',
+      fontFamily: 'Font Family',
+      fontSize: 'Font Size',
+      titleFontSize: 'Title Font Size',
+      pageSize: 'Page Size',
+      orientation: 'Orientation',
+      marginTop: 'Margin Top',
+      marginBottom: 'Margin Bottom',
+      filename: 'Filename',
+      outputDirectory: 'Output Directory',
+      addPageNumbers: 'Add Page Numbers',
+      addTimestamp: 'Add Timestamp',
+      watermarkText: 'Watermark Text',
+      channel: 'Channel',
+      channelTip: `Perform text search or news search on the component's input`,
+      text: 'Text',
+      news: 'News',
+      messageHistoryWindowSize: 'Message window size',
+      messageHistoryWindowSizeTip:
+        'The window size of conversation history visible to the LLM. Larger is better, but be mindful of the maximum token limit of LLM.',
+      wikipedia: 'Wikipedia',
+      pubMed: 'PubMed',
+      pubMedDescription:
+        'A component that searches from https://pubmed.ncbi.nlm.nih.gov/, allowing you to specify the number of search results using TopN. It supplements the existing datasets.',
+      email: 'Email',
+      emailTip:
+        'E-mail is a required field. You must input an E-mail address here.',
+      arXiv: 'ArXiv',
+      arXivDescription:
+        'A component that searches from https://arxiv.org/, allowing you to specify the number of search results using TopN. It supplements the existing datasets.',
+      sortBy: 'Sort by',
+      submittedDate: 'Submitted date',
+      lastUpdatedDate: 'Last updated date',
+      relevance: 'Relevance',
+      google: 'Google',
+      googleDescription:
+        'A component that searches from https://www.google.com/, allowing you to specify the number of search results using TopN. It supplements the existing datasets. Please note that this requires an API key from serpapi.com.',
+      bing: 'Bing',
+      bingDescription:
+        'A component that searches from https://www.bing.com/, allowing you to specify the number of search results using TopN. It supplements the existing datasets. Please note that this requires an API key from microsoft.com.',
+      apiKey: 'API KEY',
+      country: 'Country & region',
+      language: 'Language',
+      googleScholar: 'Google Scholar',
+      googleScholarDescription:
+        'A component that searches https://scholar.google.com/. You can use Top N to specify the number of search results.',
+      yearLow: 'Year low',
+      yearHigh: 'Year high',
+      patents: 'Patents',
+      data: 'Data',
+      deepL: 'DeepL',
+      deepLDescription:
+        'A component that gets more specialized translations from https://www.deepl.com/.',
+      authKey: 'Auth key',
+      sourceLang: 'Source language',
+      targetLang: 'Target language',
+      gitHub: 'GitHub',
+      gitHubDescription:
+        'A component that searches for repositories from https://github.com/. You can use Top N to specify the number of search results.',
+      baiduFanyi: 'BaiduFanyi',
+      baiduFanyiDescription:
+        'A component that gets specialized translations from https://fanyi.baidu.com/.',
+      appid: 'App ID',
+      secretKey: 'Secret key',
+      domain: 'Domain',
+      transType: 'Translation type',
+      baiduSecretKeyOptions: {
+        translate: 'General translation',
+        fieldtranslate: 'Field translation',
+      },
+      baiduDomainOptions: {
+        it: 'Information technology',
+        finance: 'Financial and economics',
+        machinery: 'Machinery manufacturing',
+        senimed: 'Biomedicine',
+        novel: 'Online literature',
+        academic: 'Academic paper',
+        aerospace: 'Aerospace',
+        wiki: 'Humanities and social sciences',
+        news: 'News and information',
+        law: 'Laws and regulations',
+        contract: 'Contract',
+      },
+      baiduSourceLangOptions: {
+        auto: 'Auto detect',
+        zh: 'Chinese',
+        en: 'English',
+        yue: 'Cantonese',
+        wyw: 'Classical Chinese',
+        jp: 'Japanese',
+        kor: 'Korean',
+        fra: 'French',
+        spa: 'Spanish',
+        th: 'Thai',
+        ara: 'Arabic',
+        ru: 'Russian',
+        pt: 'Portuguese',
+        de: 'German',
+        it: 'Italian',
+        el: 'Greek',
+        nl: 'Dutch',
+        pl: 'Polish',
+        bul: 'Bulgarian',
+        est: 'Estonian',
+        dan: 'Danish',
+        fin: 'Finnish',
+        cs: 'Czech',
+        rom: 'Romanian',
+        slo: 'Slovenian',
+        swe: 'Swedish',
+        hu: 'Hungarian',
+        cht: 'Traditional Chinese',
+        vie: 'Vietnamese',
+      },
+      qWeather: 'QWeather',
+      qWeatherDescription:
+        'A component that retrieves weather information, such as temperature and air quality, from https://www.qweather.com/.',
+      lang: 'Language',
+      type: 'Type',
+      webApiKey: 'Web API key',
+      userType: 'User type',
+      timePeriod: 'Time period',
+      qWeatherLangOptions: {
+        zh: 'Simplified Chinese',
+        'zh-hant': 'Traditional Chinese',
+        en: 'English',
+        de: 'German',
+        es: 'Spanish',
+        fr: 'French',
+        it: 'Italian',
+        ja: 'Japanese',
+        ko: 'Korean',
+        ru: 'Russian',
+        hi: 'Hindi',
+        th: 'Thai',
+        ar: 'Arabic',
+        pt: 'Portuguese',
+        bn: 'Bengali',
+        ms: 'Malay',
+        nl: 'Dutch',
+        el: 'Greek',
+        la: 'Latin',
+        sv: 'Swedish',
+        id: 'Indonesian',
+        pl: 'Polish',
+        tr: 'Turkish',
+        cs: 'Czech',
+        et: 'Estonian',
+        vi: 'Vietnamese',
+        fil: 'Filipino',
+        fi: 'Finnish',
+        he: 'Hebrew',
+        is: 'Icelandic',
+        nb: 'Norwegian',
+      },
+      qWeatherTypeOptions: {
+        weather: 'Weather forecast',
+        indices: 'Weather life index',
+        airquality: 'Air quality',
+      },
+      qWeatherUserTypeOptions: {
+        free: 'Free subscriber',
+        paid: 'Paid subscriber',
+      },
+      qWeatherTimePeriodOptions: {
+        now: 'Now',
+        '3d': '3 days',
+        '7d': '7 days',
+        '10d': '10 days',
+        '15d': '12 days',
+        '30d': '30 days',
+      },
+      publish: 'API',
+      exeSQL: 'Execute SQL',
+      exeSQLDescription:
+        'A component that performs SQL queries on a relational database, supporting querying from MySQL, PostgreSQL, or MariaDB.',
+      dbType: 'Database type',
+      database: 'Database',
+      username: 'Username',
+      userId: 'User ID',
+      host: 'Host',
+      port: 'Port',
+      password: 'Password',
+      switch: 'Switch',
+      logicalOperator: 'Logical operator',
+      switchOperatorOptions: {
+        equal: 'Equals',
+        notEqual: 'Not equal',
+        gt: 'Greater than',
+        ge: 'Greater equal',
+        lt: 'Less than',
+        le: 'Less equal',
+        contains: 'Contains',
+        notContains: 'Not contains',
+        startWith: 'Starts with',
+        endWith: 'Ends with',
+        empty: 'Is empty',
+        notEmpty: 'Not empty',
+        in: 'In',
+        notIn: 'Not in',
+        is: 'Is',
+        isNot: 'Is not',
+      },
+      switchLogicOperatorOptions: {
+        and: 'AND',
+        or: 'OR',
+      },
+      operator: 'Operator',
+      value: 'Value',
+      useTemplate: 'Use',
+      wenCai: 'WenCai',
+      queryType: 'Query type',
+      wenCaiDescription:
+        'A component that obtains financial information, including stock prices and funding news, from a wide range of financial websites.',
+      wenCaiQueryTypeOptions: {
+        stock: 'stock',
+        zhishu: 'index',
+        fund: 'fund',
+        hkstock: 'Hong Kong shares',
+        usstock: 'US stock market',
+        threeboard: 'New OTC market',
+        conbond: 'Convertible bond',
+        insurance: 'insurance',
+        futures: 'futures',
+        lccp: 'Financing',
+        foreign_exchange: 'Foreign currency',
+      },
+      akShare: 'AkShare',
+      akShareDescription:
+        'A component that obtains news about stocks from https://www.eastmoney.com/.',
+      yahooFinance: 'YahooFinance',
+      yahooFinanceDescription:
+        'A component that queries information about a publicly traded company using its ticker symbol.',
+      crawler: 'Web crawler',
+      crawlerDescription:
+        'A component that crawls HTML source code from a specified URL.',
+      proxy: 'Proxy',
+      crawlerResultOptions: {
+        html: 'Html',
+        markdown: 'Markdown',
+        content: 'Content',
+      },
+      extractType: 'Extract type',
+      info: 'Info',
+      history: 'History',
+      financials: 'Financials',
+      balanceSheet: 'Balance sheet',
+      cashFlowStatement: 'Cash flow statement',
+      jin10: 'Jin10',
+      jin10Description:
+        'A component that retrieves financial information from the Jin10 Open Platform, including news updates, calendars, quotes, and references.',
+      flashType: 'Flash type',
+      filter: 'Filter',
+      contain: 'Contain',
+      calendarType: 'Calendar type',
+      calendarDatashape: 'Calendar datashape',
+      symbolsDatatype: 'Symbols datatype',
+      symbolsType: 'Symbols type',
+      jin10TypeOptions: {
+        flash: 'Quick news',
+        calendar: 'Calendar',
+        symbols: 'quotes',
+        news: 'reference',
+      },
+      jin10FlashTypeOptions: {
+        '1': 'Market news',
+        '2': 'Futures news',
+        '3': 'US-Hong Kong news',
+        '4': 'A-Share news',
+        '5': 'Commodities & Forex news',
+      },
+      jin10CalendarTypeOptions: {
+        cj: 'Macroeconomic data calendar',
+        qh: 'Futures calendar',
+        hk: 'Hong Kong stock market calendar',
+        us: 'US stock market calendar',
+      },
+      jin10CalendarDatashapeOptions: {
+        data: 'Data',
+        event: 'Event',
+        holiday: 'Holiday',
+      },
+      jin10SymbolsTypeOptions: {
+        GOODS: 'Commodity quotes',
+        FOREX: 'Forex quotes',
+        FUTURE: 'International market quotes',
+        CRYPTO: 'Cryptocurrency quotes',
+      },
+      jin10SymbolsDatatypeOptions: {
+        symbols: 'Commodity list',
+        quotes: 'Latest market quotes',
+      },
+      concentrator: 'Concentrator',
+      concentratorDescription:
+        'A component that receives the output from the upstream component and passes it on as input to the downstream components.',
+      tuShare: 'TuShare',
+      tuShareDescription:
+        'A component that obtains financial news briefs from mainstream financial websites, aiding industry and quantitative research.',
+      tuShareSrcOptions: {
+        sina: 'Sina',
+        wallstreetcn: 'wallstreetcn',
+        '10jqka': 'Straight flush',
+        eastmoney: 'Eastmoney',
+        yuncaijing: 'YUNCAIJING',
+        fenghuang: 'FENGHUANG',
+        jinrongjie: 'JRJ',
+      },
+      token: 'Token',
+      src: 'Source',
+      startDate: 'Start date',
+      endDate: 'End date',
+      keyword: 'Keyword',
+      note: 'Note',
+      noteDescription: 'Note',
+      notePlaceholder: 'Please enter a note',
+      invoke: 'HTTP request',
+      invokeDescription: `A component capable of calling remote services, using other components' outputs or constants as inputs.`,
+      url: 'Url',
+      method: 'Method',
+      timeout: 'Timeout',
+      headers: 'Headers',
+      cleanHtml: 'Clean HTML',
+      cleanHtmlTip:
+        'If the response is HTML formatted and only the primary content wanted, please toggle it on.',
+      invalidUrl:
+        'Must be a valid URL or URL with variable placeholders in the format {variable_name} or {component@variable}',
+      reference: 'Reference',
+      input: 'Input',
+      output: 'Output',
+      parameter: 'Parameter',
+      howUseId: 'How to use agent ID?',
+      content: 'Content',
+      operationResults: 'Operation results',
+      autosaved: 'Autosaved',
+      optional: 'Optional',
+      pasteFileLink: 'Paste file link',
+      testRun: 'Test run',
+      template: 'Template',
+      templateDescription:
+        'A component that formats the output of other components.1. Supports Jinja2 templates, will first convert the input to an object and then render the template, 2. Simultaneously retains the original method of using {parameter} string replacement',
+      emailComponent: 'Email',
+      emailDescription: 'Send an email to a specified address.',
+      smtpServer: 'SMTP host',
+      smtpPort: 'SMTP port',
+      senderEmail: 'From email address',
+      smtpUsername: 'SMTP login username',
+      authCode: 'SMTP password / app password',
+      senderName: 'From display name',
+      toEmail: 'Recipient email',
+      ccEmail: 'CC email',
+      emailSubject: 'Subject',
+      emailContent: 'Content',
+      smtpServerRequired: 'Please input SMTP server address',
+      senderEmailRequired: 'Please input sender email',
+      authCodeRequired: 'Please input authorization code',
+      toEmailRequired: 'Please input recipient email',
+      emailContentRequired: 'Please input email content',
+      emailSentSuccess: 'Email sent successfully',
+      emailSentFailed: 'Failed to send email',
+      dynamicParameters: 'Dynamic parameters',
+      jsonFormatTip:
+        'Upstream component should provide JSON string in following format:',
+      toEmailTip: 'to_email: Recipient email (Required)',
+      ccEmailTip: 'cc_email: CC email (Optional)',
+      subjectTip: 'subject: Email subject (Optional)',
+      contentTip: 'content: Email content (Optional)',
+      jsonUploadTypeErrorMessage: 'Please upload json file',
+      jsonUploadContentErrorMessage: 'json file error',
+      iteration: 'Iteration',
+      iterationDescription: `A looping component that iterates over an input array and executes a defined logic for each item.`,
+      delimiterTip: `
+This delimiter is used to split the input text into several text pieces echo of which will be performed as input item of each iteration.`,
+      delimiterOptions: {
+        comma: 'Comma',
+        lineBreak: 'Line break',
+        tab: 'Tab',
+        underline: 'Underline',
+        diagonal: 'Forward slash',
+        minus: 'Dash',
+        semicolon: 'Semicolon',
+      },
+      addVariable: 'Add variable',
+      variableSettings: 'Variable settings',
+      systemPrompt: 'System prompt',
+      userPrompt: 'User prompt',
+      tocDataSource: 'Data source',
+      addCategory: 'Add category',
+      categoryName: 'Category name',
+      nextStep: 'Next step',
+      variableExtractDescription:
+        'Extract user information into global variable throughout the conversation',
+      variableExtract: 'Variables',
+      variables: 'Variables',
+      variablesTip: `Set the clear json key variable with a value of empty. e.g.
+      {
+        "UserCode":"",
+        "NumberPhone":""
+      }`,
+      datatype: 'MINE type of the HTTP request',
+      insertVariableTip: `Enter / Insert variables`,
+      mergePath: 'Merge path',
+      mergePathTip:
+        'When enabled, a dot suffix immediately after a variable is merged into a path query, such as {node@result.name}.',
+      historyVersion: 'Version history',
+      version: {
+        created: 'Created',
+        details: 'Version details',
+        dsl: 'DSL',
+        download: 'Download',
+        version: 'Version',
+        select: 'No version selected',
+      },
+      setting: 'Settings',
+      settings: {
+        agentSetting: 'Agent settings',
+        title: 'title',
+        description: 'description',
+        upload: 'Upload',
+        photo: 'Photo',
+        permissions: 'Permissions',
+        permissionsTip: 'You can set the permissions of the team members here.',
+        me: 'me',
+        team: 'Team',
+      },
+      noMoreData: 'No more data',
+      searchAgentPlaceholder: 'Search agent',
+      footer: {
+        profile: 'All rights reserved @ React',
+      },
+      layout: {
+        file: 'file',
+        knowledge: 'knowledge',
+        chat: 'chat',
+      },
+      prompt: 'Prompt',
+      promptTip:
+        'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
+      promptMessage: 'Prompt is required',
+      infor: 'Information run',
+      knowledgeBasesTip:
+        'Select the datasets to associate with this chat assistant, or choose variables containing dataset IDs below.',
+      knowledgeBaseVars: 'Dataset variables',
+      code: 'Code',
+      codeDescription: 'It allows developers to write custom Python logic.',
+      dataOperations: 'Data operations',
+      dataOperationsDescription: 'Perform various operations on a Data object.',
+      listOperations: 'List operations',
+      listOperationsDescription: 'Perform operations on a list.',
+      variableAssigner: 'Variable assigner',
+      variableAssignerDescription:
+        'This component performs operations on Data objects, including extracting, filtering, and editing keys and values in the Data.',
+      variableAggregator: 'Variable aggregator',
+      variableAggregatorDescription: `
+This process aggregates variables from multiple branches into a single variable to achieve unified configuration for downstream nodes.`,
+      inputVariables: 'Input variables',
+      runningHintText: 'is running...🕞',
+      openingSwitch: 'Opening switch',
+      openingCopy: 'Opening greeting',
+      openingSwitchTip:
+        'Your users will see this welcome message at the beginning.',
+      modeTip: 'The mode defines how the workflow is initiated.',
+      mode: 'Mode',
+      conversational: 'Conversational',
+      task: 'Task',
+      beginInputTip:
+        'Input parameters defined here can be accessed by components in the downstream workflow.',
+      query: 'Query variables',
+      switchPromptMessage:
+        'The prompt words will change. Please confirm whether you want to discard the existing prompt words?',
+      queryRequired: 'Query is required',
+      queryTip: 'Select the variable you want to use',
+      agent: 'Agent',
+      addAgent: 'Add agent',
+      agentDescription:
+        'Builds agent components equipped with reasoning, tool usage, and multi-agent collaboration. ',
+      maxRecords: 'Max records',
+      createAgent: 'Agent flow',
+      stringTransform: 'Text processing',
+      userFillUp: 'Await response',
+      userFillUpDescription: `Pauses the workflow and waits for the user's message before continuing.`,
+      codeExec: 'Code',
+      tavilySearch: 'Tavily search',
+      tavilySearchDescription: 'Search results via Tavily service.',
+      tavilyExtract: 'Tavily extract',
+      tavilyExtractDescription: 'Tavily Extract',
+      log: 'Log',
+      management: 'Management',
+      import: 'Import',
+      export: 'Export',
+      seconds: 'Seconds',
+      subject: 'Subject',
+      tag: 'Tag',
+      tagPlaceholder: 'Please enter tag',
+      descriptionPlaceholder: 'Please enter description',
+      line: 'Single-line text',
+      paragraph: 'Paragraph text',
+      options: 'Dropdown options',
+      file: 'File upload',
+      integer: 'Number',
+      boolean: 'Boolean',
+
+      logTimeline: {
+        begin: 'Ready to begin',
+        agent: 'Agent is thinking',
+        userFillUp: 'Waiting for you',
+        retrieval: 'Looking up knowledge',
+        message: 'Agent says',
+        awaitResponse: 'Waiting for you',
+        switch: 'Choosing the best path',
+        iteration: 'Batch processing',
+        categorize: 'Categorising info',
+        code: 'Running a quick script',
+        textProcessing: 'Tidying up text',
+        tavilySearch: 'Searching the web',
+        tavilyExtract: 'Reading the page',
+        exeSQL: 'Querying database',
+        google: 'Searching the web',
+        wikipedia: 'Searching Wikipedia',
+        googleScholar: 'Academic search',
+        gitHub: 'Searching GitHub',
+        email: 'Sending email',
+        httpRequest: 'Calling an API',
+        wenCai: 'Querying financial data',
+      },
+      goto: 'Fail branch',
+      comment: 'Default value',
+      sqlStatement: 'SQL statement',
+      sqlStatementTip:
+        'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
+      frameworkPrompts: 'Framework',
+      release: 'Publish',
+      production: 'Production',
+      productionTooltip:
+        'This version is published to production. Access it via the API or the embedded page.',
+      confirmPublish: 'Confirm publish',
+      publishIngestionPipeline:
+        'You are about to publish this Ingestion pipeline.',
+      publishAgent: 'You are about to publish this agent',
+      linkedDataset: 'Linked dataset:',
+      lastPublished: 'Last published',
+      createFromBlank: 'Create from blank',
+      createFromTemplate: 'Create from template',
+      importJsonFile: 'Import JSON file',
+      ceateAgent: 'Workflow',
+      createPipeline: 'Ingestion pipeline',
+      chooseAgentType: 'Choose agent type',
+      parser: 'Parser',
+      parserDescription:
+        'Extracts raw text and structure from files for downstream processing.',
+      tokenizer: 'Indexer',
+      tokenizerRequired: 'Please add the Indexer node first',
+      tokenizerDescription:
+        'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
+      tokenChunker: 'Token Chunker',
+      tokenChunkerDescription:
+        'Split text into chunks by token length with optional delimiters and overlap.',
+      titleChunkerDescription:
+        'Split documents into sections by title hierarchy with regex rules for finer control.',
+      titleChunker: 'Title Chunker',
+      extractor: 'Transformer',
+      extractorDescription:
+        'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
+      outputFormat: 'Output format',
+      fileFormats: 'File type',
+      fileFormatOptions: {
+        pdf: 'PDF',
+        spreadsheet: 'Spreadsheet',
+        image: 'Image',
+        email: 'Email',
+        markdown: 'Markdown',
+        'text&code': 'Text & Code',
+        html: 'HTML',
+        doc: 'DOC',
+        docx: 'DOCX',
+        slides: 'PPTX',
+        audio: 'Audio',
+        video: 'Video',
+      },
+      fields: 'Field',
+      addParser: 'Add Parser',
+      hierarchy: 'Hierarchy',
+      regularExpressions: 'Regular Expressions',
+      overlappedPercent: 'Overlapped percent (%)',
+      searchMethod: 'Search method',
+      searchMethodTip: `Defines how the content can be searched — by full-text, embedding, or both.
+The Indexer will store the content in the corresponding data structures for the selected methods.`,
+      // file: 'File',
+      parserMethod: 'PDF parser',
+      tableResultType: 'Table result type',
+      markdownImageResponseType: 'Markdown image response type',
+      // systemPrompt: 'System Prompt',
+      systemPromptPlaceholder:
+        'Enter system prompt for image analysis, if empty the system default value will be used',
+      exportJson: 'Export JSON',
+      viewResult: 'View result',
+      running: 'Running',
+      summary: 'Summary',
+      keywords: 'Keywords',
+      questions: 'Questions',
+      metadata: 'Metadata',
+      toc: 'PageIndex',
+      fieldName: 'Result destination',
+      prompts: {
+        system: {
+          keywords: `Role
+You are a text analyzer.
+
+Task
+Extract the most important keywords/phrases of a given piece of text content.
+
+Requirements
+- Summarize the text content, and give the top 5 important keywords/phrases.
+- The keywords MUST be in the same language as the given piece of text content.
+- The keywords are delimited by ENGLISH COMMA.
+- Output keywords ONLY.`,
+          questions: `Role
+You are a text analyzer.
+
+Task
+Propose 3 questions about a given piece of text content.
+
+Requirements
+- Understand and summarize the text content, and propose the top 3 important questions.
+- The questions SHOULD NOT have overlapping meanings.
+- The questions SHOULD cover the main content of the text as much as possible.
+- The questions MUST be in the same language as the given piece of text content.
+- One question per line.
+- Output questions ONLY.`,
+          summary: `Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.
+
+Key Instructions:
+1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.
+2. Language: Write the summary in the same language as the source text.
+3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.
+4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.`,
+          metadata: `Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.
+
+Important structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.`,
+          toc: '',
+        },
+        user: {
+          keywords: `Text Content
+[Insert text here]`,
+          questions: `Text Content
+[Insert text here]`,
+          summary: `Text to Summarize:
+[Insert text here]`,
+          metadata: `Content: [INSERT CONTENT HERE]`,
+          toc: '[Insert text here]',
+        },
+      },
+      cancel: 'Cancel',
+      swicthPromptMessage:
+        'The prompt word will change. Please confirm whether to abandon the existing prompt word?',
+      tokenizerSearchMethodOptions: {
+        full_text: 'Full-text',
+        embedding: 'Embedding',
+      },
+      filenameEmbeddingWeight: 'Filename embedding weight',
+      tokenizerFieldsOptions: {
+        text: 'Processed text',
+        keywords: 'Keywords',
+        questions: 'Questions',
+        summary: 'Augmented context',
+      },
+      imageParseMethodOptions: {
+        ocr: 'OCR',
+      },
+      structuredOutput: {
+        configuration: 'Configuration',
+        structuredOutput: 'Structured output',
+      },
+      operations: 'Operations',
+      operationsOptions: {
+        selectKeys: 'Select keys',
+        literalEval: 'Literal eval',
+        combine: 'Combine',
+        filterValues: 'Filter values',
+        appendOrUpdate: 'Append or update',
+        removeKeys: 'Remove keys',
+        renameKeys: 'Rename keys',
+      },
+      ListOperationsOptions: {
+        topN: 'Top N',
+        head: 'Head',
+        tail: 'Tail',
+        sort: 'Sort',
+        filter: 'Filter',
+        dropDuplicates: 'Drop duplicates',
+      },
+      sortMethod: 'Sort method',
+      SortMethodOptions: {
+        asc: 'Ascending',
+        desc: 'Descending',
+      },
+      variableAssignerLogicalOperatorOptions: {
+        overwrite: 'Overwritten by',
+        clear: 'Clear',
+        set: 'Set',
+        add: 'Add',
+        subtract: 'Subtract',
+        multiply: 'Multiply',
+        divide: 'Divide',
+        append: 'Append',
+        extend: 'Extend',
+        removeFirst: 'Remove first',
+        removeLast: 'Remove last',
+      },
+      webhook: {
+        name: 'Webhook',
+        methods: 'Methods',
+        contentTypes: 'Content types',
+        security: 'Security',
+        schema: 'Schema',
+        response: 'Response',
+        executionMode: 'Execution mode',
+        executionModeTip:
+          'Accepted Response: The system returns an acknowledgment immediately after the request is validated, while the workflow continues to execute asynchronously in the background. /Final Response: The system returns a response only after the workflow execution is completed.',
+        authMethods: 'Authentication methods',
+        authType: 'Authentication type',
+        limit: 'Request frequency limit',
+        per: 'Time period',
+        maxBodySize: 'Maximum body size',
+        ipWhitelist: 'IP whitelist',
+        tokenHeader: 'Token header',
+        tokenValue: 'Token value',
+        username: 'Username',
+        password: 'Password',
+        algorithm: 'Algorithm',
+        secret: 'Secret',
+        issuer: 'Issuer',
+        audience: 'Audience',
+        requiredClaims: 'Required claims',
+        header: 'Header',
+        status: 'Status',
+        headersTemplate: 'Headers template',
+        bodyTemplate: 'Body template',
+        basic: 'Basic',
+        bearer: 'Bearer',
+        apiKey: 'Api key',
+        queryParameters: 'Query parameters',
+        headerParameters: 'Header parameters',
+        requestBodyParameters: 'Request body parameters',
+        immediately: 'Accepted response',
+        streaming: 'Final response',
+        overview: 'Overview',
+        logs: 'Logs',
+        agentStatus: 'Agent status:',
+      },
+      saveToMemory: 'Save to memory',
+      retrievalFrom: 'Retrieval from',
+      id: 'ID',
+      state: 'State',
+      number: 'Number',
+      latestDate: 'Latest date',
+      createDate: 'Create date',
+      noDataToExport: 'No data to export',
+      success: 'Success',
+      failed: 'Failed',
+      logTitle: 'Title',
+    },
+    llmTools: {
+      bad_calculator: {
+        name: 'Calculator',
+        description:
+          'A tool to calculate the sum of two numbers (will give wrong answer)',
+        params: {
+          a: 'The first number',
+          b: 'The second number',
+        },
+      },
+    },
+    modal: {
+      okText: 'Confirm',
+      cancelText: 'Cancel',
+    },
+    mcp: {
+      export: 'Export',
+      import: 'Import',
+      url: 'URL',
+      serverType: 'Server type',
+      addMCP: 'Add MCP',
+      editMCP: 'Edit MCP',
+      toolsAvailable: 'tools available',
+      mcpServers: 'MCP servers',
+      mcpServer: 'MCP server',
+      customizeTheListOfMcpServers: 'Customize the list of MCP servers',
+      cachedTools: 'cached tools',
+      bulkManage: 'Bulk manage',
+      exitBulkManage: 'Exit bulk manage',
+      selected: 'Selected',
+    },
+    search: {
+      searchApps: 'Search apps',
+      createSearch: 'Create search',
+      searchGreeting: 'How can I help you today ？',
+      profile: 'Hide Profile',
+      locale: 'Locale',
+      embedCode: 'Embed code',
+      id: 'ID',
+      copySuccess: 'Copy Success',
+      welcomeBack: 'Welcome back',
+      searchSettings: 'Search settings',
+      name: 'Name',
+      avatar: 'Avatar',
+      description: 'Description',
+      datasets: 'Datasets',
+      rerankModel: 'Rerank model',
+      AISummary: 'AI summary',
+      enableWebSearch: 'Enable web search',
+      enableRelatedSearch: 'Enable related search',
+      showQueryMindmap: 'Show query mindmap',
+      embedApp: 'Embed app',
+      relatedSearch: 'Related search',
+      descriptionValue: 'You are an intelligent assistant.',
+      okText: 'Save',
+      cancelText: 'Cancel',
+      chooseDataset: 'Please select a dataset first',
+    },
+    language: {
+      english: 'English',
+      chinese: 'Chinese',
+      spanish: 'Spanish',
+      french: 'French',
+      german: 'German',
+      japanese: 'Japanese',
+      korean: 'Korean',
+      vietnamese: 'Vietnamese',
+      russian: 'Russian',
+      bulgarian: 'Bulgarian',
+      arabic: 'Arabic',
+      turkish: 'Turkish',
+    },
+    pagination: {
+      total: 'Total {{total}}',
+      page: '{{page}} / Page',
+    },
+    dataflowParser: {
+      result: 'Result',
+      parseSummary: 'Parse summary',
+      parseSummaryTip: 'Parser：DeepDoc',
+      parserMethod: 'Parser method',
+      outputFormat: 'Output format',
+      rerunFromCurrentStep: 'Rerun from current step',
+      rerunFromCurrentStepTip: 'Changes detected. Click to re-run.',
+      confirmRerun: 'Confirm rerun process',
+      confirmRerunModalContent: `
+      <p class="text-sm text-text-disabled font-medium mb-2">
+        You are about to rerun the process starting from the <span class="text-text-secondary">{{step}}</span> step.
+      </p>
+      <p class="text-sm mb-3 text-text-disabled">This will:</p><br />
+      <ul class="list-disc list-inside space-y-1 text-sm text-text-secondary">
+        <li>• Overwrite existing results from the current step onwards</li>
+        <li>• Create a new log entry for tracking</li>
+        <li>• Previous steps will remain unchanged</li>
+      </ul>`,
+      changeStepModalTitle: 'Step switch warning',
+      changeStepModalContent: `
+      <p>You are currently editing the results of this stage.</p>
+      <p>If you switch to a later stage, your changes will be lost. </p>
+      <p>To keep them, please click Rerun to re-run the current stage.</p> `,
+      changeStepModalConfirmText: 'Switch Anyway',
+      changeStepModalCancelText: 'Cancel',
+      unlinkPipelineModalTitle: 'Unlink ingestion pipeline',
+      unlinkPipelineModalConfirmText: 'Unlink',
+      unlinkPipelineModalContent: `
+      <p>Once unlinked, this Dataset will no longer be connected to the current ingestion pipeline.</p>
+      <p>Files that are already being parsed  will continue until completion</p>
+      <p>Files that are not yet parsed will no longer be processed</p> <br/>
+      <p>Are you sure you want to proceed?</p> `,
+      unlinkSourceModalTitle: 'Unlink data source',
+      unlinkSourceModalContent: `
+      <p>Are you sure to unlink this data source ？</p>`,
+      unlinkSourceModalConfirmText: 'Unlink',
+    },
+    datasetOverview: {
+      downloadTip: 'Files being downloaded from data sources. ',
+      processingTip: 'Files being processed by ingestion pipeline.',
+      totalFiles: 'Total files',
+      downloading: 'Downloading',
+      downloadSuccessTip: 'Total successful downloads',
+      downloadFailedTip: 'Total failed downloads',
+      processingSuccessTip: 'Total successfully processed files',
+      processingFailedTip: 'Total failed processes',
+      processing: 'Processing',
+      noData: 'No log yet',
+    },
+
+    deleteModal: {
+      delAgent: 'Delete agent',
+      delDataset: 'Delete dataset',
+      delSearch: 'Delete search',
+      delFile: 'Delete file',
+      delFiles: 'Delete files',
+      delFilesContent: 'Selected {{count}} files',
+      delChat: 'Delete chat',
+      delMember: 'Delete member',
+      delMemory: 'Delete memory',
+    },
+
+    empty: {
+      noMCP: 'No MCP servers available',
+      agentTitle: 'No agent app created yet',
+      notFoundAgent: 'Agent app not found',
+      datasetTitle: 'No dataset created yet',
+      notFoundDataset: 'Dataset not found',
+      chatTitle: 'No chat app created yet',
+      notFoundChat: 'Chat app not found',
+      searchTitle: 'No search app created yet',
+      notFoundSearch: 'Search app not found',
+      memoryTitle: 'No memory created yet',
+      notFoundMemory: 'Memory not found',
+      addNow: 'Add Now',
+    },
+
+    admin: {
+      loginTitle: 'Admin console',
+      title: 'RAGFlow',
+      confirm: 'Confirm',
+      close: 'Close',
+      yes: 'Yes',
+      no: 'No',
+      delete: 'Delete',
+      cancel: 'Cancel',
+      reset: 'Reset',
+      import: 'Import',
+      description: 'Description',
+      noDescription: 'No description',
+      none: 'None',
+
+      resourceType: {
+        dataset: 'Dataset',
+        chat: 'Chat',
+        agent: 'Agent',
+        search: 'Search',
+        file: 'File',
+        team: 'Team',
+        memory: 'Memory',
+      },
+
+      permissionType: {
+        enable: 'Enable',
+        read: 'Read',
+        write: 'Write',
+        share: 'Share',
+      },
+
+      serviceStatus: 'Service status',
+      userManagement: 'User management',
+      sandboxSettings: 'Sandbox settings',
+      registrationWhitelist: 'Registration whitelist',
+      roles: 'Roles',
+      monitoring: 'Monitoring',
+
+      sandboxSettingsPage: {
+        description:
+          'Configure your code execution sandbox provider. The sandbox is used by the Code component in agents.',
+        providerSelection: 'Provider selection',
+        providerSelectionDescription:
+          'Choose a sandbox provider for code execution',
+
+        namedProviderConfiguration: '{{name}} configuration',
+        namedProviderConfigurationDescription:
+          'Configure the connection settings for {{name}}.',
+
+        saveConfiguration: 'Save configuration',
+        saving: 'Saving...',
+
+        testConnectionResultModal: {
+          title: 'Connection test result',
+          testing: 'Testing connection to sandbox provider...',
+          success: 'Successfully connected to sandbox provider',
+          failed: 'Failed to connect to sandbox provider',
+
+          exitCode: 'Exit code',
+          executionTime: 'Execution time',
+          stdout: 'Standard output',
+          stderr: 'Error output / stack trace',
+        },
+
+        testConnection: 'Test connection',
+        testing: 'Testing...',
+      },
+
+      selectFile: 'Select file',
+      noFileSelected: 'No file selected',
+
+      back: 'Back',
+      active: 'Active',
+      inactive: 'Inactive',
+      enable: 'Enable',
+      disable: 'Disable',
+      all: 'All',
+      actions: 'Actions',
+      newUser: 'New user',
+      email: 'Email',
+      name: 'Name',
+      nickname: 'Nickname',
+      status: 'Status',
+      id: 'ID',
+      serviceType: 'Service type',
+      host: 'Host',
+      port: 'Port',
+
+      role: 'Role',
+      user: 'User',
+      userType: 'User type',
+      superuser: 'Superuser',
+      normalUser: 'Normal',
+
+      createTime: 'Create time',
+      lastLoginTime: 'Last login time',
+      lastUpdateTime: 'Last update time',
+
+      isAnonymous: 'Is anonymous',
+      isSuperuser: 'Is superuser',
+
+      deleteUser: 'Delete user',
+      deleteUserConfirmation: 'Are you sure you want to delete this user?',
+
+      createNewUser: 'Create new user',
+      changePassword: 'Change password',
+      newPassword: 'New password',
+      confirmNewPassword: 'Confirm new password',
+      password: 'Password',
+      confirmPassword: 'Confirm password',
+
+      invalidEmail: 'Please input a valid email address!',
+      passwordRequired: 'Please input your password!',
+      passwordMinLength: 'Password must be more than 8 characters.',
+      confirmPasswordRequired: 'Please confirm your password!',
+      confirmPasswordDoNotMatch: 'The password that you entered do not match!',
+
+      read: 'Read',
+      write: 'Write',
+      share: 'Share',
+      create: 'Create',
+
+      extraInfo: 'Extra information',
+      serviceDetail: `Service {{name}} detail`,
+      taskExecutorDetail: 'Task executor detail',
+
+      whitelistManagement: 'Whitelist management',
+      exportAsExcel: 'Export Excel',
+      importFromExcel: 'Import Excel',
+      createEmail: 'Create email',
+      deleteEmail: 'Delete email',
+      editEmail: 'Edit email',
+      deleteWhitelistEmailConfirmation:
+        'Are you sure you want to delete this email from whitelist? This action cannot be undone.',
+
+      importWhitelist: 'Import whitelist (Excel)',
+      importSelectExcelFile: 'Excel file (.xlsx)',
+      importOverwriteExistingEmails: 'Overwrite existing emails',
+      importInvalidExcelFile: 'Please select a valid Excel file',
+      importFileRequired: 'Please select a file to import',
+      importFileTips:
+        'File must contain a single header column named <code>email</code>.',
+
+      chunkNum: 'Chunks',
+      docNum: 'Documents',
+      tokenNum: 'Tokens used',
+      language: 'Language',
+      createDate: 'Create date',
+      updateDate: 'Update date',
+      permission: 'Permission',
+
+      agentTitle: 'Agent title',
+      canvasCategory: 'Canvas category',
+
+      newRole: 'New role',
+      addNewRole: 'Add new role',
+      roleName: 'Role name',
+      roleNameRequired: 'Role name is required',
+      resources: 'Resources',
+
+      editRoleDescription: 'Edit role description',
+      deleteRole: 'Delete role',
+      deleteRoleConfirmation:
+        'Are you sure you want to delete this role? This action cannot be undone.',
+
+      alive: 'Alive',
+      timeout: 'Timeout',
+      fail: 'Fail',
+    },
+    explore: {
+      title: 'Launch',
+      canvasList: 'Canvas List',
+      sessions: 'Sessions',
+      newSession: 'New Session',
+      newSessionLabel: 'Start a new conversation',
+      deleteSession: 'Delete Session',
+      searchCanvas: 'Search canvas...',
+      searchSessions: 'Search sessions...',
+      noCanvasSelected: 'Please select a canvas',
+      noSessionSelected: 'Please select a session or create a new one',
+      noSessionsFound: 'No sessions found',
+      createFirstSession: 'Create your first session',
+      noCanvasFound: 'No canvas found',
+      deleteSelectedConfirm:
+        'Are you sure you want to delete {{count}} session(s)?',
+      batchDeleteSessions: 'Delete Sessions',
+    },
+  },
+};
