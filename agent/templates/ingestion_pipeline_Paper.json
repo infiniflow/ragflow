@@ -6,7 +6,7 @@
     "zh": "论文"
     },
     "description": {
-    "en": "This template segments the parsed file based on the structure of a paper. It is suitable for documents with clearly defined sections, such as academic papers, research articles, conference papers, and technical studies.",
+    "en": "This template segments parsed files based on the structure of a paper. It is suitable for documents with clearly defined sections, such as academic papers, research articles, conference papers, and technical studies.",
     "de": "Diese Vorlage segmentiert die geparste Datei anhand der Struktur einer wissenschaftlichen Arbeit. Sie eignet sich für Dokumente mit klar definierten Abschnitten, wie wissenschaftliche Aufsätze, Forschungsartikel, Konferenzbeiträge und technische Studien.",
     "zh": "此模板将解析后的文件按论文结构进行切片，适用于具有清晰章节和学术结构的文档类型，如学术论文、研究文章、会议论文和技术研究报告。"
     },
