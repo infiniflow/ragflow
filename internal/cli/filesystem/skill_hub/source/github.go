@@ -71,10 +71,14 @@ func (s *GitHubSource) Fetch(identifier string) (*SkillBundle, error) {
 
 	skillMdContent, err := s.fetchFileContent(owner, repo, path.Join(pathStr, "SKILL.md"))
 	if err == nil {
-		meta = parseSkillFrontmatter(skillMdContent)
-		if meta.Name != "" {
-			skillName = meta.Name
+		parsedMeta, parseErr := parseSkillFrontmatter(skillMdContent)
+		if parseErr == nil {
+			meta = parsedMeta
+			if meta.Name != "" {
+				skillName = meta.Name
+			}
 		}
+		// If parsing fails, use default meta and skillName
 	}
 
 	// Fetch all files in the directory
@@ -111,7 +115,11 @@ func (s *GitHubSource) Inspect(identifier string) (*SkillMetadata, error) {
 		}, nil
 	}
 
-	return parseSkillFrontmatter(content), nil
+	meta, err := parseSkillFrontmatter(content)
+	if err != nil {
+		return nil, fmt.Errorf("invalid SKILL.md frontmatter in %s: %w", identifier, err)
+	}
+	return meta, nil
 }
 
 // fetchFileContent fetches a single file from GitHub

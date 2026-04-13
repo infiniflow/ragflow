@@ -75,73 +75,83 @@ func (e *infinityEngine) CreateDataset(ctx context.Context, indexName, datasetID
 		return fmt.Errorf("Failed to get database: %w", err)
 	}
 
+	// Determine vector column name
+	vectorColName := fmt.Sprintf("q_%d_vec", vecSize)
+
 	// Check if table already exists
 	exists, err := e.TableExists(ctx, tableName)
 	if err != nil {
 		return fmt.Errorf("Failed to check if table exists: %w", err)
 	}
+
+	var table *infinity.Table
 	if exists {
-		return fmt.Errorf("table '%s' already exists", tableName)
-	}
-
-	// Build column definitions (preserving JSON order)
-	var columns infinity.TableSchema
-	for _, fieldName := range schema.Keys {
-		fieldInfo := schema.Fields[fieldName]
-		col := infinity.ColumnDefinition{
-			Name:     fieldName,
-			DataType: fieldInfo.Type,
-			Default:  fieldInfo.Default,
-			// Comment:  fieldInfo.Comment,
+		// Table exists, open it and check if vector column needs to be added
+		logger.Info("Table already exists, checking for vector column", zap.String("tableName", tableName))
+		table, err = db.GetTable(tableName)
+		if err != nil {
+			return fmt.Errorf("Failed to open existing table %s: %w", tableName, err)
 		}
-		columns = append(columns, &col)
-	}
 
-	// Add vector column
-	vectorColName := fmt.Sprintf("q_%d_vec", vecSize)
-	logger.Info(fmt.Sprintf("Creating vector column: %s with dimension %d", vectorColName, vecSize))
-	columns = append(columns, &infinity.ColumnDefinition{
-		Name:     vectorColName,
-		DataType: fmt.Sprintf("vector,%d,float", vecSize),
-	})
+		// Check if vector column exists (for embedding model changes)
+		colExists, err := e.columnExists(table, vectorColName)
+		if err != nil {
+			logger.Warn("Failed to check column existence", zap.String("column", vectorColName), zap.Error(err))
+		}
 
-	// Add chunk_data column for table parser
-	if parserID == "table" {
+		// Add new vector column if it doesn't exist (handles embedding model change)
+		if !colExists {
+			logger.Info("Adding new vector column for embedding model change", zap.String("column", vectorColName), zap.Int("size", vecSize))
+			addColSchema := infinity.TableSchema{
+				&infinity.ColumnDefinition{
+					Name:     vectorColName,
+					DataType: fmt.Sprintf("vector,%d,float", vecSize),
+				},
+			}
+			if _, err := table.AddColumns(addColSchema); err != nil {
+				logger.Error("Failed to add vector column "+vectorColName, err)
+				return fmt.Errorf("Failed to add vector column %s: %w", vectorColName, err)
+			}
+			logger.Info("Successfully added vector column", zap.String("column", vectorColName))
+		}
+	} else {
+		// Table doesn't exist, create it with vector column in the initial schema
+		logger.Info(fmt.Sprintf("Creating table with vector column: %s with dimension %d", vectorColName, vecSize))
+
+		// Build column definitions (preserving JSON order)
+		var columns infinity.TableSchema
+		for _, fieldName := range schema.Keys {
+			fieldInfo := schema.Fields[fieldName]
+			col := infinity.ColumnDefinition{
+				Name:     fieldName,
+				DataType: fieldInfo.Type,
+				Default:  fieldInfo.Default,
+				// Comment:  fieldInfo.Comment,
+			}
+			columns = append(columns, &col)
+		}
+
+		// Add vector column
 		columns = append(columns, &infinity.ColumnDefinition{
-			Name:     "chunk_data",
-			DataType: "json",
-			Default:  "{}",
+			Name:     vectorColName,
+			DataType: fmt.Sprintf("vector,%d,float", vecSize),
 		})
-	}
 
-	// Create table
-	table, err := db.CreateTable(tableName, columns, infinity.ConflictTypeIgnore)
-	if err != nil {
-		return fmt.Errorf("Failed to create table: %w", err)
-	}
-	logger.Debug("Infinity created table", zap.String("tableName", tableName))
-
-	// Check if vector column exists (for embedding model changes)
-	// When embedding model changes, vector_size changes, and we need to add new column
-	colExists, err := e.columnExists(table, vectorColName)
-	if err != nil {
-		logger.Warn("Failed to check column existence", zap.String("column", vectorColName), zap.Error(err))
-	}
-
-	// Add new vector column if it doesn't exist (handles embedding model change)
-	if !colExists {
-		logger.Info("Adding new vector column for embedding model change", zap.String("column", vectorColName), zap.Int("size", vecSize))
-		addColSchema := infinity.TableSchema{
-			&infinity.ColumnDefinition{
-				Name:     vectorColName,
-				DataType: fmt.Sprintf("vector,%d,float", vecSize),
-			},
+		// Add chunk_data column for table parser
+		if parserID == "table" {
+			columns = append(columns, &infinity.ColumnDefinition{
+				Name:     "chunk_data",
+				DataType: "json",
+				Default:  "{}",
+			})
 		}
-		if _, err := table.AddColumns(addColSchema); err != nil {
-			logger.Error("Failed to add vector column", err)
-			return fmt.Errorf("Failed to add vector column %s: %w", vectorColName, err)
+
+		// Create table
+		table, err = db.CreateTable(tableName, columns, infinity.ConflictTypeIgnore)
+		if err != nil {
+			return fmt.Errorf("Failed to create table: %w", err)
 		}
-		logger.Info("Successfully added vector column", zap.String("column", vectorColName))
+		logger.Debug("Infinity created table", zap.String("tableName", tableName))
 	}
 
 	// Create HNSW index on vector column with unique name based on vector size

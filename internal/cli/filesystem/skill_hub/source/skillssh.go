@@ -248,8 +248,8 @@ func (s *SkillsShSource) parseDetailPage(identifier, html string) *SkillsShDetai
 	installCmd := ""
 	if match := skillsShInstallCmdRe.FindStringSubmatch(html); match != nil {
 		installCmd = strings.TrimSpace(match[0])
-		repoValue := strings.TrimSpace(s.extractGroup(match, "repo"))
-		skillValue := strings.TrimSpace(s.extractGroup(match, "skill"))
+		repoValue := strings.TrimSpace(s.extractGroup(skillsShInstallCmdRe, match, "repo"))
+		skillValue := strings.TrimSpace(s.extractGroup(skillsShInstallCmdRe, match, "skill"))
 		if skillValue != "" {
 			installSkill = skillValue
 		}
@@ -526,8 +526,17 @@ func (s *SkillsShSource) extractFirstMatch(re *regexp.Regexp, text string) strin
 }
 
 // extractGroup extracts a named group from regex match
-func (s *SkillsShSource) extractGroup(match []string, name string) string {
-	// This is a simplified version - in practice we'd need to track group indices
+// The regex must be passed to map group names to capture indices
+func (s *SkillsShSource) extractGroup(re *regexp.Regexp, match []string, name string) string {
+	if re == nil || match == nil || name == "" {
+		return ""
+	}
+
+	for i, groupName := range re.SubexpNames() {
+		if i >= 0 && i < len(match) && groupName == name {
+			return match[i]
+		}
+	}
 	return ""
 }
 

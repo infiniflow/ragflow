@@ -182,11 +182,12 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 			jsonError(c, code, "failed to get skill search config: "+err.Error())
 			return
 		}
-		embdID = config["embd_id"].(string)
-		if embdID == "" {
+		val, ok := config["embd_id"].(string)
+		if !ok || val == "" {
 			jsonError(c, common.CodeDataError, "no embedding model configured in skill search config")
 			return
 		}
+		embdID = val
 	}
 
 	// Ensure index exists before indexing (for both ES and Infinity)
@@ -256,11 +257,12 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 			jsonError(c, code, "failed to get skill search config: "+err.Error())
 			return
 		}
-		embdID = config["embd_id"].(string)
-		if embdID == "" {
+		val, ok := config["embd_id"].(string)
+		if !ok || val == "" {
 			jsonError(c, common.CodeDataError, "no embedding model configured in skill search config")
 			return
 		}
+		embdID = val
 	}
 
 	result, err := h.indexerService.ReindexAll(c.Request.Context(), user.ID, req.SpaceID, h.docEngine, embdID)

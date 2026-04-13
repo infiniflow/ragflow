@@ -62,7 +62,10 @@ func (s *LocalSource) Fetch(identifier string) (*SkillBundle, error) {
 	}
 
 	// Parse frontmatter
-	meta := parseSkillFrontmatter(string(content))
+	meta, err := parseSkillFrontmatter(string(content))
+	if err != nil {
+		return nil, fmt.Errorf("invalid SKILL.md frontmatter in %s: %w", identifier, err)
+	}
 	skillName := meta.Name
 	if skillName == "" {
 		skillName = filepath.Base(identifier)
@@ -84,7 +87,15 @@ func (s *LocalSource) Fetch(identifier string) (*SkillBundle, error) {
 			return nil
 		}
 
-		relPath, _ := filepath.Rel(identifier, path)
+		// Skip non-regular files (symlinks, devices, pipes, etc.)
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(identifier, path)
+		if err != nil {
+			return err
+		}
 
 		// Check ignore patterns
 		for _, pattern := range ignorePatterns {
@@ -94,6 +105,11 @@ func (s *LocalSource) Fetch(identifier string) (*SkillBundle, error) {
 			if strings.Contains(relPath, pattern) {
 				return nil
 			}
+		}
+
+		// Only include text files based on extension
+		if !isTextFile(path) {
+			return nil
 		}
 
 		data, err := os.ReadFile(path)
@@ -133,7 +149,10 @@ func (s *LocalSource) Inspect(identifier string) (*SkillMetadata, error) {
 		return nil, err
 	}
 
-	meta := parseSkillFrontmatter(string(content))
+	meta, err := parseSkillFrontmatter(string(content))
+	if err != nil {
+		return nil, fmt.Errorf("invalid SKILL.md frontmatter in %s: %w", identifier, err)
+	}
 	if meta.Name == "" {
 		meta.Name = filepath.Base(identifier)
 	}
@@ -142,27 +161,28 @@ func (s *LocalSource) Inspect(identifier string) (*SkillMetadata, error) {
 }
 
 // parseSkillFrontmatter extracts YAML frontmatter from SKILL.md content
-func parseSkillFrontmatter(content string) *SkillMetadata {
-	meta := &SkillMetadata{
-		Version: "1.0.0",
-	}
+// Returns an error if frontmatter delimiters are missing or YAML is invalid
+func parseSkillFrontmatter(content string) (*SkillMetadata, error) {
+	meta := &SkillMetadata{}
 
 	// Look for YAML frontmatter
 	content = strings.TrimSpace(content)
 	if !strings.HasPrefix(content, "---") {
-		return meta
+		return nil, fmt.Errorf("missing opening frontmatter delimiter '---'")
 	}
 
 	// Find end of frontmatter
 	endIdx := strings.Index(content[3:], "---")
 	if endIdx == -1 {
-		return meta
+		return nil, fmt.Errorf("missing closing frontmatter delimiter '---'")
 	}
 
 	frontmatter := content[3 : endIdx+3]
-	yaml.Unmarshal([]byte(frontmatter), meta)
+	if err := yaml.Unmarshal([]byte(frontmatter), meta); err != nil {
+		return nil, fmt.Errorf("invalid YAML frontmatter: %w", err)
+	}
 
-	return meta
+	return meta, nil
 }
 
 // isTextFile checks if a file is a text file based on extension

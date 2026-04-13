@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -272,7 +273,13 @@ func (s *SkillSpaceService) CreateSpace(req *CreateSpaceRequest) (map[string]int
 		}
 	}
 	if defaultEmbdID != "" {
-		_, _ = s.configDAO.GetOrCreate(req.TenantID, spaceID, defaultEmbdID)
+		if _, err := s.configDAO.GetOrCreate(req.TenantID, spaceID, defaultEmbdID); err != nil {
+			logger.Warn("Failed to create skill search config for new space",
+				zap.String("tenantID", req.TenantID),
+				zap.String("spaceID", spaceID),
+				zap.String("embdID", defaultEmbdID),
+				zap.Error(err))
+		}
 	}
 
 	return space.ToMap(), common.CodeSuccess, nil
@@ -385,10 +392,27 @@ func (s *SkillSpaceService) UpdateSpace(spaceID string, tenantID string, req *Up
 	return space.ToMap(), common.CodeSuccess, nil
 }
 
+// getPythonServiceURL returns the Python service URL from environment or default
+func getPythonServiceURL() string {
+	url := os.Getenv("PYTHON_SERVICE_URL")
+	if url == "" {
+		url = "http://127.0.0.1:9380"
+	}
+	// Ensure URL has scheme
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		url = "http://" + url
+	}
+	// Ensure URL has the API path
+	if !strings.HasSuffix(url, "/api/v1/files") {
+		url = strings.TrimSuffix(url, "/")
+		url = url + "/api/v1/files"
+	}
+	return url
+}
+
 // deleteFolderViaPythonAPI calls Python backend API to delete folder and its storage
 func (s *SkillSpaceService) deleteFolderViaPythonAPI(folderID, tenantID, authHeader string) error {
-	// Python service runs on port 9380 (Go runs on 9384)
-	pythonURL := "http://127.0.0.1:9380/api/v1/files"
+	pythonURL := getPythonServiceURL()
 
 	reqBody := map[string]interface{}{
 		"ids": []string{folderID},

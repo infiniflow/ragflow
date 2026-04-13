@@ -356,11 +356,16 @@ func migrateSkillSearchTables(db *gorm.DB) error {
 			if err := db.AutoMigrate(&entity.SkillSearchConfig{}); err != nil {
 				return err
 			}
+			// AutoMigrate doesn't create unique indexes, so create them explicitly
+			logger.Info("Creating unique indexes for skill_search_configs...")
+			if err := db.Exec(`ALTER TABLE skill_search_configs ADD UNIQUE INDEX idx_tenant_space_embd (tenant_id, space_id, embd_id)`).Error; err != nil {
+				return fmt.Errorf("failed to create unique index idx_tenant_space_embd: %w", err)
+			}
 		}
 	} else {
 		// Add space_id for existing installations.
 		if err := addColumnIfNotExists(db, "skill_search_configs", "space_id", "VARCHAR(128) NOT NULL DEFAULT 'default'"); err != nil {
-			logger.Warn("Failed to add space_id column to skill_search_configs", zap.Error(err))
+			return fmt.Errorf("failed to add space_id column to skill_search_configs: %w", err)
 		}
 
 		// Drop legacy unique index (tenant_id, embd_id) to allow per-space configs.
@@ -370,7 +375,7 @@ func migrateSkillSearchTables(db *gorm.DB) error {
 		if legacyIndexExists > 0 {
 			logger.Info("Dropping legacy unique index idx_tenant_embd from skill_search_configs...")
 			if err := db.Exec(`ALTER TABLE skill_search_configs DROP INDEX idx_tenant_embd`).Error; err != nil {
-				logger.Warn("Failed to drop legacy unique index idx_tenant_embd", zap.Error(err))
+				return fmt.Errorf("failed to drop legacy unique index idx_tenant_embd: %w", err)
 			}
 		}
 
@@ -382,7 +387,7 @@ func migrateSkillSearchTables(db *gorm.DB) error {
 			logger.Info("Adding unique index idx_tenant_space_embd to skill_search_configs...")
 			if err := db.Exec(`ALTER TABLE skill_search_configs 
 				ADD UNIQUE INDEX idx_tenant_space_embd (tenant_id, space_id, embd_id)`).Error; err != nil {
-				logger.Warn("Failed to add unique index idx_tenant_space_embd", zap.Error(err))
+				return fmt.Errorf("failed to add unique index idx_tenant_space_embd: %w", err)
 			}
 		}
 	}
@@ -417,17 +422,28 @@ func migrateSkillSpaceTables(db *gorm.DB) error {
 			if err := db.AutoMigrate(&entity.SkillSpace{}); err != nil {
 				return err
 			}
+			// AutoMigrate doesn't create unique indexes, so create them explicitly
+			logger.Info("Creating unique indexes for skill_spaces...")
+			if err := db.Exec(`ALTER TABLE skill_spaces ADD UNIQUE INDEX idx_tenant_name_status (tenant_id, name, status)`).Error; err != nil {
+				return fmt.Errorf("failed to create unique index idx_tenant_name_status: %w", err)
+			}
 		}
 	} else {
-		// Migrate existing table: drop old unique index and create new one with status
-		migrateSkillSpaceIndex(db)
+		// Migrate existing table: add status column first, then update index
+		if err := addColumnIfNotExists(db, "skill_spaces", "status", "VARCHAR(1) NOT NULL DEFAULT '1'"); err != nil {
+			return fmt.Errorf("failed to add status column to skill_spaces: %w", err)
+		}
+		// Migrate index after status column exists
+		if err := migrateSkillSpaceIndex(db); err != nil {
+			return fmt.Errorf("failed to migrate skill_space index: %w", err)
+		}
 	}
 
 	return nil
 }
 
 // migrateSkillSpaceIndex migrates the unique index to include status
-func migrateSkillSpaceIndex(db *gorm.DB) {
+func migrateSkillSpaceIndex(db *gorm.DB) error {
 	// Check if old index exists and drop it
 	var oldIndexExists int64
 	db.Raw(`
@@ -437,7 +453,9 @@ func migrateSkillSpaceIndex(db *gorm.DB) {
 	
 	if oldIndexExists > 0 {
 		logger.Info("Dropping old idx_tenant_name index from skill_spaces...")
-		db.Exec(`DROP INDEX idx_tenant_name ON skill_spaces`)
+		if err := db.Exec(`DROP INDEX idx_tenant_name ON skill_spaces`).Error; err != nil {
+			return fmt.Errorf("failed to drop old index idx_tenant_name: %w", err)
+		}
 	}
 	
 	// Check if new index exists
@@ -449,6 +467,10 @@ func migrateSkillSpaceIndex(db *gorm.DB) {
 	
 	if newIndexExists == 0 {
 		logger.Info("Creating new idx_tenant_name_status index on skill_spaces...")
-		db.Exec(`CREATE UNIQUE INDEX idx_tenant_name_status ON skill_spaces(tenant_id, name, status)`)
+		if err := db.Exec(`CREATE UNIQUE INDEX idx_tenant_name_status ON skill_spaces(tenant_id, name, status)`).Error; err != nil {
+			return fmt.Errorf("failed to create unique index idx_tenant_name_status: %w", err)
+		}
 	}
+	
+	return nil
 }

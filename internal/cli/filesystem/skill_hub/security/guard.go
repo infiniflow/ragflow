@@ -35,6 +35,40 @@ func NewGuard() *Guard {
 	}
 }
 
+// extractCanonicalRepo extracts the canonical owner/repo from an identifier
+// Supports formats: "owner/repo", "github.com/owner/repo/path", "owner/repo/path"
+func extractCanonicalRepo(identifier string) string {
+	// Normalize the identifier
+	identifier = strings.TrimSpace(identifier)
+	identifier = strings.ToLower(identifier)
+
+	// Remove protocol prefix if present
+	if idx := strings.Index(identifier, "://"); idx != -1 {
+		identifier = identifier[idx+3:]
+	}
+
+	// Remove github.com prefix if present
+	if strings.HasPrefix(identifier, "github.com/") {
+		identifier = strings.TrimPrefix(identifier, "github.com/")
+	}
+
+	// Split into parts
+	parts := strings.Split(identifier, "/")
+	if len(parts) < 2 {
+		return ""
+	}
+
+	// Extract owner and repo (first two components)
+	owner := strings.TrimSpace(parts[0])
+	repo := strings.TrimSpace(parts[1])
+
+	if owner == "" || repo == "" {
+		return ""
+	}
+
+	return owner + "/" + repo
+}
+
 // ResolveTrustLevel determines the trust level based on source and identifier
 func (g *Guard) ResolveTrustLevel(source, identifier string) string {
 	// Official/builtin source
@@ -42,11 +76,10 @@ func (g *Guard) ResolveTrustLevel(source, identifier string) string {
 		return "builtin"
 	}
 
-	// Check against trusted repositories
-	for repo := range g.trustedRepos {
-		if strings.Contains(identifier, repo) {
-			return "trusted"
-		}
+	// Extract canonical repo key and check against trusted repositories
+	canonicalRepo := extractCanonicalRepo(identifier)
+	if canonicalRepo != "" && g.trustedRepos[canonicalRepo] {
+		return "trusted"
 	}
 
 	// Default to community
