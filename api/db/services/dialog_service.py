@@ -19,6 +19,8 @@ import logging
 import re
 import time
 from copy import deepcopy
+
+logger = logging.getLogger(__name__)
 from datetime import datetime
 from functools import partial
 from timeit import default_timer as timer
@@ -822,6 +824,7 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
     def _validate_uuid(value: str, label: str = "id") -> str:
         """Raise ValueError if value is not a canonical UUID string."""
         if not _UUID_RE.match(str(value)):
+            logger.warning("SQL injection guard rejected invalid %s value (length=%d)", label, len(str(value)))
             raise ValueError(f"Invalid {label} format: {value!r}")
         return value
 
