@@ -20,11 +20,15 @@ import (
 	stdctx "context"
 	"fmt"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"golang.org/x/net/http2"
+	"golang.org/x/net/publicsuffix"
 
 	"ragflow/internal/cli/filesystem/skill_hub/security"
 	"ragflow/internal/cli/filesystem/skill_hub/source"
@@ -82,10 +86,21 @@ func NewInstallSkillCommand(client HTTPClientInterface, fileProvider *FileProvid
 		fmt.Printf("Using HTTPS proxy: %s\n", httpsProxy)
 	}
 
-	// Check what proxy will be used
+	// Create transport with HTTP/2 support and connection reuse
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
+		// Enable connection pooling
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+		// Enable keep-alive
+		DisableKeepAlives: false,
+		ForceAttemptHTTP2: true,
 	}
+	// Enable HTTP/2
+	http2.ConfigureTransport(transport)
+
+	// Check what proxy will be used
 	testURL, _ := url.Parse("https://github.com")
 	if proxy, err := transport.Proxy(&http.Request{URL: testURL}); err == nil && proxy != nil {
 		fmt.Printf("Proxy enabled for GitHub: %s\n", proxy.String())
@@ -93,12 +108,22 @@ func NewInstallSkillCommand(client HTTPClientInterface, fileProvider *FileProvid
 		fmt.Printf("Warning: proxy detection error: %v\n", err)
 	}
 
+	// Create cookie jar for session persistence
+	jar, err := cookiejar.New(&cookiejar.Options{
+		PublicSuffixList: publicsuffix.List,
+	})
+	if err != nil {
+		fmt.Printf("Warning: failed to create cookie jar: %v\n", err)
+		jar = nil
+	}
+
 	// Wrap client with adapter - use standard http.Client with timeout for direct external requests
 	adaptedClient := &sourceHTTPClientAdapter{
 		client: client,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-			Transport: transport,
+			Timeout:       60 * time.Second,
+			Transport:     transport,
+			Jar:           jar,
 		},
 	}
 

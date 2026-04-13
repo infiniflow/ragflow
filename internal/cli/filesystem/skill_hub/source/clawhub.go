@@ -198,26 +198,29 @@ func (s *ClawHubSource) Fetch(identifier string) (*SkillBundle, error) {
 		s.logger.success("Latest version: %s", version)
 	}
 
-	// Primary method: download as ZIP bundle
-	s.logger.log("Downloading skill bundle (version %s)...", version)
-	files, err := s.downloadZip(slug, version)
-	if err != nil {
-		s.logger.error("Failed to download skill bundle: %v", err)
-		// Try fallback method
-		s.logger.log("Trying alternative download method...")
-		versionData, err2 := s.getVersionData(slug, version)
-		if err2 != nil {
-			s.logger.error("Alternative download also failed: %v", err2)
-			return nil, fmt.Errorf("failed to download skill '%s': %w", slug, err)
-		}
+	// Try to get files from version metadata endpoint first (avoids rate-limited /download)
+	var files map[string][]byte
+	s.logger.log("Fetching skill files (version %s)...", version)
+	versionData, err := s.getVersionData(slug, version)
+	if err == nil {
 		files = s.extractFiles(versionData)
-		if len(files) == 0 {
-			s.logger.error("Download succeeded but no files were found")
-			return nil, fmt.Errorf("failed to download ZIP for %s: %w", slug, err)
+		if len(files) > 0 {
+			s.logger.success("Fetched %d files from metadata", len(files))
 		}
-		s.logger.success("Downloaded %d files via alternative method", len(files))
-	} else {
-		s.logger.success("Downloaded %d files", len(files))
+	}
+
+	// Fallback to ZIP download if metadata method didn't return files
+	if len(files) == 0 {
+		s.logger.log("Trying ZIP download...")
+		// Add delay before download to avoid rate limit
+		time.Sleep(3 * time.Second)
+		zipFiles, err2 := s.downloadZip(slug, version)
+		if err2 != nil {
+			s.logger.error("Failed to download skill bundle: %v", err2)
+			return nil, fmt.Errorf("failed to download skill '%s': %w", slug, err2)
+		}
+		files = zipFiles
+		s.logger.success("Downloaded %d files via ZIP", len(files))
 	}
 
 	// Validate: must have SKILL.md
@@ -328,8 +331,9 @@ func (s *ClawHubSource) resolveLatestVersion(slug string, skillData *clawHubSkil
 
 // downloadZip downloads skill as ZIP bundle and extracts text files
 func (s *ClawHubSource) downloadZip(slug, version string) (map[string][]byte, error) {
+	// Use the correct endpoint with slug parameter (matching hermes-agent)
 	url := fmt.Sprintf("%s/download?slug=%s&version=%s", clawHubBaseURL, slug, version)
-	s.logger.log("Downloading from: %s", url)
+	s.logger.log("Downloading ZIP from: %s", url)
 
 	body, err := s.doRequestWithRetry("GET", url, nil)
 	if err != nil {
@@ -491,15 +495,15 @@ func (s *ClawHubSource) fetchText(url string) (string, error) {
 
 // doRequestWithRetry performs HTTP request with retry logic for 429 rate limiting
 func (s *ClawHubSource) doRequestWithRetry(method, url string, body []byte) ([]byte, error) {
-	maxRetries := 3
+	maxRetries := 5
 	var lastErr error
+	isDownload := strings.Contains(url, "/download")
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			// Exponential backoff: 2s, 4s, 8s
-			backoff := time.Duration(1<<attempt) * 2 * time.Second
-			s.logger.log("Waiting %v before retry %d/%d...", backoff, attempt, maxRetries-1)
-			time.Sleep(backoff)
+		// Initial delay for download requests to avoid triggering rate limit
+		if attempt == 0 && isDownload {
+			s.logger.log("Adding initial delay for download request...")
+			time.Sleep(5 * time.Second)
 		}
 
 		var bodyReader io.Reader
@@ -514,7 +518,9 @@ func (s *ClawHubSource) doRequestWithRetry(method, url string, body []byte) ([]b
 			continue
 		}
 
+		// Simple headers like hermes-agent
 		req.Header.Set("User-Agent", "RAGFlow-CLI/1.0")
+		req.Header.Set("Accept", "application/json")
 
 		resp, err := s.client.Do(req)
 		if err != nil {
@@ -537,22 +543,26 @@ func (s *ClawHubSource) doRequestWithRetry(method, url string, body []byte) ([]b
 			continue
 		}
 
-		// Handle rate limiting
+		// Handle rate limiting - ClawHub has strict limits, wait 30-60s to reset window
 		if resp.StatusCode == http.StatusTooManyRequests {
 			retryAfter := resp.Header.Get("Retry-After")
+			waitSeconds := 30 // Default: wait 30 seconds
 			if retryAfter != "" {
 				if seconds, err := strconv.Atoi(retryAfter); err == nil && seconds > 0 {
-					// Cap wait time at 30 seconds
-					if seconds > 30 {
-						seconds = 30
-					}
-					s.logger.log("Rate limited by ClawHub, waiting %d seconds...", seconds)
-					time.Sleep(time.Duration(seconds) * time.Second)
-					continue
+					waitSeconds = seconds
 				}
 			}
-			lastErr = fmt.Errorf("rate limited (429) - ClawHub is experiencing high traffic, please try again later")
-			s.logger.error("Rate limited: %v", lastErr)
+			// Ensure minimum 30s wait to reset rate limit window
+			if waitSeconds < 30 {
+				waitSeconds = 30
+			}
+			// Cap at 60 seconds
+			if waitSeconds > 60 {
+				waitSeconds = 60
+			}
+			s.logger.log("Rate limited by ClawHub, waiting %d seconds...", waitSeconds)
+			time.Sleep(time.Duration(waitSeconds) * time.Second)
+			lastErr = fmt.Errorf("rate limited (429)")
 			continue
 		}
 
