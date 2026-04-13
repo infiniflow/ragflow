@@ -39,7 +39,7 @@ export enum EmailOutputFormat {
 }
 
 export enum TextMarkdownOutputFormat {
-  Text = 'text',
+  Text = 'json',
 }
 
 export enum TextJsonOutputFormat {

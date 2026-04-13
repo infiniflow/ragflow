@@ -117,11 +117,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// User set tenant info endpoint
 		authorized.POST("/v1/user/set_tenant_info", r.userHandler.SetTenantInfo)
 
-		// System token endpoints (requires authentication)
-		authorized.GET("/v1/system/token_list", r.systemHandler.ListTokens)
-		authorized.POST("/v1/system/new_token", r.systemHandler.CreateToken)
-		authorized.DELETE("/v1/system/token/:token", r.systemHandler.DeleteToken)
-
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
 		{
@@ -132,13 +127,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			//	users.POST("/login", r.userHandler.Login)
 			//	users.GET("", r.userHandler.ListUsers)
 			//	users.GET("/:id", r.userHandler.GetUserByID)
-			//}
-
-			//apiTokens := v1.Group("/tokens")
-			//{
-			//	apiTokens.POST("", r.systemHandler.CreateToken)
-			//	apiTokens.GET("", r.systemHandler.ListTokens)
-			//	apiTokens.DELETE("/:token", r.systemHandler.DeleteToken)
 			//}
 
 			// Document routes
@@ -187,19 +175,20 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
 
-		chats := v1.Group("/chats")
-		{
-			chats.GET("", r.chatHandler.ListChats)
-			chats.GET("/:chat_id", r.chatHandler.GetChat)
-		}
+            chats := v1.Group("/chats")
+            {
+                chats.GET("", r.chatHandler.ListChats)
+                chats.GET("/:chat_id", r.chatHandler.GetChat)
+            }
 
-		searches := v1.Group("/searches")
-		{
-			searches.GET("", r.searchHandler.ListSearches)
-			searches.POST("", r.searchHandler.CreateSearch)
-			searches.GET("/:search_id", r.searchHandler.GetSearch)
-			searches.DELETE("/:search_id", r.searchHandler.DeleteSearch)
-		}
+			searches := v1.Group("/searches")
+			{
+				searches.GET("", r.searchHandler.ListSearches)
+				searches.POST("", r.searchHandler.CreateSearch)
+				searches.GET("/:search_id", r.searchHandler.GetSearch)
+				searches.PUT("/:search_id", r.searchHandler.UpdateSearch)
+				searches.DELETE("/:search_id", r.searchHandler.DeleteSearch)
+			}
 
 			file := v1.Group("/files")
 			{
