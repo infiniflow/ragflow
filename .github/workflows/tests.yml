@@ -151,7 +151,7 @@ jobs:
           if [[ ${GITHUB_EVENT_NAME} == "schedule" ]]; then
             export HTTP_API_TEST_LEVEL=p3
           else
-            export HTTP_API_TEST_LEVEL=p2
+            export HTTP_API_TEST_LEVEL=p3
           fi
           echo "HTTP_API_TEST_LEVEL=${HTTP_API_TEST_LEVEL}" >> ${GITHUB_ENV}
           echo "RAGFLOW_CONTAINER=${GITHUB_RUN_ID}-ragflow-cpu-1" >> ${GITHUB_ENV}
