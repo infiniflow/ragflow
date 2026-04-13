@@ -20,7 +20,7 @@ const {
   ask,
   chatsMindmap,
   chatsRelatedQuestions,
-  upload_and_parse,
+  uploadAndParse,
   fetchExternalChatInfo,
 } = api;
 
@@ -99,7 +99,7 @@ const methods = {
   },
   uploadAndParse: {
     method: 'post',
-    url: upload_and_parse,
+    url: uploadAndParse,
   },
   fetchExternalChatInfo: {
     url: fetchExternalChatInfo,

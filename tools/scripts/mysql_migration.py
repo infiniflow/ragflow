@@ -795,8 +795,11 @@ Examples:
   # List available stages
   python mysql_migration.py --list-stages
   
-  # Dry run (default - check only, no write)
+  # Dry run (default - check only, no write) with config file
   python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml
+  
+  # Dry run with command line MySQL connection
+  python mysql_migration.py --stages tenant_model_provider --host localhost --port 3306 --user root --password secret
   
   # Create target tables only (no data migration)
   python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --create-table-only
@@ -808,6 +811,18 @@ Examples:
   python mysql_migration.py --stages stage1,stage2,stage3 --config /path/to/config.yaml --execute
 """
     )
+    
+    # MySQL connection options
+    parser.add_argument('--host', type=str, default='localhost',
+                       help='MySQL host (default: localhost)')
+    parser.add_argument('--port', type=int, default=3306,
+                       help='MySQL port (default: 3306)')
+    parser.add_argument('--user', type=str, default='root',
+                       help='MySQL user (default: root)')
+    parser.add_argument('--password', type=str, default='',
+                       help='MySQL password (default: empty)')
+    parser.add_argument('--database', type=str, default='rag_flow',
+                       help='MySQL database name (default: rag_flow)')
     
     # Configuration options
     parser.add_argument('--config', '-c', type=str, help='Path to YAML config file')
@@ -834,12 +849,29 @@ Examples:
     
     stages = [s.strip() for s in args.stages.split(',')]
     
-    # Load configuration
+    # Load configuration: command line args take precedence over config file
     if args.config:
         config = MigrationConfig.from_config_file(args.config)
+        # Override with command line args if provided
+        if args.host != 'localhost':
+            config.host = args.host
+        if args.port != 3306:
+            config.port = args.port
+        if args.user != 'root':
+            config.user = args.user
+        if args.password != '':
+            config.password = args.password
+        if args.database != 'rag_flow':
+            config.database = args.database
     else:
-        logging.error("No config file specified. Use --config to specify config file.")
-        sys.exit(1)
+        # Use command line args directly
+        config = MigrationConfig(
+            host=args.host,
+            port=args.port,
+            user=args.user,
+            password=args.password,
+            database=args.database
+        )
     
     logger.info(f"MySQL Configuration: host={config.host}, port={config.port}, "
                f"user={config.user}, database={config.database}")
