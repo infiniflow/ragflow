@@ -798,13 +798,21 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
     else:
         doc_engine = "es"
 
+    _UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+
+    def _validate_uuid(value: str, label: str = "id") -> str:
+        """Raise ValueError if value is not a canonical UUID string."""
+        if not _UUID_RE.match(str(value)):
+            raise ValueError(f"Invalid {label} format: {value!r}")
+        return value
+
     # Construct the full table name
     # For Elasticsearch: ragflow_{tenant_id} (kb_id is in WHERE clause)
     # For Infinity: ragflow_{tenant_id}_{kb_id} (each KB has its own table)
     base_table = index_name(tenant_id)
     if doc_engine == "infinity" and kb_ids and len(kb_ids) == 1:
-        # Infinity: append kb_id to table name
-        table_name = f"{base_table}_{kb_ids[0]}"
+        # Infinity: append kb_id to table name — validate before interpolating
+        table_name = f"{base_table}_{_validate_uuid(kb_ids[0], 'kb_id')}"
         logging.debug(f"use_sql: Using Infinity table name: {table_name}")
     else:
         # Elasticsearch/OpenSearch: use base index name
@@ -836,11 +844,14 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         if doc_engine == "infinity" or not kb_ids:
             return sql
 
+        # Validate all kb_ids are UUIDs before interpolating into SQL
+        safe_kb_ids = [_validate_uuid(kid, "kb_id") for kid in kb_ids]
+
         # Build kb_filter: single KB or multiple KBs with OR
-        if len(kb_ids) == 1:
-            kb_filter = f"kb_id = '{kb_ids[0]}'"
+        if len(safe_kb_ids) == 1:
+            kb_filter = f"kb_id = '{safe_kb_ids[0]}'"
         else:
-            kb_filter = "(" + " OR ".join([f"kb_id = '{kb_id}'" for kb_id in kb_ids]) + ")"
+            kb_filter = "(" + " OR ".join([f"kb_id = '{kid}'" for kid in safe_kb_ids]) + ")"
 
         if "where " not in sql.lower():
             o = sql.lower().split("order by")
