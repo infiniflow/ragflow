@@ -451,19 +451,6 @@ def list_docs(dataset_id, tenant_id):
     return get_result(data={"total": total, "docs": output_docs})
 
 
-@manager.route("/datasets/<dataset_id>/metadata/summary", methods=["GET"])  # noqa: F821
-@token_required
-async def metadata_summary(dataset_id, tenant_id):
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
-    req = await get_request_json()
-    try:
-        summary = DocMetadataService.get_metadata_summary(dataset_id, req.get("doc_ids"))
-        return get_result(data={"summary": summary})
-    except Exception as e:
-        return server_error_response(e)
-
-
 @manager.route("/datasets/<dataset_id>/metadata/update", methods=["POST"])  # noqa: F821
 @token_required
 async def metadata_batch_update(dataset_id, tenant_id):
