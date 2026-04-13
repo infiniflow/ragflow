@@ -601,6 +601,17 @@ class ESConnection(ESConnectionBase):
                 if n == "available_int" and isinstance(v, (int, float)):
                     m[n] = v
                     continue
+                # TAG_FLD is stored in ES as a rank_features object and comes
+                # back in _source as a native dict. Keep it a dict — the
+                # scorer in rag/nlp/search.py needs structured access to
+                # iterate tags and their weights. Previously this fell into
+                # the str() branch below, producing a single-quoted Python
+                # repr that only eval() could parse back; replacing eval()
+                # with json.loads means that path no longer round-trips, so
+                # we must avoid stringifying the dict in the first place.
+                if n == TAG_FLD and isinstance(v, dict):
+                    m[n] = v
+                    continue
                 if not isinstance(v, str):
                     m[n] = str(m[n])
                 # if n.find("tks") > 0:
