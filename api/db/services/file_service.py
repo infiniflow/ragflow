@@ -636,8 +636,16 @@ class FileService(CommonService):
         Delegates to :func:`common.ssrf_guard.assert_url_is_safe`, which
         validates the scheme, hostname, and every DNS-resolved address, and
         returns ``(hostname, resolved_ip)`` for DNS pinning.
+
+        Only the scheme and host (and port when present) are forwarded to the
+        guard so that credentials or query parameters in *url* are never
+        written to the log.
         """
-        return assert_url_is_safe(url, allowed_schemes=FileService._ALLOWED_SCHEMES)
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        port_suffix = f":{parsed.port}" if parsed.port else ""
+        redacted = f"{parsed.scheme}://{parsed.hostname}{port_suffix}"
+        return assert_url_is_safe(redacted, allowed_schemes=FileService._ALLOWED_SCHEMES)
 
     @staticmethod
     def upload_info(user_id, file, url: str|None=None):
@@ -661,7 +669,53 @@ class FileService(CommonService):
             }
 
         if url:
-            target_hostname, pinned_ip = FileService._validate_url_for_crawl(url)
+            import requests as _requests
+            from urllib.parse import urljoin as _urljoin
+
+            _MAX_CRAWL_REDIRECTS = 10
+
+            # Pre-resolve the full redirect chain so that AsyncWebCrawler never
+            # follows a server-sent redirect to an unvalidated (potentially
+            # internal) host.  Each hop is SSRF-checked before being followed;
+            # the validated (hostname, ip) pairs are pinned via Chromium's
+            # --host-resolver-rules so the browser cannot re-resolve any of them
+            # through a fresh DNS query.
+            current_url = url
+            current_hostname, current_ip = FileService._validate_url_for_crawl(current_url)
+            # Accumulate MAP rules for every hostname we encounter in the chain.
+            host_pins: dict[str, str] = {current_hostname: current_ip}
+
+            for _ in range(_MAX_CRAWL_REDIRECTS):
+                try:
+                    _resp = _requests.get(
+                        current_url,
+                        timeout=10,
+                        allow_redirects=False,
+                    )
+                except _requests.RequestException as _exc:
+                    raise ValueError(f"Failed to fetch {current_url!r}: {_exc}") from _exc
+
+                if _resp.status_code not in (301, 302, 303, 307, 308):
+                    break
+
+                _location = _resp.headers.get("Location")
+                if not _location:
+                    break
+
+                _next_url = _urljoin(current_url, _location)
+                _next_hostname, _next_ip = FileService._validate_url_for_crawl(_next_url)
+                host_pins[_next_hostname] = _next_ip
+                current_url = _next_url
+            else:
+                raise ValueError(
+                    f"Exceeded {_MAX_CRAWL_REDIRECTS} redirects fetching {url!r}"
+                )
+
+            # Build a single MAP rule string covering every validated hostname
+            # in the redirect chain.  Chromium uses the pinned IP for each,
+            # skipping DNS entirely and eliminating the rebinding window.
+            _map_rules = ",".join(f"MAP {h} {ip}" for h, ip in host_pins.items())
+
             from crawl4ai import (
                 AsyncWebCrawler,
                 BrowserConfig,
@@ -672,13 +726,10 @@ class FileService(CommonService):
             )
             filename = re.sub(r"\?.*", "", url.split("/")[-1])
             async def adownload():
-                # Pin DNS at the browser level to prevent DNS rebinding: the IP
-                # resolved during validation is locked in for the actual fetch so
-                # a second DNS query cannot swap in a private address.
                 browser_config = BrowserConfig(
                     headless=True,
                     verbose=False,
-                    extra_args=[f"--host-resolver-rules=MAP {target_hostname} {pinned_ip}"],
+                    extra_args=[f"--host-resolver-rules={_map_rules}"],
                 )
                 async with AsyncWebCrawler(config=browser_config) as crawler:
                     crawler_config = CrawlerRunConfig(
@@ -688,8 +739,10 @@ class FileService(CommonService):
                         pdf=True,
                         screenshot=False
                     )
+                    # Use the final resolved URL so the browser starts at the
+                    # redirect destination rather than re-following the chain.
                     result: CrawlResult = await crawler.arun(
-                        url=url,
+                        url=current_url,
                         config=crawler_config
                     )
                     return result
