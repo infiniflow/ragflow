@@ -1692,10 +1692,8 @@ Best for: Documents with flowing, contextually connected content — such as boo
       searXNG: 'SearXNG',
       searXNGDescription:
         'A component that searches via your provided SearXNG instance URL. Specify TopN and the instance URL.',
-      pdfGenerator: 'Docs Generator',
-      pDFGenerator: 'Docs Generator',
-      pdfGeneratorDescription: `A component that generates documents (PDF, DOCX, TXT) from markdown-formatted content with customizable styling, images, and tables. Supports: **bold**, *italic*, # headings, - lists, tables with | syntax.`,
-      pDFGeneratorDescription: `A component that generates documents (PDF, DOCX, TXT) from markdown-formatted content with customizable styling, images, and tables. Supports: **bold**, *italic*, # headings, - lists, tables with | syntax.`,
+      docGenerator: 'Doc Generator',
+      docGeneratorDescription: `Generate a file from Markdown content.`,
       subtitle: 'Subtitle',
       logoImage: 'Logo Image',
       logoPosition: 'Logo Position',

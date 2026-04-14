@@ -56,7 +56,7 @@ export const LucideIconMap = {
   [Operator.DataOperations]: FileCode,
   [Operator.Loop]: InfinityIcon,
   [Operator.ExitLoop]: LogOut,
-  [Operator.PDFGenerator]: FileText,
+  [Operator.DocGenerator]: FileText,
 };
 
 const Empty = () => {

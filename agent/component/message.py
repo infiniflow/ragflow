@@ -54,6 +54,9 @@ class MessageParam(ComponentParamBase):
         self.outputs = {
             "content": {
                 "type": "str"
+            },
+            "downloads": {
+                "type": "list"
             }
         }
 
@@ -66,10 +69,66 @@ class MessageParam(ComponentParamBase):
 class Message(ComponentBase):
     component_name = "Message"
 
+    @staticmethod
+    def _is_download_info(value: Any) -> bool:
+        return isinstance(value, dict) and all(
+            key in value for key in ("doc_id", "filename", "mime_type")
+        )
+
+    def _extract_downloads(self, value: Any) -> list[dict[str, Any]]:
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except Exception:
+                return []
+
+        if self._is_download_info(value):
+            return [value]
+
+        if isinstance(value, list) and all(self._is_download_info(item) for item in value):
+            return value
+
+        return []
+
+    def _stringify_message_value(
+        self,
+        value: Any,
+        delimiter: str = None,
+        downloads: list[dict[str, Any]] | None = None,
+        fallback_to_str: bool = False,
+    ) -> str:
+        extracted_downloads = self._extract_downloads(value)
+        if extracted_downloads:
+            if downloads is not None:
+                downloads.extend(extracted_downloads)
+            return ""
+
+        if value is None:
+            return ""
+
+        if isinstance(value, list) and delimiter:
+            return delimiter.join([str(vv) for vv in value])
+
+        if isinstance(value, str):
+            return value
+
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except Exception:
+            if fallback_to_str:
+                return str(value)
+            return ""
+
     def get_input_elements(self) -> dict[str, Any]:
         return self.get_input_elements_from_text("".join(self._param.content))
 
-    def get_kwargs(self, script:str, kwargs:dict = {}, delimiter:str=None) -> tuple[str, dict[str, str | list | Any]]:
+    def get_kwargs(
+        self,
+        script: str,
+        kwargs: dict = {},
+        delimiter: str = None,
+        downloads: list[dict[str, Any]] | None = None,
+    ) -> tuple[str, dict[str, str | list | Any]]:
         for k,v in self.get_input_elements_from_text(script).items():
             if k in kwargs:
                 continue
@@ -84,15 +143,8 @@ class Message(ComponentBase):
                 else:
                     for t in iter_obj:
                         ans += t
-            elif isinstance(v, list) and delimiter:
-                ans = delimiter.join([str(vv) for vv in v])
-            elif not isinstance(v, str):
-                try:
-                    ans = json.dumps(v, ensure_ascii=False)
-                except Exception:
-                    pass
             else:
-                ans = v
+                ans = self._stringify_message_value(v, delimiter, downloads)
             if not ans:
                 ans = ""
             kwargs[k] = ans
@@ -115,6 +167,7 @@ class Message(ComponentBase):
         s = 0
         all_content = ""
         cache = {}
+        downloads = []
         for r in re.finditer(self.variable_ref_patt, rand_cnt, flags=re.DOTALL):
             if self.check_if_canceled("Message streaming"):
                 return
@@ -154,11 +207,9 @@ class Message(ComponentBase):
                 continue
             elif inspect.isawaitable(v):
                 v = await v
-            elif not isinstance(v, str):
-                try:
-                    v = json.dumps(v, ensure_ascii=False)
-                except Exception:
-                    v = str(v)
+            v = self._stringify_message_value(
+                v, downloads=downloads, fallback_to_str=True
+            )
             yield v
             self.set_input_value(exp, v)
             all_content += v
@@ -171,6 +222,7 @@ class Message(ComponentBase):
             all_content += rand_cnt[s: ]
             yield rand_cnt[s: ]
 
+        self.set_output("downloads", downloads)
         self.set_output("content", all_content)
         self._convert_content(all_content)
         await self._save_to_memory(all_content)
@@ -191,12 +243,14 @@ class Message(ComponentBase):
             self.set_output("content", partial(self._stream, rand_cnt))
             return
 
-        rand_cnt, kwargs = self.get_kwargs(rand_cnt, kwargs)
+        downloads = []
+        rand_cnt, kwargs = self.get_kwargs(rand_cnt, kwargs, downloads=downloads)
         template = _jinja2_sandbox.from_string(rand_cnt)
         try:
             content = template.render(kwargs)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning(f"Jinja2 template rendering failed: {e}")
+            content = rand_cnt  # fallback to unrendered content
 
         if self.check_if_canceled("Message processing"):
             return
@@ -204,6 +258,7 @@ class Message(ComponentBase):
         for n, v in kwargs.items():
             content = re.sub(n, v, content)
 
+        self.set_output("downloads", downloads)
         self.set_output("content", content)
         self._convert_content(content)
         self._save_to_memory(content)
