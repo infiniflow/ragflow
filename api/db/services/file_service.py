@@ -699,7 +699,7 @@ class FileService(CommonService):
                     filename += ".pdf"
                 return structured(filename, "pdf", page.pdf, page.response_headers["content-type"])
 
-            return structured(filename, "html", str(page.markdown).encode("utf-8"), page.response_headers["content-type"], user_id)
+            return structured(filename, "html", str(page.markdown).encode("utf-8"), page.response_headers["content-type"])
 
         DocumentService.check_doc_health(user_id, file.filename)
         return structured(file.filename, filename_type(file.filename), file.read(), file.content_type)

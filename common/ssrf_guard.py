@@ -109,4 +109,10 @@ def assert_url_is_safe(
         if resolved_ip is None:
             resolved_ip = str(raw_ip)
 
+    if resolved_ip is None:
+        logger.warning(
+            "SSRF guard blocked URL: hostname=%r resolved to no addresses", hostname
+        )
+        raise ValueError(f"Hostname {hostname!r} resolved to no addresses.")
+
     return hostname, resolved_ip

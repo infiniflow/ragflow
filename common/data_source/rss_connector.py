@@ -1,9 +1,12 @@
 import hashlib
+import socket as _socket_module
+import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from time import struct_time
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import bs4
 import feedparser
@@ -13,10 +16,55 @@ from common.data_source.config import INDEX_BATCH_SIZE, REQUEST_TIMEOUT_SECONDS,
 from common.data_source.interfaces import LoadConnector, PollConnector
 from common.data_source.models import Document, GenerateDocumentsOutput, SecondsSinceUnixEpoch
 
+# ---------------------------------------------------------------------------
+# Thread-local DNS pinning
+#
+# We install a lightweight wrapper around socket.getaddrinfo once at module
+# load.  The wrapper is a no-op for threads that have no active pins, so it
+# cannot affect unrelated code running in the same process.  Within a
+# `_pin_dns` context the resolved IP that passed the SSRF guard is returned
+# for every getaddrinfo call for that hostname, eliminating the DNS-rebinding
+# window between the SSRF check and the actual TCP connection.
+# ---------------------------------------------------------------------------
 
-def _validate_url_no_ssrf(url: str) -> None:
+_tl = threading.local()
+_orig_getaddrinfo = _socket_module.getaddrinfo
+
+
+def _getaddrinfo_with_pins(host, port, *args, **kwargs):
+    pins: dict = getattr(_tl, "dns_pins", {})
+    if host in pins:
+        ip = pins[host]
+        family = _socket_module.AF_INET6 if ":" in ip else _socket_module.AF_INET
+        return [(family, _socket_module.SOCK_STREAM, 6, "", (ip, port or 0))]
+    return _orig_getaddrinfo(host, port, *args, **kwargs)
+
+
+_socket_module.getaddrinfo = _getaddrinfo_with_pins
+
+
+@contextmanager
+def _pin_dns(hostname: str, ip: str):
+    """Pin *hostname* → *ip* for the duration of this context, current thread only."""
+    pins = _tl.__dict__.setdefault("dns_pins", {})
+    pins[hostname] = ip
+    try:
+        yield
+    finally:
+        pins.pop(hostname, None)
+
+
+# ---------------------------------------------------------------------------
+# SSRF guard
+# ---------------------------------------------------------------------------
+
+_MAX_REDIRECTS = 10
+
+
+def _validate_url_no_ssrf(url: str) -> tuple[str, str]:
+    """Validate *url* against SSRF rules; return ``(hostname, resolved_ip)``."""
     from common.ssrf_guard import assert_url_is_safe
-    assert_url_is_safe(url)
+    return assert_url_is_safe(url)
 
 
 class RSSConnector(LoadConnector, PollConnector):
@@ -68,7 +116,8 @@ class RSSConnector(LoadConnector, PollConnector):
         if batch:
             yield batch
 
-    def _validate_feed_url(self) -> None:
+    def _validate_feed_url(self) -> tuple[str, str]:
+        """Validate ``self.feed_url`` and return ``(hostname, resolved_ip)``."""
         if not self.feed_url:
             raise ValueError("feed_url is required")
 
@@ -76,7 +125,7 @@ class RSSConnector(LoadConnector, PollConnector):
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("feed_url must be a valid http or https URL")
 
-        _validate_url_no_ssrf(self.feed_url)
+        return _validate_url_no_ssrf(self.feed_url)
 
     def _read_feed(self, require_entries: bool) -> Any:
         if self._cached_feed is not None:
@@ -84,14 +133,39 @@ class RSSConnector(LoadConnector, PollConnector):
                 raise ValueError("RSS feed contains no entries")
             return self._cached_feed
 
-        self._validate_feed_url()
+        # Validate once to get the pinned IP for the initial request.
+        current_hostname, current_ip = self._validate_feed_url()
+        current_url = self.feed_url
 
-        response = requests.get(self.feed_url, timeout=REQUEST_TIMEOUT_SECONDS, allow_redirects=True)
+        # Follow redirects manually: each hop is validated and DNS-pinned
+        # *before* the connection is made, closing the TOCTOU rebinding window
+        # that existed when allow_redirects=True was used with post-hoc checks.
+        response: requests.Response | None = None
+        for _ in range(_MAX_REDIRECTS + 1):
+            with _pin_dns(current_hostname, current_ip):
+                response = requests.get(
+                    current_url,
+                    timeout=REQUEST_TIMEOUT_SECONDS,
+                    allow_redirects=False,
+                )
+
+            if response.status_code not in (301, 302, 303, 307, 308):
+                break
+
+            location = response.headers.get("Location")
+            if not location:
+                break  # broken redirect; let raise_for_status() handle it
+
+            redirect_url = urljoin(current_url, location)
+            # Validate redirect target before following it.
+            current_hostname, current_ip = _validate_url_no_ssrf(redirect_url)
+            current_url = redirect_url
+        else:
+            raise ValueError(
+                f"Exceeded {_MAX_REDIRECTS} redirects fetching {self.feed_url!r}"
+            )
+
         response.raise_for_status()
-
-        final_url = getattr(response, "url", self.feed_url)
-        if final_url != self.feed_url and urlparse(final_url).hostname:
-            _validate_url_no_ssrf(final_url)
 
         feed = feedparser.parse(response.content)
         if getattr(feed, "bozo", False) and not feed.entries:
