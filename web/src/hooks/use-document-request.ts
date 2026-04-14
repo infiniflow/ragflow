@@ -73,7 +73,7 @@ export const useUploadNextDocument = () => {
       });
 
       try {
-        const ret = await kbService.document_upload(formData);
+        const ret = await kbService.documentUpload(formData);
         const code = get(ret, 'data.code');
 
         if (code === 0 || code === 500) {
@@ -95,7 +95,7 @@ export const useUploadNextDocument = () => {
   return { uploadDocument: mutateAsync, loading, data };
 };
 
-export const useFetchDocumentList = () => {
+export const useFetchDocumentList = (loop = true) => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
@@ -105,9 +105,10 @@ export const useFetchDocumentList = () => {
   const { filterValue, handleFilterSubmit, checkValue } =
     useHandleFilterSubmit();
   const [docs, setDocs] = useState<IDocumentInfo[]>([]);
+
   const isLoop = useMemo(() => {
-    return docs.some((doc) => doc.run === RunningStatus.RUNNING);
-  }, [docs]);
+    return loop && docs.some((doc) => doc.run === RunningStatus.RUNNING);
+  }, [docs, loop]);
 
   const { data, isFetching: loading } = useQuery<{
     docs: IDocumentInfo[];
@@ -253,7 +254,7 @@ export const useSetDocumentStatus = () => {
       documentId: string | string[];
     }) => {
       const ids = Array.isArray(documentId) ? documentId : [documentId];
-      const { data } = await kbService.document_change_status({
+      const { data } = await kbService.documentChangeStatus({
         doc_ids: ids,
         status: Number(status),
       });
@@ -292,7 +293,7 @@ export const useRunDocument = () => {
       queryClient.invalidateQueries({
         queryKey: [DocumentApiAction.FetchDocumentList],
       });
-      const ret = await kbService.document_run({
+      const ret = await kbService.documentRun({
         doc_ids: documentIds,
         run,
         ...(option || {}),
@@ -321,7 +322,7 @@ export const useRemoveDocument = () => {
   } = useMutation({
     mutationKey: [DocumentApiAction.RemoveDocument],
     mutationFn: async (documentIds: string | string[]) => {
-      const { data } = await kbService.document_rm({ doc_id: documentIds });
+      const { data } = await kbService.documentRm({ doc_id: documentIds });
       if (data.code === 0) {
         message.success(i18n.t('message.deleted'));
         queryClient.invalidateQueries({
@@ -389,7 +390,7 @@ export const useSetDocumentParser = () => {
       documentId: string;
       parserConfig: IChangeParserConfigRequestBody;
     }) => {
-      const { data } = await kbService.document_change_parser({
+      const { data } = await kbService.documentChangeParser({
         parser_id: parserId,
         pipeline_id: pipelineId,
         doc_id: documentId,
@@ -454,7 +455,7 @@ export const useCreateDocument = () => {
   } = useMutation({
     mutationKey: [DocumentApiAction.CreateDocument],
     mutationFn: async (name: string) => {
-      const { data } = await kbService.document_create({
+      const { data } = await kbService.documentCreate({
         name,
         kb_id: id,
       });
@@ -526,7 +527,7 @@ export const useNextWebCrawl = () => {
       formData.append('url', url);
       formData.append('kb_id', knowledgeId);
 
-      const ret = await kbService.web_crawl(formData);
+      const ret = await kbService.webCrawl(formData);
       const code = get(ret, 'data.code');
       if (code === 0) {
         message.success(i18n.t('message.uploaded'));
@@ -550,7 +551,7 @@ export const useFetchDocumentThumbnailsByIds = () => {
     enabled: ids.length > 0,
     initialData: {},
     queryFn: async () => {
-      const { data } = await kbService.document_thumbnails({ doc_ids: ids });
+      const { data } = await kbService.documentThumbnails({ doc_ids: ids });
       if (data.code === 0) {
         return data.data;
       }
