@@ -175,11 +175,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
 
-            chats := v1.Group("/chats")
-            {
-                chats.GET("", r.chatHandler.ListChats)
-                chats.GET("/:chat_id", r.chatHandler.GetChat)
-            }
+			chats := v1.Group("/chats")
+			{
+				chats.GET("", r.chatHandler.ListChats)
+				chats.GET("/:chat_id", r.chatHandler.GetChat)
+			}
 
 			searches := v1.Group("/searches")
 			{
@@ -196,6 +196,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				file.GET("", r.fileHandler.ListFiles)
 				file.DELETE("", r.fileHandler.DeleteFiles)
 				file.POST("/move", r.fileHandler.MoveFiles)
+				file.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
 				file.GET("/:id", r.fileHandler.Download)
 			}
 
@@ -245,12 +246,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Knowledge base routes
 		kb := authorized.Group("/v1/kb")
 		{
-			kb.POST("/create", r.knowledgebaseHandler.CreateKB)
 			kb.POST("/update", r.knowledgebaseHandler.UpdateKB)
 			kb.POST("/update_metadata_setting", r.knowledgebaseHandler.UpdateMetadataSetting)
 			kb.GET("/detail", r.knowledgebaseHandler.GetDetail)
-			kb.POST("/list", r.knowledgebaseHandler.ListKbs)
-			kb.POST("/rm", r.knowledgebaseHandler.DeleteKB)
 			kb.GET("/tags", r.knowledgebaseHandler.ListTagsFromKbs)
 			kb.GET("/get_meta", r.knowledgebaseHandler.GetMeta)
 			kb.GET("/basic_info", r.knowledgebaseHandler.GetBasicInfo)
