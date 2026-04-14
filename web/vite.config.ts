@@ -60,7 +60,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     hybrid: {
-      '^(/api/v1/memories)|^(/v1/user/info)|^(/v1/user/tenant_info)|^(/v1/tenant/list)|^(/v1/system/config)|^(/v1/user/login)|^(/v1/user/logout)|^(/api/v1/files)':
+      '^(/v1/kb)|^(/v1/document)|^(/v1/llm/list)|^(/api/v1/datasets)|^(/api/v1/memories)|^(/v1/user)|^(/v1/user/tenant_info)|^(/v1/tenant/list)|^(/v1/system/config)|^(/v1/user/login)|^(/v1/user/logout)|^(/api/v1/files)':
         {
           target: 'http://127.0.0.1:9384/',
           changeOrigin: true,
