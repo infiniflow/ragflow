@@ -1,6 +1,4 @@
 import hashlib
-import ipaddress
-import socket
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from time import struct_time
@@ -16,26 +14,9 @@ from common.data_source.interfaces import LoadConnector, PollConnector
 from common.data_source.models import Document, GenerateDocumentsOutput, SecondsSinceUnixEpoch
 
 
-def _is_private_ip(ip: str) -> bool:
-    try:
-        ip_obj = ipaddress.ip_address(ip)
-        return ip_obj.is_private or ip_obj.is_link_local or ip_obj.is_loopback
-    except ValueError:
-        return False
-
-
 def _validate_url_no_ssrf(url: str) -> None:
-    parsed = urlparse(url)
-    hostname = parsed.hostname
-    if not hostname:
-        raise ValueError("URL must have a valid hostname")
-
-    try:
-        ip = socket.gethostbyname(hostname)
-        if _is_private_ip(ip):
-            raise ValueError(f"URL resolves to private/internal IP address: {ip}")
-    except socket.gaierror as e:
-        raise ValueError(f"Failed to resolve hostname: {hostname}") from e
+    from common.ssrf_guard import assert_url_is_safe
+    assert_url_is_safe(url)
 
 
 class RSSConnector(LoadConnector, PollConnector):

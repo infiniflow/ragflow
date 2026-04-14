@@ -15,16 +15,13 @@
 #
 import asyncio
 import base64
-import ipaddress
 import logging
 import re
-import socket
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Union
-from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +35,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from common.misc_utils import get_uuid
+from common.ssrf_guard import assert_url_is_safe
 from common.constants import TaskStatus, FileSource, ParserType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService
@@ -632,52 +630,14 @@ class FileService(CommonService):
     _ALLOWED_SCHEMES = {"http", "https"}
 
     @staticmethod
-    def _validate_url_for_crawl(url: str) -> None:
-        """Raise ValueError if the URL is not safe to fetch (SSRF guard).
+    def _validate_url_for_crawl(url: str) -> tuple[str, str]:
+        """Raise ValueError if the URL is not safe to crawl (SSRF guard).
 
-        Checks performed in order:
-        1. Scheme must be http or https.
-        2. Hostname must be present.
-        3. All addresses returned by DNS must be public (not private, reserved,
-           loopback, link-local, or multicast).
+        Delegates to :func:`common.ssrf_guard.assert_url_is_safe`, which
+        validates the scheme, hostname, and every DNS-resolved address, and
+        returns ``(hostname, resolved_ip)`` for DNS pinning.
         """
-        parsed = urlparse(url)
-        if parsed.scheme not in FileService._ALLOWED_SCHEMES:
-            logger.warning(
-                "SSRF guard blocked URL with disallowed scheme: scheme=%r hostname=%r",
-                parsed.scheme, parsed.hostname,
-            )
-            raise ValueError(
-                f"Disallowed URL scheme: {parsed.scheme!r}. Only http and https are allowed."
-            )
-        hostname = parsed.hostname
-        if not hostname:
-            logger.warning("SSRF guard blocked URL with missing host: url=%r", url)
-            raise ValueError("URL is missing a host.")
-        try:
-            addr_infos = socket.getaddrinfo(hostname, None)
-        except socket.gaierror as exc:
-            logger.warning(
-                "SSRF guard blocked URL: could not resolve hostname=%r reason=%s",
-                hostname, exc,
-            )
-            raise ValueError(f"Could not resolve hostname {hostname!r}: {exc}") from exc
-        for _family, _type, _proto, _canonname, sockaddr in addr_infos:
-            ip = ipaddress.ip_address(sockaddr[0])
-            if (
-                ip.is_private
-                or ip.is_reserved
-                or ip.is_loopback
-                or ip.is_link_local
-                or ip.is_multicast
-            ):
-                logger.warning(
-                    "SSRF guard blocked URL: hostname=%r resolved to disallowed address=%s",
-                    hostname, ip,
-                )
-                raise ValueError(
-                    f"URL resolves to a private or reserved address ({ip}), which is not allowed."
-                )
+        return assert_url_is_safe(url, allowed_schemes=FileService._ALLOWED_SCHEMES)
 
     @staticmethod
     def upload_info(user_id, file, url: str|None=None):
@@ -701,7 +661,7 @@ class FileService(CommonService):
             }
 
         if url:
-            FileService._validate_url_for_crawl(url)
+            target_hostname, pinned_ip = FileService._validate_url_for_crawl(url)
             from crawl4ai import (
                 AsyncWebCrawler,
                 BrowserConfig,
@@ -712,9 +672,13 @@ class FileService(CommonService):
             )
             filename = re.sub(r"\?.*", "", url.split("/")[-1])
             async def adownload():
+                # Pin DNS at the browser level to prevent DNS rebinding: the IP
+                # resolved during validation is locked in for the actual fetch so
+                # a second DNS query cannot swap in a private address.
                 browser_config = BrowserConfig(
                     headless=True,
                     verbose=False,
+                    extra_args=[f"--host-resolver-rules=MAP {target_hostname} {pinned_ip}"],
                 )
                 async with AsyncWebCrawler(config=browser_config) as crawler:
                     crawler_config = CrawlerRunConfig(
