@@ -1,0 +1,31 @@
+# Firecrawl Plugin for RAGFlow - Dependencies
+
+# Core dependencies
+aiohttp>=3.8.0
+asyncio-throttle>=1.0.0
+
+# Data processing
+pydantic>=2.0.0
+python-dateutil>=2.8.0
+
+# HTTP and networking
+urllib3>=1.26.0
+requests>=2.28.0
+
+# Logging and monitoring
+structlog>=22.0.0
+
+# Optional: For advanced content processing
+beautifulsoup4>=4.11.0
+lxml>=4.9.0
+html2text>=2020.1.16
+
+# Optional: For enhanced error handling
+tenacity>=8.0.0
+
+# Development dependencies (optional)
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+black>=22.0.0
+flake8>=5.0.0
+mypy>=1.0.0

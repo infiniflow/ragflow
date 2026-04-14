@@ -1,0 +1,107 @@
+{{- if .Values.minio.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ragflow.fullname" . }}-minio
+  annotations:
+    "helm.sh/resource-policy": keep
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  {{- with .Values.minio.storage.className }}
+  storageClassName: {{ . }}
+  {{- end }}
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.minio.storage.capacity }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "ragflow.fullname" . }}-minio
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+  annotations:
+    checksum/config: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "ragflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: minio
+  {{- with .Values.minio.deployment.strategy }}
+  strategy:
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "ragflow.labels" . | nindent 8 }}
+        app.kubernetes.io/component: minio
+    spec:
+      {{- if or .Values.global.imagePullSecrets .Values.minio.image.pullSecrets }}
+      imagePullSecrets:
+        {{- with .Values.global.imagePullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.minio.image.pullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      containers:
+      - name: minio
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.minio.image.repository) }}:{{ .Values.minio.image.tag }}
+        {{- with .Values.minio.image.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
+        envFrom:
+          - secretRef:
+              name: {{ include "ragflow.fullname" . }}-env-config
+        args:
+          - server
+          - "--console-address=:9001"
+          - "/data"
+        ports:
+          - containerPort: 9000
+            name: s3
+          - containerPort: 9001
+            name: console
+        {{- with .Values.minio.deployment.resources }}
+        resources:
+          {{- . | toYaml | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+          - mountPath: /data
+            name: minio-data
+      volumes:
+        - name: minio-data
+          persistentVolumeClaim:
+            claimName: {{ include "ragflow.fullname" . }}-minio
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ragflow.fullname" . }}-minio
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  selector:
+    {{- include "ragflow.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+  ports:
+    - name: s3
+      protocol: TCP
+      port: 9000
+      targetPort: s3
+    - name: console
+      protocol: TCP
+      port: 9001
+      targetPort: console
+  type: {{ .Values.minio.service.type }}
+{{- end }}

@@ -1,0 +1,14 @@
+.canvasWrapper {
+  position: relative;
+  height: calc(100% - 64px);
+  :global(.react-flow__node-group) {
+    .commonNode();
+    border-radius: 0 0 10px 10px;
+    padding: 0;
+    border: 0;
+    background-color: transparent;
+  }
+  :global(.react-flow__node-group.selectable.selected) {
+    box-shadow: none;
+  }
+}
