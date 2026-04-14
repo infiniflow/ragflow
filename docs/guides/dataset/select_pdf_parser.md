@@ -75,11 +75,11 @@ When `DOCLING_SERVER_URL` is set, RAGFlow sends PDF content to Docling Serve (`/
 To enable the OpenDataLoader parser, start it as a standalone service and point RAGFlow at it:
 
 1. Add `opendataloader` to `COMPOSE_PROFILES` in `docker/.env`:
-   ```
+   ```env
    COMPOSE_PROFILES=${COMPOSE_PROFILES},opendataloader
    ```
 2. Set the API endpoint so RAGFlow knows where to reach the service:
-   ```
+   ```env
    OPENDATALOADER_APISERVER=http://opendataloader:9383
    ```
 3. Build and start the service:
