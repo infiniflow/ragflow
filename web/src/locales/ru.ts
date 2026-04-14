@@ -767,6 +767,9 @@ export default {
       delete: 'Удалить',
     },
     chat: {
+      chatSupport: 'Чат-поддержка',
+      replyInstantly: 'Обычно мы отвечаем мгновенно',
+      typeYourMessage: 'Введите сообщение...',
       messagePlaceholder: 'Введите ваше сообщение здесь...',
       exit: 'Выход',
       multipleModels: 'Несколько моделей',

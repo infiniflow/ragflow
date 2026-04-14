@@ -424,6 +424,9 @@ export default {
       delete: '删除',
     },
     chat: {
+      chatSupport: '聊天支援',
+      replyInstantly: '我們通常會即時回覆',
+      typeYourMessage: '輸入您的訊息...',
       newConversation: '新會話',
       createAssistant: '新建助理',
       assistantSetting: '助理設置',

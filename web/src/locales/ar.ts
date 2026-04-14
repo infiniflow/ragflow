@@ -652,6 +652,9 @@ export default {
       delete: 'يمسح',
     },
     chat: {
+      chatSupport: 'دعم الدردشة',
+      replyInstantly: 'نرد عادةً على الفور',
+      typeYourMessage: 'اكتب رسالتك...',
       messagePlaceholder: 'اكتب رسالتك هنا...',
       exit: 'مخرج',
       multipleModels: 'نماذج متعددة',

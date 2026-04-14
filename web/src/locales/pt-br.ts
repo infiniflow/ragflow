@@ -349,6 +349,9 @@ export default {
       questionTip: `Se houver perguntas fornecidas, a incorporação do fragmento será baseada nelas.`,
     },
     chat: {
+      chatSupport: 'Suporte por chat',
+      replyInstantly: 'Normalmente respondemos instantaneamente',
+      typeYourMessage: 'Digite sua mensagem...',
       newConversation: 'Nova conversa',
       createAssistant: 'Criar um Assistente',
       assistantSetting: 'Configuração do Assistente',

@@ -350,6 +350,9 @@ export default {
       questionTip: `質問が指定されている場合、チャンクの埋め込みはそれらに基づきます。`,
     },
     chat: {
+      chatSupport: 'チャットサポート',
+      replyInstantly: '通常、即座に返信します',
+      typeYourMessage: 'メッセージを入力...',
       messagePlaceholder: 'メッセージを入力してください...',
       exit: '終了',
       multipleModels: '複数モデル',

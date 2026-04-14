@@ -181,6 +181,9 @@ export default {
     // Otros bloques de traducción
     // Continua con la misma estructura
     chat: {
+      chatSupport: 'Soporte de chat',
+      replyInstantly: 'Normalmente respondemos al instante',
+      typeYourMessage: 'Escribe tu mensaje...',
       newConversation: 'Nueva conversación',
       createAssistant: 'Crear un asistente',
       assistantSetting: 'Configuración del asistente',
