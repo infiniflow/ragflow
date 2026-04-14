@@ -523,8 +523,10 @@ async def retrieval_test():
                 page_size=size,
                 similarity_threshold=float(req.get("similarity_threshold", 0.2)),
                 vector_similarity_weight=float(req.get("vector_similarity_weight", 0.3)),
+                doc_ids=local_doc_ids or None,
             )
             if compiled_chunks:
+                logging.debug(f"use_compiled_pages: prepending {len(compiled_chunks)} compiled page(s) to retrieval results")
                 ranks["chunks"] = compiled_chunks + ranks["chunks"]
         ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
 

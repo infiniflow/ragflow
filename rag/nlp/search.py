@@ -730,6 +730,7 @@ class Dealer:
         page_size: int = 6,
         similarity_threshold: float = 0.2,
         vector_similarity_weight: float = 0.3,
+        doc_ids: list[str] | None = None,
     ) -> list[dict]:
         """
         Retrieve compiled knowledge pages matching *question*.
@@ -738,8 +739,18 @@ class Dealer:
         so raw document chunks are never returned here.  Results are formatted
         in the same shape as the chunks returned by :meth:`retrieval` so they
         can be prepended to ``kbinfos["chunks"]`` without further conversion.
+
+        When *doc_ids* is provided (e.g. attachment or metadata-filter mode),
+        retrieval is skipped entirely: compiled pages are KB-level aggregates
+        and cannot be scoped to a specific document subset without risking
+        contamination of filtered answers.
         """
         if not question:
+            return []
+
+        # Skip when a doc-level scope is active — compiled pages are KB-wide aggregates.
+        if doc_ids:
+            logging.debug("retrieval_compiled_pages: skipping because doc_ids filter is active")
             return []
 
         if isinstance(tenant_ids, str):

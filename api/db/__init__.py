@@ -71,7 +71,7 @@ class PipelineTaskType(StrEnum):
 VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR, PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP, PipelineTaskType.COMPILED_PAGES}
 
 
-PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES = {PipelineTaskType.RAPTOR.lower(), PipelineTaskType.GRAPH_RAG.lower(), PipelineTaskType.MINDMAP.lower(), PipelineTaskType.COMPILED_PAGES.lower()}
+PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES = {PipelineTaskType.RAPTOR.lower(), PipelineTaskType.GRAPH_RAG.lower(), PipelineTaskType.MINDMAP.lower(), "compiled_pages"}
 
 
 KNOWLEDGEBASE_FOLDER_NAME=".knowledgebase"

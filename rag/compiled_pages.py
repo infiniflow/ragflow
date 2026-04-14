@@ -42,12 +42,11 @@ COMPILED_PAGE_TYPE_KWD = "compiled_page_type_kwd"
 SOURCE_CHUNK_IDS_KWD = "source_chunk_ids_kwd"
 
 # -----------------------------------------------------------------------
-# LLM synthesis prompt
+# LLM synthesis prompt (system + user are kept separate)
 # -----------------------------------------------------------------------
-_SYNTHESIS_PROMPT = """\
-You are a knowledge compiler. You will receive a set of related excerpts \
-from a document or knowledge base. Your job is to produce a single, \
-well-structured knowledge page that captures the key information.
+_SYSTEM_PROMPT = """\
+You are a knowledge compiler. Your job is to produce a single, \
+well-structured knowledge page from the provided excerpts.
 
 Rules:
 - Detect the content type automatically:
@@ -58,12 +57,9 @@ Rules:
 - Start with a one-line title that clearly names the topic.
 - Be concise yet complete (200–600 words).
 - Preserve numbers, proper nouns, and technical terms exactly.
-- Do NOT add information not present in the excerpts.
+- Do NOT add information not present in the excerpts."""
 
-Excerpts:
-{content}
-
-Knowledge page:"""
+_USER_TEMPLATE = "Excerpts:\n{content}\n\nKnowledge page:"
 
 
 # -----------------------------------------------------------------------
@@ -110,12 +106,11 @@ async def _call_llm(chat_mdl, content: str, task_id: str) -> str | None:
     if task_id and has_canceled(task_id):
         raise TaskCanceledException(f"Task {task_id} cancelled before LLM call")
 
-    prompt = _SYNTHESIS_PROMPT.format(content=content)
     async with chat_limiter:
         try:
             response = await chat_mdl.async_chat(
-                prompt,
-                [{"role": "user", "content": "Write the knowledge page:"}],
+                _SYSTEM_PROMPT,
+                [{"role": "user", "content": _USER_TEMPLATE.format(content=content)}],
                 {"temperature": 0.1, "max_tokens": 1024},
             )
         except Exception as exc:

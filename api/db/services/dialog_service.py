@@ -649,8 +649,10 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     page_size=dialog.top_n,
                     similarity_threshold=dialog.similarity_threshold,
                     vector_similarity_weight=dialog.vector_similarity_weight,
+                    doc_ids=attachments or None,
                 )
                 if compiled_chunks:
+                    logging.debug(f"use_compiled_pages: prepending {len(compiled_chunks)} compiled page(s) to context")
                     kbinfos["chunks"] = compiled_chunks + kbinfos["chunks"]
 
     knowledges = kb_prompt(kbinfos, max_tokens)
