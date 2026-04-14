@@ -242,24 +242,27 @@ class TestLoadSubgraphFromStore:
 class TestHasRaptorChunks:
 
     @pytest.mark.p1
-    def test_returns_true_when_raptor_chunk_exists(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_returns_true_when_raptor_chunk_exists(self, monkeypatch):
         """Doc store returns a RAPTOR row -> True."""
         monkeypatch.setattr(_settings.docStoreConn, "search", MagicMock(return_value=object()))
         monkeypatch.setattr(_settings.docStoreConn, "get_fields",
                             MagicMock(return_value={"chunk_r": {"raptor_kwd": "raptor"}}))
 
-        assert has_raptor_chunks("doc_001", "t1", "kb1") is True
+        assert await has_raptor_chunks("doc_001", "t1", "kb1") is True
 
     @pytest.mark.p1
-    def test_returns_false_when_no_raptor_chunks(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_returns_false_when_no_raptor_chunks(self, monkeypatch):
         """Doc store returns empty -> False."""
         monkeypatch.setattr(_settings.docStoreConn, "search", MagicMock(return_value=object()))
         monkeypatch.setattr(_settings.docStoreConn, "get_fields", MagicMock(return_value={}))
 
-        assert has_raptor_chunks("doc_001", "t1", "kb1") is False
+        assert await has_raptor_chunks("doc_001", "t1", "kb1") is False
 
     @pytest.mark.p1
-    def test_queries_specifically_for_raptor_kwd(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_queries_specifically_for_raptor_kwd(self, monkeypatch):
         """raptor_kwd is in the search condition so non-RAPTOR leading chunks
         cannot produce a false-negative."""
         captured = {}
@@ -271,14 +274,15 @@ class TestHasRaptorChunks:
         monkeypatch.setattr(_settings.docStoreConn, "search", _capture)
         monkeypatch.setattr(_settings.docStoreConn, "get_fields", MagicMock(return_value={}))
 
-        has_raptor_chunks("doc_001", "t1", "kb1")
+        await has_raptor_chunks("doc_001", "t1", "kb1")
         assert "raptor_kwd" in captured["condition"]
 
     @pytest.mark.p2
-    def test_returns_false_on_doc_store_exception(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_returns_false_on_doc_store_exception(self, monkeypatch):
         """Exception is caught; False is returned without crashing."""
         monkeypatch.setattr(_settings.docStoreConn, "search", MagicMock(side_effect=RuntimeError("db down")))
-        assert has_raptor_chunks("doc_001", "t1", "kb1") is False
+        assert await has_raptor_chunks("doc_001", "t1", "kb1") is False
 
 
 # ---------------------------------------------------------------------------

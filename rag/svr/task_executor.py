@@ -768,17 +768,19 @@ async def run_dataflow(task: dict):
                                        dsl=str(pipeline))
 
 
-def has_raptor_chunks(doc_id: str, tenant_id: str, kb_id: str) -> bool:
+async def has_raptor_chunks(doc_id: str, tenant_id: str, kb_id: str) -> bool:
     """Return True if RAPTOR chunks already exist for doc_id in the doc store.
 
     Queries directly for raptor_kwd="raptor" rows so a non-RAPTOR leading
-    chunk cannot produce a false-negative result.
+    chunk cannot produce a false-negative result.  Uses thread_pool_exec so
+    the blocking doc-store call does not stall the event loop.
     """
     from common.doc_store.doc_store_base import OrderByExpr
     from rag.nlp import search as nlp_search
     try:
         condition = {"doc_id": doc_id, "raptor_kwd": ["raptor"]}
-        res = settings.docStoreConn.search(
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
             ["raptor_kwd"], [], condition, [], OrderByExpr(),
             0, 1, nlp_search.index_name(tenant_id), [kb_id]
         )
@@ -858,7 +860,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
     if raptor_config.get("scope", "file") == "file":
         for x, doc_id in enumerate(doc_ids):
             # CHECKPOINT: skip docs that already have RAPTOR chunks in the doc store
-            if has_raptor_chunks(doc_id, row["tenant_id"], row["kb_id"]):
+            if await has_raptor_chunks(doc_id, row["tenant_id"], row["kb_id"]):
                 callback(msg=f"[RAPTOR] doc:{doc_id} already has RAPTOR chunks, skipping.")
                 callback(prog=(x + 1.) / len(doc_ids))
                 continue
