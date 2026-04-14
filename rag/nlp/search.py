@@ -383,13 +383,18 @@ class Dealer:
         if not question:
             return ranks
 
-        # Ensure RERANK_LIMIT is multiple of page_size
+        # Keep the historical windowing strategy by default, but when an external
+        # reranker is enabled cap candidate count by both top_k and provider-safe 64.
         RERANK_LIMIT = math.ceil(64 / page_size) * page_size if page_size > 1 else 1
         RERANK_LIMIT = max(30, RERANK_LIMIT)
+        if rerank_mdl and top > 0:
+            RERANK_LIMIT = min(RERANK_LIMIT, top, 64)
+        page = max(page, 1)
+        global_offset = (page - 1) * page_size
         req = {
             "kb_ids": kb_ids,
             "doc_ids": doc_ids,
-            "page": math.ceil(page_size * page / RERANK_LIMIT),
+            "page": global_offset // RERANK_LIMIT + 1,
             "size": RERANK_LIMIT,
             "question": question,
             "vector": True,
@@ -453,9 +458,7 @@ class Dealer:
             ranks["doc_aggs"] = []
             return ranks
 
-        max_pages = max(RERANK_LIMIT // max(page_size, 1), 1)
-        page_index = (page - 1) % max_pages
-        begin = page_index * page_size
+        begin = global_offset % RERANK_LIMIT
         end = begin + page_size
         page_idx = valid_idx[begin:end]
 
