@@ -79,7 +79,7 @@ env:
 ragflow:
   image:
     repository: quay-etaps.registry.intern/dap/kira
-    tag: testv24
+    tag: testv24.1
     pullPolicy: IfNotPresent
     pullSecrets: []
   # Optional service configuration overrides

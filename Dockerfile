@@ -22,7 +22,12 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
     cp -r /deps/nltk_data/* /opt/nltk_data/ && \
     cp /deps/tika-server-standard-3.3.0.jar /deps/tika-server-standard-3.3.0.jar.md5 /ragflow/ && \
     cp /deps/cl100k_base.tiktoken /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
+    
+RUN wget -q -O /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4 \
+    https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken && \
+    echo "tiktoken cl100k_base encoding cached successfully"
 
+ENV TIKTOKEN_CACHE_DIR=/ragflow
 ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard-3.3.0.jar"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NLTK_DATA=/opt/nltk_data
