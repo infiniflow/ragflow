@@ -98,12 +98,29 @@ def create_database_connection(host: str, port: int, user: str, password: str, d
     return db
 
 
-def create_migration(router: Router, name: str = "auto"):
-    """Create a new migration"""
+def create_migration(router: Router, name: str = "auto", auto: bool = False, models: list = None):
+    """Create a new migration
+    
+    Args:
+        router: peewee-migrate Router instance
+        name: Migration name
+        auto: If True, auto-generate migration SQL from model changes
+        models: List of model classes to compare against database
+    """
     try:
-        migration_name = router.create(name)
-        logger.info(f"Created migration: {migration_name}")
-        return migration_name
+        if auto and models:
+            # Auto-generate migration SQL by comparing models with database
+            migration_name = router.create(name, auto=models)
+            if migration_name:
+                logger.info(f"Created auto-generated migration: {migration_name}")
+            else:
+                logger.info("No schema changes detected, migration not created")
+            return migration_name
+        else:
+            # Create empty migration template
+            migration_name = router.create(name)
+            logger.info(f"Created migration template: {migration_name}")
+            return migration_name
     except Exception as e:
         logger.error(f"Failed to create migration: {e}")
         raise
@@ -112,6 +129,11 @@ def create_migration(router: Router, name: str = "auto"):
 def run_migrations(router: Router):
     """Run all pending migrations"""
     try:
+        diff = router.diff
+        if not diff:
+            logger.info("No pending migrations to run")
+            return
+        
         router.run()
         logger.info("Migrations completed successfully")
     except Exception as e:
@@ -121,9 +143,15 @@ def run_migrations(router: Router):
 
 def list_migrations(router: Router):
     """List all migrations"""
+    todo = router.todo
+    if not todo:
+        logger.info("No migration files found")
+        return
+    
     logger.info("Available migrations:")
-    for migration in router.migrations:
-        status = "applied" if migration in router.done else "pending"
+    done = set(router.done)
+    for migration in todo:
+        status = "applied" if migration in done else "pending"
         logger.info(f"  [{status}] {migration}")
 
 
@@ -171,11 +199,11 @@ Examples:
   # List all migrations
   python db_schema_sync.py --list --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.24.0
   
-  # Create a new migration (auto-detect changes)
-  python db_schema_sync.py --create --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.24.0
-  
-  # Create a named migration
+  # Create an empty migration template
   python db_schema_sync.py --create --name add_user_table --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.24.0
+  
+  # Auto-generate migration from model changes
+  python db_schema_sync.py --create --auto --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.24.0
   
   # Run all pending migrations
   python db_schema_sync.py --migrate --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.24.0
@@ -199,6 +227,8 @@ Examples:
     # Action options
     parser.add_argument('--list', '-l', action='store_true', help='List all migrations')
     parser.add_argument('--create', action='store_true', help='Create a new migration')
+    parser.add_argument('--auto', '-a', action='store_true', 
+                       help='Auto-generate migration SQL from model changes (use with --create)')
     parser.add_argument('--migrate', '-m', action='store_true', help='Run pending migrations')
     parser.add_argument('--diff', '-d', action='store_true', help='Show schema differences')
     
@@ -216,6 +246,11 @@ Examples:
     if not any([args.list, args.create, args.migrate, args.diff]):
         parser.print_help()
         logger.error("Please specify at least one action: --list, --create, --migrate, or --diff")
+        sys.exit(1)
+    
+    # Validate --auto requires --create
+    if args.auto and not args.create:
+        logger.error("--auto can only be used with --create")
         sys.exit(1)
     
     # Convert version to directory name
@@ -258,7 +293,7 @@ Examples:
             list_migrations(router)
         
         if args.create:
-            create_migration(router, args.name)
+            create_migration(router, args.name, auto=args.auto, models=models if args.auto else None)
         
         if args.migrate:
             run_migrations(router)
