@@ -136,7 +136,7 @@ const FileLogsPage: FC = () => {
   const { data: topData } = useFetchOverviewTital();
   const {
     pagination: { total: fileTotal },
-  } = useFetchDocumentList();
+  } = useFetchDocumentList(false);
 
   useEffect(() => {
     setTopAllData((prev) => {

@@ -25,6 +25,7 @@ from common.time_utils import current_timestamp, datetime_format
 from api.db.db_models import APIToken
 from api.db.services.api_service import APITokenService
 from api.db.services.user_service import UserTenantService
+from common.log_utils import get_log_levels, set_log_level
 
 @manager.route("/system/ping", methods=["GET"])  # noqa: F821
 async def ping():
@@ -191,3 +192,56 @@ def rm(token):
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route("/system/config/log", methods=["GET"])  # noqa: F821
+@login_required
+async def get_logger_levels():
+    """
+    Get current log levels for all packages.
+    ---
+    tags:
+        - System
+    responses:
+        200:
+            description: Return current log levels
+    """
+    return get_json_result(data=get_log_levels())
+
+
+@manager.route("/system/config/log", methods=["PUT"])  # noqa: F821
+@login_required
+async def set_logger_level():
+    """
+    Set log level for a package.
+    ---
+    tags:
+        - System
+    parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            properties:
+                pkg_name:
+                    type: string
+                    description: Package name (e.g., "rag.utils.es_conn")
+                level:
+                    type: string
+                    description: Log level (DEBUG, INFO, WARNING, ERROR)
+    responses:
+        200:
+            description: Log level updated successfully
+    """
+    from quart import request
+    data = await request.get_json()
+    if not data or "pkg_name" not in data or "level" not in data:
+        return get_data_error_result(message="pkg_name and level are required")
+    pkg_name = data["pkg_name"]
+    level = data["level"]
+    success = set_log_level(pkg_name, level)
+    if success:
+        return get_json_result(data={"pkg_name": pkg_name, "level": level})
+    else:
+        return get_data_error_result(message=f"Invalid log level: {level}")

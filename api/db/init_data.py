@@ -35,6 +35,7 @@ from api.db.services.llm_service import LLMService, LLMBundle, get_init_tenant_l
 from api.db.services.user_service import TenantService, UserTenantService
 from api.db.services.system_settings_service import SystemSettingsService
 from api.db.services.dialog_service import DialogService
+from api.db.template_utils import normalize_canvas_template_categories
 from api.db.joint_services.memory_message_service import init_message_id_sequence, init_memory_size_cache, fix_missing_tokenized_memory
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
 from common.constants import LLMType
@@ -166,16 +167,21 @@ def add_graph_templates():
         logging.warning("Missing agent templates!")
         return
 
-    for fnm in os.listdir(dir):
+    for fnm in sorted(os.listdir(dir)):
+        if not fnm.endswith(".json"):
+            logging.debug("Skipping non-json template file in %s: %s", dir, fnm)
+            continue
+        template_path = os.path.join(dir, fnm)
         try:
-            with open(os.path.join(dir, fnm), "r", encoding="utf-8") as f:
-                cnvs = json.load(f)
+            with open(template_path, "r", encoding="utf-8") as f:
+                cnvs = normalize_canvas_template_categories(json.load(f))
+            logging.info("Loaded and normalized template file: %s", template_path)
             try:
                 CanvasTemplateService.save(**cnvs)
             except Exception:
                 CanvasTemplateService.update_by_id(cnvs["id"], cnvs)
         except Exception as e:
-            logging.exception(f"Add agent templates error: {e}")
+            logging.exception("Add agent templates error for %s: %s", template_path, e)
 
 
 def init_web_data():

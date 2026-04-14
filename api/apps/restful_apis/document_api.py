@@ -15,6 +15,7 @@
 #
 import logging
 
+from quart import request
 from peewee import OperationalError
 from pydantic import ValidationError
 
@@ -25,12 +26,13 @@ from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common.constants import RetCode
 from api.apps import login_required
-from api.utils.api_utils import get_error_data_result, get_result, add_tenant_id_to_kwargs, get_request_json
+from api.utils.api_utils import get_error_data_result, get_result, add_tenant_id_to_kwargs, get_request_json, \
+    server_error_response
 from api.utils.validation_utils import (
     UpdateDocumentReq, format_validation_error_message,
 )
 
-@manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PUT"]) # noqa: F821
+@manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PATCH"]) # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def update_document(tenant_id, dataset_id, document_id):
@@ -144,3 +146,40 @@ async def update_document(tenant_id, dataset_id, document_id):
     renamed_doc = rename_doc_key(doc)
     return get_result(data=renamed_doc)
 
+
+@manager.route("/datasets/<dataset_id>/metadata/summary", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def metadata_summary(dataset_id, tenant_id):
+    """
+    Get metadata summary for a dataset.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: query
+        name: doc_ids
+        type: string
+        required: false
+        description: Comma-separated document IDs to filter metadata.
+    responses:
+      200:
+        description: Metadata summary retrieved successfully.
+    """
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+    # Get doc_ids from query parameters (comma-separated string)
+    doc_ids_param = request.args.get("doc_ids", "")
+    doc_ids = doc_ids_param.split(",") if doc_ids_param else None
+    try:
+        summary = DocMetadataService.get_metadata_summary(dataset_id, doc_ids)
+        return get_result(data={"summary": summary})
+    except Exception as e:
+        return server_error_response(e)
