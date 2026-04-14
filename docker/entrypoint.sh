@@ -236,16 +236,6 @@ function ensure_docling() {
       || uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
 }
 
-function ensure_opendataloader() {
-    [[ "${USE_OPENDATALOADER}" == "true" ]] || { echo "[opendataloader] disabled by USE_OPENDATALOADER"; return 0; }
-    if ! command -v java >/dev/null 2>&1; then
-        echo "[opendataloader] Java runtime not found; OpenDataLoader requires Java 11+. Skipping."
-        return 0
-    fi
-    OPENDATALOADER_PIN="${OPENDATALOADER_VERSION:-}"
-    "$PY" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('opendataloader_pdf') else 1)" \
-      || uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "opendataloader-pdf${OPENDATALOADER_PIN}"
-}
 
 function ensure_db_init() {
     echo "Initializing database tables..."
@@ -275,7 +265,6 @@ function wait_for_server() {
 # Start components based on flags
 # -----------------------------------------------------------------------------
 ensure_docling
-ensure_opendataloader
 ensure_db_init
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then

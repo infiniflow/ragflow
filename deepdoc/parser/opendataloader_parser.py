@@ -3,10 +3,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
-import shutil
-import subprocess
-import tempfile
 from dataclasses import dataclass
 from enum import Enum
 from io import BytesIO
@@ -15,12 +13,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 import pdfplumber
+import requests
 from PIL import Image
-
-try:
-    import opendataloader_pdf
-except Exception:
-    opendataloader_pdf = None
 
 try:
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
@@ -131,49 +125,27 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         self.page_from = 0
         self.page_to = 10_000
         self.outlines = []
+        self.api_url = os.environ.get("OPENDATALOADER_APISERVER", "").rstrip("/")
 
     def check_installation(self) -> bool:
-        if opendataloader_pdf is None:
+        """Return True when the OpenDataLoader service is reachable."""
+        if not self.api_url:
             self.logger.warning(
-                "[OpenDataLoader] 'opendataloader_pdf' is not importable. "
-                "Install with: pip install opendataloader-pdf (requires Java 11+)."
+                "[OpenDataLoader] OPENDATALOADER_APISERVER is not set. "
+                "Start the opendataloader service and set the env var."
             )
-            return False
-        if not hasattr(opendataloader_pdf, "convert"):
-            self.logger.warning("[OpenDataLoader] installed package lacks convert() entry point.")
-            return False
-        java_bin = shutil.which("java")
-        if not java_bin:
-            self.logger.warning("[OpenDataLoader] Java runtime not found on PATH (Java 11+ required).")
             return False
         try:
-            result = subprocess.run(
-                [java_bin, "-version"],
-                capture_output=True,
-                text=True,
-                timeout=10,
+            resp = requests.get(f"{self.api_url}/health", timeout=5)
+            if resp.status_code == 200:
+                return True
+            self.logger.warning(
+                f"[OpenDataLoader] Health check returned {resp.status_code}: {resp.text[:200]}"
             )
-            version_output = result.stderr or result.stdout
-            # version string is e.g. 'openjdk version "21.0.1"' or 'java version "1.8.0_XXX"'
-            import re as _re
-            m = _re.search(r'"(\d+)(?:\.(\d+))?', version_output)
-            if m:
-                major = int(m.group(1))
-                if major == 1:
-                    # old-style versioning: 1.8 → 8
-                    major = int(m.group(2) or 0)
-                if major < 11:
-                    self.logger.warning(
-                        f"[OpenDataLoader] Java {major} detected; Java 11+ is required."
-                    )
-                    return False
-            else:
-                self.logger.warning("[OpenDataLoader] Could not determine Java version from: %s", version_output[:120])
-                return False
-        except Exception as e:
-            self.logger.warning(f"[OpenDataLoader] Failed to check Java version: {e}")
             return False
-        return True
+        except Exception as exc:
+            self.logger.warning(f"[OpenDataLoader] Health check failed: {exc}")
+            return False
 
     def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=600, callback=None):
         self.page_from = page_from
@@ -197,13 +169,10 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         if bbox is None:
             return ""
         # Guard: only emit a crop tag when the page was actually rendered.
-        # __images__() caps at page_to (default 600) and leaves page_images empty
-        # on render failure — indexing beyond that would crash crop().
         if not self.page_images or len(self.page_images) < bbox.page_no:
             return ""
         x0, x1 = bbox.x0, bbox.x1
         # OpenDataLoader bbox uses PDF coordinate space (origin bottom-left).
-        # y1 is the top edge, y0 is the bottom edge in PDF points.
         # Convert to image-space (origin top-left) by subtracting from page height.
         _, page_height = self.page_images[bbox.page_no - 1].size
         top = page_height - bbox.y1
@@ -298,9 +267,7 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         if t in _FORMULA_TYPES:
             return OpenDataLoaderContentType.EQUATION.value
         # Preserve the original structural type (heading, title, paragraph,
-        # list, caption, …) so downstream parsers (e.g. rag/flow/parser/parser.py)
-        # can apply heading/title heuristics. Fall back to "text" only when the
-        # type is truly unknown.
+        # list, caption, …) so downstream parsers can apply heading/title heuristics.
         return t if t else OpenDataLoaderContentType.TEXT.value
 
     def _transfer_from_json(self, root: Any, parse_method: str):
@@ -351,33 +318,12 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
             return [(txt, OpenDataLoaderContentType.TEXT.value)]
         return [(txt, "")]
 
-    @staticmethod
-    def _read_outputs(out_dir: Path) -> tuple[Optional[dict], Optional[str]]:
-        json_doc: Optional[dict] = None
-        md_text: Optional[str] = None
-        for p in sorted(out_dir.rglob("*.json")):
-            try:
-                with open(p, "r", encoding="utf-8") as f:
-                    json_doc = json.load(f)
-                break
-            except Exception:
-                continue
-        for p in sorted(out_dir.rglob("*.md")):
-            try:
-                md_text = p.read_text(encoding="utf-8")
-                break
-            except Exception:
-                continue
-        return json_doc, md_text
-
     def parse_pdf(
         self,
         filepath: str | PathLike[str],
         binary: BytesIO | bytes | None = None,
         callback: Optional[Callable] = None,
         *,
-        output_dir: Optional[str] = None,
-        delete_output: bool = True,
         parse_method: str = "raw",
         hybrid: Optional[str] = None,
         image_output: Optional[str] = None,
@@ -385,68 +331,62 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
     ):
         self.outlines = extract_pdf_outlines(binary if binary is not None else filepath)
 
-        if not self.check_installation():
-            raise RuntimeError("OpenDataLoader not available, please install `opendataloader-pdf`")
+        if not self.api_url:
+            raise RuntimeError(
+                "[OpenDataLoader] OPENDATALOADER_APISERVER is not configured. "
+                "Please start the opendataloader service and set the env var."
+            )
 
-        # Always use a unique per-request subdirectory to prevent concurrent
-        # requests from colliding on input files or stale output artifacts.
-        base_dir = Path(output_dir) if output_dir else None
-        if base_dir:
-            base_dir.mkdir(parents=True, exist_ok=True)
-        workdir = Path(tempfile.mkdtemp(prefix="opendataloader_", dir=base_dir))
-        # When caller supplied output_dir they want to retain the tree; only
-        # clean up when we created the base dir ourselves (no output_dir given).
-        cleanup_workdir = output_dir is None
-
-        src_path: Path
-        tmp_input: Optional[Path] = None
-        if binary is not None:
-            name = Path(filepath).name or "input.pdf"
-            tmp_input = workdir / f"_in_{name}"
-            with open(tmp_input, "wb") as f:
-                if isinstance(binary, (bytes, bytearray)):
-                    f.write(binary)
-                else:
-                    f.write(binary.getbuffer())
-            src_path = tmp_input
-        else:
-            src_path = Path(filepath)
-            if not src_path.exists():
-                raise FileNotFoundError(f"PDF not found: {src_path}")
-
-        if callback:
-            callback(0.1, f"[OpenDataLoader] Converting: {src_path.name}")
-
+        # Render page images locally — used by _make_line_tag() and crop().
+        # The image rendering stays on the RAGFlow host; only the Java conversion
+        # runs inside the opendataloader service container.
         try:
-            self.__images__(str(src_path), zoomin=1)
+            if binary is not None:
+                src = BytesIO(binary) if isinstance(binary, (bytes, bytearray)) else binary
+                self.__images__(src, zoomin=1)
+            else:
+                self.__images__(str(filepath), zoomin=1)
         except Exception as e:
             self.logger.warning(f"[OpenDataLoader] render pages failed: {e}")
 
-        out_sub = workdir / "out"
-        out_sub.mkdir(parents=True, exist_ok=True)
-        convert_kwargs: dict[str, Any] = {
-            "input_path": [str(src_path)],
-            "output_dir": str(out_sub),
-            "format": "markdown,json",
-        }
-        if hybrid:
-            convert_kwargs["hybrid"] = hybrid
-        if image_output:
-            convert_kwargs["image_output"] = image_output
-        if sanitize is not None:
-            convert_kwargs["sanitize"] = sanitize
+        # Read PDF bytes for the multipart upload
+        if binary is not None:
+            pdf_bytes = binary if isinstance(binary, (bytes, bytearray)) else binary.getvalue()
+        else:
+            with open(filepath, "rb") as fh:
+                pdf_bytes = fh.read()
 
-        try:
-            opendataloader_pdf.convert(**convert_kwargs)
-        except Exception as e:
-            if cleanup_workdir:
-                shutil.rmtree(workdir, ignore_errors=True)
-            raise RuntimeError(f"[OpenDataLoader] convert failed: {e}") from e
+        filename = Path(str(filepath)).name or "input.pdf"
 
         if callback:
-            callback(0.7, "[OpenDataLoader] Reading outputs")
+            callback(0.1, f"[OpenDataLoader] Sending '{filename}' to service")
 
-        json_doc, md_text = self._read_outputs(out_sub)
+        form_data: dict[str, str] = {}
+        if hybrid:
+            form_data["hybrid"] = hybrid
+        if image_output:
+            form_data["image_output"] = image_output
+        if sanitize is not None:
+            form_data["sanitize"] = "true" if sanitize else "false"
+
+        try:
+            self.logger.info(f"[OpenDataLoader] POST {self.api_url}/file_parse for '{filename}'")
+            resp = requests.post(
+                url=f"{self.api_url}/file_parse",
+                files={"file": (filename, pdf_bytes, "application/pdf")},
+                data=form_data,
+                timeout=600,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+        except Exception as exc:
+            raise RuntimeError(f"[OpenDataLoader] service call failed: {exc}") from exc
+
+        if callback:
+            callback(0.7, "[OpenDataLoader] Processing response")
+
+        json_doc = result.get("json_doc")
+        md_text = result.get("md_text")
 
         sections: list[tuple[str, ...]] = []
         tables: list = []
@@ -456,25 +396,12 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
             sections = self._sections_from_markdown(md_text, parse_method=parse_method)
 
         if callback:
-            callback(0.95, f"[OpenDataLoader] Sections: {len(sections)}, Tables: {len(tables)}")
+            callback(1.0, f"[OpenDataLoader] Done. Sections: {len(sections)}, Tables: {len(tables)}")
 
-        if delete_output:
-            if tmp_input is not None:
-                try:
-                    tmp_input.unlink(missing_ok=True)
-                except Exception:
-                    pass
-            if cleanup_workdir:
-                shutil.rmtree(workdir, ignore_errors=True)
-            else:
-                shutil.rmtree(out_sub, ignore_errors=True)
-
-        if callback:
-            callback(1.0, "[OpenDataLoader] Done.")
         return sections, tables
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     parser = OpenDataLoaderParser()
-    print("OpenDataLoader available:", parser.check_installation())
+    print("OpenDataLoader service reachable:", parser.check_installation())

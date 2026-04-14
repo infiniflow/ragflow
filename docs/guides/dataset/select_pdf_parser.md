@@ -39,7 +39,7 @@ RAGFlow isn't one-size-fits-all. It is built for flexibility and supports deeper
 - Naive: Skip OCR, TSR, and DLR tasks if _all_ your PDFs are plain text.
 - [MinerU](https://github.com/opendatalab/MinerU): (Experimental) An open-source tool that converts PDF into machine-readable formats.
 - [Docling](https://github.com/docling-project/docling): (Experimental) An open-source document processing tool for gen AI.
-- [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf): (Experimental) A deterministic, local-first PDF parser with structured JSON + Markdown output. Requires a Java 11+ runtime on the host.
+- [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf): (Experimental) A deterministic, local-first PDF parser with structured JSON + Markdown output. Runs as a standalone service container so no Java runtime is needed on the RAGFlow host.
 - A third-party visual model from a specific model provider.
 
 :::danger IMPORTANT
@@ -72,13 +72,27 @@ To use an external Docling Serve instance (instead of local in-process Docling),
 
 When `DOCLING_SERVER_URL` is set, RAGFlow sends PDF content to Docling Serve (`/v1/convert/source`, with fallback to `/v1alpha/convert/source`) and ingests the returned markdown/text. If the variable is not set, RAGFlow keeps using local Docling (`USE_DOCLING=true` + installed package) behavior.
 
-To enable the OpenDataLoader parser, install it on first run by setting `USE_OPENDATALOADER=true` in the `.env` file. The container installs `opendataloader-pdf` from PyPI on startup and expects a Java 11+ runtime to be available on the host image. Optional tuning:
+To enable the OpenDataLoader parser, start it as a standalone service and point RAGFlow at it:
 
-- `OPENDATALOADER_VERSION`: Pin the `opendataloader-pdf` release (for example, `==0.3.0`).
+1. Add `opendataloader` to `COMPOSE_PROFILES` in `docker/.env`:
+   ```
+   COMPOSE_PROFILES=${COMPOSE_PROFILES},opendataloader
+   ```
+2. Set the API endpoint so RAGFlow knows where to reach the service:
+   ```
+   OPENDATALOADER_APISERVER=http://opendataloader:9383
+   ```
+3. Build and start the service:
+   ```bash
+   docker compose up -d --build opendataloader
+   ```
+
+The `opendataloader` container bundles Java 11+ via `default-jre-headless`; the RAGFlow host does not need a JRE installed.
+
+Optional tuning (set as environment variables on the RAGFlow container, forwarded to the service as request parameters):
+
 - `OPENDATALOADER_HYBRID`: Enable hybrid extraction (for example, `docling-fast`). Leaving it unset uses local-only mode (fastest, no AI backend).
 - `OPENDATALOADER_IMAGE_OUTPUT`: `off`, `embedded`, or `external` (default).
-- `OPENDATALOADER_OUTPUT_DIR`: Directory used for intermediate JSON/Markdown. If unset, a temporary directory is created per request and removed afterward.
-- `OPENDATALOADER_DELETE_OUTPUT`: `1` to delete the per-request directory (default), `0` to retain for debugging.
 - `OPENDATALOADER_SANITIZE`: `1` to filter known prompt-injection patterns from extracted text.
 
 :::note

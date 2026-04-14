@@ -190,8 +190,6 @@ def by_opendataloader(filename, binary=None, from_page=0, to_page=100000, lang="
         filepath=filename,
         binary=binary,
         callback=callback,
-        output_dir=os.environ.get("OPENDATALOADER_OUTPUT_DIR", ""),
-        delete_output=bool(int(os.environ.get("OPENDATALOADER_DELETE_OUTPUT", 1))),
         parse_method=parse_method,
         hybrid=hybrid,
         image_output=image_output,

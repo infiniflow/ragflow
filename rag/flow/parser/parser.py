@@ -430,15 +430,6 @@ class Parser(ProcessBase):
 
         elif parse_method.lower() == "opendataloader":
 
-            def _odl_env_bool(name: str, default: bool) -> bool:
-                """Parse common truthy/falsy env strings robustly."""
-                raw = os.environ.get(name, "").strip().lower()
-                if raw in ("1", "true", "yes", "on"):
-                    return True
-                if raw in ("0", "false", "no", "off"):
-                    return False
-                return default
-
             pdf_parser = OpenDataLoaderParser()
             odl_sanitize_raw = os.environ.get("OPENDATALOADER_SANITIZE", "").strip().lower()
             odl_sanitize: bool | None = None
@@ -452,8 +443,6 @@ class Parser(ProcessBase):
                 binary=blob,
                 callback=self.callback,
                 parse_method="pipeline",
-                output_dir=os.environ.get("OPENDATALOADER_OUTPUT_DIR", "") or None,
-                delete_output=_odl_env_bool("OPENDATALOADER_DELETE_OUTPUT", True),
                 hybrid=os.environ.get("OPENDATALOADER_HYBRID", "") or None,
                 image_output=os.environ.get("OPENDATALOADER_IMAGE_OUTPUT", "") or None,
                 sanitize=odl_sanitize,
