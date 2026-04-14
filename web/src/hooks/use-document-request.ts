@@ -65,13 +65,16 @@ export const useUploadNextDocument = () => {
   } = useMutation<ResponseType<IDocumentInfo[]>, Error, File[]>({
     mutationKey: [DocumentApiAction.UploadDocument],
     mutationFn: async (fileList) => {
+      if (!id) {
+        return { code: 500, message: 'Dataset ID is required' };
+      }
       const formData = new FormData();
       fileList.forEach((file: any) => {
         formData.append('file', file);
       });
 
       try {
-        const ret = await uploadDocument(id!, formData);
+        const ret = await uploadDocument(id, formData);
         const code = get(ret, 'code');
 
         if (code === 0 || code === 500) {

@@ -139,8 +139,8 @@ class TestDocumentsUpload:
     def test_invalid_dataset_id(self, HttpApiAuth, tmp_path):
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
         res = upload_documents(HttpApiAuth, "invalid_dataset_id", [fp])
-        assert res["code"] == 100
-        assert res["message"] == """LookupError("Can\'t find the dataset with ID invalid_dataset_id!")"""
+        assert res["code"] == 102
+        assert res["message"] == "Can\'t find the dataset with ID invalid_dataset_id!"
 
     @pytest.mark.p2
     def test_duplicate_files(self, HttpApiAuth, add_dataset_func, tmp_path):

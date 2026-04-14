@@ -1400,7 +1400,7 @@ class RAGFlowClient:
                 params=None,
                 stream=False,
                 auth_kind="web",
-                use_api_base=False
+                use_api_base=True
             )
             res = response.json()
             if res.get("code") == 0:

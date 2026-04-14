@@ -19,8 +19,8 @@ from quart import request
 from peewee import OperationalError
 from pydantic import ValidationError
 
-from api.apps.services.document_api_service import map_doc_keys, validate_document_update_fields, \
-    update_document_name_only, update_chunk_method_only, update_document_status_only
+from api.apps.services.document_api_service import map_doc_keys_with_run_status, validate_document_update_fields, \
+    update_document_name_only, update_chunk_method_only, update_document_status_only, map_doc_keys
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -265,25 +265,28 @@ async def upload_document(dataset_id, tenant_id):
     
     # Validation
     if "file" not in files:
+        logging.error("No file part!")
         return get_error_data_result(message="No file part!", code=RetCode.ARGUMENT_ERROR)
     
     file_objs = files.getlist("file")
     for file_obj in file_objs:
-        if file_obj.filename == "":
+        if file_obj is None or file_obj.filename is None or file_obj.filename == "":
+            logging.error("No file selected!")
             return get_error_data_result(message="No file selected!", code=RetCode.ARGUMENT_ERROR)
         if len(file_obj.filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-            return get_error_data_result(
-                message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", 
-                code=RetCode.ARGUMENT_ERROR
-            )
+            msg = f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less."
+            logging.error(msg)
+            return get_error_data_result(message=msg, code=RetCode.ARGUMENT_ERROR)
 
     # KB Lookup
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
-        return server_error_response(LookupError(f"Can't find the dataset with ID {dataset_id}!"))
+        logging.error(f"Can't find the dataset with ID {dataset_id}!")
+        return get_error_data_result(message=f"Can't find the dataset with ID {dataset_id}!", code=RetCode.DATA_ERROR)
     
     # Permission Check
     if not check_kb_team_permission(kb, tenant_id):
+        logging.error("No authorization.")
         return get_error_data_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     # File Upload (async)
@@ -292,13 +295,14 @@ async def upload_document(dataset_id, tenant_id):
         parent_path=form.get("parent_path")
     )
     if err:
-        return get_error_data_result(message="\n".join(err), code=RetCode.SERVER_ERROR)
+        msg = "\n".join(err)
+        logging.error(msg)
+        return get_error_data_result(message=msg, code=RetCode.SERVER_ERROR)
 
     if not files:
-        return get_error_data_result(
-            message="There seems to be an issue with your file format. please verify it is correct and not corrupted.", 
-            code=RetCode.DATA_ERROR
-        )
+        msg = "There seems to be an issue with your file format. please verify it is correct and not corrupted."
+        logging.error(msg)
+        return get_error_data_result(message=msg, code=RetCode.DATA_ERROR)
     
     files = [f[0] for f in files]  # remove the blob
 
@@ -308,7 +312,7 @@ async def upload_document(dataset_id, tenant_id):
     if return_raw_files:
         return get_result(data=files)
 
-    renamed_doc_list = [map_doc_keys(doc, run_value="UNSTART") for doc in files]
+    renamed_doc_list = [map_doc_keys_with_run_status(doc, run_status="0") for doc in files]
     return get_result(data=renamed_doc_list)
 
 

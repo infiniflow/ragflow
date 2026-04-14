@@ -127,8 +127,8 @@ class TestDocumentsUpload:
     def test_invalid_kb_id(self, WebApiAuth, tmp_path):
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
         res = upload_documents(WebApiAuth, {"kb_id": "invalid_kb_id"}, [fp])
-        assert res["code"] == 100, res
-        assert res["message"] == """LookupError("Can't find the dataset with ID invalid_kb_id!")""", res
+        assert res["code"] == 102, res
+        assert res["message"] == "Can't find the dataset with ID invalid_kb_id!", res
 
     @pytest.mark.p2
     def test_duplicate_files(self, WebApiAuth, add_dataset_func, tmp_path):
@@ -282,7 +282,7 @@ class TestDocumentsUploadUnit:
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
         res = upload_documents(WebApiAuth, {"kb_id": "invalid_kb_id"}, [fp])
         # The API should return an error for invalid KB ID
-        assert res["code"] == 100
+        assert res["code"] == 102
         assert "Can't find the dataset" in res["message"] or "not found" in res["message"].lower()
 
     def test_no_permission(self, WebApiAuth, tmp_path):
