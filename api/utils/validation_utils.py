@@ -455,6 +455,46 @@ class UpdateDocumentReq(Base):
                 raise PydanticCustomError("format_invalid", "The type is not supported: {v}", {"v":v})
         return meta_fields
 
+
+class UpdateDocumentMetadataSettingReq(Base):
+    """
+    Request model for document-level metadata setting updates.
+
+    Validates payload shape for `/document/update_metadata_setting` without
+    changing endpoint business behavior.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+    doc_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1), Field(...)]
+    metadata: Annotated[dict | list, Field(...)]
+    enable_metadata: Annotated[bool | None, Field(default=None)]
+    built_in_metadata: Annotated[list | None, Field(default=None)]
+
+    @field_validator("metadata", mode="after")
+    @classmethod
+    def validate_metadata_shape(cls, metadata: dict | list):
+        if isinstance(metadata, list):
+            for item in metadata:
+                if not isinstance(item, dict):
+                    raise PydanticCustomError("format_invalid", "Each metadata list item must be a dictionary")
+        return metadata
+
+    @field_validator("built_in_metadata", mode="after")
+    @classmethod
+    def validate_built_in_metadata_shape(cls, built_in_metadata: list | None):
+        if built_in_metadata is None:
+            return None
+        for item in built_in_metadata:
+            if isinstance(item, str):
+                continue
+            if isinstance(item, dict) and isinstance(item.get("key"), str):
+                continue
+            raise PydanticCustomError(
+                "format_invalid",
+                "Each built_in_metadata item must be a string or object with string key",
+            )
+        return built_in_metadata
+
 class CreateDatasetReq(Base):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=DATASET_NAME_LIMIT), Field(...)]
     avatar: Annotated[str | None, Field(default=None, max_length=65535)]
@@ -957,4 +997,3 @@ def validate_chunk_method(doc, chunk_method=None):
     if doc.type == FileType.VISUAL or re.search(r"\.(ppt|pptx|pages)$", doc.name):
         return "Not supported yet!", RetCode.DATA_ERROR
     return None, None
-
