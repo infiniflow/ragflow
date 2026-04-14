@@ -196,16 +196,18 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
     def _make_line_tag(self, bbox: _BBox) -> str:
         if bbox is None:
             return ""
+        # Guard: only emit a crop tag when the page was actually rendered.
+        # __images__() caps at page_to (default 600) and leaves page_images empty
+        # on render failure — indexing beyond that would crash crop().
+        if not self.page_images or len(self.page_images) < bbox.page_no:
+            return ""
         x0, x1 = bbox.x0, bbox.x1
         # OpenDataLoader bbox uses PDF coordinate space (origin bottom-left).
         # y1 is the top edge, y0 is the bottom edge in PDF points.
         # Convert to image-space (origin top-left) by subtracting from page height.
-        if self.page_images and len(self.page_images) >= bbox.page_no:
-            _, page_height = self.page_images[bbox.page_no - 1].size
-            top = page_height - bbox.y1
-            bott = page_height - bbox.y0
-        else:
-            top, bott = bbox.y1, bbox.y0
+        _, page_height = self.page_images[bbox.page_no - 1].size
+        top = page_height - bbox.y1
+        bott = page_height - bbox.y0
         return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(
             bbox.page_no, x0, x1, top, bott
         )
@@ -220,6 +222,8 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         return poss
 
     def crop(self, text: str, ZM: int = 1, need_position: bool = False):
+        if not self.page_images:
+            return (None, None) if need_position else None
         imgs = []
         poss = self.extract_positions(text)
         if not poss:
@@ -293,7 +297,11 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
             return OpenDataLoaderContentType.IMAGE.value
         if t in _FORMULA_TYPES:
             return OpenDataLoaderContentType.EQUATION.value
-        return OpenDataLoaderContentType.TEXT.value
+        # Preserve the original structural type (heading, title, paragraph,
+        # list, caption, …) so downstream parsers (e.g. rag/flow/parser/parser.py)
+        # can apply heading/title heuristics. Fall back to "text" only when the
+        # type is truly unknown.
+        return t if t else OpenDataLoaderContentType.TEXT.value
 
     def _transfer_from_json(self, root: Any, parse_method: str):
         sections: list[tuple[str, ...]] = []

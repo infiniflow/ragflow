@@ -429,17 +429,34 @@ class Parser(ProcessBase):
                 bboxes.append(box)
 
         elif parse_method.lower() == "opendataloader":
+
+            def _odl_env_bool(name: str, default: bool) -> bool:
+                """Parse common truthy/falsy env strings robustly."""
+                raw = os.environ.get(name, "").strip().lower()
+                if raw in ("1", "true", "yes", "on"):
+                    return True
+                if raw in ("0", "false", "no", "off"):
+                    return False
+                return default
+
             pdf_parser = OpenDataLoaderParser()
-            lines, _ = pdf_parser.parse_pdf(
+            odl_sanitize_raw = os.environ.get("OPENDATALOADER_SANITIZE", "").strip().lower()
+            odl_sanitize: bool | None = None
+            if odl_sanitize_raw in ("1", "true", "yes", "on"):
+                odl_sanitize = True
+            elif odl_sanitize_raw in ("0", "false", "no", "off"):
+                odl_sanitize = False
+
+            lines, odl_tables = pdf_parser.parse_pdf(
                 filepath=name,
                 binary=blob,
                 callback=self.callback,
                 parse_method="pipeline",
                 output_dir=os.environ.get("OPENDATALOADER_OUTPUT_DIR", "") or None,
-                delete_output=bool(int(os.environ.get("OPENDATALOADER_DELETE_OUTPUT", 1))),
+                delete_output=_odl_env_bool("OPENDATALOADER_DELETE_OUTPUT", True),
                 hybrid=os.environ.get("OPENDATALOADER_HYBRID", "") or None,
                 image_output=os.environ.get("OPENDATALOADER_IMAGE_OUTPUT", "") or None,
-                sanitize=bool(int(os.environ.get("OPENDATALOADER_SANITIZE", 0))) or None,
+                sanitize=odl_sanitize,
             )
             bboxes = []
             for item in lines or []:
@@ -457,6 +474,21 @@ class Parser(ProcessBase):
                     image = pdf_parser.crop(poss, 1)
                     if image is not None:
                         box["image"] = image
+                bboxes.append(box)
+            # Merge tables and images from the second return value.
+            for (img, html_or_caption), positions in odl_tables or []:
+                box = {"layout_type": "table" if not isinstance(html_or_caption, list) else "figure"}
+                if isinstance(html_or_caption, str):
+                    box["text"] = html_or_caption
+                elif isinstance(html_or_caption, list):
+                    box["text"] = html_or_caption[0] if html_or_caption else ""
+                if img is not None:
+                    box["image"] = img
+                if positions:
+                    try:
+                        box["positions"] = [[p[0] + 1, p[1], p[2], p[3], p[4]] for p in positions]
+                    except Exception:
+                        pass
                 bboxes.append(box)
 
         elif parse_method.lower() == "tcadp parser":
