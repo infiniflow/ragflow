@@ -16,11 +16,13 @@
 
 """Tests for GraphRAG/RAPTOR checkpoint/resume logic.
 
-These tests call the real service functions in api.db.services.task_checkpoint,
-monkeypatching only the doc-store layer (settings.docStoreConn.search /
-get_fields).  This ensures bugs in pagination, query construction, and error
-handling are caught -- a local re-implementation of the logic would not detect
-those failures.
+Calls the real implementations:
+  - load_subgraph_from_store  (rag/graphrag/general/index.py)
+  - has_raptor_chunks         (rag/svr/task_executor.py)
+
+Both modules are loaded via importlib with their infrastructure dependencies
+mocked, so the actual query logic, pagination, and error handling are exercised
+without needing running services.
 """
 
 import importlib.util
@@ -33,33 +35,68 @@ import networkx as nx
 import pytest
 
 # ---------------------------------------------------------------------------
-# Load the real task_checkpoint module.
+# Additional sys.modules mocks needed beyond what conftest already provides.
 #
-# conftest.py mocks 'api.db.services' as a MagicMock (needed by other graphrag
-# imports), which would turn any submodule import into another MagicMock.
-# We load the file directly via importlib so the actual implementation is
-# exercised, then register it under its canonical dotted name so internal
-# imports like `from common import settings` resolve to the same MagicMocks
-# that conftest already installed.
+# conftest.py (same directory) mocks the heavy packages listed in
+# _modules_to_mock.  We need a few more to satisfy index.py and
+# task_executor.py's import-time dependencies.
 # ---------------------------------------------------------------------------
-_CHECKPOINT_PATH = (
-    pathlib.Path(__file__).parents[4] / "api" / "db" / "services" / "task_checkpoint.py"
-)
-_spec = importlib.util.spec_from_file_location(
-    "api.db.services.task_checkpoint", _CHECKPOINT_PATH
-)
-_checkpoint_mod = importlib.util.module_from_spec(_spec)
-sys.modules["api.db.services.task_checkpoint"] = _checkpoint_mod
-_spec.loader.exec_module(_checkpoint_mod)
+_EXTRA_MOCKS = [
+    # for index.py
+    "api.db.services.document_service",
+    # for task_executor.py
+    "api.db",
+    "api.db.services.knowledgebase_service",
+    "api.db.services.pipeline_operation_log_service",
+    "api.db.joint_services",
+    "api.db.joint_services.memory_message_service",
+    "api.db.joint_services.tenant_model_service",
+    "api.db.services.doc_metadata_service",
+    "api.db.services.llm_service",
+    "api.db.services.file2document_service",
+    "api.db.db_models",
+    "common.metadata_utils",
+    "common.log_utils",
+    "common.config_utils",
+    "common.versions",
+    "common.token_utils",
+    "common.signal_utils",
+    "common.exceptions",
+    "common.constants",
+    "rag.utils.base64_image",
+    "rag.utils.raptor_utils",
+    "rag.prompts.generator",
+    "rag.raptor",
+    "rag.app",
+    "rag.graphrag.utils",
+]
+for _m in _EXTRA_MOCKS:
+    if _m not in sys.modules:
+        sys.modules[_m] = MagicMock()
 
-from api.db.services.task_checkpoint import (  # noqa: E402
-    has_raptor_chunks,
-    load_subgraph_from_store,
-)
+# ---------------------------------------------------------------------------
+# Load the real implementations via importlib.
+# ---------------------------------------------------------------------------
+_ROOT = pathlib.Path(__file__).parents[4]
 
-# The conftest installed common.settings as a MagicMock.  Grab it so we can
-# attach controlled return values to docStoreConn in individual tests.
-import common.settings as _settings  # noqa: E402  (MagicMock, from conftest)
+
+def _load_module(dotted_name: str, rel_path: str):
+    path = _ROOT / rel_path
+    spec = importlib.util.spec_from_file_location(dotted_name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[dotted_name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_index_mod = _load_module("rag.graphrag.general.index", "rag/graphrag/general/index.py")
+_executor_mod = _load_module("rag.svr.task_executor", "rag/svr/task_executor.py")
+
+load_subgraph_from_store = _index_mod.load_subgraph_from_store
+has_raptor_chunks = _executor_mod.has_raptor_chunks
+
+# settings is a MagicMock installed by conftest; grab it to monkeypatch docStoreConn.
+import common.settings as _settings  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -70,10 +107,7 @@ def _make_subgraph(doc_id: str) -> nx.Graph:
     sg = nx.Graph()
     sg.add_node("ENTITY_A", description="test entity A", source_id=[doc_id])
     sg.add_node("ENTITY_B", description="test entity B", source_id=[doc_id])
-    sg.add_edge(
-        "ENTITY_A", "ENTITY_B",
-        description="related", source_id=[doc_id], weight=1.0, keywords=[],
-    )
+    sg.add_edge("ENTITY_A", "ENTITY_B", description="related", source_id=[doc_id], weight=1.0, keywords=[])
     sg.graph["source_id"] = [doc_id]
     return sg
 
@@ -83,7 +117,7 @@ def _to_store_content(sg: nx.Graph) -> str:
 
 
 def _single_page_mocks(field_map: dict):
-    """Return (search_mock, get_fields_mock) that simulate a single-page store."""
+    """search + get_fields mocks that simulate a single-page result."""
     sentinel = object()
     call_count = {"n": 0}
 
@@ -95,7 +129,7 @@ def _single_page_mocks(field_map: dict):
 
 
 # ---------------------------------------------------------------------------
-# Tests for load_subgraph_from_store
+# Tests for load_subgraph_from_store  (rag/graphrag/general/index.py)
 # ---------------------------------------------------------------------------
 
 class TestLoadSubgraphFromStore:
@@ -103,7 +137,7 @@ class TestLoadSubgraphFromStore:
     @pytest.mark.p1
     @pytest.mark.asyncio
     async def test_loads_existing_subgraph(self, monkeypatch):
-        """Subgraph present in the store is loaded and returned as nx.Graph."""
+        """Subgraph present in the store is returned as nx.Graph."""
         doc_id = "doc_001"
         sg = _make_subgraph(doc_id)
         field_map = {"chunk_001": {"content_with_weight": _to_store_content(sg), "source_id": [doc_id]}}
@@ -113,8 +147,7 @@ class TestLoadSubgraphFromStore:
 
         result = await load_subgraph_from_store("t1", "kb1", doc_id)
 
-        assert result is not None
-        assert isinstance(result, nx.Graph)
+        assert result is not None and isinstance(result, nx.Graph)
         assert result.has_node("ENTITY_A") and result.has_node("ENTITY_B")
         assert result.graph["source_id"] == [doc_id]
 
@@ -142,14 +175,12 @@ class TestLoadSubgraphFromStore:
         monkeypatch.setattr(_settings.docStoreConn, "get_fields", gf)
 
         result = await load_subgraph_from_store("t1", "kb1", "doc_b")
-
-        assert result is not None
-        assert result.graph["source_id"] == ["doc_b"]
+        assert result is not None and result.graph["source_id"] == ["doc_b"]
 
     @pytest.mark.p2
     @pytest.mark.asyncio
     async def test_handles_string_source_id(self, monkeypatch):
-        """source_id stored as a bare string (not list) is normalised correctly."""
+        """source_id stored as a bare string is normalised to a list."""
         doc_id = "doc_str"
         sg = _make_subgraph(doc_id)
         field_map = {"chunk_001": {"content_with_weight": _to_store_content(sg), "source_id": doc_id}}
@@ -158,33 +189,28 @@ class TestLoadSubgraphFromStore:
         monkeypatch.setattr(_settings.docStoreConn, "get_fields", gf)
 
         result = await load_subgraph_from_store("t1", "kb1", doc_id)
-
-        assert result is not None
-        assert result.graph["source_id"] == [doc_id]
+        assert result is not None and result.graph["source_id"] == [doc_id]
 
     @pytest.mark.p2
     @pytest.mark.asyncio
     async def test_skips_malformed_json_returns_none(self, monkeypatch):
-        """Malformed JSON is logged and skipped; function returns None (not raises)."""
+        """Malformed JSON is logged and skipped; None is returned (not raised)."""
         field_map = {"chunk_bad": {"content_with_weight": "not valid json{{{", "source_id": ["doc_bad"]}}
         s, gf = _single_page_mocks(field_map)
         monkeypatch.setattr(_settings.docStoreConn, "search", s)
         monkeypatch.setattr(_settings.docStoreConn, "get_fields", gf)
 
-        result = await load_subgraph_from_store("t1", "kb1", "doc_bad")
-        assert result is None
+        assert await load_subgraph_from_store("t1", "kb1", "doc_bad") is None
 
     @pytest.mark.p2
     @pytest.mark.asyncio
     async def test_paginates_when_match_is_on_second_page(self, monkeypatch):
-        """When the matching doc is beyond the first page, pagination finds it."""
+        """Pagination continues past the first full page until a match is found."""
         doc_id = "doc_page2"
         sg = _make_subgraph(doc_id)
-
         page1 = {f"other_{i}": {"content_with_weight": "", "source_id": [f"other_{i}"]} for i in range(256)}
         page2 = {"chunk_target": {"content_with_weight": _to_store_content(sg), "source_id": [doc_id]}}
 
-        sentinel = object()
         call_count = {"n": 0}
 
         def _get_fields(_res, _fields):
@@ -195,27 +221,22 @@ class TestLoadSubgraphFromStore:
                 return page2
             return {}
 
-        monkeypatch.setattr(_settings.docStoreConn, "search", MagicMock(return_value=sentinel))
+        monkeypatch.setattr(_settings.docStoreConn, "search", MagicMock(return_value=object()))
         monkeypatch.setattr(_settings.docStoreConn, "get_fields", MagicMock(side_effect=_get_fields))
 
         result = await load_subgraph_from_store("t1", "kb1", doc_id)
-
-        assert result is not None
-        assert result.graph["source_id"] == [doc_id]
+        assert result is not None and result.graph["source_id"] == [doc_id]
 
     @pytest.mark.p2
     @pytest.mark.asyncio
     async def test_doc_store_exception_returns_none(self, monkeypatch):
-        """A doc-store exception is caught; function returns None safely."""
-        monkeypatch.setattr(
-            _settings.docStoreConn, "search", MagicMock(side_effect=RuntimeError("db down"))
-        )
-
+        """A doc-store exception is caught; None is returned safely."""
+        monkeypatch.setattr(_settings.docStoreConn, "search", MagicMock(side_effect=RuntimeError("db down")))
         assert await load_subgraph_from_store("t1", "kb1", "doc_001") is None
 
 
 # ---------------------------------------------------------------------------
-# Tests for has_raptor_chunks
+# Tests for has_raptor_chunks  (rag/svr/task_executor.py)
 # ---------------------------------------------------------------------------
 
 class TestHasRaptorChunks:
@@ -224,10 +245,8 @@ class TestHasRaptorChunks:
     def test_returns_true_when_raptor_chunk_exists(self, monkeypatch):
         """Doc store returns a RAPTOR row -> True."""
         monkeypatch.setattr(_settings.docStoreConn, "search", MagicMock(return_value=object()))
-        monkeypatch.setattr(
-            _settings.docStoreConn, "get_fields",
-            MagicMock(return_value={"chunk_r": {"raptor_kwd": "raptor"}}),
-        )
+        monkeypatch.setattr(_settings.docStoreConn, "get_fields",
+                            MagicMock(return_value={"chunk_r": {"raptor_kwd": "raptor"}}))
 
         assert has_raptor_chunks("doc_001", "t1", "kb1") is True
 
@@ -241,8 +260,8 @@ class TestHasRaptorChunks:
 
     @pytest.mark.p1
     def test_queries_specifically_for_raptor_kwd(self, monkeypatch):
-        """raptor_kwd must be in the search condition so a non-RAPTOR leading chunk
-        cannot produce a false-negative result."""
+        """raptor_kwd is in the search condition so non-RAPTOR leading chunks
+        cannot produce a false-negative."""
         captured = {}
 
         def _capture(fields, filters, condition, *_a, **_kw):
@@ -253,16 +272,12 @@ class TestHasRaptorChunks:
         monkeypatch.setattr(_settings.docStoreConn, "get_fields", MagicMock(return_value={}))
 
         has_raptor_chunks("doc_001", "t1", "kb1")
-
         assert "raptor_kwd" in captured["condition"]
 
     @pytest.mark.p2
     def test_returns_false_on_doc_store_exception(self, monkeypatch):
-        """Exception is caught; function returns False without crashing."""
-        monkeypatch.setattr(
-            _settings.docStoreConn, "search", MagicMock(side_effect=RuntimeError("db down"))
-        )
-
+        """Exception is caught; False is returned without crashing."""
+        monkeypatch.setattr(_settings.docStoreConn, "search", MagicMock(side_effect=RuntimeError("db down")))
         assert has_raptor_chunks("doc_001", "t1", "kb1") is False
 
 
@@ -281,14 +296,11 @@ class TestCheckpointResumeWorkflow:
             f"chunk_{d}": {"content_with_weight": _to_store_content(_make_subgraph(d)), "source_id": [d]}
             for d in completed
         }
-
         monkeypatch.setattr(_settings.docStoreConn, "search", MagicMock(return_value=object()))
         monkeypatch.setattr(_settings.docStoreConn, "get_fields", MagicMock(return_value=field_map))
 
         for doc_id in completed:
             result = await load_subgraph_from_store("t1", "kb1", doc_id)
-            assert result is not None
-            assert result.graph["source_id"] == [doc_id]
+            assert result is not None and result.graph["source_id"] == [doc_id]
 
-        result = await load_subgraph_from_store("t1", "kb1", "doc_4_new")
-        assert result is None
+        assert await load_subgraph_from_store("t1", "kb1", "doc_4_new") is None
