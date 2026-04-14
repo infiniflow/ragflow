@@ -1,0 +1,211 @@
+import { cn } from '@/lib/utils';
+import { supportsCssAnchor } from '@/utils/css-support';
+import * as React from 'react';
+import { useId } from 'react';
+import { Button, ButtonVariants } from './button';
+export declare type SegmentedValue = string | number;
+export declare type SegmentedRawOption = SegmentedValue;
+export interface SegmentedLabeledOption {
+  className?: string;
+  disabled?: boolean;
+  label: React.ReactNode;
+  value: SegmentedRawOption;
+  /**
+   * html `title` property for label
+   */
+  title?: string;
+}
+declare type SegmentedOptions = (SegmentedRawOption | SegmentedLabeledOption)[];
+const segmentedVariants = {
+  round: {
+    default: 'rounded-md',
+    none: 'rounded-none',
+    sm: 'rounded-sm',
+    md: 'rounded-md',
+    lg: 'rounded-lg',
+    xl: 'rounded-xl',
+    xxl: 'rounded-2xl',
+    xxxl: 'rounded-3xl',
+    full: 'rounded-full',
+  },
+  size: {
+    default: 'px-1 py-1',
+    sm: 'px-1 py-1',
+    md: 'px-2 py-1.5',
+    lg: 'px-4 px-2',
+    xl: 'px-5 py-2.5',
+    xxl: 'px-6 py-3',
+  },
+  buttonSize: {
+    default: 'px-2 py-1',
+    md: 'px-2 py-1',
+    lg: 'px-4 px-1.5',
+    xl: 'px-6 py-2',
+  },
+};
+export interface SegmentedProps extends Omit<
+  React.HTMLProps<HTMLDivElement>,
+  'onChange'
+> {
+  options: SegmentedOptions;
+  defaultValue?: SegmentedValue;
+  value?: SegmentedValue;
+  onChange?: (value: SegmentedValue) => void;
+  disabled?: boolean;
+  prefixCls?: string;
+  direction?: 'ltr' | 'rtl';
+  motionName?: string;
+  activeClassName?: string;
+  itemClassName?: string;
+  rounded?: keyof typeof segmentedVariants.round;
+  sizeType?: keyof typeof segmentedVariants.size;
+  buttonSize?: ButtonVariants['size'];
+}
+
+const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
+  supportsCssAnchor
+    ? (
+        {
+          options,
+          value,
+          onChange,
+          className,
+          activeClassName,
+          itemClassName,
+          rounded = 'default',
+          sizeType = 'default',
+          buttonSize = 'default',
+        },
+        ref,
+      ) => {
+        const anchorNamePrefix = useId().replace(/:/g, '');
+        const [selectedValue, setSelectedValue] = React.useState<
+          SegmentedValue | undefined
+        >(value);
+        React.useEffect(() => {
+          setSelectedValue(value);
+        }, [value]);
+        const handleOnChange = (e: SegmentedValue) => {
+          if (onChange) {
+            onChange(e);
+          }
+          setSelectedValue(e);
+        };
+        return (
+          <div
+            ref={ref}
+            className={cn(
+              'flex items-center p-1 gap-2 bg-bg-card',
+              segmentedVariants.round[rounded],
+              segmentedVariants.size[sizeType],
+              className,
+            )}
+          >
+            {options.map((option) => {
+              const isObject = typeof option === 'object';
+              const actualValue = isObject ? option.value : option;
+
+              return (
+                <Button
+                  key={actualValue}
+                  type="button"
+                  size={buttonSize}
+                  variant="static"
+                  className={cn(
+                    selectedValue === actualValue && 'text-text-primary',
+                    itemClassName,
+                    selectedValue === actualValue && activeClassName,
+                    'relative z-10',
+                  )}
+                  onClick={() => handleOnChange(actualValue)}
+                  style={{
+                    anchorName: `--${anchorNamePrefix}-${String(actualValue).replace('/', '')}`,
+                  }}
+                >
+                  {isObject ? option.label : option}
+                </Button>
+              );
+            })}
+
+            <div
+              className={cn(
+                itemClassName,
+                'absolute bg-bg-base rounded-sm transition-all',
+              )}
+              style={{
+                positionAnchor: `--${anchorNamePrefix}-${String(selectedValue).replace('/', '')}`,
+                width: 'anchor-size(width)',
+                height: 'anchor-size(height)',
+                top: 'anchor(top)',
+                left: 'anchor(left)',
+              }}
+            />
+          </div>
+        );
+      }
+    : (
+        {
+          options,
+          value,
+          onChange,
+          className,
+          activeClassName,
+          itemClassName,
+          rounded = 'default',
+          sizeType = 'default',
+          buttonSize = 'default',
+        },
+        ref,
+      ) => {
+        const [selectedValue, setSelectedValue] = React.useState<
+          SegmentedValue | undefined
+        >(value);
+        React.useEffect(() => {
+          setSelectedValue(value);
+        }, [value]);
+        const handleOnChange = (e: SegmentedValue) => {
+          if (onChange) {
+            onChange(e);
+          }
+          setSelectedValue(e);
+        };
+        return (
+          <div
+            ref={ref}
+            className={cn(
+              'flex items-center p-1 gap-2 bg-bg-card',
+              segmentedVariants.round[rounded],
+              segmentedVariants.size[sizeType],
+              className,
+            )}
+          >
+            {options.map((option) => {
+              const isObject = typeof option === 'object';
+              const actualValue = isObject ? option.value : option;
+
+              return (
+                <Button
+                  key={actualValue}
+                  type="button"
+                  size={buttonSize}
+                  variant="static"
+                  className={cn(
+                    {
+                      'text-text-primary bg-bg-base':
+                        selectedValue === actualValue,
+                    },
+                    itemClassName,
+                    selectedValue === actualValue && activeClassName,
+                  )}
+                  onClick={() => handleOnChange(actualValue)}
+                >
+                  {isObject ? option.label : option}
+                </Button>
+              );
+            })}
+          </div>
+        );
+      },
+);
+
+export { Segmented };

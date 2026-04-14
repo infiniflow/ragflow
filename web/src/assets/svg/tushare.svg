@@ -1,0 +1,10 @@
+<svg version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="24" height="32">
+	<title>tushare</title>
+	<defs>
+		<image width="20" height="32" id="img1"
+			href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAdCAMAAACdWLz3AAAAAXNSR0IB2cksfwAAAnZQTFRF///////9z/msyvil/f/38Pzl/f/8xfGhf+Euf+Evs+2C+P33/v/9y/WiqO5gvPKEnulgjOREjuVGnuldtOmhb9VMe9hb6Pji8fzlpu5erO9oqu5lk+ZMj+VJk+ZLd9pCWM4xXtA3UMwlnOKD+/73uPF9p+5fr/BtmOhTkeZJgt9GYNA8Y9I+ZNI+Us0os+mh7/zhsO9uqO5foetcjuVEbtc9YNE9YdE7U80oi91u+v758v/zw/idsPFwo+tfcddFVs4wYtNAneiR+v////br/+fO/+nQ/+nR/+bO/+PL9vfh+f7y6/nl0fLG6fDR/+TM//fv/9Ke/4kF/5IW/5IX/4wL/5cg/9ap//v6//r4/86Y/5EV/44O/4kH/9mv/9Og/4wJ/5Qb/5Qc/5gk/+zW/+G//5MY/9qw/9Oh/40L/5Ud/44N/9an/8aF/40M/40N/9qx/5oo//jw//Lj/50t//jx//r0/9Ge/82V/9Gc/8uR/5Ye/5Qa/+3a/5wr/5Uc/+C+//36//ny/9Gd/6ZC/7Ja/7Nd/+rT/7pu/65R/6tL/6ZA/+TF/5ws/5AR/6pJ/9mu/4wK/5gl//Xp//bt/7lq/7Ne/7lp/6I5/5AS/+TG//Tp/61R/6M6/5Ue/9Oi/8+Z/+bK/48R/9y0/7Zj/8qP/48Q/+3Z/5sq/6hF/48S//Hh//38/6Q8/8+a/9y1/48P/6lI///+/82U/5IY/5Yg/+bL/4oH/9eq//z5/6pK/4sI/5MZ/61Q/69V/5EU/4oF/7Jb//Xq/6dE/65T//v3/8aG/54x/58y//79//v2/+fM/8+Y/8iJ/8eI/8iL/9Sj/+XHh/PjeAAAANJ0Uk5TAAD//wCgAP////8AAP/////////////QoP//////////////AP//////////////4P///////////wAA/////////wBA///////gAKD///8A/////////wAA////////////////////////////////AMD/AAD/////////////AAD/////////////////////YCD///////9g////////////////////4AD//////wD///////8A//////////9Q//8A////AAD/////////BLUGZwAAAZpJREFUeJxNkV0og2EUx89f87U3lreGiRIrN4oLJc0FkSQUoVZqboiLKZFys3zcKCVld5QkoaYpUfKZfJR244KaWhEbttWo+WrTPM/7sTk3z3N+73PO/z3nD1ICLKLqXT6SOcOngHAcpqQiHq8qzE0weFRo/Aev4z3LE/AiIWRS2aEkVA/I/yPrJ8UoJqCNQSlfJzKz4zumBSzs8pOGRblNb0iMhEX0Sy/t6mBWRNkgDEYFzKpw+D4zU4L+QsywfJQ1ConwyVD05k/xR8KTQfNYEJDLKTlrnJdOgN6yghEF+su52hj/MO1ThEj84CsZYWxSuMxWoBFDivgc3KTAaCmsRHY+134OhxYtSJ+HPqIFvBiO6lwcLl2xhZToeqTqZXgCHK64ImxLVd0SXA26SV9yjLUbbzr5O+5sHG7ghMSiDDgQZA4EzO2MOTeLA9TA5Gh7qdlFTdhaoN19v46oBY2gPeDRVbEzADg6D0LUhfdWJn2K39hK2let5rbooQaaI5tk3DkzwflcTXRWX+YxVqpuXmF+UDIqbOLpH/bLcsV/98goAAAAAElFTkSuQmCC" />
+	</defs>
+	<style>
+	</style>
+	<use id="Background" href="#img1" x="6" y="1" />
+</svg>

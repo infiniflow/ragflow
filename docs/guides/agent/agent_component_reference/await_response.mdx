@@ -1,0 +1,59 @@
+---
+sidebar_position: 5
+slug: /await_response
+sidebar_custom_props: {
+  categoryIcon: LucideMessageSquareDot
+}
+---
+# Await response component
+
+A component that halts the workflow and awaits user input.
+
+---
+
+An **Await response** component halts the workflow, initiating a conversation and collecting key information via predefined forms.
+
+## Scenarios
+
+An **Await response** component is essential where you need to display the agent's responses or require user-computer interaction.
+
+## Configurations
+
+### Guiding question
+
+Whether to show the message defined in the **Message** field.
+
+### Message
+
+The static message to send out. 
+
+Click **+ Add message** to add message options. When multiple messages are supplied, the **Message** component randomly selects one to send.
+
+### Input
+
+You can define global variables within the **Await response** component, which can be either mandatory or optional. Once set, users will need to provide values for these variables when engaging with the agent. Click **+** to add a global variable, each with the following attributes:
+
+- **Name**: _Required_  
+  A descriptive name providing additional details about the variable.  
+- **Type**: _Required_  
+  The type of the variable:
+  - **Single-line text**: Accepts a single line of text without line breaks.
+  - **Paragraph text**: Accepts multiple lines of text, including line breaks.
+  - **Dropdown options**: Requires the user to select a value for this variable from a dropdown menu. And you are required to set _at least_ one option for the dropdown menu.
+  - **file upload**: Requires the user to upload one or multiple files.
+  - **Number**: Accepts a number as input.
+  - **Boolean**: Requires the user to toggle between on and off.
+- **Key**: _Required_  
+  The unique variable name.
+- **Optional**: A toggle indicating whether the variable is optional.
+
+:::tip NOTE
+To pass in parameters from a client, call:
+
+- HTTP method [Converse with agent](../../../references/http_api_reference.md#converse-with-agent), or
+- Python method [Converse with agent](../../../references/python_api_reference.md#converse-with-agent).
+  :::
+
+:::danger IMPORTANT
+If you set the key type as **file**, ensure the token count of the uploaded file does not exceed your model provider's maximum token limit; otherwise, the plain text in your file will be truncated and incomplete.
+:::

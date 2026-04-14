@@ -1,0 +1,28 @@
+name: "🙋‍♀️ Question"
+description: Ask questions on RAGFlow
+title: "[Question]: "
+labels: ["🙋‍♀️ question"]
+body:
+- type: checkboxes
+  attributes:
+    label: Self Checks
+    description: "Please check the following in order to be responded in time :)"
+    options:
+      - label: I have searched for existing issues [search for existing issues](https://github.com/infiniflow/ragflow/issues), including closed ones.
+        required: true
+      - label: I confirm that I am using English to submit this report ([Language Policy](https://github.com/infiniflow/ragflow/issues/5910)).
+        required: true
+      - label: Non-english title submitions will be closed directly ( 非英文标题的提交将会被直接关闭 ) ([Language Policy](https://github.com/infiniflow/ragflow/issues/5910)).
+        required: true
+      - label: "Please do not modify this template :) and fill in all the required fields."
+        required: true
+- type: markdown
+  attributes:
+    value: |
+      If the previous templates don't fit with what you'd like to report or ask, please use this general question template to file issue.
+- type: textarea
+  attributes:
+    label: Describe your problem
+    description: A clear and concise description of your problem.
+  validations:
+    required: true

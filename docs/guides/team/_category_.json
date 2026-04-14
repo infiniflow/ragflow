@@ -1,0 +1,11 @@
+{
+  "label": "Team",
+  "position": 4,
+  "link": {
+    "type": "generated-index",
+    "description": "Team-specific guides."
+  },
+  "customProps": {
+    "categoryIcon": "LucideUsers"
+  }
+}
