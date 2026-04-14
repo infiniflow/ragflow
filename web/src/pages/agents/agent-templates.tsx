@@ -79,18 +79,16 @@ export default function AgentTemplates() {
       return templateList;
     }
     const selectedCanvasType = selectMenuItem.toLocaleLowerCase();
-    return templateList.filter(
-      (item) => {
-        if (Array.isArray(item.canvas_types) && item.canvas_types.length > 0) {
-          return item.canvas_types.some(
-            (canvasType) =>
-              typeof canvasType === 'string' &&
-              canvasType.toLocaleLowerCase() === selectedCanvasType,
-          );
-        }
-        return item.canvas_type?.toLocaleLowerCase() === selectedCanvasType;
-      },
-    );
+    return templateList.filter((item) => {
+      if (Array.isArray(item.canvas_types) && item.canvas_types.length > 0) {
+        return item.canvas_types.some(
+          (canvasType) =>
+            typeof canvasType === 'string' &&
+            canvasType.toLocaleLowerCase() === selectedCanvasType,
+        );
+      }
+      return item.canvas_type?.toLocaleLowerCase() === selectedCanvasType;
+    });
   }, [selectMenuItem, templateList]);
 
   return (
