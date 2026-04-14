@@ -27,7 +27,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from common.constants import RetCode
 from api.apps import login_required
 from api.utils.api_utils import get_error_data_result, get_result, add_tenant_id_to_kwargs, get_request_json, \
-    server_error_response, get_json_result
+    server_error_response
 from api.utils.validation_utils import (
     UpdateDocumentReq, format_validation_error_message,
 )

@@ -22,7 +22,6 @@ import xxhash
 from pydantic import BaseModel, Field, validator
 from quart import request, send_file
 
-from api.constants import FILE_NAME_LEN_LIMIT
 from api.db.db_models import APIToken, Document, File, Task
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from api.db.services.doc_metadata_service import DocMetadataService

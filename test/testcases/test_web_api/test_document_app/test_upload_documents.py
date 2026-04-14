@@ -20,7 +20,6 @@ from test_common import list_datasets, upload_documents
 from configs import DOCUMENT_NAME_LIMIT, INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 from utils.file_utils import create_txt_file
-from api.constants import FILE_NAME_LEN_LIMIT
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
