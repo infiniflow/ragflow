@@ -32,7 +32,7 @@ from api.utils.validation_utils import (
     UpdateDocumentReq, format_validation_error_message,
 )
 
-@manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PUT"]) # noqa: F821
+@manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PATCH"]) # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def update_document(tenant_id, dataset_id, document_id):
