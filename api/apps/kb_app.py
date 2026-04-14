@@ -803,6 +803,75 @@ def trace_mindmap():
     return get_json_result(data=task.to_dict())
 
 
+@manager.route("/run_compiled_pages", methods=["POST"])  # noqa: F821
+@login_required
+async def run_compiled_pages():
+    req = await get_request_json()
+
+    kb_id = req.get("kb_id", "")
+    if not kb_id:
+        return get_error_data_result(message='Lack of "KB ID"')
+
+    ok, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not ok:
+        return get_error_data_result(message="Invalid Knowledgebase ID")
+
+    task_id = kb.compiled_page_task_id
+    if task_id:
+        ok, task = TaskService.get_by_id(task_id)
+        if not ok:
+            logging.warning(f"A valid Compiled Pages task id is expected for kb {kb_id}")
+
+        if task and task.progress not in [-1, 1]:
+            return get_error_data_result(message=f"Task {task_id} in progress with status {task.progress}. A Compiled Pages task is already running.")
+
+    documents, _ = DocumentService.get_by_kb_id(
+        kb_id=kb_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=False,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
+    )
+    if not documents:
+        return get_error_data_result(message=f"No documents in Knowledgebase {kb_id}")
+
+    sample_document = documents[0]
+    document_ids = [document["id"] for document in documents]
+
+    task_id = queue_raptor_o_graphrag_tasks(sample_doc_id=sample_document, ty="compiled_pages", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
+
+    if not KnowledgebaseService.update_by_id(kb.id, {"compiled_page_task_id": task_id}):
+        logging.warning(f"Cannot save compiled_page_task_id for kb {kb_id}")
+
+    return get_json_result(data={"compiled_page_task_id": task_id})
+
+
+@manager.route("/trace_compiled_pages", methods=["GET"])  # noqa: F821
+@login_required
+def trace_compiled_pages():
+    kb_id = request.args.get("kb_id", "")
+    if not kb_id:
+        return get_error_data_result(message='Lack of "KB ID"')
+
+    ok, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not ok:
+        return get_error_data_result(message="Invalid Knowledgebase ID")
+
+    task_id = kb.compiled_page_task_id
+    if not task_id:
+        return get_json_result(data={})
+
+    ok, task = TaskService.get_by_id(task_id)
+    if not ok:
+        return get_error_data_result(message="Compiled Pages Task Not Found or Error Occurred")
+
+    return get_json_result(data=task.to_dict())
+
+
 @manager.route("/unbind_task", methods=["DELETE"])  # noqa: F821
 @login_required
 def delete_kb_task():
@@ -814,7 +883,7 @@ def delete_kb_task():
         return get_json_result(data=True)
 
     pipeline_task_type = request.args.get("pipeline_task_type", "")
-    if not pipeline_task_type or pipeline_task_type not in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP]:
+    if not pipeline_task_type or pipeline_task_type not in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP, PipelineTaskType.COMPILED_PAGES]:
         return get_error_data_result(message="Invalid task type")
 
     def cancel_task(task_id):
@@ -840,6 +909,12 @@ def delete_kb_task():
             task_id = kb.mindmap_task_id
             kb_task_finish_at = "mindmap_task_finish_at"
             cancel_task(task_id)
+        case PipelineTaskType.COMPILED_PAGES:
+            kb_task_id_field = "compiled_page_task_id"
+            task_id = kb.compiled_page_task_id
+            kb_task_finish_at = "compiled_page_task_finish_at"
+            cancel_task(task_id)
+            settings.docStoreConn.delete({"compiled_page_kwd": ["page"]}, search.index_name(kb.tenant_id), kb_id)
         case _:
             return get_error_data_result(message="Internal Error: Invalid task type")
 

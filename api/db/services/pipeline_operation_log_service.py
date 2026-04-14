@@ -130,7 +130,7 @@ class PipelineOperationLogService(CommonService):
         if task_type not in VALID_PIPELINE_TASK_TYPES:
             raise ValueError(f"Invalid task type: {task_type}")
 
-        if task_type in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP]:
+        if task_type in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP, PipelineTaskType.COMPILED_PAGES]:
             finish_at = document.process_begin_at + timedelta(seconds=document.process_duration)
             if task_type == PipelineTaskType.GRAPH_RAG:
                 KnowledgebaseService.update_by_id(
@@ -146,6 +146,11 @@ class PipelineOperationLogService(CommonService):
                 KnowledgebaseService.update_by_id(
                     document.kb_id,
                     {"mindmap_task_finish_at": finish_at},
+                )
+            elif task_type == PipelineTaskType.COMPILED_PAGES:
+                KnowledgebaseService.update_by_id(
+                    document.kb_id,
+                    {"compiled_page_task_finish_at": finish_at},
                 )
 
         log = dict(

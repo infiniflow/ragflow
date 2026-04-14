@@ -41,6 +41,7 @@ from rag.utils.raptor_utils import should_skip_raptor, get_skip_reason
 from common.log_utils import init_root_logger
 from common.config_utils import show_configs
 from rag.graphrag.general.index import run_graphrag_for_kb
+from rag.compiled_pages import build_compiled_pages
 from rag.graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text, \
     gen_metadata
@@ -107,6 +108,7 @@ TASK_TYPE_TO_PIPELINE_TASK_TYPE = {
     "graphrag": PipelineTaskType.GRAPH_RAG,
     "mindmap": PipelineTaskType.MINDMAP,
     "memory": PipelineTaskType.MEMORY,
+    "compiled_pages": PipelineTaskType.COMPILED_PAGES,
 }
 
 UNACKED_ITERATOR = None
@@ -1125,6 +1127,57 @@ async def do_handle_task(task):
         progress_callback(1, "place holder")
         pass
         return
+    elif task_type == "compiled_pages":
+        ok, kb = KnowledgebaseService.get_by_id(task_dataset_id)
+        if not ok:
+            progress_callback(prog=-1.0, msg="Cannot find valid dataset for Compiled Pages task")
+            return
+
+        kb_parser_config = kb.parser_config
+        if not kb_parser_config.get("compiled_pages", {}).get("use_compiled_pages", False):
+            kb_parser_config.update(
+                {
+                    "compiled_pages": {
+                        "use_compiled_pages": True,
+                        "max_section_tokens": 2048,
+                    }
+                }
+            )
+            if not KnowledgebaseService.update_by_id(kb.id, {"parser_config": kb_parser_config}):
+                progress_callback(prog=-1.0, msg="Internal error: Invalid Compiled Pages configuration")
+                return
+
+        compiled_pages_config = kb_parser_config.get("compiled_pages", {})
+        max_section_tokens = int(compiled_pages_config.get("max_section_tokens", 2048))
+
+        chat_model_config = get_model_config_by_type_and_name(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
+        chat_model = LLMBundle(task_tenant_id, chat_model_config, lang=task_language)
+
+        start_ts = timer()
+        async with kg_limiter:
+            pages, token_count = await build_compiled_pages(
+                row=task,
+                doc_ids=task.get("doc_ids", []),
+                chat_mdl=chat_model,
+                embd_mdl=embedding_model,
+                vector_size=vector_size,
+                callback=progress_callback,
+                task_id=task_id,
+                max_section_tokens=max_section_tokens,
+            )
+
+        if pages:
+            await thread_pool_exec(
+                settings.docStoreConn.insert,
+                pages,
+                search.index_name(task_tenant_id),
+                task_dataset_id,
+            )
+
+        progress_callback(prog=1.0, msg="Compiled Pages done ({:.2f}s), {} pages built".format(timer() - start_ts, len(pages)))
+        if fake_doc_ids := task.get("doc_ids", []):
+            task_doc_id = fake_doc_ids[0]
+        return
     else:
         # Standard chunking methods
         task['llm_id'] = doc_task_llm_id
@@ -1257,7 +1310,7 @@ async def handle_task():
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
     finally:
         task_document_ids = []
-        if task_type in ["graphrag", "raptor", "mindmap"]:
+        if task_type in ["graphrag", "raptor", "mindmap", "compiled_pages"]:
             task_document_ids = task["doc_ids"]
         if not task.get("dataflow_id", ""):
             PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id="",

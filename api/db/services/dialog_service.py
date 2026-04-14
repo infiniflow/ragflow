@@ -640,6 +640,18 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                                                        LLMBundle(dialog.tenant_id, default_chat_model))
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
+            if prompt_config.get("use_compiled_pages") and embd_mdl:
+                compiled_chunks = await settings.retriever.retrieval_compiled_pages(
+                    " ".join(questions),
+                    embd_mdl,
+                    tenant_ids,
+                    dialog.kb_ids,
+                    page_size=dialog.top_n,
+                    similarity_threshold=dialog.similarity_threshold,
+                    vector_similarity_weight=dialog.vector_similarity_weight,
+                )
+                if compiled_chunks:
+                    kbinfos["chunks"] = compiled_chunks + kbinfos["chunks"]
 
     knowledges = kb_prompt(kbinfos, max_tokens)
     logging.debug("{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
