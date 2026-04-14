@@ -547,13 +547,16 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     # try to use sql if field mapping is good to go
     if field_map:
         logging.debug("Use SQL to retrieval:{}".format(questions[-1]))
-        ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
-        # For aggregate queries (COUNT, SUM, etc.), chunks may be empty but answer is still valid
-        if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
-            yield ans
-            return
-        else:
-            logging.debug("SQL failed or returned no results, falling back to vector search")
+        try:
+            ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
+            # For aggregate queries (COUNT, SUM, etc.), chunks may be empty but answer is still valid
+            if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
+                yield ans
+                return
+            else:
+                logging.debug("SQL failed or returned no results, falling back to vector search")
+        except ValueError as e:
+            logging.warning(f"SQL validation failed: {e}, falling back to vector search")
 
     param_keys = [p["key"] for p in prompt_config.get("parameters", [])]
     logging.debug(f"attachments={attachments}, param_keys={param_keys}, embd_mdl={embd_mdl}")
