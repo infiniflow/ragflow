@@ -27,7 +27,6 @@ const {
   switchChunk,
   rmChunk,
   retrievalTest,
-  documentRename,
   documentRun,
   documentUpload,
   webCrawl,
@@ -74,10 +73,6 @@ const methods = {
   documentRm: {
     url: documentRm,
     method: 'post',
-  },
-  documentRename: {
-    url: documentRename,
-    method: 'put',
   },
   documentCreate: {
     url: documentCreate,
@@ -255,7 +250,7 @@ export const renameDocument = (
   datasetId: string,
   documentId: string,
   data: { name?: string },
-) => request.put(api.documentRename(datasetId, documentId), { data });
+) => request.patch(api.documentRename(datasetId, documentId), { data });
 
 export const getMetaDataService = ({
   kb_id,
