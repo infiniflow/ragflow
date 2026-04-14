@@ -246,6 +246,7 @@ function MessageItem({
                         showLoudspeaker={showLoudspeaker}
                         showLog={showLog}
                         attachment={item.attachment}
+                        isShare={isShare}
                       ></AssistantGroupButton>
                     )}
                     {!isShare && (

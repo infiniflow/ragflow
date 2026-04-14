@@ -40,7 +40,7 @@ export const useFetchLlmList = (modelType?: LlmModelType) => {
     queryKey: [LLMApiAction.LlmList],
     initialData: {},
     queryFn: async () => {
-      const { data } = await userService.llm_list({ model_type: modelType });
+      const { data } = await userService.llmList({ model_type: modelType });
 
       return data?.data ?? {};
     },
@@ -191,7 +191,7 @@ export const useFetchLlmFactoryList = (): ResponseGetType<IFactory[]> => {
     initialData: [],
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await userService.factories_list();
+      const { data } = await userService.factoriesList();
 
       return data?.data ?? [];
     },
@@ -210,7 +210,7 @@ export const useFetchMyLlmList = (): ResponseGetType<
     initialData: {},
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await userService.my_llm();
+      const { data } = await userService.myLlm();
 
       return data?.data ?? {};
     },
@@ -227,7 +227,7 @@ export const useFetchMyLlmListDetailed = (): ResponseGetType<
     initialData: {},
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await userService.my_llm({ include_details: true });
+      const { data } = await userService.myLlm({ include_details: true });
 
       return data?.data ?? {};
     },
@@ -285,7 +285,7 @@ export const useSaveApiKey = () => {
   } = useMutation({
     mutationKey: [LLMApiAction.SaveApiKey],
     mutationFn: async (params: IApiKeySavingParams) => {
-      const { data } = await userService.set_api_key(params);
+      const { data } = await userService.setApiKey(params);
       if (data.code === 0) {
         // message.success(t('message.modified'));
         queryClient.invalidateQueries({ queryKey: [LLMApiAction.MyLlmList] });
@@ -319,7 +319,7 @@ export const useSaveTenantInfo = () => {
   } = useMutation({
     mutationKey: [LLMApiAction.SaveTenantInfo],
     mutationFn: async (params: ISystemModelSettingSavingParams) => {
-      const { data } = await userService.set_tenant_info(params);
+      const { data } = await userService.setTenantInfo(params);
       if (data.code === 0) {
         message.success(t('message.modified'));
       }
@@ -340,7 +340,7 @@ export const useAddLlm = () => {
   } = useMutation({
     mutationKey: [LLMApiAction.AddLlm],
     mutationFn: async (params: IAddLlmRequestBody & { verify?: boolean }) => {
-      const { data } = await userService.add_llm(params);
+      const { data } = await userService.addLlm(params);
       if (data.code === 0 && !params.verify) {
         queryClient.invalidateQueries({ queryKey: [LLMApiAction.MyLlmList] });
         queryClient.invalidateQueries({
@@ -367,7 +367,7 @@ export const useDeleteLlm = () => {
   } = useMutation({
     mutationKey: [LLMApiAction.DeleteLlm],
     mutationFn: async (params: IDeleteLlmRequestBody) => {
-      const { data } = await userService.delete_llm(params);
+      const { data } = await userService.deleteLlm(params);
       if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: [LLMApiAction.MyLlmList] });
         queryClient.invalidateQueries({
@@ -398,7 +398,7 @@ export const useEnableLlm = () => {
         status?: 1 | 0;
       } = { ...params, status: params.enable ? 1 : 0 };
       delete reqParam.enable;
-      const { data } = await userService.enable_llm(reqParam);
+      const { data } = await userService.enableLlm(reqParam);
       if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: [LLMApiAction.MyLlmList] });
         queryClient.invalidateQueries({
