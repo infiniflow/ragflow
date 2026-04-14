@@ -1253,6 +1253,19 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         author: '作者',
         sectionTitle: '章节标题',
       },
+      includeHeadingContent: '包含标题内容',
+      includeHeadingContentTip:
+        '启用后，标题下的直接内容将作为一个独立的块保留。子块仅保留标题路径。',
+      hierarchyTip: `构建标题树并生成独立的块，每个块携带其完整的祖先标题路径（例如 第1部分 › 第3章 › 第2节 + 正文）。<br>
+适用场景：具有独立的、结构性重要章节的文档——如法律条款、法规、合同和技术规范——其中每个块即使没有上下文也能通过其结构位置来识别。`,
+      groupTip: `在选定的标题级别将文档扁平分割，并自动合并相邻的小节以保持内容连续性。不注入父标题路径。<br>
+适用场景：具有流动性的、内容相关联的文档——如书籍、手册、报告和文章——其中相邻段落应保持在一起以维持叙述连贯性。`,
+      enableMultiColumn: '启用多栏',
+      enableMultiColumnTip:
+        '检测并解析多栏页面布局以保持正确的阅读顺序。对于具有双栏或报纸式布局的PDF或文档，请开启此功能。',
+      removeToc: '移除原始目录',
+      removeTocTip:
+        '移除原始PDF中包含的目录，这样它就不会被解析为常规内容或作为检索块。',
       autoPlay: '自动播放',
       downloadFileTypeTip: '文件下载的类型',
       downloadFileType: '文件类型',
@@ -1943,7 +1956,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tokenChunkerDescription:
         '根据分词器长度将文本拆分成块，并带有可选的分隔符和重叠。',
       titleChunkerDescription:
-        '使用正则表达式规则按标题层次结构将文档拆分成多个部分，以实现更精细的控制。',
+        '按标题层级拆分文档。通过正则表达式定义各级标题，再选择层级或分组模式控制切片方式。',
       titleChunker: '按标题分块',
       extractor: '提取器',
       extractorDescription:
@@ -1966,6 +1979,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       },
       fields: '字段',
       addParser: '增加解析器',
+      group: '聚合',
       hierarchy: '层次结构',
       regularExpressions: '正则表达式',
       overlappedPercent: '重叠百分比（%）',
