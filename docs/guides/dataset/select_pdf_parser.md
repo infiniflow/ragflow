@@ -77,7 +77,7 @@ To enable the OpenDataLoader parser, install it on first run by setting `USE_OPE
 - `OPENDATALOADER_VERSION`: Pin the `opendataloader-pdf` release (for example, `==0.3.0`).
 - `OPENDATALOADER_HYBRID`: Enable hybrid extraction (for example, `docling-fast`). Leaving it unset uses local-only mode (fastest, no AI backend).
 - `OPENDATALOADER_IMAGE_OUTPUT`: `off`, `embedded`, or `external` (default).
-- `OPENDATALOADER_OUTPUT_DIR`: Directory used for intermediate JSON/Markdown. If unset, a temporary directory is created per request and removed afterwards.
+- `OPENDATALOADER_OUTPUT_DIR`: Directory used for intermediate JSON/Markdown. If unset, a temporary directory is created per request and removed afterward.
 - `OPENDATALOADER_DELETE_OUTPUT`: `1` to delete the per-request directory (default), `0` to retain for debugging.
 - `OPENDATALOADER_SANITIZE`: `1` to filter known prompt-injection patterns from extracted text.
 

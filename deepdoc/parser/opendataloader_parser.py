@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import shutil
+import subprocess
 import tempfile
 from dataclasses import dataclass
 from enum import Enum
@@ -141,8 +142,36 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         if not hasattr(opendataloader_pdf, "convert"):
             self.logger.warning("[OpenDataLoader] installed package lacks convert() entry point.")
             return False
-        if not shutil.which("java"):
+        java_bin = shutil.which("java")
+        if not java_bin:
             self.logger.warning("[OpenDataLoader] Java runtime not found on PATH (Java 11+ required).")
+            return False
+        try:
+            result = subprocess.run(
+                [java_bin, "-version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            version_output = result.stderr or result.stdout
+            # version string is e.g. 'openjdk version "21.0.1"' or 'java version "1.8.0_XXX"'
+            import re as _re
+            m = _re.search(r'"(\d+)(?:\.(\d+))?', version_output)
+            if m:
+                major = int(m.group(1))
+                if major == 1:
+                    # old-style versioning: 1.8 → 8
+                    major = int(m.group(2) or 0)
+                if major < 11:
+                    self.logger.warning(
+                        f"[OpenDataLoader] Java {major} detected; Java 11+ is required."
+                    )
+                    return False
+            else:
+                self.logger.warning("[OpenDataLoader] Could not determine Java version from: %s", version_output[:120])
+                return False
+        except Exception as e:
+            self.logger.warning(f"[OpenDataLoader] Failed to check Java version: {e}")
             return False
         return True
 
@@ -167,10 +196,16 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
     def _make_line_tag(self, bbox: _BBox) -> str:
         if bbox is None:
             return ""
-        x0, x1, top, bott = bbox.x0, bbox.x1, bbox.y0, bbox.y1
+        x0, x1 = bbox.x0, bbox.x1
+        # OpenDataLoader bbox uses PDF coordinate space (origin bottom-left).
+        # y1 is the top edge, y0 is the bottom edge in PDF points.
+        # Convert to image-space (origin top-left) by subtracting from page height.
         if self.page_images and len(self.page_images) >= bbox.page_no:
             _, page_height = self.page_images[bbox.page_no - 1].size
-            top, bott = page_height - top, page_height - bott
+            top = page_height - bbox.y1
+            bott = page_height - bbox.y0
+        else:
+            top, bott = bbox.y1, bbox.y0
         return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(
             bbox.page_no, x0, x1, top, bott
         )
@@ -345,14 +380,15 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         if not self.check_installation():
             raise RuntimeError("OpenDataLoader not available, please install `opendataloader-pdf`")
 
-        workdir: Optional[Path] = None
-        cleanup_workdir = False
-        if output_dir:
-            workdir = Path(output_dir)
-            workdir.mkdir(parents=True, exist_ok=True)
-        else:
-            workdir = Path(tempfile.mkdtemp(prefix="opendataloader_"))
-            cleanup_workdir = True
+        # Always use a unique per-request subdirectory to prevent concurrent
+        # requests from colliding on input files or stale output artifacts.
+        base_dir = Path(output_dir) if output_dir else None
+        if base_dir:
+            base_dir.mkdir(parents=True, exist_ok=True)
+        workdir = Path(tempfile.mkdtemp(prefix="opendataloader_", dir=base_dir))
+        # When caller supplied output_dir they want to retain the tree; only
+        # clean up when we created the base dir ourselves (no output_dir given).
+        cleanup_workdir = output_dir is None
 
         src_path: Path
         tmp_input: Optional[Path] = None

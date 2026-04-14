@@ -438,6 +438,8 @@ class Parser(ProcessBase):
                 output_dir=os.environ.get("OPENDATALOADER_OUTPUT_DIR", "") or None,
                 delete_output=bool(int(os.environ.get("OPENDATALOADER_DELETE_OUTPUT", 1))),
                 hybrid=os.environ.get("OPENDATALOADER_HYBRID", "") or None,
+                image_output=os.environ.get("OPENDATALOADER_IMAGE_OUTPUT", "") or None,
+                sanitize=bool(int(os.environ.get("OPENDATALOADER_SANITIZE", 0))) or None,
             )
             bboxes = []
             for item in lines or []:
