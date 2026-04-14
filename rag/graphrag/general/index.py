@@ -45,63 +45,52 @@ from rag.utils.redis_conn import RedisDistributedLock
 from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
 
-_PAGE_SIZE = 256
 
 
 async def load_subgraph_from_store(tenant_id: str, kb_id: str, doc_id: str):
     """Load a previously saved subgraph from the doc store.
 
-    Paginates through stored subgraphs (page size _PAGE_SIZE) and matches
-    source_id in Python to avoid backend-specific list-field query issues.
+    Filters directly by source_id (== doc_id) and knowledge_graph_kwd in the
+    query so the doc store index does the heavy lifting.  Expects at most one
+    matching chunk per doc_id (as written by generate_subgraph).
     Returns a networkx Graph on hit, or None on miss.
     """
     fields = ["content_with_weight", "source_id"]
-    condition = {"knowledge_graph_kwd": ["subgraph"], "removed_kwd": "N"}
-    offset = 0
-    candidates_scanned = 0
+    condition = {
+        "knowledge_graph_kwd": ["subgraph"],
+        "removed_kwd": "N",
+        "source_id": [doc_id],
+    }
     try:
-        while True:
-            res = await thread_pool_exec(
-                settings.docStoreConn.search,
-                fields, [], condition, [], OrderByExpr(),
-                offset, _PAGE_SIZE, search.index_name(tenant_id), [kb_id]
-            )
-            field_map = settings.docStoreConn.get_fields(res, fields)
-            if not field_map:
-                break
-            candidates_scanned += len(field_map)
-            for cid, row in field_map.items():
-                source_ids = row.get("source_id") or []
-                if isinstance(source_ids, str):
-                    source_ids = [source_ids]
-                if doc_id not in source_ids:
-                    continue
-                content = row.get("content_with_weight", "")
-                if not content:
-                    continue
-                try:
-                    data = json.loads(content)
-                    sg = nx.node_link_graph(data, edges="edges")
-                    sg.graph["source_id"] = [doc_id]
-                    logging.info(
-                        "Checkpoint hit: subgraph for doc %s (tenant=%s kb=%s) found at chunk %s",
-                        doc_id, tenant_id, kb_id, cid,
-                    )
-                    return sg
-                except Exception:
-                    logging.exception(
-                        "Failed to parse subgraph JSON for doc %s chunk %s", doc_id, cid
-                    )
-                    continue
-            if len(field_map) < _PAGE_SIZE:
-                break
-            offset += _PAGE_SIZE
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            fields, [], condition, [], OrderByExpr(),
+            0, 1, search.index_name(tenant_id), [kb_id]
+        )
+        field_map = settings.docStoreConn.get_fields(res, fields)
+        for cid, row in field_map.items():
+            content = row.get("content_with_weight", "")
+            if not content:
+                continue
+            try:
+                data = json.loads(content)
+                sg = nx.node_link_graph(data, edges="edges")
+                sg.graph["source_id"] = [doc_id]
+                logging.info(
+                    "Checkpoint hit: subgraph for doc %s (tenant=%s kb=%s) found at chunk %s",
+                    doc_id, tenant_id, kb_id, cid,
+                )
+                return sg
+            except Exception:
+                logging.exception(
+                    "Failed to parse subgraph JSON for doc %s chunk %s", doc_id, cid
+                )
     except Exception:
         logging.exception("Failed to load subgraph from store for doc %s", doc_id)
         return None
     logging.info(
-        "Checkpoint miss: no subgraph for doc %s (tenant=%s kb=%s, scanned=%d candidates)",
-        doc_id, tenant_id, kb_id, candidates_scanned,
+        "Checkpoint miss: no subgraph for doc %s (tenant=%s kb=%s)",
+        doc_id, tenant_id, kb_id,
     )
     return None
 

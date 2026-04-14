@@ -163,33 +163,23 @@ class TestLoadSubgraphFromStore:
 
     @pytest.mark.p2
     @pytest.mark.asyncio
-    async def test_filters_by_doc_id_in_python(self, monkeypatch):
-        """Only the chunk whose source_id matches the requested doc_id is returned."""
-        sg_a, sg_b = _make_subgraph("doc_a"), _make_subgraph("doc_b")
-        field_map = {
-            "chunk_a": {"content_with_weight": _to_store_content(sg_a), "source_id": ["doc_a"]},
-            "chunk_b": {"content_with_weight": _to_store_content(sg_b), "source_id": ["doc_b"]},
-        }
-        s, gf = _single_page_mocks(field_map)
-        monkeypatch.setattr(_settings.docStoreConn, "search", s)
-        monkeypatch.setattr(_settings.docStoreConn, "get_fields", gf)
+    async def test_passes_doc_id_in_search_condition(self, monkeypatch):
+        """source_id (== doc_id) is included in the search condition so the doc
+        store filters results directly rather than fetching all subgraphs."""
+        captured = {}
+
+        def _capture(fields, filters, condition, *_a, **_kw):
+            captured["condition"] = condition
+            return object()
+
+        sg = _make_subgraph("doc_b")
+        monkeypatch.setattr(_settings.docStoreConn, "search", _capture)
+        monkeypatch.setattr(_settings.docStoreConn, "get_fields",
+                            MagicMock(return_value={"chunk_b": {"content_with_weight": _to_store_content(sg), "source_id": ["doc_b"]}}))
 
         result = await load_subgraph_from_store("t1", "kb1", "doc_b")
         assert result is not None and result.graph["source_id"] == ["doc_b"]
-
-    @pytest.mark.p2
-    @pytest.mark.asyncio
-    async def test_handles_string_source_id(self, monkeypatch):
-        """source_id stored as a bare string is normalised to a list."""
-        doc_id = "doc_str"
-        sg = _make_subgraph(doc_id)
-        field_map = {"chunk_001": {"content_with_weight": _to_store_content(sg), "source_id": doc_id}}
-        s, gf = _single_page_mocks(field_map)
-        monkeypatch.setattr(_settings.docStoreConn, "search", s)
-        monkeypatch.setattr(_settings.docStoreConn, "get_fields", gf)
-
-        result = await load_subgraph_from_store("t1", "kb1", doc_id)
-        assert result is not None and result.graph["source_id"] == [doc_id]
+        assert captured["condition"]["source_id"] == ["doc_b"]
 
     @pytest.mark.p2
     @pytest.mark.asyncio
@@ -204,38 +194,25 @@ class TestLoadSubgraphFromStore:
 
     @pytest.mark.p2
     @pytest.mark.asyncio
-    async def test_paginates_when_match_is_on_second_page(self, monkeypatch):
-        """Pagination increments offset and continues until a match is found."""
-        doc_id = "doc_page2"
+    async def test_issues_single_query_with_limit_one(self, monkeypatch):
+        """Exactly one search call is issued with limit=1 — the doc store index
+        does the filtering, so no pagination is required."""
+        doc_id = "doc_single"
         sg = _make_subgraph(doc_id)
-        page1 = {f"other_{i}": {"content_with_weight": "", "source_id": [f"other_{i}"]} for i in range(256)}
-        page2 = {"chunk_target": {"content_with_weight": _to_store_content(sg), "source_id": [doc_id]}}
-
-        search_calls: list[tuple] = []  # capture (offset, limit) from each search() call
+        search_calls: list[tuple] = []
 
         def _search(fields, filters, condition, order, orderby, offset, limit, *_a, **_kw):
             search_calls.append((offset, limit))
             return object()
 
-        call_count = {"n": 0}
-
-        def _get_fields(_res, _fields):
-            call_count["n"] += 1
-            if call_count["n"] == 1:
-                return page1
-            if call_count["n"] == 2:
-                return page2
-            return {}
-
         monkeypatch.setattr(_settings.docStoreConn, "search", _search)
-        monkeypatch.setattr(_settings.docStoreConn, "get_fields", MagicMock(side_effect=_get_fields))
+        monkeypatch.setattr(_settings.docStoreConn, "get_fields",
+                            MagicMock(return_value={"chunk_t": {"content_with_weight": _to_store_content(sg), "source_id": [doc_id]}}))
 
         result = await load_subgraph_from_store("t1", "kb1", doc_id)
-        assert result is not None and result.graph["source_id"] == [doc_id]
-        # Verify the implementation actually incremented the offset between pages
-        assert len(search_calls) == 2
-        assert search_calls[0] == (0, 256), "first page must start at offset 0"
-        assert search_calls[1] == (256, 256), "second page must start at offset 256"
+        assert result is not None
+        assert len(search_calls) == 1, "must issue exactly one query"
+        assert search_calls[0] == (0, 1), "must use offset=0, limit=1"
 
     @pytest.mark.p2
     @pytest.mark.asyncio
@@ -310,8 +287,20 @@ class TestCheckpointResumeWorkflow:
             f"chunk_{d}": {"content_with_weight": _to_store_content(_make_subgraph(d)), "source_id": [d]}
             for d in completed
         }
-        monkeypatch.setattr(_settings.docStoreConn, "search", MagicMock(return_value=object()))
-        monkeypatch.setattr(_settings.docStoreConn, "get_fields", MagicMock(return_value=field_map))
+        # The doc store filters by source_id (doc_id) directly, so get_fields
+        # should return only the matching chunk for each call.
+        def _get_fields_by_doc(res, fields):
+            # res is the sentinel from search; extract the doc_id it was called with
+            return {k: v for k, v in field_map.items() if v["source_id"] == [_get_fields_by_doc.last_doc_id]}
+
+        search_calls_doc = {}
+
+        def _search(fields, filters, condition, *_a, **_kw):
+            _get_fields_by_doc.last_doc_id = (condition or {}).get("source_id", [None])[0]
+            return object()
+
+        monkeypatch.setattr(_settings.docStoreConn, "search", _search)
+        monkeypatch.setattr(_settings.docStoreConn, "get_fields", _get_fields_by_doc)
 
         for doc_id in completed:
             result = await load_subgraph_from_store("t1", "kb1", doc_id)
