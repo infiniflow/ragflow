@@ -20,7 +20,7 @@ import logging
 import re
 from copy import deepcopy
 from typing import Tuple
-import jinja2
+from jinja2.sandbox import SandboxedEnvironment
 import json_repair
 from common.misc_utils import hash_str2int
 from rag.nlp import rag_tokenizer
@@ -183,7 +183,9 @@ RANK_MEMORY = load_prompt("rank_memory")
 META_FILTER = load_prompt("meta_filter")
 ASK_SUMMARY = load_prompt("ask_summary")
 
-PROMPT_JINJA_ENV = jinja2.Environment(autoescape=False, trim_blocks=True, lstrip_blocks=True)
+PROMPT_JINJA_ENV = SandboxedEnvironment(
+    autoescape=False, trim_blocks=True, lstrip_blocks=True
+)
 
 
 def citation_prompt(user_defined_prompts: dict = {}) -> str:
