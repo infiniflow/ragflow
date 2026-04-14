@@ -33,6 +33,7 @@ from common.constants import LLMType
 from common.misc_utils import get_uuid, thread_pool_exec
 from deepdoc.parser import ExcelParser, HtmlParser, TxtParser
 from deepdoc.parser.docling_parser import DoclingParser
+from deepdoc.parser.opendataloader_parser import OpenDataLoaderParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
@@ -235,7 +236,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "tcadp parser", "paddleocr"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -408,6 +409,35 @@ class Parser(ProcessBase):
                 callback=self.callback,
                 parse_method="pipeline",
                 docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""),
+            )
+            bboxes = []
+            for item in lines or []:
+                if not isinstance(item, tuple) or len(item) < 3:
+                    continue
+                text, layout_type, poss = item[0], item[1], item[2]
+                box = {
+                    "text": text,
+                    "layout_type": layout_type or "text",
+                }
+                if isinstance(poss, str) and poss:
+                    positions = [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
+                    if positions:
+                        box["positions"] = positions
+                    image = pdf_parser.crop(poss, 1)
+                    if image is not None:
+                        box["image"] = image
+                bboxes.append(box)
+
+        elif parse_method.lower() == "opendataloader":
+            pdf_parser = OpenDataLoaderParser()
+            lines, _ = pdf_parser.parse_pdf(
+                filepath=name,
+                binary=blob,
+                callback=self.callback,
+                parse_method="pipeline",
+                output_dir=os.environ.get("OPENDATALOADER_OUTPUT_DIR", "") or None,
+                delete_output=bool(int(os.environ.get("OPENDATALOADER_DELETE_OUTPUT", 1))),
+                hybrid=os.environ.get("OPENDATALOADER_HYBRID", "") or None,
             )
             bboxes = []
             for item in lines or []:
