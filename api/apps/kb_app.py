@@ -525,8 +525,8 @@ async def list_pipeline_logs():
     suffix = req.get("suffix", [])
 
     try:
-        logs, tol = PipelineOperationLogService.get_file_logs_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, operation_status, types, suffix, create_date_from, create_date_to)
-        return get_json_result(data={"total": tol, "logs": logs})
+        logs, count = PipelineOperationLogService.get_file_logs_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, operation_status, types, suffix, create_date_from, create_date_to)
+        return get_json_result(data={"total": count, "logs": logs})
     except Exception as e:
         return server_error_response(e)
 
