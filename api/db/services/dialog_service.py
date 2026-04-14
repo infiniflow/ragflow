@@ -829,9 +829,9 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         kb_ids: Optional list of knowledge-base UUIDs to restrict the query scope.
 
     Returns:
-        A tuple ``(answer_text, references)`` where *answer_text* is the formatted
-        response string and *references* is a dict of supporting document chunks,
-        or ``None`` if SQL generation or execution fails.
+        A dict with keys ``answer`` (formatted response string), ``reference``
+        (dict of supporting document chunks and doc_aggs), and ``prompt``
+        (the system prompt used), or ``None`` if SQL generation or execution fails.
     """
     logging.debug(f"use_sql: Question: {question}")
 
