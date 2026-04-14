@@ -1623,7 +1623,7 @@ class RAGFlowClient:
         }
 
         response = self.http_client.request(
-            "PUT",
+            "PATCH",
             f"/datasets/{dataset_id}/documents/{doc_id}",
             json_body=payload,
             use_api_base=True,

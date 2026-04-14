@@ -395,9 +395,18 @@ func (s *DatasetsService) CreateDataset(req *CreateDatasetRequest, tenantID stri
 	now := time.Now().Unix()
 	nowDate := time.Now().Truncate(time.Second)
 	status := string(entity.StatusValid)
+	// Deduplicate name within tenant
+	duplicateName, err := common.DuplicateName(func(n, tid string) bool {
+		existing, err := s.kbDAO.GetByName(n, tid)
+		return err == nil && existing != nil
+	}, name, tenantID)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+
 	kb := &entity.Knowledgebase{
 		ID:           kbID,
-		Name:         s.kbDAO.DuplicateName(name, tenantID),
+		Name:         duplicateName,
 		TenantID:     tenantID,
 		CreatedBy:    tenantID,
 		ParserID:     parserID,
