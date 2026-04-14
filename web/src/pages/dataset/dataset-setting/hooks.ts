@@ -35,7 +35,7 @@ export function useHasParsedDocument(isEdit?: boolean) {
 }
 
 export const useFetchKnowledgeConfigurationOnMount = (
-  form: UseFormReturn<z.infer<typeof formSchema>, any, undefined>,
+  form: UseFormReturn<z.infer<typeof formSchema>>,
 ) => {
   const { data: knowledgeDetails, loading } =
     useFetchKnowledgeBaseConfiguration();
