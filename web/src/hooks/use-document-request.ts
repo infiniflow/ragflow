@@ -18,6 +18,7 @@ import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters
 import kbService, {
   listDocument,
   renameDocument,
+  uploadDocument,
 } from '@/services/knowledge-service';
 import api, { restAPIv1, webAPI } from '@/utils/api';
 import { getSearchValue } from '@/utils/common-util';
@@ -65,21 +66,20 @@ export const useUploadNextDocument = () => {
     mutationKey: [DocumentApiAction.UploadDocument],
     mutationFn: async (fileList) => {
       const formData = new FormData();
-      formData.append('kb_id', id!);
       fileList.forEach((file: any) => {
         formData.append('file', file);
       });
 
       try {
-        const ret = await kbService.document_upload(formData);
-        const code = get(ret, 'data.code');
+        const ret = await uploadDocument(id!, formData);
+        const code = get(ret, 'code');
 
         if (code === 0 || code === 500) {
           queryClient.invalidateQueries({
             queryKey: [DocumentApiAction.FetchDocumentList],
           });
         }
-        return ret?.data;
+        return ret;
       } catch (error) {
         console.warn(error);
         return {

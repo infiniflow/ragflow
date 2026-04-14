@@ -119,7 +119,8 @@ export default {
   get_document_file: `${webAPI}/document/get`,
   get_document_file_download: (docId: string) =>
     `${webAPI}/document/download/${docId}`,
-  document_upload: `${webAPI}/document/upload`,
+  document_upload: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents`,
   web_crawl: `${webAPI}/document/web_crawl`,
   document_infos: `${webAPI}/document/infos`,
   upload_and_parse: `${webAPI}/document/upload_info`,

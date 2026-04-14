@@ -630,7 +630,7 @@ def step_05_upload_files(
                 page,
                 trigger,
                 lambda resp: resp.request.method == "POST"
-                and "/v1/document/upload" in resp.url,
+                and "/v1/datasets/.*/documents" in resp.url,
             )
             expect(upload_modal).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
         snap(f"upload_{filename}_submitted")

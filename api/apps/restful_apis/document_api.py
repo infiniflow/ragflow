@@ -19,7 +19,7 @@ from quart import request
 from peewee import OperationalError
 from pydantic import ValidationError
 
-from api.apps.services.document_api_service import rename_doc_key, validate_document_update_fields, \
+from api.apps.services.document_api_service import map_doc_keys, validate_document_update_fields, \
     update_document_name_only, update_chunk_method_only, update_document_status_only
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService
@@ -27,7 +27,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from common.constants import RetCode
 from api.apps import login_required
 from api.utils.api_utils import get_error_data_result, get_result, add_tenant_id_to_kwargs, get_request_json, \
-    server_error_response
+    server_error_response, get_json_result
 from api.utils.validation_utils import (
     UpdateDocumentReq, format_validation_error_message,
 )
@@ -143,7 +143,7 @@ async def update_document(tenant_id, dataset_id, document_id):
     except OperationalError as e:
         logging.exception(e)
         return get_error_data_result(message="Database operation failed")
-    renamed_doc = rename_doc_key(doc)
+    renamed_doc = map_doc_keys(doc)
     return get_result(data=renamed_doc)
 
 
@@ -183,3 +183,132 @@ async def metadata_summary(dataset_id, tenant_id):
         return get_result(data={"summary": summary})
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route("/datasets/<dataset_id>/documents", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def upload_document(dataset_id, tenant_id):
+    """
+    Upload documents to a dataset.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: formData
+        name: file
+        type: file
+        required: true
+        description: Document files to upload.
+      - in: formData
+        name: parent_path
+        type: string
+        description: Optional nested path under the parent folder. Uses '/' separators.
+      - in: query
+        name: return_raw_files
+        type: boolean
+        required: false
+        default: false
+        description: Whether to skip document key mapping and return raw document data
+    responses:
+      200:
+        description: Successfully uploaded documents.
+        schema:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: Document ID.
+                  name:
+                    type: string
+                    description: Document name.
+                  chunk_count:
+                    type: integer
+                    description: Number of chunks.
+                  token_count:
+                    type: integer
+                    description: Number of tokens.
+                  dataset_id:
+                    type: string
+                    description: ID of the dataset.
+                  chunk_method:
+                    type: string
+                    description: Chunking method used.
+                  run:
+                    type: string
+                    description: Processing status.
+    """
+    from api.constants import FILE_NAME_LEN_LIMIT
+    from api.common.check_team_permission import check_kb_team_permission
+    from api.db.services.file_service import FileService
+    from common.misc_utils import thread_pool_exec
+    
+    form = await request.form
+    files = await request.files
+    
+    # Validation
+    if "file" not in files:
+        return get_error_data_result(message="No file part!", code=RetCode.ARGUMENT_ERROR)
+    
+    file_objs = files.getlist("file")
+    for file_obj in file_objs:
+        if file_obj.filename == "":
+            return get_error_data_result(message="No file selected!", code=RetCode.ARGUMENT_ERROR)
+        if len(file_obj.filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
+            return get_error_data_result(
+                message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", 
+                code=RetCode.ARGUMENT_ERROR
+            )
+
+    # KB Lookup
+    e, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not e:
+        return server_error_response(LookupError(f"Can't find the dataset with ID {dataset_id}!"))
+    
+    # Permission Check
+    if not check_kb_team_permission(kb, tenant_id):
+        return get_error_data_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+
+    # File Upload (async)
+    err, files = await thread_pool_exec(
+        FileService.upload_document, kb, file_objs, tenant_id,
+        parent_path=form.get("parent_path")
+    )
+    if err:
+        return get_error_data_result(message="\n".join(err), code=RetCode.SERVER_ERROR)
+
+    if not files:
+        return get_error_data_result(
+            message="There seems to be an issue with your file format. please verify it is correct and not corrupted.", 
+            code=RetCode.DATA_ERROR
+        )
+    
+    files = [f[0] for f in files]  # remove the blob
+
+    # Check if we should return raw files without document key mapping
+    return_raw_files = request.args.get("return_raw_files", "false").lower() == "true"
+
+    if return_raw_files:
+        return get_result(data=files)
+
+    renamed_doc_list = [map_doc_keys(doc, run_value="UNSTART") for doc in files]
+    return get_result(data=renamed_doc_list)
+
+

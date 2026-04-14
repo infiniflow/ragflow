@@ -351,7 +351,9 @@ def batch_create_datasets(auth, num):
 
 # DOCUMENT APP
 def upload_documents(auth, payload=None, files_path=None, *, filename_override=None):
-    url = f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/upload"
+    # New endpoint: /api/v1/datasets/{kb_id}/documents
+    kb_id = payload.get("kb_id") if payload else None
+    url = f"{HOST_ADDRESS}/api/{VERSION}/datasets/{kb_id}/documents"
 
     if files_path is None:
         files_path = []
@@ -359,9 +361,11 @@ def upload_documents(auth, payload=None, files_path=None, *, filename_override=N
     fields = []
     file_objects = []
     try:
+        # Note: kb_id is now in the URL path, not in the form data
         if payload:
             for k, v in payload.items():
-                fields.append((k, str(v)))
+                if k != "kb_id":  # Skip kb_id as it's in the URL
+                    fields.append((k, str(v)))
 
         for fp in files_path:
             p = Path(fp)
