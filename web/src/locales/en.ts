@@ -764,6 +764,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       delete: 'Delete',
     },
     chat: {
+      chatSupport: 'Chat Support',
+      replyInstantly: 'We typically reply instantly',
+      typeYourMessage: 'Type your message...',
       messagePlaceholder: 'Type your message here...',
       exit: 'Exit',
       multipleModels: 'Multiple models',

@@ -393,6 +393,9 @@ export default {
         'Nếu có những câu hỏi được đưa ra, việc nhúng phần đó sẽ dựa trên những câu hỏi đó.',
     },
     chat: {
+      chatSupport: 'Hỗ trợ trò chuyện',
+      replyInstantly: 'Chúng tôi thường phản hồi ngay lập tức',
+      typeYourMessage: 'Nhập tin nhắn của bạn...',
       newConversation: 'Cuộc trò chuyện mới',
       createAssistant: 'Tạo trợ lý',
       assistantSetting: 'Cài đặt trợ lý',
