@@ -68,25 +68,6 @@ def _log_http_debug(method, url, req_id, payload, status, text, resp_json, elaps
     print(f"[HTTP DEBUG] response_text={text}")
     print(f"[HTTP DEBUG] response_json={json.dumps(resp_json, default=str) if resp_json is not None else None}")
 
-
-# API APP
-def api_new_token(auth, payload=None, *, headers=HEADERS, data=None):
-    if payload is None:
-        payload = {}
-    res = requests.post(url=f"{HOST_ADDRESS}{API_APP_URL}/new_token", headers=headers, auth=auth, json=payload, data=data)
-    return res.json()
-
-
-def api_token_list(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{API_APP_URL}/token_list", headers=headers, auth=auth, params=params)
-    return res.json()
-
-
-def api_rm_token(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{API_APP_URL}/rm", headers=headers, auth=auth, json=payload, data=data)
-    return res.json()
-
-
 def api_stats(auth, params=None, *, headers=HEADERS):
     res = requests.get(url=f"{HOST_ADDRESS}{API_APP_URL}/stats", headers=headers, auth=auth, params=params)
     return res.json()
