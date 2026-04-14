@@ -1513,7 +1513,7 @@ Example: Virtual Hosted Style`,
 Best for: Documents with independent, structurally significant sections — such as legal statutes, regulations, contracts, and technical specifications — where each chunk must be identifiable by its structural position even without surrounding context.`,
       groupTip: `Split the document flat at a chosen heading level and automatically merge adjacent small sections to preserve content continuity. No parent-heading path is injected.<br>
 Best for: Documents with flowing, contextually connected content — such as books, manuals, reports, and articles — where adjacent paragraphs should stay together to maintain narrative coherence.`,
-      enableMultiColumn: 'Remove original table of contents',
+      enableMultiColumn: 'Detect multi-column layout',
       enableMultiColumnTip:
         'Detect and parse multi-column page layouts to preserve the correct reading order. Turn this on for PDFs or documents with two-column or newspaper-style layouts.',
       removeToc: 'Remove original table of contents',
