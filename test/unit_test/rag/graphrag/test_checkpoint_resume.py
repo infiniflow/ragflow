@@ -205,11 +205,17 @@ class TestLoadSubgraphFromStore:
     @pytest.mark.p2
     @pytest.mark.asyncio
     async def test_paginates_when_match_is_on_second_page(self, monkeypatch):
-        """Pagination continues past the first full page until a match is found."""
+        """Pagination increments offset and continues until a match is found."""
         doc_id = "doc_page2"
         sg = _make_subgraph(doc_id)
         page1 = {f"other_{i}": {"content_with_weight": "", "source_id": [f"other_{i}"]} for i in range(256)}
         page2 = {"chunk_target": {"content_with_weight": _to_store_content(sg), "source_id": [doc_id]}}
+
+        search_calls: list[tuple] = []  # capture (offset, limit) from each search() call
+
+        def _search(fields, filters, condition, order, orderby, offset, limit, *_a, **_kw):
+            search_calls.append((offset, limit))
+            return object()
 
         call_count = {"n": 0}
 
@@ -221,11 +227,15 @@ class TestLoadSubgraphFromStore:
                 return page2
             return {}
 
-        monkeypatch.setattr(_settings.docStoreConn, "search", MagicMock(return_value=object()))
+        monkeypatch.setattr(_settings.docStoreConn, "search", _search)
         monkeypatch.setattr(_settings.docStoreConn, "get_fields", MagicMock(side_effect=_get_fields))
 
         result = await load_subgraph_from_store("t1", "kb1", doc_id)
         assert result is not None and result.graph["source_id"] == [doc_id]
+        # Verify the implementation actually incremented the offset between pages
+        assert len(search_calls) == 2
+        assert search_calls[0] == (0, 256), "first page must start at offset 0"
+        assert search_calls[1] == (256, 256), "second page must start at offset 256"
 
     @pytest.mark.p2
     @pytest.mark.asyncio
@@ -275,7 +285,7 @@ class TestHasRaptorChunks:
         monkeypatch.setattr(_settings.docStoreConn, "get_fields", MagicMock(return_value={}))
 
         await has_raptor_chunks("doc_001", "t1", "kb1")
-        assert "raptor_kwd" in captured["condition"]
+        assert captured["condition"] == {"doc_id": "doc_001", "raptor_kwd": ["raptor"]}
 
     @pytest.mark.p2
     @pytest.mark.asyncio
