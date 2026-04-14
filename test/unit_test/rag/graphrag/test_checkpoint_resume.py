@@ -14,23 +14,59 @@
 #  limitations under the License.
 #
 
-"""Tests for GraphRAG checkpoint/resume logic.
+"""Tests for GraphRAG/RAPTOR checkpoint/resume logic.
 
-The _load_subgraph_from_store function in rag/graphrag/general/index.py
-queries the doc store for previously saved subgraphs to avoid re-running
-expensive LLM extraction on resume. These tests exercise the core logic:
-parsing stored subgraph JSON, filtering by source_id in Python, and
-handling edge cases (missing data, string vs list source_id, errors).
+These tests call the real service functions in api.db.services.task_checkpoint,
+monkeypatching only the doc-store layer (settings.docStoreConn.search /
+get_fields).  This ensures bugs in pagination, query construction, and error
+handling are caught -- a local re-implementation of the logic would not detect
+those failures.
 """
 
+import importlib.util
 import json
+import pathlib
+import sys
+from unittest.mock import MagicMock
 
 import networkx as nx
 import pytest
 
+# ---------------------------------------------------------------------------
+# Load the real task_checkpoint module.
+#
+# conftest.py mocks 'api.db.services' as a MagicMock (needed by other graphrag
+# imports), which would turn any submodule import into another MagicMock.
+# We load the file directly via importlib so the actual implementation is
+# exercised, then register it under its canonical dotted name so internal
+# imports like `from common import settings` resolve to the same MagicMocks
+# that conftest already installed.
+# ---------------------------------------------------------------------------
+_CHECKPOINT_PATH = (
+    pathlib.Path(__file__).parents[4] / "api" / "db" / "services" / "task_checkpoint.py"
+)
+_spec = importlib.util.spec_from_file_location(
+    "api.db.services.task_checkpoint", _CHECKPOINT_PATH
+)
+_checkpoint_mod = importlib.util.module_from_spec(_spec)
+sys.modules["api.db.services.task_checkpoint"] = _checkpoint_mod
+_spec.loader.exec_module(_checkpoint_mod)
+
+from api.db.services.task_checkpoint import (  # noqa: E402
+    has_raptor_chunks,
+    load_subgraph_from_store,
+)
+
+# The conftest installed common.settings as a MagicMock.  Grab it so we can
+# attach controlled return values to docStoreConn in individual tests.
+import common.settings as _settings  # noqa: E402  (MagicMock, from conftest)
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
 
 def _make_subgraph(doc_id: str) -> nx.Graph:
-    """Create a simple test subgraph for a given doc_id."""
     sg = nx.Graph()
     sg.add_node("ENTITY_A", description="test entity A", source_id=[doc_id])
     sg.add_node("ENTITY_B", description="test entity B", source_id=[doc_id])
@@ -42,203 +78,217 @@ def _make_subgraph(doc_id: str) -> nx.Graph:
     return sg
 
 
-def _subgraph_to_store_content(sg: nx.Graph) -> str:
-    """Serialize a subgraph the same way generate_subgraph does."""
+def _to_store_content(sg: nx.Graph) -> str:
     return json.dumps(nx.node_link_data(sg, edges="edges"), ensure_ascii=False)
 
 
-def _load_subgraph_from_field_map(field_map: dict, doc_id: str):
-    """Replicate the core logic of _load_subgraph_from_store for unit testing.
+def _single_page_mocks(field_map: dict):
+    """Return (search_mock, get_fields_mock) that simulate a single-page store."""
+    sentinel = object()
+    call_count = {"n": 0}
 
-    This mirrors the implementation in rag/graphrag/general/index.py without
-    importing it (which would pull in the entire API stack and DB dependencies).
-    """
-    for cid in field_map:
-        source_ids = field_map[cid].get("source_id") or []
-        if isinstance(source_ids, str):
-            source_ids = [source_ids]
-        if doc_id not in source_ids:
-            continue
-        content = field_map[cid].get("content_with_weight", "")
-        if content:
-            data = json.loads(content)
-            sg = nx.node_link_graph(data, edges="edges")
-            sg.graph["source_id"] = [doc_id]
-            return sg
-    return None
+    def _get_fields(_res, _fields):
+        call_count["n"] += 1
+        return field_map if call_count["n"] == 1 else {}
 
+    return MagicMock(return_value=sentinel), MagicMock(side_effect=_get_fields)
+
+
+# ---------------------------------------------------------------------------
+# Tests for load_subgraph_from_store
+# ---------------------------------------------------------------------------
 
 class TestLoadSubgraphFromStore:
-    """Tests for the subgraph checkpoint loading logic."""
 
     @pytest.mark.p1
-    def test_loads_existing_subgraph(self):
-        """When a subgraph exists in the store, it should be loaded and returned."""
+    @pytest.mark.asyncio
+    async def test_loads_existing_subgraph(self, monkeypatch):
+        """Subgraph present in the store is loaded and returned as nx.Graph."""
         doc_id = "doc_001"
         sg = _make_subgraph(doc_id)
+        field_map = {"chunk_001": {"content_with_weight": _to_store_content(sg), "source_id": [doc_id]}}
+        s, gf = _single_page_mocks(field_map)
+        monkeypatch.setattr(_settings.docStoreConn, "search", s)
+        monkeypatch.setattr(_settings.docStoreConn, "get_fields", gf)
 
-        field_map = {
-            "chunk_001": {
-                "content_with_weight": _subgraph_to_store_content(sg),
-                "source_id": [doc_id],
-            }
-        }
-
-        result = _load_subgraph_from_field_map(field_map, doc_id)
+        result = await load_subgraph_from_store("t1", "kb1", doc_id)
 
         assert result is not None
         assert isinstance(result, nx.Graph)
-        assert result.has_node("ENTITY_A")
-        assert result.has_node("ENTITY_B")
-        assert result.has_edge("ENTITY_A", "ENTITY_B")
+        assert result.has_node("ENTITY_A") and result.has_node("ENTITY_B")
         assert result.graph["source_id"] == [doc_id]
 
     @pytest.mark.p1
-    def test_returns_none_when_no_subgraph(self):
-        """When no subgraph exists, should return None."""
-        result = _load_subgraph_from_field_map({}, "doc_missing")
-        assert result is None
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_subgraph(self, monkeypatch):
+        """Empty store returns None without raising."""
+        s, gf = _single_page_mocks({})
+        monkeypatch.setattr(_settings.docStoreConn, "search", s)
+        monkeypatch.setattr(_settings.docStoreConn, "get_fields", gf)
+
+        assert await load_subgraph_from_store("t1", "kb1", "doc_missing") is None
 
     @pytest.mark.p2
-    def test_filters_by_doc_id_in_python(self):
-        """Should only return subgraph whose source_id matches the requested doc_id."""
-        sg_a = _make_subgraph("doc_a")
-        sg_b = _make_subgraph("doc_b")
-
+    @pytest.mark.asyncio
+    async def test_filters_by_doc_id_in_python(self, monkeypatch):
+        """Only the chunk whose source_id matches the requested doc_id is returned."""
+        sg_a, sg_b = _make_subgraph("doc_a"), _make_subgraph("doc_b")
         field_map = {
-            "chunk_a": {
-                "content_with_weight": _subgraph_to_store_content(sg_a),
-                "source_id": ["doc_a"],
-            },
-            "chunk_b": {
-                "content_with_weight": _subgraph_to_store_content(sg_b),
-                "source_id": ["doc_b"],
-            },
+            "chunk_a": {"content_with_weight": _to_store_content(sg_a), "source_id": ["doc_a"]},
+            "chunk_b": {"content_with_weight": _to_store_content(sg_b), "source_id": ["doc_b"]},
         }
+        s, gf = _single_page_mocks(field_map)
+        monkeypatch.setattr(_settings.docStoreConn, "search", s)
+        monkeypatch.setattr(_settings.docStoreConn, "get_fields", gf)
 
-        result = _load_subgraph_from_field_map(field_map, "doc_b")
+        result = await load_subgraph_from_store("t1", "kb1", "doc_b")
 
         assert result is not None
         assert result.graph["source_id"] == ["doc_b"]
 
     @pytest.mark.p2
-    def test_does_not_match_wrong_doc(self):
-        """Should return None when no entry matches the requested doc_id."""
-        sg = _make_subgraph("doc_a")
-
-        field_map = {
-            "chunk_a": {
-                "content_with_weight": _subgraph_to_store_content(sg),
-                "source_id": ["doc_a"],
-            },
-        }
-
-        result = _load_subgraph_from_field_map(field_map, "doc_b")
-        assert result is None
-
-    @pytest.mark.p2
-    def test_handles_string_source_id(self):
-        """Should handle source_id stored as string instead of list."""
+    @pytest.mark.asyncio
+    async def test_handles_string_source_id(self, monkeypatch):
+        """source_id stored as a bare string (not list) is normalised correctly."""
         doc_id = "doc_str"
         sg = _make_subgraph(doc_id)
+        field_map = {"chunk_001": {"content_with_weight": _to_store_content(sg), "source_id": doc_id}}
+        s, gf = _single_page_mocks(field_map)
+        monkeypatch.setattr(_settings.docStoreConn, "search", s)
+        monkeypatch.setattr(_settings.docStoreConn, "get_fields", gf)
 
-        field_map = {
-            "chunk_001": {
-                "content_with_weight": _subgraph_to_store_content(sg),
-                "source_id": doc_id,  # string, not list
-            }
-        }
-
-        result = _load_subgraph_from_field_map(field_map, doc_id)
+        result = await load_subgraph_from_store("t1", "kb1", doc_id)
 
         assert result is not None
         assert result.graph["source_id"] == [doc_id]
 
     @pytest.mark.p2
-    def test_handles_none_source_id(self):
-        """Should handle source_id being None without crashing."""
-        field_map = {
-            "chunk_001": {
-                "content_with_weight": "{}",
-                "source_id": None,
-            }
-        }
+    @pytest.mark.asyncio
+    async def test_skips_malformed_json_returns_none(self, monkeypatch):
+        """Malformed JSON is logged and skipped; function returns None (not raises)."""
+        field_map = {"chunk_bad": {"content_with_weight": "not valid json{{{", "source_id": ["doc_bad"]}}
+        s, gf = _single_page_mocks(field_map)
+        monkeypatch.setattr(_settings.docStoreConn, "search", s)
+        monkeypatch.setattr(_settings.docStoreConn, "get_fields", gf)
 
-        result = _load_subgraph_from_field_map(field_map, "doc_001")
+        result = await load_subgraph_from_store("t1", "kb1", "doc_bad")
         assert result is None
 
     @pytest.mark.p2
-    def test_skips_empty_content(self):
-        """Should skip entries with empty content_with_weight."""
-        field_map = {
-            "chunk_empty": {
-                "content_with_weight": "",
-                "source_id": ["doc_001"],
-            }
-        }
-
-        result = _load_subgraph_from_field_map(field_map, "doc_001")
-        assert result is None
-
-    @pytest.mark.p1
-    def test_preserves_graph_structure(self):
-        """Loaded subgraph should preserve all nodes, edges, and attributes."""
-        doc_id = "doc_full"
+    @pytest.mark.asyncio
+    async def test_paginates_when_match_is_on_second_page(self, monkeypatch):
+        """When the matching doc is beyond the first page, pagination finds it."""
+        doc_id = "doc_page2"
         sg = _make_subgraph(doc_id)
 
-        field_map = {
-            "chunk_001": {
-                "content_with_weight": _subgraph_to_store_content(sg),
-                "source_id": [doc_id],
-            }
-        }
+        page1 = {f"other_{i}": {"content_with_weight": "", "source_id": [f"other_{i}"]} for i in range(256)}
+        page2 = {"chunk_target": {"content_with_weight": _to_store_content(sg), "source_id": [doc_id]}}
 
-        result = _load_subgraph_from_field_map(field_map, doc_id)
+        sentinel = object()
+        call_count = {"n": 0}
 
-        assert set(result.nodes()) == {"ENTITY_A", "ENTITY_B"}
-        assert result.nodes["ENTITY_A"]["description"] == "test entity A"
-        assert result.nodes["ENTITY_B"]["description"] == "test entity B"
-        edge = result.get_edge_data("ENTITY_A", "ENTITY_B")
-        assert edge["description"] == "related"
-        assert edge["weight"] == 1.0
+        def _get_fields(_res, _fields):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return page1
+            if call_count["n"] == 2:
+                return page2
+            return {}
+
+        monkeypatch.setattr(_settings.docStoreConn, "search", MagicMock(return_value=sentinel))
+        monkeypatch.setattr(_settings.docStoreConn, "get_fields", MagicMock(side_effect=_get_fields))
+
+        result = await load_subgraph_from_store("t1", "kb1", doc_id)
+
+        assert result is not None
+        assert result.graph["source_id"] == [doc_id]
+
+    @pytest.mark.p2
+    @pytest.mark.asyncio
+    async def test_doc_store_exception_returns_none(self, monkeypatch):
+        """A doc-store exception is caught; function returns None safely."""
+        monkeypatch.setattr(
+            _settings.docStoreConn, "search", MagicMock(side_effect=RuntimeError("db down"))
+        )
+
+        assert await load_subgraph_from_store("t1", "kb1", "doc_001") is None
 
 
-class TestCheckpointResumeWorkflow:
-    """Integration-style test simulating the crash-resume scenario."""
+# ---------------------------------------------------------------------------
+# Tests for has_raptor_chunks
+# ---------------------------------------------------------------------------
+
+class TestHasRaptorChunks:
 
     @pytest.mark.p1
-    def test_resume_finds_completed_docs_skips_new_ones(self):
-        """Simulates: 3 docs processed, crash, restart.
+    def test_returns_true_when_raptor_chunk_exists(self, monkeypatch):
+        """Doc store returns a RAPTOR row -> True."""
+        monkeypatch.setattr(_settings.docStoreConn, "search", MagicMock(return_value=object()))
+        monkeypatch.setattr(
+            _settings.docStoreConn, "get_fields",
+            MagicMock(return_value={"chunk_r": {"raptor_kwd": "raptor"}}),
+        )
 
-        Existing subgraphs should be loaded; new doc should return None.
-        """
-        completed_docs = ["doc_1", "doc_2", "doc_3"]
-        field_map = {}
-        for doc_id in completed_docs:
-            sg = _make_subgraph(doc_id)
-            field_map[f"chunk_{doc_id}"] = {
-                "content_with_weight": _subgraph_to_store_content(sg),
-                "source_id": [doc_id],
-            }
+        assert has_raptor_chunks("doc_001", "t1", "kb1") is True
 
-        for doc_id in completed_docs:
-            result = _load_subgraph_from_field_map(field_map, doc_id)
+    @pytest.mark.p1
+    def test_returns_false_when_no_raptor_chunks(self, monkeypatch):
+        """Doc store returns empty -> False."""
+        monkeypatch.setattr(_settings.docStoreConn, "search", MagicMock(return_value=object()))
+        monkeypatch.setattr(_settings.docStoreConn, "get_fields", MagicMock(return_value={}))
+
+        assert has_raptor_chunks("doc_001", "t1", "kb1") is False
+
+    @pytest.mark.p1
+    def test_queries_specifically_for_raptor_kwd(self, monkeypatch):
+        """raptor_kwd must be in the search condition so a non-RAPTOR leading chunk
+        cannot produce a false-negative result."""
+        captured = {}
+
+        def _capture(fields, filters, condition, *_a, **_kw):
+            captured["condition"] = condition
+            return object()
+
+        monkeypatch.setattr(_settings.docStoreConn, "search", _capture)
+        monkeypatch.setattr(_settings.docStoreConn, "get_fields", MagicMock(return_value={}))
+
+        has_raptor_chunks("doc_001", "t1", "kb1")
+
+        assert "raptor_kwd" in captured["condition"]
+
+    @pytest.mark.p2
+    def test_returns_false_on_doc_store_exception(self, monkeypatch):
+        """Exception is caught; function returns False without crashing."""
+        monkeypatch.setattr(
+            _settings.docStoreConn, "search", MagicMock(side_effect=RuntimeError("db down"))
+        )
+
+        assert has_raptor_chunks("doc_001", "t1", "kb1") is False
+
+
+# ---------------------------------------------------------------------------
+# End-to-end workflow test
+# ---------------------------------------------------------------------------
+
+class TestCheckpointResumeWorkflow:
+
+    @pytest.mark.p1
+    @pytest.mark.asyncio
+    async def test_resume_finds_completed_docs_skips_new_ones(self, monkeypatch):
+        """3 docs completed before crash; on resume each is found, new doc is not."""
+        completed = ["doc_1", "doc_2", "doc_3"]
+        field_map = {
+            f"chunk_{d}": {"content_with_weight": _to_store_content(_make_subgraph(d)), "source_id": [d]}
+            for d in completed
+        }
+
+        monkeypatch.setattr(_settings.docStoreConn, "search", MagicMock(return_value=object()))
+        monkeypatch.setattr(_settings.docStoreConn, "get_fields", MagicMock(return_value=field_map))
+
+        for doc_id in completed:
+            result = await load_subgraph_from_store("t1", "kb1", doc_id)
             assert result is not None
             assert result.graph["source_id"] == [doc_id]
 
-        # New doc not yet processed — should not be found
-        result = _load_subgraph_from_field_map(field_map, "doc_4_new")
+        result = await load_subgraph_from_store("t1", "kb1", "doc_4_new")
         assert result is None
-
-    @pytest.mark.p2
-    def test_malformed_json_returns_none(self):
-        """If stored content is invalid JSON, should return None gracefully."""
-        field_map = {
-            "chunk_bad": {
-                "content_with_weight": "not valid json{{{",
-                "source_id": ["doc_bad"],
-            }
-        }
-
-        with pytest.raises(json.JSONDecodeError):
-            _load_subgraph_from_field_map(field_map, "doc_bad")

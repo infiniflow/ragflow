@@ -233,13 +233,6 @@ async def run_graphrag_for_kb(
             callback(msg=f"Task {row['id']} cancelled, stopping execution.")
             raise TaskCanceledException(f"Task {row['id']} was cancelled")
 
-        # CHECKPOINT: try to load existing subgraph from doc store instead of re-generating
-        existing_sg = await load_subgraph_from_store(tenant_id, kb_id, doc_id)
-        if existing_sg:
-            subgraphs[doc_id] = existing_sg
-            callback(msg=f"[GraphRAG] doc:{doc_id} subgraph found in store, skipping LLM extraction.")
-            return
-
         chunks = all_doc_chunks.get(doc_id, [])
         if not chunks:
             callback(msg=f"[GraphRAG] doc:{doc_id} has no available chunks, skip generation.")
@@ -250,6 +243,12 @@ async def run_graphrag_for_kb(
         deadline = max(120, len(chunks) * 60 * 10) if enable_timeout_assertion else 10000000000
 
         async with semaphore:
+            # CHECKPOINT: bounded by semaphore so doc-store lookups respect max_parallel_docs
+            existing_sg = await load_subgraph_from_store(tenant_id, kb_id, doc_id)
+            if existing_sg:
+                subgraphs[doc_id] = existing_sg
+                callback(msg=f"[GraphRAG] doc:{doc_id} subgraph found in store, skipping LLM extraction.")
+                return
             try:
                 msg = f"[GraphRAG] build_subgraph doc:{doc_id}"
                 callback(msg=f"{msg} start (chunks={len(chunks)}, timeout={deadline}s)")
