@@ -41,7 +41,7 @@ def health():
 
 
 @app.post("/file_parse")
-async def file_parse(
+def file_parse(
     file: UploadFile = File(...),
     hybrid: Optional[str] = Form(None),
     image_output: Optional[str] = Form(None),
@@ -63,7 +63,7 @@ async def file_parse(
         elif sanitize_lower in ("0", "false", "no", "off"):
             sanitize_val = False
 
-    pdf_bytes = await file.read()
+    pdf_bytes = file.file.read()
     filename = file.filename or "input.pdf"
 
     with tempfile.TemporaryDirectory() as workdir:
