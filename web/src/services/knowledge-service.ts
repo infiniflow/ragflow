@@ -30,7 +30,6 @@ const {
   switchChunk,
   rmChunk,
   retrievalTest,
-  documentRename,
   documentRun,
   documentUpload,
   webCrawl,
@@ -77,10 +76,6 @@ const methods = {
   documentRm: {
     url: documentRm,
     method: 'post',
-  },
-  documentRename: {
-    url: documentRename,
-    method: 'put',
   },
   documentCreate: {
     url: documentCreate,

@@ -1,4 +1,4 @@
-import { IndentedTree } from '@/components/indented-tree/next';
+import { IndentedTree } from '@/components/indented-tree/indented-tree';
 import { Progress } from '@/components/ui/progress';
 import {
   Sheet,
