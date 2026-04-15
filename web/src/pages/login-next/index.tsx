@@ -370,7 +370,9 @@ const Login = () => {
                 className="size-8 mr-[12] cursor-pointer"
               />
             </div>
-            <div className="text-xl font-bold self-center">RAGFlow</div>
+            <h1 className="pl-3 text-transparent bg-clip-text  bg-gradient-to-l from-[#9B348E] to-[#ee0000]">
+              KIRA
+            </h1>
           </div>
           <h1 className="text-[36px] font-medium  text-center mb-2">
             {t('title')}

@@ -30,11 +30,6 @@ const menuItems = [
     name: 'header.search',
     /* icon: Search, */ 'data-testid': 'nav-search',
   },
-  {
-    path: Routes.Agents,
-    name: 'header.flow',
-    /* icon: Cpu, */ 'data-testid': 'nav-agent',
-  },
   { path: Routes.Memories, name: 'header.memories' /* icon: Cpu, */ },
   { path: Routes.Files, name: 'header.fileManager' /* icon: File, */ },
 ];

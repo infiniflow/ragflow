@@ -25,7 +25,7 @@
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
 
-    --accent: 210 40% 96.1%;
+    --accent: 238 0 0;
     --accent-foreground: 222.2 47.4% 11.2%;
 
     --destructive: 0 100% 50%;
@@ -109,10 +109,10 @@
     /* Input  default color */
     --border-default: rgba(0, 0, 0, 0.2);
     /* Input accent color */
-    --border-accent: #000000;
+    --border-accent: #ee0000;
     --border-button: rgba(0, 0, 0, 0.1);
     /* Regulators, parsing, switches, variables */
-    --accent-primary: 0 190 180;
+    --accent-primary: 238 0 0;
     /* Output Variables Box */
     --bg-accent: rgba(76, 164, 231, 0.05);
 
@@ -122,7 +122,7 @@
     --state-warning: 250 173 20;
     --state-error: 216 73 75;
 
-    --team-group: #5ab77e;
+    --team-group: #ee0000;
     --team-member: #5c96c8;
     --team-department: #8866d3;
     --bg-group: rgba(90, 183, 126, 0.1);

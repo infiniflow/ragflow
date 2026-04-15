@@ -7,6 +7,7 @@ import i18n, { changeLanguageAsync } from '@/locales/config';
 import { useSendNextSharedMessage } from '@/pages/agent/hooks/use-send-shared-message';
 import { MessageCircle, Minimize2, Send, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   useGetSharedChatSearchParams,
   useSendSharedMessage,
@@ -14,6 +15,7 @@ import {
 import FloatingChatWidgetMarkdown from './floating-chat-widget-markdown';
 
 const FloatingChatWidget = () => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [inputValue, setInputValue] = useState('');
@@ -386,10 +388,10 @@ const FloatingChatWidget = () => {
               </div>
               <div>
                 <h3 className="font-semibold text-sm">
-                  {title || 'Chat Support'}
+                  {title || t('chat.chatSupport')}
                 </h3>
                 <p className="text-xs text-blue-100">
-                  We typically reply instantly
+                  {t('chat.replyInstantly')}
                 </p>
               </div>
             </div>
@@ -489,7 +491,7 @@ const FloatingChatWidget = () => {
                       handleInputChange(e);
                     }}
                     onKeyPress={handleKeyPress}
-                    placeholder="Type your message..."
+                    placeholder={t('chat.typeYourMessage')}
                     rows={1}
                     className="w-full resize-none border border-gray-300 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
                     style={{ minHeight: '44px', maxHeight: '120px' }}
@@ -540,10 +542,10 @@ const FloatingChatWidget = () => {
               </div>
               <div>
                 <h3 className="font-semibold text-sm">
-                  {title || 'Chat Support'}
+                  {title || t('chat.chatSupport')}
                 </h3>
                 <p className="text-xs text-blue-100">
-                  We typically reply instantly
+                  {t('chat.replyInstantly')}
                 </p>
               </div>
             </div>
@@ -666,7 +668,7 @@ const FloatingChatWidget = () => {
                         handleInputChange(e);
                       }}
                       onKeyPress={handleKeyPress}
-                      placeholder="Type your message..."
+                      placeholder={t('chat.typeYourMessage')}
                       rows={1}
                       className="w-full resize-none border border-gray-300 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
                       style={{ minHeight: '44px', maxHeight: '120px' }}

@@ -11,13 +11,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { TFunction } from 'i18next';
-import {
-  LucideBox,
-  LucideServer,
-  LucideUnplug,
-  LucideUser,
-  LucideUsers,
-} from 'lucide-react';
+import { LucideBox, LucideServer, LucideUser, LucideUsers } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleMenuClick } from './hooks';
@@ -48,11 +42,6 @@ const menuItems = (t: TFunction) => [
     icon: <LucideUser className="size-[1em]" />,
     label: t('setting.profile'),
     key: Routes.Profile,
-  },
-  {
-    icon: <LucideUnplug className="size-[1em]" />,
-    label: t('setting.api'),
-    key: Routes.Api,
   },
   // {
   //   icon: MessageSquareQuote,

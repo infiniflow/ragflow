@@ -2,13 +2,12 @@ import { Input } from '@/components/originui/input';
 import Spotlight from '@/components/spotlight';
 import message from '@/components/ui/message';
 import { IUserInfo } from '@/interfaces/database/user-setting';
-import { cn } from '@/lib/utils';
 import { Search } from 'lucide-react';
 import { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import './index.less';
 
-export default function SearchPage({
+export default function SearchHome({
   isSearching,
   setIsSearching,
   searchText,
@@ -30,10 +29,10 @@ export default function SearchPage({
       <div className="relative z-10 px-8 pt-8 flex  text-transparent flex-col justify-center items-center w-[780px]">
         <h1
           className={cn(
-            'text-4xl font-bold bg-gradient-to-l from-[#40EBE3] to-[#4A51FF] bg-clip-text',
+            'text-4xl font-bold bg-gradient-to-l from-[#9B348E] to-[#ee0000] bg-clip-text',
           )}
         >
-          RAGFlow
+          KIRA
         </h1>
 
         <div className="rounded-lg  text-primary text-xl sticky flex justify-center w-full transform scale-100 mt-8 p-6 h-[240px] border">
@@ -41,7 +40,9 @@ export default function SearchPage({
           <div className="flex flex-col justify-center items-center  w-2/3">
             {!isSearching && (
               <>
-                <p className="mb-4 transition-opacity">👋 Hi there</p>
+                <p className="mb-4 transition-opacity">
+                  👋 Hallo! Was möchtest du suchen?
+                </p>
                 <p className="mb-10 transition-opacity">
                   {userInfo && (
                     <>

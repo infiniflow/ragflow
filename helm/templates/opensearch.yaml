@@ -83,7 +83,7 @@ spec:
         {{- end }}
         envFrom:
           - secretRef:
-              name: {{ include "ragflow.fullname" . }}-env-config
+              name: {{ include "ragflow.fullname" . }}
           - configMapRef:
               name: {{ include "ragflow.fullname" . }}-opensearch-config
         ports:

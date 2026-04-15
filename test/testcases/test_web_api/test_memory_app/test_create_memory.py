@@ -17,7 +17,7 @@ import random
 import re
 
 import pytest
-from test_web_api.common import create_memory
+from test_common import create_memory
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
