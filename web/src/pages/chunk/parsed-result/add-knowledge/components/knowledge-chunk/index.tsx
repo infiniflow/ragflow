@@ -35,7 +35,6 @@ import {
   QueryStringMap,
   useNavigatePage,
 } from '@/hooks/logic-hooks/navigate-hooks';
-import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { LucideArrowBigLeft } from 'lucide-react';
 import styles from './index.module.less';
 
@@ -54,7 +53,6 @@ const Chunk = () => {
   } = useFetchNextChunkList();
   const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
   const isPdf = documentInfo?.type === 'pdf';
-  const { data: dataset } = useFetchKnowledgeBaseConfiguration();
 
   const { t } = useTranslation();
   const { changeChunkTextMode, textMode } = useChangeChunkTextMode();
@@ -69,8 +67,7 @@ const Chunk = () => {
     chunkUpdatingVisible,
     documentId,
   } = useUpdateChunk();
-  const { navigateToDataFile, getQueryString, navigateToDatasetList } =
-    useNavigatePage();
+  const { navigateToDataFile, getQueryString } = useNavigatePage();
   const fileUrl = useGetDocumentUrl(false);
   useEffect(() => {
     setChunkList(data);

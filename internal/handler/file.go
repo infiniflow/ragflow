@@ -219,6 +219,41 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 	})
 }
 
+// GetFileAncestors gets all ancestor folders of a file (matches Python /files/<file_id>/ancestors)
+// @Summary Get File Ancestors
+// @Description Get all ancestor folders in path from file to root
+// @Tags file
+// @Accept json
+// @Produce json
+// @Param id path string true "file ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/files/{id}/ancestors [get]
+func (h *FileHandler) GetFileAncestors(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	fileID := c.Param("id")
+	if fileID == "" {
+		jsonError(c, common.CodeBadRequest, "file id is required")
+		return
+	}
+
+	parentFolders, err := h.fileService.GetAllParentFolders(fileID)
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    gin.H{"parent_folders": parentFolders},
+		"message": common.CodeSuccess.Message(),
+	})
+}
+
 type CreateFolderRequest struct {
 	Name     string `json:"name" binding:"required"`
 	ParentID string `json:"parent_id"`
@@ -385,6 +420,7 @@ type MoveFileRequest struct {
 //   - dest_file_id only: move files to a new folder (names unchanged)
 //   - new_name only: rename a single file in place (no storage operation)
 //   - both: move and rename simultaneously
+//
 // @Tags file
 // @Accept json
 // @Produce json

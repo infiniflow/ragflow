@@ -18,7 +18,7 @@ import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { LucidePlus } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MetadataType } from '../components/metedata/constant';
 import { useManageMetadata } from '../components/metedata/hooks/use-manage-modal';
@@ -54,13 +54,8 @@ export default function Dataset() {
     checkValue,
   } = useFetchDocumentList();
 
-  const refreshCount = useMemo(() => {
-    return documents.findIndex((doc) => doc.run === '1') + documents.length;
-  }, [documents]);
+  const { data: dataSetData } = useFetchKnowledgeBaseConfiguration();
 
-  const { data: dataSetData } = useFetchKnowledgeBaseConfiguration({
-    refreshCount,
-  });
   const { filters, onOpenChange, filterGroup } = useSelectDatasetFilters();
 
   const {
