@@ -133,7 +133,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         callback(0.1, "Start to parse.")
         chunks = Docx()(filename, binary)
         callback(0.7, "Finish parsing.")
-        return tokenize_chunks(chunks, doc, eng, None)
+        return tokenize_chunks(chunks, doc, eng, None, language=lang)
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
@@ -214,7 +214,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     if not res:
         callback(0.99, "No chunk parsed out.")
 
-    return tokenize_chunks(res, doc, eng, pdf_parser)
+    return tokenize_chunks(res, doc, eng, pdf_parser, language=lang)
 
     # chunks = hierarchical_merge(bull, sections, 5)
     #     return tokenize_chunks(["\n".join(ck)for ck in chunks], doc, eng, pdf_parser)

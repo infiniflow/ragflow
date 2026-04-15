@@ -265,15 +265,16 @@ def is_chinese(text):
     return False
 
 
-def tokenize(d, txt, eng):
+def tokenize(d, txt, eng, language="English"):
     from . import rag_tokenizer
+    rag_tokenizer.tokenizer.set_language(language)
     d["content_with_weight"] = txt
     t = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt)
     d["content_ltks"] = rag_tokenizer.tokenize(t)
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
 
 
-def split_with_pattern(d, pattern: str, content: str, eng) -> list:
+def split_with_pattern(d, pattern: str, content: str, eng, language="English") -> list:
     docs = []
 
     # Validate and compile regex pattern before use
@@ -283,7 +284,7 @@ def split_with_pattern(d, pattern: str, content: str, eng) -> list:
         logging.warning(f"Invalid delimiter regex pattern '{pattern}': {e}. Falling back to no split.")
         # Fallback: return content as single chunk
         dd = copy.deepcopy(d)
-        tokenize(dd, content, eng)
+        tokenize(dd, content, eng, language=language)
         return [dd]
 
     txts = [txt for txt in compiled_pattern.split(content)]
@@ -294,12 +295,12 @@ def split_with_pattern(d, pattern: str, content: str, eng) -> list:
         if j + 1 < len(txts):
             txt += txts[j + 1]
         dd = copy.deepcopy(d)
-        tokenize(dd, txt, eng)
+        tokenize(dd, txt, eng, language=language)
         docs.append(dd)
     return docs
 
 
-def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=None):
+def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=None, language="English"):
     res = []
     # wrap up as es documents
     for ii, ck in enumerate(chunks):
@@ -319,15 +320,15 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=
 
         if child_delimiters_pattern:
             d["mom_with_weight"] = ck
-            res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng))
+            res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng, language=language))
             continue
 
-        tokenize(d, ck, eng)
+        tokenize(d, ck, eng, language=language)
         res.append(d)
     return res
 
 
-def doc_tokenize_chunks_with_images(chunks, doc, eng, child_delimiters_pattern=None, batch_size=10):
+def doc_tokenize_chunks_with_images(chunks, doc, eng, child_delimiters_pattern=None, batch_size=10, language="English"):
     res = []
     for ii, ck in enumerate(chunks):
         text = ck.get("context_above", "") + ck.get("text") + ck.get("context_below", "")
@@ -342,18 +343,18 @@ def doc_tokenize_chunks_with_images(chunks, doc, eng, child_delimiters_pattern=N
         if ck.get("ck_type") == "text":
             if child_delimiters_pattern:
                 d["mom_with_weight"] = text
-                res.extend(split_with_pattern(d, child_delimiters_pattern, text, eng))
+                res.extend(split_with_pattern(d, child_delimiters_pattern, text, eng, language=language))
                 continue
         elif ck.get("ck_type") == "image":
             d["doc_type_kwd"] = "image"
         elif ck.get("ck_type") == "table":
             d["doc_type_kwd"] = "table"
-        tokenize(d, text, eng)
+        tokenize(d, text, eng, language=language)
         res.append(d)
     return res
 
 
-def tokenize_chunks_with_images(chunks, doc, eng, images, child_delimiters_pattern=None):
+def tokenize_chunks_with_images(chunks, doc, eng, images, child_delimiters_pattern=None, language="English"):
     res = []
     # wrap up as es documents
     for ii, (ck, image) in enumerate(zip(chunks, images)):
@@ -365,14 +366,14 @@ def tokenize_chunks_with_images(chunks, doc, eng, images, child_delimiters_patte
         add_positions(d, [[ii] * 5])
         if child_delimiters_pattern:
             d["mom_with_weight"] = ck
-            res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng))
+            res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng, language=language))
             continue
-        tokenize(d, ck, eng)
+        tokenize(d, ck, eng, language=language)
         res.append(d)
     return res
 
 
-def tokenize_table(tbls, doc, eng, batch_size=10):
+def tokenize_table(tbls, doc, eng, batch_size=10, language="English"):
     res = []
     # add tables
     for (img, rows), poss in tbls:
@@ -380,7 +381,7 @@ def tokenize_table(tbls, doc, eng, batch_size=10):
             continue
         if isinstance(rows, str):
             d = copy.deepcopy(doc)
-            tokenize(d, rows, eng)
+            tokenize(d, rows, eng, language=language)
             d["content_with_weight"] = rows
             d["doc_type_kwd"] = "table"
             if img:
@@ -395,7 +396,7 @@ def tokenize_table(tbls, doc, eng, batch_size=10):
         for i in range(0, len(rows), batch_size):
             d = copy.deepcopy(doc)
             r = de.join(rows[i:i + batch_size])
-            tokenize(d, r, eng)
+            tokenize(d, r, eng, language=language)
             d["doc_type_kwd"] = "table"
             if img:
                 d["image"] = img
