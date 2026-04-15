@@ -62,56 +62,6 @@ def _is_safe_download_filename(name: str) -> bool:
     return True
 
 
-@manager.route("/upload", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("kb_id")
-async def upload():
-    form = await request.form
-    kb_id = form.get("kb_id")
-    if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-    files = await request.files
-    if "file" not in files:
-        return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
-
-    file_objs = files.getlist("file")
-
-    def _close_file_objs(objs):
-        for obj in objs:
-            try:
-                obj.close()
-            except Exception:
-                try:
-                    obj.stream.close()
-                except Exception:
-                    pass
-
-    for file_obj in file_objs:
-        if file_obj.filename == "":
-            _close_file_objs(file_objs)
-            return get_json_result(data=False, message="No file selected!", code=RetCode.ARGUMENT_ERROR)
-        if len(file_obj.filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-            _close_file_objs(file_objs)
-            return get_json_result(data=False, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=RetCode.ARGUMENT_ERROR)
-
-    e, kb = KnowledgebaseService.get_by_id(kb_id)
-    if not e:
-        raise LookupError("Can't find this dataset!")
-    if not check_kb_team_permission(kb, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-
-    err, files = await thread_pool_exec(FileService.upload_document, kb, file_objs, current_user.id)
-    if err:
-        files = [f[0] for f in files] if files else []
-        return get_json_result(data=files, message="\n".join(err), code=RetCode.SERVER_ERROR)
-
-    if not files:
-        return get_json_result(data=files, message="There seems to be an issue with your file format. Please verify it is correct and not corrupted.", code=RetCode.DATA_ERROR)
-    files = [f[0] for f in files]  # remove the blob
-
-    return get_json_result(data=files)
-
-
 @manager.route("/web_crawl", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("kb_id", "name", "url")

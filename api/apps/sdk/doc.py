@@ -22,7 +22,6 @@ import xxhash
 from pydantic import BaseModel, Field, validator
 from quart import request, send_file
 
-from api.constants import FILE_NAME_LEN_LIMIT
 from api.db.db_models import APIToken, Document, File, Task
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from api.db.services.doc_metadata_service import DocMetadataService
@@ -68,117 +67,6 @@ class Chunk(BaseModel):
                 raise ValueError("Each sublist in positions must have a length of 5")
         return value
 
-
-@manager.route("/datasets/<dataset_id>/documents", methods=["POST"])  # noqa: F821
-@token_required
-async def upload(dataset_id, tenant_id):
-    """
-    Upload documents to a dataset.
-    ---
-    tags:
-      - Documents
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-      - in: formData
-        name: file
-        type: file
-        required: true
-        description: Document files to upload.
-      - in: formData
-        name: parent_path
-        type: string
-        description: Optional nested path under the parent folder. Uses '/' separators.
-    responses:
-      200:
-        description: Successfully uploaded documents.
-        schema:
-          type: object
-          properties:
-            data:
-              type: array
-              items:
-                type: object
-                properties:
-                  id:
-                    type: string
-                    description: Document ID.
-                  name:
-                    type: string
-                    description: Document name.
-                  chunk_count:
-                    type: integer
-                    description: Number of chunks.
-                  token_count:
-                    type: integer
-                    description: Number of tokens.
-                  dataset_id:
-                    type: string
-                    description: ID of the dataset.
-                  chunk_method:
-                    type: string
-                    description: Chunking method used.
-                  run:
-                    type: string
-                    description: Processing status.
-    """
-    form = await request.form
-    files = await request.files
-    if "file" not in files:
-        return get_error_data_result(message="No file part!", code=RetCode.ARGUMENT_ERROR)
-    file_objs = files.getlist("file")
-    for file_obj in file_objs:
-        if file_obj.filename == "":
-            return get_result(message="No file selected!", code=RetCode.ARGUMENT_ERROR)
-        if len(file_obj.filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-            return get_result(message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=RetCode.ARGUMENT_ERROR)
-    """
-    # total size
-    total_size = 0
-    for file_obj in file_objs:
-        file_obj.seek(0, os.SEEK_END)
-        total_size += file_obj.tell()
-        file_obj.seek(0)
-    MAX_TOTAL_FILE_SIZE = 10 * 1024 * 1024
-    if total_size > MAX_TOTAL_FILE_SIZE:
-        return get_result(
-            message=f"Total file size exceeds 10MB limit! ({total_size / (1024 * 1024):.2f} MB)",
-            code=RetCode.ARGUMENT_ERROR,
-        )
-    """
-    e, kb = KnowledgebaseService.get_by_id(dataset_id)
-    if not e:
-        return server_error_response(LookupError(f"Can't find the dataset with ID {dataset_id}!"))
-    err, files = FileService.upload_document(kb, file_objs, tenant_id, parent_path=form.get("parent_path"))
-    if err:
-        return get_result(message="\n".join(err), code=RetCode.SERVER_ERROR)
-    # rename key's name
-    renamed_doc_list = []
-    for file in files:
-        doc = file[0]
-        key_mapping = {
-            "chunk_num": "chunk_count",
-            "kb_id": "dataset_id",
-            "token_num": "token_count",
-            "parser_id": "chunk_method",
-        }
-        renamed_doc = {}
-        for key, value in doc.items():
-            new_key = key_mapping.get(key, key)
-            renamed_doc[new_key] = value
-        renamed_doc["run"] = "UNSTART"
-        renamed_doc_list.append(renamed_doc)
-    return get_result(data=renamed_doc_list)
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
 @token_required
