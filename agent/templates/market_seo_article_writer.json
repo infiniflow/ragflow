@@ -9,6 +9,7 @@
         "de": "SEO-Blog-Magnetiseur automatisch einen vollständigen SEO-optimierten Blogartikel basierend auf einer einfachen Benutzereingabe. Sie benötigen keine Schreiberfahrung. Geben Sie einfach ein Thema oder eine kurze Anfrage ein – das System übernimmt den Rest.",
         "zh": "此 SEO 博客写手根据简单的用户输入自动生成完整的SEO博客文章。你无需任何写作经验，只需提供一个主题或简短请求，系统将处理其余部分。"},
     "canvas_type": "Marketing",
+    "canvas_types": ["Marketing", "Recommended"],
     "dsl": {
             "components": {
                 "Agent:BetterSitesSend": {

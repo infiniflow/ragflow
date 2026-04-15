@@ -227,7 +227,8 @@ class LLM(ComponentBase):
     def _prepare_prompt_variables(self):
         self.imgs = []
         if self._param.visual_files_var:
-            self.imgs.extend(self._extract_data_images(self._canvas.get_variable_value(self._param.visual_files_var)))
+            visual_val = self._canvas.get_variable_value(self._param.visual_files_var)
+            self.imgs.extend(self._extract_data_images(visual_val))
 
         args = {}
         vars = self.get_input_elements() if not self._param.debug_inputs else self._param.debug_inputs
