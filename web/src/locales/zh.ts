@@ -1324,6 +1324,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       oneChunkTitle: 'Note',
       oneChunkDescription:
         '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
+      flattenMediaToText: '禁用视觉模型',
+      flattenMediaToTextTip: '将图片和表格区块按普通文本处理，并跳过视觉增强。',
       merge: '合并',
       split: '拆分',
       script: '脚本',

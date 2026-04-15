@@ -88,6 +88,29 @@ export function LargeModelFormField({
   );
 }
 
+export function FlattenMediaToTextFormField({ prefix }: CommonProps) {
+  const { t } = useTranslation();
+  return (
+    <RAGFlowFormItem
+      name={buildFieldNameWithPrefix(`flatten_media_to_text`, prefix)}
+      label={t('flow.flattenMediaToText')}
+      tooltip={t('flow.flattenMediaToTextTip')}
+      horizontal={true}
+      labelClassName="w-full"
+      valueClassName="w-8"
+    >
+      {(field) => (
+        <Switch
+          checked={field.value}
+          onCheckedChange={(checked) => {
+            field.onChange?.(checked);
+          }}
+        />
+      )}
+    </RAGFlowFormItem>
+  );
+}
+
 export function TwoColumnCheckFormField({ prefix }: CommonProps) {
   const { t } = useTranslation();
   return (
