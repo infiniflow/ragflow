@@ -277,18 +277,16 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "remove_chunks":
 		return c.RemoveChunks(cmd)
 	// ContextEngine commands
-	case "context_list":
-		return c.ContextList(cmd)
-	case "context_cat":
-		return c.ContextCat(cmd)
-	case "context_search":
-		return c.ContextSearch(cmd)
 	case "ce_ls":
 		return c.CEList(cmd)
 	case "ce_cat":
-		return c.ContextCat(cmd)
+		return c.CECat(cmd)
 	case "ce_search":
 		return c.CESearch(cmd)
+	case "ce_mount":
+		return c.ContextMount(cmd)
+	case "ce_unmount":
+		return c.ContextUnmount(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)

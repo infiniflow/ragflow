@@ -1923,7 +1923,7 @@ func (p *Parser) parseSearchCommand() (*Command, error) {
 		return cmd, nil
 	}
 
-	cmd := NewCommand("context_search")
+	cmd := NewCommand("ce_search")
 
 	cmd.Params["query"] = question
 

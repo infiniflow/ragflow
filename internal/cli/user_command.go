@@ -1566,6 +1566,36 @@ func (c *RAGFlowClient) ShowCurrentModel(cmd *Command) (ResponseIf, error) {
 
 // Context related commands
 
+// CECat handles the cat command - shows content using Context Engine
+func (c *RAGFlowClient) CECat(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	path, ok := cmd.Params["path"].(string)
+	if !ok {
+		return nil, fmt.Errorf("fail to convert 'path' to string")
+	}
+
+	// Execute cat command through Filesystem Engine
+	ctx := context.Background()
+	content, err := c.ContextEngine.Cat(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to response
+	var response ContextCatResponse
+	response.OutputFormat = c.OutputFormat
+	response.Code = 0
+	response.Content = string(content)
+
+	return &response, nil
+}
+
 // CEList handles the ls command - lists nodes using Context Engine
 func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
 	// Get path from command params, default to "datasets"

@@ -24,7 +24,7 @@ import (
 func (p *Parser) parseContextListCommand() (*Command, error) {
 	p.nextToken() // consume LS
 
-	cmd := NewCommand("context_list")
+	cmd := NewCommand("ce_ls")
 
 	if p.curToken.Type == TokenEOF {
 		cmd.Params["path"] = "."
@@ -70,7 +70,7 @@ func (p *Parser) parseContextCatCommand() (*Command, error) {
 		return nil, fmt.Errorf("expect a filename")
 	}
 
-	cmd := NewCommand("context_cat")
+	cmd := NewCommand("ce_cat")
 	if p.curToken.Type == TokenIdentifier {
 		for p.curToken.Type != TokenEOF {
 			if p.curToken.Type != TokenIdentifier {
@@ -114,7 +114,7 @@ func (p *Parser) parseContextCatCommand() (*Command, error) {
 func (p *Parser) parseContextSearchCommand() (*Command, error) {
 	p.nextToken() // consume SEARCH
 
-	cmd := NewCommand("context_search")
+	cmd := NewCommand("ce_search")
 
 	for p.curToken.Type != TokenEOF {
 		if p.curToken.Type == TokenDash {
@@ -172,6 +172,80 @@ func (p *Parser) parseContextSearchCommand() (*Command, error) {
 			}
 		}
 		return nil, fmt.Errorf("syntax error")
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseContextMountCommand() (*Command, error) {
+	p.nextToken() // consume MOUNT
+
+	cmd := NewCommand("ce_mount")
+
+	// Parse flags and mountpoint
+	var args []string
+	foreground := false
+
+	for p.curToken.Type != TokenEOF {
+		if p.curToken.Type == TokenDash {
+			p.nextToken() // skip dash
+			if p.curToken.Type == TokenIdentifier {
+				flag := strings.ToLower(p.curToken.Value)
+				if flag == "f" || flag == "foreground" {
+					foreground = true
+				}
+				p.nextToken()
+			} else {
+				return nil, fmt.Errorf("expected flag after dash")
+			}
+		} else if p.curToken.Type == TokenIdentifier {
+			args = append(args, p.curToken.Value)
+			p.nextToken()
+		} else if p.curToken.Type == TokenQuotedString {
+			val, err := p.parseQuotedString()
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, val)
+			p.nextToken()
+		} else {
+			return nil, fmt.Errorf("unexpected token: %s", p.curToken.Value)
+		}
+	}
+
+	if len(args) == 0 {
+		return nil, fmt.Errorf("mount requires a mountpoint")
+	}
+
+	// Last argument is the mountpoint
+	cmd.Params["mountpoint"] = args[len(args)-1]
+	cmd.Params["foreground"] = foreground
+
+	return cmd, nil
+}
+
+func (p *Parser) parseContextUnmountCommand() (*Command, error) {
+	p.nextToken() // consume UNMOUNT
+
+	if p.curToken.Type == TokenEOF {
+		return nil, fmt.Errorf("unmount requires a mountpoint")
+	}
+
+	cmd := NewCommand("ce_unmount")
+
+	// Parse mountpoint (can be identifier or quoted string)
+	if p.curToken.Type == TokenIdentifier {
+		cmd.Params["mountpoint"] = p.curToken.Value
+		p.nextToken()
+	} else if p.curToken.Type == TokenQuotedString {
+		val, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd.Params["mountpoint"] = val
+		p.nextToken()
+	} else {
+		return nil, fmt.Errorf("expected mountpoint path")
 	}
 
 	return cmd, nil

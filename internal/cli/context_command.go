@@ -17,14 +17,12 @@
 package cli
 
 import (
-	"context"
 	"fmt"
-	"strings"
 
-	ce "ragflow/internal/cli/filesystem"
+	"ragflow/internal/cli/fuse"
 )
 
-func (c *RAGFlowClient) ContextList(cmd *Command) (ResponseIf, error) {
+func (c *RAGFlowClient) ContextMount(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
@@ -32,157 +30,62 @@ func (c *RAGFlowClient) ContextList(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	var path string
-	var ok bool
-	if cmd.Params["path"] != nil {
-		path, ok = cmd.Params["path"].(string)
-		if !ok {
-			return nil, fmt.Errorf("fail to convert 'path' to string")
-		}
+	mountpoint, ok := cmd.Params["mountpoint"].(string)
+	if !ok || mountpoint == "" {
+		return nil, fmt.Errorf("mountpoint is required")
 	}
 
-	if path == "" {
-		path = "."
+	// Get foreground option
+	foreground := false
+	if fg, ok := cmd.Params["foreground"].(bool); ok {
+		foreground = fg
 	}
 
-	var parameter string
-	if cmd.Params["parameter"] != nil {
-		parameter, ok = cmd.Params["parameter"].(string)
-		if !ok {
-			return nil, fmt.Errorf("fail to convert 'parameter' to string")
-		}
+	// Get config path
+	configPath := ""
+	if cp, ok := cmd.Params["config_path"].(string); ok {
+		configPath = cp
 	}
 
-	if parameter == "" {
-		fmt.Printf("ls %s\n", path)
-	} else {
-		fmt.Printf("ls %s -%s\n", path, parameter)
+	// Build server URL
+	serverURL := fmt.Sprintf("http://%s:%d", c.HTTPClient.Host, c.HTTPClient.Port)
+
+	// Mount options
+	opts := &fuse.MountOptions{
+		Mountpoint: mountpoint,
+		ConfigPath: configPath,
+		ServerURL:  serverURL,
+		Foreground: foreground,
 	}
 
-	// Convert to response
-	var response ContextListResponse
+	// Start mount (this blocks in foreground mode)
+	err := fuse.Mount(c.ContextEngine, opts)
+	if err != nil {
+		return nil, fmt.Errorf("mount failed: %w", err)
+	}
+
+	var response ContextMountResponse
 	response.OutputFormat = c.OutputFormat
 	response.Code = 0
-	response.Data = nil
+	response.Message = fmt.Sprintf("Mounted at %s", mountpoint)
 
 	return &response, nil
 }
 
-func (c *RAGFlowClient) ContextCat(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
-		return nil, fmt.Errorf("API token not set. Please login first")
-	}
-	if c.ServerType != "user" {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
+func (c *RAGFlowClient) ContextUnmount(cmd *Command) (ResponseIf, error) {
+	mountpoint, ok := cmd.Params["mountpoint"].(string)
+	if !ok || mountpoint == "" {
+		return nil, fmt.Errorf("mountpoint is required")
 	}
 
-	path, ok := cmd.Params["path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("fail to convert 'path' to string")
-	}
-
-	// Execute cat command through Filesystem Engine
-	ctx := context.Background()
-	content, err := c.ContextEngine.Cat(ctx, path)
-	if err != nil {
+	if err := fuse.Unmount(mountpoint); err != nil {
 		return nil, err
 	}
 
-	// Convert to response
-	var response ContextCatResponse
+	var response ContextUnmountResponse
 	response.OutputFormat = c.OutputFormat
 	response.Code = 0
-	response.Content = string(content)
-
-	return &response, nil
-}
-
-func (c *RAGFlowClient) ContextSearch(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
-		return nil, fmt.Errorf("API token not set. Please login first")
-	}
-	if c.ServerType != "user" {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	path, ok := cmd.Params["path"].(string)
-	if !ok || path == "" {
-		path = "datasets"
-	}
-
-	query, ok := cmd.Params["query"].(string)
-	if !ok || query == "" {
-		return nil, fmt.Errorf("search query is required")
-	}
-
-	number := 10
-	if cmd.Params["number"] != nil {
-		number, ok = cmd.Params["number"].(int)
-		if !ok {
-			return nil, fmt.Errorf("fail to convert 'number' to int")
-		}
-	}
-
-	fmt.Printf("search query: %s, path: %s, number: %d\n", query, path, number)
-
-	// Check if searching skills
-	if path == "skills" || strings.HasPrefix(path, "skills/") {
-		// Parse space ID from path
-		spaceID := "default"
-		if strings.HasPrefix(path, "skills/") {
-			spaceID = strings.TrimPrefix(path, "skills/")
-			if spaceID == "" {
-				spaceID = "default"
-			}
-		}
-
-		// Get skill provider and perform search
-		provider := c.ContextEngine.GetProvider("skills")
-		if provider == nil {
-			return nil, fmt.Errorf("skill provider not available")
-		}
-		skillProvider, ok := provider.(*ce.SkillProvider)
-		if !ok {
-			return nil, fmt.Errorf("invalid skill provider type")
-		}
-
-		searchOptions := &ce.SearchOptions{
-			Query:  query,
-			Limit:  number,
-			Offset: 0,
-			TopK:   number,
-		}
-		result, err := skillProvider.Search(context.Background(), spaceID, searchOptions)
-		if err != nil {
-			return nil, err
-		}
-
-		// Convert to response
-		var response ContextSearchResponse
-		response.OutputFormat = c.OutputFormat
-		response.Code = 0
-		response.Total = result.Total
-		response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
-		return &response, nil
-	}
-
-	// For dataset search, use ContextEngine
-	opts := &ce.SearchOptions{
-		Query: query,
-		Limit: number,
-	}
-
-	result, err := c.ContextEngine.Search(context.Background(), path, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert to response
-	var response ContextSearchResponse
-	response.OutputFormat = c.OutputFormat
-	response.Code = 0
-	response.Total = result.Total
-	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
+	response.Message = fmt.Sprintf("Unmounted %s", mountpoint)
 
 	return &response, nil
 }
