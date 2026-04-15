@@ -31,7 +31,7 @@ export function useHasParsedDocument(isEdit?: boolean) {
   const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration({
     isEdit,
   });
-  return knowledgeDetails.chunk_count > 0;
+  return knowledgeDetails.chunk_num > 0;
 }
 
 export const useFetchKnowledgeConfigurationOnMount = (

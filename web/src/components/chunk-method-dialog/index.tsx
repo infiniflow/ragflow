@@ -215,7 +215,6 @@ export function ChunkMethodDialog({
   const showAutoKeywords = useShowAutoKeywords();
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
-    console.log('🚀 ~ onSubmit ~ data:', data);
     const parserConfig = data.parser_config;
     const imageTableContextWindow = Number(
       parserConfig?.image_table_context_window || 0,
@@ -234,7 +233,6 @@ export function ChunkMethodDialog({
         pages: parserConfig?.pages?.map((x: any) => [x.from, x.to]) ?? [],
       },
     };
-    console.log('🚀 ~ onSubmit ~ nextData:', nextData);
     const ret = await onOk?.(nextData);
     if (ret) {
       hideModal?.();
@@ -378,19 +376,7 @@ export function ChunkMethodDialog({
                     <ExcelToHtmlFormField></ExcelToHtmlFormField>
                   )}
                 </div>
-                {/* {showRaptorParseConfiguration(
-                    selectedTag as DocumentParserType,
-                  ) && (
-                    <FormContainer>
-                      <RaptorFormFields></RaptorFormFields>
-                    </FormContainer>
-                  )} */}
-                {/* {showGraphRagItems(selectedTag as DocumentParserType) &&
-                    useGraphRag && (
-                      <FormContainer>
-                        <UseGraphRagFormField></UseGraphRagFormField>
-                      </FormContainer>
-                    )} */}
+
                 <div className="space-y-6 border-t-0.5 border-border-button pt-6 empty:hidden">
                   {showEntityTypes && <EntityTypesFormField />}
                 </div>
