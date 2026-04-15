@@ -119,6 +119,7 @@ function CodeForm({ node }: INextOperatorForm) {
                       <Button
                         variant={'ghost'}
                         onClick={() => setIsExpanded(true)}
+                        type="button"
                       >
                         <Maximize2 className="size-4" />
                       </Button>
