@@ -267,6 +267,53 @@ class Dealer:
 
         return res, seted
 
+    @staticmethod
+    def _extract_tag_feas(chunk_id, fields):
+        """Return TAG_FLD for a chunk as a sanitized ``{tag: number}`` dict, or
+        ``None`` if the field is missing or malformed. Callers should treat
+        ``None`` as "skip this chunk's rank-feature contribution".
+
+        Security invariant: TAG_FLD originates from the chunk create/update
+        API, which accepts it from request bodies with no schema validation.
+        Its contents must therefore be treated as untrusted — this function
+        must NEVER ``eval()`` / ``exec()`` its input, and must never fall
+        back to a code-evaluating parser such as ``ast.literal_eval()``.
+
+        Expected backend shapes:
+          * Elasticsearch / OpenSearch: native dict from the ``_source``
+            response, passed through unchanged by ``get_fields``.
+          * Infinity: native dict from the ``_feas`` read path, which
+            ``json.loads``-decodes during column post-processing. A
+            type-confused writer that supplied a bare string at ingestion
+            can still produce a string here, since ``json.dumps`` /
+            ``json.loads`` round-trip strings faithfully.
+          * OceanBase: JSON column returned by the driver as a raw string.
+
+        Accepts (a) a dict directly, or (b) a string that parses as JSON to
+        a dict. Everything else (non-dict JSON, malformed JSON, Python-repr
+        strings, raw non-string-non-dict values) is logged and rejected.
+        Values inside the dict are filtered to numbers so downstream
+        arithmetic can't be tripped by a poisoned score (e.g. a string that
+        would trigger string repetition).
+        """
+        raw = fields[chunk_id].get(TAG_FLD)
+        if not raw:
+            return None
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except json.JSONDecodeError:
+                logging.warning("Malformed %s for chunk %s; skipping", TAG_FLD, chunk_id)
+                return None
+        if not isinstance(raw, dict):
+            logging.warning("Unexpected %s type %s for chunk %s; skipping",
+                            TAG_FLD, type(raw).__name__, chunk_id)
+            return None
+        # bool is a subclass of int; explicitly exclude it so True/False can't
+        # pose as scores.
+        return {t: sc for t, sc in raw.items()
+                if isinstance(sc, (int, float)) and not isinstance(sc, bool)}
+
     def _rank_feature_scores(self, query_rfea, search_res):
         ## For rank feature(tag_fea) scores.
         rank_fea = []
@@ -281,10 +328,11 @@ class Dealer:
         q_denor = np.sqrt(np.sum([s * s for t, s in query_rfea.items() if t != PAGERANK_FLD]))
         for i in search_res.ids:
             nor, denor = 0, 0
-            if not search_res.field[i].get(TAG_FLD):
+            tag_feas = self._extract_tag_feas(i, search_res.field)
+            if tag_feas is None:
                 rank_fea.append(0)
                 continue
-            for t, sc in eval(search_res.field[i].get(TAG_FLD, "{}")).items():
+            for t, sc in tag_feas.items():
                 if t in query_rfea:
                     nor += query_rfea[t] * sc
                 denor += sc * sc
