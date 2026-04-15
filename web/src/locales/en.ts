@@ -1559,7 +1559,7 @@ Example: Virtual Hosted Style`,
       oneChunkTitle: 'Note',
       oneChunkDescription:
         'All parsed sections will be merged in order into a single chunk.',
-      flattenMediaToText: 'Media content to text',
+      flattenMediaToText: 'Disable vision model',
       flattenMediaToTextTip:
         'Treat image and table sections as plain text and skip vision enhancement.',
       enableChildrenDelimiters: 'Child chunk are used for retrieval',
