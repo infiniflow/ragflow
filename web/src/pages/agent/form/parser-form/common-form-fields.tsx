@@ -96,10 +96,11 @@ export function FlattenMediaToTextFormField({ prefix }: CommonProps) {
       label={t('flow.flattenMediaToText')}
       tooltip={t('flow.flattenMediaToTextTip')}
       horizontal={true}
-      labelClassName="w-[200px]"
+      labelClassName="w-full"
+      valueClassName="w-8"
     >
       {(field) => (
-        <Checkbox
+        <Switch
           checked={field.value}
           onCheckedChange={(checked) => {
             field.onChange?.(checked);
