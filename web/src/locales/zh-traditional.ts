@@ -424,6 +424,9 @@ export default {
       delete: '删除',
     },
     chat: {
+      chatSupport: '聊天支援',
+      replyInstantly: '我們通常會即時回覆',
+      typeYourMessage: '輸入您的訊息...',
       newConversation: '新會話',
       createAssistant: '新建助理',
       assistantSetting: '助理設置',
@@ -717,7 +720,7 @@ export default {
       FishAudioModelNameMessage: '請為你的TTS模型起名',
       addFishAudioAK: 'Fish Audio API KEY',
       addFishAudioAKMessage: '請輸入 API KEY',
-      addFishAudioRefID: 'FishAudio Refrence ID',
+      addFishAudioRefID: 'FishAudio Reference ID',
       addFishAudioRefIDMessage: '請輸入引用模型的ID（留空表示使用默認模型）',
       GoogleModelIDMessage: '請輸入 model ID!',
       addGoogleProjectID: 'Project ID',
@@ -762,6 +765,7 @@ export default {
         '以英文逗號分隔的倉庫 slug，例如：repo-one,repo-two',
       bitbucketProjectsTip: '以英文逗號分隔的項目鍵，例如：PROJ1,PROJ2',
       connectorNameTip: '為連接器填寫一個有意義的名稱',
+      syncDeletedFiles: '同步刪除文件',
     },
     message: {
       registered: '註冊成功',
@@ -905,10 +909,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         '此組件透過您提供的 SearXNG 實例 URL 進行搜尋。請設定 Top N 和實例 URL。',
-      pdfGenerator: '文檔生成器',
-      pPDFGenerator: '文檔生成器',
-      pdfGeneratorDescription: `該組件從 markdown 格式的內容生成文檔（PDF、DOCX、TXT），支援自定義樣式、圖片和表格。支援：**粗體**、*斜體*、# 標題、- 列表、使用 | 語法的表格。`,
-      pPDFGeneratorDescription: `該組件從 markdown 格式的內容生成文檔（PDF、DOCX、TXT），支援自定義樣式、圖片和表格。支援：**粗體**、*斜體*、# 標題、- 列表、使用 | 語法的表格。`,
+      docGenerator: '文檔生成器',
+      docGeneratorDescription: `從 Markdown 內容產生檔案。`,
       subtitle: '副標題',
       logoImage: '標誌圖片',
       logoPosition: '標誌位置',
@@ -1262,6 +1264,9 @@ export default {
       categoryName: '分類名稱',
       nextStep: '下一步',
       insertVariableTip: `輸入 / 插入變數`,
+      mergePath: '合併路徑',
+      mergePathTip:
+        '開啟後，緊跟在變數後面的點號後綴會合併為路徑查詢，例如 {node@result.name}。',
       promptMessage: '提示詞是必填項',
       promptTip:
         '系統提示為大型模型提供任務描述、規定回覆方式，以及設定其他各種要求。系統提示通常與 key（變數）合用，透過變數設定大型模型的輸入資料。你可以透過斜線或 (x) 按鈕顯示可用的 key。',

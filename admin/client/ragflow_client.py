@@ -24,7 +24,6 @@ from http_client import HttpClient
 from lark import Tree
 from user import encrypt_password, login_user
 
-import getpass
 import base64
 from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from Cryptodome.PublicKey import RSA
@@ -63,10 +62,16 @@ class RAGFlowClient:
             return
 
         email: str = command["email"]
-        user_password = getpass.getpass(f"password for {email}: ").strip()
+        user_password: str = command.get("password")
+        if not user_password:
+            import getpass
+            user_password = getpass.getpass("Password: ")
         try:
             token = login_user(self.http_client, self.server_type, email, user_password)
             self.http_client.login_token = token
+            # Also store as api_key for API endpoint authentication
+            if self.server_type == "user":
+                self.http_client.api_key = token
             print(f"Login user {email} successfully")
         except Exception as e:
             print(str(e))
@@ -1024,7 +1029,7 @@ class RAGFlowClient:
         else:
             print(f"Fail to create chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
 
-    def create_index(self, command):
+    def create_dataset_table(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
             return
@@ -1040,15 +1045,15 @@ class RAGFlowClient:
         # Build payload
         payload = {"kb_id": dataset_id, "vector_size": vector_size}
         # Call API
-        response = self.http_client.request("POST", "/kb/index", json_body=payload,
+        response = self.http_client.request("POST", "/kb/doc_engine_table", json_body=payload,
                                           use_api_base=False, auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json.get("code") == 0:
-            print(f"Success to create index for dataset: {dataset_name}")
+            print(f"Success to create table for dataset: {dataset_name}")
         else:
-            print(f"Fail to create index for dataset {dataset_name}, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            print(f"Fail to create table for dataset {dataset_name}, code: {res_json.get('code')}, message: {res_json.get('message')}")
 
-    def drop_index(self, command):
+    def drop_dataset_table(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
             return
@@ -1057,41 +1062,41 @@ class RAGFlowClient:
         dataset_id = self._get_dataset_id(dataset_name)
         if dataset_id is None:
             return
-        # Call API to delete index
+        # Call API to delete table
         payload = {"kb_id": dataset_id}
-        response = self.http_client.request("DELETE", "/kb/index", json_body=payload,
+        response = self.http_client.request("DELETE", "/kb/doc_engine_table", json_body=payload,
                                           use_api_base=False, auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json.get("code") == 0:
-            print(f"Success to drop index for dataset: {dataset_name}")
+            print(f"Success to drop table for dataset: {dataset_name}")
         else:
-            print(f"Fail to drop index for dataset {dataset_name}, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            print(f"Fail to drop table for dataset {dataset_name}, code: {res_json.get('code')}, message: {res_json.get('message')}")
 
-    def create_doc_meta_index(self, command):
+    def create_metadata_table(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
             return
-        # Call API to create doc meta index
-        response = self.http_client.request("POST", "/tenant/doc_meta_index",
+        # Call API to create metadata table
+        response = self.http_client.request("POST", "/tenant/doc_engine_metadata_table",
                                           use_api_base=False, auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json.get("code") == 0:
-            print("Success to create doc meta index")
+            print("Success to create metadata table")
         else:
-            print(f"Fail to create doc meta index, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            print(f"Fail to create metadata table, code: {res_json.get('code')}, message: {res_json.get('message')}")
 
-    def drop_doc_meta_index(self, command):
+    def drop_metadata_table(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
             return
-        # Call API to delete doc meta index
-        response = self.http_client.request("DELETE", "/tenant/doc_meta_index",
+        # Call API to delete metadata table
+        response = self.http_client.request("DELETE", "/tenant/doc_engine_metadata_table",
                                           use_api_base=False, auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json.get("code") == 0:
-            print("Success to drop doc meta index")
+            print("Success to drop metadata table")
         else:
-            print(f"Fail to drop doc meta index, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            print(f"Fail to drop metadata table, code: {res_json.get('code')}, message: {res_json.get('message')}")
 
     def drop_user_chat(self, command):
         if self.server_type != "user":
@@ -1388,14 +1393,14 @@ class RAGFlowClient:
             headers = {"Content-Type": encoder.content_type}
             response = self.http_client.request(
                 "POST",
-                "/document/upload",
+                f"/datasets/{dataset_id}/documents?return_raw_files=true",
                 headers=headers,
                 data=encoder,
                 json_body=None,
                 params=None,
                 stream=False,
                 auth_kind="web",
-                use_api_base=False
+                use_api_base=True
             )
             res = response.json()
             if res.get("code") == 0:
@@ -1506,6 +1511,187 @@ class RAGFlowClient:
         else:
             print(f"Fail to insert metadata from file, code: {res_json['code']}, message: {res_json['message']}")
 
+    def update_chunk(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+            return
+
+        chunk_id = command_dict["chunk_id"]
+        dataset_name = command_dict["dataset_name"]
+        json_body_str = command_dict["json_body"]
+
+        # Get dataset_id from dataset_name
+        dataset_id = self._get_dataset_id(dataset_name)
+        if dataset_id is None:
+            return
+
+        # Get doc_id from chunk_id via GET /chunk/get
+        response = self.http_client.request("GET", f"/chunk/get?chunk_id={chunk_id}", use_api_base=False,
+                                            auth_kind="web")
+        res_json = response.json()
+        if response.status_code != 200:
+            print(f"Fail to get chunk info, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            return
+
+        doc_id = None
+        if res_json.get("code") == 0 and res_json.get("data"):
+            doc_id = res_json["data"].get("doc_id")
+
+        if not doc_id:
+            print(f"Could not find document_id for chunk {chunk_id}")
+            return
+
+        # Parse json_body
+        try:
+            payload = json.loads(json_body_str)
+        except json.JSONDecodeError as e:
+            print(f"Invalid JSON body: {e}")
+            return
+
+        # Add IDs to payload
+        payload["dataset_id"] = dataset_id
+        payload["document_id"] = doc_id
+        payload["chunk_id"] = chunk_id
+
+        # Call POST /v1/chunk/update
+        response = self.http_client.request("POST", "/chunk/update", json_body=payload, use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200:
+            if res_json.get("code") == 0:
+                print(f"Success to update chunk: {chunk_id}")
+            else:
+                print(f"Fail to update chunk, code: {res_json.get('code')}, message: {res_json.get('message')}")
+        else:
+            print(f"Fail to update chunk, HTTP {response.status_code}")
+
+    def _get_documents_by_ids(self, ids:list[str]):
+        response = self.http_client.request(
+            "POST",
+            "/document/infos",
+            json_body={"doc_ids": ids},
+            use_api_base=False,
+            auth_kind="web"
+        )
+
+        if response.status_code != 200:
+            return f"Fail to get document info, HTTP {response.status_code}", None
+
+        res_json = response.json()
+        if res_json.get("code") != 0:
+            return f"Fail to get document info: {res_json.get('message')}", None
+
+        docs = res_json.get("data", [])
+        if not docs:
+            return f"Document not found: {ids}", None
+
+        return None, docs
+
+    def set_metadata(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+            return
+
+        doc_id = command_dict["doc_id"]
+        meta_json_str = command_dict["meta"]
+
+        # Parse JSON string to dict
+        import json
+        try:
+            meta_fields = json.loads(meta_json_str)
+        except json.JSONDecodeError as e:
+            print(f"Invalid JSON format: {e}")
+            return
+
+        # Step 1: Get document info to find kb_id (dataset_id)
+        doc_error_msg, docs = self._get_documents_by_ids([doc_id])
+        if doc_error_msg:
+            print(doc_error_msg)
+            return
+
+        if len(docs) == 0:
+            print(f"no document found for {doc_id}")
+            return
+
+        dataset_id = docs[0].get("kb_id")
+        if not dataset_id:
+            print(f"Dataset ID not found for document: {doc_id}")
+            return
+
+        # Send meta as JSON string
+        payload = {
+            "meta_fields": meta_fields,
+        }
+
+        response = self.http_client.request(
+            "PATCH",
+            f"/datasets/{dataset_id}/documents/{doc_id}",
+            json_body=payload,
+            use_api_base=True,
+            auth_kind="web"
+        )
+
+        res_json = response.json()
+        if response.status_code == 200:
+            if res_json.get("code") == 0:
+                print(f"Success to set metadata for document: {doc_id}")
+            else:
+                print(f"Fail to set metadata, code: {res_json.get('code')}, message: {res_json.get('message')}")
+        else:
+            print(f"Fail to set metadata, HTTP {response.status_code}: {res_json.get('message', 'no message')}")
+
+    def remove_tags(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+            return
+
+        dataset_name = command_dict["dataset_name"]
+        dataset_id = self._get_dataset_id(dataset_name)
+        if dataset_id is None:
+            print(f"Dataset not found: {dataset_name}")
+            return
+
+        tags = command_dict["tags"]
+
+        payload = {
+            "tags": tags,
+        }
+
+        response = self.http_client.request("POST", f"/kb/{dataset_id}/rm_tags", json_body=payload,
+                                            use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200:
+            if res_json.get("code") == 0:
+                print(f"Success to remove tags from dataset: {dataset_name}")
+            else:
+                print(f"Fail to remove tags, code: {res_json.get('code')}, message: {res_json.get('message')}")
+        else:
+            print(f"Fail to remove tags, HTTP {response.status_code}")
+
+    def remove_chunks(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+            return
+
+        doc_id = command_dict["doc_id"]
+        payload = {"doc_id": doc_id}
+
+        if command_dict.get("delete_all"):
+            payload["delete_all"] = True
+        elif command_dict.get("chunk_ids"):
+            payload["chunk_ids"] = command_dict["chunk_ids"]
+
+        response = self.http_client.request("POST", "/chunk/rm", json_body=payload,
+                                            use_api_base=False, auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200:
+            if res_json.get("code") == 0:
+                deleted_count = res_json.get("data", 0)
+                print(f"Success to remove chunks from document {doc_id}: {deleted_count} chunks deleted")
+            else:
+                print(f"Fail to remove chunks, code: {res_json.get('code')}, message: {res_json.get('message')}")
+        else:
+            print(f"Fail to remove chunks, HTTP {response.status_code}")
+
     def list_chunks(self, command_dict):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
@@ -1548,7 +1734,7 @@ class RAGFlowClient:
         if self.server_type == "admin":
             response = self.http_client.request("GET", "/admin/version", use_api_base=True, auth_kind="admin")
         else:
-            response = self.http_client.request("GET", "/system/version", use_api_base=False, auth_kind="admin")
+            response = self.http_client.request("GET", "/system/version", use_api_base=True, auth_kind="admin")
 
         res_json = response.json()
         if response.status_code == 200:
@@ -1578,7 +1764,7 @@ class RAGFlowClient:
             time.sleep(0.5)
 
     def _list_documents(self, dataset_name: str, dataset_id: str):
-        response = self.http_client.request("POST", f"/document/list?kb_id={dataset_id}", use_api_base=False,
+        response = self.http_client.request("POST", f"/document/list?id={dataset_id}", use_api_base=False,
                                             auth_kind="web")
         res_json = response.json()
         if response.status_code != 200:
@@ -1869,14 +2055,14 @@ def run_command(client: RAGFlowClient, command_dict: dict):
             client.create_user_chat(command_dict)
         case "drop_user_chat":
             client.drop_user_chat(command_dict)
-        case "create_index":
-            client.create_index(command_dict)
-        case "drop_index":
-            client.drop_index(command_dict)
-        case "create_doc_meta_index":
-            client.create_doc_meta_index(command_dict)
-        case "drop_doc_meta_index":
-            client.drop_doc_meta_index(command_dict)
+        case "create_dataset_table":
+            client.create_dataset_table(command_dict)
+        case "drop_dataset_table":
+            client.drop_dataset_table(command_dict)
+        case "create_metadata_table":
+            client.create_metadata_table(command_dict)
+        case "drop_metadata_table":
+            client.drop_metadata_table(command_dict)
         case "create_chat_session":
             client.create_chat_session(command_dict)
         case "drop_chat_session":
@@ -1903,6 +2089,14 @@ def run_command(client: RAGFlowClient, command_dict: dict):
             return client.insert_dataset_from_file(command_dict)
         case "insert_metadata_from_file":
             return client.insert_metadata_from_file(command_dict)
+        case "update_chunk":
+            return client.update_chunk(command_dict)
+        case "set_metadata":
+            return client.set_metadata(command_dict)
+        case "remove_tags":
+            return client.remove_tags(command_dict)
+        case "remove_chunks":
+            return client.remove_chunks(command_dict)
         case "list_chunks":
             return client.list_chunks(command_dict)
         case "meta":
@@ -1964,10 +2158,6 @@ LIST METADATA OF DATASETS <dataset>[, <dataset>]*
 LIST METADATA SUMMARY OF DATASET <dataset> DOCUMENTS <doc_id>[, <doc_id>]*
 GET CHUNK <chunk_id>
 LIST CHUNKS OF DOCUMENT <doc_id> [PAGE <page>] [SIZE <size>] [KEYWORDS <keywords>] [AVAILABLE <0|1>]
-CREATE INDEX FOR DATASET <dataset> VECTOR_SIZE <vector_size>
-DROP INDEX FOR DATASET <dataset>
-CREATE INDEX DOC_META
-DROP INDEX DOC_META
 
 Meta Commands:
 \\?, \\h, \\help     Show this help

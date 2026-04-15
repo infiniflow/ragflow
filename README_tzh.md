@@ -88,6 +88,7 @@
 
 ## 🔥 近期更新
 
+- 2026-03-24 發布 [RAGFlow 官方 Skill](https://clawhub.ai/yingfeng/ragflow-skill) — 提供官方 Skill 以透過 OpenClaw 訪問 RAGFlow 數據集。
 - 2025-12-26 支援AI代理的「記憶」功能。
 - 2025-11-19 支援 Gemini 3 Pro。
 - 2025-11-12 支援從 Confluence、S3、Notion、Discord、Google Drive 進行資料同步。
@@ -329,7 +330,7 @@ docker build --platform linux/amd64 \
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.12 # install RAGFlow dependent python modules
-   uv run download_deps.py
+   uv run python3 download_deps.py
    pre-commit install
    ```
 3. 透過 Docker Compose 啟動依賴的服務（MinIO, Elasticsearch, Redis, and MySQL）：

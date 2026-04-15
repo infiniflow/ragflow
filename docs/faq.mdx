@@ -182,6 +182,12 @@ To fix this issue, use https://hf-mirror.com instead:
 
 ---
 
+### `Fail to access model(Ollama/xxxxx)`
+
+Ollama may time out or fail during its first model load due to memory constraints or out-of-memory (OOM). It is best to test your local model in isolation first. If sharing hardware with other services, memory exhaustion is likely. To resolve this, switch to a smaller model or increase RAM.
+
+---
+
 ### `MaxRetryError: HTTPSConnectionPool(host='hf-mirror.com', port=443)`
 
 This error suggests that you do not have Internet access or are unable to connect to hf-mirror.com. Try the following:
@@ -192,6 +198,20 @@ This error suggests that you do not have Internet access or are unable to connec
    ```
    - ~/deepdoc:/ragflow/rag/res/deepdoc
    ```
+
+---
+
+### `RuntimeError: Unable to start Tika server.`
+
+This error is almost always caused by Java not being installed or not accessible in the environment. See [here](https://github.com/infiniflow/ragflow/issues/13194) for detailed instructions.
+
+---
+
+### `Cannot stat '/etc/nginx/conf.d/ragflow.conf.python': No such file or directory`
+
+To resolve this, either download the missing file from the corresponding tag on [GitHub](https://github.com/infiniflow/ragflow) or update `~/ragflow/docker/docker-compose.yml` as follows: 
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/docker-compose_missing.jpg)
 
 ---
 

@@ -7,6 +7,7 @@ import CategorizeForm from '../form/categorize-form';
 import CodeForm from '../form/code-form';
 import CrawlerForm from '../form/crawler-form';
 import DataOperationsForm from '../form/data-operations-form';
+import DocGeneratorForm from '../form/doc-generator-form';
 import DuckDuckGoForm from '../form/duckduckgo-form';
 import EmailForm from '../form/email-form';
 import ExeSQLForm from '../form/exesql-form';
@@ -14,7 +15,6 @@ import ExtractorForm from '../form/extractor-form';
 import GithubForm from '../form/github-form';
 import GoogleForm from '../form/google-form';
 import GoogleScholarForm from '../form/google-scholar-form';
-import HierarchicalMergerForm from '../form/hierarchical-merger-form';
 import InvokeForm from '../form/invoke-form';
 import IterationForm from '../form/iteration-form';
 import IterationStartForm from '../form/iteration-start-from';
@@ -22,16 +22,16 @@ import ListOperationsForm from '../form/list-operations-form';
 import LoopForm from '../form/loop-form';
 import MessageForm from '../form/message-form';
 import ParserForm from '../form/parser-form';
-import PDFGeneratorForm from '../form/pdf-generator-form';
 import PubMedForm from '../form/pubmed-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
 import SearXNGForm from '../form/searxng-form';
-import SplitterForm from '../form/splitter-form';
 import StringTransformForm from '../form/string-transform-form';
 import SwitchForm from '../form/switch-form';
 import TavilyExtractForm from '../form/tavily-extract-form';
 import TavilyForm from '../form/tavily-form';
+import TitleChunkerForm from '../form/title-chunker-form';
+import TokenChunkerForm from '../form/token-chunker-form';
 import TokenizerForm from '../form/tokenizer-form';
 import ToolForm from '../form/tool-form';
 import UserFillUpForm from '../form/user-fill-up-form';
@@ -111,8 +111,8 @@ export const FormConfigMap = {
   [Operator.SearXNG]: {
     component: SearXNGForm,
   },
-  [Operator.PDFGenerator]: {
-    component: PDFGeneratorForm,
+  [Operator.DocGenerator]: {
+    component: DocGeneratorForm,
   },
   [Operator.Note]: {
     component: () => <></>,
@@ -154,11 +154,11 @@ export const FormConfigMap = {
   [Operator.Tokenizer]: {
     component: TokenizerForm,
   },
-  [Operator.Splitter]: {
-    component: SplitterForm,
+  [Operator.TokenChunker]: {
+    component: TokenChunkerForm,
   },
-  [Operator.HierarchicalMerger]: {
-    component: HierarchicalMergerForm,
+  [Operator.TitleChunker]: {
+    component: TitleChunkerForm,
   },
   [Operator.Extractor]: {
     component: ExtractorForm,

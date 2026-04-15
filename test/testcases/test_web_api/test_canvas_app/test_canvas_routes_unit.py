@@ -442,7 +442,10 @@ def _load_canvas_module(monkeypatch):
 
     agent_pkg = ModuleType("agent")
     agent_pkg.__path__ = []
+    agent_dsl_migration_mod = ModuleType("agent.dsl_migration")
+    agent_dsl_migration_mod.normalize_chunker_dsl = lambda dsl: dsl
     monkeypatch.setitem(sys.modules, "agent", agent_pkg)
+    monkeypatch.setitem(sys.modules, "agent.dsl_migration", agent_dsl_migration_mod)
 
     agent_component_mod = ModuleType("agent.component")
 
@@ -450,6 +453,7 @@ def _load_canvas_module(monkeypatch):
         pass
 
     agent_component_mod.LLM = _StubLLM
+    agent_pkg.component = agent_component_mod
     monkeypatch.setitem(sys.modules, "agent.component", agent_component_mod)
 
     agent_canvas_mod = ModuleType("agent.canvas")
@@ -479,6 +483,8 @@ def _load_canvas_module(monkeypatch):
             return "{}"
 
     agent_canvas_mod.Canvas = _StubCanvas
+    agent_pkg.canvas = agent_canvas_mod
+    agent_pkg.dsl_migration = agent_dsl_migration_mod
     monkeypatch.setitem(sys.modules, "agent.canvas", agent_canvas_mod)
 
     quart_mod = ModuleType("quart")
@@ -509,12 +515,12 @@ def test_templates_rm_save_get_matrix_unit(monkeypatch):
             self.template_id = template_id
 
         def to_dict(self):
-            return {"id": self.template_id}
+            return {"id": self.template_id, "canvas_type": "Recommended", "canvas_types": ["Recommended", "Agent"]}
 
     monkeypatch.setattr(module.CanvasTemplateService, "get_all", lambda: [_Template("tpl-1")])
     res = module.templates()
     assert res["code"] == module.RetCode.SUCCESS
-    assert res["data"] == [{"id": "tpl-1"}]
+    assert res["data"] == [{"id": "tpl-1", "canvas_type": "Recommended", "canvas_types": ["Recommended", "Agent"]}]
 
     _set_request_json(monkeypatch, module, {"canvas_ids": ["c1", "c2"]})
     monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: False)

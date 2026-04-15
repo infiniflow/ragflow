@@ -233,10 +233,10 @@ export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
         } else if (name === TimelineNodeType.tokenizer) {
           tempType = TimelineNodeType.tokenizer;
         } else if (
-          name === TimelineNodeType.characterSplitter ||
-          name === TimelineNodeType.titleSplitter
+          name === TimelineNodeType.tokenChunker ||
+          name === TimelineNodeType.titleChunker
         ) {
-          tempType = TimelineNodeType.characterSplitter;
+          tempType = name;
         }
         const timeNode = {
           ...TimelineNodeObj[name],

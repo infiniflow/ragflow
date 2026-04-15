@@ -18,6 +18,7 @@ package cli
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -56,12 +57,11 @@ func (p *Parser) Parse(adminCommand bool) (*Command, error) {
 	}
 
 	// Check for ContextEngine commands (ls, cat, search)
-	if p.curToken.Type == TokenIdentifier && isCECommand(p.curToken.Value) {
-		return p.parseCECommand()
-	}
+	//if p.curToken.Type == TokenIdentifier && isCECommand(p.curToken.Value) {
+	//	return p.parseCECommand()
+	//}
 
-	// Parse SQL-like command
-	return p.parseSQLCommand(adminCommand)
+	return p.parseCommand(adminCommand)
 }
 
 func (p *Parser) parseMetaCommand() (*Command, error) {
@@ -192,14 +192,24 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseDisableCommand()
 	case TokenChat:
 		return p.parseChatCommand()
+	case TokenThink:
+		return p.parseThinkCommand()
+	case TokenLS:
+		return p.parseContextListCommand()
+	case TokenCat:
+		return p.parseContextCatCommand()
 	case TokenUse:
 		return p.parseUseCommand()
+	case TokenUpdate:
+		return p.parseUpdateCommand()
+	case TokenRemove:
+		return p.parseRemoveCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
 }
 
-func (p *Parser) parseSQLCommand(adminCommand bool) (*Command, error) {
+func (p *Parser) parseCommand(adminCommand bool) (*Command, error) {
 	if p.curToken.Type != TokenIdentifier && !isKeyword(p.curToken.Type) {
 		return nil, fmt.Errorf("expected command, got %s", p.curToken.Value)
 	}
@@ -231,7 +241,7 @@ func (p *Parser) expectSemicolon() error {
 }
 
 func isKeyword(tokenType int) bool {
-	return tokenType >= TokenLogin && tokenType <= TokenMetadata
+	return tokenType >= TokenLogin && tokenType <= TokenTag
 }
 
 // isCECommand checks if the given string is a ContextEngine command
@@ -260,10 +270,22 @@ func (p *Parser) parseIdentifier() (string, error) {
 }
 
 func (p *Parser) parseNumber() (int, error) {
-	if p.curToken.Type != TokenNumber {
+	if p.curToken.Type != TokenInteger {
 		return 0, fmt.Errorf("expected number, got %s", p.curToken.Value)
 	}
 	return strconv.Atoi(p.curToken.Value)
+}
+
+func (p *Parser) parseFloat() (float64, error) {
+	if p.curToken.Type != TokenInteger {
+		return math.NaN(), fmt.Errorf("expected number, got %s", p.curToken.Value)
+	}
+	result, err := strconv.ParseFloat(p.curToken.Value, 64)
+	if err != nil {
+		return math.NaN(), err
+	}
+
+	return result, nil
 }
 
 func tokenTypeToString(t int) string {

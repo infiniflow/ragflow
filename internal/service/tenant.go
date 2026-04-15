@@ -19,13 +19,11 @@ package service
 import (
 	"context"
 	"fmt"
-	"ragflow/internal/entity"
-	"strings"
-	"time"
-
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/entity"
+	"strings"
 )
 
 // TenantService tenant service
@@ -232,14 +230,14 @@ func (s *TenantService) GetTenantList(userID string) ([]*TenantListItem, error) 
 	}
 
 	result := make([]*TenantListItem, len(tenants))
-	now := time.Now()
 
 	for i, t := range tenants {
 		// Parse update_date and calculate delta_seconds
 		var deltaSeconds float64
 		if t.UpdateDate != "" {
-			if updateTime, err := time.Parse("2006-01-02 15:04:05", t.UpdateDate); err == nil {
-				deltaSeconds = now.Sub(updateTime).Seconds()
+			deltaSeconds, err = common.DeltaSeconds(t.UpdateDate)
+			if err != nil {
+				return nil, err
 			}
 		}
 
@@ -257,29 +255,29 @@ func (s *TenantService) GetTenantList(userID string) ([]*TenantListItem, error) 
 	return result, nil
 }
 
-// CreateDocMetaIndex creates the document metadata index for a tenant
-func (s *TenantService) CreateDocMetaIndex(tenantID string) (common.ErrorCode, error) {
-	// Build index name: ragflow_doc_meta_<tenant_id>
-	indexName := fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
+// CreateMetadataInDocEngine creates the document metadata table for a tenant
+func (s *TenantService) CreateMetadataInDocEngine(tenantID string) (common.ErrorCode, error) {
+	// Build table name: ragflow_doc_meta_<tenant_id>
+	tableName := fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
 
-	// Call document engine to create doc meta index
-	err := s.docEngine.CreateDocMetaIndex(context.Background(), indexName)
+	// Call document engine to create doc meta table
+	err := s.docEngine.CreateMetadata(context.Background(), tableName)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("failed to create doc meta index: %w", err)
+		return common.CodeServerError, fmt.Errorf("failed to create metadata table: %w", err)
 	}
 
 	return common.CodeSuccess, nil
 }
 
-// DeleteDocMetaIndex deletes the document metadata index for a tenant
-func (s *TenantService) DeleteDocMetaIndex(tenantID string) (common.ErrorCode, error) {
-	// Build index name: ragflow_doc_meta_<tenant_id>
-	indexName := fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
+// DeleteMetadataInDocEngine deletes the document metadata table for a tenant
+func (s *TenantService) DeleteMetadataInDocEngine(tenantID string) (common.ErrorCode, error) {
+	// Build table name: ragflow_doc_meta_<tenant_id>
+	tableName := fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
 
-	// Call document engine to delete doc meta index
-	err := s.docEngine.DeleteIndex(context.Background(), indexName)
+	// Call document engine to delete doc meta table
+	err := s.docEngine.DropTable(context.Background(), tableName)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("failed to delete doc meta index: %w", err)
+		return common.CodeServerError, fmt.Errorf("failed to delete doc meta table: %w", err)
 	}
 
 	return common.CodeSuccess, nil
