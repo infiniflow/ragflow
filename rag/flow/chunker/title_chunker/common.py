@@ -222,14 +222,6 @@ class BaseTitleChunker(ABC):
             if level < BODY_LEVEL:
                 most_level = level
                 break
-        t = {
-            "levels": levels,
-            "most_level": most_level,
-            "source": "frequency",
-        }
-
-        for key, item in t.items():
-            print(f"\n key: {key} \n item: {item} \n\n")
 
         return {
             "levels": levels,
