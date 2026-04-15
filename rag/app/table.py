@@ -48,11 +48,11 @@ class Excel(ExcelParser):
         res, fails, done = [], [], 0
         rn = 0
         flow_images = []
-        pending_cell_images = []
         tables = []
         for sheet_name in wb.sheetnames:
             ws = wb[sheet_name]
             images = Excel._extract_images_from_worksheet(ws, sheetname=sheet_name)
+            pending_cell_images = []
             if images:
                 image_descriptions = vision_figure_parser_figure_xlsx_wrapper(images=images, callback=callback,
                                                                               **kwargs)
