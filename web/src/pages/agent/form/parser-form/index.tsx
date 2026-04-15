@@ -157,6 +157,7 @@ export const FormSchema = z.object({
       lang: z.string().optional(),
       fields: z.array(z.string()).optional(),
       vlm: z.object({ llm_id: z.string().optional() }).optional(),
+      flatten_media_to_text: z.boolean().optional(),
       system_prompt: z.string().optional(),
       table_result_type: z.string().optional(),
       markdown_image_response_type: z.string().optional(),
