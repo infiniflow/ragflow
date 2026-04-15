@@ -525,8 +525,8 @@ async def list_pipeline_logs():
     suffix = req.get("suffix", [])
 
     try:
-        logs, tol = PipelineOperationLogService.get_file_logs_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, operation_status, types, suffix, create_date_from, create_date_to)
-        return get_json_result(data={"total": tol, "logs": logs})
+        logs, count = PipelineOperationLogService.get_file_logs_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, operation_status, types, suffix, create_date_from, create_date_to)
+        return get_json_result(data={"total": count, "logs": logs})
     except Exception as e:
         return server_error_response(e)
 
@@ -773,7 +773,7 @@ async def run_mindmap():
     sample_document = documents[0]
     document_ids = [document["id"] for document in documents]
 
-    task_id = queue_raptor_o_graphrag_tasks(sample_doc_id=sample_document, ty="mindmap", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
+    task_id = queue_raptor_o_graphrag_tasks(sample_doc=sample_document, ty="mindmap", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
 
     if not KnowledgebaseService.update_by_id(kb.id, {"mindmap_task_id": task_id}):
         logging.warning(f"Cannot save mindmap_task_id for kb {kb_id}")

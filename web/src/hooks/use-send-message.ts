@@ -130,6 +130,7 @@ export const useSendMessageBySSE = (url: string) => {
           .pipeThrough(new EventSourceParserStream())
           .getReader();
 
+        // eslint-disable-next-line no-constant-condition
         while (true) {
           try {
             const x = await reader?.read();

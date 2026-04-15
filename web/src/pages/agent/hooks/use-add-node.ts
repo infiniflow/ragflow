@@ -17,6 +17,7 @@ import {
   initialCodeValues,
   initialCrawlerValues,
   initialDataOperationsValues,
+  initialDocGeneratorValues,
   initialDuckValues,
   initialEmailValues,
   initialExeSqlValues,
@@ -31,7 +32,6 @@ import {
   initialLoopValues,
   initialMessageValues,
   initialNoteValues,
-  initialPDFGeneratorValues,
   initialParserValues,
   initialPubMedValues,
   initialRetrievalValues,
@@ -180,7 +180,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Loop]: initialLoopValues,
       [Operator.LoopStart]: {},
       [Operator.ExitLoop]: {},
-      [Operator.PDFGenerator]: initialPDFGeneratorValues,
+      [Operator.DocGenerator]: initialDocGeneratorValues,
       [Operator.ExcelProcessor]: {},
     };
   }, [llmId]);

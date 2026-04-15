@@ -16,7 +16,7 @@
 import re
 
 import pytest
-from test_web_api.common import update_memory
+from test_common import update_memory
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 from utils import encode_avatar

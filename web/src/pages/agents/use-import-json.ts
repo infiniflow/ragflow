@@ -8,6 +8,7 @@ import { Node } from '@xyflow/react';
 import isEmpty from 'lodash/isEmpty';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { buildDslComponentsByGraph } from '../agent/utils';
 import { DataflowEmptyDsl } from './hooks/use-create-agent';
 import { FormSchemaType } from './upload-agent-dialog/upload-agent-form';
 
@@ -63,6 +64,14 @@ export const useHandleImportJsonFile = () => {
 
             if (graphOrDsl.variables) {
               dsl.variables = graphOrDsl.variables;
+            }
+
+            if (Array.isArray(graph?.nodes) && Array.isArray(graph?.edges)) {
+              dsl.components = buildDslComponentsByGraph(
+                graph.nodes as any,
+                graph.edges as any,
+                graphOrDsl.components ?? dsl.components,
+              );
             }
 
             setAgent({

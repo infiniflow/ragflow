@@ -276,6 +276,29 @@ func (s *DocumentService) GetMetadataSummary(kbID string, docIDs []string) (map[
 	return aggregateMetadata(searchResult.Chunks), nil
 }
 
+// SetDocumentMetadata sets metadata for a document in the document engine
+func (s *DocumentService) SetDocumentMetadata(docID string, meta map[string]interface{}) error {
+	// Get document to find kb_id
+	doc, err := s.documentDAO.GetByID(docID)
+	if err != nil {
+		return fmt.Errorf("document not found: %w", err)
+	}
+
+	// Get tenant ID
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(doc.KbID)
+	if err != nil {
+		return fmt.Errorf("failed to get tenant ID: %w", err)
+	}
+
+	// Update metadata using the document engine (merges with existing)
+	err = s.docEngine.UpdateMetadata(nil, docID, doc.KbID, meta, tenantID)
+	if err != nil {
+		return fmt.Errorf("failed to update metadata: %w", err)
+	}
+
+	return nil
+}
+
 // GetDocumentMetadataByID get metadata for a specific document
 func (s *DocumentService) GetDocumentMetadataByID(docID string) (map[string]interface{}, error) {
 	// Get document to find kb_id

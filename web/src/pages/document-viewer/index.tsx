@@ -1,5 +1,5 @@
 import { Images } from '@/constants/common';
-import { ExternalApi, api_host } from '@/utils/api';
+import { restAPIv1, webAPI } from '@/utils/api';
 import { useParams, useSearchParams } from 'react-router';
 // import Docx from './docx';
 // import Excel from './excel';
@@ -28,8 +28,8 @@ const DocumentViewer = () => {
     currentQueryParameters.get('resource') === 'files' ? 'files' : 'document';
   const api =
     resource === 'files'
-      ? `${ExternalApi}${api_host}/files/${documentId}`
-      : `${api_host}/document/get/${documentId}`;
+      ? `${restAPIv1}/files/${documentId}`
+      : `${webAPI}/document/get/${documentId}`;
   // request.head
 
   if (ext === 'html' && documentId) {

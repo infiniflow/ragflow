@@ -16,7 +16,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from test_web_api.common import list_memory, get_memory_config
+from test_common import list_memory, get_memory_config
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 

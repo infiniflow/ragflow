@@ -107,7 +107,7 @@
                     "component_name": "Message",
                     "params": {
                         "content": [
-                            "Customer's original review: {begin@customer_review}\n\nFinale review category is: \n{VariableAggregator:FlatBerriesRest@ReviewCategory}"
+                            "Customer's original review: {begin@customer_review}\n\nFinal review category is: \n{VariableAggregator:FlatBerriesRest@ReviewCategory}"
                         ]
                     }
                 },
@@ -590,7 +590,7 @@
                     "data": {
                         "form": {
                             "content": [
-                                "Customer's original review: {begin@customer_review}\n\nFinale review category is: \n{VariableAggregator:FlatBerriesRest@ReviewCategory}"
+                                "Customer's original review: {begin@customer_review}\n\nFinal review category is: \n{VariableAggregator:FlatBerriesRest@ReviewCategory}"
                             ]
                         },
                         "label": "Message",

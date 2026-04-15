@@ -78,7 +78,7 @@ export class VariableNode extends DecoratorNode<ReactNode> {
 export function $createVariableNode(
   value: string,
   label: string,
-  parentLabel: string | ReactNode,
+  parentLabel?: string | ReactNode,
   icon?: ReactNode,
 ): VariableNode {
   return new VariableNode(value, label, undefined, parentLabel, icon);

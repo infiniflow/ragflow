@@ -19,7 +19,7 @@ from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from test_web_api.common import create_document, list_datasets
+from test_common import create_document, list_datasets
 from configs import DOCUMENT_NAME_LIMIT, INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 from utils.file_utils import create_txt_file

@@ -290,7 +290,7 @@ def get_redis_info():
 def check_ragflow_server_alive():
     start_time = timer()
     try:
-        url = f'http://{settings.HOST_IP}:{settings.HOST_PORT}/v1/system/ping'
+        url = f'http://{settings.HOST_IP}:{settings.HOST_PORT}/api/v1/system/ping'
         if '0.0.0.0' in url:
             url = url.replace('0.0.0.0', '127.0.0.1')
         response = requests.get(url)

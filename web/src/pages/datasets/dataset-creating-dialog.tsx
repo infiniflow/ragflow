@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { FormLayout } from '@/constants/form';
+import { ParseType } from '@/constants/knowledge';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -34,6 +35,8 @@ import {
 
 const FormId = 'dataset-creating-form';
 
+const ChunkMethodName = 'chunk_method';
+
 export function InputForm({ onOk }: IModalProps<any>) {
   const { t } = useTranslation();
   const { data: tenantInfo } = useFetchTenantInfo();
@@ -46,30 +49,30 @@ export function InputForm({ onOk }: IModalProps<any>) {
           message: t('knowledgeList.namePlaceholder'),
         })
         .trim(),
-      parseType: z.number().optional(),
+      parseType: z.nativeEnum(ParseType).optional(),
       embedding_model: z
         .string()
         .min(1, {
           message: t('knowledgeConfiguration.embeddingModelPlaceholder'),
         })
         .trim(),
-      chunk_method: z.string().optional(),
+      [ChunkMethodName]: z.string().optional(),
       pipeline_id: z.string().optional(),
     })
     .superRefine((data, ctx) => {
-      // When parseType === 1, chunk_method is required
+      // When parseType === BuiltIn, chunk_method is required
       if (
-        data.parseType === 1 &&
-        (!data.chunk_method || data.chunk_method.trim() === '')
+        data.parseType === ParseType.BuiltIn &&
+        (!data[ChunkMethodName] || data[ChunkMethodName].trim() === '')
       ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: t('knowledgeList.parserRequired'),
-          path: ['parser_id'],
+          path: [ChunkMethodName],
         });
       }
-      // When parseType === 1, pipline_id required
-      if (data.parseType === 2 && !data.pipeline_id) {
+      // When parseType === Pipeline, pipeline_id required
+      if (data.parseType === ParseType.Pipeline && !data.pipeline_id) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: t('knowledgeList.dataFlowRequired'),
@@ -82,8 +85,8 @@ export function InputForm({ onOk }: IModalProps<any>) {
     resolver: zodResolver(FormSchema),
     defaultValues: {
       name: '',
-      parseType: 1,
-      chunk_method: '',
+      parseType: ParseType.BuiltIn,
+      [ChunkMethodName]: '',
       embedding_model: tenantInfo?.embd_id,
     },
   });
@@ -94,12 +97,13 @@ export function InputForm({ onOk }: IModalProps<any>) {
   });
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
-    const nextData = parseType === 1 ? data : omit(data, 'chunk_method');
+    const nextData =
+      parseType === ParseType.BuiltIn ? data : omit(data, ChunkMethodName);
     onOk?.(nextData);
   }
 
   useEffect(() => {
-    if (parseType === 1) {
+    if (parseType === ParseType.BuiltIn) {
       form.setValue('pipeline_id', '');
     }
   }, [parseType, form]);
@@ -107,7 +111,9 @@ export function InputForm({ onOk }: IModalProps<any>) {
   return (
     <Form {...form}>
       <form
-        onSubmit={form.handleSubmit(onSubmit)}
+        onSubmit={form.handleSubmit(onSubmit, (errors) => {
+          console.warn(errors);
+        })}
         className="space-y-6"
         id={FormId}
       >
@@ -133,10 +139,10 @@ export function InputForm({ onOk }: IModalProps<any>) {
 
         <EmbeddingModelItem line={2} isEdit={false} />
         <ParseTypeItem />
-        {parseType === 1 && (
-          <ChunkMethodItem name="chunk_method"></ChunkMethodItem>
+        {parseType === ParseType.BuiltIn && (
+          <ChunkMethodItem name={ChunkMethodName}></ChunkMethodItem>
         )}
-        {parseType === 2 && (
+        {parseType === ParseType.Pipeline && (
           <DataFlowSelect
             isMult={false}
             showToDataPipeline={true}

@@ -33,10 +33,18 @@ def generate_time_range_filter(
     start: SecondsSinceUnixEpoch | None = None,
     end: SecondsSinceUnixEpoch | None = None,
 ) -> str:
+    """Build a Google Drive API query filter clause for the given time range.
+
+    Checks both modifiedTime and createdTime so that files uploaded with
+    older modification timestamps are still discovered on incremental syncs.
+    """
     time_range_filter = ""
     if start is not None:
         time_start = datetime.fromtimestamp(start, tz=timezone.utc).isoformat()
-        time_range_filter += f" and {GoogleFields.MODIFIED_TIME.value} > '{time_start}'"
+        time_range_filter += (
+            f" and ({GoogleFields.MODIFIED_TIME.value} > '{time_start}'"
+            f" or {GoogleFields.CREATED_TIME.value} >= '{time_start}')"
+        )
     if end is not None:
         time_stop = datetime.fromtimestamp(end, tz=timezone.utc).isoformat()
         time_range_filter += f" and {GoogleFields.MODIFIED_TIME.value} <= '{time_stop}'"

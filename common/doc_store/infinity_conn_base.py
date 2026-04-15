@@ -270,7 +270,8 @@ class InfinityConnectionBase(DocStoreConnection):
             fp_mapping = os.path.join(get_project_base_directory(), "conf", self.mapping_file_name)
             if not os.path.exists(fp_mapping):
                 raise Exception(f"Mapping file not found at {fp_mapping}")
-            schema = json.load(open(fp_mapping))
+            with open(fp_mapping) as f:
+                schema = json.load(f)
 
             if parser_id is not None:
                 from common.constants import ParserType

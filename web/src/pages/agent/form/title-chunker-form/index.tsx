@@ -8,7 +8,7 @@ import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Trash2 } from 'lucide-react';
-import { memo, useEffect, useRef } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { useFieldArray, useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -197,6 +197,7 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
   });
   const isInitialized = useRef(false);
   const initialMode = useRef<string | undefined>(undefined);
+  const [showAllTip, setShowAllTip] = useState(true);
 
   const method = form.watch('method');
   const name = 'rules';
@@ -210,6 +211,7 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
     }
 
     if (method !== initialMode.current) {
+      setShowAllTip(true);
       const currentMode = initialMode.current;
       const hierarchyValue = form.getValues('hierarchy');
       const rulesValue = form.getValues('rules');
@@ -290,6 +292,34 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
             ],
           }}
         />
+        {/* <div className={cn("text-xs text-text-secondary w-full border p-1", showAllTip ? "block" : "")}>
+          {method === 'hierarchy' && t('flow.hierarchyTip')}
+          {method === 'group' && t('flow.groupTip')}
+        </div> */}
+        <div
+          className={`text-xs text-text-secondary w-full border rounded-sm p-2 cursor-pointer ${showAllTip ? 'block' : 'truncate'}`}
+          onClick={() => setShowAllTip(!showAllTip)}
+        >
+          <div className="flex flex-col justify-start items-center">
+            <span
+              className="flex self-start"
+              dangerouslySetInnerHTML={{
+                __html:
+                  method === 'hierarchy'
+                    ? t('flow.hierarchyTip')
+                    : method === 'group'
+                      ? t('flow.groupTip')
+                      : '',
+              }}
+            >
+              {/* {method === 'hierarchy' && t('flow.hierarchyTip')}
+              {method === 'group' && t('flow.groupTip')} */}
+            </span>
+            {/* <span className="flex ml-2 text-xs self-center">
+              {showAllTip ? '▲' : ''}
+            </span> */}
+          </div>
+        </div>
         <RAGFlowFormItem name={'hierarchy'} label={''}>
           <SelectWithSearch options={hierarchyOptions}></SelectWithSearch>
         </RAGFlowFormItem>
@@ -297,12 +327,9 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
           <RAGFlowFormItem
             name="include_heading_content"
             label={t('flow.includeHeadingContent', 'Include heading content')}
-            tooltip={t(
-              'flow.includeHeadingContentTip',
-              'When enabled, content directly under a heading is kept as its own chunk. Child chunks keep only the heading path.',
-            )}
+            tooltip={t('flow.includeHeadingContentTip')}
             horizontal={true}
-            labelClassName="w-[200px]"
+            labelClassName="w-full"
           >
             {(field) => (
               <Checkbox

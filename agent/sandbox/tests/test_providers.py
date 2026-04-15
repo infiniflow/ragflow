@@ -255,6 +255,41 @@ class TestSelfManagedProvider:
         assert result.metadata["instance_id"] == "test-123"
 
     @patch('requests.post')
+    def test_execute_code_maps_structured_result_into_metadata(self, mock_post):
+        """Test successful code execution with structured result envelope."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "status": "success",
+            "stdout": "debug line\n",
+            "stderr": "",
+            "exit_code": 0,
+            "time_used_ms": 100.0,
+            "memory_used_kb": 1024.0,
+            "result": {
+                "present": True,
+                "value": {"items": ["a", "b"]},
+                "type": "json",
+            },
+        }
+        mock_post.return_value = mock_response
+
+        provider = SelfManagedProvider()
+        provider._initialized = True
+
+        result = provider.execute_code(
+            instance_id="test-123",
+            code="def main(): return {'items': ['a', 'b']}",
+            language="python",
+            timeout=10
+        )
+
+        assert result.stdout == "debug line\n"
+        assert result.metadata["result_present"] is True
+        assert result.metadata["result_value"] == {"items": ["a", "b"]}
+        assert result.metadata["result_type"] == "json"
+
+    @patch('requests.post')
     def test_execute_code_timeout(self, mock_post):
         """Test code execution timeout."""
         mock_post.side_effect = requests.Timeout()

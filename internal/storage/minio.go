@@ -71,6 +71,7 @@ func (m *MinioStorage) connect() error {
 		Creds:     credentials.NewStaticV4(m.config.User, m.config.Password, ""),
 		Secure:    m.config.Secure,
 		Transport: transport,
+		Region:    m.config.Region,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to connect to MinIO: %w", err)

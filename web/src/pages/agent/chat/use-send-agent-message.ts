@@ -86,6 +86,7 @@ export function findMessageFromList(eventList: IEventList) {
     content: nextContent,
     audio_binary: audioBinary,
     attachment: workflowFinished?.data?.outputs?.attachment || {},
+    downloads: workflowFinished?.data?.outputs?.downloads || [],
   };
 }
 
@@ -441,7 +442,7 @@ export const useSendAgentMessage = ({
   }, [sendMessageInTaskMode]);
 
   useEffect(() => {
-    const { content, id, attachment, audio_binary } =
+    const { content, id, attachment, audio_binary, downloads } =
       findMessageFromList(answerList);
     const inputAnswer = findInputFromList(answerList);
     const answer = content || getLatestError(answerList);
@@ -451,6 +452,7 @@ export const useSendAgentMessage = ({
         answer: answer ?? '',
         audio_binary: audio_binary,
         attachment: attachment as IAttachment,
+        downloads,
         id: id,
         ...inputAnswer,
       });

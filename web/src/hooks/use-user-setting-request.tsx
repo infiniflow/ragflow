@@ -5,7 +5,6 @@ import { IToken } from '@/interfaces/database/chat';
 import { ITenantInfo } from '@/interfaces/database/knowledge';
 import { ILangfuseConfig } from '@/interfaces/database/system';
 import {
-  ISystemStatus,
   ITenant,
   ITenantUser,
   IUserInfo,
@@ -51,7 +50,7 @@ export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
     initialData: {},
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await userService.user_info();
+      const { data } = await userService.userInfo();
 
       if (data.code === 0) {
         const targetLng =
@@ -80,7 +79,7 @@ export const useFetchTenantInfo = (
     initialData: {},
     gcTime: 0,
     queryFn: async () => {
-      const { data: res } = await userService.get_tenant_info();
+      const { data: res } = await userService.getTenantInfo();
       if (res.code === 0) {
         // llm_id is chat_id
         // asr_id is speech2txt
@@ -219,28 +218,6 @@ export const useFetchSystemVersion = () => {
   }, []);
 
   return { fetchSystemVersion, version, loading };
-};
-
-export const useFetchSystemStatus = () => {
-  const [systemStatus, setSystemStatus] = useState<ISystemStatus>(
-    {} as ISystemStatus,
-  );
-  const [loading, setLoading] = useState(false);
-
-  const fetchSystemStatus = useCallback(async () => {
-    setLoading(true);
-    const { data } = await userService.getSystemStatus();
-    if (data.code === 0) {
-      setSystemStatus(data.data);
-      setLoading(false);
-    }
-  }, []);
-
-  return {
-    systemStatus,
-    fetchSystemStatus,
-    loading,
-  };
 };
 
 export const useFetchManualSystemTokenList = () => {

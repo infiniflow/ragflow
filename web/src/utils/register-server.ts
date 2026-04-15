@@ -17,7 +17,7 @@ const registerServer = <T extends string>(
   request: RequestMethod,
 ) => {
   const server: Service<T> = {} as Service<T>;
-  for (let key in opt) {
+  for (const key in opt) {
     server[key] = (params?: any, urlAppendix?: string) => {
       let url = opt[key].url;
       const requestOptions = opt[key];

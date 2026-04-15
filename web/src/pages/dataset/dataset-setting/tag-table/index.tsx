@@ -222,7 +222,7 @@ export function TagTable() {
           )}
         </div>
         <Table rootClassName="rounded-none border max-h-80 overflow-y-auto">
-          <TableHeader className="bg-[#39393b]">
+          <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {

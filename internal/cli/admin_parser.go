@@ -35,6 +35,17 @@ func (p *Parser) parseAdminLoginUser() (*Command, error) {
 	cmd.Params["email"] = email
 
 	p.nextToken()
+	// Optional: PASSWORD 'password'
+	if p.curToken.Type == TokenPassword {
+		p.nextToken()
+		password, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd.Params["password"] = password
+		p.nextToken()
+	}
+
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()

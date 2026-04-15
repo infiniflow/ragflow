@@ -346,9 +346,20 @@ def _load_chat_module(monkeypatch):
         def query(**_kwargs):
             return []
 
+    user_service_mod.UserService = type("UserService", (), {})
     user_service_mod.TenantService = _StubTenantService
     user_service_mod.UserTenantService = _StubUserTenantService
     monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_service_mod)
+
+    chunk_feedback_service_mod = ModuleType("api.db.services.chunk_feedback_service")
+
+    class _StubChunkFeedbackService:
+        @staticmethod
+        def apply_feedback(**_kwargs):
+            return {"success_count": 0, "fail_count": 0, "chunk_ids": []}
+
+    chunk_feedback_service_mod.ChunkFeedbackService = _StubChunkFeedbackService
+    monkeypatch.setitem(sys.modules, "api.db.services.chunk_feedback_service", chunk_feedback_service_mod)
 
     api_utils_mod = ModuleType("api.utils.api_utils")
 

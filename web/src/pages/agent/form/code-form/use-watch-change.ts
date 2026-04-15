@@ -1,10 +1,14 @@
 import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
-import { ICodeForm } from '@/interfaces/database/agent';
 import { isEmpty } from 'lodash';
 import { useCallback, useEffect } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
 import useGraphStore from '../../store';
 import { FormSchemaType } from './schema';
+import {
+  buildDefaultCodeOutput,
+  hasLegacyMultiOutputs,
+  serializeCodeOutputContract,
+} from './utils';
 
 function convertToObject(list: FormSchemaType['arguments'] = []) {
   return list.reduce<Record<string, string>>((pre, cur) => {
@@ -14,58 +18,52 @@ function convertToObject(list: FormSchemaType['arguments'] = []) {
   }, {});
 }
 
-type ArrayOutputs = Extract<FormSchemaType['outputs'], Array<any>>;
-
-type ObjectOutputs = Exclude<FormSchemaType['outputs'], Array<any>>;
-
-function convertOutputsToObject({ lang, outputs }: FormSchemaType) {
-  if (lang === ProgrammingLanguage.Python) {
-    return (outputs as ArrayOutputs).reduce<ICodeForm['outputs']>(
-      (pre, cur) => {
-        pre[cur.name] = {
-          value: '',
-          type: cur.type,
-        };
-
-        return pre;
-      },
-      {},
-    );
-  }
-  const outputsObject = outputs as ObjectOutputs;
-  if (isEmpty(outputsObject)) {
-    return {};
-  }
-  return {
-    [outputsObject.name]: {
-      value: '',
-      type: outputsObject.type,
-    },
-  };
-}
-
 export function useWatchFormChange(
   id?: string,
   form?: UseFormReturn<FormSchemaType>,
 ) {
-  let values = useWatch({ control: form?.control });
+  const watchedValues = useWatch({ control: form?.control });
   const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
+  const getNode = useGraphStore((state) => state.getNode);
 
   useEffect(() => {
     // Manually triggered form updates are synchronized to the canvas
     if (id) {
-      values = form?.getValues() || {};
-      let nextValues: any = {
+      const values = form?.getValues() || watchedValues || {};
+      const currentOutputs = getNode(id)?.data?.form?.outputs;
+      const shouldPreserveLegacyOutputs =
+        hasLegacyMultiOutputs(currentOutputs) &&
+        isEmpty(form?.formState.dirtyFields?.output);
+      const hasCompleteOutputContract =
+        !!values?.output?.name?.trim() && !!values?.output?.type?.trim();
+      const nextValues: any = {
         ...values,
         arguments: convertToObject(
           values?.arguments as FormSchemaType['arguments'],
         ),
-        outputs: convertOutputsToObject(values as FormSchemaType),
+        outputs: shouldPreserveLegacyOutputs
+          ? currentOutputs
+          : hasCompleteOutputContract
+            ? serializeCodeOutputContract({
+                name: values.output?.name?.trim() ?? '',
+                type: values.output?.type?.trim() ?? '',
+              })
+            : (currentOutputs ??
+              serializeCodeOutputContract(buildDefaultCodeOutput())),
       };
+      delete nextValues.output;
 
       updateNodeForm(id, nextValues);
     }
-  }, [form?.formState.isDirty, id, updateNodeForm, values]);
+  }, [
+    form?.formState.dirtyFields?.output,
+    form?.formState.isDirty,
+    form,
+    getNode,
+    id,
+    updateNodeForm,
+    watchedValues,
+  ]);
 }
 
 export function useHandleLanguageChange(
@@ -79,12 +77,14 @@ export function useHandleLanguageChange(
       if (id) {
         const script = CodeTemplateStrMap[lang as ProgrammingLanguage];
         form?.setValue('script', script);
-        form?.setValue(
-          'outputs',
-          (lang === ProgrammingLanguage.Python
-            ? []
-            : {}) as FormSchemaType['outputs'],
-        );
+        if (
+          !form?.getValues('output')?.name ||
+          !form?.getValues('output')?.type
+        ) {
+          form?.setValue('output', buildDefaultCodeOutput(), {
+            shouldDirty: true,
+          });
+        }
         updateNodeForm(id, script, ['script']);
       }
     },

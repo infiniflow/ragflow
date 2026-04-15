@@ -95,7 +95,7 @@ class TestSessionWithChatAssistantCreate:
         client.delete_chats(ids=[chat_assistant.id])
         with pytest.raises(Exception) as exception_info:
             chat_assistant.create_session(name="valid_name")
-        assert "You do not own the assistant" in str(exception_info.value)
+        assert "No authorization." in str(exception_info.value)
 
 
 @pytest.mark.p2

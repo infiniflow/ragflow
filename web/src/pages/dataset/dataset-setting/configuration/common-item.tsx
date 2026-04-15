@@ -19,7 +19,7 @@ import {
 import { Radio } from '@/components/ui/radio';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
-import { LlmModelType } from '@/constants/knowledge';
+import { LlmModelType, ParseType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
@@ -248,8 +248,8 @@ export function ParseTypeItem({
                       line === 1 ? 'w-1/2' : 'w-3/4',
                     )}
                   >
-                    <Radio value={1}>{t('builtIn')}</Radio>
-                    <Radio value={2}>{t('manualSetup')}</Radio>
+                    <Radio value={ParseType.BuiltIn}>{t('builtIn')}</Radio>
+                    <Radio value={ParseType.Pipeline}>{t('manualSetup')}</Radio>
                   </div>
                 </Radio.Group>
               </FormControl>

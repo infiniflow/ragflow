@@ -11,7 +11,7 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn<any>) {
     // Manually triggered form updates are synchronized to the canvas
     if (id && form?.formState.isDirty) {
       values = form?.getValues();
-      let nextValues: any = {
+      const nextValues: any = {
         ...values,
         prompts: [{ role: PromptRole.User, content: values.prompts }],
       };

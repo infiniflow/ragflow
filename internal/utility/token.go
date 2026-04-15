@@ -37,6 +37,9 @@ func ExtractAccessToken(authorization, secretKey string) (string, error) {
 		return "", errors.New("empty authorization")
 	}
 
+	// Strip "Bearer " prefix if present
+	token := strings.TrimPrefix(authorization, "Bearer ")
+
 	// Create URLSafeTimedSerializer with correct configuration
 	// Matching Python itsdangerous configuration:
 	// - salt: "itsdangerous"
@@ -53,7 +56,7 @@ func ExtractAccessToken(authorization, secretKey string) (string, error) {
 	)
 
 	// Unsign the token (verifies signature and extracts payload)
-	encodedValue, err := signer.Unsign(authorization, 0)
+	encodedValue, err := signer.Unsign(token, 0)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode token: %w", err)
 	}

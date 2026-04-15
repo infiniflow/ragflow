@@ -93,9 +93,10 @@ export function TwoColumnCheckFormField({ prefix }: CommonProps) {
   return (
     <RAGFlowFormItem
       name={buildFieldNameWithPrefix(`enable_multi_column`, prefix)}
-      label={t('flow.enableMultiColumn', 'Enable multi column')}
+      label={t('flow.enableMultiColumn')}
       horizontal={true}
-      labelClassName="w-[200px]"
+      labelClassName="w-full"
+      tooltip={t('flow.enableMultiColumnTip')}
     >
       {(field) => (
         <Checkbox
@@ -114,9 +115,10 @@ export function RmdirFormField({ prefix }: CommonProps) {
   return (
     <RAGFlowFormItem
       name={buildFieldNameWithPrefix(`remove_toc`, prefix)}
-      label={t('flow.remove_toc', 'Remove TOC')}
+      label={t('flow.removeToc')}
       horizontal={true}
-      labelClassName="w-[200px]"
+      tooltip={t('flow.removeTocTip')}
+      labelClassName="w-full"
     >
       {(field) => (
         <Checkbox

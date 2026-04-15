@@ -58,3 +58,15 @@ func (dao *File2DocumentDAO) GetKBInfoByFileID(fileID string) ([]map[string]inte
 
 	return results, nil
 }
+
+// GetByFileID gets file2document mappings by file ID
+func (dao *File2DocumentDAO) GetByFileID(fileID string) ([]*entity.File2Document, error) {
+	var mappings []*entity.File2Document
+	err := DB.Where("file_id = ?", fileID).Find(&mappings).Error
+	return mappings, err
+}
+
+// DeleteByFileID deletes file2document mappings by file ID
+func (dao *File2DocumentDAO) DeleteByFileID(fileID string) error {
+	return DB.Unscoped().Where("file_id = ?", fileID).Delete(&entity.File2Document{}).Error
+}

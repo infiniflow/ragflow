@@ -18,7 +18,7 @@ import uuid
 
 import pytest
 import random
-from test_web_api.common import create_memory, list_memory, add_message, delete_memory
+from test_common import create_memory, list_memory, add_message, delete_memory
 
 
 @pytest.fixture(scope="class")

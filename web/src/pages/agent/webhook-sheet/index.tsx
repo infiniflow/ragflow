@@ -49,7 +49,7 @@ const WebhookSheet = ({ hideModal }: RunSheetProps) => {
       return { status: 'running' };
     }
 
-    let errorItem = data?.events.find(
+    const errorItem = data?.events.find(
       (x) => x.event === 'error' || x.data?.error,
     );
     if (errorItem) {

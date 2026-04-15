@@ -35,7 +35,7 @@ export const PptPreviewer: React.FC<PptPreviewerProps> = ({
           width = containerRef.current.clientWidth - 50;
           height = containerRef.current.clientHeight - 50;
         }
-        let pptxPrviewer = init(containerRef.current, {
+        const pptxPrviewer = init(containerRef.current, {
           width: width,
           height: height,
         });

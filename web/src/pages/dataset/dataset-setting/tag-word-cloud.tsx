@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 export function TagWordCloud() {
   const domRef = useRef<HTMLDivElement>(null);
-  let chartRef = useRef<Chart>();
+  const chartRef = useRef<Chart>();
   const { list } = useFetchTagList();
 
   const { list: tagList } = useMemo(() => {

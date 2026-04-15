@@ -319,7 +319,7 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
   ]);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex w-full flex-col gap-3">
       {(hasConfigured || hasAuthorized) && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-dashed border-muted-foreground/40 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
           <div className="flex flex-wrap items-center gap-2">
@@ -342,7 +342,11 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
         </div>
       )}
 
-      <Button variant="outline" onClick={handleOpenDialog}>
+      <Button
+        variant="outline"
+        className="w-full justify-start"
+        onClick={handleOpenDialog}
+      >
         {hasConfigured ? 'Get Box credentials' : 'Configure Box credentials'}
       </Button>
 

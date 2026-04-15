@@ -18,6 +18,9 @@ import sys
 import argparse
 import base64
 import getpass
+import os
+import atexit
+import readline
 from cmd import Cmd
 from typing import Any, Dict, List
 
@@ -61,6 +64,12 @@ class RAGFlowCLI(Cmd):
         self.port: int = 0
         self.mode: str = "admin"
         self.ragflow_client = None
+        # History file for readline persistence
+        self.history_file = os.path.expanduser("~/.ragflow_cli_history")
+        # Load existing history
+        self._load_history()
+        # Register cleanup to save history on exit
+        atexit.register(self._save_history)
 
     intro = r"""Type "\h" for help."""
     prompt = "ragflow> "
@@ -99,6 +108,7 @@ class RAGFlowCLI(Cmd):
             return {"type": "empty"}
 
         self.command_history.append(command_str)
+        readline.add_history(command_str)
 
         try:
             result = self.parser.parse(command_str)
@@ -209,6 +219,21 @@ class RAGFlowCLI(Cmd):
             print(row)
 
         print(separator)
+
+    def _load_history(self):
+        """Load command history from file."""
+        try:
+            if os.path.exists(self.history_file):
+                readline.read_history_file(self.history_file)
+        except Exception:
+            pass  # Ignore errors loading history
+
+    def _save_history(self):
+        """Save command history to file."""
+        try:
+            readline.write_history_file(self.history_file)
+        except Exception:
+            pass  # Ignore errors saving history
 
     def run_interactive(self, args):
         if self.verify_auth(args, single_command=False, auth=args["auth"]):

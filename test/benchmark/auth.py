@@ -45,7 +45,7 @@ def login_user(client: HttpClient, email: str, password_enc: str) -> str:
 def create_api_token(client: HttpClient, login_token: str, token_name: Optional[str] = None) -> str:
     client.login_token = login_token
     params = {"name": token_name} if token_name else None
-    res = client.request_json("POST", "/system/new_token", use_api_base=False, auth_kind="login", params=params)
+    res = client.request_json("POST", "/system/tokens", use_api_base=False, auth_kind="login", params=params)
     if res.get("code") != 0:
         raise AuthError(f"API token creation failed: {res.get('message')}")
     token = res.get("data", {}).get("token")

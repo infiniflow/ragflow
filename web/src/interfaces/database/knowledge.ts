@@ -1,5 +1,5 @@
 import { RunningStatus } from '@/constants/knowledge';
-import { DataSourceKey } from '@/pages/user-setting/data-source/contant';
+import { DataSourceKey } from '@/pages/user-setting/data-source/constant';
 import { TreeData } from '@antv/g6/lib/types';
 export interface IConnector {
   id: string;
@@ -8,15 +8,15 @@ export interface IConnector {
   source: DataSourceKey;
   auto_parse?: '0' | '1';
 }
-// knowledge base
+// knowledge base detail
 export interface IKnowledge {
   avatar?: any;
-  chunk_count: number;
+  chunk_num: number;
   create_date: string;
   create_time: number;
   created_by: string;
   description: string;
-  document_count: number;
+  doc_num: number;
   id: string;
   name: string;
   parser_config: ParserConfig;
@@ -43,6 +43,8 @@ export interface IKnowledge {
   graphrag_task_finish_at: string;
   graphrag_task_id: string;
   connectors: IConnector[];
+  embd_id: string;
+  parser_id: string;
 }
 
 export interface IKnowledgeResult {

@@ -86,6 +86,7 @@ export function DataFlowSelect(props: IProps) {
                 <FormLabel
                   // tooltip={t('dataFlowTip')}
                   className="text-sm text-text-primary whitespace-wrap "
+                  required
                 >
                   {t('manualSetup')}
                 </FormLabel>

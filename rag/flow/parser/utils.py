@@ -125,7 +125,7 @@ def enhance_media_sections_with_vision(
     vlm_conf=None,
     callback=None,
 ):
-    if not sections or not tenant_id or not vlm_conf:
+    if not sections or not tenant_id:
         return sections
 
     try:

@@ -22,7 +22,7 @@ export const useFetchMemoryMessageList = () => {
   const { handleInputChange, searchString, pagination, setPagination } =
     useHandleSearchChange();
   const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
-  let queryKey: (MemoryApiAction | number)[] = [
+  const queryKey: (MemoryApiAction | number)[] = [
     MemoryApiAction.FetchMemoryMessage,
   ];
   const agentIds = Array.isArray(filterValue.agentId)

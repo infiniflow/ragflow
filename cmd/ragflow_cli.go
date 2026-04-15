@@ -40,7 +40,7 @@ func main() {
 	}()
 
 	// Check if we have a single command to execute
-	if args.Command != "" {
+	if args.Command != nil {
 		// Single command mode
 		if err = cliApp.RunSingleCommand(args.Command); err != nil {
 			fmt.Printf("Error: %v\n", err)

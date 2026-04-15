@@ -117,16 +117,16 @@ func (h *TenantHandler) TenantList(c *gin.Context) {
 	})
 }
 
-// CreateDocMetaIndex handles the create doc meta index request
-// @Summary Create Doc Meta Index
-// @Description Create the document metadata index for a tenant
+// CreateMetadataInDocEngine handles the create doc meta table request
+// @Summary Create Doc Meta Table
+// @Description Create the document metadata table for a tenant
 // @Tags tenants
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/doc_meta_index [post]
-func (h *TenantHandler) CreateDocMetaIndex(c *gin.Context) {
+// @Router /v1/tenant/doc_engine_metadata_table [post]
+func (h *TenantHandler) CreateMetadataInDocEngine(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
@@ -136,7 +136,7 @@ func (h *TenantHandler) CreateDocMetaIndex(c *gin.Context) {
 	// Use user.ID as tenant ID (user IS the tenant in user mode)
 	tenantID := user.ID
 
-	code, err := h.tenantService.CreateDocMetaIndex(tenantID)
+	code, err := h.tenantService.CreateMetadataInDocEngine(tenantID)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return
@@ -149,16 +149,16 @@ func (h *TenantHandler) CreateDocMetaIndex(c *gin.Context) {
 	})
 }
 
-// DeleteDocMetaIndex handles the delete doc meta index request
-// @Summary Delete Doc Meta Index
-// @Description Delete the document metadata index for a tenant
+// DeleteMetadataInDocEngine handles the delete doc meta table request
+// @Summary Delete Metadata In Doc Engine
+// @Description Delete the document metadata table for a tenant
 // @Tags tenants
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/doc_meta_index [delete]
-func (h *TenantHandler) DeleteDocMetaIndex(c *gin.Context) {
+// @Router /v1/tenant/doc_engine_metadata_table [delete]
+func (h *TenantHandler) DeleteMetadataInDocEngine(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
@@ -168,7 +168,7 @@ func (h *TenantHandler) DeleteDocMetaIndex(c *gin.Context) {
 	// Use user.ID as tenant ID (user IS the tenant in user mode)
 	tenantID := user.ID
 
-	code, err := h.tenantService.DeleteDocMetaIndex(tenantID)
+	code, err := h.tenantService.DeleteMetadataInDocEngine(tenantID)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return

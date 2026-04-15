@@ -9,6 +9,7 @@
         "de": "Ein Berichtsgenerierungsassistent, der eine lokale Wissensdatenbank nutzt, mit erweiterten Fähigkeiten in Aufgabenplanung, Schlussfolgerung und reflektierender Analyse. Empfohlen für akademische Forschungspapier-Fragen und -Antworten.",
         "zh": "一个使用本地知识库的学术论文生成助手，具备高级能力，包括任务规划、推理和反思性分析。推荐用于学术研究论文问答。"},
     "canvas_type": "Agent",
+    "canvas_types": ["Agent", "Recommended"],
     "dsl": {
         "components": {
             "Agent:NewPumasLick": {

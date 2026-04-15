@@ -70,7 +70,7 @@ class SelfManagedProvider(SandboxProvider):
             # Try to fall back to SANDBOX_HOST from settings if we are using localhost
             if "localhost" in self.endpoint or "127.0.0.1" in self.endpoint:
                 try:
-                    from api import settings
+                    from common import settings
                     if settings.SANDBOX_HOST and settings.SANDBOX_HOST not in self.endpoint:
                         original_endpoint = self.endpoint
                         self.endpoint = f"http://{settings.SANDBOX_HOST}:9385"
@@ -187,6 +187,7 @@ class SelfManagedProvider(SandboxProvider):
                 )
 
             result = response.json()
+            structured_result = result.get("result") or {}
 
             return ExecutionResult(
                 stdout=result.get("stdout", ""),
@@ -200,6 +201,9 @@ class SelfManagedProvider(SandboxProvider):
                     "detail": result.get("detail"),
                     "instance_id": instance_id,
                     "artifacts": result.get("artifacts", []),
+                    "result_present": structured_result.get("present", False),
+                    "result_value": structured_result.get("value"),
+                    "result_type": structured_result.get("type"),
                 }
             )
 

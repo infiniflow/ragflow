@@ -13,7 +13,7 @@ import { useParams, useSearchParams } from 'react-router';
 import { LogTabs } from './dataset-common';
 import { IFileLogList, IOverviewTotal } from './interface';
 
-const useFetchOverviewTital = () => {
+const useFetchOverviewTotal = () => {
   const [searchParams] = useSearchParams();
   const { id } = useParams();
   const knowledgeBaseId = searchParams.get('id') || id;
@@ -95,4 +95,4 @@ const useFetchFileLogList = () => {
   };
 };
 
-export { useFetchFileLogList, useFetchOverviewTital };
+export { useFetchFileLogList, useFetchOverviewTotal };

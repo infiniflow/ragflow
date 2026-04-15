@@ -1,4 +1,4 @@
-import { FormFieldType } from '@/components/dynamic-form';
+import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
@@ -45,6 +45,29 @@ export enum DataSourceKey {
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
 }
+
+type DataSourceFeatureVisibility = {
+  syncDeletedFiles?: boolean;
+};
+
+type DataSourceFormValues = Record<string, any>;
+
+export const DataSourceFeatureVisibilityMap = {
+  [DataSourceKey.GITHUB]: {
+    syncDeletedFiles: true,
+  },
+};
+
+const isDataSourceFeatureVisible = (
+  source?: DataSourceKey,
+  feature?: keyof DataSourceFeatureVisibility,
+) => {
+  if (!source || !feature) {
+    return false;
+  }
+
+  return Boolean(DataSourceFeatureVisibilityMap[source]?.[feature]);
+};
 
 export const generateDataSourceInfo = (t: TFunction) => {
   return {
@@ -200,6 +223,30 @@ export const useDataSourceInfo = () => {
   return { dataSourceInfo };
 };
 
+const isPlainObject = (value: unknown): value is DataSourceFormValues =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export const mergeDataSourceFormValues = (
+  ...values: Array<DataSourceFormValues | undefined>
+): DataSourceFormValues =>
+  values.reduce<DataSourceFormValues>((result, current) => {
+    if (!current) {
+      return result;
+    }
+
+    const next = { ...result };
+
+    Object.entries(current).forEach(([key, value]) => {
+      if (isPlainObject(value) && isPlainObject(next[key])) {
+        next[key] = mergeDataSourceFormValues(next[key], value);
+      } else {
+        next[key] = value;
+      }
+    });
+
+    return next;
+  }, {});
+
 export const DataSourceFormBaseFields = [
   {
     id: 'Id',
@@ -227,6 +274,26 @@ export const DataSourceFormBaseFields = [
     })),
   },
 ];
+
+export const getCommonExtraFields = (
+  source?: DataSourceKey,
+): FormFieldConfig[] => [
+  {
+    label: t('setting.syncDeletedFiles'),
+    name: 'config.sync_deleted_files',
+    type: FormFieldType.Checkbox,
+    required: false,
+    defaultValue: false,
+    shouldRender: () => isDataSourceFeatureVisible(source, 'syncDeletedFiles'),
+  },
+];
+
+export const getCommonExtraDefaultValues = () => ({
+  config: {
+    sync_deleted_files: false,
+  },
+});
+
 export const DataSourceFormFields = {
   [DataSourceKey.RSS]: [
     {
@@ -936,6 +1003,30 @@ export const DataSourceFormFields = {
       placeholder: 'title,description,content',
       tooltip: t('setting.mysqlContentColumnsTip'),
     },
+    {
+      label: 'Metadata Columns',
+      name: 'config.metadata_columns',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id,category,status',
+      tooltip: t('setting.mysqlMetadataColumnsTip'),
+    },
+    {
+      label: 'ID Column',
+      name: 'config.id_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id',
+      tooltip: t('setting.mysqlIdColumnTip'),
+    },
+    {
+      label: 'Timestamp Column',
+      name: 'config.timestamp_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'updated_at',
+      tooltip: t('setting.mysqlTimestampColumnTip'),
+    },
   ],
   [DataSourceKey.POSTGRESQL]: [
     {
@@ -985,6 +1076,30 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'title,description,content',
       tooltip: t('setting.postgresqlContentColumnsTip'),
+    },
+    {
+      label: 'Metadata Columns',
+      name: 'config.metadata_columns',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id,category,status',
+      tooltip: t('setting.postgresqlMetadataColumnsTip'),
+    },
+    {
+      label: 'ID Column',
+      name: 'config.id_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id',
+      tooltip: t('setting.postgresqlIdColumnTip'),
+    },
+    {
+      label: 'Timestamp Column',
+      name: 'config.timestamp_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'updated_at',
+      tooltip: t('setting.postgresqlTimestampColumnTip'),
     },
   ],
 };

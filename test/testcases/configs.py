@@ -66,4 +66,9 @@ DEFAULT_PARSER_CONFIG = {
         ],
         "method": "light",
     },
+    "parent_child": {
+        "use_parent_child": False,
+        "children_delimiter": "\n",
+    },
+    "children_delimiter": "",
 }

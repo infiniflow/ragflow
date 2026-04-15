@@ -54,10 +54,10 @@ export const transformBase64ToFile = (
   dataUrl: string,
   filename: string = 'file',
 ) => {
-  let arr = dataUrl.split(','),
-    bstr = atob(arr[1]),
-    n = bstr.length,
-    u8arr = new Uint8Array(n);
+  const arr = dataUrl.split(','),
+    bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
 
   const mime = arr[0].match(/:(.*?);/);
   const mimeType = mime ? mime[1] : 'image/png';

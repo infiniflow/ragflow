@@ -375,6 +375,25 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def list_doc_headers_by_kb_and_source_type(cls, kb_id, source_type, page_size=500):
+        fields = [cls.model.id, cls.model.kb_id, cls.model.source_type, cls.model.name]
+        docs = cls.model.select(*fields).where(
+            cls.model.kb_id == kb_id,
+            cls.model.source_type == source_type,
+        ).order_by(cls.model.create_time.asc())
+        offset = 0
+        res = []
+        while True:
+            doc_batch = docs.offset(offset).limit(page_size)
+            _temp = list(doc_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += page_size
+        return res
+
+    @classmethod
+    @DB.connection_context()
     def get_all_docs_by_creator_id(cls, creator_id):
         fields = [cls.model.id, cls.model.kb_id, cls.model.token_num, cls.model.chunk_num, Knowledgebase.tenant_id]
         docs = cls.model.select(*fields).join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id)).where(cls.model.created_by == creator_id)
@@ -965,23 +984,22 @@ class DocumentService(CommonService):
             queue_tasks(doc, bucket, name, 0)
 
 
-def queue_raptor_o_graphrag_tasks(sample_doc_id, ty, priority, fake_doc_id="", doc_ids=[]):
+def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_ids=[]):
     """
     You can provide a fake_doc_id to bypass the restriction of tasks at the knowledgebase level.
     Optionally, specify a list of doc_ids to determine which documents participate in the task.
     """
     assert ty in ["graphrag", "raptor", "mindmap"], "type should be graphrag, raptor or mindmap"
 
-    chunking_config = DocumentService.get_chunking_config(sample_doc_id["id"])
+    chunking_config = DocumentService.get_chunking_config(sample_doc["id"])
     hasher = xxhash.xxh64()
     for field in sorted(chunking_config.keys()):
         hasher.update(str(chunking_config[field]).encode("utf-8"))
 
     def new_task():
-        nonlocal sample_doc_id
         return {
             "id": get_uuid(),
-            "doc_id": sample_doc_id["id"],
+            "doc_id": fake_doc_id,
             "from_page": 100000000,
             "to_page": 100000000,
             "task_type": ty,
@@ -996,9 +1014,8 @@ def queue_raptor_o_graphrag_tasks(sample_doc_id, ty, priority, fake_doc_id="", d
     task["digest"] = hasher.hexdigest()
     bulk_insert_into_db(Task, [task], True)
 
-    task["doc_id"] = fake_doc_id
     task["doc_ids"] = doc_ids
-    DocumentService.begin2parse(sample_doc_id["id"], keep_progress=True)
+    DocumentService.begin2parse(task["doc_id"], keep_progress=True)
     assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
     return task["id"]
 

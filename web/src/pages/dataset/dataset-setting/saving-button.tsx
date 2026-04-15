@@ -1,4 +1,5 @@
 import { ButtonLoading } from '@/components/ui/button';
+import { ParseType } from '@/constants/knowledge';
 import { useUpdateKnowledge } from '@/hooks/use-knowledge-request';
 import { useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
@@ -68,7 +69,7 @@ export function SavingButton() {
             if (beValid) {
               form.handleSubmit(async (originalValues) => {
                 const values = originalValues;
-                if (originalValues.parse_type === 1) {
+                if (originalValues.parse_type === ParseType.BuiltIn) {
                   values.pipeline_id = null;
                 } else {
                   values.chunk_method = null;

@@ -54,7 +54,7 @@ class Document(Base):
         if "meta_fields" in update_message:
             if not isinstance(update_message["meta_fields"], dict):
                 raise Exception("meta_fields must be a dictionary")
-        res = self.put(f"/datasets/{self.dataset_id}/documents/{self.id}", update_message)
+        res = self.patch(f"/datasets/{self.dataset_id}/documents/{self.id}", update_message)
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])

@@ -47,7 +47,7 @@ if (process.env.NODE_ENV === 'development') {
       whyDidYouRender(React, {
         trackAllPureComponents: true,
         trackExtraHooks: [],
-        logOnDifferentValues: true,
+        logOnDifferentValues: false,
         exclude: [/^RouterProvider$/],
       });
     },

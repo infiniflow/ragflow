@@ -394,7 +394,7 @@ class TableStructureRecognizer(Recognizer):
 
     @staticmethod
     def __desc_table(cap, hdr_rowno, tbl, is_english):
-        # get text of every colomn in header row to become header text
+        # get text of every column in header row to become header text
         clmno = len(tbl[0])
         rowno = len(tbl)
         headers = {}

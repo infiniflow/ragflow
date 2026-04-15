@@ -16,7 +16,7 @@
 import random
 
 import pytest
-from test_web_api.common import get_message_content, get_recent_message
+from test_common import get_message_content, get_recent_message
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 

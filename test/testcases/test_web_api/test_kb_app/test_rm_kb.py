@@ -15,7 +15,7 @@
 #
 
 import pytest
-from common import (
+from test_common import (
     list_datasets,
     delete_datasets,
 )

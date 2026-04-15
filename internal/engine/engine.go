@@ -41,25 +41,23 @@ type DocEngine interface {
 	// Search
 	Search(ctx context.Context, req interface{}) (interface{}, error)
 
-	// Index operations
-	CreateIndex(ctx context.Context, indexName, datasetID string, vectorSize int, parserID string) error
-	DeleteIndex(ctx context.Context, indexName string) error
-	IndexExists(ctx context.Context, indexName string) (bool, error)
-
-	// Insert operations
+	// Dataset operations
+	CreateDataset(ctx context.Context, indexName, datasetID string, vectorSize int, parserID string) error
 	InsertDataset(ctx context.Context, documents []map[string]interface{}, indexName string, knowledgebaseID string) ([]string, error)
-	InsertMetadata(ctx context.Context, documents []map[string]interface{}, tenantID string) ([]string, error)
-
-	// Document operations
-	IndexDocument(ctx context.Context, indexName, docID string, doc interface{}) error
-	BulkIndex(ctx context.Context, indexName string, docs []interface{}) (interface{}, error)
-	DeleteDocument(ctx context.Context, indexName, docID string) error
+	UpdateDataset(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, tableNamePrefix string, knowledgebaseID string) error
 
 	// Chunk operations
 	GetChunk(ctx context.Context, indexName, chunkID string, kbIDs []string) (interface{}, error)
 
-	// Doc metadata index operations (per-tenant)
-	CreateDocMetaIndex(ctx context.Context, indexName string) error
+	// Document metadata operations
+	CreateMetadata(ctx context.Context, indexName string) error
+	InsertMetadata(ctx context.Context, documents []map[string]interface{}, tenantID string) ([]string, error)
+	UpdateMetadata(ctx context.Context, docID string, kbID string, metaFields map[string]interface{}, tenantID string) error
+
+	// Operations for both dataset and metadata tables
+	Delete(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error)
+    DropTable(ctx context.Context, indexName string) error
+	TableExists(ctx context.Context, indexName string) (bool, error)
 
 	// Health check
 	Ping(ctx context.Context) error

@@ -108,7 +108,7 @@ export enum Operator {
   UserFillUp = 'UserFillUp',
   StringTransform = 'StringTransform',
   SearXNG = 'SearXNG',
-  PDFGenerator = 'PDFGenerator',
+  DocGenerator = 'DocGenerator',
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',
   ListOperations = 'ListOperations',

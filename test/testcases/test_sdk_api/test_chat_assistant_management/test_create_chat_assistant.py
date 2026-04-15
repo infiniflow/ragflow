@@ -56,7 +56,7 @@ class TestChatAssistantCreate:
             ([], ""),
             (lambda r: [r], ""),
             (["invalid_dataset_id"], "You don't own the dataset invalid_dataset_id"),
-            ("invalid_dataset_id", "You don't own the dataset i"),
+            ("invalid_dataset_id", "violates type hint list[str] | None"),
         ],
     )
     def test_dataset_ids(self, client, add_chunks, dataset_ids, expected_message):

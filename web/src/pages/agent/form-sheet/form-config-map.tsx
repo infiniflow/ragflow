@@ -7,6 +7,7 @@ import CategorizeForm from '../form/categorize-form';
 import CodeForm from '../form/code-form';
 import CrawlerForm from '../form/crawler-form';
 import DataOperationsForm from '../form/data-operations-form';
+import DocGeneratorForm from '../form/doc-generator-form';
 import DuckDuckGoForm from '../form/duckduckgo-form';
 import EmailForm from '../form/email-form';
 import ExeSQLForm from '../form/exesql-form';
@@ -21,7 +22,6 @@ import ListOperationsForm from '../form/list-operations-form';
 import LoopForm from '../form/loop-form';
 import MessageForm from '../form/message-form';
 import ParserForm from '../form/parser-form';
-import PDFGeneratorForm from '../form/pdf-generator-form';
 import PubMedForm from '../form/pubmed-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
@@ -111,8 +111,8 @@ export const FormConfigMap = {
   [Operator.SearXNG]: {
     component: SearXNGForm,
   },
-  [Operator.PDFGenerator]: {
-    component: PDFGeneratorForm,
+  [Operator.DocGenerator]: {
+    component: DocGeneratorForm,
   },
   [Operator.Note]: {
     component: () => <></>,

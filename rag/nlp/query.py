@@ -65,7 +65,9 @@ class FulltextQueryer(QueryBase):
             tks_w = [(tk.strip(), w) for tk, w in tks_w if tk.strip()]
             syns = []
             for tk, w in tks_w[:256]:
-                syn = [rag_tokenizer.tokenize(s) for s in self.syn.lookup(tk)]
+                # Strip single quotes from synonym terms to avoid Infinity lexer TokenError
+                # (e.g. WordNet returns "cat-o'-nine-tails" for "cat")
+                syn = [rag_tokenizer.tokenize(s).replace("'", "") for s in self.syn.lookup(tk)]
                 keywords.extend(syn)
                 syn = ["\"{}\"^{:.4f}".format(s, w / 4.) for s in syn if s.strip()]
                 syns.append(" ".join(syn))

@@ -28,6 +28,7 @@ from api.db.joint_services.tenant_model_service import (
     get_model_config_by_type_and_name,
     get_tenant_default_model_by_type,
 )
+from api.db.services.chunk_feedback_service import ChunkFeedbackService
 from api.db.services.conversation_service import ConversationService, structure_answer
 from api.db.services.dialog_service import DialogService, async_ask, async_chat, gen_mindmap
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -769,28 +770,64 @@ async def delete_session_message(chat_id, session_id, msg_id):
 @manager.route("/chats/<chat_id>/sessions/<session_id>/messages/<msg_id>/feedback", methods=["PUT"])  # noqa: F821
 @login_required
 async def update_message_feedback(chat_id, session_id, msg_id):
-    if not _ensure_owned_chat(chat_id):
+    owned = _ensure_owned_chat(chat_id)
+    if not owned:
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
         req = await get_request_json()
         ok, conv = ConversationService.get_by_id(session_id)
         if not ok or conv.dialog_id != chat_id:
             return get_data_error_result(message="Session not found!")
-        up_down = req.get("thumbup")
+        thumb_raw = req.get("thumbup")
+        if not isinstance(thumb_raw, bool):
+            return get_data_error_result(message="thumbup must be a boolean")
         feedback = req.get("feedback", "")
-        conv = conv.to_dict()
-        for msg in conv["message"]:
+        conv_dict = conv.to_dict()
+        message_index = None
+        apply_chunk_feedback = False
+        prior_thumb = None
+        for i, msg in enumerate(conv_dict["message"]):
             if msg_id == msg.get("id", "") and msg.get("role", "") == "assistant":
-                if up_down:
+                prior_thumb = msg.get("thumbup")
+                if thumb_raw is True:
                     msg["thumbup"] = True
                     msg.pop("feedback", None)
+                    apply_chunk_feedback = prior_thumb is not True
                 else:
                     msg["thumbup"] = False
                     if feedback:
                         msg["feedback"] = feedback
+                    apply_chunk_feedback = prior_thumb is not False
+                message_index = i
                 break
-        ConversationService.update_by_id(conv["id"], conv)
-        return get_json_result(data=_build_session_response(conv))
+
+        if message_index is not None and apply_chunk_feedback:
+            try:
+                ref_index = (message_index - 1) // 2
+                if 0 <= ref_index < len(conv_dict.get("reference", [])):
+                    reference = conv_dict["reference"][ref_index]
+                    if reference:
+                        if isinstance(prior_thumb, bool) and prior_thumb != thumb_raw:
+                            ChunkFeedbackService.apply_feedback(
+                                tenant_id=current_user.id,
+                                reference=reference,
+                                is_positive=not prior_thumb,
+                            )
+                        feedback_result = ChunkFeedbackService.apply_feedback(
+                            tenant_id=current_user.id,
+                            reference=reference,
+                            is_positive=thumb_raw is True,
+                        )
+                        logging.debug(
+                            "Chunk feedback applied: %s succeeded, %s failed",
+                            feedback_result["success_count"],
+                            feedback_result["fail_count"],
+                        )
+            except Exception as e:
+                logging.warning("Failed to apply chunk feedback: %s", e)
+
+        ConversationService.update_by_id(conv_dict["id"], conv_dict)
+        return get_json_result(data=_build_session_response(conv_dict))
     except Exception as ex:
         return server_error_response(ex)
 

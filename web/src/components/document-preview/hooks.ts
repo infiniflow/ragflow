@@ -1,7 +1,7 @@
 import { Authorization } from '@/constants/authorization';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { useGetPipelineResultSearchParams } from '@/pages/dataflow-result/hooks';
-import api, { api_host } from '@/utils/api';
+import api, { webAPI } from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import jsPreviewExcel from '@js-preview/excel';
 import { useSize } from 'ahooks';
@@ -57,7 +57,7 @@ export const useGetDocumentUrl = (isAgent: boolean) => {
     if (isAgent) {
       return api.downloadFile + `?id=${id}&created_by=${createdBy}`;
     }
-    return `${api_host}/document/get/${documentId}`;
+    return `${webAPI}/document/get/${documentId}`;
   }, [createdBy, documentId, id, isAgent]);
 
   return url;
