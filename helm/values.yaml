@@ -11,6 +11,7 @@ global:
   imagePullSecrets: []
 
 env:
+  SSL_CERT_FILE: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
   # The type of doc engine to use.
   # Available options:
   # - `elasticsearch` (default)
@@ -79,7 +80,7 @@ env:
 ragflow:
   image:
     repository: quay-etaps.registry.intern/dap/kira
-    tag: testv24.1
+    tag: testv24.3
     pullPolicy: IfNotPresent
     pullSecrets: []
   # Optional service configuration overrides
