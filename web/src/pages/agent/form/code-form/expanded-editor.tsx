@@ -26,7 +26,7 @@ export function ExpandedEditor({
     <div className="absolute inset-0 z-10 flex flex-col bg-bg-base">
       <div className="flex items-center justify-between border-b px-5 py-3">
         <span className="font-medium">Code</span>
-        <Button variant="ghost" onClick={onClose}>
+        <Button variant="ghost" onClick={onClose} type="button">
           <Minimize2 className="size-4" />
         </Button>
       </div>
