@@ -771,7 +771,6 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             final = decorate_answer(thought + full_answer)
             final["final"] = True
             final["audio_binary"] = None
-            final["answer"] = ""
             yield final
     else:
         if llm_type == "chat":
