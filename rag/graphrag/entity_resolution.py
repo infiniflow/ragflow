@@ -32,7 +32,6 @@ from rag.graphrag.utils import perform_variable_replacements, chat_limiter, Grap
 from api.db.services.task_service import has_canceled
 from common.exceptions import TaskCanceledException
 
-from common.misc_utils import thread_pool_exec
 
 DEFAULT_RECORD_DELIMITER = "##"
 DEFAULT_ENTITY_INDEX_DELIMITER = "<|>"
@@ -213,21 +212,15 @@ class EntityResolution(Extractor):
             timeout_seconds = 280 if os.environ.get("ENABLE_TIMEOUT_ASSERTION") else 1000000000
             try:
                 response = await asyncio.wait_for(
-                    thread_pool_exec(
-                        self._chat,
-                        text,
-                        [{"role": "user", "content": "Output:"}],
-                        {},
-                        task_id
-                    ),
+                    self._async_chat(text, [{"role": "user", "content": "Output:"}], {}, task_id),
                     timeout=timeout_seconds,
                 )
 
             except asyncio.TimeoutError:
-                logging.warning("_resolve_candidate._chat timeout, skipping...")
+                logging.warning("_resolve_candidate._async_chat timeout, skipping...")
                 return
             except Exception as e:
-                logging.error(f"_resolve_candidate._chat failed: {e}")
+                logging.error(f"_resolve_candidate._async_chat failed: {e}")
                 return
 
         logging.debug(f"_resolve_candidate chat prompt: {text}\nchat response: {response}")

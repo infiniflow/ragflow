@@ -14,25 +14,22 @@ import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
-import {
-  useFetchKnowledgeBaseConfiguration,
-  useFetchKnowledgeGraph,
-} from '@/hooks/use-knowledge-request';
+import { useFetchKnowledgeGraph } from '@/hooks/use-knowledge-request';
 import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
 
+import { IKnowledge } from '@/interfaces/database/knowledge';
 import { useParams } from 'react-router';
 
 type PropType = {
   refreshCount?: number;
+  dataset: IKnowledge;
 };
 
-export function SideBar({ refreshCount }: PropType) {
+export function SideBar({ dataset: data }: PropType) {
   const pathName = useSecondPathName();
   const { id } = useParams();
-  // refreshCount: be for avatar img sync update on top left
-  const { data } = useFetchKnowledgeBaseConfiguration({ refreshCount });
   const { data: routerData } = useFetchKnowledgeGraph();
   const { t } = useTranslation();
 

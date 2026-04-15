@@ -3,12 +3,13 @@ import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Trash2 } from 'lucide-react';
-import { memo, useEffect, useRef } from 'react';
+import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { useFieldArray, useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -145,7 +146,7 @@ function CardBody({ cardName }: CardBodyProps) {
         onClick={() => appendLevel({ expression: '' })}
         className="mt-4"
       >
-        {t('flow.addLevel', 'Add Level')}
+        {t('flow.addRegularExpressions')}
       </BlockButton>
     </CardContent>
   );
@@ -197,6 +198,7 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
   });
   const isInitialized = useRef(false);
   const initialMode = useRef<string | undefined>(undefined);
+  const [showAllTip, setShowAllTip] = useState(true);
 
   const method = form.watch('method');
   const name = 'rules';
@@ -210,6 +212,7 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
     }
 
     if (method !== initialMode.current) {
+      setShowAllTip(true);
       const currentMode = initialMode.current;
       const hierarchyValue = form.getValues('hierarchy');
       const rulesValue = form.getValues('rules');
@@ -290,6 +293,32 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
             ],
           }}
         />
+        {/* <div className={cn("text-xs text-text-secondary w-full border p-1", showAllTip ? "block" : "")}>
+          {method === 'hierarchy' && t('flow.hierarchyTip')}
+          {method === 'group' && t('flow.groupTip')}
+        </div> */}
+        <div
+          className={`text-xs text-text-secondary w-full cursor-pointer `}
+          onClick={() => setShowAllTip(!showAllTip)}
+        >
+          <div className={cn('flex justify-start items-start')}>
+            <div
+              className={cn(
+                'flex-1 ',
+                showAllTip ? 'whitespace-pre-wrap' : 'truncate',
+              )}
+            >
+              {method === 'hierarchy'
+                ? t('flow.hierarchyTip')
+                : method === 'group'
+                  ? t('flow.groupTip')
+                  : ''}
+            </div>
+            <div className="flex ml-2 text-xs ">
+              {showAllTip ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </div>
+          </div>
+        </div>
         <RAGFlowFormItem name={'hierarchy'} label={''}>
           <SelectWithSearch options={hierarchyOptions}></SelectWithSearch>
         </RAGFlowFormItem>
@@ -297,15 +326,13 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
           <RAGFlowFormItem
             name="include_heading_content"
             label={t('flow.includeHeadingContent', 'Include heading content')}
-            tooltip={t(
-              'flow.includeHeadingContentTip',
-              'When enabled, content directly under a heading is kept as its own chunk. Child chunks keep only the heading path.',
-            )}
+            tooltip={t('flow.includeHeadingContentTip')}
             horizontal={true}
-            labelClassName="w-[200px]"
+            labelClassName="w-full"
+            valueClassName="w-8"
           >
             {(field) => (
-              <Checkbox
+              <Switch
                 checked={field.value}
                 onCheckedChange={(checked) => {
                   field.onChange?.(checked);
@@ -362,7 +389,7 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
           }
           className="mt-4"
         >
-          {t('flow.rule', 'Add Rule')}
+          {t('flow.addRule', 'Add Rule')}
         </BlockButton>
         {/* )} */}
       </FormWrapper>

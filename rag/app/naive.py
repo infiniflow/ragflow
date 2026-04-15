@@ -891,6 +891,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         callback(0.1, "Start to parse.")
         sections = TxtParser()(filename, binary, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", "\n!?;。；！？"))
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
+        print("\n", "-"*150, "\n")
+        print(sections)
+        print("\n", "-"*150, "\n")
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(md|markdown|mdx)$", filename, re.IGNORECASE):
