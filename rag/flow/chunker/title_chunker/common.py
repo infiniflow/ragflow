@@ -222,7 +222,7 @@ class BaseTitleChunker(ABC):
             if level < BODY_LEVEL:
                 most_level = level
                 break
-
+            
         return {
             "levels": levels,
             "most_level": most_level,
