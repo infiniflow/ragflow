@@ -9,7 +9,7 @@ import {
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { upperCase, upperFirst } from 'lodash';
 import { useTranslation } from 'react-i18next';
 import {
@@ -96,10 +96,11 @@ export function TwoColumnCheckFormField({ prefix }: CommonProps) {
       label={t('flow.enableMultiColumn')}
       horizontal={true}
       labelClassName="w-full"
+      valueClassName="w-8"
       tooltip={t('flow.enableMultiColumnTip')}
     >
       {(field) => (
-        <Checkbox
+        <Switch
           checked={field.value}
           onCheckedChange={(checked) => {
             field.onChange?.(checked);
@@ -119,9 +120,10 @@ export function RmdirFormField({ prefix }: CommonProps) {
       horizontal={true}
       tooltip={t('flow.removeTocTip')}
       labelClassName="w-full"
+      valueClassName="w-8"
     >
       {(field) => (
-        <Checkbox
+        <Switch
           checked={field.value}
           onCheckedChange={(checked) => {
             field.onChange?.(checked);

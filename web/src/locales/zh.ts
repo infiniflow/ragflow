@@ -1259,9 +1259,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       includeHeadingContent: '包含标题内容',
       includeHeadingContentTip:
         '启用后，标题下的直接内容将作为一个独立的块保留。子块仅保留标题路径。',
-      hierarchyTip: `构建标题树并生成独立的块，每个块携带其完整的祖先标题路径（例如 第1部分 › 第3章 › 第2节 + 正文）。<br>
+      hierarchyTip: `构建标题树并生成独立的块，每个块携带其完整的祖先标题路径（例如 第1部分 › 第3章 › 第2节 + 正文）。\n
 适用场景：具有独立的、结构性重要章节的文档——如法律条款、法规、合同和技术规范——其中每个块即使没有上下文也能通过其结构位置来识别。`,
-      groupTip: `在选定的标题级别将文档扁平分割，并自动合并相邻的小节以保持内容连续性。不注入父标题路径。<br>
+      groupTip: `在选定的标题级别将文档扁平分割，并自动合并相邻的小节以保持内容连续性。不注入父标题路径。\n
 适用场景：具有流动性的、内容相关联的文档——如书籍、手册、报告和文章——其中相邻段落应保持在一起以维持叙述连贯性。`,
       enableMultiColumn: '启用多栏',
       enableMultiColumnTip:
@@ -1980,8 +1980,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       },
       fields: '字段',
       addParser: '增加解析器',
-      group: '聚合',
-      hierarchy: '层次结构',
+      rule: '规则',
+      addRule: '增加规则',
+      addRegularExpressions: '增加正则表达式',
+      // group: '聚合',
+      // hierarchy: '层次结构',
       regularExpressions: '正则表达式',
       overlappedPercent: '重叠百分比（%）',
       searchMethod: '搜索方法',
