@@ -61,7 +61,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
 
 RUN wget -q -O /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4 \
     https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken && \
-    echo "tiktoken cl100k_base encoding cached successfully" \
+    echo "tiktoken cl100k_base encoding cached successfully"
 
 # Download resource from GitHub to /usr/share/infinity
 RUN mkdir -p /usr/share/infinity/resource && \
