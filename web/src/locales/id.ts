@@ -352,6 +352,9 @@ export default {
       mind: 'Peta pikiran',
     },
     chat: {
+      chatSupport: 'Dukungan Obrolan',
+      replyInstantly: 'Kami biasanya membalas secara instan',
+      typeYourMessage: 'Ketik pesan Anda...',
       newConversation: 'Percakapan baru',
       createAssistant: 'Buat Asisten',
       assistantSetting: 'Pengaturan Asisten',

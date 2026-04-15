@@ -14,8 +14,11 @@
 #  limitations under the License.
 #
 import asyncio
-import nest_asyncio
-nest_asyncio.apply()
+try:
+    import nest_asyncio
+    nest_asyncio.apply()
+except Exception:
+    pass
 import inspect
 import json
 import os

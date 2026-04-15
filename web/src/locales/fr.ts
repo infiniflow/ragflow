@@ -337,6 +337,9 @@ export default {
       delete: 'Supprimer',
     },
     chat: {
+      chatSupport: 'Support par chat',
+      replyInstantly: 'Nous répondons généralement instantanément',
+      typeYourMessage: 'Tapez votre message...',
       newConversation: 'Nouvelle conversation',
       createAssistant: 'Créer un assistant',
       assistantSetting: 'Paramètres de l’assistant',

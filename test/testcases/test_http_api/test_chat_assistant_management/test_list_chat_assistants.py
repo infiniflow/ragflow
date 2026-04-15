@@ -252,7 +252,7 @@ class TestChatAssistantsList:
         "chat_assistant_id, keywords, expected_code, expected_num, expected_message",
         [
             (lambda r: r[0], "test_chat_assistant_0", 0, 1, ""),
-            (lambda r: r[0], "test_chat_assistant_1", 0, 0, ""),
+            (lambda r: r[0], "test_chat_assistant_1", 0, 1, ""),
             (lambda r: r[0], "unknown", 0, 0, ""),
         ],
     )
