@@ -69,7 +69,7 @@ _EXTRA_MOCKS = [
     "common.exceptions",
     "common.constants",
     "rag.utils.base64_image",
-    "rag.utils.raptor_utils",
+
     "rag.prompts.generator",
     "rag.raptor",
     "rag.app",
@@ -102,6 +102,10 @@ has_raptor_chunks = _executor_mod.has_raptor_chunks
 
 # settings is a MagicMock installed by conftest; grab it to monkeypatch docStoreConn.
 import common.settings as _settings  # noqa: E402
+
+# Ensure docStoreConn is a MagicMock so monkeypatch.setattr works in all environments.
+if not isinstance(_settings.docStoreConn, MagicMock):
+    _settings.docStoreConn = MagicMock()
 
 
 # ---------------------------------------------------------------------------
