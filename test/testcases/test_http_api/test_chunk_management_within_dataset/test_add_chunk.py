@@ -58,7 +58,7 @@ class TestAddChunk:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"content": None}, 100, """TypeError("unsupported operand type(s) for +: \'NoneType\' and \'str\'")"""),
+            ({"content": None}, 102, "`content` is required"),
             ({"content": ""}, 102, "`content` is required"),
             pytest.param(
                 {"content": 1},
