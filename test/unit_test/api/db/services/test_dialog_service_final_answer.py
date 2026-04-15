@@ -178,6 +178,11 @@ def test_async_ask_final_event_carries_decorated_answer(monkeypatch):
         dialog_service.DocMetadataService, "get_flatted_meta_by_kbs", lambda _ids: {}
     )
     monkeypatch.setattr(dialog_service, "label_question", lambda _q, _kbs: "")
+    # kb_prompt calls DocumentService.get_by_ids which needs a live DB; stub it out.
+    monkeypatch.setattr(
+        dialog_service, "kb_prompt",
+        lambda _kbinfos, _max_tokens, **_kw: ["RAGFlow is a RAG engine."],
+    )
 
     events = _collect(
         dialog_service.async_ask(
@@ -227,6 +232,10 @@ def test_async_ask_delta_events_carry_incremental_text_only(monkeypatch):
         dialog_service.DocMetadataService, "get_flatted_meta_by_kbs", lambda _ids: {}
     )
     monkeypatch.setattr(dialog_service, "label_question", lambda _q, _kbs: "")
+    monkeypatch.setattr(
+        dialog_service, "kb_prompt",
+        lambda _kbinfos, _max_tokens, **_kw: ["RAGFlow is a RAG engine."],
+    )
 
     events = _collect(
         dialog_service.async_ask(
@@ -311,10 +320,10 @@ def test_async_chat_final_event_carries_decorated_answer(monkeypatch):
         dialog_service.TenantLangfuseService, "filter_by_tenant",
         lambda tenant_id: None,
     )
-    # get_models returns (embd_mdl, chat_mdl, rerank_mdl, tts_mdl)
+    # get_models returns (kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl)
     monkeypatch.setattr(
         dialog_service, "get_models",
-        lambda _dialog: (chat_mdl, chat_mdl, None, None),
+        lambda _dialog: ([_KB], chat_mdl, None, chat_mdl, None),
     )
     monkeypatch.setattr(
         dialog_service.KnowledgebaseService, "get_field_map", lambda _kb_ids: {}
