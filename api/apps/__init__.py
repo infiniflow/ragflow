@@ -100,7 +100,8 @@ def _load_user():
         return None
 
     try:
-        access_token = str(jwt.loads(authorization))
+        token_value = authorization.split(" ", 1)[1] if authorization.startswith("Bearer ") or authorization.startswith("bearer ") else authorization
+        access_token = str(jwt.loads(token_value))
 
         if not access_token or not access_token.strip():
             logging.warning("Authentication attempt with empty access token")
