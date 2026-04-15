@@ -311,10 +311,10 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
                       ? t('flow.groupTip')
                       : '',
               }}
-            >
-              {/* {method === 'hierarchy' && t('flow.hierarchyTip')}
+            />
+            {/* {method === 'hierarchy' && t('flow.hierarchyTip')}
               {method === 'group' && t('flow.groupTip')} */}
-            </span>
+
             {/* <span className="flex ml-2 text-xs self-center">
               {showAllTip ? '▲' : ''}
             </span> */}
