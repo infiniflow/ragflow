@@ -293,8 +293,6 @@ class TestCheckpointResumeWorkflow:
             # res is the sentinel from search; extract the doc_id it was called with
             return {k: v for k, v in field_map.items() if v["source_id"] == [_get_fields_by_doc.last_doc_id]}
 
-        search_calls_doc = {}
-
         def _search(fields, filters, condition, *_a, **_kw):
             _get_fields_by_doc.last_doc_id = (condition or {}).get("source_id", [None])[0]
             return object()
