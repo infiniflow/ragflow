@@ -1,0 +1,296 @@
+{
+  "id": 37,
+  "title": {
+    "en": "Data analysis beginner assistant",
+    "de": "Datenanalyse-Anfängerassistent",
+    "zh": "数据分析初学者助手"
+  },
+  "description": {
+    "en": "A beginner-friendly data analysis assistant that guides you through exploring datasets step-by-step, automatically generating code and visualizations while explaining the logic behind each insight. ",
+    "de": "Ein anfängerfreundlicher Datenanalyse-Assistent, der Sie Schritt für Schritt durch die Erkundung von Datensätzen führt, automatisch Code und Visualisierungen erstellt und die Logik hinter jedem Einblick erklärt.",
+    "zh": "一个面向初学者的数据分析助手，指导您逐步探索数据集，自动生成代码和可视化，同时解释每个洞察背后的逻辑。"
+  },
+  "canvas_type": "Marketing",
+  "dsl": {
+    "components": {
+      "Agent:SillyStatesRun": {
+        "downstream": [
+          "Message:VastWaspsBrush"
+        ],
+        "obj": {
+          "component_name": "Agent",
+          "params": {
+            "cite": true,
+            "delay_after_error": 1,
+            "description": "",
+            "exception_default_value": "",
+            "exception_goto": [],
+            "exception_method": "",
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.5,
+            "llm_id": "kimi-k2.5@Moonshot",
+            "maxTokensEnabled": false,
+            "max_retries": 3,
+            "max_rounds": 1,
+            "max_tokens": 4096,
+            "mcp": [],
+            "message_history_window_size": 12,
+            "outputs": {
+              "content": {
+                "type": "string",
+                "value": ""
+              }
+            },
+            "parameter": "Precise",
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.5,
+            "prompts": [
+              {
+                "content": "{sys.query}\n\n",
+                "role": "user"
+              }
+            ],
+            "showStructuredOutput": false,
+            "sys_prompt": "<role>\n  You are an expert Data Analyst AI assistant, specialized in extracting insights from structured and unstructured data.\n  Your core competencies include statistical analysis, data cleaning, exploratory data analysis (EDA), hypothesis testing, \n  predictive modeling, and data visualization. You translate raw data into actionable business intelligence with rigorous \n  methodological transparency.\n</role>\n\n<instructions>\n  1. **Understand**: Clarify the analytical objectives, data sources, and success metrics with the user.\n  2. **Data Assessment**: Evaluate data quality (completeness, consistency, outliers) and perform necessary cleaning/validation.\n  3. **Exploratory Analysis**: Decompose the dataset into logical segments; calculate descriptive statistics and identify patterns, correlations, or anomalies.\n  4. **Analytical Execution**: \n     - Use `CodeExec` (Python/SQL/R) for all computational tasks—never rely on mental arithmetic for complex calculations.\n     - Apply appropriate statistical methods (regression, clustering, time-series analysis, etc.) based on data type and business question.\n  5. **Visualization**: Generate clear, publication-ready charts and graphs using the coding environment to illustrate findings visually.\n  6. **Validation**: Verify statistical significance, check for biases, validate assumptions, and ensure reproducibility of results.\n  7. **Synthesis**: Summarize insights in business-friendly language, highlight limitations of the analysis, and provide data-driven recommendations.\n</instructions>\n\n<constraints>\n  - Always execute data processing and calculations via code; never guess or approximate numerical results.\n  - All visualizations must be generated programmaticallyand returned as renderable outputs.\n  - Cite data sources and methodologies; flag any data quality issues that may affect interpretation.\n</constraints>",
+            "temperature": 0.2,
+            "temperatureEnabled": true,
+            "tenant_llm_id": 598,
+            "tools": [
+              {
+                "component_name": "CodeExec",
+                "id": "CodeExec:SunnyDaysTaste",
+                "name": "CodeExec",
+                "params": {}
+              }
+            ],
+            "topPEnabled": true,
+            "top_p": 0.75,
+            "user_prompt": "",
+            "visual_files_var": ""
+          }
+        },
+        "upstream": [
+          "begin"
+        ]
+      },
+      "Message:VastWaspsBrush": {
+        "downstream": [],
+        "obj": {
+          "component_name": "Message",
+          "params": {
+            "content": [
+              "{Agent:SillyStatesRun@content}"
+            ]
+          }
+        },
+        "upstream": [
+          "Agent:SillyStatesRun"
+        ]
+      },
+      "begin": {
+        "downstream": [
+          "Agent:SillyStatesRun"
+        ],
+        "obj": {
+          "component_name": "Begin",
+          "params": {
+            "mode": "conversational",
+            "prologue": "Hi! I'm your assistant. What can I do for you?"
+          }
+        },
+        "upstream": []
+      }
+    },
+    "globals": {
+      "sys.conversation_turns": 0,
+      "sys.date": "",
+      "sys.files": [],
+      "sys.history": [],
+      "sys.query": "",
+      "sys.user_id": ""
+    },
+    "graph": {
+      "edges": [
+        {
+          "data": {
+            "isHovered": false
+          },
+          "id": "xy-edge__beginstart-Agent:SillyStatesRunend",
+          "source": "begin",
+          "sourceHandle": "start",
+          "target": "Agent:SillyStatesRun",
+          "targetHandle": "end"
+        },
+        {
+          "data": {
+            "isHovered": false
+          },
+          "id": "xy-edge__Agent:SillyStatesRunstart-Message:VastWaspsBrushend",
+          "source": "Agent:SillyStatesRun",
+          "sourceHandle": "start",
+          "target": "Message:VastWaspsBrush",
+          "targetHandle": "end"
+        },
+        {
+          "data": {
+            "isHovered": false
+          },
+          "id": "xy-edge__Agent:SillyStatesRuntool-Tool:ThinBreadsVanishend",
+          "source": "Agent:SillyStatesRun",
+          "sourceHandle": "tool",
+          "target": "Tool:ThinBreadsVanish",
+          "targetHandle": "end"
+        }
+      ],
+      "nodes": [
+        {
+          "data": {
+            "form": {
+              "mode": "conversational",
+              "prologue": "Hi! I'm your assistant. What can I do for you?"
+            },
+            "label": "Begin",
+            "name": "begin"
+          },
+          "id": "begin",
+          "measured": {
+            "height": 82,
+            "width": 200
+          },
+          "position": {
+            "x": 50,
+            "y": 200
+          },
+          "sourcePosition": "left",
+          "targetPosition": "right",
+          "type": "beginNode"
+        },
+        {
+          "data": {
+            "form": {
+              "cite": true,
+              "delay_after_error": 1,
+              "description": "",
+              "exception_default_value": "",
+              "exception_goto": [],
+              "exception_method": "",
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.5,
+              "llm_id": "kimi-k2.5@Moonshot",
+              "maxTokensEnabled": false,
+              "max_retries": 3,
+              "max_rounds": 1,
+              "max_tokens": 4096,
+              "mcp": [],
+              "message_history_window_size": 12,
+              "outputs": {
+                "content": {
+                  "type": "string",
+                  "value": ""
+                }
+              },
+              "parameter": "Precise",
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.5,
+              "prompts": [
+                {
+                  "content": "{sys.query}\n\n",
+                  "role": "user"
+                }
+              ],
+              "showStructuredOutput": false,
+              "sys_prompt": "<role>\n  You are an expert Data Analyst AI assistant, specialized in extracting insights from structured and unstructured data.\n  Your core competencies include statistical analysis, data cleaning, exploratory data analysis (EDA), hypothesis testing, \n  predictive modeling, and data visualization. You translate raw data into actionable business intelligence with rigorous \n  methodological transparency.\n</role>\n\n<instructions>\n  1. **Understand**: Clarify the analytical objectives, data sources, and success metrics with the user.\n  2. **Data Assessment**: Evaluate data quality (completeness, consistency, outliers) and perform necessary cleaning/validation.\n  3. **Exploratory Analysis**: Decompose the dataset into logical segments; calculate descriptive statistics and identify patterns, correlations, or anomalies.\n  4. **Analytical Execution**: \n     - Use `CodeExec` (Python/SQL/R) for all computational tasks—never rely on mental arithmetic for complex calculations.\n     - Apply appropriate statistical methods (regression, clustering, time-series analysis, etc.) based on data type and business question.\n  5. **Visualization**: Generate clear, publication-ready charts and graphs using the coding environment to illustrate findings visually.\n  6. **Validation**: Verify statistical significance, check for biases, validate assumptions, and ensure reproducibility of results.\n  7. **Synthesis**: Summarize insights in business-friendly language, highlight limitations of the analysis, and provide data-driven recommendations.\n</instructions>\n\n<constraints>\n  - Always execute data processing and calculations via code; never guess or approximate numerical results.\n  - All visualizations must be generated programmaticallyand returned as renderable outputs.\n  - Cite data sources and methodologies; flag any data quality issues that may affect interpretation.\n</constraints>",
+              "temperature": 0.2,
+              "temperatureEnabled": true,
+              "tenant_llm_id": 598,
+              "tools": [
+                {
+                  "component_name": "CodeExec",
+                  "id": "CodeExec:SunnyDaysTaste",
+                  "name": "CodeExec",
+                  "params": {}
+                }
+              ],
+              "topPEnabled": true,
+              "top_p": 0.75,
+              "user_prompt": "",
+              "visual_files_var": ""
+            },
+            "label": "Agent",
+            "name": "Agent"
+          },
+          "id": "Agent:SillyStatesRun",
+          "measured": {
+            "height": 90,
+            "width": 200
+          },
+          "position": {
+            "x": 320.24334926918766,
+            "y": 170.67098173237693
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "agentNode"
+        },
+        {
+          "data": {
+            "form": {
+              "content": [
+                "{Agent:SillyStatesRun@content}"
+              ]
+            },
+            "label": "Message",
+            "name": "Message"
+          },
+          "dragging": false,
+          "id": "Message:VastWaspsBrush",
+          "measured": {
+            "height": 86,
+            "width": 200
+          },
+          "position": {
+            "x": 608.5815883481804,
+            "y": 193.76667724143644
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "messageNode"
+        },
+        {
+          "data": {
+            "form": {
+              "description": "This is an agent for a specific task.",
+              "user_prompt": "This is the order you need to send to the agent."
+            },
+            "label": "Tool",
+            "name": "flow.tool_0"
+          },
+          "dragging": false,
+          "id": "Tool:ThinBreadsVanish",
+          "measured": {
+            "height": 50,
+            "width": 200
+          },
+          "position": {
+            "x": 238.24334926918766,
+            "y": 309.5222833773799
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "toolNode"
+        }
+      ]
+    },
+    "history": [],
+    "memory": [],
+    "messages": [],
+    "path": [],
+    "retrieval": [],
+    "task_id": "ba87a18538ab11f1be9f84ba59297dca",
+    "variables": []
+  },
+  "avatar": "data:image/png;base64,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"
+}
