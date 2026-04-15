@@ -32,38 +32,18 @@ ENV DEBIAN_FRONTEND=noninteractive
 # selenium:      libatk-bridge2.0-0                       chrome-linux64-121-0-6167-85
 # Building C extensions: libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    apt_update() { \
-        apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 update; \
-    }; \
-    apt_update && \
-    apt-get --no-install-recommends install -y ca-certificates && \
-    cp /etc/apt/sources.list.d/ubuntu.sources /tmp/ubuntu.sources && \
-    use_official_sources() { \
-        cp /tmp/ubuntu.sources /etc/apt/sources.list.d/ubuntu.sources; \
-    }; \
-    use_mirror_sources() { \
+    apt update && \
+    apt --no-install-recommends install -y ca-certificates; \
+    if [ "$NEED_MIRROR" == "1" ]; then \
         sed -i 's|http://archive.ubuntu.com/ubuntu|https://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
         sed -i 's|http://security.ubuntu.com/ubuntu|https://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
-    }; \
-    apt_update_with_fallback() { \
-        if apt_update; then \
-            return 0; \
-        fi; \
-        if [ "$NEED_MIRROR" != "1" ]; then \
-            return 1; \
-        fi; \
-        echo "Mirror apt update failed, falling back to official Ubuntu archives"; \
-        use_official_sources; \
-        apt_update; \
-    }; \
-    if [ "$NEED_MIRROR" == "1" ]; then \
-        use_mirror_sources; \
     fi; \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
     chmod 1777 /tmp && \
-    apt_update_with_fallback && \
-    apt install -y build-essential libglib2.0-0 libglx-mesa0 libgl1 pkg-config libicu-dev libgdiplus default-jdk libatk-bridge2.0-0 libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev libjemalloc-dev gnupg unzip curl wget git vim less ghostscript pandoc texlive fonts-freefont-ttf fonts-noto-cjk postgresql-client
+    apt update && \
+    apt install -y \
+    build-essential libglib2.0-0 libglx-mesa0 libgl1 pkg-config libicu-dev libgdiplus default-jdk libatk-bridge2.0-0 libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev libjemalloc-dev gnupg unzip curl wget git vim less ghostscript pandoc texlive texlive-latex-extra texlive-xetex texlive-lang-chinese fonts-freefont-ttf fonts-noto-cjk postgresql-client
 
 # Download resource from GitHub to /usr/share/infinity
 RUN mkdir -p /usr/share/infinity/resource && \
