@@ -21,6 +21,7 @@ type RAGFlowFormItemProps = {
   horizontal?: boolean;
   required?: boolean;
   labelClassName?: string;
+  valueClassName?: string;
   className?: string;
 } & Pick<UseControllerProps<any>, 'rules'>;
 
@@ -32,6 +33,7 @@ export function RAGFlowFormItem({
   horizontal = false,
   required = false,
   labelClassName,
+  valueClassName,
   className,
   rules,
 }: RAGFlowFormItemProps) {
@@ -60,10 +62,14 @@ export function RAGFlowFormItem({
             </FormLabel>
           )}
           <div
-            className={cn('flex flex-col', {
-              'w-full': !horizontal,
-              'w-3/4': horizontal,
-            })}
+            className={cn(
+              'flex flex-col',
+              {
+                'w-full': !horizontal,
+                'w-3/4': horizontal,
+              },
+              valueClassName,
+            )}
           >
             <FormControl>
               {typeof children === 'function'
