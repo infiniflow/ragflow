@@ -14,6 +14,45 @@
     "canvas_category": "dataflow_canvas",
         "dsl": {
             "components": {
+                "Extractor:ClearAnimalsWink": {
+                    "downstream": [
+                        "Tokenizer:TangyBirdsShare"
+                    ],
+                    "obj": {
+                        "component_name": "Extractor",
+                        "params": {
+                            "field_name": "summary",
+                            "frequencyPenaltyEnabled": true,
+                            "frequency_penalty": 0.7,
+                            "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
+                            "maxTokensEnabled": false,
+                            "max_tokens": 256,
+                            "outputs": {
+                                "chunks": {
+                                    "type": "Array<Object>",
+                                    "value": []
+                                }
+                            },
+                            "presencePenaltyEnabled": true,
+                            "presence_penalty": 0.4,
+                            "prompts": [
+                                {
+                                    "content": "Text to Summarize:\n{TitleChunker:FuzzyPantsLose@chunks}",
+                                    "role": "user"
+                                }
+                            ],
+                            "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
+                            "temperature": 0.1,
+                            "temperatureEnabled": true,
+                            "tenant_llm_id": 63,
+                            "topPEnabled": true,
+                            "top_p": 0.3
+                        }
+                    },
+                    "upstream": [
+                        "TitleChunker:FuzzyPantsLose"
+                    ]
+                },
                 "File": {
                     "downstream": [
                         "Parser:HipSignsRhyme"
@@ -58,7 +97,6 @@
                                     ]
                                 },
                                 "docx": {
-                                    "flatten_media_to_text": false,
                                     "output_format": "json",
                                     "preprocess": "main_content",
                                     "suffix": [
@@ -105,7 +143,6 @@
                                     "system_prompt": ""
                                 },
                                 "markdown": {
-                                    "flatten_media_to_text": false,
                                     "output_format": "json",
                                     "preprocess": "main_content",
                                     "suffix": [
@@ -116,7 +153,6 @@
                                     "vlm": {}
                                 },
                                 "pdf": {
-                                    "flatten_media_to_text": false,
                                     "output_format": "json",
                                     "parse_method": "DeepDOC",
                                     "preprocess": "main_content",
@@ -135,7 +171,6 @@
                                     ]
                                 },
                                 "spreadsheet": {
-                                    "flatten_media_to_text": false,
                                     "output_format": "html",
                                     "parse_method": "DeepDOC",
                                     "preprocess": "main_content",
@@ -175,7 +210,7 @@
                 },
                 "TitleChunker:FuzzyPantsLose": {
                     "downstream": [
-                        "Tokenizer:TangyBirdsShare"
+                        "Extractor:ClearAnimalsWink"
                     ],
                     "obj": {
                         "component_name": "TitleChunker",
@@ -239,7 +274,7 @@
                         }
                     },
                     "upstream": [
-                        "TitleChunker:FuzzyPantsLose"
+                        "Extractor:ClearAnimalsWink"
                     ]
                 }
             },
@@ -266,11 +301,21 @@
                         "data": {
                             "isHovered": false
                         },
-                        "id": "xy-edge__TitleChunker:FuzzyPantsLosestart-Tokenizer:TangyBirdsShareend",
+                        "id": "xy-edge__TitleChunker:FuzzyPantsLosestart-Extractor:ClearAnimalsWinkend",
                         "source": "TitleChunker:FuzzyPantsLose",
                         "sourceHandle": "start",
-                        "target": "Tokenizer:TangyBirdsShare",
+                        "target": "Extractor:ClearAnimalsWink",
                         "targetHandle": "end"
+                    },
+                    {
+                        "id": "xy-edge__Extractor:ClearAnimalsWinkstart-Tokenizer:TangyBirdsShareend",
+                        "markerEnd": "logo",
+                        "source": "Extractor:ClearAnimalsWink",
+                        "sourceHandle": "start",
+                        "target": "Tokenizer:TangyBirdsShare",
+                        "targetHandle": "end",
+                        "type": "buttonEdge",
+                        "zIndex": 1001
                     }
                 ],
                 "nodes": [
@@ -391,7 +436,7 @@
                         "dragging": false,
                         "id": "Parser:HipSignsRhyme",
                         "measured": {
-                            "height": 57,
+                            "height": 198,
                             "width": 200
                         },
                         "position": {
@@ -549,6 +594,49 @@
                         "sourcePosition": "right",
                         "targetPosition": "left",
                         "type": "tokenizerNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "field_name": "summary",
+                                "frequencyPenaltyEnabled": true,
+                                "frequency_penalty": 0.7,
+                                "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
+                                "maxTokensEnabled": false,
+                                "max_tokens": 256,
+                                "outputs": {
+                                    "chunks": {
+                                        "type": "Array<Object>",
+                                        "value": []
+                                    }
+                                },
+                                "presencePenaltyEnabled": true,
+                                "presence_penalty": 0.4,
+                                "prompts": "Text to Summarize:\n{TitleChunker:FuzzyPantsLose@chunks}",
+                                "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
+                                "temperature": 0.1,
+                                "temperatureEnabled": true,
+                                "tenant_llm_id": 63,
+                                "topPEnabled": true,
+                                "top_p": 0.3
+                            },
+                            "label": "Extractor",
+                            "name": "Transformer_0"
+                        },
+                        "dragging": false,
+                        "id": "Extractor:ClearAnimalsWink",
+                        "measured": {
+                            "height": 90,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 650.8284281106984,
+                            "y": 313.3477721044113
+                        },
+                        "selected": true,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "contextNode"
                     }
                 ]
             },
