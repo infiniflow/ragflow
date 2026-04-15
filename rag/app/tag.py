@@ -47,6 +47,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         Every pair will be treated as a chunk.
     """
     eng = lang.lower() == "english"
+    rag_tokenizer.tokenizer.set_language(lang)
     res = []
     doc = {
         "docnm_kwd": filename,

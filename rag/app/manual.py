@@ -261,8 +261,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             callback=callback,
             **kwargs,
         )
-        res = tokenize_table(tbls, doc, eng)
-        res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
+        res = tokenize_table(tbls, doc, eng, language=lang)
+        res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser, language=lang))
         table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
         image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
         if table_ctx or image_ctx:
@@ -278,13 +278,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         docx_parser = Docx()
         ti_list, tbls = docx_parser(filename, binary, from_page=0, to_page=10000, callback=callback)
         tbls = vision_figure_parser_docx_wrapper(sections=ti_list, tbls=tbls, callback=callback, **kwargs)
-        res = tokenize_table(tbls, doc, eng)
+        res = tokenize_table(tbls, doc, eng, language=lang)
         for text, image in ti_list:
             d = copy.deepcopy(doc)
             if image:
                 d["image"] = image
                 d["doc_type_kwd"] = "image"
-            tokenize(d, text, eng)
+            tokenize(d, text, eng, language=lang)
             res.append(d)
         table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
         image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))

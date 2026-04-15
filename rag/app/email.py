@@ -104,7 +104,7 @@ def chunk(
         parser_config.get("delimiter", "\n!?。；！？"),
     )
 
-    main_res.extend(tokenize_chunks(chunks, doc, eng, None))
+    main_res.extend(tokenize_chunks(chunks, doc, eng, None, language=lang))
     logging.debug("naive_merge({}): {}".format(filename, timer() - st))
     # get the attachment info
     for part in msg.iter_attachments():
