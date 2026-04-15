@@ -736,6 +736,9 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       delete: 'Löschen',
     },
     chat: {
+      chatSupport: 'Chat-Support',
+      replyInstantly: 'Wir antworten in der Regel sofort',
+      typeYourMessage: 'Nachricht eingeben...',
       messagePlaceholder: 'Geben Sie hier Ihre Nachricht ein...',
       exit: 'Verlassen',
       multipleModels: 'Mehrere Modelle',
