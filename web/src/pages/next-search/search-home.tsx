@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import './index.less';
 import { RAGFlowLogo } from './ragflow-log';
 
-export default function SearchPage({
+export default function SearchHome({
   isSearching,
   setIsSearching,
   searchText,

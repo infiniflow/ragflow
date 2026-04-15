@@ -38,6 +38,7 @@ from api.utils.api_utils import (
     get_request_json,
 )
 from common.misc_utils import thread_pool_exec
+from common.tag_feature_utils import validate_tag_features
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
@@ -161,7 +162,10 @@ async def set():
             return get_data_error_result(message="`tag_kwd` must be a list of strings")
         d["tag_kwd"] = req["tag_kwd"]
     if "tag_feas" in req:
-        d["tag_feas"] = req["tag_feas"]
+        try:
+            d["tag_feas"] = validate_tag_features(req["tag_feas"])
+        except ValueError as exc:
+            return get_data_error_result(message=f"`tag_feas` {exc}")
     if "available_int" in req:
         d["available_int"] = req["available_int"]
 
@@ -328,7 +332,10 @@ async def create():
             return get_data_error_result(message="`tag_kwd` must be a list of strings")
         d["tag_kwd"] = req["tag_kwd"]
     if "tag_feas" in req:
-        d["tag_feas"] = req["tag_feas"]
+        try:
+            d["tag_feas"] = validate_tag_features(req["tag_feas"])
+        except ValueError as exc:
+            return get_data_error_result(message=f"`tag_feas` {exc}")
     image_base64 = req.get("image_base64", None)
 
     try:
