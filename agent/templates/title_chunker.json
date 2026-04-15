@@ -14,9 +14,9 @@
     "canvas_category": "dataflow_canvas",
         "dsl": {
             "components": {
-                "Extractor:ClearAnimalsWink": {
+                "Extractor:DryRatsGive": {
                     "downstream": [
-                        "Tokenizer:TangyBirdsShare"
+                        "Tokenizer:WackyOnionsFly"
                     ],
                     "obj": {
                         "component_name": "Extractor",
@@ -37,7 +37,7 @@
                             "presence_penalty": 0.4,
                             "prompts": [
                                 {
-                                    "content": "Text to Summarize:\n{TitleChunker:FuzzyPantsLose@chunks}",
+                                    "content": "Text to Summarize:\n{TitleChunker:WideResultsTeach@chunks}",
                                     "role": "user"
                                 }
                             ],
@@ -50,7 +50,7 @@
                         }
                     },
                     "upstream": [
-                        "TitleChunker:FuzzyPantsLose"
+                        "TitleChunker:WideResultsTeach"
                     ]
                 },
                 "File": {
@@ -65,7 +65,7 @@
                 },
                 "Parser:HipSignsRhyme": {
                     "downstream": [
-                        "TitleChunker:FuzzyPantsLose"
+                        "TitleChunker:WideResultsTeach"
                     ],
                     "obj": {
                         "component_name": "Parser",
@@ -97,6 +97,7 @@
                                     ]
                                 },
                                 "docx": {
+                                    "flatten_media_to_text": false,
                                     "output_format": "json",
                                     "preprocess": "main_content",
                                     "suffix": [
@@ -143,6 +144,7 @@
                                     "system_prompt": ""
                                 },
                                 "markdown": {
+                                    "flatten_media_to_text": false,
                                     "output_format": "json",
                                     "preprocess": "main_content",
                                     "suffix": [
@@ -153,6 +155,7 @@
                                     "vlm": {}
                                 },
                                 "pdf": {
+                                    "flatten_media_to_text": false,
                                     "output_format": "json",
                                     "parse_method": "DeepDOC",
                                     "preprocess": "main_content",
@@ -171,6 +174,7 @@
                                     ]
                                 },
                                 "spreadsheet": {
+                                    "flatten_media_to_text": false,
                                     "output_format": "html",
                                     "parse_method": "DeepDOC",
                                     "preprocess": "main_content",
@@ -208,9 +212,9 @@
                         "File"
                     ]
                 },
-                "TitleChunker:FuzzyPantsLose": {
+                "TitleChunker:WideResultsTeach": {
                     "downstream": [
-                        "Extractor:ClearAnimalsWink"
+                        "Extractor:DryRatsGive"
                     ],
                     "obj": {
                         "component_name": "TitleChunker",
@@ -259,7 +263,7 @@
                         "Parser:HipSignsRhyme"
                     ]
                 },
-                "Tokenizer:TangyBirdsShare": {
+                "Tokenizer:WackyOnionsFly": {
                     "downstream": [],
                     "obj": {
                         "component_name": "Tokenizer",
@@ -274,7 +278,7 @@
                         }
                     },
                     "upstream": [
-                        "Extractor:ClearAnimalsWink"
+                        "Extractor:DryRatsGive"
                     ]
                 }
             },
@@ -291,31 +295,25 @@
                         "targetHandle": "end"
                     },
                     {
-                        "id": "xy-edge__Parser:HipSignsRhymestart-TitleChunker:FuzzyPantsLoseend",
+                        "id": "xy-edge__Parser:HipSignsRhymestart-TitleChunker:WideResultsTeachend",
                         "source": "Parser:HipSignsRhyme",
                         "sourceHandle": "start",
-                        "target": "TitleChunker:FuzzyPantsLose",
+                        "target": "TitleChunker:WideResultsTeach",
                         "targetHandle": "end"
                     },
                     {
-                        "data": {
-                            "isHovered": false
-                        },
-                        "id": "xy-edge__TitleChunker:FuzzyPantsLosestart-Extractor:ClearAnimalsWinkend",
-                        "source": "TitleChunker:FuzzyPantsLose",
+                        "id": "xy-edge__TitleChunker:WideResultsTeachstart-Extractor:DryRatsGiveend",
+                        "source": "TitleChunker:WideResultsTeach",
                         "sourceHandle": "start",
-                        "target": "Extractor:ClearAnimalsWink",
+                        "target": "Extractor:DryRatsGive",
                         "targetHandle": "end"
                     },
                     {
-                        "id": "xy-edge__Extractor:ClearAnimalsWinkstart-Tokenizer:TangyBirdsShareend",
-                        "markerEnd": "logo",
-                        "source": "Extractor:ClearAnimalsWink",
+                        "id": "xy-edge__Extractor:DryRatsGivestart-Tokenizer:WackyOnionsFlyend",
+                        "source": "Extractor:DryRatsGive",
                         "sourceHandle": "start",
-                        "target": "Tokenizer:TangyBirdsShare",
-                        "targetHandle": "end",
-                        "type": "buttonEdge",
-                        "zIndex": 1001
+                        "target": "Tokenizer:WackyOnionsFly",
+                        "targetHandle": "end"
                     }
                 ],
                 "nodes": [
@@ -436,7 +434,7 @@
                         "dragging": false,
                         "id": "Parser:HipSignsRhyme",
                         "measured": {
-                            "height": 198,
+                            "height": 57,
                             "width": 200
                         },
                         "position": {
@@ -555,7 +553,7 @@
                             "label": "TitleChunker",
                             "name": "Title Chunker_0"
                         },
-                        "id": "TitleChunker:FuzzyPantsLose",
+                        "id": "TitleChunker:WideResultsTeach",
                         "measured": {
                             "height": 74,
                             "width": 200
@@ -567,33 +565,6 @@
                         "sourcePosition": "right",
                         "targetPosition": "left",
                         "type": "chunkerNode"
-                    },
-                    {
-                        "data": {
-                            "form": {
-                                "fields": "text",
-                                "filename_embd_weight": 0.1,
-                                "outputs": {},
-                                "search_method": [
-                                    "embedding",
-                                    "full_text"
-                                ]
-                            },
-                            "label": "Tokenizer",
-                            "name": "Indexer_0"
-                        },
-                        "id": "Tokenizer:TangyBirdsShare",
-                        "measured": {
-                            "height": 114,
-                            "width": 200
-                        },
-                        "position": {
-                            "x": 916.9952409420641,
-                            "y": 195.39629819663406
-                        },
-                        "sourcePosition": "right",
-                        "targetPosition": "left",
-                        "type": "tokenizerNode"
                     },
                     {
                         "data": {
@@ -612,7 +583,7 @@
                                 },
                                 "presencePenaltyEnabled": true,
                                 "presence_penalty": 0.4,
-                                "prompts": "Text to Summarize:\n{TitleChunker:FuzzyPantsLose@chunks}",
+                                "prompts": "Text to Summarize:\n{TitleChunker:WideResultsTeach@chunks}",
                                 "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
                                 "temperature": 0.1,
                                 "temperatureEnabled": true,
@@ -623,20 +594,46 @@
                             "label": "Extractor",
                             "name": "Transformer_0"
                         },
-                        "dragging": false,
-                        "id": "Extractor:ClearAnimalsWink",
+                        "id": "Extractor:DryRatsGive",
                         "measured": {
                             "height": 90,
                             "width": 200
                         },
                         "position": {
-                            "x": 650.8284281106984,
-                            "y": 313.3477721044113
+                            "x": 916.9952409420641,
+                            "y": 195.39629819663406
                         },
                         "selected": true,
                         "sourcePosition": "right",
                         "targetPosition": "left",
                         "type": "contextNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "fields": "text",
+                                "filename_embd_weight": 0.1,
+                                "outputs": {},
+                                "search_method": [
+                                    "embedding",
+                                    "full_text"
+                                ]
+                            },
+                            "label": "Tokenizer",
+                            "name": "Indexer_0"
+                        },
+                        "id": "Tokenizer:WackyOnionsFly",
+                        "measured": {
+                            "height": 114,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 1216.9952409420641,
+                            "y": 195.39629819663406
+                        },
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "tokenizerNode"
                     }
                 ]
             },
