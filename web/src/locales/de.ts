@@ -371,7 +371,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       changeSpecificCategory: 'Spezifische Kategorie ändern',
       uploadTitle: 'Ziehen Sie Ihre Datei hierher, um sie hochzuladen',
       uploadDescription:
-        'RAGFlow unterstützt das Hochladen von Dateien einzeln oder in Batches. Für lokal bereitgestelltes RAGFlow: Die maximale Dateigröße pro Upload beträgt 1 GB, mit einem Batch-Upload-Limit von 32 Dateien. Es gibt keine Begrenzung der Gesamtanzahl an Dateien pro Konto. Für cloud.ragflow.io: Die maximale Dateigröße pro Upload beträgt 10 MB, wobei jede Datei nicht größer als 10 MB sein darf und maximal 128 Dateien pro Konto erlaubt sind.',
+        'RAGFlow unterstützt das Hochladen von Dateien einzeln oder in Batches. Die maximale Dateigröße pro Upload beträgt 1 GB, mit einem Batch-Upload-Limit von 32 Dateien. Es gibt keine Begrenzung der Gesamtanzahl an Dateien pro Konto.',
       chunk: 'Chunk',
       bulk: 'Masse',
       cancel: 'Abbrechen',
@@ -722,7 +722,7 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       function: 'Funktion',
       chunkMessage: 'Bitte Wert eingeben!',
       full: 'Volltext',
-      ellipse: 'Ellipse',
+      ellipse: 'Zusammenfassung',
       graph: 'Wissensgraph',
       mind: 'Mind Map',
       question: 'Frage',

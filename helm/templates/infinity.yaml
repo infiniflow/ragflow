@@ -60,7 +60,7 @@ spec:
         {{- end }}
         envFrom:
           - secretRef:
-              name: {{ include "ragflow.fullname" . }}-env-config
+              name: {{ include "ragflow.fullname" . }}
         ports:
           - containerPort: 23817
             name: thrift

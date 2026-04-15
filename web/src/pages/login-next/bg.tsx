@@ -27,9 +27,9 @@ export const BgSvg = ({ isPaused = false }: { isPaused?: boolean }) => {
       >
         <defs>
           <linearGradient id={`glow${id}`} x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#80FFF8" stopOpacity="0" />
-            <stop offset="50%" stopColor="#80FFF8" stopOpacity="1" />
-            <stop offset="100%" stopColor="#80FFF8" stopOpacity="0" />
+            <stop offset="0%" stopColor="#EE0000" stopOpacity="0" />
+            <stop offset="50%" stopColor="#EE0000" stopOpacity="1" />
+            <stop offset="100%" stopColor="#EE0000" stopOpacity="0" />
           </linearGradient>
           <linearGradient
             id="strokeWidthGradient"
@@ -106,7 +106,7 @@ export const BgSvg = ({ isPaused = false }: { isPaused?: boolean }) => {
         </defs>
         <path
           d={path}
-          stroke="#00BEB4"
+          stroke="#EE0000"
           strokeWidth="1"
           fill="none"
           opacity="0.1"

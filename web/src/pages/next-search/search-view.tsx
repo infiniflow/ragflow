@@ -25,7 +25,6 @@ import { ISearchReturnProps } from './hooks';
 import './index.less';
 import MarkdownContent from './markdown-content';
 import MindMapDrawer from './mindmap-drawer';
-import { RAGFlowLogo } from './ragflow-log';
 import RetrievalDocuments from './retrieval-documents';
 
 export default function SearchingView({
@@ -81,11 +80,16 @@ export default function SearchingView({
           'relative z-10 px-8 pt-8 flex  text-transparent justify-start items-start w-full h-full',
         )}
       >
-        <RAGFlowLogo
+        <h1
+          className={cn(
+            'text-4xl font-bold bg-gradient-to-l from-[#9B348E] to-[#ee0000] bg-clip-text cursor-pointer',
+          )}
           onClick={() => {
             setIsSearching?.(false);
           }}
-        ></RAGFlowLogo>
+        >
+          KIRA
+        </h1>
         <div
           className={cn(
             ' rounded-lg text-primary text-xl sticky flex flex-col justify-center w-2/3 transform scale-100 ml-16 h-full',

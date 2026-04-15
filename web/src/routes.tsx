@@ -130,10 +130,6 @@ const routeConfigOptions = [
     layout: false,
   },
   {
-    path: Routes.AgentList,
-    Component: () => import('@/pages/agents'),
-  },
-  {
     path: '/document/:id',
     Component: () => import('@/pages/document-viewer'),
     layout: false,
