@@ -29,7 +29,12 @@ import importlib.util
 import json
 import pathlib
 import sys
+import warnings
 from unittest.mock import MagicMock
+
+# Suppress deprecation warnings from third-party libraries (e.g. huggingface_hub)
+# that are triggered during module import but are not related to the code under test.
+warnings.filterwarnings("ignore", category=UserWarning, module="huggingface_hub")
 
 import networkx as nx
 import pytest
