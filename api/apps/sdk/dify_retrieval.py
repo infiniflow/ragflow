@@ -15,7 +15,7 @@
 #
 import logging
 
-from quart import jsonify
+from quart import jsonify, request
 
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
@@ -28,7 +28,28 @@ from rag.app.tag import label_question
 from common.constants import RetCode, LLMType
 from common import settings
 
-@manager.route('/dify/retrieval', methods=['POST'])  # noqa: F821
+async def _read_retrieval_request():
+    if request.method == "GET":
+        query_args = request.args
+        retrieval_setting = {}
+        top_k = query_args.get("top_k")
+        score_threshold = query_args.get("score_threshold")
+        if top_k is not None:
+            retrieval_setting["top_k"] = top_k
+        if score_threshold is not None:
+            retrieval_setting["score_threshold"] = score_threshold
+
+        req = {
+            "knowledge_id": query_args.get("knowledge_id"),
+            "query": query_args.get("query"),
+            "use_kg": str(query_args.get("use_kg", "")).lower() in {"1", "true", "yes", "on"},
+            "retrieval_setting": retrieval_setting,
+        }
+        return req
+    return await get_request_json()
+
+
+@manager.route('/dify/retrieval', methods=['POST', 'GET'])  # noqa: F821
 @apikey_required
 @validate_request("knowledge_id", "query")
 async def retrieval(tenant_id):
@@ -115,7 +136,7 @@ async def retrieval(tenant_id):
       404:
         description: Knowledge base or document not found
     """
-    req = await get_request_json()
+    req = await _read_retrieval_request()
     question = req["query"]
     kb_id = req["knowledge_id"]
     use_kg = req.get("use_kg", False)

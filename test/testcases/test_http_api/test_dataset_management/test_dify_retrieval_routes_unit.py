@@ -352,3 +352,40 @@ def test_retrieval_generic_exception_mapping(monkeypatch):
     res = _run(inspect.unwrap(module.retrieval)("tenant-1"))
     assert res["code"] == module.RetCode.SERVER_ERROR, res
     assert "boom" in res["message"], res
+
+
+@pytest.mark.p2
+def test_read_retrieval_request_from_get_args(monkeypatch):
+    module = _load_dify_retrieval_module(monkeypatch)
+    monkeypatch.setattr(
+        module,
+        "request",
+        SimpleNamespace(
+            method="GET",
+            args={
+                "knowledge_id": "kb-1",
+                "query": "hello",
+                "use_kg": "true",
+                "top_k": "12",
+                "score_threshold": "0.66",
+            },
+        ),
+    )
+
+    req = _run(module._read_retrieval_request())
+    assert req["knowledge_id"] == "kb-1", req
+    assert req["query"] == "hello", req
+    assert req["use_kg"] is True, req
+    assert req["retrieval_setting"]["top_k"] == "12", req
+    assert req["retrieval_setting"]["score_threshold"] == "0.66", req
+
+
+@pytest.mark.p2
+def test_read_retrieval_request_from_post_json(monkeypatch):
+    module = _load_dify_retrieval_module(monkeypatch)
+    payload = {"knowledge_id": "kb-1", "query": "hello"}
+    monkeypatch.setattr(module, "request", SimpleNamespace(method="POST", args={}))
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue(payload))
+
+    req = _run(module._read_retrieval_request())
+    assert req == payload, req
