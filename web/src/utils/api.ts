@@ -124,7 +124,6 @@ export default {
   webCrawl: `${webAPI}/document/web_crawl`,
   documentInfos: `${webAPI}/document/infos`,
   uploadAndParse: `${webAPI}/document/upload_info`,
-  parse: `${webAPI}/document/parse`,
   setMeta: `${webAPI}/document/set_meta`,
   getDatasetFilter: `${webAPI}/document/filter`,
 
