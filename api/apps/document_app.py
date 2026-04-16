@@ -420,11 +420,15 @@ async def update_metadata_setting():
 
 
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
-# @login_required
-def thumbnails():
+@login_required
+async def thumbnails():
     doc_ids = request.args.getlist("doc_ids")
     if not doc_ids:
         return get_json_result(data=False, message='Lack of "Document ID"', code=RetCode.ARGUMENT_ERROR)
+
+    for doc_id in doc_ids:
+        if not DocumentService.accessible(doc_id, current_user.id):
+            return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         docs = DocumentService.get_thumbnails(doc_ids)
