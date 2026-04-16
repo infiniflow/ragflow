@@ -18,6 +18,7 @@ import binascii
 import logging
 import re
 import time
+import uuid
 from copy import deepcopy
 
 logger = logging.getLogger(__name__)
@@ -846,14 +847,14 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
     else:
         doc_engine = "es"
 
-    _UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
-
     def _validate_uuid(value: str, label: str = "id") -> str:
-        """Raise ValueError if value is not a canonical UUID string."""
-        if not _UUID_RE.match(str(value)):
+        """Raise ValueError if value is not a valid UUID; return its canonical form."""
+        try:
+            canonical = str(uuid.UUID(str(value)))
+        except (ValueError, AttributeError, TypeError):
             logger.warning("SQL injection guard rejected invalid %s value (length=%d)", label, len(str(value)))
             raise ValueError(f"Invalid {label} format: {value!r}")
-        return value
+        return canonical
 
     # Construct the full table name
     # For Elasticsearch: ragflow_{tenant_id} (kb_id is in WHERE clause)
