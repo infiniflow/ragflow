@@ -32,7 +32,7 @@ export function Header({
   const changeLanguage = useChangeLanguage();
 
   const {
-    data: { language = 'en', avatar, nickname },
+    data: { language = 'de', avatar, nickname },
   } = useFetchUserInfo();
 
   const { data: tenantData } = useListTenant();

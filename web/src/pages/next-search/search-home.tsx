@@ -2,6 +2,7 @@ import { Input } from '@/components/originui/input';
 import Spotlight from '@/components/spotlight';
 import message from '@/components/ui/message';
 import { IUserInfo } from '@/interfaces/database/user-setting';
+import { cn } from '@/lib/utils.ts';
 import { Search } from 'lucide-react';
 import { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
