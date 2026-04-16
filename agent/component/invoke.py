@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import ast
 import json
 import logging
 import os
@@ -54,6 +55,15 @@ class InvokeParam(ComponentParamBase):
 class Invoke(ComponentBase, ABC):
     component_name = "Invoke"
 
+    @staticmethod
+    def _literal_eval_if_possible(value):
+        if not isinstance(value, str):
+            return value
+        try:
+            return ast.literal_eval(value)
+        except Exception:
+            return value
+
     def get_input_form(self) -> dict[str, dict]:
         res = {}
         for item in self._param.variables or []:
@@ -78,13 +88,14 @@ class Invoke(ComponentBase, ABC):
 
         args = {}
         for para in self._param.variables:
-            if para.get("value"):
-                args[para["key"]] = para["value"]
+            if "value" in para and para.get("value") is not None:
+                t = self._literal_eval_if_possible(para["value"])
+                args[para["key"]] = self._literal_eval_if_possible(para["value"])
             elif para.get("ref") in kwargs:
-                args[para["key"]] = kwargs[para["ref"]]
-                self.set_input_value(para["ref"], kwargs[para["ref"]])
+                args[para["key"]] = self._literal_eval_if_possible(kwargs[para["ref"]])
+                self.set_input_value(para["ref"], args[para["key"]])
             else:
-                args[para["key"]] = self._canvas.get_variable_value(para["ref"])
+                args[para["key"]] = self._literal_eval_if_possible(self._canvas.get_variable_value(para["ref"]))
                 self.set_input_value(para["ref"], args[para["key"]])
 
         url = self._param.url.strip()
