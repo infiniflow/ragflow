@@ -243,6 +243,35 @@ async def get_storage_binary(bucket, name):
     return await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, name)
 
 
+def _resolve_built_in_metadata(task: dict) -> dict:
+    """Resolve built-in metadata values from task parser settings."""
+    built_in_metadata = {}
+    built_in_metadata_setting = task["parser_config"].get("built_in_metadata") or []
+    if not isinstance(built_in_metadata_setting, list):
+        return built_in_metadata
+
+    built_in_metadata_keys = set()
+    for item in built_in_metadata_setting:
+        if isinstance(item, str):
+            built_in_metadata_keys.add(item)
+        elif isinstance(item, dict):
+            key = item.get("key")
+            if isinstance(key, str) and key:
+                built_in_metadata_keys.add(key)
+
+    if "file_name" in built_in_metadata_keys and task.get("name"):
+        built_in_metadata["file_name"] = str(task["name"])
+
+    if "update_time" in built_in_metadata_keys:
+        update_time = task.get("update_time")
+        if isinstance(update_time, datetime):
+            built_in_metadata["update_time"] = update_time.isoformat()
+        elif update_time:
+            built_in_metadata["update_time"] = str(update_time)
+
+    return built_in_metadata
+
+
 @timeout(60 * 80, 1)
 async def build_chunks(task, progress_callback):
     """Parse a document task and build enriched chunks for indexing.
@@ -414,27 +443,7 @@ async def build_chunks(task, progress_callback):
             raise
         progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
-    built_in_metadata = {}
-    built_in_metadata_setting = task["parser_config"].get("built_in_metadata") or []
-    if isinstance(built_in_metadata_setting, list):
-        built_in_metadata_keys = set()
-        for item in built_in_metadata_setting:
-            if isinstance(item, str):
-                built_in_metadata_keys.add(item)
-            elif isinstance(item, dict):
-                key = item.get("key")
-                if isinstance(key, str) and key:
-                    built_in_metadata_keys.add(key)
-
-        if "file_name" in built_in_metadata_keys and task.get("name"):
-            built_in_metadata["file_name"] = str(task["name"])
-
-        if "update_time" in built_in_metadata_keys:
-            update_time = task.get("update_time")
-            if isinstance(update_time, datetime):
-                built_in_metadata["update_time"] = update_time.isoformat()
-            elif update_time:
-                built_in_metadata["update_time"] = str(update_time)
+    built_in_metadata = _resolve_built_in_metadata(task)
 
     metadata_setting = task["parser_config"].get("metadata")
     metadata_schema = turn2jsonschema(metadata_setting) if metadata_setting else {}
@@ -473,13 +482,22 @@ async def build_chunks(task, progress_callback):
         metadata = {}
         for doc in docs:
             if doc.get("metadata_obj"):
-                metadata = update_metadata_to(metadata, doc["metadata_obj"])
+                metadata = update_metadata_to(
+                    existing_metadata=metadata,
+                    incoming_metadata=doc["metadata_obj"],
+                )
                 del doc["metadata_obj"]
         if metadata or built_in_metadata:
             existing_meta = DocMetadataService.get_document_metadata(task["doc_id"])
             existing_meta = existing_meta if isinstance(existing_meta, dict) else {}
-            merged_meta = update_metadata_to(existing_meta, metadata)
-            merged_meta = update_metadata_to(merged_meta, built_in_metadata)
+            merged_meta = update_metadata_to(
+                existing_metadata=existing_meta,
+                incoming_metadata=metadata,
+            )
+            merged_meta = update_metadata_to(
+                existing_metadata=merged_meta,
+                incoming_metadata=built_in_metadata,
+            )
             DocMetadataService.update_document_metadata(task["doc_id"], merged_meta)
         progress_callback(msg="Metadata generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
@@ -766,7 +784,10 @@ async def run_dataflow(task: dict):
                 ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
             del ck["summary"]
         if "metadata" in ck:
-            metadata = update_metadata_to(metadata, ck["metadata"])
+            metadata = update_metadata_to(
+                existing_metadata=metadata,
+                incoming_metadata=ck["metadata"],
+            )
             del ck["metadata"]
         if "content_with_weight" not in ck:
             ck["content_with_weight"] = ck["text"]
@@ -778,7 +799,10 @@ async def run_dataflow(task: dict):
     if metadata:
         existing_meta = DocMetadataService.get_document_metadata(doc_id)
         existing_meta = existing_meta if isinstance(existing_meta, dict) else {}
-        metadata = update_metadata_to(metadata, existing_meta)
+        metadata = update_metadata_to(
+            existing_metadata=metadata,
+            incoming_metadata=existing_meta,
+        )
         DocMetadataService.update_document_metadata(doc_id, metadata)
 
     start_ts = timer()
