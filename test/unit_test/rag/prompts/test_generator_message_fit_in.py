@@ -113,3 +113,21 @@ def test_message_fit_in_handles_zero_token_messages(monkeypatch):
 
     assert used_tokens == 0
     assert trimmed == messages
+
+
+@pytest.mark.p1
+def test_message_fit_in_clamps_negative_slice_lengths(monkeypatch):
+    generator = _load_generator_module(monkeypatch)
+    monkeypatch.setattr(generator, "num_tokens_from_string", lambda text: len(text))
+    monkeypatch.setattr(generator, "encoder", _CharEncoder())
+
+    messages = [
+        {"role": "system", "content": "1234"},
+        {"role": "user", "content": "abcdefghij"},
+    ]
+
+    used_tokens, trimmed = generator.message_fit_in(messages, max_length=2)
+
+    assert used_tokens == 2
+    assert trimmed[0]["content"] == "1234"
+    assert trimmed[-1]["content"] == ""

@@ -91,16 +91,26 @@ def message_fit_in(msg, max_length=4000):
     ll2 = num_tokens_from_string(msg_[-1]["content"])
     total = ll + ll2
     if total <= 0:
+        logging.debug(
+            "message_fit_in degenerate token counts total=%s max_length=%s ll=%s ll2=%s preserved_roles=%s",
+            total,
+            max_length,
+            ll,
+            ll2,
+            [m.get("role") for m in msg],
+        )
         return 0, msg
 
     if ll / total > 0.8:
         m = msg_[0]["content"]
-        m = encoder.decode(encoder.encode(m)[: max_length - ll2])
+        preserve_len = max(0, max_length - ll2)
+        m = encoder.decode(encoder.encode(m)[:preserve_len])
         msg[0]["content"] = m
         return max_length, msg
 
     m = msg_[-1]["content"]
-    m = encoder.decode(encoder.encode(m)[: max_length - ll])
+    preserve_len_last = max(0, max_length - ll)
+    m = encoder.decode(encoder.encode(m)[:preserve_len_last])
     msg[-1]["content"] = m
     return max_length, msg
 
