@@ -314,8 +314,16 @@ def test_iteration_runtime_processes_all_array_items(monkeypatch):
     assert any(event["event"] == "workflow_finished" for event in events)
 
 
+@pytest.mark.parametrize(
+    ("query", "expected_calls"),
+    [
+        ("{item}", ["a", "b", "c"]),
+        ("{index}", ["0", "1", "2"]),
+        ("{result}", ["a", "b", "c"]),
+    ],
+)
 @pytest.mark.p2
-def test_iteration_runtime_supports_bare_item_alias(monkeypatch):
+def test_iteration_runtime_supports_bare_iteration_aliases(monkeypatch, query, expected_calls):
     canvas_mod = _load_canvas_runtime(monkeypatch)
 
     dsl = {
@@ -342,7 +350,7 @@ def test_iteration_runtime_supports_bare_item_alias(monkeypatch):
             "Probe:1": {
                 "obj": {
                     "component_name": "Probe",
-                    "params": {"query": "{item}"},
+                    "params": {"query": query},
                 },
                 "parent_id": "Iteration:1",
                 "downstream": [],
@@ -380,4 +388,4 @@ def test_iteration_runtime_supports_bare_item_alias(monkeypatch):
     canvas = canvas_mod.Canvas(json.dumps(dsl))
     asyncio.run(_collect_events(canvas))
 
-    assert canvas.globals["probe.calls"] == ["a", "b", "c"]
+    assert canvas.globals["probe.calls"] == expected_calls
