@@ -85,6 +85,23 @@ def _apply_model_family_policies(
                 sanitized_gen_conf.pop(key, None)
                 sanitized_kwargs.pop(key, None)
 
+        # Reasoning models (o1, o3, o4-mini, codex-mini) do not support:
+        # temperature, top_p, presence_penalty, frequency_penalty,
+        # logprobs, top_logprobs, logit_bias, max_tokens.
+        # Only max_completion_tokens is supported for token limits.
+        if provider in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI}:
+            # Model name may be prefixed (e.g. "azure/o1", "openai/o3-mini").
+            # Strip the provider prefix to get the base model name.
+            base_name = model_name_lower.split("/")[-1]
+            is_reasoning_model = any(
+                base_name == p or base_name.startswith(p + "-")
+                for p in ("o1", "o3", "o4-mini", "codex-mini")
+            )
+            if is_reasoning_model:
+                for key in ("temperature", "top_p", "presence_penalty", "frequency_penalty", "logprobs", "top_logprobs", "logit_bias"):
+                    sanitized_gen_conf.pop(key, None)
+                    sanitized_kwargs.pop(key, None)
+
         if provider == SupportedLiteLLMProvider.HunYuan:
             for key in ("presence_penalty", "frequency_penalty"):
                 sanitized_gen_conf.pop(key, None)
