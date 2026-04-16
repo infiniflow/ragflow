@@ -394,9 +394,12 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             chat_kwargs["doc_ids"] = doc_ids_str
         async for ans in async_chat(dia, msg, False, **chat_kwargs):
             # focus answer content only
-            answer = ans
+            if isinstance(ans, dict):
+                answer = ans
             break
-        content = answer["answer"]
+        if not isinstance(answer, dict):
+            return get_error_data_result("Unexpected response format from chat engine.")
+        content = answer.get("answer", "")
 
         response = {
             "id": f"chatcmpl-{chat_id}",
@@ -426,8 +429,11 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             ],
         }
         if need_reference:
+            reference = answer.get("reference", {})
+            if not isinstance(reference, dict):
+                reference = {}
             response["choices"][0]["message"]["reference"] = _build_reference_chunks(
-                answer.get("reference", {}),
+                reference,
                 include_metadata=include_reference_metadata,
                 metadata_fields=metadata_fields,
             )
