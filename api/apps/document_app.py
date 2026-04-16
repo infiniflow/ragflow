@@ -487,7 +487,7 @@ async def change_status():
                         search.index_name(kb.tenant_id),
                         doc.kb_id,
                     )
-                except Exception as exc:
+                except Exception:
                     logging.exception(
                         "Document store update failed in change_status: doc_id=%s kb_id=%s status=%s",
                         doc_id, doc.kb_id, status_int,
