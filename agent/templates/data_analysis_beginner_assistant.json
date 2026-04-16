@@ -1,9 +1,9 @@
 {
   "id": 37,
   "title": {
-    "en": "Data analysis beginner assistant",
-    "de": "Datenanalyse-Anfängerassistent",
-    "zh": "数据分析初学者助手"
+    "en": "Beginner's data analytics assistant",
+    "de": "Datenanalyse-Assistent für Einsteiger",
+    "zh": "数据分析入门助手"
   },
   "description": {
     "en": "A beginner-friendly data analysis assistant that guides you through exploring datasets step-by-step, automatically generating code and visualizations while explaining the logic behind each insight. ",
