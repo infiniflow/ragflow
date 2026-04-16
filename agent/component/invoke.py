@@ -54,6 +54,40 @@ class InvokeParam(ComponentParamBase):
 class Invoke(ComponentBase, ABC):
     component_name = "Invoke"
 
+    @staticmethod
+    def _coerce_json_arg_if_possible(key, value):
+        raw_value = value
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+                logging.debug(
+                    "Invoke JSON arg coercion succeeded. key=%s parsed_type=%s",
+                    key,
+                    type(value).__name__,
+                )
+            except json.JSONDecodeError as exc:
+                logging.info(
+                    "Invoke JSON arg coercion skipped; value is not valid JSON. key=%s raw=%r error=%s",
+                    key,
+                    raw_value,
+                    exc,
+                )
+                return raw_value
+
+        try:
+            json.dumps(value, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            logging.warning(
+                "Invoke JSON arg is not JSON-serializable. key=%s value_type=%s value=%r error=%s",
+                key,
+                type(value).__name__,
+                value,
+                exc,
+            )
+            raise ValueError(f"Invoke JSON argument '{key}' is not JSON-serializable.") from exc
+
+        return value
+
     def get_input_form(self) -> dict[str, dict]:
         res = {}
         for item in self._param.variables or []:
@@ -76,17 +110,23 @@ class Invoke(ComponentBase, ABC):
         if self.check_if_canceled("Invoke processing"):
             return
 
+        is_json_mode = self._param.datatype.lower() == "json"
         args = {}
         for para in self._param.variables:
-            if para.get("value"):
-                args[para["key"]] = para["value"]
+            key = para["key"]
+            if "value" in para and para.get("value") is not None:
+                value = para["value"]
             elif para.get("ref") in kwargs:
-                args[para["key"]] = kwargs[para["ref"]]
-                self.set_input_value(para["ref"], kwargs[para["ref"]])
+                value = kwargs[para["ref"]]
             else:
-                args[para["key"]] = self._canvas.get_variable_value(para["ref"])
-                self.set_input_value(para["ref"], args[para["key"]])
+                value = self._canvas.get_variable_value(para["ref"])
 
+            coerced_value = self._coerce_json_arg_if_possible(key, value) if is_json_mode else value
+            args[key] = coerced_value
+
+            if para.get("ref"):
+                self.set_input_value(para["ref"], coerced_value)
+    
         url = self._param.url.strip()
 
         def replace_variable(match):
