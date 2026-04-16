@@ -196,6 +196,11 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         poss = self.extract_positions(text)
         if not poss:
             return (None, None) if need_position else None
+        # Drop positions whose page indices fall outside the rendered range.
+        max_page = len(self.page_images) - 1
+        poss = [p for p in poss if all(0 <= pn <= max_page for pn in p[0])]
+        if not poss:
+            return (None, None) if need_position else None
         GAP = 6
         pos = poss[0]
         poss.insert(0, ([pos[0][0]], pos[1], pos[2], max(0, pos[3] - 120), max(pos[3] - GAP, 0)))
