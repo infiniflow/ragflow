@@ -9,10 +9,11 @@ export enum FileType {
   Spreadsheet = 'spreadsheet',
   Image = 'image',
   Email = 'email',
-  TextMarkdown = 'text&markdown',
-  Code = 'code',
+  TextMarkdown = 'markdown',
+  Code = 'text&code',
   Html = 'html',
-  Docx = 'word',
+  Doc = 'doc',
+  Docx = 'docx',
   PowerPoint = 'slides',
   Video = 'video',
   Audio = 'audio',
@@ -38,7 +39,12 @@ export enum EmailOutputFormat {
 }
 
 export enum TextMarkdownOutputFormat {
+  Text = 'json',
+}
+
+export enum TextJsonOutputFormat {
   Text = 'text',
+  Json = 'json',
 }
 
 export enum DocxOutputFormat {
@@ -64,8 +70,9 @@ export const OutputFormatMap = {
   [FileType.Image]: ImageOutputFormat,
   [FileType.Email]: EmailOutputFormat,
   [FileType.TextMarkdown]: TextMarkdownOutputFormat,
-  [FileType.Code]: TextMarkdownOutputFormat,
-  [FileType.Html]: TextMarkdownOutputFormat,
+  [FileType.Code]: TextJsonOutputFormat,
+  [FileType.Html]: TextJsonOutputFormat,
+  [FileType.Doc]: DocxOutputFormat,
   [FileType.Docx]: DocxOutputFormat,
   [FileType.PowerPoint]: PptOutputFormat,
   [FileType.Video]: VideoOutputFormat,
@@ -78,8 +85,9 @@ export const InitialOutputFormatMap = {
   [FileType.Image]: ImageOutputFormat.Text,
   [FileType.Email]: EmailOutputFormat.Text,
   [FileType.TextMarkdown]: TextMarkdownOutputFormat.Text,
-  [FileType.Code]: TextMarkdownOutputFormat.Text,
-  [FileType.Html]: TextMarkdownOutputFormat.Text,
+  [FileType.Code]: TextJsonOutputFormat.Json,
+  [FileType.Html]: TextJsonOutputFormat.Json,
+  [FileType.Doc]: DocxOutputFormat.Json,
   [FileType.Docx]: DocxOutputFormat.Json,
   [FileType.PowerPoint]: PptOutputFormat.Json,
   [FileType.Video]: VideoOutputFormat.Text,
@@ -189,12 +197,14 @@ export const initialParserValues = {
       output_format: PdfOutputFormat.Json,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
+      flatten_media_to_text: false,
     },
     {
       fileFormat: FileType.Spreadsheet,
       output_format: SpreadsheetOutputFormat.Html,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
+      flatten_media_to_text: false,
     },
     {
       fileFormat: FileType.Image,
@@ -213,21 +223,28 @@ export const initialParserValues = {
       fileFormat: FileType.TextMarkdown,
       output_format: TextMarkdownOutputFormat.Text,
       preprocess: PreprocessValue.main_content,
+      flatten_media_to_text: false,
     },
     {
       fileFormat: FileType.Code,
-      output_format: TextMarkdownOutputFormat.Text,
+      output_format: TextJsonOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
     },
     {
       fileFormat: FileType.Html,
-      output_format: TextMarkdownOutputFormat.Text,
+      output_format: TextJsonOutputFormat.Json,
+      preprocess: PreprocessValue.main_content,
+    },
+    {
+      fileFormat: FileType.Doc,
+      output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
     },
     {
       fileFormat: FileType.Docx,
       output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
+      flatten_media_to_text: false,
     },
     {
       fileFormat: FileType.PowerPoint,
@@ -242,6 +259,7 @@ export const initialTokenChunkerValues = {
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
+  delimiter_mode: 'token_size',
   chunk_token_size: 512,
   overlapped_percent: 0,
   delimiters: [{ value: '\n' }],
@@ -340,8 +358,9 @@ export const FileTypeSuffixMap = {
   [FileType.Spreadsheet]: ['xls', 'xlsx', 'csv'],
   [FileType.Image]: ['jpg', 'jpeg', 'png', 'gif'],
   [FileType.Email]: ['eml', 'msg'],
-  [FileType.TextMarkdown]: ['md', 'markdown', 'mdx', 'txt'],
+  [FileType.TextMarkdown]: ['md', 'markdown', 'mdx'],
   [FileType.Code]: [
+    'txt',
     'py',
     'js',
     'java',
@@ -357,7 +376,8 @@ export const FileTypeSuffixMap = {
     'sql',
   ],
   [FileType.Html]: ['htm', 'html'],
-  [FileType.Docx]: ['doc', 'docx'],
+  [FileType.Doc]: ['doc'],
+  [FileType.Docx]: ['docx'],
   [FileType.PowerPoint]: ['pptx', 'ppt'],
   [FileType.Video]: ['mp4', 'avi', 'mkv'],
   [FileType.Audio]: [

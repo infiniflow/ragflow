@@ -341,31 +341,6 @@ class TestDocRoutesUnit:
             module.Chunk(positions=[[1, 2, 3, 4]])
         assert "length of 5" in str(exc_info.value)
 
-    def test_upload_validation_and_upload_error(self, monkeypatch):
-        module = _load_doc_module(monkeypatch)
-
-        class _FileObj:
-            def __init__(self, name):
-                self.filename = name
-
-        monkeypatch.setattr(module, "request", SimpleNamespace(form=_AwaitableValue({}), files=_AwaitableValue(_DummyFiles({"file": [_FileObj("")]}))))
-        res = _run(module.upload.__wrapped__("ds-1", "tenant-1"))
-        assert res["code"] == module.RetCode.ARGUMENT_ERROR
-        assert res["message"] == "No file selected!"
-
-        long_name = "a" * (module.FILE_NAME_LEN_LIMIT + 1)
-        monkeypatch.setattr(module, "request", SimpleNamespace(form=_AwaitableValue({}), files=_AwaitableValue(_DummyFiles({"file": [_FileObj(long_name)]}))))
-        res = _run(module.upload.__wrapped__("ds-1", "tenant-1"))
-        assert res["code"] == module.RetCode.ARGUMENT_ERROR
-        assert "bytes or less" in res["message"]
-
-        monkeypatch.setattr(module, "request", SimpleNamespace(form=_AwaitableValue({}), files=_AwaitableValue(_DummyFiles({"file": [_FileObj("ok.txt")]}))))
-        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, SimpleNamespace()))
-        monkeypatch.setattr(module.FileService, "upload_document", lambda *_args, **_kwargs: (["upload failed"], []))
-        res = _run(module.upload.__wrapped__("ds-1", "tenant-1"))
-        assert res["code"] == module.RetCode.SERVER_ERROR
-        assert res["message"] == "upload failed"
-
     def test_download_and_download_doc_errors(self, monkeypatch):
         module = _load_doc_module(monkeypatch)
         _patch_send_file(monkeypatch, module)
@@ -472,7 +447,7 @@ class TestDocRoutesUnit:
         assert res["code"] == 0
         assert res["data"]["docs"] == []
 
-    def test_metadata_summary_and_batch_update(self, monkeypatch):
+    def test_metadata_batch_update(self, monkeypatch):
         module = _load_doc_module(monkeypatch)
         monkeypatch.setattr(module, "convert_conditions", lambda cond: cond)
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
@@ -480,22 +455,7 @@ class TestDocRoutesUnit:
         res = _run(module.metadata_batch_update.__wrapped__("ds-1", "tenant-1"))
         assert "don't own the dataset" in res["message"]
 
-        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
-        res = _run(module.metadata_summary.__wrapped__("ds-1", "tenant-1"))
-        assert "don't own the dataset" in res["message"]
-
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"doc_ids": ["d1"]}))
-        monkeypatch.setattr(module.DocMetadataService, "get_metadata_summary", lambda *_args, **_kwargs: {"k": 1})
-        res = _run(module.metadata_summary.__wrapped__("ds-1", "tenant-1"))
-        assert res["code"] == 0
-        assert res["data"]["summary"] == {"k": 1}
-
-        monkeypatch.setattr(module.DocMetadataService, "get_metadata_summary", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("x")))
-        monkeypatch.setattr(module, "server_error_response", lambda e: {"code": 500, "message": str(e)})
-        res = _run(module.metadata_summary.__wrapped__("ds-1", "tenant-1"))
-        assert res["code"] == 500
-
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"selector": [1]}))
         res = _run(module.metadata_batch_update.__wrapped__("ds-1", "tenant-1"))
         assert res["message"] == "selector must be an object."
@@ -575,6 +535,7 @@ class TestDocRoutesUnit:
         assert res["code"] == 0
         assert res["data"]["updated"] == 1
         assert res["data"]["matched_docs"] == 1
+
 
     def test_delete_branches(self, monkeypatch):
         module = _load_doc_module(monkeypatch)

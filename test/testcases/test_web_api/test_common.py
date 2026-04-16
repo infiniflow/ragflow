@@ -68,25 +68,6 @@ def _log_http_debug(method, url, req_id, payload, status, text, resp_json, elaps
     print(f"[HTTP DEBUG] response_text={text}")
     print(f"[HTTP DEBUG] response_json={json.dumps(resp_json, default=str) if resp_json is not None else None}")
 
-
-# API APP
-def api_new_token(auth, payload=None, *, headers=HEADERS, data=None):
-    if payload is None:
-        payload = {}
-    res = requests.post(url=f"{HOST_ADDRESS}{API_APP_URL}/new_token", headers=headers, auth=auth, json=payload, data=data)
-    return res.json()
-
-
-def api_token_list(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{API_APP_URL}/token_list", headers=headers, auth=auth, params=params)
-    return res.json()
-
-
-def api_rm_token(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{API_APP_URL}/rm", headers=headers, auth=auth, json=payload, data=data)
-    return res.json()
-
-
 def api_stats(auth, params=None, *, headers=HEADERS):
     res = requests.get(url=f"{HOST_ADDRESS}{API_APP_URL}/stats", headers=headers, auth=auth, params=params)
     return res.json()
@@ -351,7 +332,9 @@ def batch_create_datasets(auth, num):
 
 # DOCUMENT APP
 def upload_documents(auth, payload=None, files_path=None, *, filename_override=None):
-    url = f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/upload"
+    # New endpoint: /api/v1/datasets/{kb_id}/documents
+    kb_id = payload.get("kb_id") if payload else None
+    url = f"{HOST_ADDRESS}/api/{VERSION}/datasets/{kb_id}/documents"
 
     if files_path is None:
         files_path = []
@@ -359,9 +342,11 @@ def upload_documents(auth, payload=None, files_path=None, *, filename_override=N
     fields = []
     file_objects = []
     try:
+        # Note: kb_id is now in the URL path, not in the form data
         if payload:
             for k, v in payload.items():
-                fields.append((k, str(v)))
+                if k != "kb_id":  # Skip kb_id as it's in the URL
+                    fields.append((k, str(v)))
 
         for fp in files_path:
             p = Path(fp)

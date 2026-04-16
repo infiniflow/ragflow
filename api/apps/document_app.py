@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
-import json
 import os.path
 import re
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -61,56 +60,6 @@ def _is_safe_download_filename(name: str) -> bool:
     if name != PureWindowsPath(name).name:
         return False
     return True
-
-
-@manager.route("/upload", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("kb_id")
-async def upload():
-    form = await request.form
-    kb_id = form.get("kb_id")
-    if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-    files = await request.files
-    if "file" not in files:
-        return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
-
-    file_objs = files.getlist("file")
-
-    def _close_file_objs(objs):
-        for obj in objs:
-            try:
-                obj.close()
-            except Exception:
-                try:
-                    obj.stream.close()
-                except Exception:
-                    pass
-
-    for file_obj in file_objs:
-        if file_obj.filename == "":
-            _close_file_objs(file_objs)
-            return get_json_result(data=False, message="No file selected!", code=RetCode.ARGUMENT_ERROR)
-        if len(file_obj.filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-            _close_file_objs(file_objs)
-            return get_json_result(data=False, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=RetCode.ARGUMENT_ERROR)
-
-    e, kb = KnowledgebaseService.get_by_id(kb_id)
-    if not e:
-        raise LookupError("Can't find this dataset!")
-    if not check_kb_team_permission(kb, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-
-    err, files = await thread_pool_exec(FileService.upload_document, kb, file_objs, current_user.id)
-    if err:
-        files = [f[0] for f in files] if files else []
-        return get_json_result(data=files, message="\n".join(err), code=RetCode.SERVER_ERROR)
-
-    if not files:
-        return get_json_result(data=files, message="There seems to be an issue with your file format. Please verify it is correct and not corrupted.", code=RetCode.DATA_ERROR)
-    files = [f[0] for f in files]  # remove the blob
-
-    return get_json_result(data=files)
 
 
 @manager.route("/web_crawl", methods=["POST"])  # noqa: F821
@@ -421,29 +370,6 @@ async def doc_infos():
     for doc in docs_list:
         doc["meta_fields"] = DocMetadataService.get_document_metadata(doc["id"])
     return get_json_result(data=docs_list)
-
-
-@manager.route("/metadata/summary", methods=["POST"])  # noqa: F821
-@login_required
-async def metadata_summary():
-    req = await get_request_json()
-    kb_id = req.get("kb_id")
-    doc_ids = req.get("doc_ids")
-    if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-
-    tenants = UserTenantService.query(user_id=current_user.id)
-    for tenant in tenants:
-        if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
-            break
-    else:
-        return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
-
-    try:
-        summary = DocMetadataService.get_metadata_summary(kb_id, doc_ids)
-        return get_json_result(data={"summary": summary})
-    except Exception as e:
-        return server_error_response(e)
 
 
 @manager.route("/metadata/update", methods=["POST"])  # noqa: F821
@@ -888,41 +814,6 @@ async def parse():
     txt = FileService.parse_docs(file_objs, current_user.id)
 
     return get_json_result(data=txt)
-
-
-@manager.route("/set_meta", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("doc_id", "meta")
-async def set_meta():
-    req = await get_request_json()
-    if not DocumentService.accessible(req["doc_id"], current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-    try:
-        meta = json.loads(req["meta"])
-        if not isinstance(meta, dict):
-            return get_json_result(data=False, message="Only dictionary type supported.", code=RetCode.ARGUMENT_ERROR)
-        for k, v in meta.items():
-            if isinstance(v, list):
-                if not all(isinstance(i, (str, int, float)) for i in v):
-                    return get_json_result(data=False, message=f"The type is not supported in list: {v}", code=RetCode.ARGUMENT_ERROR)
-            elif not isinstance(v, (str, int, float)):
-                return get_json_result(data=False, message=f"The type is not supported: {v}", code=RetCode.ARGUMENT_ERROR)
-    except Exception as e:
-        return get_json_result(data=False, message=f"Json syntax error: {e}", code=RetCode.ARGUMENT_ERROR)
-    if not isinstance(meta, dict):
-        return get_json_result(data=False, message='Meta data should be in Json map format, like {"key": "value"}', code=RetCode.ARGUMENT_ERROR)
-
-    try:
-        e, doc = DocumentService.get_by_id(req["doc_id"])
-        if not e:
-            return get_data_error_result(message="Document not found!")
-
-        if not DocMetadataService.update_document_metadata(req["doc_id"], meta):
-            return get_data_error_result(message="Database error (meta updates)!")
-
-        return get_json_result(data=True)
-    except Exception as e:
-        return server_error_response(e)
 
 
 @manager.route("/upload_info", methods=["POST"])  # noqa: F821
