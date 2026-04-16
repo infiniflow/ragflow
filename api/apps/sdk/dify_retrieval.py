@@ -40,10 +40,13 @@ async def _read_retrieval_request():
         use_kg = str(query_args.get("use_kg", "")).lower() in {"1", "true", "yes", "on"}
         top_k = query_args.get("top_k")
         score_threshold = query_args.get("score_threshold")
-        if top_k is not None:
-            retrieval_setting["top_k"] = top_k
-        if score_threshold is not None:
-            retrieval_setting["score_threshold"] = score_threshold
+        try:
+            if top_k not in (None, ""):
+                retrieval_setting["top_k"] = int(top_k)
+            if score_threshold not in (None, ""):
+                retrieval_setting["score_threshold"] = float(score_threshold)
+        except (TypeError, ValueError):
+            raise ValueError("top_k must be integer and score_threshold must be numeric")
         safe_query = f"len={len(query)}" if isinstance(query, str) else "len=0"
         logger.debug(
             "Dify retrieval GET normalization: knowledge_id=%s query=%s use_kg=%s top_k=%s score_threshold=%s",
@@ -175,7 +178,13 @@ async def retrieval(tenant_id):
       404:
         description: Knowledge base or document not found
     """
-    req = await _read_retrieval_request()
+    try:
+        req = await _read_retrieval_request()
+    except (AttributeError, TypeError, ValueError) as e:
+        return build_error_result(
+            message=f"required argument are missing: {str(e)}; ",
+            code=RetCode.ARGUMENT_ERROR,
+        )
     missing = [field for field in ("knowledge_id", "query") if not req.get(field)]
     if missing:
         return build_error_result(
