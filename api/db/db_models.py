@@ -1322,6 +1322,7 @@ class Memory(DataBaseModel):
     temperature = FloatField(default=0.5, index=False)
     system_prompt = TextField(null=True, help_text="system prompt", index=False)
     user_prompt = TextField(null=True, help_text="user prompt", index=False)
+    status = CharField(null=False, default="1", index=True, help_text="1=valid, 0=invalid")
 
     class Meta:
         db_table = "memory"
@@ -1333,6 +1334,18 @@ class SystemSettings(DataBaseModel):
     value = TextField(null=False, help_text="Configuration value (JSON, string, etc.)")
     class Meta:
         db_table = "system_settings"
+
+
+class TenantModelProvider(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    provider_name = CharField(max_length=128, null=False, help_text="Model provider name", index=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+
+    class Meta:
+        db_table = "tenant_model_provider"
+        indexes = (
+            (("tenant_id", "provider_name"), True),
+        )
 
 def alter_db_add_column(migrator, table_name, column_name, column_type):
     try:
