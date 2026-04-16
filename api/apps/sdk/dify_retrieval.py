@@ -38,7 +38,12 @@ logger = logging.getLogger(__name__)
 
 
 async def _read_retrieval_request():
-    if request.method == "GET":
+    try:
+        method = request.method
+    except RuntimeError:
+        # Unit tests may call the handler directly without a request context.
+        method = "POST"
+    if method == "GET":
         query_args = request.args
         retrieval_setting = {}
         knowledge_id = query_args.get("knowledge_id")
@@ -204,13 +209,13 @@ async def retrieval(tenant_id):
         req = await _read_retrieval_request()
     except parse_exception_types as e:
         return build_error_result(
-            message=f"required argument are missing: {str(e)}; ",
+            message=f"invalid or malformed arguments: {str(e)}; ",
             code=RetCode.ARGUMENT_ERROR,
         )
     missing = [field for field in ("knowledge_id", "query") if not req.get(field)]
     if missing:
         return build_error_result(
-            message=f"required argument are missing: {','.join(missing)}; ",
+            message=f"required arguments are missing: {','.join(missing)}; ",
             code=RetCode.ARGUMENT_ERROR,
         )
     question = req["query"]
@@ -220,7 +225,7 @@ async def retrieval(tenant_id):
         retrieval_setting, similarity_threshold, top = _parse_retrieval_options(req.get("retrieval_setting", {}))
     except ValueError as e:
         return build_error_result(
-            message=f"required argument are missing: {str(e)}; ",
+            message=f"invalid or malformed arguments: {str(e)}; ",
             code=RetCode.ARGUMENT_ERROR,
         )
     metadata_condition = req.get("metadata_condition", {}) or {}

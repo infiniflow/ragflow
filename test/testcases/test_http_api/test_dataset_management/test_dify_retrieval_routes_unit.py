@@ -376,8 +376,8 @@ def test_read_retrieval_request_from_get_args(monkeypatch):
     assert req["knowledge_id"] == "kb-1", req
     assert req["query"] == "hello", req
     assert req["use_kg"] is True, req
-    assert req["retrieval_setting"]["top_k"] == "12", req
-    assert req["retrieval_setting"]["score_threshold"] == "0.66", req
+    assert req["retrieval_setting"]["top_k"] == 12, req
+    assert req["retrieval_setting"]["score_threshold"] == 0.66, req
 
 
 @pytest.mark.p2
