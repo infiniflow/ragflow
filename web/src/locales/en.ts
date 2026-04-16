@@ -1513,11 +1513,11 @@ Example: Virtual Hosted Style`,
       includeHeadingContent: 'Include heading content',
       includeHeadingContentTip:
         'When enabled, content directly under a heading is kept as its own chunk. Child chunks keep only the heading path.',
-      hierarchyTip: `Build a heading tree and produce self-contained chunks, each carrying its full ancestor heading path (e.g. Part 1 › Chapter 3 › Section 2 + body text).<br>
+      hierarchyTip: `Build a heading tree and produce self-contained chunks, each carrying its full ancestor heading path (e.g. Part 1 › Chapter 3 › Section 2 + body text).\n
 Best for: Documents with independent, structurally significant sections — such as legal statutes, regulations, contracts, and technical specifications — where each chunk must be identifiable by its structural position even without surrounding context.`,
-      groupTip: `Split the document flat at a chosen heading level and automatically merge adjacent small sections to preserve content continuity. No parent-heading path is injected.<br>
+      groupTip: `Split the document flat at a chosen heading level and automatically merge adjacent small sections to preserve content continuity. No parent-heading path is injected.\n
 Best for: Documents with flowing, contextually connected content — such as books, manuals, reports, and articles — where adjacent paragraphs should stay together to maintain narrative coherence.`,
-      enableMultiColumn: 'Remove original table of contents',
+      enableMultiColumn: 'Detect multi-column layout',
       enableMultiColumnTip:
         'Detect and parse multi-column page layouts to preserve the correct reading order. Turn this on for PDFs or documents with two-column or newspaper-style layouts.',
       removeToc: 'Remove original table of contents',
@@ -1575,6 +1575,9 @@ Best for: Documents with flowing, contextually connected content — such as boo
       oneChunkTitle: 'Note',
       oneChunkDescription:
         'All parsed sections will be merged in order into a single chunk.',
+      flattenMediaToText: 'Disable vision model',
+      flattenMediaToTextTip:
+        'Treat image and table sections as plain text and skip vision enhancement.',
       enableChildrenDelimiters: 'Child chunk are used for retrieval',
       merge: 'Merge',
       split: 'Split',
@@ -2281,8 +2284,11 @@ This process aggregates variables from multiple branches into a single variable 
       },
       fields: 'Field',
       addParser: 'Add Parser',
+      rule: 'Rule',
+      addRule: 'Add rule',
       group: 'Group',
       hierarchy: 'Hierarchy',
+      addRegularExpressions: 'Add regular expressions',
       regularExpressions: 'Regular Expressions',
       overlappedPercent: 'Overlapped percent (%)',
       searchMethod: 'Search method',

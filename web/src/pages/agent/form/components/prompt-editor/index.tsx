@@ -237,7 +237,7 @@ export const PromptEditor = forwardRef(function PromptEditor(
           placeholder={
             <div
               className={cn(
-                '-z-10 absolute top-1 left-2 text-text-disabled pointer-events-none',
+                '-z-10 absolute top-4 left-2 text-text-disabled pointer-events-none',
                 {
                   'truncate max-w-[calc(100%-4rem)]': !multiLine,
                   'translate-y-9': multiLine,
