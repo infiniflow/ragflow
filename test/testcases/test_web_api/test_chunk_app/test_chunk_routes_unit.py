@@ -825,7 +825,7 @@ def test_retrieval_test_branch_matrix_unit(monkeypatch):
                 "metas": metas,
                 "question": question,
                 "chat_mdl": chat_mdl,
-                "local_doc_ids": list(local_doc_ids),
+                "local_doc_ids": list(local_doc_ids) if local_doc_ids is not None else None,
             }
         )
         return ["doc-filtered"]
@@ -842,13 +842,15 @@ def test_retrieval_test_branch_matrix_unit(monkeypatch):
         def __init__(self, mode="ok"):
             self.mode = mode
             self.retrieval_questions = []
+            self.calls = []
 
-        async def retrieval(self, question, *_args, **_kwargs):
+        async def retrieval(self, question, *args, **kwargs):
             if self.mode == "not_found":
                 raise Exception("boom not_found boom")
             if self.mode == "explode":
                 raise RuntimeError("retrieval boom")
             self.retrieval_questions.append(question)
+            self.calls.append({"args": args, "kwargs": kwargs})
             return {"chunks": [{"id": "c1", "vector": [0.1], "content_with_weight": "chunk-content"}]}
 
         def retrieval_by_children(self, chunks, _tenant_ids):
@@ -919,6 +921,7 @@ def test_retrieval_test_branch_matrix_unit(monkeypatch):
     assert cross_calls[-1] == ("q", ("fr",))
     assert keyword_calls[-1] == "q-xl"
     assert retriever.retrieval_questions[-1] == "q-xl-kw"
+    assert retriever.calls[-1]["kwargs"]["doc_ids"] is None
     assert res["data"]["chunks"][0]["id"] == "kg-1", res
     assert all("vector" not in chunk for chunk in res["data"]["chunks"])
 
