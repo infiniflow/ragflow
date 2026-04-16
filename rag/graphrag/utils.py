@@ -571,17 +571,31 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         timeout = 3 if enable_timeout_assertion else 30000000
         max_retries = 3
         for attempt in range(max_retries):
-            try:
-                doc_store_result = await asyncio.wait_for(
-                    thread_pool_exec(
-                        settings.docStoreConn.insert,
-                        chunks[b : b + es_bulk_size],
-                        search.index_name(tenant_id),
-                        kb_id
-                    ),
-                    timeout=timeout
+            task = asyncio.create_task(
+                thread_pool_exec(
+                    settings.docStoreConn.insert,
+                    chunks[b : b + es_bulk_size],
+                    search.index_name(tenant_id),
+                    kb_id
                 )
+            )
+            try:
+                doc_store_result = await asyncio.wait_for(task, timeout=timeout)
                 break
+            except asyncio.TimeoutError:
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                if attempt < max_retries - 1:
+                    wait = 2 ** attempt
+                    logging.warning(f"Insert batch {b}/{len(chunks)} attempt {attempt + 1} timed out, retrying in {wait}s")
+                    await asyncio.sleep(wait)
+                else:
+                    raise
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 if attempt < max_retries - 1:
                     wait = 2 ** attempt
