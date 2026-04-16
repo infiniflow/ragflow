@@ -43,6 +43,56 @@ from common.misc_utils import thread_pool_exec
 from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import RedisDistributedLock
 from common import settings
+from common.doc_store.doc_store_base import OrderByExpr
+
+
+
+async def load_subgraph_from_store(tenant_id: str, kb_id: str, doc_id: str):
+    """Load a previously saved subgraph from the doc store.
+
+    Filters directly by source_id (== doc_id) and knowledge_graph_kwd in the
+    query so the doc store index does the heavy lifting.  Expects at most one
+    matching chunk per doc_id (as written by generate_subgraph).
+    Returns a networkx Graph on hit, or None on miss.
+    """
+    fields = ["content_with_weight", "source_id"]
+    condition = {
+        "knowledge_graph_kwd": ["subgraph"],
+        "removed_kwd": "N",
+        "source_id": [doc_id],
+    }
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            fields, [], condition, [], OrderByExpr(),
+            0, 1, search.index_name(tenant_id), [kb_id]
+        )
+        field_map = settings.docStoreConn.get_fields(res, fields)
+        for cid, row in field_map.items():
+            content = row.get("content_with_weight", "")
+            if not content:
+                continue
+            try:
+                data = json.loads(content)
+                sg = nx.node_link_graph(data, edges="edges")
+                sg.graph["source_id"] = [doc_id]
+                logging.info(
+                    "Checkpoint hit: subgraph for doc %s (tenant=%s kb=%s) found at chunk %s",
+                    doc_id, tenant_id, kb_id, cid,
+                )
+                return sg
+            except Exception:
+                logging.exception(
+                    "Failed to parse subgraph JSON for doc %s chunk %s", doc_id, cid
+                )
+    except Exception:
+        logging.exception("Failed to load subgraph from store for doc %s", doc_id)
+        return None
+    logging.info(
+        "Checkpoint miss: no subgraph for doc %s (tenant=%s kb=%s)",
+        doc_id, tenant_id, kb_id,
+    )
+    return None
 
 
 async def run_graphrag(
@@ -242,6 +292,12 @@ async def run_graphrag_for_kb(
         deadline = max(120, len(chunks) * 60 * 10) if enable_timeout_assertion else 10000000000
 
         async with semaphore:
+            # CHECKPOINT: bounded by semaphore so doc-store lookups respect max_parallel_docs
+            existing_sg = await load_subgraph_from_store(tenant_id, kb_id, doc_id)
+            if existing_sg:
+                subgraphs[doc_id] = existing_sg
+                callback(msg=f"[GraphRAG] doc:{doc_id} subgraph found in store, skipping LLM extraction.")
+                return
             try:
                 msg = f"[GraphRAG] build_subgraph doc:{doc_id}"
                 callback(msg=f"{msg} start (chunks={len(chunks)}, timeout={deadline}s)")

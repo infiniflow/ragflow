@@ -11,6 +11,7 @@ import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
+  FlattenMediaToTextFormField,
   LanguageFormField,
   LargeModelFormField,
   ParserMethodFormField,
@@ -41,6 +42,9 @@ export function PdfFormFields({ prefix }: CommonProps) {
   ]);
   const parseMethod = useWatch({
     name: parseMethodName,
+  });
+  const flattenMediaToText = useWatch({
+    name: buildFieldNameWithPrefix('flatten_media_to_text', prefix),
   });
 
   const languageShown = useMemo(() => {
@@ -101,11 +105,13 @@ export function PdfFormFields({ prefix }: CommonProps) {
       <TwoColumnCheckFormField prefix={prefix} />
       <RmdirFormField prefix={prefix} />
       <ParserMethodFormField prefix={prefix}></ParserMethodFormField>
-
-      <LargeModelFormField
-        prefix={prefix}
-        options={modelOptions}
-      ></LargeModelFormField>
+      <FlattenMediaToTextFormField prefix={prefix} />
+      {!flattenMediaToText && (
+        <LargeModelFormField
+          prefix={prefix}
+          options={modelOptions}
+        ></LargeModelFormField>
+      )}
       {languageShown && <LanguageFormField prefix={prefix}></LanguageFormField>}
       {tcadpOptionsShown && (
         <>

@@ -341,31 +341,6 @@ class TestDocRoutesUnit:
             module.Chunk(positions=[[1, 2, 3, 4]])
         assert "length of 5" in str(exc_info.value)
 
-    def test_upload_validation_and_upload_error(self, monkeypatch):
-        module = _load_doc_module(monkeypatch)
-
-        class _FileObj:
-            def __init__(self, name):
-                self.filename = name
-
-        monkeypatch.setattr(module, "request", SimpleNamespace(form=_AwaitableValue({}), files=_AwaitableValue(_DummyFiles({"file": [_FileObj("")]}))))
-        res = _run(module.upload.__wrapped__("ds-1", "tenant-1"))
-        assert res["code"] == module.RetCode.ARGUMENT_ERROR
-        assert res["message"] == "No file selected!"
-
-        long_name = "a" * (module.FILE_NAME_LEN_LIMIT + 1)
-        monkeypatch.setattr(module, "request", SimpleNamespace(form=_AwaitableValue({}), files=_AwaitableValue(_DummyFiles({"file": [_FileObj(long_name)]}))))
-        res = _run(module.upload.__wrapped__("ds-1", "tenant-1"))
-        assert res["code"] == module.RetCode.ARGUMENT_ERROR
-        assert "bytes or less" in res["message"]
-
-        monkeypatch.setattr(module, "request", SimpleNamespace(form=_AwaitableValue({}), files=_AwaitableValue(_DummyFiles({"file": [_FileObj("ok.txt")]}))))
-        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, SimpleNamespace()))
-        monkeypatch.setattr(module.FileService, "upload_document", lambda *_args, **_kwargs: (["upload failed"], []))
-        res = _run(module.upload.__wrapped__("ds-1", "tenant-1"))
-        assert res["code"] == module.RetCode.SERVER_ERROR
-        assert res["message"] == "upload failed"
-
     def test_download_and_download_doc_errors(self, monkeypatch):
         module = _load_doc_module(monkeypatch)
         _patch_send_file(monkeypatch, module)

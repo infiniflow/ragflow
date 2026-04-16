@@ -14,17 +14,17 @@
     "canvas_category": "dataflow_canvas",
         "dsl": {
             "components": {
-                "Extractor:CleverPianosInvite": {
+                "Extractor:CurlyEmusJam": {
                     "downstream": [
-                        "Tokenizer:ShyBalloonsSmell"
+                        "Tokenizer:WittySunsListen"
                     ],
                     "obj": {
                         "component_name": "Extractor",
                         "params": {
-                            "field_name": "summary",
+                            "field_name": "metadata",
                             "frequencyPenaltyEnabled": true,
                             "frequency_penalty": 0.7,
-                            "llm_id": "Qwen/Qwen3-8B@SILICONFLOW",
+                            "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
                             "maxTokensEnabled": false,
                             "max_tokens": 256,
                             "outputs": {
@@ -37,25 +37,25 @@
                             "presence_penalty": 0.4,
                             "prompts": [
                                 {
-                                    "content": "Text to Summarize:\n{Extractor:SunnyCooksSpend@chunks}",
+                                    "content": "Content:\n{Extractor:SmartWindowsHammer@chunks}",
                                     "role": "user"
                                 }
                             ],
-                            "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
+                            "sys_prompt": "Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.\n\nImportant structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.",
                             "temperature": 0.1,
                             "temperatureEnabled": true,
-                            "tenant_llm_id": 54,
+                            "tenant_llm_id": 63,
                             "topPEnabled": true,
                             "top_p": 0.3
                         }
                     },
                     "upstream": [
-                        "Extractor:SunnyCooksSpend"
+                        "Extractor:SmartWindowsHammer"
                     ]
                 },
-                "Extractor:EasyToesFail": {
+                "Extractor:LazyCarpetsKiss": {
                     "downstream": [
-                        "Extractor:SunnyCooksSpend"
+                        "Extractor:LovelyPearsRest"
                     ],
                     "obj": {
                         "component_name": "Extractor",
@@ -63,7 +63,7 @@
                             "field_name": "summary",
                             "frequencyPenaltyEnabled": true,
                             "frequency_penalty": 0.7,
-                            "llm_id": "Qwen/Qwen3-8B@SILICONFLOW",
+                            "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
                             "maxTokensEnabled": false,
                             "max_tokens": 256,
                             "outputs": {
@@ -76,25 +76,25 @@
                             "presence_penalty": 0.4,
                             "prompts": [
                                 {
-                                    "content": "Text to Summarize:\n{TokenChunker:SixtyShirtsFeel@chunks}",
+                                    "content": "Text to Summarize:\n{TokenChunker:BumpyStarsPress@chunks}",
                                     "role": "user"
                                 }
                             ],
                             "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
                             "temperature": 0.1,
                             "temperatureEnabled": true,
-                            "tenant_llm_id": 54,
+                            "tenant_llm_id": 63,
                             "topPEnabled": true,
                             "top_p": 0.3
                         }
                     },
                     "upstream": [
-                        "TokenChunker:SixtyShirtsFeel"
+                        "TokenChunker:BumpyStarsPress"
                     ]
                 },
-                "Extractor:SunnyCooksSpend": {
+                "Extractor:LovelyPearsRest": {
                     "downstream": [
-                        "Extractor:CleverPianosInvite"
+                        "Extractor:SmartWindowsHammer"
                     ],
                     "obj": {
                         "component_name": "Extractor",
@@ -102,7 +102,7 @@
                             "field_name": "keywords",
                             "frequencyPenaltyEnabled": true,
                             "frequency_penalty": 0.7,
-                            "llm_id": "Qwen/Qwen3-8B@SILICONFLOW",
+                            "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
                             "maxTokensEnabled": false,
                             "max_tokens": 256,
                             "outputs": {
@@ -115,20 +115,59 @@
                             "presence_penalty": 0.4,
                             "prompts": [
                                 {
-                                    "content": "Text Content\n{Extractor:EasyToesFail@chunks}",
+                                    "content": "Text Content\n{Extractor:LazyCarpetsKiss@chunks}",
                                     "role": "user"
                                 }
                             ],
                             "sys_prompt": "Role\nYou are a text analyzer.\n\nTask\nExtract the most important keywords/phrases of a given piece of text content.\n\nRequirements\n- Summarize the text content, and give the top 5 important keywords/phrases.\n- The keywords MUST be in the same language as the given piece of text content.\n- The keywords are delimited by ENGLISH COMMA.\n- Output keywords ONLY.",
                             "temperature": 0.1,
                             "temperatureEnabled": true,
-                            "tenant_llm_id": 54,
+                            "tenant_llm_id": 63,
                             "topPEnabled": true,
                             "top_p": 0.3
                         }
                     },
                     "upstream": [
-                        "Extractor:EasyToesFail"
+                        "Extractor:LazyCarpetsKiss"
+                    ]
+                },
+                "Extractor:SmartWindowsHammer": {
+                    "downstream": [
+                        "Extractor:CurlyEmusJam"
+                    ],
+                    "obj": {
+                        "component_name": "Extractor",
+                        "params": {
+                            "field_name": "questions",
+                            "frequencyPenaltyEnabled": true,
+                            "frequency_penalty": 0.7,
+                            "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
+                            "maxTokensEnabled": false,
+                            "max_tokens": 256,
+                            "outputs": {
+                                "chunks": {
+                                    "type": "Array<Object>",
+                                    "value": []
+                                }
+                            },
+                            "presencePenaltyEnabled": true,
+                            "presence_penalty": 0.4,
+                            "prompts": [
+                                {
+                                    "content": "Text Content\n{Extractor:LovelyPearsRest@chunks}",
+                                    "role": "user"
+                                }
+                            ],
+                            "sys_prompt": "Role\nYou are a text analyzer.\n\nTask\nPropose 3 questions about a given piece of text content.\n\nRequirements\n- Understand and summarize the text content, and propose the top 3 important questions.\n- The questions SHOULD NOT have overlapping meanings.\n- The questions SHOULD cover the main content of the text as much as possible.\n- The questions MUST be in the same language as the given piece of text content.\n- One question per line.\n- Output questions ONLY.",
+                            "temperature": 0.1,
+                            "temperatureEnabled": true,
+                            "tenant_llm_id": 63,
+                            "topPEnabled": true,
+                            "top_p": 0.3
+                        }
+                    },
+                    "upstream": [
+                        "Extractor:LovelyPearsRest"
                     ]
                 },
                 "File": {
@@ -143,7 +182,7 @@
                 },
                 "Parser:HipSignsRhyme": {
                     "downstream": [
-                        "TokenChunker:SixtyShirtsFeel"
+                        "TokenChunker:BumpyStarsPress"
                     ],
                     "obj": {
                         "component_name": "Parser",
@@ -175,6 +214,7 @@
                                     ]
                                 },
                                 "docx": {
+                                    "flatten_media_to_text": false,
                                     "output_format": "json",
                                     "preprocess": "main_content",
                                     "suffix": [
@@ -221,6 +261,7 @@
                                     "system_prompt": ""
                                 },
                                 "markdown": {
+                                    "flatten_media_to_text": false,
                                     "output_format": "json",
                                     "preprocess": "main_content",
                                     "suffix": [
@@ -231,6 +272,7 @@
                                     "vlm": {}
                                 },
                                 "pdf": {
+                                    "flatten_media_to_text": false,
                                     "output_format": "json",
                                     "parse_method": "DeepDOC",
                                     "preprocess": "main_content",
@@ -249,6 +291,7 @@
                                     ]
                                 },
                                 "spreadsheet": {
+                                    "flatten_media_to_text": false,
                                     "output_format": "html",
                                     "parse_method": "DeepDOC",
                                     "preprocess": "main_content",
@@ -286,9 +329,9 @@
                         "File"
                     ]
                 },
-                "TokenChunker:SixtyShirtsFeel": {
+                "TokenChunker:BumpyStarsPress": {
                     "downstream": [
-                        "Extractor:EasyToesFail"
+                        "Extractor:LazyCarpetsKiss"
                     ],
                     "obj": {
                         "component_name": "TokenChunker",
@@ -312,7 +355,7 @@
                         "Parser:HipSignsRhyme"
                     ]
                 },
-                "Tokenizer:ShyBalloonsSmell": {
+                "Tokenizer:WittySunsListen": {
                     "downstream": [],
                     "obj": {
                         "component_name": "Tokenizer",
@@ -327,7 +370,7 @@
                         }
                     },
                     "upstream": [
-                        "Extractor:CleverPianosInvite"
+                        "Extractor:CurlyEmusJam"
                     ]
                 }
             },
@@ -337,9 +380,6 @@
             "graph": {
                 "edges": [
                     {
-                        "data": {
-                            "isHovered": false
-                        },
                         "id": "xy-edge__Filestart-Parser:HipSignsRhymeend",
                         "source": "File",
                         "sourceHandle": "start",
@@ -347,54 +387,59 @@
                         "targetHandle": "end"
                     },
                     {
-                        "data": {
-                            "isHovered": false
-                        },
-                        "id": "xy-edge__Parser:HipSignsRhymestart-TokenChunker:SixtyShirtsFeelend",
+                        "id": "xy-edge__Parser:HipSignsRhymestart-TokenChunker:BumpyStarsPressend",
                         "source": "Parser:HipSignsRhyme",
                         "sourceHandle": "start",
-                        "target": "TokenChunker:SixtyShirtsFeel",
+                        "target": "TokenChunker:BumpyStarsPress",
                         "targetHandle": "end"
                     },
                     {
-                        "data": {
-                            "isHovered": false
-                        },
-                        "id": "xy-edge__TokenChunker:SixtyShirtsFeelstart-Extractor:EasyToesFailend",
-                        "source": "TokenChunker:SixtyShirtsFeel",
+                        "id": "xy-edge__TokenChunker:BumpyStarsPressstart-Extractor:LazyCarpetsKissend",
+                        "source": "TokenChunker:BumpyStarsPress",
                         "sourceHandle": "start",
-                        "target": "Extractor:EasyToesFail",
+                        "target": "Extractor:LazyCarpetsKiss",
                         "targetHandle": "end"
                     },
                     {
                         "data": {
                             "isHovered": false
                         },
-                        "id": "xy-edge__Extractor:EasyToesFailstart-Extractor:SunnyCooksSpendend",
+                        "id": "xy-edge__Extractor:LazyCarpetsKissstart-Extractor:LovelyPearsRestend",
+                        "source": "Extractor:LazyCarpetsKiss",
+                        "sourceHandle": "start",
+                        "target": "Extractor:LovelyPearsRest",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__Extractor:LovelyPearsReststart-Extractor:SmartWindowsHammerend",
                         "selected": false,
-                        "source": "Extractor:EasyToesFail",
+                        "source": "Extractor:LovelyPearsRest",
                         "sourceHandle": "start",
-                        "target": "Extractor:SunnyCooksSpend",
+                        "target": "Extractor:SmartWindowsHammer",
                         "targetHandle": "end"
                     },
                     {
                         "data": {
                             "isHovered": false
                         },
-                        "id": "xy-edge__Extractor:SunnyCooksSpendstart-Extractor:CleverPianosInviteend",
-                        "source": "Extractor:SunnyCooksSpend",
+                        "id": "xy-edge__Extractor:SmartWindowsHammerstart-Extractor:CurlyEmusJamend",
+                        "selected": false,
+                        "source": "Extractor:SmartWindowsHammer",
                         "sourceHandle": "start",
-                        "target": "Extractor:CleverPianosInvite",
+                        "target": "Extractor:CurlyEmusJam",
                         "targetHandle": "end"
                     },
                     {
                         "data": {
                             "isHovered": false
                         },
-                        "id": "xy-edge__Extractor:CleverPianosInvitestart-Tokenizer:ShyBalloonsSmellend",
-                        "source": "Extractor:CleverPianosInvite",
+                        "id": "xy-edge__Extractor:CurlyEmusJamstart-Tokenizer:WittySunsListenend",
+                        "source": "Extractor:CurlyEmusJam",
                         "sourceHandle": "start",
-                        "target": "Tokenizer:ShyBalloonsSmell",
+                        "target": "Tokenizer:WittySunsListen",
                         "targetHandle": "end"
                     }
                 ],
@@ -406,7 +451,7 @@
                         },
                         "id": "File",
                         "measured": {
-                            "height": 49,
+                            "height": 50,
                             "width": 200
                         },
                         "position": {
@@ -441,12 +486,14 @@
                                 "setups": [
                                     {
                                         "fileFormat": "pdf",
+                                        "flatten_media_to_text": false,
                                         "output_format": "json",
                                         "parse_method": "DeepDOC",
                                         "preprocess": "main_content"
                                     },
                                     {
                                         "fileFormat": "spreadsheet",
+                                        "flatten_media_to_text": false,
                                         "output_format": "html",
                                         "parse_method": "DeepDOC",
                                         "preprocess": "main_content"
@@ -475,6 +522,7 @@
                                     },
                                     {
                                         "fileFormat": "markdown",
+                                        "flatten_media_to_text": false,
                                         "output_format": "json",
                                         "preprocess": "main_content"
                                     },
@@ -495,6 +543,7 @@
                                     },
                                     {
                                         "fileFormat": "docx",
+                                        "flatten_media_to_text": false,
                                         "output_format": "json",
                                         "preprocess": "main_content"
                                     },
@@ -547,9 +596,9 @@
                             "label": "TokenChunker",
                             "name": "Token Chunker_0"
                         },
-                        "id": "TokenChunker:SixtyShirtsFeel",
+                        "id": "TokenChunker:BumpyStarsPress",
                         "measured": {
-                            "height": 73,
+                            "height": 74,
                             "width": 200
                         },
                         "position": {
@@ -567,7 +616,7 @@
                                 "field_name": "summary",
                                 "frequencyPenaltyEnabled": true,
                                 "frequency_penalty": 0.7,
-                                "llm_id": "Qwen/Qwen3-8B@SILICONFLOW",
+                                "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
                                 "maxTokensEnabled": false,
                                 "max_tokens": 256,
                                 "outputs": {
@@ -578,26 +627,25 @@
                                 },
                                 "presencePenaltyEnabled": true,
                                 "presence_penalty": 0.4,
-                                "prompts": "Text to Summarize:\n{TokenChunker:SixtyShirtsFeel@chunks}",
+                                "prompts": "Text to Summarize:\n{TokenChunker:BumpyStarsPress@chunks}",
                                 "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
                                 "temperature": 0.1,
                                 "temperatureEnabled": true,
-                                "tenant_llm_id": 54,
+                                "tenant_llm_id": 63,
                                 "topPEnabled": true,
                                 "top_p": 0.3
                             },
                             "label": "Extractor",
                             "name": "Summarization"
                         },
-                        "dragging": false,
-                        "id": "Extractor:EasyToesFail",
+                        "id": "Extractor:LazyCarpetsKiss",
                         "measured": {
-                            "height": 89,
+                            "height": 90,
                             "width": 200
                         },
                         "position": {
-                            "x": 606.9117864444606,
-                            "y": 295.54747604679164
+                            "x": 916.9952409420641,
+                            "y": 195.39629819663406
                         },
                         "selected": false,
                         "sourcePosition": "right",
@@ -610,7 +658,7 @@
                                 "field_name": "keywords",
                                 "frequencyPenaltyEnabled": true,
                                 "frequency_penalty": 0.7,
-                                "llm_id": "Qwen/Qwen3-8B@SILICONFLOW",
+                                "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
                                 "maxTokensEnabled": false,
                                 "max_tokens": 256,
                                 "outputs": {
@@ -621,26 +669,26 @@
                                 },
                                 "presencePenaltyEnabled": true,
                                 "presence_penalty": 0.4,
-                                "prompts": "Text Content\n{Extractor:EasyToesFail@chunks}",
+                                "prompts": "Text Content\n{Extractor:LazyCarpetsKiss@chunks}",
                                 "sys_prompt": "Role\nYou are a text analyzer.\n\nTask\nExtract the most important keywords/phrases of a given piece of text content.\n\nRequirements\n- Summarize the text content, and give the top 5 important keywords/phrases.\n- The keywords MUST be in the same language as the given piece of text content.\n- The keywords are delimited by ENGLISH COMMA.\n- Output keywords ONLY.",
                                 "temperature": 0.1,
                                 "temperatureEnabled": true,
-                                "tenant_llm_id": 54,
+                                "tenant_llm_id": 63,
                                 "topPEnabled": true,
                                 "top_p": 0.3
                             },
                             "label": "Extractor",
-                            "name": "Auto Keywords"
+                            "name": "Auto Keyword"
                         },
                         "dragging": false,
-                        "id": "Extractor:SunnyCooksSpend",
+                        "id": "Extractor:LovelyPearsRest",
                         "measured": {
-                            "height": 89,
+                            "height": 90,
                             "width": 200
                         },
                         "position": {
-                            "x": 598.3422026718366,
-                            "y": 414.3467657992519
+                            "x": 983.5410692821999,
+                            "y": 301.1557383781162
                         },
                         "selected": false,
                         "sourcePosition": "right",
@@ -650,10 +698,10 @@
                     {
                         "data": {
                             "form": {
-                                "field_name": "summary",
+                                "field_name": "questions",
                                 "frequencyPenaltyEnabled": true,
                                 "frequency_penalty": 0.7,
-                                "llm_id": "Qwen/Qwen3-8B@SILICONFLOW",
+                                "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
                                 "maxTokensEnabled": false,
                                 "max_tokens": 256,
                                 "outputs": {
@@ -664,26 +712,69 @@
                                 },
                                 "presencePenaltyEnabled": true,
                                 "presence_penalty": 0.4,
-                                "prompts": "Text to Summarize:\n{Extractor:SunnyCooksSpend@chunks}",
-                                "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
+                                "prompts": "Text Content\n{Extractor:LovelyPearsRest@chunks}",
+                                "sys_prompt": "Role\nYou are a text analyzer.\n\nTask\nPropose 3 questions about a given piece of text content.\n\nRequirements\n- Understand and summarize the text content, and propose the top 3 important questions.\n- The questions SHOULD NOT have overlapping meanings.\n- The questions SHOULD cover the main content of the text as much as possible.\n- The questions MUST be in the same language as the given piece of text content.\n- One question per line.\n- Output questions ONLY.",
                                 "temperature": 0.1,
                                 "temperatureEnabled": true,
-                                "tenant_llm_id": 54,
+                                "tenant_llm_id": 63,
                                 "topPEnabled": true,
                                 "top_p": 0.3
                             },
                             "label": "Extractor",
-                            "name": "Auto Questions"
+                            "name": "Auto Question"
                         },
                         "dragging": false,
-                        "id": "Extractor:CleverPianosInvite",
+                        "id": "Extractor:SmartWindowsHammer",
                         "measured": {
-                            "height": 89,
+                            "height": 90,
                             "width": 200
                         },
                         "position": {
-                            "x": 594.401162655802,
-                            "y": 536.2317513894384
+                            "x": 1021.1009769800036,
+                            "y": 421.67760363913044
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "contextNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "field_name": "metadata",
+                                "frequencyPenaltyEnabled": true,
+                                "frequency_penalty": 0.7,
+                                "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
+                                "maxTokensEnabled": false,
+                                "max_tokens": 256,
+                                "outputs": {
+                                    "chunks": {
+                                        "type": "Array<Object>",
+                                        "value": []
+                                    }
+                                },
+                                "presencePenaltyEnabled": true,
+                                "presence_penalty": 0.4,
+                                "prompts": "Content:\n{Extractor:SmartWindowsHammer@chunks}",
+                                "sys_prompt": "Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.\n\nImportant structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.",
+                                "temperature": 0.1,
+                                "temperatureEnabled": true,
+                                "tenant_llm_id": 63,
+                                "topPEnabled": true,
+                                "top_p": 0.3
+                            },
+                            "label": "Extractor",
+                            "name": "Auto Metadata"
+                        },
+                        "dragging": false,
+                        "id": "Extractor:CurlyEmusJam",
+                        "measured": {
+                            "height": 90,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 1065.7115140232393,
+                            "y": 527.4370438206126
                         },
                         "selected": true,
                         "sourcePosition": "right",
@@ -705,14 +796,14 @@
                             "name": "Indexer_0"
                         },
                         "dragging": false,
-                        "id": "Tokenizer:ShyBalloonsSmell",
+                        "id": "Tokenizer:WittySunsListen",
                         "measured": {
-                            "height": 113,
+                            "height": 114,
                             "width": 200
                         },
                         "position": {
-                            "x": 911.3724897632962,
-                            "y": 186.00527380751004
+                            "x": 1327.3247542536642,
+                            "y": 164.72133416115918
                         },
                         "selected": false,
                         "sourcePosition": "right",

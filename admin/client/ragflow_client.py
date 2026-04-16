@@ -1393,14 +1393,14 @@ class RAGFlowClient:
             headers = {"Content-Type": encoder.content_type}
             response = self.http_client.request(
                 "POST",
-                "/document/upload",
+                f"/datasets/{dataset_id}/documents?return_raw_files=true",
                 headers=headers,
                 data=encoder,
                 json_body=None,
                 params=None,
                 stream=False,
                 auth_kind="web",
-                use_api_base=False
+                use_api_base=True
             )
             res = response.json()
             if res.get("code") == 0:

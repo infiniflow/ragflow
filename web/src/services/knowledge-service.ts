@@ -1,3 +1,4 @@
+import { Authorization } from '@/constants/authorization';
 import { IRenameTag } from '@/interfaces/database/knowledge';
 import {
   IFetchDocumentListRequestBody,
@@ -5,8 +6,10 @@ import {
 } from '@/interfaces/request/knowledge';
 import { ProcessingType } from '@/pages/dataset/dataset-overview/dataset-common';
 import api from '@/utils/api';
+import { getAuthorization } from '@/utils/authorization-util';
 import registerServer from '@/utils/register-server';
 import request, { post } from '@/utils/request';
+import axios from 'axios';
 
 const {
   createKb,
@@ -245,6 +248,17 @@ export const listDocument = (
 
 export const documentFilter = (kb_id: string) =>
   request.post(api.getDatasetFilter, { kb_id });
+
+// Custom upload function that handles dynamic URL using axios directly
+export const uploadDocument = async (datasetId: string, formData: FormData) => {
+  const url = api.documentUpload(datasetId);
+  const response = await axios.post(url, formData, {
+    headers: {
+      [Authorization]: getAuthorization(),
+    },
+  });
+  return response.data;
+};
 
 export const renameDocument = (
   datasetId: string,

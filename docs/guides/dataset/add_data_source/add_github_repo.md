@@ -1,5 +1,5 @@
 ---
-sidebar_position: 5
+sidebar_position: 15
 slug: /add_github_repo
 sidebar_custom_props: {
   categoryIcon: SiGoogledrive
@@ -8,7 +8,7 @@ sidebar_custom_props: {
 
 # Add GitHub repo
 
-Link your GitHub repofor pull request or issue synchronization.
+Link your GitHub repo for pull request or issue synchronization.
 
 ---
 
