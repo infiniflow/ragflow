@@ -1,10 +1,10 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useUpdateKnowledge } from '@/hooks/use-knowledge-request';
-import { IKnowledge } from '@/interfaces/database/knowledge';
+import { IDataset } from '@/interfaces/database/dataset';
 import { useCallback, useState } from 'react';
 
 export const useRenameDataset = () => {
-  const [dataset, setDataset] = useState<IKnowledge>({} as IKnowledge);
+  const [dataset, setDataset] = useState<IDataset>({} as IDataset);
   const {
     visible: datasetRenameVisible,
     hideModal: hideDatasetRenameModal,
@@ -27,7 +27,7 @@ export const useRenameDataset = () => {
   );
 
   const handleShowDatasetRenameModal = useCallback(
-    async (record: IKnowledge) => {
+    async (record: IDataset) => {
       setDataset(record);
       showDatasetRenameModal();
     },
