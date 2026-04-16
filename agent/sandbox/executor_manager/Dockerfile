@@ -1,6 +1,10 @@
 FROM python:3.11-slim-bookworm
 
-RUN grep -rl 'deb.debian.org' /etc/apt/ | xargs sed -i 's|http[s]*://deb.debian.org|https://mirrors.tuna.tsinghua.edu.cn|g' && \
+ARG NEED_MIRROR=1
+
+RUN if NEED_MIRROR=1; then \
+        grep -rl 'deb.debian.org' /etc/apt/ | xargs sed -i 's|http[s]*://deb.debian.org|https://mirrors.tuna.tsinghua.edu.cn|g'; \
+    fi; \
     apt-get update && \
     apt-get install -y curl gcc && \
     rm -rf /var/lib/apt/lists/*
@@ -27,7 +31,7 @@ RUN set -eux; \
     ln -sf /usr/local/bin/docker /usr/bin/docker
 
 COPY --from=ghcr.io/astral-sh/uv:0.7.5 /uv /uvx /bin/
-ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ENV UV_INDEX_URL = if [ "$NEED_MIRROR" = 1 ]; then echo "https://pypi.tuna.tsinghua.edu.cn/simple"; else echo "https://pypi.org/simple"; fi
 
 WORKDIR /app
 COPY . .
