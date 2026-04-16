@@ -16,6 +16,12 @@
 import logging
 
 from quart import jsonify, request
+from werkzeug.exceptions import BadRequest as WerkzeugBadRequest
+
+try:
+    from quart.exceptions import BadRequest as QuartBadRequest
+except ImportError:  # pragma: no cover - optional dependency
+    QuartBadRequest = None
 
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
@@ -191,9 +197,12 @@ async def retrieval(tenant_id):
       404:
         description: Knowledge base or document not found
     """
+    parse_exception_types = (AttributeError, TypeError, ValueError, WerkzeugBadRequest)
+    if QuartBadRequest is not None:
+        parse_exception_types = parse_exception_types + (QuartBadRequest,)
     try:
         req = await _read_retrieval_request()
-    except (AttributeError, TypeError, ValueError) as e:
+    except parse_exception_types as e:
         return build_error_result(
             message=f"required argument are missing: {str(e)}; ",
             code=RetCode.ARGUMENT_ERROR,
