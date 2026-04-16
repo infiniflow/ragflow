@@ -231,7 +231,6 @@ class TestUpdateChunk:
             assert res["message"] == expected_message, res
 
     @pytest.mark.p3
-    @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6554")
     def test_concurrent_update_chunk(self, WebApiAuth, add_chunks):
         count = 50
         _, doc_id, chunk_ids = add_chunks

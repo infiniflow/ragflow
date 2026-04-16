@@ -149,7 +149,6 @@ class TestUpdatedChunk:
         chunk.update({"content": "chunk test 2"})
 
     @pytest.mark.p3
-    @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6554")
     def test_concurrent_update_chunk(self, add_chunks):
         count = 50
         _, _, chunks = add_chunks
