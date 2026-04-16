@@ -35,8 +35,7 @@ from api.db.services.user_service import UserService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from common.constants import RetCode
 from common.misc_utils import get_uuid
-from api.utils.api_utils import get_data_error_result, get_error_data_result, get_json_result, get_request_json, token_required
-from api.utils.api_utils import get_result
+from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, token_required
 from quart import request, Response
 from rag.utils.redis_conn import REDIS_CONN
 

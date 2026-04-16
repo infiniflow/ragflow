@@ -24,7 +24,6 @@ from api.db import CanvasCategory
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
-from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.db.services.task_service import queue_dataflow, CANVAS_DEBUG_DOC_ID, TaskService
 from api.db.services.user_canvas_version import UserCanvasVersionService
@@ -38,7 +37,6 @@ from api.utils.api_utils import (
     get_request_json,
 )
 from agent.canvas import Canvas
-from agent.dsl_migration import normalize_chunker_dsl
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken, Task
 
