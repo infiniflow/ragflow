@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from peewee import fn
 
 from api.db import VALID_PIPELINE_TASK_TYPES, PipelineTaskType
-from api.db.db_models import DB, Document, PipelineOperationLog, Task
+from api.db.db_models import DB, Document, PipelineOperationLog
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
