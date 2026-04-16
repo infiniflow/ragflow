@@ -26,8 +26,6 @@ from agent.component.base import ComponentBase, ComponentParamBase
 from common.connection_utils import timeout
 from deepdoc.parser import HtmlParser
 
-logger = logging.getLogger(__name__)
-
 
 class InvokeParam(ComponentParamBase):
     """
@@ -62,13 +60,13 @@ class Invoke(ComponentBase, ABC):
         if isinstance(value, str):
             try:
                 value = json.loads(value)
-                logger.debug(
+                logging.debug(
                     "Invoke JSON arg coercion succeeded. key=%s parsed_type=%s",
                     key,
                     type(value).__name__,
                 )
             except json.JSONDecodeError as exc:
-                logger.info(
+                logging.info(
                     "Invoke JSON arg coercion skipped; value is not valid JSON. key=%s raw=%r error=%s",
                     key,
                     raw_value,
@@ -79,7 +77,7 @@ class Invoke(ComponentBase, ABC):
         try:
             json.dumps(value, allow_nan=False)
         except (TypeError, ValueError) as exc:
-            logger.warning(
+            logging.warning(
                 "Invoke JSON arg is not JSON-serializable. key=%s value_type=%s value=%r error=%s",
                 key,
                 type(value).__name__,
