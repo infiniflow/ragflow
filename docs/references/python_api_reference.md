@@ -1702,7 +1702,7 @@ from ragflow_sdk import RAGFlow, Agent
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 agent_id = "AGENT_ID"
-agent = rag_object.list_agents(id = agent_id)[0]
+agent = rag_object.get_agent(agent_id)
 session = agent.create_session()
 # Or create in release mode:
 # session = agent.create_session(release=True)
@@ -1784,7 +1784,7 @@ from ragflow_sdk import RAGFlow, Agent
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_id = "AGENT_ID"
-agent = rag_object.list_agents(id = AGENT_id)[0]
+agent = rag_object.get_agent(AGENT_id)
 session = agent.create_session()    
 
 print("\n===== Miss R ====\n")
@@ -1853,7 +1853,7 @@ from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_id = "AGENT_ID"
-agent = rag_object.list_agents(id = AGENT_id)[0]
+agent = rag_object.get_agent(AGENT_id)
 sessons = agent.list_sessions()
 for session in sessions:
     print(session)
@@ -1892,7 +1892,7 @@ from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_id = "AGENT_ID"
-agent = rag_object.list_agents(id = AGENT_id)[0]
+agent = rag_object.get_agent(AGENT_id)
 agent.delete_sessions(ids=["id_1","id_2"])
 agent.delete_sessions(delete_all=True)
 ```
@@ -1909,7 +1909,7 @@ agent.delete_sessions(delete_all=True)
 RAGFlow.list_agents(
     page: int = 1, 
     page_size: int = 30, 
-    orderby: str = "create_time", 
+    orderby: str = "update_time", 
     desc: bool = True,
     id: str = None,
     title: str = None
@@ -1932,8 +1932,8 @@ The number of agents on each page. Defaults to `30`.
 
 The attribute by which the results are sorted. Available options:
 
-- `"create_time"` (default)
-- `"update_time"`
+- `"create_time"`
+- `"update_time"` (default)
 
 ##### desc: `bool`
 
@@ -1943,7 +1943,7 @@ Indicates whether the retrieved agents should be sorted in descending order. Def
 
 The ID of the agent to retrieve. Defaults to `None`.
 
-##### name: `string`  
+##### title: `string`  
 
 The name of the agent to retrieve. Defaults to `None`.
 
@@ -1959,6 +1959,37 @@ from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 for agent in rag_object.list_agents():
     print(agent)
+```
+
+---
+
+### Get agent
+
+```python
+RAGFlow.get_agent(agent_id: str) -> Agent
+```
+
+Gets an agent by ID.
+
+#### Parameters
+
+##### agent_id: `string`
+
+The ID of the agent to retrieve.
+
+#### Returns
+
+- Success: An `Agent` object.
+- Failure: `Exception`.
+
+#### Examples
+
+```python
+from ragflow_sdk import RAGFlow
+
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+agent = rag_object.get_agent("AGENT_ID")
+print(agent)
 ```
 
 ---

@@ -177,8 +177,7 @@ export default {
 
   // flow
   listTemplates: `${webAPI}/canvas/templates`,
-  listCanvas: `${webAPI}/canvas/list`,
-  getCanvas: `${webAPI}/canvas/get`,
+  listAgents: `${restAPIv1}/agents`,
   getCanvasSSE: (canvasId: string) => `${webAPI}/canvas/getsse/${canvasId}`,
   removeCanvas: `${webAPI}/canvas/rm`,
   setCanvas: `${webAPI}/canvas/set`,
@@ -197,7 +196,7 @@ export default {
   inputForm: `${webAPI}/canvas/input_form`,
   fetchVersionList: (id: string) => `${webAPI}/canvas/getlistversion/${id}`,
   fetchVersion: (id: string) => `${webAPI}/canvas/getversion/${id}`,
-  fetchCanvas: (id: string) => `${webAPI}/canvas/get/${id}`,
+  fetchCanvas: (id: string) => `${restAPIv1}/agents/${id}`,
   fetchAgentAvatar: (id: string) => `${webAPI}/canvas/getsse/${id}`,
   uploadAgentFile: (id?: string) => `${webAPI}/canvas/upload/${id}`,
   fetchAgentLogs: (canvasId: string) => `${webAPI}/canvas/${canvasId}/sessions`,

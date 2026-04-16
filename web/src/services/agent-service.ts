@@ -10,7 +10,7 @@ import request from '@/utils/request';
 const {
   getCanvasSSE,
   setCanvas,
-  listCanvas,
+  listAgents,
   resetCanvas,
   removeCanvas,
   runCanvas,
@@ -54,8 +54,8 @@ const methods = {
     url: fetchVersion,
     method: 'get',
   },
-  listCanvas: {
-    url: listCanvas,
+  listAgents: {
+    url: listAgents,
     method: 'get',
   },
   resetCanvas: {
@@ -149,7 +149,7 @@ export const fetchAgentLogsById = (canvasId: string, sessionId: string) => {
 };
 
 export const fetchPipeLineList = (params: IPipeLineListRequest) => {
-  return request.get(api.listCanvas, { params: params });
+  return request.get(api.listAgents, { params: params });
 };
 
 export const fetchWebhookTrace = (

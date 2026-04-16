@@ -89,6 +89,37 @@ export const useFetchAgentTemplates = () => {
   return data;
 };
 
+const buildAgentListParams = ({
+  page,
+  pageSize,
+  keywords,
+  canvasCategory,
+  ownerIds,
+}: {
+  page: number;
+  pageSize: number;
+  keywords?: string;
+  canvasCategory?: string;
+  ownerIds?: string[];
+}) => {
+  const params: Record<string, unknown> = {
+    page,
+    page_size: pageSize,
+  };
+
+  if (keywords) {
+    params.keywords = keywords;
+  }
+  if (canvasCategory) {
+    params.canvas_category = canvasCategory;
+  }
+  if (Array.isArray(ownerIds) && ownerIds.length > 0) {
+    params.owner_ids = ownerIds.join(',');
+  }
+
+  return params;
+};
+
 export const useFetchAgentListByPage = () => {
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
@@ -99,17 +130,13 @@ export const useFetchAgentListByPage = () => {
     : [];
   const owner = filterValue.owner;
 
-  const requestParams: Record<string, any> = {
-    keywords: debouncedSearchString,
-    page_size: pagination.pageSize,
+  const requestParams = buildAgentListParams({
     page: pagination.current,
-    canvas_category:
-      canvasCategory.length === 1 ? canvasCategory[0] : undefined,
-  };
-
-  if (Array.isArray(owner) && owner.length > 0) {
-    requestParams.owner_ids = owner.join(',');
-  }
+    pageSize: pagination.pageSize,
+    keywords: debouncedSearchString,
+    canvasCategory: canvasCategory.length === 1 ? canvasCategory[0] : undefined,
+    ownerIds: Array.isArray(owner) ? owner : undefined,
+  });
 
   const { data, isFetching: loading } = useQuery<{
     canvas: IFlow[];
@@ -131,7 +158,7 @@ export const useFetchAgentListByPage = () => {
     },
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await agentService.listCanvas(
+      const { data } = await agentService.listAgents(
         {
           params: requestParams,
         },
@@ -166,13 +193,13 @@ export function useFetchAllAgentList() {
   const { data, isFetching: loading } = useQuery<IFlow[]>({
     queryKey: [AgentApiAction.FetchAllAgentList],
     queryFn: async () => {
-      const { data } = await agentService.listCanvas(
+      const { data } = await agentService.listAgents(
         {
-          params: {
+          params: buildAgentListParams({
             page: 1,
-            page_size: 100000,
-            canvas_category: AgentCategory.AgentCanvas,
-          },
+            pageSize: 100000,
+            canvasCategory: AgentCategory.AgentCanvas,
+          }),
         },
         true,
       );
@@ -731,7 +758,9 @@ export const useFetchAgentList = ({
     initialData: { canvas: [], total: 0 },
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await fetchPipeLineList({ canvas_category });
+      const { data } = await fetchPipeLineList({
+        canvas_category,
+      });
 
       return data?.data ?? [];
     },
@@ -767,7 +796,7 @@ export const useCancelDataflow = () => {
 //     initialData: [],
 //     gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
 //     queryFn: async () => {
-//       const { data } = await agentService.listCanvas();
+//       const { data } = await agentService.listAgents();
 
 //       return data?.data ?? [];
 //     },

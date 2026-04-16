@@ -27,7 +27,6 @@ from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.db.services.task_service import queue_dataflow, CANVAS_DEBUG_DOC_ID, TaskService
-from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from common.constants import RetCode
 from common.misc_utils import get_uuid, thread_pool_exec
@@ -114,56 +113,6 @@ async def save():
     if not replica_ok:
         return get_data_error_result(message="canvas saved, but replica sync failed.")
     return get_json_result(data=req)
-
-
-@manager.route('/get/<canvas_id>', methods=['GET'])  # noqa: F821
-@login_required
-def get(canvas_id):
-    if not UserCanvasService.accessible(canvas_id, current_user.id):
-        return get_data_error_result(message="canvas not found.")
-    e, c = UserCanvasService.get_by_canvas_id(canvas_id)
-    if not e:
-        return get_data_error_result(message="canvas not found.")
-    try:
-        # DELETE
-        CanvasReplicaService.bootstrap(
-            canvas_id=canvas_id,
-            tenant_id=str(current_user.id),
-            runtime_user_id=str(current_user.id),
-            dsl=c.get("dsl"),
-            canvas_category=c.get("canvas_category", CanvasCategory.Agent),
-            title=c.get("title", ""),
-        )
-    except ValueError as e:
-        return get_data_error_result(message=str(e))
-
-    # Get the last publication time (latest released version's update_time)
-    last_publish_time = None
-    versions = UserCanvasVersionService.list_by_canvas_id(canvas_id)
-    if versions:
-        released_versions = [v for v in versions if v.release]
-        if released_versions:
-            # Sort by update_time descending and get the latest
-            released_versions.sort(key=lambda x: x.update_time, reverse=True)
-            last_publish_time = released_versions[0].update_time
-
-    # Add last_publish_time to response data
-    if isinstance(c, dict):
-        c["dsl"] = normalize_chunker_dsl(c.get("dsl", {}))
-        c["last_publish_time"] = last_publish_time
-    else:
-        # If c is a model object, convert to dict first
-        c = c.to_dict()
-        c["dsl"] = normalize_chunker_dsl(c.get("dsl", {}))
-        c["last_publish_time"] = last_publish_time
-
-    # For pipeline type, get associated datasets
-    if c.get("canvas_category") == CanvasCategory.DataFlow:
-        datasets = list(KnowledgebaseService.query(pipeline_id=canvas_id))
-        c["datasets"] = [{"id": d.id, "name": d.name, "avatar": d.avatar} for d in datasets]
-
-    return get_json_result(data=c)
-
 
 @manager.route('/getsse/<canvas_id>', methods=['GET'])  # type: ignore # noqa: F821
 def getsse(canvas_id):
@@ -573,34 +522,6 @@ def getversion( version_id):
             return get_json_result(data=version.to_dict())
     except Exception as e:
         return get_json_result(data=f"Error getting history file: {e}")
-
-
-@manager.route('/list', methods=['GET'])  # noqa: F821
-@login_required
-def list_canvas():
-    keywords = request.args.get("keywords", "")
-    page_number = int(request.args.get("page", 0))
-    items_per_page = int(request.args.get("page_size", 0))
-    orderby = request.args.get("orderby", "create_time")
-    canvas_category = request.args.get("canvas_category")
-    if request.args.get("desc", "true").lower() == "false":
-        desc = False
-    else:
-        desc = True
-    owner_ids = [id for id in request.args.get("owner_ids", "").strip().split(",") if id]
-    if not owner_ids:
-        tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-        tenants = [m["tenant_id"] for m in tenants]
-        tenants.append(current_user.id)
-        canvas, total = UserCanvasService.get_by_tenant_ids(
-            tenants, current_user.id, page_number,
-            items_per_page, orderby, desc, keywords, canvas_category)
-    else:
-        tenants = owner_ids
-        canvas, total = UserCanvasService.get_by_tenant_ids(
-            tenants, current_user.id, 0,
-            0, orderby, desc, keywords, canvas_category)
-    return get_json_result(data={"canvas": canvas, "total": total})
 
 
 @manager.route('/setting', methods=['POST'])  # noqa: F821
