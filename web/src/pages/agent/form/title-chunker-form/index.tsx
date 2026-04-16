@@ -3,11 +3,12 @@ import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { memo, useEffect, useRef, useState } from 'react';
 import { useFieldArray, useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -145,7 +146,7 @@ function CardBody({ cardName }: CardBodyProps) {
         onClick={() => appendLevel({ expression: '' })}
         className="mt-4"
       >
-        {t('flow.addLevel', 'Add Level')}
+        {t('flow.addRegularExpressions')}
       </BlockButton>
     </CardContent>
   );
@@ -297,27 +298,25 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
           {method === 'group' && t('flow.groupTip')}
         </div> */}
         <div
-          className={`text-xs text-text-secondary w-full border rounded-sm p-2 cursor-pointer ${showAllTip ? 'block' : 'truncate'}`}
+          className={`text-xs text-text-secondary w-full cursor-pointer `}
           onClick={() => setShowAllTip(!showAllTip)}
         >
-          <div className="flex flex-col justify-start items-center">
-            <span
-              className="flex self-start"
-              dangerouslySetInnerHTML={{
-                __html:
-                  method === 'hierarchy'
-                    ? t('flow.hierarchyTip')
-                    : method === 'group'
-                      ? t('flow.groupTip')
-                      : '',
-              }}
+          <div className={cn('flex justify-start items-start')}>
+            <div
+              className={cn(
+                'flex-1 ',
+                showAllTip ? 'whitespace-pre-wrap' : 'truncate',
+              )}
             >
-              {/* {method === 'hierarchy' && t('flow.hierarchyTip')}
-              {method === 'group' && t('flow.groupTip')} */}
-            </span>
-            {/* <span className="flex ml-2 text-xs self-center">
-              {showAllTip ? '▲' : ''}
-            </span> */}
+              {method === 'hierarchy'
+                ? t('flow.hierarchyTip')
+                : method === 'group'
+                  ? t('flow.groupTip')
+                  : ''}
+            </div>
+            <div className="flex ml-2 text-xs ">
+              {showAllTip ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </div>
           </div>
         </div>
         <RAGFlowFormItem name={'hierarchy'} label={''}>
@@ -330,9 +329,10 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
             tooltip={t('flow.includeHeadingContentTip')}
             horizontal={true}
             labelClassName="w-full"
+            valueClassName="w-8"
           >
             {(field) => (
-              <Checkbox
+              <Switch
                 checked={field.value}
                 onCheckedChange={(checked) => {
                   field.onChange?.(checked);
@@ -389,7 +389,7 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
           }
           className="mt-4"
         >
-          {t('flow.rule', 'Add Rule')}
+          {t('flow.addRule', 'Add Rule')}
         </BlockButton>
         {/* )} */}
       </FormWrapper>
