@@ -54,11 +54,16 @@ export const getAuthorization = () => {
   }
 
   const auth = getSearchValue('auth');
-  const authorization = auth
-    ? 'Bearer ' + auth
-    : storage.getAuthorization() || '';
+  if (auth) {
+    return 'Bearer ' + auth;
+  }
 
-  return authorization;
+  const stored = storage.getAuthorization();
+  if (stored) {
+    return stored.startsWith('Bearer ') ? stored : 'Bearer ' + stored;
+  }
+
+  return '';
 };
 
 export default storage;

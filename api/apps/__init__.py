@@ -97,7 +97,10 @@ def _load_user():
     authorization = request.headers.get("Authorization")
     g.user = None
     if not authorization:
+        logging.debug("load_user: No Authorization header")
         return None
+
+    logging.debug(f"load_user: Authorization header format: starts_with_bearer={authorization.startswith('Bearer ')}, len={len(authorization)}")
 
     try:
         token_value = authorization.split(" ", 1)[1] if authorization.startswith("Bearer ") or authorization.startswith("bearer ") else authorization
@@ -121,6 +124,8 @@ def _load_user():
                 return None
             g.user = user[0]
             return user[0]
+        else:
+            logging.warning(f"load_user: No user found for access_token={access_token[:8]}... (len={len(access_token)})")
     except Exception as e_auth:
         logging.warning(f"load_user from jwt got exception {e_auth}")
         try:

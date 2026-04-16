@@ -135,6 +135,9 @@ request.interceptors.response.use(
         });
         authorizationUtil.removeAll();
         redirectToLogin();
+        setTimeout(() => {
+          isRedirecting = false;
+        }, 1000);
       }
     } else if (data?.code !== 0) {
       notification.error({
@@ -162,6 +165,9 @@ request.interceptors.response.use(
         });
         authorizationUtil.removeAll();
         redirectToLogin();
+        setTimeout(() => {
+          isRedirecting = false;
+        }, 1000);
       }
 
       return Promise.reject(error);

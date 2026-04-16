@@ -130,6 +130,9 @@ request.interceptors.response.use(async (response: Response, options) => {
       });
       authorizationUtil.removeAll();
       redirectToLogin();
+      setTimeout(() => {
+        isRedirecting = false;
+      }, 1000);
     }
 
     return response;
@@ -161,9 +164,10 @@ request.interceptors.response.use(async (response: Response, options) => {
       });
       authorizationUtil.removeAll();
       redirectToLogin();
+      setTimeout(() => {
+        isRedirecting = false;
+      }, 1000);
     }
-    authorizationUtil.removeAll();
-    redirectToLogin();
   } else if (data?.code !== 0) {
     notification.error({
       message: `${i18n.t('message.hint')} : ${data?.code}`,
