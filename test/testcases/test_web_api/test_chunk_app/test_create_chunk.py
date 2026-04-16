@@ -166,7 +166,7 @@ class TestAddChunk:
         payload = {
             "doc_id": doc_id,
             "content_with_weight": "chunk with tags",
-            "tag_feas": [0.1, 0.2],
+            "tag_feas": {"tag1": 0.1, "tag2": 0.2},
             "important_kwd": ["tag"],
             "question_kwd": ["question"],
         }
