@@ -487,15 +487,11 @@ async def change_status():
                         doc.kb_id,
                     )
                 except Exception as exc:
-                    msg = str(exc)
-                    if "3022" in msg:
-                        result[doc_id] = {"error": "Document store table missing."}
-                    else:
-                        result[doc_id] = {"error": f"Document store update failed: {msg}"}
+                    result[doc_id] = {"error": f"Document store update failed: {str(exc)}"}
                     has_error = True
                     continue
                 if not ok:
-                    result[doc_id] = {"error": "Database error (docStore update)!"}
+                    result[doc_id] = {"error": "Document store table missing or update failed."}
                     has_error = True
                     continue
             result[doc_id] = {"status": status}
