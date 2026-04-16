@@ -20,7 +20,8 @@ from io import BytesIO
 
 import xxhash
 from pydantic import BaseModel, Field, validator
-from quart import request, send_file
+from quart import request, send_file, Blueprint
+from quart_schema import security_scheme_blueprint
 
 from api.db.db_models import APIToken, Document, File, Task
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
@@ -68,6 +69,7 @@ class Chunk(BaseModel):
                 raise ValueError("Each sublist in positions must have a length of 5")
         return value
 
+manager: Blueprint
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
 @token_required
@@ -1546,3 +1548,5 @@ async def retrieval_test(tenant_id):
                 code=RetCode.DATA_ERROR,
             )
         return server_error_response(e)
+
+security_scheme_blueprint(manager, [{"BearerAuth": []}])

@@ -37,9 +37,11 @@ from common.constants import RetCode
 from common.misc_utils import get_uuid
 from api.utils.api_utils import get_data_error_result, get_error_data_result, get_json_result, get_request_json, token_required
 from api.utils.api_utils import get_result
-from quart import request, Response
+from quart import request, Response, Blueprint
+from quart_schema import security_scheme_blueprint
 from rag.utils.redis_conn import REDIS_CONN
 
+manager: Blueprint
 
 def _get_user_nickname(user_id: str) -> str:
     exists, user = UserService.get_by_id(user_id)
@@ -936,3 +938,5 @@ async def webhook_trace(agent_id: str):
             "finished": finished,
         }
     )
+
+security_scheme_blueprint(manager, [{"BearerAuth": []}])
