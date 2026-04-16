@@ -38,7 +38,7 @@ class InfinityConnectionPool:
                 "db_name": "default_db"
             })
 
-        self.pool_max_size = int(os.environ.get("INFINITY_POOL_MAX_SIZE", 32))
+        self.pool_max_size = int(os.environ.get("INFINITY_POOL_MAX_SIZE", 4))
 
         infinity_uri = self.INFINITY_CONFIG["uri"]
         if ":" in infinity_uri:

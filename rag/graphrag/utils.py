@@ -455,13 +455,12 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         )
 
     if change.removed_edges:
-        edge_del_limiter = asyncio.Semaphore(int(os.environ.get("GRAPH_EDGE_DELETE_CONCURRENCY", 4)))
 
         async def del_edges(from_node, to_node):
             max_retries = 3
             for attempt in range(max_retries):
                 try:
-                    async with edge_del_limiter:
+                    async with chat_limiter:
                         await thread_pool_exec(
                             settings.docStoreConn.delete,
                             {"knowledge_graph_kwd": ["relation"], "from_entity_kwd": from_node, "to_entity_kwd": to_node},
