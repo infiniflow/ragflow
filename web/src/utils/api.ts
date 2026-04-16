@@ -224,9 +224,6 @@ export default {
   deleteMcpServer: `${webAPI}/mcp_server/rm`,
   importMcpServer: `${webAPI}/mcp_server/import`,
   exportMcpServer: `${webAPI}/mcp_server/export`,
-  listMcpServerTools: `${webAPI}/mcp_server/list_tools`,
-  testMcpServerTool: `${webAPI}/mcp_server/test_tool`,
-  cacheMcpServerTool: `${webAPI}/mcp_server/cache_tools`,
   testMcpServer: `${webAPI}/mcp_server/test_mcp`,
 
   // next-search
