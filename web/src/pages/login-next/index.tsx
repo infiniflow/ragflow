@@ -61,6 +61,7 @@ function LoginFormContent({
 }: LoginFormContentProps) {
   const face = useContext(FlipFaceContext);
   const isActiveFace = isLoginPage ? face === 'front' : face === 'back';
+  const testId = (id: string) => `${title}-auth-${id}`;
 
   return (
     <div className="flex flex-col items-center justify-center w-full">
@@ -74,7 +75,7 @@ function LoginFormContent({
           <Form {...form}>
             <form
               className="flex flex-col gap-8 text-text-primary "
-              data-testid="auth-form"
+              data-testid={testId('form')}
               data-active={isActiveFace ? 'true' : undefined}
               onSubmit={form.handleSubmit(onCheck)}
             >
@@ -86,7 +87,7 @@ function LoginFormContent({
                     <FormLabel required>{t('emailLabel')}</FormLabel>
                     <FormControl>
                       <Input
-                        data-testid="auth-email"
+                        data-testid={testId('email')}
                         placeholder={t('emailPlaceholder')}
                         autoComplete="email"
                         {...field}
@@ -105,7 +106,7 @@ function LoginFormContent({
                       <FormLabel required>{t('nicknameLabel')}</FormLabel>
                       <FormControl>
                         <Input
-                          data-testid="auth-nickname"
+                          data-testid={testId('nickname')}
                           placeholder={t('nicknamePlaceholder')}
                           autoComplete="username"
                           {...field}
@@ -126,7 +127,7 @@ function LoginFormContent({
                     <FormControl>
                       <div className="relative">
                         <Input
-                          data-testid="auth-password"
+                          data-testid={testId('password')}
                           type={'password'}
                           placeholder={t('passwordPlaceholder')}
                           autoComplete={
@@ -173,7 +174,7 @@ function LoginFormContent({
                 />
               )}
               <ButtonLoading
-                data-testid="auth-submit"
+                data-testid={testId('submit')}
                 type="submit"
                 loading={loading}
                 className="bg-metallic-gradient border-b-[#00BEB4] border-b-2 hover:bg-metallic-gradient hover:border-b-[#02bcdd] w-full my-8"
@@ -213,7 +214,7 @@ function LoginFormContent({
             <p className="text-text-disabled text-sm">
               {t('signInTip')}
               <Button
-                data-testid="auth-toggle-register"
+                data-testid={testId('toggle-register')}
                 variant={'transparent'}
                 onClick={changeTitle}
                 className="text-accent-primary/90 hover:text-accent-primary hover:bg-transparent font-medium border-none transition-colors duration-200"
@@ -228,7 +229,7 @@ function LoginFormContent({
             <p className="text-text-disabled text-sm">
               {t('signUpTip')}
               <Button
-                data-testid="auth-toggle-login"
+                data-testid={testId('toggle-login')}
                 variant={'transparent'}
                 onClick={changeTitle}
                 className="text-accent-primary/90 hover:text-accent-primary hover:bg-transparent font-medium border-none transition-colors duration-200"
