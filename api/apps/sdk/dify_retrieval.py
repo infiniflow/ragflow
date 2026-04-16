@@ -67,6 +67,19 @@ async def _read_retrieval_request():
     return await get_request_json()
 
 
+def _parse_retrieval_options(retrieval_setting):
+    if retrieval_setting is None:
+        retrieval_setting = {}
+    if not isinstance(retrieval_setting, dict):
+        raise ValueError("retrieval_setting must be an object")
+    try:
+        similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
+        top = int(retrieval_setting.get("top_k", 1024))
+    except (TypeError, ValueError):
+        raise ValueError("top_k must be integer and score_threshold must be numeric")
+    return retrieval_setting, similarity_threshold, top
+
+
 @manager.route('/dify/retrieval', methods=['POST', 'GET'])  # noqa: F821
 @apikey_required
 async def retrieval(tenant_id):
@@ -194,9 +207,13 @@ async def retrieval(tenant_id):
     question = req["query"]
     kb_id = req["knowledge_id"]
     use_kg = req.get("use_kg", False)
-    retrieval_setting = req.get("retrieval_setting", {})
-    similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
-    top = int(retrieval_setting.get("top_k", 1024))
+    try:
+        retrieval_setting, similarity_threshold, top = _parse_retrieval_options(req.get("retrieval_setting", {}))
+    except ValueError as e:
+        return build_error_result(
+            message=f"required argument are missing: {str(e)}; ",
+            code=RetCode.ARGUMENT_ERROR,
+        )
     metadata_condition = req.get("metadata_condition", {}) or {}
     metas = DocMetadataService.get_flatted_meta_by_kbs([kb_id])
 
