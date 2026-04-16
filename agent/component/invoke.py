@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import ast
 import json
 import logging
 import os
@@ -26,6 +25,8 @@ import requests
 from agent.component.base import ComponentBase, ComponentParamBase
 from common.connection_utils import timeout
 from deepdoc.parser import HtmlParser
+
+logger = logging.getLogger(__name__)
 
 
 class InvokeParam(ComponentParamBase):
@@ -56,13 +57,38 @@ class Invoke(ComponentBase, ABC):
     component_name = "Invoke"
 
     @staticmethod
-    def _literal_eval_if_possible(value):
-        if not isinstance(value, str):
-            return value
+    def _coerce_json_arg_if_possible(key, value):
+        raw_value = value
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+                logger.debug(
+                    "Invoke JSON arg coercion succeeded. key=%s parsed_type=%s",
+                    key,
+                    type(value).__name__,
+                )
+            except json.JSONDecodeError as exc:
+                logger.info(
+                    "Invoke JSON arg coercion skipped; value is not valid JSON. key=%s raw=%r error=%s",
+                    key,
+                    raw_value,
+                    exc,
+                )
+                return raw_value
+
         try:
-            return ast.literal_eval(value)
-        except Exception:
-            return value
+            json.dumps(value, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                "Invoke JSON arg is not JSON-serializable. key=%s value_type=%s value=%r error=%s",
+                key,
+                type(value).__name__,
+                value,
+                exc,
+            )
+            raise ValueError(f"Invoke JSON argument '{key}' is not JSON-serializable.") from exc
+
+        return value
 
     def get_input_form(self) -> dict[str, dict]:
         res = {}
@@ -86,18 +112,23 @@ class Invoke(ComponentBase, ABC):
         if self.check_if_canceled("Invoke processing"):
             return
 
+        is_json_mode = self._param.datatype.lower() == "json"
         args = {}
         for para in self._param.variables:
+            key = para["key"]
             if "value" in para and para.get("value") is not None:
-                t = self._literal_eval_if_possible(para["value"])
-                args[para["key"]] = self._literal_eval_if_possible(para["value"])
+                value = para["value"]
             elif para.get("ref") in kwargs:
-                args[para["key"]] = self._literal_eval_if_possible(kwargs[para["ref"]])
-                self.set_input_value(para["ref"], args[para["key"]])
+                value = kwargs[para["ref"]]
             else:
-                args[para["key"]] = self._literal_eval_if_possible(self._canvas.get_variable_value(para["ref"]))
-                self.set_input_value(para["ref"], args[para["key"]])
+                value = self._canvas.get_variable_value(para["ref"])
 
+            coerced_value = self._coerce_json_arg_if_possible(key, value) if is_json_mode else value
+            args[key] = coerced_value
+
+            if para.get("ref"):
+                self.set_input_value(para["ref"], coerced_value)
+    
         url = self._param.url.strip()
 
         def replace_variable(match):
