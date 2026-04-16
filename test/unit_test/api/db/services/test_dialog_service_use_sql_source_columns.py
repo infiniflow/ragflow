@@ -617,7 +617,8 @@ def test_async_ask_skips_disabled_metadata_filter_and_omits_document_metadata(mo
     assert kb_prompt_calls == [False]
     assert retriever.calls[0]["kwargs"]["doc_ids"] is None
     assert retriever.citation_calls[0]["embd_mdl"] is embd_model
-    assert chat_model.stream_calls[0]["system_prompt"] == "Chunk text from dataset."
+    # async_ask wraps kb_prompt output with ASK_SUMMARY; assert knowledge is embedded.
+    assert "Chunk text from dataset." in chat_model.stream_calls[0]["system_prompt"]
     assert result[0]["answer"] == "stub answer"
     assert result[-1]["final"] is True
 
