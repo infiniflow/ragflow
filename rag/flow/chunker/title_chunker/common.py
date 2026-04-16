@@ -222,7 +222,7 @@ class BaseTitleChunker(ABC):
             if level < BODY_LEVEL:
                 most_level = level
                 break
-
+            
         return {
             "levels": levels,
             "most_level": most_level,
@@ -232,10 +232,6 @@ class BaseTitleChunker(ABC):
 
     def resolve_title_levels(self, line_records):
         return self.resolve_outline_levels(line_records) or self.resolve_frequency_levels(line_records)
-
-
-    def resolve_manual_levels(self, line_records):
-        return self.resolve_title_levels(line_records)["levels"]
 
 
     def build_chunks_from_record_groups(self, record_groups):
