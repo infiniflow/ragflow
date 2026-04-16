@@ -129,5 +129,23 @@ def test_message_fit_in_clamps_negative_slice_lengths(monkeypatch):
     used_tokens, trimmed = generator.message_fit_in(messages, max_length=2)
 
     assert used_tokens == 2
-    assert trimmed[0]["content"] == "1234"
+    assert trimmed[0]["content"] == "12"
     assert trimmed[-1]["content"] == ""
+
+
+@pytest.mark.p1
+def test_message_fit_in_clamps_dominant_last_message_to_budget(monkeypatch):
+    generator = _load_generator_module(monkeypatch)
+    monkeypatch.setattr(generator, "num_tokens_from_string", lambda text: len(text))
+    monkeypatch.setattr(generator, "encoder", _CharEncoder())
+
+    messages = [
+        {"role": "system", "content": "s" * 41},
+        {"role": "user", "content": "abcdefghij"},
+    ]
+
+    used_tokens, trimmed = generator.message_fit_in(messages, max_length=8)
+
+    assert used_tokens == 8
+    assert trimmed[0]["content"] == ""
+    assert trimmed[-1]["content"] == "abcdefgh"

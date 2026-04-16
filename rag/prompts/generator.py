@@ -75,6 +75,10 @@ def message_fit_in(msg, max_length=4000):
             total += m["count"]
         return total
 
+    def trim_content(content, limit):
+        limit = max(0, limit)
+        return encoder.decode(encoder.encode(content)[:limit])
+
     c = count()
     if c < max_length:
         return c, msg
@@ -101,18 +105,22 @@ def message_fit_in(msg, max_length=4000):
         )
         return 0, msg
 
-    if ll / total > 0.8:
-        m = msg_[0]["content"]
-        preserve_len = max(0, max_length - ll2)
-        m = encoder.decode(encoder.encode(m)[:preserve_len])
-        msg[0]["content"] = m
-        return max_length, msg
+    if len(msg) == 1:
+        msg[0]["content"] = trim_content(msg[0]["content"], max_length)
+        return count(), msg
 
-    m = msg_[-1]["content"]
-    preserve_len_last = max(0, max_length - ll)
-    m = encoder.decode(encoder.encode(m)[:preserve_len_last])
-    msg[-1]["content"] = m
-    return max_length, msg
+    if ll / total > 0.8:
+        preserved_last = min(ll2, max_length)
+        msg[-1]["content"] = trim_content(msg_[-1]["content"], preserved_last)
+        remaining = max(0, max_length - preserved_last)
+        msg[0]["content"] = trim_content(msg_[0]["content"], remaining)
+        return count(), msg
+
+    preserved_system = min(ll, max_length)
+    msg[0]["content"] = trim_content(msg_[0]["content"], preserved_system)
+    remaining = max(0, max_length - preserved_system)
+    msg[-1]["content"] = trim_content(msg_[-1]["content"], remaining)
+    return count(), msg
 
 
 def kb_prompt(kbinfos, max_tokens, hash_id=False):
