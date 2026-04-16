@@ -220,6 +220,7 @@ def _load_chunk_module(monkeypatch):
 
     string_utils_mod = ModuleType("common.string_utils")
     string_utils_mod.remove_redundant_spaces = lambda text: " ".join(str(text).split())
+    string_utils_mod.is_content_empty = lambda content: content is None or not str(content).strip()
     monkeypatch.setitem(sys.modules, "common.string_utils", string_utils_mod)
 
     metadata_utils_mod = ModuleType("common.metadata_utils")
