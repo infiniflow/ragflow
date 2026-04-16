@@ -23,26 +23,41 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from common.metadata_utils import meta_filter, convert_conditions
-from api.utils.api_utils import apikey_required, build_error_result, get_request_json, validate_request
+from api.utils.api_utils import apikey_required, build_error_result, get_request_json
 from rag.app.tag import label_question
 from common.constants import RetCode, LLMType
 from common import settings
+
+logger = logging.getLogger(__name__)
+
 
 async def _read_retrieval_request():
     if request.method == "GET":
         query_args = request.args
         retrieval_setting = {}
+        knowledge_id = query_args.get("knowledge_id")
+        query = query_args.get("query")
+        use_kg = str(query_args.get("use_kg", "")).lower() in {"1", "true", "yes", "on"}
         top_k = query_args.get("top_k")
         score_threshold = query_args.get("score_threshold")
         if top_k is not None:
             retrieval_setting["top_k"] = top_k
         if score_threshold is not None:
             retrieval_setting["score_threshold"] = score_threshold
+        safe_query = f"len={len(query)}" if isinstance(query, str) else "len=0"
+        logger.debug(
+            "Dify retrieval GET normalization: knowledge_id=%s query=%s use_kg=%s top_k=%s score_threshold=%s",
+            knowledge_id,
+            safe_query,
+            use_kg,
+            retrieval_setting.get("top_k"),
+            retrieval_setting.get("score_threshold"),
+        )
 
         req = {
-            "knowledge_id": query_args.get("knowledge_id"),
-            "query": query_args.get("query"),
-            "use_kg": str(query_args.get("use_kg", "")).lower() in {"1", "true", "yes", "on"},
+            "knowledge_id": knowledge_id,
+            "query": query,
+            "use_kg": use_kg,
             "retrieval_setting": retrieval_setting,
         }
         return req
@@ -51,7 +66,6 @@ async def _read_retrieval_request():
 
 @manager.route('/dify/retrieval', methods=['POST', 'GET'])  # noqa: F821
 @apikey_required
-@validate_request("knowledge_id", "query")
 async def retrieval(tenant_id):
     """
     Dify-compatible retrieval API
@@ -61,9 +75,34 @@ async def retrieval(tenant_id):
     security:
       - ApiKeyAuth: []
     parameters:
+      - in: query
+        name: knowledge_id
+        required: false
+        type: string
+        description: Knowledge base ID (for GET requests)
+      - in: query
+        name: query
+        required: false
+        type: string
+        description: Query text (for GET requests)
+      - in: query
+        name: use_kg
+        required: false
+        type: boolean
+        description: Whether to use knowledge graph (for GET requests)
+      - in: query
+        name: top_k
+        required: false
+        type: integer
+        description: Number of results to return (for GET requests)
+      - in: query
+        name: score_threshold
+        required: false
+        type: number
+        description: Similarity threshold (for GET requests)
       - in: body
         name: body
-        required: true
+        required: false
         schema:
           type: object
           required:
@@ -137,6 +176,12 @@ async def retrieval(tenant_id):
         description: Knowledge base or document not found
     """
     req = await _read_retrieval_request()
+    missing = [field for field in ("knowledge_id", "query") if not req.get(field)]
+    if missing:
+        return build_error_result(
+            message=f"required argument are missing: {','.join(missing)}; ",
+            code=RetCode.ARGUMENT_ERROR,
+        )
     question = req["query"]
     kb_id = req["knowledge_id"]
     use_kg = req.get("use_kg", False)
