@@ -26,6 +26,7 @@ from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, OrderByE
 from common.string_utils import remove_redundant_spaces
 from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
+from common.tag_feature_utils import parse_tag_features
 from common import settings
 
 from common.misc_utils import thread_pool_exec
@@ -280,12 +281,18 @@ class Dealer:
             return np.array([0 for _ in range(len(search_res.ids))]) + pageranks
 
         q_denor = np.sqrt(np.sum([s * s for t, s in query_rfea.items() if t != PAGERANK_FLD]))
+        if q_denor == 0:
+            return np.array([0 for _ in range(len(search_res.ids))]) + pageranks
         for i in search_res.ids:
             nor, denor = 0, 0
             if not search_res.field[i].get(TAG_FLD):
                 rank_fea.append(0)
                 continue
-            for t, sc in eval(search_res.field[i].get(TAG_FLD, "{}")).items():
+            tag_feas = parse_tag_features(search_res.field[i].get(TAG_FLD), allow_json_string=True, allow_python_literal=True)
+            if not tag_feas:
+                rank_fea.append(0)
+                continue
+            for t, sc in tag_feas.items():
                 if t in query_rfea:
                     nor += query_rfea[t] * sc
                 denor += sc * sc

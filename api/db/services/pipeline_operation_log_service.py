@@ -26,7 +26,8 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID
+from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
+from common.constants import TaskStatus
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format
 
@@ -93,23 +94,34 @@ class PipelineOperationLogService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def create(cls, document_id, pipeline_id, task_type, fake_document_ids=[], dsl: str = "{}"):
-        referred_document_id = document_id
+    def create(cls, document_id, pipeline_id, task_type, task_id=None, referred_document_id=None, dsl: str = "{}"):
+        if document_id != GRAPH_RAPTOR_FAKE_DOC_ID:
+            referred_document_id = document_id
 
-        if referred_document_id == GRAPH_RAPTOR_FAKE_DOC_ID and fake_document_ids:
-            referred_document_id = fake_document_ids[0]
+        # no need to update document for graph rag, raptor mindmap task
+        if task_type not in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP]:
+            ok, document = DocumentService.get_by_id(referred_document_id)
+            if not ok:
+                logging.warning(f"Document for referred_document_id {referred_document_id} not found")
+                return None
+            DocumentService.update_progress_immediately([document.to_dict()])
+            if document.progress not in [1, -1]:
+                return None
+
         ok, document = DocumentService.get_by_id(referred_document_id)
         if not ok:
             logging.warning(f"Document for referred_document_id {referred_document_id} not found")
             return None
-        DocumentService.update_progress_immediately([document.to_dict()])
-        ok, document = DocumentService.get_by_id(referred_document_id)
-        if not ok:
-            logging.warning(f"Document for referred_document_id {referred_document_id} not found")
-            return None
-        if document.progress not in [1, -1]:
-            return None
+
+        # From document
+        title = document.parser_id
+        avatar = document.thumbnail
+        document_name = document.name
         operation_status = document.run
+        progress = document.progress
+        progress_msg = document.progress_msg
+        process_begin_at = document.process_begin_at
+        process_duration = document.process_duration
 
         if pipeline_id:
             ok, user_pipeline = UserCanvasService.get_by_id(pipeline_id)
@@ -122,16 +134,25 @@ class PipelineOperationLogService(CommonService):
             ok, kb_info = KnowledgebaseService.get_by_id(document.kb_id)
             if not ok:
                 raise RuntimeError(f"Cannot find dataset {document.kb_id} for referred_document {referred_document_id}")
-
             tenant_id = kb_info.tenant_id
-            title = document.parser_id
-            avatar = document.thumbnail
 
         if task_type not in VALID_PIPELINE_TASK_TYPES:
             raise ValueError(f"Invalid task type: {task_type}")
 
         if task_type in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP, PipelineTaskType.COMPILED_PAGES]:
-            finish_at = document.process_begin_at + timedelta(seconds=document.process_duration)
+            # query task to get progress information from task
+            ok, task = TaskService.get_by_id(task_id)
+            if not ok:
+                raise RuntimeError(f"Task not found for dataset {document.kb_id}")
+            title = task_type
+            document_name = task_type
+            operation_status = TaskStatus.DONE if task.progress == 1 else TaskStatus.FAIL
+            progress = task.progress
+            progress_msg = task.progress_msg
+            process_begin_at = task.begin_at
+            process_duration = task.process_duration
+
+            finish_at = process_begin_at + timedelta(seconds=process_duration)
             if task_type == PipelineTaskType.GRAPH_RAG:
                 KnowledgebaseService.update_by_id(
                     document.kb_id,
@@ -161,14 +182,14 @@ class PipelineOperationLogService(CommonService):
             pipeline_id=pipeline_id,
             pipeline_title=title,
             parser_id=document.parser_id,
-            document_name=document.name,
+            document_name=document_name,
             document_suffix=document.suffix,
             document_type=document.type,
             source_from=document.source_type.split("/")[0],
-            progress=document.progress,
-            progress_msg=document.progress_msg,
-            process_begin_at=document.process_begin_at,
-            process_duration=document.process_duration,
+            progress=progress,
+            progress_msg=progress_msg,
+            process_begin_at=process_begin_at,
+            process_duration=process_duration,
             dsl=json.loads(dsl),
             task_type=task_type,
             operation_status=operation_status,
@@ -196,8 +217,8 @@ class PipelineOperationLogService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def record_pipeline_operation(cls, document_id, pipeline_id, task_type, fake_document_ids=[]):
-        return cls.create(document_id=document_id, pipeline_id=pipeline_id, task_type=task_type, fake_document_ids=fake_document_ids)
+    def record_pipeline_operation(cls, document_id, pipeline_id, task_type, task_id=None, referred_document_id=None):
+        return cls.create(document_id=document_id, pipeline_id=pipeline_id, task_type=task_type, task_id=task_id, referred_document_id=referred_document_id)
 
     @classmethod
     @DB.connection_context()
