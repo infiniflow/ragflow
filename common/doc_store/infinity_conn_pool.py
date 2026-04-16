@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import logging
+import os
 import time
 
 import infinity
@@ -37,6 +38,8 @@ class InfinityConnectionPool:
                 "db_name": "default_db"
             })
 
+        self.pool_max_size = int(os.environ.get("INFINITY_POOL_MAX_SIZE", 32))
+
         infinity_uri = self.INFINITY_CONFIG["uri"]
         if ":" in infinity_uri:
             host, port = infinity_uri.split(":")
@@ -44,7 +47,7 @@ class InfinityConnectionPool:
 
         for _ in range(24):
             try:
-                conn_pool = ConnectionPool(self.infinity_uri, max_size=4)
+                conn_pool = ConnectionPool(self.infinity_uri, max_size=self.pool_max_size)
                 inf_conn = conn_pool.get_conn()
                 res = inf_conn.show_current_node()
                 if res.error_code == ErrorCode.OK and res.server_status in ["started", "alive"]:
@@ -60,7 +63,7 @@ class InfinityConnectionPool:
             logging.error(msg)
             raise Exception(msg)
 
-        logging.info(f"Infinity {infinity_uri} is healthy.")
+        logging.info(f"Infinity {infinity_uri} is healthy. Connection pool max_size={self.pool_max_size}")
 
     def get_conn_pool(self):
         return self.conn_pool
@@ -91,7 +94,7 @@ class InfinityConnectionPool:
             logging.error(str(e))
             if hasattr(self, "conn_pool") and self.conn_pool:
                 self.conn_pool.destroy()
-                self.conn_pool = ConnectionPool(self.infinity_uri, max_size=32)
+                self.conn_pool = ConnectionPool(self.infinity_uri, max_size=self.pool_max_size)
                 return self.conn_pool
 
     def __del__(self):
