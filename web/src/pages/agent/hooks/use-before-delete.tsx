@@ -7,7 +7,7 @@ import { deleteAllDownstreamAgentsAndTool } from '../utils/delete-node';
 const UndeletableNodes = [Operator.Begin, Operator.IterationStart];
 
 export function useBeforeDelete() {
-  const { getOperatorTypeFromId, getNode } = useGraphStore((state) => state);
+  const { getOperatorTypeFromId, getNode, nodes: allNodes } = useGraphStore((state) => state);
 
   const agentPredicate = (node: Node) => {
     return getOperatorTypeFromId(node.id) === Operator.Agent;
@@ -32,6 +32,22 @@ export function useBeforeDelete() {
 
       return true;
     });
+
+    // Include child nodes of Iteration boxes being deleted
+    const deletedIterationIds = new Set(
+      toBeDeletedNodes
+        .filter((node) => (node.data?.label as Operator) === Operator.Iteration)
+        .map((node) => node.id),
+    );
+    if (deletedIterationIds.size > 0) {
+      allNodes
+        .filter((node) => node.parentId && deletedIterationIds.has(node.parentId))
+        .forEach((child) => {
+          if (toBeDeletedNodes.every((x) => x.id !== child.id)) {
+            toBeDeletedNodes.push(child);
+          }
+        });
+    }
 
     const toBeDeletedEdges = edges.filter((edge) => {
       const sourceType = getOperatorTypeFromId(edge.source) as Operator;
