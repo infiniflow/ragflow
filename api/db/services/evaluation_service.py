@@ -284,7 +284,7 @@ class EvaluationService(CommonService):
             # Create evaluation run
             run_id = get_uuid()
             if not name:
-                name = f"Evaluation Run {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}"
+                name = f"Evaluation Run {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
 
             run = {
                 "id": run_id,

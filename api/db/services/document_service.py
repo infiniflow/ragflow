@@ -881,13 +881,14 @@ class DocumentService(CommonService):
                 # only for special task and parsed docs and unfinished
                 freeze_progress = special_task_running and doc_progress >= 1 and not finished
                 msg = "\n".join(sorted(msg))
+                now_utc = datetime.utcnow()
                 begin_at = d.get("process_begin_at")
                 if not begin_at:
-                    begin_at = datetime.utcnow()
+                    begin_at = now_utc
                     # fallback
                     cls.update_by_id(d["id"], {"process_begin_at": begin_at})
 
-                info = {"process_duration": max(datetime.timestamp(datetime.utcnow()) - begin_at.timestamp(), 0), "run": status}
+                info = {"process_duration": max((now_utc - begin_at).total_seconds(), 0), "run": status}
                 if prg != 0 and not freeze_progress:
                     info["progress"] = prg
                 if msg:
@@ -997,14 +998,15 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
         hasher.update(str(chunking_config[field]).encode("utf-8"))
 
     def new_task():
+        now_utc = datetime.utcnow()
         return {
             "id": get_uuid(),
             "doc_id": fake_doc_id,
             "from_page": 100000000,
             "to_page": 100000000,
             "task_type": ty,
-            "progress_msg": datetime.utcnow().strftime("%H:%M:%S") + " created task " + ty,
-            "begin_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            "progress_msg": now_utc.strftime("%H:%M:%S") + " created task " + ty,
+            "begin_at": now_utc.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
     task = new_task()
@@ -1079,8 +1081,9 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             d = deepcopy(doc)
             d.update(ck)
             d["id"] = xxhash.xxh64((ck["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
-            d["create_time"] = str(datetime.utcnow()).replace("T", " ")[:19]
-            d["create_timestamp_flt"] = datetime.utcnow().timestamp()
+            now_utc = datetime.utcnow()
+            d["create_time"] = now_utc.strftime("%Y-%m-%d %H:%M:%S")
+            d["create_timestamp_flt"] = now_utc.timestamp()
             if not d.get("image"):
                 docs.append(d)
                 continue

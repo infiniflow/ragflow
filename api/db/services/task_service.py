@@ -342,7 +342,10 @@ class TaskService(CommonService):
                         ((prog == -1) | (prog > cls.model.progress))))
                     ).execute()
 
-        process_duration = (datetime.utcnow() - task.begin_at).total_seconds()
+        if task.begin_at:
+            process_duration = max((datetime.utcnow() - task.begin_at).total_seconds(), 0)
+        else:
+            process_duration = 0
         cls.model.update(process_duration=process_duration).where(cls.model.id == id).execute()
 
     @classmethod
