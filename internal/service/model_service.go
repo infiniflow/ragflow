@@ -24,10 +24,10 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 	"strings"
 	"time"
 
-	model "ragflow/internal/entity/models"
 	"ragflow/internal/service/models"
 )
 
@@ -351,7 +351,7 @@ func (m *ModelProviderService) ShowProviderInstance(providerName, instanceName, 
 func (m *ModelProviderService) AlterProviderInstance(providerName, instanceName, newInstanceName, apiKey, userID string) (common.ErrorCode, error) {
 	return common.CodeSuccess, nil
 }
-func (m *ModelProviderService) DropProviderInstance(providerName, instanceName, userID string) (common.ErrorCode, error) {
+func (m *ModelProviderService) DropProviderInstances(providerName, userID string, instances []string) (common.ErrorCode, error) {
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -371,13 +371,15 @@ func (m *ModelProviderService) DropProviderInstance(providerName, instanceName, 
 		return common.CodeServerError, err
 	}
 
-	count, err := m.modelInstanceDAO.DeleteByProviderIDAndInstanceName(provider.ID, instanceName)
-	if err != nil {
-		return common.CodeServerError, err
-	}
+	for _, instanceName := range instances {
+		count, err := m.modelInstanceDAO.DeleteByProviderIDAndInstanceName(provider.ID, instanceName)
+		if err != nil {
+			return common.CodeServerError, err
+		}
 
-	if count == 0 {
-		return common.CodeNotFound, errors.New("provider instance not found")
+		if count == 0 {
+			return common.CodeNotFound, errors.New("provider instance not found")
+		}
 	}
 
 	return common.CodeSuccess, nil
@@ -468,11 +470,18 @@ func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, mod
 		if err != nil {
 			return common.CodeServerError, errors.New("fail to get UUID")
 		}
+
+		var modelSchema *entity.Model
+		modelSchema, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		if err != nil {
+			return common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
+		}
+
 		// Get model info from provider
 		model = &entity.TenantModel{
 			ID:         modelID,
 			ModelName:  modelName,
-			ModelType:  model.ModelType,
+			ModelType:  modelSchema.ModelTypes[0],
 			ProviderID: provider.ID,
 			InstanceID: instance.ID,
 			Status:     status,
@@ -616,7 +625,7 @@ func (m *ModelProviderService) ChatToModelStream(providerName, instanceName, mod
 }
 
 // ChatToModelStreamWithSender streams chat response directly via sender function (best performance, no channel)
-func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, message string, modelConfig *model.ChatConfig, sender func(*string, *string) error) common.ErrorCode {
+func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, message string, modelConfig *modelModule.ChatConfig, sender func(*string, *string) error) common.ErrorCode {
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
