@@ -207,7 +207,7 @@ class CommonService:
         if "id" not in kwargs:
             kwargs["id"] = get_uuid()
         timestamp = current_timestamp()
-        cur_datetime = datetime_format(datetime.now())
+        cur_datetime = datetime_format(datetime.utcnow())
         kwargs["create_time"] = timestamp
         kwargs["create_date"] = cur_datetime
         kwargs["update_time"] = timestamp
@@ -228,7 +228,7 @@ class CommonService:
             batch_size (int, optional): Number of records to insert in each batch. Defaults to 100.
         """
         current_ts = current_timestamp()
-        current_datetime = datetime_format(datetime.now())
+        current_datetime = datetime_format(datetime.utcnow())
         with DB.atomic():
             for d in data_list:
                 d["create_time"] = current_ts
@@ -253,7 +253,7 @@ class CommonService:
         """
 
         timestamp = current_timestamp()
-        cur_datetime = datetime_format(datetime.now())
+        cur_datetime = datetime_format(datetime.utcnow())
         for data in data_list:
             data["update_time"] = timestamp
             data["update_date"] = cur_datetime
@@ -272,7 +272,7 @@ class CommonService:
         # Returns:
         #     Number of records updated
         data["update_time"] = current_timestamp()
-        data["update_date"] = datetime_format(datetime.now())
+        data["update_date"] = datetime_format(datetime.utcnow())
         num = cls.model.update(data).where(cls.model.id == pid).execute()
         return num
 

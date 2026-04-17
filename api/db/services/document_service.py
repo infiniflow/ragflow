@@ -883,11 +883,11 @@ class DocumentService(CommonService):
                 msg = "\n".join(sorted(msg))
                 begin_at = d.get("process_begin_at")
                 if not begin_at:
-                    begin_at = datetime.now()
+                    begin_at = datetime.utcnow()
                     # fallback
                     cls.update_by_id(d["id"], {"process_begin_at": begin_at})
 
-                info = {"process_duration": max(datetime.timestamp(datetime.now()) - begin_at.timestamp(), 0), "run": status}
+                info = {"process_duration": max(datetime.timestamp(datetime.utcnow()) - begin_at.timestamp(), 0), "run": status}
                 if prg != 0 and not freeze_progress:
                     info["progress"] = prg
                 if msg:
@@ -1003,8 +1003,8 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
             "from_page": 100000000,
             "to_page": 100000000,
             "task_type": ty,
-            "progress_msg": datetime.now().strftime("%H:%M:%S") + " created task " + ty,
-            "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "progress_msg": datetime.utcnow().strftime("%H:%M:%S") + " created task " + ty,
+            "begin_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
     task = new_task()
@@ -1079,8 +1079,8 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             d = deepcopy(doc)
             d.update(ck)
             d["id"] = xxhash.xxh64((ck["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
-            d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
-            d["create_timestamp_flt"] = datetime.now().timestamp()
+            d["create_time"] = str(datetime.utcnow()).replace("T", " ")[:19]
+            d["create_timestamp_flt"] = datetime.utcnow().timestamp()
             if not d.get("image"):
                 docs.append(d)
                 continue

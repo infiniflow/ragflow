@@ -325,8 +325,8 @@ async def create():
     if not isinstance(d["question_kwd"], list):
         return get_data_error_result(message="`question_kwd` is required to be a list")
     d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
-    d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
-    d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
+    d["create_time"] = str(datetime.datetime.utcnow()).replace("T", " ")[:19]
+    d["create_timestamp_flt"] = datetime.datetime.utcnow().timestamp()
     if "tag_kwd" in req:
         if not isinstance(req["tag_kwd"], list):
             return get_data_error_result(message="`tag_kwd` is required to be a list")

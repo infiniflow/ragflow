@@ -143,7 +143,7 @@ def new_token():
             "token": generate_confirmation_token(),
             "beta": generate_confirmation_token().replace("ragflow-", "")[:32],
             "create_time": current_timestamp(),
-            "create_date": datetime_format(datetime.now()),
+            "create_date": datetime_format(datetime.utcnow()),
             "update_time": None,
             "update_date": None,
         }

@@ -309,7 +309,7 @@ def check_task_executor_alive():
     task_executor_heartbeats = {}
     try:
         task_executors = REDIS_CONN.smembers("TASKEXE")
-        now = datetime.now().timestamp()
+        now = datetime.utcnow().timestamp()
         for task_executor_id in task_executors:
             heartbeats = REDIS_CONN.zrangebyscore(task_executor_id, now - 60 * 30, now)
             heartbeats = [json.loads(heartbeat) for heartbeat in heartbeats]

@@ -124,7 +124,7 @@ class TaskService(CommonService):
         if not docs:
             return None
 
-        msg = f"\n{datetime.now().strftime('%H:%M:%S')} Task has been received."
+        msg = f"\n{datetime.utcnow().strftime('%H:%M:%S')} Task has been received."
         prog = random.random() / 10.0
         if docs[0]["retry_count"] >= 3:
             msg = "\nERROR: Task is abandoned after 3 times attempts."
@@ -342,7 +342,7 @@ class TaskService(CommonService):
                         ((prog == -1) | (prog > cls.model.progress))))
                     ).execute()
 
-        process_duration = (datetime.now() - task.begin_at).total_seconds()
+        process_duration = (datetime.utcnow() - task.begin_at).total_seconds()
         cls.model.update(process_duration=process_duration).where(cls.model.id == id).execute()
 
     @classmethod
@@ -380,7 +380,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
             "progress": 0.0,
             "from_page": 0,
             "to_page": 100000000,
-            "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "begin_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
     parse_task_array = []
@@ -500,7 +500,7 @@ def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: 
     else:
         task["progress_msg"] = ""
     task["progress_msg"] = " ".join(
-        [datetime.now().strftime("%H:%M:%S"), task["progress_msg"], "Reused previous task's chunks."])
+        [datetime.utcnow().strftime("%H:%M:%S"), task["progress_msg"], "Reused previous task's chunks."])
     prev_task["chunk_ids"] = ""
 
     return len(task["chunk_ids"].split())
@@ -533,7 +533,7 @@ def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str=CANVAS_DE
         to_page=100000000,
         task_type="dataflow" if not rerun else "dataflow_rerun",
         priority=priority,
-        begin_at= datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        begin_at= datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
     )
     if doc_id not in [CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID]:
         TaskService.model.delete().where(TaskService.model.doc_id == doc_id).execute()
