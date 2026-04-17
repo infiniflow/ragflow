@@ -231,6 +231,17 @@ This script:
 2. Compares with existing database tables specified via command line
 3. Generates migration files in `tools/migrate/{version}/`
 
+### Detected Change Types
+
+| Change Type | Description | Auto-included? |
+|-------------|-------------|----------------|
+| New table | Model class with no corresponding DB table | Yes |
+| New field | Model field not present in DB table | Yes |
+| Field type change | Model field type differs from DB column type | Yes |
+| Removed field | DB column not present in model definition | No (requires `--drop`) |
+
+> **Warning**: Removed fields are **not** included in migrations by default. You must explicitly use `--drop` to generate `DROP COLUMN` statements, as this operation permanently deletes data.
+
 ## Prerequisites
 
 Install peewee-migrate:
@@ -259,6 +270,7 @@ python db_schema_sync.py [OPTIONS]
 | `--migrate` | `-m` | Run pending migrations |
 | `--diff` | `-d` | Show schema differences |
 | `--name` | `-n` | Migration name (default: auto) |
+| `--drop` | - | Include `DROP COLUMN` for fields removed from models (destructive - permanently deletes data!) |
 
 ### Version Format
 
@@ -285,8 +297,13 @@ python db_schema_sync.py --list \
     --host localhost --port 3306 --user root --password xxx --database rag_flow \
     --version v0.24.0
 
-# Create a new auto-detected migration
+# Create a new auto-detected migration (new tables, new fields, type changes only)
 python db_schema_sync.py --create \
+    --host localhost --port 3306 --user root --password xxx --database rag_flow \
+    --version v0.24.0
+
+# Create a migration including dropped fields (destructive!)
+python db_schema_sync.py --create --drop \
     --host localhost --port 3306 --user root --password xxx --database rag_flow \
     --version v0.24.0
 
@@ -300,7 +317,7 @@ python db_schema_sync.py --migrate \
     --host localhost --port 3306 --user root --password xxx --database rag_flow \
     --version v0.24.0
 
-# Show schema differences
+# Show schema differences (including removed fields)
 python db_schema_sync.py --diff \
     --host localhost --port 3306 --user root --password xxx --database rag_flow \
     --version v0.24.0
@@ -310,5 +327,20 @@ python db_schema_sync.py --diff \
 
 1. **Load Models**: Imports all model classes from `api/db/db_models.py`
 2. **Connect Database**: Creates MySQL connection from command line arguments
-3. **Detect Changes**: peewee-migrate compares model definitions with actual database schema
-4. **Generate Migration**: Creates Python migration file with `upgrade()` and `downgrade()` functions
+3. **Detect Changes**: Compares model definitions with actual database schema:
+   - New tables → `create_model`
+   - New fields → `ALTER TABLE ADD COLUMN`
+   - Field type changes → `ALTER TABLE MODIFY COLUMN`
+   - Removed fields → `ALTER TABLE DROP COLUMN` (only with `--drop`)
+4. **Generate Migration**: Creates Python migration file with `migrate()` and `rollback()` functions
+
+### Rollback Behavior
+
+| Forward Operation | Rollback Operation |
+|-------------------|--------------------|
+| `CREATE TABLE` | `remove_model` |
+| `ADD COLUMN` | `DROP COLUMN` |
+| `MODIFY COLUMN` | `MODIFY COLUMN` (restore original type) |
+| `DROP COLUMN` | `ADD COLUMN` (restore column definition; **data is lost**) |
+
+> **Note**: Rolling back a `DROP COLUMN` will re-add the column structure, but the data that was in it cannot be recovered.

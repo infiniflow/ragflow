@@ -221,11 +221,13 @@ def compare_fields(model_fields: dict, db_columns: dict) -> dict:
         dict: {
             'added': {field_name: field_obj},  # New fields not in DB
             'changed': {field_name: (old_info, new_field)},  # Type changed
+            'removed': {field_name: col_info},  # Fields in DB but not in model
         }
     """
     result = {
         'added': {},
         'changed': {},
+        'removed': {},
     }
     
     # Skip auto-generated fields like id, create_time, etc.
@@ -249,6 +251,14 @@ def compare_fields(model_fields: dict, db_columns: dict) -> dict:
             if model_base_type != db_type:
                 result['changed'][field_name] = (db_col, field)
                 logger.info(f"  Field type changed: {field_name} ({db_type} -> {model_base_type}, actual: {field.__class__.__name__})")
+    
+    # Detect removed fields: columns in DB but not in model
+    for col_name, col_info in db_columns.items():
+        if col_name in skip_fields:
+            continue
+        if col_name not in model_fields:
+            result['removed'][col_name] = col_info
+            logger.info(f"  Removed field detected: {col_name} ({col_info['column_type']})")
     
     return result
 
@@ -374,9 +384,51 @@ def generate_add_field_sql(table_name: str, field: Field, field_name: str) -> st
     return sql, index_sql
 
 
+def generate_drop_field_sql(table_name: str, field_name: str) -> str:
+    """Generate SQL for dropping a field from a table."""
+    return f"ALTER TABLE `{table_name}` DROP COLUMN `{field_name}`"
+
+
 def generate_rollback_field_sql(table_name: str, field_name: str) -> str:
     """Generate SQL for removing a field."""
     return f"ALTER TABLE `{table_name}` DROP COLUMN `{field_name}`"
+
+
+def generate_rollback_add_field_sql(table_name: str, col_info: dict, field_name: str) -> str:
+    """Generate SQL for rolling back a dropped field (re-adding it).
+    
+    This reconstructs the ADD COLUMN statement from the column info
+    that was captured before the field was dropped.
+    """
+    mysql_type = col_info.get('column_type', 'LONGTEXT')
+    
+    parts = [f'`{field_name}`', mysql_type]
+    
+    # NULL/NOT NULL
+    if col_info.get('nullable', True):
+        parts.append('NULL')
+    else:
+        parts.append('NOT NULL')
+    
+    # DEFAULT
+    default_val = col_info.get('default')
+    if default_val is not None:
+        if isinstance(default_val, str):
+            escaped = default_val.replace("'", "''")
+            parts.append(f"DEFAULT '{escaped}'")
+        elif isinstance(default_val, bool):
+            parts.append(f"DEFAULT {1 if default_val else 0}")
+        elif isinstance(default_val, (int, float)):
+            parts.append(f"DEFAULT {default_val}")
+    
+    sql = f"ALTER TABLE `{table_name}` ADD COLUMN {' '.join(parts)}"
+    
+    # Re-add index if it was a non-primary key
+    index_sql = None
+    if col_info.get('column_key') == 'MUL':
+        index_sql = f"CREATE INDEX `idx_{table_name}_{field_name}` ON `{table_name}` (`{field_name}`)"
+    
+    return sql, index_sql
 
 
 def generate_rollback_modify_sql(table_name: str, old_info: dict, field_name: str) -> str:
@@ -465,7 +517,7 @@ def generate_modify_field_sql(table_name: str, field: Field, field_name: str) ->
     return f"ALTER TABLE `{table_name}` MODIFY COLUMN {' '.join(parts)}"
 
 
-def generate_migration_content(new_tables: list, field_changes: dict, migrate_dir: str, migration_name: str) -> str:
+def generate_migration_content(new_tables: list, field_changes: dict, migrate_dir: str, migration_name: str, drop_fields: bool = False) -> str:
     """Generate migration file content"""
     lines = [
         '"""Peewee migrations."""',
@@ -528,11 +580,32 @@ def generate_migration_content(new_tables: list, field_changes: dict, migrate_di
                 lines.append(f'    migrator.sql("{modify_sql}")')
                 lines.append('')
     
+    # Generate SQL for dropping removed fields from existing tables
+    if drop_fields:
+        for table_name, changes in field_changes.items():
+            if changes.get('removed'):
+                for field_name, col_info in changes['removed'].items():
+                    drop_sql = generate_drop_field_sql(table_name, field_name)
+                    lines.append(f'    # WARNING: Dropping column `{field_name}` from `{table_name}` - this will permanently delete data!')
+                    lines.append(f'    migrator.sql("{drop_sql}")')
+                    lines.append('')
+    
     # Generate rollback
     lines.append('')
     lines.append('def rollback(migrator: Migrator, database: pw.Database, *, fake=False):')
     lines.append('    """Write your rollback migrations here."""')
     lines.append('')
+    
+    # Rollback: re-add dropped fields (before other rollbacks, since they may depend on these fields)
+    if drop_fields:
+        for table_name, changes in field_changes.items():
+            if changes.get('removed'):
+                for field_name, col_info in changes['removed'].items():
+                    add_sql, index_sql = generate_rollback_add_field_sql(table_name, col_info, field_name)
+                    lines.append(f'    # Re-add dropped column `{field_name}` to `{table_name}` (data is lost)')
+                    lines.append(f'    migrator.sql("{add_sql}")')
+                    if index_sql:
+                        lines.append(f'    migrator.sql("{index_sql}")')
     
     # Rollback: reverse field type changes first (before removing added fields)
     for table_name, changes in field_changes.items():
@@ -559,19 +632,21 @@ def generate_migration_content(new_tables: list, field_changes: dict, migrate_di
     return '\n'.join(lines)
 
 
-def create_migration(router: Router, models: list, db, name: str = "auto"):
+def create_migration(router: Router, models: list, db, name: str = "auto", drop_fields: bool = False):
     """Create a new migration by auto-detecting model changes
     
     Detects:
     1. New tables -> generate create_model
     2. New fields in existing tables -> generate add_fields
     3. Field type changes -> generate change_fields
+    4. Removed fields (only when --drop is specified) -> generate drop_fields
     
     Args:
         router: peewee-migrate Router instance
         models: List of model classes to compare against database
         db: Database connection
         name: Migration name
+        drop_fields: Whether to include DROP COLUMN for removed fields
     """
     try:
         # Get existing tables from database
@@ -611,16 +686,29 @@ def create_migration(router: Router, models: list, db, name: str = "auto"):
                 # Compare
                 changes = compare_fields(model_fields, db_columns)
                 
-                if changes['added'] or changes['changed']:
+                if changes['added'] or changes['changed'] or changes['removed']:
                     field_changes[table_name] = changes
         
         # Check if any changes detected
-        if not new_tables and not field_changes:
-            logger.info("No schema changes detected, migration not created")
-            return None
+        has_removed = any(changes.get('removed') for changes in field_changes.values())
+        if not drop_fields and has_removed:
+            removed_details = []
+            for table_name, changes in field_changes.items():
+                if changes.get('removed'):
+                    for col_name in changes['removed']:
+                        removed_details.append(f"{table_name}.{col_name}")
+            logger.warning(f"Removed fields detected (not included in migration, use --drop to include): {', '.join(removed_details)}")
+            # Remove 'removed' from changes since we're not acting on them
+            for table_name in field_changes:
+                field_changes[table_name]['removed'] = {}
+        
+        if not new_tables and not any(changes['added'] or changes['changed'] for changes in field_changes.values()):
+            if not (drop_fields and has_removed):
+                logger.info("No schema changes detected, migration not created")
+                return None
         
         # Generate migration file content
-        migration_content = generate_migration_content(new_tables, field_changes, router.migrate_dir, name)
+        migration_content = generate_migration_content(new_tables, field_changes, router.migrate_dir, name, drop_fields=drop_fields)
         
         # Get next migration number (count existing migration files)
         existing_migrations = [f for f in os.listdir(router.migrate_dir) if f.endswith('.py') and not f.startswith('_')]
@@ -706,6 +794,7 @@ def diff_schema(models: list, db):
         
         total_added = 0
         total_changed = 0
+        total_removed = 0
         
         for model in models:
             table_name = model._meta.table_name
@@ -734,8 +823,13 @@ def diff_schema(models: list, db):
                 total_changed += len(changes['changed'])
                 field_details = [f"{k}:{v[1].__class__.__name__}" for k, v in changes['changed'].items()]
                 logger.info(f"  {table_name}: {len(changes['changed'])} changed field(s) - {field_details}")
+            
+            if changes['removed']:
+                total_removed += len(changes['removed'])
+                field_details = [f"{k}:{v['column_type']}" for k, v in changes['removed'].items()]
+                logger.warning(f"  {table_name}: {len(changes['removed'])} removed field(s) - {field_details}")
         
-        logger.info(f"\nSummary: {total_added} new fields, {total_changed} changed fields")
+        logger.info(f"\nSummary: {total_added} new fields, {total_changed} changed fields, {total_removed} removed fields")
 
 
 def main():
@@ -749,6 +843,9 @@ Examples:
   
   # Create migration from model changes
   python db_schema_sync.py --create --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.24.0
+  
+  # Create migration including dropped fields (destructive!)
+  python db_schema_sync.py --create --drop --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.24.0
   
   # Run all pending migrations
   python db_schema_sync.py --migrate --host localhost --port 3306 --user root --password xxx --database rag_flow --version v0.24.0
@@ -778,6 +875,8 @@ Examples:
     
     # Migration options
     parser.add_argument('--name', '-n', type=str, default='auto', help='Migration name')
+    parser.add_argument('--drop', action='store_true',
+                       help='Include DROP COLUMN for fields removed from models (destructive - will permanently delete data!)')
     
     args = parser.parse_args()
     
@@ -832,7 +931,7 @@ Examples:
             list_migrations(router)
         
         if args.create:
-            create_migration(router, models, db, args.name)
+            create_migration(router, models, db, args.name, drop_fields=args.drop)
         
         if args.migrate:
             run_migrations(router)
