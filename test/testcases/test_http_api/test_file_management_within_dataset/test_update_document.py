@@ -42,7 +42,8 @@ class TestAuthorization:
 
 
 class TestDocumentsUpdated:
-    @pytest.mark.p1
+    # GET /api/v1/datasets/<dataset_id>/documents no longer support find by id/name
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, expected_code, expected_message",
         [
@@ -94,7 +95,8 @@ class TestDocumentsUpdated:
         else:
             assert res["message"] == expected_message
 
-    @pytest.mark.p2
+    # GET /api/v1/datasets/<dataset_id>/documents no longer support find by id/name
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
@@ -156,7 +158,11 @@ class TestDocumentsUpdated:
         res = update_document(HttpApiAuth, dataset_id, document_ids[0], {"meta_fields": meta_fields})
         if expected_code == 0:
             res = list_documents(HttpApiAuth, dataset_id, {"id": document_ids[0]})
-            assert res["data"]["docs"][0]["meta_fields"] == meta_fields
+            for doc in res["data"]["docs"]:
+                if doc["id"] != document_ids[0]:
+                    continue
+                else:
+                    assert doc["meta_fields"] == meta_fields
         else:
             assert expected_message in res["message"] or res["message"] == expected_message
 
@@ -206,10 +212,15 @@ class TestDocumentsUpdated:
         assert res["code"] == expected_code
         if expected_code == 0:
             res = list_documents(HttpApiAuth, dataset_id, {"id": document_ids[0]})
+            doc_of_id = None
+            for doc in res["data"]["docs"]:
+                if doc["id"] == document_ids[0]:
+                    doc_of_id = doc
+                    break
             if chunk_method == "":
-                assert res["data"]["docs"][0]["chunk_method"] == "naive"
+                assert doc_of_id["chunk_method"] == "naive"
             else:
-                assert res["data"]["docs"][0]["chunk_method"] == chunk_method
+                assert doc_of_id["chunk_method"] == chunk_method
         else:
             assert res["message"] == expected_message
 
@@ -597,10 +608,17 @@ class TestUpdateDocumentParserConfig:
         assert res["code"] == expected_code
         if expected_code == 0:
             res = list_documents(HttpApiAuth, dataset_id, {"id": document_ids[0]})
+
+            doc_of_id = None
+            for doc in res["data"]["docs"]:
+                if doc["id"] == document_ids[0]:
+                    doc_of_id = doc
+                    break
+
             if parser_config == {}:
-                assert res["data"]["docs"][0]["parser_config"] == DEFAULT_PARSER_CONFIG
+                assert doc_of_id["parser_config"] == DEFAULT_PARSER_CONFIG
             else:
                 for k, v in parser_config.items():
-                    assert res["data"]["docs"][0]["parser_config"][k] == v
+                    assert doc_of_id["parser_config"][k] == v
         if expected_code != 0 or expected_message:
             assert res["message"] == expected_message

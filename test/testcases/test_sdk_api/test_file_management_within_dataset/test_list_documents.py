@@ -152,6 +152,81 @@ class TestDocumentsList:
         assert len(documents) == expected_num, str(documents)
 
 
+    @pytest.mark.p1
+    @pytest.mark.parametrize(
+        "params, expected_num, expected_message",
+        [
+            ({"name": None}, 5, ""),
+            ({"name": ""}, 5, ""),
+            ({"name": "ragflow_test_upload_0.txt"}, 1, ""),
+            ({"name": "unknown.txt"}, 0, "You don't own the document unknown.txt"),
+        ],
+    )
+    @pytest.mark.skip(reason="currently list docs API does not support document id filtering")
+    def test_name(self, add_documents, params, expected_num, expected_message):
+        dataset, _ = add_documents
+        if expected_message:
+            with pytest.raises(Exception) as exception_info:
+                dataset.list_documents(**params)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
+        else:
+            documents = dataset.list_documents(**params)
+            assert len(documents) == expected_num, str(documents)
+            if params["name"] not in [None, ""]:
+                assert documents[0].name == params["name"], str(documents)
+
+    @pytest.mark.p1
+    @pytest.mark.parametrize(
+        "document_id, expected_num, expected_message",
+        [
+            (None, 5, ""),
+            ("", 5, ""),
+            (lambda docs: docs[0].id, 1, ""),
+            ("unknown.txt", 0, "You don't own the document unknown.txt"),
+        ],
+    )
+    @pytest.mark.skip(reason="currently list docs API does not support document id filtering")
+    def test_id(self, add_documents, document_id, expected_num, expected_message):
+        dataset, documents = add_documents
+        if callable(document_id):
+            params = {"id": document_id(documents)}
+        else:
+            params = {"id": document_id}
+
+        if expected_message:
+            with pytest.raises(Exception) as exception_info:
+                dataset.list_documents(**params)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
+        else:
+            documents = dataset.list_documents(**params)
+            assert len(documents) == expected_num, str(documents)
+            if params["id"] not in [None, ""]:
+                assert documents[0].id == params["id"], str(documents)
+
+    @pytest.mark.p3
+    @pytest.mark.parametrize(
+        "document_id, name, expected_num, expected_message",
+        [
+            (lambda docs: docs[0].id, "ragflow_test_upload_0.txt", 1, ""),
+            (lambda docs: docs[0].id, "ragflow_test_upload_1.txt", 0, ""),
+            (lambda docs: docs[0].id, "unknown", 0, "You don't own the document unknown"),
+            ("invalid_id", "ragflow_test_upload_0.txt", 0, "You don't own the document invalid_id"),
+        ],
+    )
+    @pytest.mark.skip(reason="currently list docs API does not support document id filtering")
+    def test_name_and_id(self, add_documents, document_id, name, expected_num, expected_message):
+        dataset, documents = add_documents
+        params = {"id": document_id(documents) if callable(document_id) else document_id, "name": name}
+
+        if expected_message:
+            with pytest.raises(Exception) as exception_info:
+                dataset.list_documents(**params)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
+        else:
+            documents = dataset.list_documents(**params)
+            assert len(documents) == expected_num, str(documents)
+
+
     @pytest.mark.p3
     def test_concurrent_list(self, add_documents):
         dataset, _ = add_documents

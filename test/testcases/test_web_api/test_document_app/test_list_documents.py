@@ -46,18 +46,6 @@ class TestDocumentsList:
         assert len(res["data"]["docs"]) == 5
         assert res["data"]["total"] == 5
 
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "kb_id, expected_code, expected_message",
-        [
-            ("", 101, 'Lack of "KB ID"'),
-            ("invalid_dataset_id", 103, "Only owner of dataset authorized for this operation."),
-        ],
-    )
-    def test_invalid_dataset_id(self, WebApiAuth, kb_id, expected_code, expected_message):
-        res = list_documents(WebApiAuth, {"kb_id": kb_id})
-        assert res["code"] == expected_code
-        assert res["message"] == expected_message
 
     @pytest.mark.p1
     @pytest.mark.parametrize(

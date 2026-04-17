@@ -437,8 +437,6 @@ def list_docs(dataset_id, tenant_id):
     page = int(q.get("page", 1))
     page_size = int(q.get("page_size", 30))
 
-    print(f"page:{page}, page size:{page_size}")
-
     orderby = q.get("orderby", "create_time")
     desc = str(q.get("desc", "true")).strip().lower() != "false"
     keywords = q.get("keywords", "")
@@ -446,7 +444,7 @@ def list_docs(dataset_id, tenant_id):
     # filters - align with OpenAPI parameter names
     suffix = q.getlist("suffix")
 
-    types = q.getlist("types", [])
+    types = q.getlist("types")
     if types:
         invalid_types = {t for t in types if t not in VALID_FILE_TYPES}
         if invalid_types:
@@ -488,6 +486,43 @@ def list_docs(dataset_id, tenant_id):
     return get_result(data={"total": total, "docs": renamed_doc_list})
 
 def _parse_doc_id_filter_with_metadata(req, kb_id):
+    """Parse document ID filter based on metadata conditions from the request.
+
+    This function extracts and processes metadata filtering parameters from the request
+    and returns a list of document IDs that match the specified criteria.
+
+    Args:
+        req: The request object containing filtering parameters.
+            - return_empty_metadata (bool|str): If True, returns all documents regardless
+              of their metadata. Can be a boolean or string "true"/"false".
+            - metadata_condition (str): JSON string containing complex metadata conditions
+              with optional "logic" (and/or) and "conditions" list.
+            - metadata (str): JSON string containing key-value pairs for exact metadata
+              matching. Can include special key "empty_metadata" to indicate documents
+              with empty metadata.
+        kb_id: The knowledge base ID to filter documents from.
+
+    Returns:
+        A tuple of (doc_ids_filter, error, return_empty_metadata):
+            - doc_ids_filter (list): List of document IDs matching the metadata criteria,
+              or empty list if no filter should be applied.
+            - error: None if successful, or an error response dict if validation fails.
+            - return_empty_metadata (bool): The processed flag indicating whether to
+              return documents with empty metadata.
+
+    Examples:
+        Simple metadata filter:
+            req = {"metadata": '{"author": ["John", "Jane"]}'}
+            # Returns documents where author is John or Jane
+
+        Complex metadata conditions:
+            req = {"metadata_condition": '{"logic": "and", "conditions": [{"key": "status", "operator": "eq", "value": "published"}]}'}
+        # Returns documents where status equals "published"
+
+        Return empty metadata:
+            req = {"return_empty_metadata": True}
+            # Returns all documents regardless of metadata
+    """
     return_empty_metadata = req.get("return_empty_metadata", False)
     if isinstance(return_empty_metadata, str):
         return_empty_metadata = return_empty_metadata.lower() == "true"

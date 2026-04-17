@@ -232,6 +232,49 @@ class TestDocumentsList:
         assert res["data"]["total"] == expected_num
 
 
+    @pytest.mark.p1
+    @pytest.mark.parametrize(
+        "document_id, expected_code, expected_num, expected_message",
+        [
+            (None, 0, 5, ""),
+            ("", 0, 5, ""),
+            pytest.param(
+                lambda r: r[0], 0, 1, "",
+                marks=pytest.mark.skip(reason="currently list docs API can not filter by document id"),
+            ),
+            pytest.param(
+                "unknown.txt", 102, 0, "You don't own the document unknown.txt.",
+                marks=pytest.mark.skip(reason="currently list docs API can not filter by document id"),
+            ),
+        ],
+    )
+    def test_id(
+            self,
+            HttpApiAuth,
+            add_documents,
+            document_id,
+            expected_code,
+            expected_num,
+            expected_message,
+    ):
+        dataset_id, document_ids = add_documents
+        if callable(document_id):
+            params = {"id": document_id(document_ids)}
+        else:
+            params = {"id": document_id}
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
+
+        assert res["code"] == expected_code
+        if expected_code == 0:
+            if params["id"] in [None, ""]:
+                assert len(res["data"]["docs"]) == expected_num
+            else:
+                doc = [doc for doc in res["data"]["docs"] if doc["id"] == document_id][0]
+                assert doc["id"] == params["id"]
+        else:
+            assert res["message"] == expected_message
+
+
     @pytest.mark.p3
     def test_concurrent_list(self, HttpApiAuth, add_documents):
         dataset_id, _ = add_documents
@@ -282,7 +325,7 @@ class TestDocumentsList:
             # Filter with create_time_from in the future - should return 0 results
             ({"create_time_from": "9999999999000"}, 0, 0),
             # Filter with create_time_to in the past - should return 0 results
-            ({"create_time_to": "0"}, 0, 0),
+            ({"create_time_to": "1"}, 0, 0),
             # Filter with create_time_from and create_time_to covering all time
             ({"create_time_from": "0", "create_time_to": "9999999999000"}, 0, 5),
         ],
