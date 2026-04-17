@@ -201,7 +201,7 @@ export default function SearchingView({
                               ></ImageWithPopover>
                             )}
                             <HighLightMarkdown>
-                              {chunk.content_with_weight}
+                              {chunk.highlight || chunk.content_with_weight}
                             </HighLightMarkdown>
                           </div>
                           <div
