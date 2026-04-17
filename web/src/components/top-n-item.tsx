@@ -11,7 +11,7 @@ export const topnSchema = {
   top_n: z.number().optional(),
 };
 
-export function TopNFormField({ max = 30 }: SimilaritySliderFormFieldProps) {
+export function TopNFormField({ max = 200 }: SimilaritySliderFormFieldProps) {
   const { t } = useTranslate('chat');
 
   return (
