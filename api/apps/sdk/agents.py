@@ -119,18 +119,6 @@ async def update_agent(tenant_id: str, agent_id: str):
 
     return get_json_result(data=True)
 
-
-@manager.route("/agents/<agent_id>", methods=["DELETE"])  # noqa: F821
-@token_required
-def delete_agent(tenant_id: str, agent_id: str):
-    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
-        return get_json_result(
-            data=False, message="Only owner of canvas authorized for this operation.",
-            code=RetCode.OPERATING_ERROR)
-
-    UserCanvasService.delete_by_id(agent_id)
-    return get_json_result(data=True)
-
 @manager.route("/webhook/<agent_id>", methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"])  # noqa: F821
 @manager.route("/webhook_test/<agent_id>",methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"],)  # noqa: F821
 async def webhook(agent_id: str):

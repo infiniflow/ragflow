@@ -245,14 +245,14 @@ export const useDeleteAgent = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: [AgentApiAction.DeleteAgent],
-    mutationFn: async (canvasIds: string[]) => {
-      const { data } = await agentService.removeCanvas({ canvasIds });
+    mutationFn: async (agentId: string) => {
+      const { data } = await agentService.deleteAgent(agentId);
       if (data.code === 0) {
         queryClient.invalidateQueries({
           queryKey: [AgentApiAction.FetchAgentListByPage],
         });
       }
-      return data?.data ?? [];
+      return data?.data ?? false;
     },
   });
 

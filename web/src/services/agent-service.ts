@@ -11,8 +11,8 @@ const {
   getCanvasSSE,
   setCanvas,
   listAgents,
+  deleteAgent,
   resetCanvas,
-  removeCanvas,
   runCanvas,
   listTemplates,
   testDbConnect,
@@ -62,9 +62,9 @@ const methods = {
     url: resetCanvas,
     method: 'post',
   },
-  removeCanvas: {
-    url: removeCanvas,
-    method: 'post',
+  deleteAgent: {
+    url: deleteAgent,
+    method: 'delete',
   },
   runCanvas: {
     url: runCanvas,

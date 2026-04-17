@@ -178,8 +178,8 @@ export default {
   // flow
   listTemplates: `${webAPI}/canvas/templates`,
   listAgents: `${restAPIv1}/agents`,
+  deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   getCanvasSSE: (canvasId: string) => `${webAPI}/canvas/getsse/${canvasId}`,
-  removeCanvas: `${webAPI}/canvas/rm`,
   setCanvas: `${webAPI}/canvas/set`,
   settingCanvas: `${webAPI}/canvas/setting`,
   getListVersion: `${webAPI}/canvas/getlistversion`,

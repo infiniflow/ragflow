@@ -17,7 +17,7 @@
 from quart import request
 
 from agent.dsl_migration import normalize_chunker_dsl
-from api.apps import current_user, login_required
+from api.apps import login_required
 from api.apps.services.canvas_replica_service import CanvasReplicaService
 from api.db import CanvasCategory
 from api.db.services.canvas_service import UserCanvasService
@@ -25,6 +25,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.utils.api_utils import add_tenant_id_to_kwargs, get_data_error_result, get_json_result
+from common.constants import RetCode
 
 
 @manager.route("/agents", methods=["GET"])  # noqa: F821
@@ -41,12 +42,12 @@ def list_agents(tenant_id):
     desc = str(request.args.get("desc", "true")).lower() != "false"
 
     if not owner_ids:
-        tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
+        tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
         tenants = [member["tenant_id"] for member in tenants]
-        tenants.append(current_user.id)
+        tenants.append(tenant_id)
         canvas, total = UserCanvasService.get_by_tenant_ids(
             tenants,
-            current_user.id,
+            tenant_id,
             page_number,
             items_per_page,
             order_by,
@@ -57,7 +58,7 @@ def list_agents(tenant_id):
     else:
         canvas, total = UserCanvasService.get_by_tenant_ids(
             owner_ids,
-            current_user.id,
+            tenant_id,
             0,
             0,
             order_by,
@@ -73,7 +74,7 @@ def list_agents(tenant_id):
 @login_required
 @add_tenant_id_to_kwargs
 def get_agent(agent_id, tenant_id):
-    if not UserCanvasService.accessible(agent_id, current_user.id):
+    if not UserCanvasService.accessible(agent_id, tenant_id):
         return get_data_error_result(message="canvas not found.")
 
     exists, canvas = UserCanvasService.get_by_canvas_id(agent_id)
@@ -84,7 +85,7 @@ def get_agent(agent_id, tenant_id):
         CanvasReplicaService.bootstrap(
             canvas_id=agent_id,
             tenant_id=str(tenant_id),
-            runtime_user_id=str(current_user.id),
+            runtime_user_id=str(tenant_id),
             dsl=canvas.get("dsl"),
             canvas_category=canvas.get("canvas_category", CanvasCategory.Agent),
             title=canvas.get("title", ""),
@@ -108,3 +109,18 @@ def get_agent(agent_id, tenant_id):
         canvas["datasets"] = [{"id": item.id, "name": item.name, "avatar": item.avatar} for item in datasets]
 
     return get_json_result(data=canvas)
+
+
+@manager.route("/agents/<agent_id>", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def delete_agent(agent_id, tenant_id):
+    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
+        return get_json_result(
+            data=False,
+            message="Only owner of canvas authorized for this operation.",
+            code=RetCode.OPERATING_ERROR,
+        )
+
+    UserCanvasService.delete_by_id(agent_id)
+    return get_json_result(data=True)

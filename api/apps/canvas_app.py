@@ -55,20 +55,6 @@ def templates():
     return get_json_result(data=[c.to_dict() for c in CanvasTemplateService.get_all()])
 
 
-@manager.route('/rm', methods=['POST'])  # noqa: F821
-@validate_request("canvas_ids")
-@login_required
-async def rm():
-    req = await get_request_json()
-    for i in req["canvas_ids"]:
-        if not UserCanvasService.accessible(i, current_user.id):
-            return get_json_result(
-                data=False, message='Only owner of canvas authorized for this operation.',
-                code=RetCode.OPERATING_ERROR)
-        UserCanvasService.delete_by_id(i)
-    return get_json_result(data=True)
-
-
 @manager.route('/set', methods=['POST'])  # noqa: F821
 @validate_request("dsl", "title")
 @login_required
