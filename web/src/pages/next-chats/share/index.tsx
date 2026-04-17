@@ -44,7 +44,8 @@ const ChatContainer = () => {
   const sendDisabled = useSendButtonDisabled(value);
   const { data: chatInfo } = useFetchExternalChatInfo();
 
-  const { data: flowData } = useFetchFlowSSE();
+  const isAgent = from === SharedFrom.Agent;
+  const { data: flowData } = useFetchFlowSSE(isAgent);
   React.useEffect(() => {
     if (locale && i18n.language !== locale) {
       changeLanguageAsync(locale);
@@ -52,7 +53,7 @@ const ChatContainer = () => {
   }, [locale, visibleAvatar]);
 
   const avatarDialogSrc =
-    from === SharedFrom.Agent ? flowData?.avatar : chatInfo.avatar;
+    isAgent ? flowData?.avatar : chatInfo.avatar;
 
   if (!conversationId) {
     return <div>empty</div>;
