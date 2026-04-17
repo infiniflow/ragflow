@@ -37,7 +37,8 @@ from common import settings
 from common.constants import FileSource, LLMType, ParserType, RetCode, TaskStatus
 from common.metadata_utils import convert_conditions, meta_filter
 from common.misc_utils import thread_pool_exec
-from common.string_utils import remove_redundant_spaces
+from common.string_utils import is_content_empty, remove_redundant_spaces
+from common.tag_feature_utils import validate_tag_features
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
@@ -750,7 +751,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         return get_error_data_result(message=f"You don't own the document {document_id}.")
     doc = doc[0]
     req = await get_request_json()
-    if not str(req.get("content", "")).strip():
+    if is_content_empty(req.get("content")):
         return get_error_data_result(message="`content` is required")
     if "important_keywords" in req:
         if not isinstance(req["important_keywords"], list):
@@ -781,7 +782,10 @@ async def add_chunk(tenant_id, dataset_id, document_id):
             return get_error_data_result("`tag_kwd` must be a list of strings")
         d["tag_kwd"] = req["tag_kwd"]
     if "tag_feas" in req:
-        d["tag_feas"] = req["tag_feas"]
+        try:
+            d["tag_feas"] = validate_tag_features(req["tag_feas"])
+        except ValueError as exc:
+            return get_error_data_result(f"`tag_feas` {exc}")
     import base64
 
     image_base64 = req.get("image_base64", None)
@@ -990,8 +994,10 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         return get_error_data_result(message=f"You don't own the document {document_id}.")
     doc = doc[0]
     req = await get_request_json()
-    if "content" in req and req["content"] is not None:
-        content = req["content"]
+    content = req.get("content")
+    if content is not None:
+        if is_content_empty(content):
+            return get_error_data_result(message="`content` is required")
     else:
         content = chunk.get("content_with_weight", "")
     d = {"id": chunk_id, "content_with_weight": content}
@@ -1020,7 +1026,10 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
             return get_error_data_result("`tag_kwd` must be a list of strings")
         d["tag_kwd"] = req["tag_kwd"]
     if "tag_feas" in req:
-        d["tag_feas"] = req["tag_feas"]
+        try:
+            d["tag_feas"] = validate_tag_features(req["tag_feas"])
+        except ValueError as exc:
+            return get_error_data_result(f"`tag_feas` {exc}")
     tenant_embd_id = DocumentService.get_tenant_embd_id(document_id)
     if tenant_embd_id:
         model_config = get_model_config_by_id(tenant_embd_id)
