@@ -1,7 +1,7 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
-import { post } from '@/utils/next-request';
 
 import message from '@/components/ui/message';
+import { RunningStatus } from '@/constants/knowledge';
 import { ResponseType } from '@/interfaces/database/base';
 import { IReferenceChunk } from '@/interfaces/database/chat';
 import {
@@ -18,14 +18,15 @@ import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters
 import kbService, {
   listDocument,
   renameDocument,
+  uploadDocument,
 } from '@/services/knowledge-service';
-import api, { restAPIv1, webAPI } from '@/utils/api';
+import { restAPIv1, webAPI } from '@/utils/api';
 import { getSearchValue } from '@/utils/common-util';
 import { buildChunkHighlights } from '@/utils/document-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { get } from 'lodash';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
 import { useParams } from 'react-router';
 import {
@@ -36,6 +37,7 @@ import {
   useGetKnowledgeSearchParams,
   useSetPaginationParams,
 } from './route-hook';
+import { KnowledgeApiAction } from './use-knowledge-request';
 
 export const enum DocumentApiAction {
   UploadDocument = 'uploadDocument',
@@ -64,22 +66,24 @@ export const useUploadNextDocument = () => {
   } = useMutation<ResponseType<IDocumentInfo[]>, Error, File[]>({
     mutationKey: [DocumentApiAction.UploadDocument],
     mutationFn: async (fileList) => {
+      if (!id) {
+        return { code: 500, message: 'Dataset ID is required' };
+      }
       const formData = new FormData();
-      formData.append('kb_id', id!);
       fileList.forEach((file: any) => {
         formData.append('file', file);
       });
 
       try {
-        const ret = await kbService.documentUpload(formData);
-        const code = get(ret, 'data.code');
+        const ret = await uploadDocument(id, formData);
+        const code = get(ret, 'code');
 
         if (code === 0 || code === 500) {
           queryClient.invalidateQueries({
             queryKey: [DocumentApiAction.FetchDocumentList],
           });
         }
-        return ret?.data;
+        return ret;
       } catch (error) {
         console.warn(error);
         return {
@@ -105,7 +109,7 @@ export const useFetchDocumentList = (loop = true) => {
   const [docs, setDocs] = useState<IDocumentInfo[]>([]);
 
   const isLoop = useMemo(() => {
-    return loop && docs.some((doc) => doc.run === '1');
+    return loop && docs.some((doc) => doc.run === RunningStatus.RUNNING);
   }, [docs, loop]);
 
   const { data, isFetching: loading } = useQuery<{
@@ -173,6 +177,12 @@ export const useFetchDocumentList = (loop = true) => {
     },
     [handleInputChange, setPagination],
   );
+
+  useEffect(() => {
+    queryClient.invalidateQueries({
+      queryKey: [KnowledgeApiAction.FetchKnowledgeDetail],
+    });
+  }, [data.docs, queryClient]);
 
   return {
     loading,
@@ -552,27 +562,4 @@ export const useFetchDocumentThumbnailsByIds = () => {
   });
 
   return { data, setDocumentIds };
-};
-
-export const useParseDocument = () => {
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [DocumentApiAction.ParseDocument],
-    mutationFn: async (url: string) => {
-      try {
-        const { data } = await post(api.parse, { url });
-        if (data?.code === 0) {
-          message.success(i18n.t('message.uploaded'));
-        }
-        return data;
-      } catch (error) {
-        message.error('error');
-      }
-    },
-  });
-
-  return { parseDocument: mutateAsync, data, loading };
 };

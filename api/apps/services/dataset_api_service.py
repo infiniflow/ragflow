@@ -444,7 +444,7 @@ def run_graphrag(dataset_id: str, tenant_id: str):
     sample_document = documents[0]
     document_ids = [document["id"] for document in documents]
 
-    task_id = queue_raptor_o_graphrag_tasks(sample_doc_id=sample_document, ty="graphrag", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
+    task_id = queue_raptor_o_graphrag_tasks(sample_doc=sample_document, ty="graphrag", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
 
     if not KnowledgebaseService.update_by_id(kb.id, {"graphrag_task_id": task_id}):
         logging.warning(f"Cannot save graphrag_task_id for Dataset {dataset_id}")
@@ -523,7 +523,7 @@ def run_raptor(dataset_id: str, tenant_id: str):
     sample_document = documents[0]
     document_ids = [document["id"] for document in documents]
 
-    task_id = queue_raptor_o_graphrag_tasks(sample_doc_id=sample_document, ty="raptor", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
+    task_id = queue_raptor_o_graphrag_tasks(sample_doc=sample_document, ty="raptor", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
 
     if not KnowledgebaseService.update_by_id(kb.id, {"raptor_task_id": task_id}):
         logging.warning(f"Cannot save raptor_task_id for Dataset {dataset_id}")
