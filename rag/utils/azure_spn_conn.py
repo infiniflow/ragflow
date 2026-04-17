@@ -69,9 +69,10 @@ class RAGFlowAzureSpnBlob:
         return f.flush_data(len(binary))
 
     def put(self, bucket, fnm, binary):
+        f_path = f"{bucket}/{fnm}"
         for _ in range(3):
             try:
-                f = self.conn.create_file(fnm)
+                f = self.conn.create_file(f_path)
                 f.append_data(binary, offset=0, length=len(binary))
                 return f.flush_data(len(binary))
             except Exception:
@@ -83,14 +84,15 @@ class RAGFlowAzureSpnBlob:
 
     def rm(self, bucket, fnm):
         try:
-            self.conn.delete_file(fnm)
+            self.conn.delete_file(f"{bucket}/{fnm}")
         except Exception:
             logging.exception(f"Fail rm {bucket}/{fnm}")
 
     def get(self, bucket, fnm):
+        f_path = f"{bucket}/{fnm}"
         for _ in range(1):
             try:
-                client = self.conn.get_file_client(fnm)
+                client = self.conn.get_file_client(f_path)
                 r = client.download_file()
                 return r.read()
             except Exception:
@@ -101,16 +103,17 @@ class RAGFlowAzureSpnBlob:
 
     def obj_exist(self, bucket, fnm):
         try:
-            client = self.conn.get_file_client(fnm)
+            client = self.conn.get_file_client(f"{bucket}/{fnm}")
             return client.exists()
         except Exception:
             logging.exception(f"Fail put {bucket}/{fnm}")
         return False
 
     def get_presigned_url(self, bucket, fnm, expires):
+        f_path = f"{bucket}/{fnm}"
         for _ in range(10):
             try:
-                return self.conn.get_presigned_url("GET", bucket, fnm, expires)
+                return self.conn.get_presigned_url("GET", bucket, f_path, expires)
             except Exception:
                 logging.exception(f"fail get {bucket}/{fnm}")
                 self.__open__()

@@ -52,9 +52,10 @@ class RAGFlowAzureSasBlob:
         return self.conn.upload_blob(name=fnm, data=BytesIO(binary), length=len(binary))
 
     def put(self, bucket, fnm, binary):
+        blob_name = f"{bucket}/{fnm}"
         for _ in range(3):
             try:
-                return self.conn.upload_blob(name=fnm, data=BytesIO(binary), length=len(binary))
+                return self.conn.upload_blob(name=blob_name, data=BytesIO(binary), length=len(binary))
             except Exception:
                 logging.exception(f"Fail put {bucket}/{fnm}")
                 self.__open__()
@@ -62,14 +63,15 @@ class RAGFlowAzureSasBlob:
 
     def rm(self, bucket, fnm):
         try:
-            self.conn.delete_blob(fnm)
+            self.conn.delete_blob(f"{bucket}/{fnm}")
         except Exception:
             logging.exception(f"Fail rm {bucket}/{fnm}")
 
     def get(self, bucket, fnm):
+        blob_name = f"{bucket}/{fnm}"
         for _ in range(1):
             try:
-                r = self.conn.download_blob(fnm)
+                r = self.conn.download_blob(blob_name)
                 return r.read()
             except Exception:
                 logging.exception(f"fail get {bucket}/{fnm}")
@@ -79,15 +81,16 @@ class RAGFlowAzureSasBlob:
 
     def obj_exist(self, bucket, fnm):
         try:
-            return self.conn.get_blob_client(fnm).exists()
+            return self.conn.get_blob_client(f"{bucket}/{fnm}").exists()
         except Exception:
             logging.exception(f"Fail put {bucket}/{fnm}")
         return False
 
     def get_presigned_url(self, bucket, fnm, expires):
+        blob_name = f"{bucket}/{fnm}"
         for _ in range(10):
             try:
-                return self.conn.get_presigned_url("GET", bucket, fnm, expires)
+                return self.conn.get_presigned_url("GET", bucket, blob_name, expires)
             except Exception:
                 logging.exception(f"fail get {bucket}/{fnm}")
                 self.__open__()
