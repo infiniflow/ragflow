@@ -19,6 +19,7 @@ import os
 import re
 import time
 from abc import ABC
+from functools import partial
 
 import requests
 
@@ -105,6 +106,31 @@ class Invoke(ComponentBase, ABC):
             }
         return res
 
+    def _resolve_template_text(self, content: str, kwargs: dict | None = None) -> str:
+        content = content or ""
+        kwargs = kwargs or {}
+        if not content:
+            return content
+
+        def replace_variable(match_obj):
+            match = match_obj.group(1)
+            try:
+                value = kwargs.get(match, self._canvas.get_variable_value(match))
+                if value is None:
+                    return ""
+                if isinstance(value, partial):
+                    resolved_content = ""
+                    for chunk in value():
+                        resolved_content += chunk
+                    self.set_input_value(match, resolved_content)
+                    return resolved_content
+                return str(value)
+            except Exception as e:
+                logging.warning("Error resolving variable %s in Invoke: %s", match, str(e))
+                return f"[ERROR: {str(e)}]"
+
+        return re.sub(self.variable_ref_patt, replace_variable, content, flags=re.DOTALL)
+    
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))
     def _invoke(self, **kwargs):
         if self.check_if_canceled("Invoke processing"):
@@ -116,6 +142,8 @@ class Invoke(ComponentBase, ABC):
             key = para["key"]
             if "value" in para and para.get("value") is not None:
                 value = para["value"]
+                if isinstance(value, str):
+                    value = self._resolve_template_text(value, kwargs)
             elif para.get("ref") in kwargs:
                 value = kwargs[para["ref"]]
             else:
@@ -126,21 +154,8 @@ class Invoke(ComponentBase, ABC):
 
             if para.get("ref"):
                 self.set_input_value(para["ref"], coerced_value)
-    
-        url = self._param.url.strip()
 
-        def replace_variable(match):
-            var_name = match.group(1)
-            try:
-                value = self._canvas.get_variable_value(var_name)
-                return str(value or "")
-            except Exception:
-                return ""
-
-        variable_pattern = r"\{([a-zA-Z_][a-zA-Z0-9_.@-]*)\}"
-
-        # {base_url} or {component_id@variable_name}
-        url = re.sub(variable_pattern, replace_variable, url)
+        url = self._resolve_template_text(self._param.url.strip(), kwargs)
 
         if url.find("http") != 0:
             url = "http://" + url
@@ -166,7 +181,7 @@ class Invoke(ComponentBase, ABC):
             headers = parsed_headers
             for key, value in list(headers.items()):
                 if isinstance(value, str):
-                    headers[key] = re.sub(variable_pattern, replace_variable, value)
+                    headers[key] = self._resolve_template_text(value, kwargs)
         proxies = None
         if re.sub(r"https?:?/?/?", "", self._param.proxy):
             proxies = {"http": self._param.proxy, "https": self._param.proxy}
