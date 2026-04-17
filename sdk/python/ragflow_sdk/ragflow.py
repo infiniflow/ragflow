@@ -289,7 +289,7 @@ class RAGFlow:
         if dsl is not None:
             req["dsl"] = dsl
 
-        res = self.patch(f"/agents/{agent_id}", req)
+        res = self.put(f"/agents/{agent_id}", req)
         res = res.json()
 
         if res.get("code") != 0:

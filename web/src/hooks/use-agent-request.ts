@@ -28,7 +28,7 @@ import agentService, {
   fetchPipeLineList,
   fetchTrace,
   fetchWebhookTrace,
-  patchAgent,
+  updateAgent,
 } from '@/services/agent-service';
 import api from '@/utils/api';
 import { buildMessageListWithUuid } from '@/utils/chat';
@@ -222,7 +222,7 @@ export const useUpdateAgentSetting = () => {
   } = useMutation({
     mutationKey: [AgentApiAction.UpdateAgentSetting],
     mutationFn: async (params: any) => {
-      const ret = await patchAgent(params.id, {
+      const ret = await updateAgent(params.id, {
         title: params.title,
         description: params.description,
         permission: params.permission,
@@ -348,7 +348,7 @@ export const useSetAgent = (showMessage: boolean = true) => {
     }) => {
       const agentId = params.id ?? id;
       const { data = {} } = agentId
-        ? await patchAgent(agentId, {
+        ? await updateAgent(agentId, {
             title: params.title,
             dsl: params.dsl,
             avatar: params.avatar,

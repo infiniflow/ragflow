@@ -217,7 +217,7 @@ def delete_agent(agent_id, tenant_id):
     return get_json_result(data=True)
 
 
-@manager.route("/agents/<agent_id>", methods=["PATCH"])  # noqa: F821
+@manager.route("/agents/<agent_id>", methods=["PUT"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def update_agent(agent_id, tenant_id):
@@ -246,6 +246,10 @@ async def update_agent(agent_id, tenant_id):
 
     _, current_agent = UserCanvasService.get_by_id(agent_id)
     agent_title_for_version = req.get("title") or (current_agent.title if current_agent else "")
+    canvas_category = (
+        req.get("canvas_category")
+        or (current_agent.canvas_category if current_agent else CanvasCategory.Agent)
+    )
     owner_nickname = _get_user_nickname(tenant_id)
     UserCanvasService.update_by_id(agent_id, req)
 
@@ -255,6 +259,16 @@ async def update_agent(agent_id, tenant_id):
             title=UserCanvasVersionService.build_version_title(owner_nickname, agent_title_for_version),
             dsl=req["dsl"],
         )
+        replica_ok = CanvasReplicaService.replace_for_set(
+            canvas_id=agent_id,
+            tenant_id=str(tenant_id),
+            runtime_user_id=str(tenant_id),
+            dsl=req["dsl"],
+            canvas_category=canvas_category,
+            title=agent_title_for_version,
+        )
+        if not replica_ok:
+            return get_data_error_result(message="agent saved, but replica sync failed.")
 
     return get_json_result(data=True)
 
@@ -279,6 +293,16 @@ async def reset_agent(agent_id, tenant_id):
         canvas.reset()
         dsl = json.loads(str(canvas))
         UserCanvasService.update_by_id(agent_id, {"dsl": dsl})
+        replica_ok = CanvasReplicaService.replace_for_set(
+            canvas_id=agent_id,
+            tenant_id=str(tenant_id),
+            runtime_user_id=str(tenant_id),
+            dsl=dsl,
+            canvas_category=user_canvas.canvas_category,
+            title=user_canvas.title,
+        )
+        if not replica_ok:
+            return get_data_error_result(message="agent reset, but replica sync failed.")
         return get_json_result(data=dsl)
     except Exception as exc:
         return server_error_response(exc)

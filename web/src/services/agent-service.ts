@@ -10,7 +10,7 @@ import request from '@/utils/request';
 const {
   getCanvasSSE,
   createAgent,
-  updateAgent,
+  updateAgent: updateAgentApi,
   listAgents,
   deleteAgent,
   resetCanvas,
@@ -130,7 +130,7 @@ const methods = {
 
 const agentService = registerNextServer<keyof typeof methods>(methods);
 
-export const patchAgent = (
+export const updateAgent = (
   agentId: string,
   params: {
     title?: string;
@@ -141,7 +141,7 @@ export const patchAgent = (
     release?: string;
   },
 ) => {
-  return request(updateAgent(agentId), { method: 'patch', data: params });
+  return request(updateAgentApi(agentId), { method: 'put', data: params });
 };
 
 export const fetchTrace = (data: { canvas_id: string; message_id: string }) => {
