@@ -207,7 +207,8 @@ class InfinityConnectionBase(DocStoreConnection):
                         if kk == "exists":
                             cond.append("NOT (%s)" % exists(vv))
             elif isinstance(v, str):
-                cond.append(f"{k}='{v.replace(\"'\", \"''\")}'")
+                escaped_v = v.replace("'", "''")
+                cond.append(f"{k}='{escaped_v}'")
             elif k == "exists":
                 cond.append(exists(v))
             else:
