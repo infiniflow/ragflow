@@ -299,14 +299,17 @@ class TestCrop:
     def test_valid_page_index_does_not_raise(self):
         p = _make_parser()
         img = _fake_page_image(width=200, height=300)
-        img.size = (200, 300)
         p.page_images = [img, img, img]
-        # Tag references page 2 (index 1) — within rendered range
+        # Tag references page 2 (index 1) — within rendered range.
+        # Patch Image.new and alpha_composite at the module level to avoid
+        # real ImagingCore requirements from mocked PIL images.
         tag = "@@2\t10.0\t100.0\t20.0\t80.0##"
-        # Should not raise; result may be None if composite image build fails
-        # due to mocked images, but no IndexError should occur
+        canvas = mock.MagicMock()
+        canvas.paste = mock.MagicMock()
         try:
-            p.crop(tag)
+            with mock.patch.object(_mod.Image, "new", return_value=canvas), \
+                 mock.patch.object(_mod.Image, "alpha_composite", return_value=img):
+                p.crop(tag)
         except IndexError:
             pytest.fail("crop() raised IndexError for a valid page index")
 
