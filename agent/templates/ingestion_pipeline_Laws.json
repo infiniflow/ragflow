@@ -6,7 +6,7 @@
         "zh": "法律条文"
     },
     "description": {
-    "en": "This template segments parsed files based on the structure of legal provisions. It is suitable for documents with clearly defined article hierarchies, such as laws, regulations, judicial interpretations, compliance policies, and other legal texts.",
+    "en": "This template segments parsed files by legal provision hierarchy. Best for documents with clearly defined articles, such as laws, regulations, judicial interpretations,  and compliance policies.",
     "de": "Diese Vorlage segmentiert die geparste Datei anhand der Struktur von Gesetzesbestimmungen. Sie eignet sich für Dokumente mit klar definierten Artikel- und Paragraphenhierarchien, wie Gesetze, Verordnungen, richterliche Auslegungen, Compliance-Richtlinien und andere Rechtstexte.",
     "zh": "此模板将解析后的文件按法律条文结构进行切片，适用于具有清晰条、款、项层级的文档类型，如法律、法规、司法解释、合规制度及其他法律文本。"
     },
