@@ -193,7 +193,7 @@ Pre-installed packages: `requests`, `numpy`, `pandas`, `matplotlib`.
 
 > `matplotlib` uses the `Agg` (non-interactive) backend by default in the sandbox (`MPLBACKEND=Agg`). No display server is available, so always save figures to files (e.g. `fig.savefig("artifacts/chart.png")`) rather than calling `plt.show()`.
 >
-> Tip: if Chinese text renders as missing boxes/squares in `matplotlib`, install Debian package `fonts-noto-cjk` in your custom image. We do not preinstall it by default to keep the base image smaller. After the font is installed, the RAGFlow Code component will detect available CJK fonts and automatically configure `matplotlib` font settings for generated Python plotting code.
+> Tip: if Chinese text renders as missing boxes/squares in `matplotlib`, install Debian package `fonts-noto-cjk` in your custom image. We do not preinstall it by default to keep the base image smaller. The sandbox base image ships a `matplotlibrc` that already lists common CJK fonts in the `font.sans-serif` fallback chain, so no code-level font configuration is needed — just install the font package and rebuild the image.
 >
 > Example:
 >

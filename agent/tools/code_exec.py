@@ -46,31 +46,6 @@ SYSTEM_OUTPUT_KEYS = frozenset(
     }
 )
 
-_AUTO_MPL_FONT_MARKER = "# [CodeExec] Auto matplotlib font defaults"
-_AUTO_MPL_FONT_DETECTION_LINES = [
-    "    from matplotlib import font_manager as _rf_font_manager",
-    "    _rf_available_font_names = {f.name for f in _rf_font_manager.fontManager.ttflist}",
-    "    _rf_cjk_candidates = [",
-    '        "Noto Sans CJK SC",',
-    '        "Noto Sans CJK TC",',
-    '        "Noto Sans CJK JP",',
-    '        "Noto Sans CJK KR",',
-    '        "Source Han Sans SC",',
-    '        "Source Han Sans CN",',
-    '        "WenQuanYi Zen Hei",',
-    '        "Microsoft YaHei",',
-    '        "SimHei",',
-    '        "PingFang SC",',
-    '        "Heiti SC",',
-    '        "STHeiti",',
-    '        "Arial Unicode MS",',
-    "    ]",
-    "    _rf_selected_cjk_font = next((name for name in _rf_cjk_candidates if name in _rf_available_font_names), None)",
-    "    if _rf_selected_cjk_font:",
-    '        matplotlib.rcParams["font.family"] = [_rf_selected_cjk_font, "DejaVu Sans"]',
-]
-_AUTO_MPL_UNICODE_MINUS_LINE = '    matplotlib.rcParams["axes.unicode_minus"] = False'
-
 
 class ContractError(ValueError):
     pass
@@ -377,7 +352,6 @@ class CodeExec(ToolBase, ABC):
             return self.output()
 
         timeout_seconds = int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60))
-        code = self._prepare_code_for_execution(language=language, code=code)
 
         try:
             # Try using the new sandbox provider system first
@@ -449,31 +423,6 @@ class CodeExec(ToolBase, ABC):
             self.set_output("_ERROR", "Exception executing code: " + str(e))
 
         return self.output()
-
-    def _prepare_code_for_execution(self, language: str, code: str) -> str:
-        lang = str(language or "").lower()
-        if lang not in {"python", "python3"}:
-            return code
-        if _AUTO_MPL_FONT_MARKER in code:
-            return code
-
-        lower_code = code.lower()
-        need_font_family = "font.family" not in lower_code
-        need_unicode_minus = "axes.unicode_minus" not in lower_code
-        if not need_font_family and not need_unicode_minus:
-            return code
-
-        bootstrap_lines = [
-            _AUTO_MPL_FONT_MARKER,
-            "try:",
-            "    import matplotlib",
-        ]
-        if need_font_family:
-            bootstrap_lines.extend(_AUTO_MPL_FONT_DETECTION_LINES)
-        if need_unicode_minus:
-            bootstrap_lines.append(_AUTO_MPL_UNICODE_MINUS_LINE)
-        bootstrap_lines.extend(["except Exception:", "    pass", ""])
-        return "\n".join(bootstrap_lines) + code
 
     def _process_execution_result(
         self,
