@@ -249,7 +249,8 @@ class RAGFlow:
         res = res.json()
         result_list = []
         if res.get("code") == 0:
-            data_list = res.get("data", {}).get("canvas", [])
+            data = res.get("data") or {}
+            data_list = data.get("canvas", [])
             for data in data_list:
                 if title is not None and data.get("title") != title:
                     continue
