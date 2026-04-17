@@ -1,5 +1,6 @@
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
+import HighLightMarkdown from '@/components/highlight-markdown';
 import { FilterButton } from '@/components/list-filter-bar';
 import { FilterPopover } from '@/components/list-filter-bar/filter-popover';
 import { FilterCollection } from '@/components/list-filter-bar/interface';
@@ -91,7 +92,11 @@ export function TestingResult({
                 <article key={x.chunk_id}>
                   <Card className="px-5 py-2.5 bg-transparent shadow-none">
                     <ChunkTitle item={x}></ChunkTitle>
-                    <p className="!mt-2.5"> {x.content_with_weight}</p>
+                    <div className="!mt-2.5">
+                      <HighLightMarkdown>
+                        {x.highlight || x.content_with_weight}
+                      </HighLightMarkdown>
+                    </div>
                   </Card>
                 </article>
               ))}

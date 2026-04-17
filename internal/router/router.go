@@ -219,6 +219,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.POST("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.ChatToModel)
 			}
 
+			model := v1.Group("/models")
+			{
+				model.GET("/", r.tenantHandler.GetModels)
+				model.PATCH("/", r.tenantHandler.SetModels)
+			}
+
 			system := v1.Group("/system")
 			{
 				system.GET("/version", r.systemHandler.GetVersion)

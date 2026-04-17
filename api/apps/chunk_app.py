@@ -499,6 +499,15 @@ async def retrieval_test():
             _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
+        highlight_val = req.get("highlight", None)
+        if highlight_val is None:
+            highlight = False
+        elif isinstance(highlight_val, bool):
+            highlight = highlight_val
+        elif isinstance(highlight_val, str):
+            highlight = highlight_val.lower() in ("true", "1", "yes", "on")
+        else:
+            highlight = bool(highlight_val)
         ranks = await settings.retriever.retrieval(
                         _question,
                         embd_mdl,
@@ -511,6 +520,7 @@ async def retrieval_test():
                         doc_ids=local_doc_ids,
                         top=top,
                         rerank_mdl=rerank_mdl,
+                        highlight=highlight,
                         rank_feature=labels
                     )
 
