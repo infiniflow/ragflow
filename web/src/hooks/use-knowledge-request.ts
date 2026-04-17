@@ -625,6 +625,7 @@ export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
       const { data } = await kbService.retrievalTest({
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
+        highlight: true,
         page,
         size: pageSize,
       });
@@ -669,6 +670,7 @@ export const useTestChunkAllRetrieval = (): ResponsePostType<ITestingResult> & {
       const { data } = await kbService.retrievalTest({
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
+        highlight: true,
         doc_ids: [],
         page,
         size: pageSize,
