@@ -35,16 +35,21 @@ pytestmark = pytest.mark.skipif(
     reason="fastapi not installed in test environment",
 )
 
-# Load app module
+# Load app module (only when fastapi is available)
 _REPO = Path(__file__).parents[3]
 _APP_PATH = _REPO / "docker" / "opendataloader-service" / "app.py"
-_spec = importlib.util.spec_from_file_location("odl_service_app", _APP_PATH)
-_app_mod = importlib.util.module_from_spec(_spec)
-sys.modules["odl_service_app"] = _app_mod
-_spec.loader.exec_module(_app_mod)
 
-health = _app_mod.health
-file_parse = _app_mod.file_parse
+if _FASTAPI_AVAILABLE:
+    _spec = importlib.util.spec_from_file_location("odl_service_app", _APP_PATH)
+    _app_mod = importlib.util.module_from_spec(_spec)
+    sys.modules["odl_service_app"] = _app_mod
+    _spec.loader.exec_module(_app_mod)
+    health = _app_mod.health
+    file_parse = _app_mod.file_parse
+else:
+    _app_mod = None
+    health = None
+    file_parse = None
 
 
 # ---------------------------------------------------------------------------
