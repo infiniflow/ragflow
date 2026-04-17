@@ -1,7 +1,9 @@
 {
   "name": "OpenAI",
-  "tags": "LLM,TEXT EMBEDDING,TTS,TEXT RE-RANK,SPEECH2TEXT,MODERATION",
-  "url": "https://api.openai.com/v1",
+  "tags": ["llm", "embedding", "speech2text", "image2text", "asr", "tts"],
+  "url": {
+    "default": "https://api.openai.com/v1"
+  },
   "url_suffix": {
     "chat": "chat/completions"
   },

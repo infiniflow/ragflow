@@ -1,7 +1,9 @@
 {
   "name": "xAI",
-  "tags": "LLM",
-  "url": "https://api.x.ai/v1",
+  "tags": ["llm", "embedding", "speech2text", "image2text", "asr", "tts"],
+  "url": {
+    "default": "https://api.x.ai/v1"
+  },
   "url_suffix": {
     "chat": "chat/completions"
   },

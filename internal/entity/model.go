@@ -145,11 +145,11 @@ type Model struct {
 
 // Provider represents an LLM provider
 type Provider struct {
-	Name        string           `json:"name"`
-	Tags        string           `json:"tags"`
-	URL         string           `json:"url"`
-	URLSuffix   models.URLSuffix `json:"url_suffix"`
-	Models      []*Model         `json:"models"`
+	Name        string            `json:"name"`
+	Tags        []string          `json:"tags"`
+	URL         map[string]string `json:"url"`
+	URLSuffix   models.URLSuffix  `json:"url_suffix"`
+	Models      []*Model          `json:"models"`
 	ModelDriver models.ModelDriver
 }
 
