@@ -27,11 +27,11 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
+                401,
+                "<Unauthorized '401: Unauthorized'>",
             ),
         ],
     )
@@ -358,3 +358,83 @@ class TestDocumentsList:
         res = list_documents(HttpApiAuth, dataset_id, params=params)
         assert res["code"] == 0
         assert len(res["data"]["docs"]) == 5
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "params, expected_code, expected_message",
+        [
+            (
+                {"metadata_condition": "{bad json"},
+                102,
+                "metadata_condition must be valid JSON.",
+            ),
+            (
+                {"metadata_condition": "[1]"},
+                102,
+                "metadata_condition must be an object.",
+            ),
+        ],
+    )
+    def test_metadata_condition_validation(
+        self, HttpApiAuth, add_documents, params, expected_code, expected_message
+    ):
+        dataset_id, _ = add_documents
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
+        assert res["code"] == expected_code
+        assert expected_message in res["message"]
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "params, expected_code, expected_total",
+        [
+            # Filter with create_time_from in the future - should return 0 results
+            ({"create_time_from": "9999999999000"}, 0, 0),
+            # Filter with create_time_to in the past - should return 0 results
+            ({"create_time_to": "0"}, 0, 0),
+            # Filter with create_time_from and create_time_to covering all time
+            ({"create_time_from": "0", "create_time_to": "9999999999000"}, 0, 5),
+        ],
+    )
+    def test_create_time_filter(
+        self, HttpApiAuth, add_documents, params, expected_code, expected_total
+    ):
+        dataset_id, _ = add_documents
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
+
+        assert res["code"] == expected_code
+        assert len(res["data"]["docs"]) == expected_total
+        assert res["data"]["total"] == 5
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "params, expected_code, expected_message",
+        [
+            # Invalid run status - should return error
+            ({"run": ["INVALID_STATUS"]}, 102, "Invalid filter run status conditions: INVALID_STATUS"),
+        ],
+    )
+    def test_run_status_filter_invalid(
+        self, HttpApiAuth, add_documents, params, expected_code, expected_message
+    ):
+        dataset_id, _ = add_documents
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
+
+        assert res["code"] == expected_code
+        assert expected_message in res["message"]
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "params, expected_size",
+        [
+            # Invalid run status - should return error
+            ({"run": ["UNSTART"]}, 5),
+        ],
+    )
+    def test_run_status_filter_unstart(
+            self, HttpApiAuth, add_documents, params, expected_size
+    ):
+        dataset_id, _ = add_documents
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
+
+        assert res["code"] == 0
+        assert res["data"]["total"] == expected_size

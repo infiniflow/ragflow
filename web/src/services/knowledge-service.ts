@@ -241,10 +241,16 @@ export const runRaptor = (datasetId: string) =>
 export const traceRaptor = (datasetId: string) =>
   request.get(api.traceRaptor(datasetId));
 
+// Using RESTful API: GET /api/v1/datasets/{dataset_id}/documents
 export const listDocument = (
   params?: IFetchKnowledgeListRequestParams,
   body?: IFetchDocumentListRequestBody,
-) => request.post(api.getDocumentList, { data: body || {}, params });
+) => {
+  if (!params || !params.id) {
+    throw new Error('params and params.id are required');
+  }
+  return request.get(api.getDocumentList(params.id), { params: body });
+};
 
 export const documentFilter = (kb_id: string) =>
   request.post(api.getDatasetFilter, { kb_id });
