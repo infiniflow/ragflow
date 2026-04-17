@@ -392,7 +392,8 @@ def tokenize_table(tbls, doc, eng, batch_size=10, language="English"):
                 add_positions(d, poss)
             res.append(d)
             continue
-        de = "; " if eng else "； "
+        lang_key = (language or "English").strip().lower()
+        de = "； " if lang_key in {"chinese", "japanese"} else "; "
         for i in range(0, len(rows), batch_size):
             d = copy.deepcopy(doc)
             r = de.join(rows[i:i + batch_size])
