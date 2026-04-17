@@ -367,11 +367,12 @@ async def test_tool() -> Response:
         tool_call_sessions.append(tool_call_session)
         result = await thread_pool_exec(tool_call_session.tool_call, tool_name, arguments, timeout)
 
-        # PERF: blocking call to close sessions — consider moving to background thread or task queue
-        await thread_pool_exec(close_multiple_mcp_toolcall_sessions, tool_call_sessions)
         return get_json_result(data=result)
     except Exception as e:
         return server_error_response(e)
+    finally:
+        # PERF: blocking call to close sessions — consider moving to background thread or task queue
+        await thread_pool_exec(close_multiple_mcp_toolcall_sessions, tool_call_sessions)
 
 
 @manager.route("/cache_tools", methods=["POST"])  # noqa: F821
