@@ -323,9 +323,7 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
       task_page_size,
       pages,
       parent_child:
-        children_delimiter !== undefined ||
-        use_parent_child !== undefined ||
-        enable_children !== undefined
+        children_delimiter !== undefined || use_parent_child !== undefined
           ? {
               children_delimiter,
               use_parent_child: use_parent_child ?? enable_children,
