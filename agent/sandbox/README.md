@@ -192,6 +192,14 @@ Currently, the following languages are officially supported:
 Pre-installed packages: `requests`, `numpy`, `pandas`, `matplotlib`.
 
 > `matplotlib` uses the `Agg` (non-interactive) backend by default in the sandbox (`MPLBACKEND=Agg`). No display server is available, so always save figures to files (e.g. `fig.savefig("artifacts/chart.png")`) rather than calling `plt.show()`.
+>
+> Tip: if Chinese text renders as missing boxes/squares in `matplotlib`, install Debian package `fonts-noto-cjk` in your custom image. We do not preinstall it by default to keep the base image smaller.
+>
+> Example:
+>
+> ```dockerfile
+> RUN apt-get update && apt-get install -y --no-install-recommends fonts-noto-cjk && rm -rf /var/lib/apt/lists/*
+> ```
 
 To add more dependencies, edit:
 
