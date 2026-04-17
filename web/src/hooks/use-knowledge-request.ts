@@ -302,6 +302,9 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
       filename_embd_weight,
       task_page_size,
       pages,
+      children_delimiter,
+      use_parent_child,
+      enable_children,
       ext,
       ...parserExt
     } = parserConfig;
@@ -319,6 +322,15 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
       filename_embd_weight,
       task_page_size,
       pages,
+      parent_child:
+        children_delimiter !== undefined ||
+        use_parent_child !== undefined ||
+        enable_children !== undefined
+          ? {
+              children_delimiter,
+              use_parent_child: use_parent_child ?? enable_children,
+            }
+          : undefined,
       ext: { ...ext, ...parserExt },
     };
   };

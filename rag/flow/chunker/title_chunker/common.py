@@ -234,10 +234,6 @@ class BaseTitleChunker(ABC):
         return self.resolve_outline_levels(line_records) or self.resolve_frequency_levels(line_records)
 
 
-    def resolve_manual_levels(self, line_records):
-        return self.resolve_title_levels(line_records)["levels"]
-
-
     def build_chunks_from_record_groups(self, record_groups):
         # Strategy code decides record grouping. This method materializes each
         # group into the output chunk representation. For PDF-like inputs, the
