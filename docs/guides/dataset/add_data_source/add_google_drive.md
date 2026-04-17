@@ -6,7 +6,7 @@ sidebar_custom_props: {
 }
 ---
 
-# Add Google Drive as data source
+# Add Google Drive
 
 Add Google Drive as one of the data sources in RAGFlow.
 

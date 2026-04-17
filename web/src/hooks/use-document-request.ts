@@ -1,5 +1,4 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
-import { post } from '@/utils/next-request';
 
 import message from '@/components/ui/message';
 import { RunningStatus } from '@/constants/knowledge';
@@ -21,7 +20,7 @@ import kbService, {
   renameDocument,
   uploadDocument,
 } from '@/services/knowledge-service';
-import api, { restAPIv1, webAPI } from '@/utils/api';
+import { restAPIv1, webAPI } from '@/utils/api';
 import { getSearchValue } from '@/utils/common-util';
 import { buildChunkHighlights } from '@/utils/document-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -563,27 +562,4 @@ export const useFetchDocumentThumbnailsByIds = () => {
   });
 
   return { data, setDocumentIds };
-};
-
-export const useParseDocument = () => {
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [DocumentApiAction.ParseDocument],
-    mutationFn: async (url: string) => {
-      try {
-        const { data } = await post(api.parse, { url });
-        if (data?.code === 0) {
-          message.success(i18n.t('message.uploaded'));
-        }
-        return data;
-      } catch (error) {
-        message.error('error');
-      }
-    },
-  });
-
-  return { parseDocument: mutateAsync, data, loading };
 };

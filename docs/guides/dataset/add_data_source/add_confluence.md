@@ -6,7 +6,7 @@ sidebar_custom_props: {
 }
 ---
 
-# Connecting Confluence to RAGFlow
+# Add Confluence
 
 Integrate Confluence as a data source.
 
@@ -45,6 +45,8 @@ Navigate to the **Connectors** or **External Data Source** section in the RAGFlo
     - **Space Keys:** Specify keys (e.g., `ENG, HR`) separated by commas to restrict indexing. Leave blank to index all accessible spaces.
 
 Once configuration is complete, click **Confirm** to save your changes.
+
+*RAGFlow validates the connection immediately.*
 
 ### Link to a dataset
 

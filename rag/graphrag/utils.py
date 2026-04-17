@@ -457,13 +457,24 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     if change.removed_edges:
 
         async def del_edges(from_node, to_node):
-            async with chat_limiter:
-                await thread_pool_exec(
-                    settings.docStoreConn.delete,
-                    {"knowledge_graph_kwd": ["relation"], "from_entity_kwd": from_node, "to_entity_kwd": to_node},
-                    search.index_name(tenant_id),
-                    kb_id
-                )
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    async with chat_limiter:
+                        await thread_pool_exec(
+                            settings.docStoreConn.delete,
+                            {"knowledge_graph_kwd": ["relation"], "from_entity_kwd": from_node, "to_entity_kwd": to_node},
+                            search.index_name(tenant_id),
+                            kb_id
+                        )
+                    return
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        wait = 2 ** attempt
+                        logging.warning(f"del_edges({from_node}, {to_node}) attempt {attempt + 1} failed: {e}, retrying in {wait}s")
+                        await asyncio.sleep(wait)
+                    else:
+                        raise
 
         tasks = []
         for from_node, to_node in change.removed_edges:
@@ -558,15 +569,40 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     es_bulk_size = 4
     for b in range(0, len(chunks), es_bulk_size):
         timeout = 3 if enable_timeout_assertion else 30000000
-        doc_store_result = await asyncio.wait_for(
-            thread_pool_exec(
-                settings.docStoreConn.insert,
-                chunks[b : b + es_bulk_size],
-                search.index_name(tenant_id),
-                kb_id
-            ),
-            timeout=timeout
-        )
+        max_retries = 3
+        for attempt in range(max_retries):
+            task = asyncio.create_task(
+                thread_pool_exec(
+                    settings.docStoreConn.insert,
+                    chunks[b : b + es_bulk_size],
+                    search.index_name(tenant_id),
+                    kb_id
+                )
+            )
+            try:
+                doc_store_result = await asyncio.wait_for(task, timeout=timeout)
+                break
+            except asyncio.TimeoutError:
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                if attempt < max_retries - 1:
+                    wait = 2 ** attempt
+                    logging.warning(f"Insert batch {b}/{len(chunks)} attempt {attempt + 1} timed out, retrying in {wait}s")
+                    await asyncio.sleep(wait)
+                else:
+                    raise
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait = 2 ** attempt
+                    logging.warning(f"Insert batch {b}/{len(chunks)} attempt {attempt + 1} failed: {e}, retrying in {wait}s")
+                    await asyncio.sleep(wait)
+                else:
+                    raise
         if b % 100 == es_bulk_size and callback:
             callback(msg=f"Insert chunks: {b}/{len(chunks)}")
         if doc_store_result:

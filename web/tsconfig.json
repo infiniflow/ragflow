@@ -28,8 +28,7 @@
       "@parent/*": ["../src/*"]
     },
 
-    "types": ["vite/client", "node", "@testing-library/jest-dom"],
-    "ignoreDeprecations": "6.0"
+    "types": ["vite/client", "node", "@testing-library/jest-dom"]
   },
   "include": ["src"],
   "exclude": ["node_modules", "dist"],
