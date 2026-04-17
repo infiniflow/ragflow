@@ -1753,7 +1753,7 @@ class RAGFlowClient:
                 return False
             all_done = True
             for doc in docs:
-                if doc.get("run") != "3":
+                if doc.get("run") != "DONE":
                     print(f"Document {doc["name"]} is not done, status: {doc.get("run")}")
                     all_done = False
                     break
@@ -1767,7 +1767,7 @@ class RAGFlowClient:
         # Use the new RESTful API: GET /api/v1/datasets/<dataset_id>/documents
         response = self.http_client.request(
             "GET",
-            f"/api/v1/datasets/{dataset_id}/documents",
+            f"/datasets/{dataset_id}/documents",
             use_api_base=True,
             auth_kind="web"
         )

@@ -152,7 +152,7 @@ def test_parse_100_files(WebApiAuth, add_dataset_func, tmp_path):
     def condition(_auth, _kb_id, _document_num):
         res = list_documents(_auth, {"kb_id": _kb_id, "page_size": _document_num})
         for doc in res["data"]["docs"]:
-            if doc["run"] != "3":
+            if doc["run"] != "DONE":
                 return False
         return True
 

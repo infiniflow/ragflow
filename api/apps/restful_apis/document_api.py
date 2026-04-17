@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import logging
+import json
 
 from quart import request
 from peewee import OperationalError
@@ -337,11 +338,6 @@ def list_docs(dataset_id, tenant_id):
         required: true
         description: ID of the dataset.
       - in: query
-        name: id
-        type: string
-        required: false
-        description: Filter by document ID.
-      - in: query
         name: page
         type: integer
         required: false
@@ -433,19 +429,16 @@ def list_docs(dataset_id, tenant_id):
                     description: Processing status.
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        logging.error(f"You don't own the dataset {dataset_id}. ")
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
 
     q = request.args
-    document_id = q.get("id")
-    name = q.get("name")
-
-    if document_id and not DocumentService.query(id=document_id, kb_id=dataset_id):
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
-    if name and not DocumentService.query(name=name, kb_id=dataset_id):
-        return get_error_data_result(message=f"You don't own the document {name}.")
 
     page = int(q.get("page", 1))
     page_size = int(q.get("page_size", 30))
+
+    print(f"page:{page}, page size:{page_size}")
+
     orderby = q.get("orderby", "create_time")
     desc = str(q.get("desc", "true")).strip().lower() != "false"
     keywords = q.get("keywords", "")
@@ -453,10 +446,11 @@ def list_docs(dataset_id, tenant_id):
     # filters - align with OpenAPI parameter names
     suffix = q.getlist("suffix")
 
-    types = q.get("types", [])
+    types = q.getlist("types", [])
     if types:
         invalid_types = {t for t in types if t not in VALID_FILE_TYPES}
         if invalid_types:
+            logging.error(msg=f"------------Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}")
             return get_data_error_result(message=f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}")
 
     # map run status (text or numeric) - align with API parameter
@@ -466,18 +460,21 @@ def list_docs(dataset_id, tenant_id):
     if run_status_converted:
         invalid_status = {s for s in run_status_converted if s not in run_status_text_to_numeric.values()}
         if invalid_status:
+            logging.error(msg=f"----------Invalid filter run status conditions: {', '.join(invalid_status)}")
             return get_data_error_result(message=f"Invalid filter run status conditions: {', '.join(invalid_status)}")
 
     doc_ids_filter, empty_result_or_error, return_empty_metadata = _parse_doc_id_filter_with_metadata(q, dataset_id)
     if empty_result_or_error is not None:
+        logging.error(msg=f"----------empty_result_or_error: {empty_result_or_error}")
         return empty_result_or_error
+
     docs, total = DocumentService.get_by_kb_id(dataset_id, page, page_size, orderby, desc, keywords, run_status_converted, types, suffix, doc_ids_filter, return_empty_metadata=return_empty_metadata)
 
     # time range filter (0 means no bound)
-    create_time_from = int(q.get("create_time_from", -1))
-    create_time_to = int(q.get("create_time_to", -1))
-    if create_time_from >=0 or create_time_to >= 0:
-        docs = [d for d in docs if (create_time_from == -1 or d.get("create_time", 0) >= create_time_from) and (create_time_to == -1 or d.get("create_time", 0) <= create_time_to)]
+    create_time_from = int(q.get("create_time_from", 0))
+    create_time_to = int(q.get("create_time_to", 0))
+    if create_time_from or create_time_to:
+        docs = [d for d in docs if (create_time_from == 0 or d.get("create_time", 0) >= create_time_from) and (create_time_to == 0 or d.get("create_time", 0) <= create_time_to)]
 
     renamed_doc_list = [map_doc_keys(doc) for doc in docs]
     for doc_item in renamed_doc_list:
@@ -495,9 +492,17 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
     if isinstance(return_empty_metadata, str):
         return_empty_metadata = return_empty_metadata.lower() == "true"
 
-    import json
-    metadata_condition = json.loads(req.get("metadata_condition", "{}"))
-    metadata = json.loads(req.get("metadata", "{}"))
+    try:
+        metadata_condition = json.loads(req.get("metadata_condition", "{}"))
+    except json.JSONDecodeError:
+        logging.error(msg=f'----------metadata_condition must be valid JSON: {req.get("metadata_condition")}.')
+        return None, get_data_error_result(message="metadata_condition must be valid JSON."), return_empty_metadata
+    try:
+        metadata = json.loads(req.get("metadata", "{}"))
+    except json.JSONDecodeError:
+        logging.error(msg=f'------------metadata must be valid JSON: {req.get("metadata")}.')
+        return None, get_data_error_result(message="metadata must be valid JSON."), return_empty_metadata
+
     if isinstance(metadata, dict) and metadata.get("empty_metadata"):
         return_empty_metadata = True
         metadata = {k: v for k, v in metadata.items() if k != "empty_metadata"}
