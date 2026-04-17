@@ -9,7 +9,8 @@ import request from '@/utils/request';
 
 const {
   getCanvasSSE,
-  setCanvas,
+  createAgent,
+  updateAgent,
   listAgents,
   deleteAgent,
   resetCanvas,
@@ -18,7 +19,6 @@ const {
   testDbConnect,
   getInputElements,
   debug,
-  settingCanvas,
   uploadCanvasFile,
   trace,
   inputForm,
@@ -42,8 +42,8 @@ const methods = {
     url: getCanvasSSE,
     method: 'get',
   },
-  setCanvas: {
-    url: setCanvas,
+  createAgent: {
+    url: createAgent,
     method: 'post',
   },
   fetchVersionList: {
@@ -84,10 +84,6 @@ const methods = {
   },
   debugSingle: {
     url: debug,
-    method: 'post',
-  },
-  settingCanvas: {
-    url: settingCanvas,
     method: 'post',
   },
   uploadCanvasFile: {
@@ -133,6 +129,20 @@ const methods = {
 } as const;
 
 const agentService = registerNextServer<keyof typeof methods>(methods);
+
+export const patchAgent = (
+  agentId: string,
+  params: {
+    title?: string;
+    dsl?: Record<string, any>;
+    avatar?: string;
+    description?: string | null;
+    permission?: string;
+    release?: string;
+  },
+) => {
+  return request(updateAgent(agentId), { method: 'patch', data: params });
+};
 
 export const fetchTrace = (data: { canvas_id: string; message_id: string }) => {
   return request.get(methods.trace.url, { params: data });

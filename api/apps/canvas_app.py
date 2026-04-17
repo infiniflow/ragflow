@@ -55,49 +55,6 @@ def templates():
     return get_json_result(data=[c.to_dict() for c in CanvasTemplateService.get_all()])
 
 
-@manager.route('/set', methods=['POST'])  # noqa: F821
-@validate_request("dsl", "title")
-@login_required
-async def save():
-    req = await get_request_json()
-    req['release'] = bool(req.get("release", ""))
-    try:
-        req["dsl"] = CanvasReplicaService.normalize_dsl(req["dsl"])
-    except ValueError as e:
-        return get_data_error_result(message=str(e))
-    cate = req.get("canvas_category", CanvasCategory.Agent)
-    if "id" not in req:
-        req["user_id"] = current_user.id
-        if UserCanvasService.query(user_id=current_user.id, title=req["title"].strip(), canvas_category=cate):
-            return get_data_error_result(message=f"{req['title'].strip()} already exists.")
-        req["id"] = get_uuid()
-        if not UserCanvasService.save(**req):
-            return get_data_error_result(message="Fail to save canvas.")
-    else:
-        if not UserCanvasService.accessible(req["id"], current_user.id):
-            return get_json_result(
-                data=False, message='Only owner of canvas authorized for this operation.',
-                code=RetCode.OPERATING_ERROR)
-        UserCanvasService.update_by_id(req["id"], req)
-    # save version
-    UserCanvasVersionService.save_or_replace_latest(
-        user_canvas_id=req["id"],
-        dsl=req["dsl"],
-        title=UserCanvasVersionService.build_version_title(getattr(current_user, "nickname", current_user.id), req.get("title")),
-        release=req.get("release"),
-    )
-    replica_ok = CanvasReplicaService.replace_for_set(
-        canvas_id=req["id"],
-        tenant_id=str(current_user.id),
-        runtime_user_id=str(current_user.id),
-        dsl=req["dsl"],
-        canvas_category=req.get("canvas_category", cate),
-        title=req.get("title", ""),
-    )
-    if not replica_ok:
-        return get_data_error_result(message="canvas saved, but replica sync failed.")
-    return get_json_result(data=req)
-
 @manager.route('/getsse/<canvas_id>', methods=['GET'])  # type: ignore # noqa: F821
 def getsse(canvas_id):
     token = request.headers.get('Authorization').split()
@@ -280,30 +237,6 @@ def cancel(task_id):
     except Exception as e:
         logging.exception(e)
     return get_json_result(data=True)
-
-
-@manager.route('/reset', methods=['POST'])  # noqa: F821
-@validate_request("id")
-@login_required
-async def reset():
-    req = await get_request_json()
-    if not UserCanvasService.accessible(req["id"], current_user.id):
-        return get_json_result(
-            data=False, message='Only owner of canvas authorized for this operation.',
-            code=RetCode.OPERATING_ERROR)
-    try:
-        e, user_canvas = UserCanvasService.get_by_id(req["id"])
-        if not e:
-            return get_data_error_result(message="canvas not found.")
-
-        canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id, canvas_id=user_canvas.id)
-        canvas.reset()
-        req["dsl"] = json.loads(str(canvas))
-        UserCanvasService.update_by_id(req["id"], {"dsl": req["dsl"]})
-        return get_json_result(data=req["dsl"])
-    except Exception as e:
-        return server_error_response(e)
-
 
 @manager.route("/upload/<canvas_id>", methods=["POST"])  # noqa: F821
 async def upload(canvas_id):
@@ -506,32 +439,6 @@ def getversion( version_id):
             return get_json_result(data=version.to_dict())
     except Exception as e:
         return get_json_result(data=f"Error getting history file: {e}")
-
-
-@manager.route('/setting', methods=['POST'])  # noqa: F821
-@validate_request("id", "title", "permission")
-@login_required
-async def setting():
-    req = await get_request_json()
-    req["user_id"] = current_user.id
-
-    if not UserCanvasService.accessible(req["id"], current_user.id):
-        return get_json_result(
-            data=False, message='Only owner of canvas authorized for this operation.',
-            code=RetCode.OPERATING_ERROR)
-
-    e,flow = UserCanvasService.get_by_id(req["id"])
-    if not e:
-        return get_data_error_result(message="canvas not found.")
-    flow = flow.to_dict()
-    flow["title"] = req["title"]
-
-    for key in ["description", "permission", "avatar"]:
-        if value := req.get(key):
-            flow[key] = value
-
-    num= UserCanvasService.update_by_id(req["id"], flow)
-    return get_json_result(data=num)
 
 
 @manager.route('/trace', methods=['GET'])  # noqa: F821

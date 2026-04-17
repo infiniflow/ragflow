@@ -28,6 +28,7 @@ import agentService, {
   fetchPipeLineList,
   fetchTrace,
   fetchWebhookTrace,
+  patchAgent,
 } from '@/services/agent-service';
 import api from '@/utils/api';
 import { buildMessageListWithUuid } from '@/utils/chat';
@@ -221,7 +222,12 @@ export const useUpdateAgentSetting = () => {
   } = useMutation({
     mutationKey: [AgentApiAction.UpdateAgentSetting],
     mutationFn: async (params: any) => {
-      const ret = await agentService.settingCanvas(params);
+      const ret = await patchAgent(params.id, {
+        title: params.title,
+        description: params.description,
+        permission: params.permission,
+        avatar: params.avatar,
+      });
       if (ret?.data?.code === 0) {
         message.success('success');
         queryClient.invalidateQueries({
@@ -313,7 +319,7 @@ export const useResetAgent = () => {
   } = useMutation({
     mutationKey: [AgentApiAction.ResetAgent],
     mutationFn: async () => {
-      const { data } = await agentService.resetCanvas({ id });
+      const { data } = await agentService.resetCanvas(id);
       return data;
     },
   });
@@ -322,6 +328,7 @@ export const useResetAgent = () => {
 };
 
 export const useSetAgent = (showMessage: boolean = true) => {
+  const { id } = useParams();
   const queryClient = useQueryClient();
   const {
     data,
@@ -336,17 +343,34 @@ export const useSetAgent = (showMessage: boolean = true) => {
       avatar?: string;
       canvas_category?: string;
       release?: string;
+      description?: string | null;
+      permission?: string;
     }) => {
-      const { data = {} } = await agentService.setCanvas(params);
+      const agentId = params.id ?? id;
+      const { data = {} } = agentId
+        ? await patchAgent(agentId, {
+            title: params.title,
+            dsl: params.dsl,
+            avatar: params.avatar,
+            description: params.description,
+            permission: params.permission,
+            release: params.release,
+          })
+        : await agentService.createAgent(params);
       if (data.code === 0) {
         if (showMessage) {
           message.success(
-            i18n.t(`message.${params?.id ? 'modified' : 'created'}`),
+            i18n.t(`message.${agentId ? 'modified' : 'created'}`),
           );
         }
         queryClient.invalidateQueries({
           queryKey: [AgentApiAction.FetchAgentListByPage],
         });
+        if (agentId) {
+          queryClient.invalidateQueries({
+            queryKey: [AgentApiAction.FetchAgentDetail],
+          });
+        }
       }
       return data;
     },
@@ -697,33 +721,6 @@ export const useFetchExternalAgentInputs = () => {
   });
 
   return { data, loading, refetch };
-};
-
-export const useSetAgentSetting = () => {
-  const { id } = useParams();
-  const queryClient = useQueryClient();
-
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [AgentApiAction.SetAgentSetting],
-    mutationFn: async (params: any) => {
-      const ret = await agentService.settingCanvas({ id, ...params });
-      if (ret?.data?.code === 0) {
-        message.success('success');
-        queryClient.invalidateQueries({
-          queryKey: [AgentApiAction.FetchAgentDetail],
-        });
-      } else {
-        message.error(ret?.data?.data);
-      }
-      return ret?.data?.code;
-    },
-  });
-
-  return { data, loading, setAgentSetting: mutateAsync };
 };
 
 export const useFetchPrompt = () => {
