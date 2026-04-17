@@ -6,7 +6,7 @@
         "zh": "全文"
     },
     "description": {
-        "en": "This template treats the entire parsed file as a single segment without further splitting. It is suitable for short documents or highly coherent texts where preserving full context is essential.",
+        "en": "This template treats the entire parsed file as one segment. Best for short documents or highly coherent text where maintaining full context is critical.",
         "de": "Diese Vorlage behandelt die gesamte geparste Datei als ein einzelnes Segment, ohne sie weiter aufzuteilen. Sie eignet sich für kurze Dokumente, stark zusammenhängende Texte oder Fälle, in denen der vollständige Kontext erhalten bleiben soll.",
         "zh": "此模板将解析后的文件作为一个完整片段处理，不再进一步切分，适用于篇幅较短、内容连贯性较强，或需要保留全文上下文的文档。"
     },
