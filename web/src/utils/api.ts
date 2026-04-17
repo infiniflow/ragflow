@@ -175,7 +175,7 @@ export default {
   setLangfuseConfig: `${webAPI}/langfuse/api_key`,
 
   // flow
-  listTemplates: `${webAPI}/canvas/templates`,
+  listAgentTemplate: `${restAPIv1}/agents/templates`,
   listAgents: `${restAPIv1}/agents`,
   createAgent: `${restAPIv1}/agents`,
   updateAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,

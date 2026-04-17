@@ -23,7 +23,7 @@ from agent.dsl_migration import normalize_chunker_dsl
 from api.apps import login_required
 from api.apps.services.canvas_replica_service import CanvasReplicaService
 from api.db import CanvasCategory
-from api.db.services.canvas_service import UserCanvasService
+from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService, UserService
 from api.db.services.user_canvas_version import UserCanvasVersionService
@@ -43,6 +43,12 @@ def _get_user_nickname(user_id: str) -> str:
     if not exists:
         return user_id
     return str(getattr(user, "nickname", "") or user_id)
+
+
+@manager.route("/agents/templates", methods=["GET"])  # noqa: F821
+@login_required
+def list_agent_template():
+    return get_json_result(data=[item.to_dict() for item in CanvasTemplateService.get_all()])
 
 
 @manager.route("/agents", methods=["GET"])  # noqa: F821

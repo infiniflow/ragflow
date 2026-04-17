@@ -21,7 +21,7 @@ from functools import partial
 from quart import request, Response, make_response
 from agent.component import LLM
 from api.db import CanvasCategory
-from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
+from api.db.services.canvas_service import UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
@@ -47,12 +47,6 @@ from common import settings
 from api.apps import login_required, current_user
 from api.apps.services.canvas_replica_service import CanvasReplicaService
 from api.db.services.canvas_service import completion as agent_completion
-
-
-@manager.route('/templates', methods=['GET'])  # noqa: F821
-@login_required
-def templates():
-    return get_json_result(data=[c.to_dict() for c in CanvasTemplateService.get_all()])
 
 
 @manager.route('/getsse/<canvas_id>', methods=['GET'])  # type: ignore # noqa: F821

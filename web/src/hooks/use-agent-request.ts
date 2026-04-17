@@ -81,7 +81,7 @@ export const useFetchAgentTemplates = () => {
     queryKey: [AgentApiAction.FetchAgentTemplates],
     initialData: [],
     queryFn: async () => {
-      const { data } = await agentService.listTemplates();
+      const { data } = await agentService.listAgentTemplate();
 
       return data.data;
     },

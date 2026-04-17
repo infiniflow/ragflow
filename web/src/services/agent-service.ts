@@ -15,7 +15,7 @@ const {
   deleteAgent,
   resetCanvas,
   runCanvas,
-  listTemplates,
+  listAgentTemplate,
   testDbConnect,
   getInputElements,
   debug,
@@ -70,8 +70,8 @@ const methods = {
     url: runCanvas,
     method: 'post',
   },
-  listTemplates: {
-    url: listTemplates,
+  listAgentTemplate: {
+    url: listAgentTemplate,
     method: 'get',
   },
   testDbConnect: {
