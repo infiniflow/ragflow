@@ -24,9 +24,10 @@ minio:
   # optional: set to false to allow self-signed certificates (e.g. in development).
   # verify: ${MINIO_VERIFY:-true}
 es:
-  hosts: 'http://${ES_HOST:-es01}:9200'
+  hosts: '${ES_HOST_PROTO:-http://}${ES_HOST:-es01}:${ES_HOST_PORT:-9200}'
   username: '${ES_USER:-elastic}'
   password: '${ELASTIC_PASSWORD:-infini_rag_flow}'
+  api_key: '${ELASTIC_API_KEY:-}'
 os:
   hosts: 'http://${OS_HOST:-opensearch01}:9201'
   username: '${OS_USER:-admin}'
