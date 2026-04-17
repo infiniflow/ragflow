@@ -25,7 +25,7 @@ import { ISearchReturnProps } from './hooks';
 import './index.less';
 import MarkdownContent from './markdown-content';
 import MindMapDrawer from './mindmap-drawer';
-import { RAGFlowLogo } from './ragflow-log';
+import { RAGFlowLogo } from './ragflow-logo';
 import RetrievalDocuments from './retrieval-documents';
 
 export default function SearchingView({
@@ -57,9 +57,11 @@ export default function SearchingView({
   handleSearch,
   pagination,
   onChange,
+  showEmbedLogo,
 }: ISearchReturnProps & {
   setIsSearching?: Dispatch<SetStateAction<boolean>>;
   searchData: ISearchAppDetailProps;
+  showEmbedLogo?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -85,6 +87,7 @@ export default function SearchingView({
           onClick={() => {
             setIsSearching?.(false);
           }}
+          showEmbedIcon={showEmbedLogo}
         ></RAGFlowLogo>
         <div
           className={cn(
