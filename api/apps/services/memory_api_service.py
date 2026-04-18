@@ -217,12 +217,12 @@ async def get_memory_config(memory_id):
     return format_ret_data_from_memory(memory)
 
 
-async def get_memory_messages(memory_id, agent_ids: list[str], keywords: str, page: int=1, page_size: int = 50):
+async def get_memory_messages(memory_id, agent_ids: list[str], keywords: str, page: int=1, page_size: int = 50, memory_types: list[str] = None):
     memory = MemoryService.get_by_memory_id(memory_id)
     if not memory:
         raise NotFoundException(f"Memory '{memory_id}' not found.")
     messages = MessageService.list_message(
-        memory.tenant_id, memory_id, agent_ids, keywords, page, page_size)
+        memory.tenant_id, memory_id, agent_ids, keywords, page, page_size, memory_types=memory_types)
     agent_name_mapping = {}
     extract_task_mapping = {}
     if messages["message_list"]:
@@ -285,7 +285,7 @@ async def update_message_status(memory_id: str, message_id: int, status: bool):
     raise Exception(f"Failed to set status for message '{message_id}' in memory '{memory_id}'.")
 
 
-async def search_message(filter_dict: dict, params: dict):
+async def search_message(filter_dict: dict, params: dict, memory_types: list[str] = None):
     """
     :param filter_dict: {
         "memory_id": list[str],
@@ -299,11 +299,14 @@ async def search_message(filter_dict: dict, params: dict):
         "keywords_similarity_weight": float,
         "top_n": int
     }
+    :param memory_types: optional list of memory type strings for filtering
     """
+    if memory_types:
+        filter_dict["message_type"] = memory_types
     return query_message(filter_dict, params)
 
 
-async def get_messages(memory_ids: list[str], agent_id: str = "", session_id: str = "", limit: int = 10):
+async def get_messages(memory_ids: list[str], agent_id: str = "", session_id: str = "", limit: int = 10, memory_types: list[str] = None):
     """
     Get recent messages from specified memories.
 
@@ -311,6 +314,7 @@ async def get_messages(memory_ids: list[str], agent_id: str = "", session_id: st
     :param agent_id: optional agent ID for filtering
     :param session_id: optional session ID for filtering
     :param limit: maximum number of messages to return
+    :param memory_types: optional list of memory type strings for filtering
     :return: list of recent messages
     """
     memory_list = MemoryService.get_by_ids(memory_ids)
@@ -320,7 +324,8 @@ async def get_messages(memory_ids: list[str], agent_id: str = "", session_id: st
         memory_ids,
         agent_id,
         session_id,
-        limit
+        limit,
+        memory_types=memory_types
     )
     return res
 
