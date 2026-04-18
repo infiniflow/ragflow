@@ -181,6 +181,9 @@ func startServer(config *server.Config) {
 	memoryService := service.NewMemoryService()
 	modelProviderService := service.NewModelProviderService()
 
+	// Initialize doc engine for skill search
+	docEngine := engine.Get()
+
 	// Initialize handler layer
 	authHandler := handler.NewAuthHandler()
 	userHandler := handler.NewUserHandler(userService)
@@ -197,10 +200,11 @@ func startServer(config *server.Config) {
 	searchHandler := handler.NewSearchHandler(searchService, userService)
 	fileHandler := handler.NewFileHandler(fileService, userService)
 	memoryHandler := handler.NewMemoryHandler(memoryService)
+	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, kbHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, providerHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, kbHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, skillSearchHandler, providerHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()
@@ -214,11 +218,15 @@ func startServer(config *server.Config) {
 	// Setup routes
 	r.Setup(ginEngine)
 
-	// Create HTTP server
+	// Create HTTP server with timeouts to prevent slow clients from blocking shutdown
 	addr := fmt.Sprintf(":%d", config.Server.Port)
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: ginEngine,
+		Addr:              addr,
+		Handler:           ginEngine,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// Start server in a goroutine

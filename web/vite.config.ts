@@ -111,6 +111,9 @@ export default defineConfig(({ mode }) => {
     proxySchemes[env.API_PROXY_SCHEME || 'python'] || proxySchemes.python;
 
   return {
+    define: {
+      __API_PROXY_SCHEME__: JSON.stringify(env.API_PROXY_SCHEME || 'python'),
+    },
     plugins: [
       inspectorBabelPlugin(),
       react(),

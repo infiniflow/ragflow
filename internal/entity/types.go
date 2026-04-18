@@ -42,6 +42,8 @@ type EmbeddingModel interface {
 	Encode(texts []string) ([][]float64, error)
 	// EncodeQuery encodes a single query string into embedding
 	EncodeQuery(query string) ([]float64, error)
+	// MaxLength returns the maximum input length for the model
+	MaxLength() int
 }
 
 // ChatModel interface for chat models

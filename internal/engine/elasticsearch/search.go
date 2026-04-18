@@ -83,7 +83,13 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 
 	// Build filter clauses (default: available=1, meaning available_int >= 1)
 	// Reference: rag/utils/es_conn.py L60-L78
-	filterClauses := buildFilterClauses(req.KbIDs, req.DocIDs, 1)
+	// For skill indices, use status filter instead of available_int
+	var filterClauses []map[string]interface{}
+	if len(req.IndexNames) > 0 && strings.HasPrefix(req.IndexNames[0], "skill_") {
+		filterClauses = buildSkillFilterClauses()
+	} else {
+		filterClauses = buildFilterClauses(req.KbIDs, req.DocIDs, 1)
+	}
 
 	// Build search query body
 	queryBody := make(map[string]interface{})
@@ -94,16 +100,28 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 		matchText = req.Question
 	}
 
+	// Check if this is a skill index
+	isSkillIndex := len(req.IndexNames) > 0 && strings.HasPrefix(req.IndexNames[0], "skill_")
+
 	var vectorFieldName string
 	if req.KeywordOnly || len(req.Vector) == 0 {
 		// Keyword-only search
-		queryBody["query"] = buildESKeywordQuery(matchText, filterClauses, 1.0)
+		if isSkillIndex {
+			queryBody["query"] = buildSkillKeywordQuery(matchText, filterClauses, 1.0)
+		} else {
+			queryBody["query"] = buildESKeywordQuery(matchText, filterClauses, 1.0)
+		}
 	} else {
 		// Hybrid search: keyword + vector
 		// Calculate text weight
 		textWeight := 1.0 - req.VectorSimilarityWeight
 		// Build boolean query for text match and filters
-		boolQuery := buildESKeywordQuery(matchText, filterClauses, 1.0)
+		var boolQuery map[string]interface{}
+		if isSkillIndex {
+			boolQuery = buildSkillKeywordQuery(matchText, filterClauses, 1.0)
+		} else {
+			boolQuery = buildESKeywordQuery(matchText, filterClauses, 1.0)
+		}
 		// Add boost to the bool query (as in Python code)
 		if boolMap, ok := boolQuery["bool"].(map[string]interface{}); ok {
 			boolMap["boost"] = textWeight
@@ -138,6 +156,14 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 	queryBody["size"] = limit
 	queryBody["from"] = offset
 
+	// Add sorting if specified
+	if req.OrderBy != "" {
+		sort := parseOrderBy(req.OrderBy)
+		if len(sort) > 0 {
+			queryBody["sort"] = sort
+		}
+	}
+
 	// Serialize query
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(queryBody); err != nil {
@@ -165,8 +191,12 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 		bodyBytes, err := io.ReadAll(res.Body)
 		if err != nil {
 			logger.Error("Elasticsearch failed to read error response body", err)
-		} else {
-			logger.Warn("Elasticsearch error response", zap.String("body", string(bodyBytes)))
+			return nil, fmt.Errorf("Elasticsearch returned error: %s", res.Status())
+		}
+		logger.Warn("Elasticsearch error response", zap.String("body", string(bodyBytes)))
+		reason := extractErrorReason(bodyBytes)
+		if reason != "" {
+			return nil, fmt.Errorf("Elasticsearch error: %s", reason)
 		}
 		return nil, fmt.Errorf("Elasticsearch returned error: %s", res.Status())
 	}
@@ -288,8 +318,12 @@ func (e *elasticsearchEngine) searchLegacy(ctx context.Context, searchReq *Searc
 		bodyBytes, err := io.ReadAll(res.Body)
 		if err != nil {
 			logger.Error("Elasticsearch failed to read error response body", err)
-		} else {
-			logger.Warn("Elasticsearch error response", zap.String("body", string(bodyBytes)))
+			return nil, fmt.Errorf("Elasticsearch returned error: %s", res.Status())
+		}
+		logger.Warn("Elasticsearch error response", zap.String("body", string(bodyBytes)))
+		reason := extractErrorReason(bodyBytes)
+		if reason != "" {
+			return nil, fmt.Errorf("Elasticsearch error: %s", reason)
 		}
 		return nil, fmt.Errorf("Elasticsearch returned error: %s", res.Status())
 	}
@@ -380,22 +414,74 @@ func buildFilterClauses(kbIDs, docIDs []string, available int) []map[string]inte
 	return filters
 }
 
+// buildSkillFilterClauses builds ES filter clauses for skill index
+// Skill index uses 'status' field instead of 'available_int'
+func buildSkillFilterClauses() []map[string]interface{} {
+	// Filter for active skills (status = "1")
+	return []map[string]interface{}{
+		{
+			"term": map[string]interface{}{
+				"status": "1",
+			},
+		},
+	}
+}
+
 // buildESKeywordQuery builds keyword-only search query for ES
 // Uses query_string if matchText is in query_string format, otherwise uses multi_match
 // boost is applied to the text match clause (query_string or multi_match)
 func buildESKeywordQuery(matchText string, filterClauses []map[string]interface{}, boost float64) map[string]interface{} {
 	var mustClause map[string]interface{}
 
-	// Use query_string for complex queries
-	queryString := map[string]interface{}{
-		"query":                matchText,
-		"fields":               []string{"title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"},
-		"type":                 "best_fields",
-		"minimum_should_match": "30%",
-		"boost":                boost,
+	// Handle wildcard query (match all)
+	if matchText == "*" || matchText == "" {
+		mustClause = map[string]interface{}{
+			"match_all": map[string]interface{}{},
+		}
+	} else {
+		// Use query_string for complex queries
+		queryString := map[string]interface{}{
+			"query":                matchText,
+			"fields":               []string{"title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"},
+			"type":                 "best_fields",
+			"minimum_should_match": "30%",
+			"boost":                boost,
+		}
+		mustClause = map[string]interface{}{
+			"query_string": queryString,
+		}
 	}
-	mustClause = map[string]interface{}{
-		"query_string": queryString,
+
+	return map[string]interface{}{
+		"bool": map[string]interface{}{
+			"must":   mustClause,
+			"filter": filterClauses,
+		},
+	}
+}
+
+// buildSkillKeywordQuery builds keyword-only search query for skill index
+// Skill index uses different field names: name_tks, tags_tks, description_tks, content_tks
+func buildSkillKeywordQuery(matchText string, filterClauses []map[string]interface{}, boost float64) map[string]interface{} {
+	var mustClause map[string]interface{}
+
+	// Handle wildcard query (match all)
+	if matchText == "*" || matchText == "" {
+		mustClause = map[string]interface{}{
+			"match_all": map[string]interface{}{},
+		}
+	} else {
+		// Use query_string for complex queries with skill-specific fields
+		queryString := map[string]interface{}{
+			"query":                matchText,
+			"fields":               []string{"name_tks^10", "tags_tks^5", "description_tks^3", "content_tks^1"},
+			"type":                 "best_fields",
+			"minimum_should_match": "30%",
+			"boost":                boost,
+		}
+		mustClause = map[string]interface{}{
+			"query_string": queryString,
+		}
 	}
 
 	return map[string]interface{}{
@@ -470,6 +556,50 @@ func BuildRangeQuery(field string, from, to interface{}) map[string]interface{} 
 			field: rangeQuery,
 		},
 	}
+}
+
+// parseOrderBy parses the OrderBy string into ES sort format
+// Format: "field1 desc, field2 asc" or "field1" (defaults to asc)
+func parseOrderBy(orderBy string) []map[string]interface{} {
+	if orderBy == "" {
+		return nil
+	}
+
+	var result []map[string]interface{}
+	fields := strings.Split(orderBy, ",")
+
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+
+		// Check for direction
+		direction := "asc"
+		if strings.HasSuffix(strings.ToLower(field), " desc") {
+			direction = "desc"
+			field = strings.TrimSpace(field[:len(field)-5])
+		} else if strings.HasSuffix(strings.ToLower(field), " asc") {
+			field = strings.TrimSpace(field[:len(field)-4])
+		}
+
+		if field == "" {
+			continue
+		}
+
+		// Special handling for _score (relevance)
+		if field == "_score" || field == "score" {
+			result = append(result, map[string]interface{}{
+				"_score": direction,
+			})
+		} else {
+			result = append(result, map[string]interface{}{
+				field: direction,
+			})
+		}
+	}
+
+	return result
 }
 
 // BuildBoolQuery builds a bool query

@@ -56,12 +56,20 @@ type DocEngine interface {
 
 	// Operations for both dataset and metadata tables
 	Delete(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error)
-    DropTable(ctx context.Context, indexName string) error
+	DropTable(ctx context.Context, indexName string) error
 	TableExists(ctx context.Context, indexName string) (bool, error)
+
+	// Document operations (used by skill indexing)
+	IndexDocument(ctx context.Context, indexName, docID string, doc interface{}) error
+	DeleteDocument(ctx context.Context, indexName, docID string) error
+	BulkIndex(ctx context.Context, indexName string, docs []interface{}) (interface{}, error)
 
 	// Health check
 	Ping(ctx context.Context) error
 	Close() error
+
+	// GetType returns the engine type
+	GetType() string
 }
 
 // Type returns the engine type (helper method for runtime type checking)

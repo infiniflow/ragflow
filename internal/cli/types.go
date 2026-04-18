@@ -108,6 +108,7 @@ const (
 	TokenSize
 	TokenDocMeta
 	TokenName // For ALTER PROVIDER <name> NAME <new_name>
+	TokenPool
 	TokenInstance
 	TokenInstances
 	TokenDisable
@@ -134,11 +135,14 @@ const (
 	TokenError
 	TokenFatal
 	TokenPanic
+	TokenMount
+	TokenUnmount
 	// Literals
 	TokenIdentifier
 	TokenQuotedString
 	TokenInteger
 	TokenFloat
+	TokenNumber = TokenInteger // Alias for integer tokens in path parsing (e.g., version numbers like 1.0.0)
 
 	// Special
 	TokenSemicolon

@@ -108,7 +108,7 @@ func (l *Lexer) NextToken() Token {
 		tok.Type = TokenEOF
 		tok.Value = ""
 	default:
-		if isLetter(l.ch) {
+		if isLetter(l.ch) || l.ch == '_' {
 			ident := l.readIdentifier()
 			return l.lookupIdent(ident)
 		} else if isDigit(l.ch) {
@@ -407,6 +407,10 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenFatal, Value: ident}
 	case "PANIC":
 		return Token{Type: TokenPanic, Value: ident}
+	case "MOUNT":
+		return Token{Type: TokenMount, Value: ident}
+	case "UNMOUNT":
+		return Token{Type: TokenUnmount, Value: ident}
 	default:
 		return Token{Type: TokenIdentifier, Value: ident}
 	}

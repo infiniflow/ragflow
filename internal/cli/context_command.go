@@ -18,9 +18,11 @@ package cli
 
 import (
 	"fmt"
+
+	"ragflow/internal/cli/fuse"
 )
 
-func (c *RAGFlowClient) ContextList(cmd *Command) (ResponseIf, error) {
+func (c *RAGFlowClient) ContextMount(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
@@ -28,108 +30,62 @@ func (c *RAGFlowClient) ContextList(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	var path string
-	var ok bool
-	if cmd.Params["path"] != nil {
-		path, ok = cmd.Params["path"].(string)
-		if !ok {
-			return nil, fmt.Errorf("fail to convert 'path' to string")
-		}
+	mountpoint, ok := cmd.Params["mountpoint"].(string)
+	if !ok || mountpoint == "" {
+		return nil, fmt.Errorf("mountpoint is required")
 	}
 
-	if path == "" {
-		path = "."
+	// Get foreground option
+	foreground := false
+	if fg, ok := cmd.Params["foreground"].(bool); ok {
+		foreground = fg
 	}
 
-	var parameter string
-	if cmd.Params["parameter"] != nil {
-		parameter, ok = cmd.Params["parameter"].(string)
-		if !ok {
-			return nil, fmt.Errorf("fail to convert 'parameter' to string")
-		}
+	// Get config path
+	configPath := ""
+	if cp, ok := cmd.Params["config_path"].(string); ok {
+		configPath = cp
 	}
 
-	if parameter == "" {
-		fmt.Printf("ls %s\n", path)
-	} else {
-		fmt.Printf("ls %s -%s\n", path, parameter)
+	// Build server URL
+	serverURL := fmt.Sprintf("http://%s:%d", c.HTTPClient.Host, c.HTTPClient.Port)
+
+	// Mount options
+	opts := &fuse.MountOptions{
+		Mountpoint: mountpoint,
+		ConfigPath: configPath,
+		ServerURL:  serverURL,
+		Foreground: foreground,
 	}
 
-	// Convert to response
-	var response ContextListResponse
+	// Start mount (this blocks in foreground mode)
+	err := fuse.Mount(c.ContextEngine, opts)
+	if err != nil {
+		return nil, fmt.Errorf("mount failed: %w", err)
+	}
+
+	var response ContextMountResponse
 	response.OutputFormat = c.OutputFormat
 	response.Code = 0
-	response.Data = nil
+	response.Message = fmt.Sprintf("Mounted at %s", mountpoint)
 
 	return &response, nil
 }
 
-func (c *RAGFlowClient) ContextCat(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
-		return nil, fmt.Errorf("API token not set. Please login first")
-	}
-	if c.ServerType != "user" {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
+func (c *RAGFlowClient) ContextUnmount(cmd *Command) (ResponseIf, error) {
+	mountpoint, ok := cmd.Params["mountpoint"].(string)
+	if !ok || mountpoint == "" {
+		return nil, fmt.Errorf("mountpoint is required")
 	}
 
-	path, ok := cmd.Params["filename"].(string)
-	if !ok {
-		return nil, fmt.Errorf("fail to convert 'filename' to string")
+	if err := fuse.Unmount(mountpoint); err != nil {
+		return nil, err
 	}
 
-	fmt.Printf("cat %s\n", path)
-
-	// Convert to response
-	var response ContextListResponse
+	var response ContextUnmountResponse
 	response.OutputFormat = c.OutputFormat
 	response.Code = 0
-	response.Data = nil
-
-	return &response, nil
-}
-
-func (c *RAGFlowClient) ContextSearch(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
-		return nil, fmt.Errorf("API token not set. Please login first")
-	}
-	if c.ServerType != "user" {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	path, ok := cmd.Params["path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("fail to convert 'path' to string")
-	}
-
-	query, ok := cmd.Params["query"].(string)
-	if !ok {
-		return nil, fmt.Errorf("fail to convert 'parameter' to float64")
-	}
-
-	number := 10
-	if cmd.Params["number"] != nil {
-		number, ok = cmd.Params["number"].(int)
-		if !ok {
-			return nil, fmt.Errorf("fail to convert 'number' to int")
-		}
-	}
-
-	//threshold := 0.0
-	//if cmd.Params["threshold"] != nil {
-	//	threshold, ok = cmd.Params["threshold"].(float64)
-	//	if !ok {
-	//		return nil, fmt.Errorf("fail to convert 'threshold' to float64")
-	//	}
-	//}
-
-	fmt.Printf("search query: %s, path: %s, number: %d\n", query, path, number)
-
-	// Convert to response
-	var response ContextSearchResponse
-	response.OutputFormat = c.OutputFormat
-	response.Code = 0
-	response.Total = 0
-	response.Data = nil
+	response.Message = fmt.Sprintf("Unmounted %s", mountpoint)
 
 	return &response, nil
 }

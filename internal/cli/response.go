@@ -314,3 +314,64 @@ func (r *ContextSearchResponse) PrintOut() {
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
 	}
 }
+
+// ContextCatResponse represents the response for cat command
+type ContextCatResponse struct {
+	Code         int          `json:"code"`
+	Content      string       `json:"content"`
+	Message      string       `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ContextCatResponse) Type() string                        { return "ce_cat" }
+func (r *ContextCatResponse) TimeCost() float64                   { return r.Duration }
+func (r *ContextCatResponse) SetOutputFormat(format OutputFormat) { r.OutputFormat = format }
+func (r *ContextCatResponse) PrintOut() {
+	if r.Code == 0 {
+		fmt.Println(r.Content)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+// ContextMountResponse represents the response for mount command
+type ContextMountResponse struct {
+	Code         int    `json:"code"`
+	Message      string `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ContextMountResponse) Type() string                        { return "ce_mount" }
+func (r *ContextMountResponse) TimeCost() float64                   { return r.Duration }
+func (r *ContextMountResponse) SetOutputFormat(format OutputFormat) { r.OutputFormat = format }
+func (r *ContextMountResponse) PrintOut() {
+	if r.Code == 0 {
+		fmt.Println(r.Message)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+// ContextUnmountResponse represents the response for unmount command
+type ContextUnmountResponse struct {
+	Code         int    `json:"code"`
+	Message      string `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ContextUnmountResponse) Type() string                        { return "ce_unmount" }
+func (r *ContextUnmountResponse) TimeCost() float64                   { return r.Duration }
+func (r *ContextUnmountResponse) SetOutputFormat(format OutputFormat) { r.OutputFormat = format }
+func (r *ContextUnmountResponse) PrintOut() {
+	if r.Code == 0 {
+		fmt.Println(r.Message)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}

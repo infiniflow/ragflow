@@ -73,7 +73,18 @@ func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID stri
 	// Parse composite model name to extract model name and provider
 	modelName, provider, err := parseModelName(compositeModelName)
 	if err != nil {
-		return nil, err
+		// If provider is missing (e.g., "default" instead of "default@OpenAI"),
+		// try to find the provider from tenant LLM configuration
+		if provider == "" && modelName != "" {
+			// Try to find matching embedding model in tenant LLM configuration
+			tenantLLM, lookupErr := dao.NewTenantLLMDAO().GetByTenantIDAndLLMName(tenantID, modelName)
+			if lookupErr != nil {
+				return nil, fmt.Errorf("provider name missing in model name: %s (also failed to find provider: %w)", compositeModelName, lookupErr)
+			}
+			provider = tenantLLM.LLMFactory
+		} else {
+			return nil, err
+		}
 	}
 
 	// Get API key and configuration
@@ -92,7 +103,7 @@ func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID stri
 	if providerConfig == nil || providerConfig.DefaultURL == "" {
 		return nil, fmt.Errorf("no API base found for provider %s", provider)
 	}
-	apiBase := fmt.Sprintf("%sembeddings/", providerConfig.DefaultURL)
+	apiBase := providerConfig.DefaultURL
 
 	return models.CreateEmbeddingModel(provider, *apiKey, apiBase, modelName, p.httpClient)
 }

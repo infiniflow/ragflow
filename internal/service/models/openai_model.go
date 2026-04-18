@@ -17,11 +17,13 @@
 package models
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"ragflow/internal/entity"
+	"time"
 
 	"strings"
 )
@@ -64,7 +66,11 @@ func (m *openAIEmbeddingModel) Encode(texts []string) ([][]float64, error) {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", m.apiBase+"/embeddings", strings.NewReader(string(jsonData)))
+	// Use context with timeout to prevent indefinite blocking on API calls
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", m.apiBase+"/embeddings", strings.NewReader(string(jsonData)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -109,6 +115,12 @@ func (m *openAIEmbeddingModel) EncodeQuery(query string) ([]float64, error) {
 		return nil, fmt.Errorf("no embedding returned")
 	}
 	return embeddings[0], nil
+}
+
+// MaxLength returns the maximum input length for the model
+// OpenAI embedding models typically support 8191 tokens
+func (m *openAIEmbeddingModel) MaxLength() int {
+	return 8191
 }
 
 // init registers the OpenAI embedding model factory
