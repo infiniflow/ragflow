@@ -6,7 +6,7 @@
     "zh": "书籍"
     },
     "description": {
-    "en": "This template segments parsed files based on the structure of a book. It is suitable for documents with clearly defined chapters and sections, such as books, long-form manuscripts, literary works, and other chapter-based texts.",
+    "en": "This template segments parsed files by book structure. Best for books, long-form manuscripts, literary works, and other documents with defined chapters and sections.",
     "de": "Diese Vorlage segmentiert die geparste Datei anhand der Struktur eines Buches. Sie eignet sich für Dokumente mit klar definierten Kapiteln und Abschnitten, wie Bücher, längere Manuskripte, literarische Werke und andere kapitelbasierte Texte.",
     "zh": "此模板将解析后的文件按书籍结构进行切片，适用于具有清晰章节层级的文档类型，如书籍、长篇手稿、文学作品及其他按章节组织的文本。"
     },

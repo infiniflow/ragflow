@@ -206,17 +206,20 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
         del req["connectors"]
 
     if req.get("parser_config"):
-        parser_config = req["parser_config"]
-        req_ext_fields = parser_config.pop("ext", {})
-        parser_config.update(req_ext_fields)
-        req["parser_config"] = deep_merge(kb.parser_config, parser_config)
-
         # Flatten parent_child config into children_delimiter for the execution layer
         pc = req["parser_config"].get("parent_child", {})
         if pc.get("use_parent_child"):
             req["parser_config"]["children_delimiter"] = pc.get("children_delimiter", "\n")
-        elif pc:
+            req["parser_config"]["enable_children"] = pc.get("use_parent_child", True)
+        else:
             req["parser_config"]["children_delimiter"] = ""
+            req["parser_config"]["enable_children"] = False
+            req["parser_config"]["parent_child"] = {}
+
+        parser_config = req["parser_config"]
+        req_ext_fields = parser_config.pop("ext", {})
+        parser_config.update(req_ext_fields)
+        req["parser_config"] = deep_merge(kb.parser_config, parser_config)
 
     if (chunk_method := req.get("parser_id")) and chunk_method != kb.parser_id:
         if not req.get("parser_config"):
