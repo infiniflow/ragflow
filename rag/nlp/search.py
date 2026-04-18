@@ -654,6 +654,7 @@ class Dealer:
             chunk = self.dataStore.get(cid, idx_nms[0], kb_ids)
             if not chunk:
                 continue
+            has_highlights = any(ck.get("highlight") for ck in chunks)
             d = {
                 "chunk_id": cid,
                 "content_ltks": chunk["content_ltks"],
@@ -670,6 +671,8 @@ class Dealer:
                 "positions": chunk.get("position_int", []),
                 "doc_type_kwd": chunk.get("doc_type_kwd", "")
             }
+            if has_highlights:
+                d["highlight"] = chunk["content_with_weight"]
             for k in chunk.keys():
                 if k[-4:] == "_vec":
                     d["vector"] = chunk[k]
@@ -702,6 +705,7 @@ class Dealer:
         vector_size = 1024
         for id, cks in mom_chunks.items():
             chunk = self.dataStore.get(id, idx_nms[0], [ck["kb_id"] for ck in cks])
+            child_highlights = [ck["highlight"] for ck in cks if ck.get("highlight")]
             d = {
                 "chunk_id": id,
                 "content_ltks": " ".join([ck["content_ltks"] for ck in cks]),
@@ -718,6 +722,8 @@ class Dealer:
                 "positions": chunk.get("position_int", []),
                 "doc_type_kwd": chunk.get("doc_type_kwd", "")
             }
+            if child_highlights:
+                d["highlight"] = " ".join(child_highlights)
             for k in cks[0].keys():
                 if k[-4:] == "_vec":
                     d["vector"] = cks[0][k]

@@ -27,6 +27,15 @@
       "features": {}
     },
     {
+      "name": "glm-4.6v-Flash",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "image2text"
+      ],
+      "features": {}
+    },
+    {
       "name": "glm-4.5-x",
       "max_tokens": 128000,
       "model_types": [

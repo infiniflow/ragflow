@@ -6,7 +6,7 @@
     "zh": "通用"
     },
     "description": {
-    "en": "This template uses a general segmentation strategy and splits parsed files based on token count. It is suitable for a wide range of document types with no fixed structural patterns.",
+    "en": "This general-purpose template segments parsed files by token count. Ideal for unstructured documents that lack a fixed layout.",
     "de": "Diese Vorlage verwendet eine allgemeine Segmentierungsstrategie und teilt die geparste Datei anhand der Token-Anzahl auf. Sie eignet sich für verschiedenste Dokumenttypen, wenn kein spezifisches Strukturmuster erforderlich ist.",
     "zh": "此模板采用通用切分逻辑，按照 token 数量对解析后的文件进行切片，适用于不依赖特定结构模式的各类文档。"
     },

@@ -1,6 +1,5 @@
 import { useFetchSessionsByCanvasId } from '@/hooks/use-agent-request';
 import { IAgentLogResponse } from '@/interfaces/database/agent';
-import { generateConversationId } from '@/utils/chat';
 import { useCallback, useEffect, useState } from 'react';
 import { useExploreUrlParams } from './use-explore-url-params';
 
@@ -14,11 +13,10 @@ export const useSelectDerivedSessionList = () => {
   const { setSessionId } = useExploreUrlParams();
 
   const addTemporarySession = useCallback(() => {
-    const sessionId = generateConversationId();
     const now = Date.now() / 1000;
 
     const tempSession: IAgentLogResponse & { is_new?: boolean } = {
-      id: sessionId,
+      id: '',
       message: [],
       create_date: '',
       create_time: now,

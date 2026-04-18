@@ -373,6 +373,75 @@ func (c *RAGFlowClient) ShowModel(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+func (c *RAGFlowClient) SetDefaultModel(cmd *Command) (ResponseIf, error) {
+
+	modeType, ok := cmd.Params["model_type"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model_type not provided")
+	}
+	modelProvider, ok := cmd.Params["model_provider"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model_provider not provided")
+	}
+	modelInstance, ok := cmd.Params["model_instance"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model_instance not provided")
+	}
+	modelName, ok := cmd.Params["model_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model_name not provided")
+	}
+
+	payload := map[string]interface{}{
+		"model_type":     modeType,
+		"model_provider": modelProvider,
+		"model_instance": modelInstance,
+		"model_name":     modelName,
+	}
+
+	resp, err := c.HTTPClient.Request("PATCH", "/models", true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set default model: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to set default model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to set default model: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) ListDefaultModels(cmd *Command) (ResponseIf, error) {
+	resp, err := c.HTTPClient.Request("GET", "/models", true, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list default models: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list default models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to list default models: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // readPassword reads password from terminal without echoing
 func ReadPassword() (string, error) {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {

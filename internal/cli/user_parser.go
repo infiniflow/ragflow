@@ -1597,35 +1597,49 @@ func (p *Parser) parseSetVariable() (*Command, error) {
 func (p *Parser) parseSetDefault() (*Command, error) {
 	p.nextToken() // consume DEFAULT
 
-	var modelType, modelID string
+	var modelType, modelProvider, modelInstance, modelName string
+	var err error
 
 	switch p.curToken.Type {
 	case TokenLLM:
-		modelType = "llm_id"
+		modelType = "chat"
 	case TokenVLM:
-		modelType = "img2txt_id"
+		modelType = "image2text"
 	case TokenEmbedding:
-		modelType = "embd_id"
+		modelType = "embedding"
 	case TokenReranker:
-		modelType = "reranker_id"
+		modelType = "rerank"
 	case TokenASR:
-		modelType = "asr_id"
+		modelType = "asr"
 	case TokenTTS:
-		modelType = "tts_id"
+		modelType = "tts"
 	default:
 		return nil, fmt.Errorf("unknown model type: %s", p.curToken.Value)
 	}
 
 	p.nextToken()
-	id, err := p.parseQuotedString()
+	modelProvider, err = p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	modelID = id
+
+	p.nextToken()
+	modelInstance, err = p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	p.nextToken()
+	modelName, err = p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
 
 	cmd := NewCommand("set_default_model")
 	cmd.Params["model_type"] = modelType
-	cmd.Params["model_id"] = modelID
+	cmd.Params["model_provider"] = modelProvider
+	cmd.Params["model_instance"] = modelInstance
+	cmd.Params["model_name"] = modelName
 
 	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
@@ -2600,7 +2614,6 @@ func (p *Parser) parseRemoveTags() (*Command, error) {
 
 	return cmd, nil
 }
-
 
 // parseRemoveChunk parses:
 //   - REMOVE CHUNKS 'chunk_id1', 'chunk_id2' FROM DOCUMENT 'doc_id';

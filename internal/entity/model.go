@@ -149,7 +149,7 @@ type Provider struct {
 	Tags        string           `json:"tags"`
 	URL         string           `json:"url"`
 	URLSuffix   models.URLSuffix `json:"url_suffix"`
-	Models      []Model          `json:"models"`
+	Models      []*Model         `json:"models"`
 	ModelDriver models.ModelDriver
 }
 
@@ -547,7 +547,7 @@ func (pm *ProviderManager) FindProvider(name string) *Provider {
 func (pm *ProviderManager) findModel(provider *Provider, modelName string) *Model {
 	for i := range provider.Models {
 		if strings.EqualFold(provider.Models[i].Name, modelName) {
-			return &provider.Models[i]
+			return provider.Models[i]
 		}
 	}
 	return nil

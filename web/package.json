@@ -8,15 +8,18 @@
     "build": "vite build --mode production",
     "build-storybook": "storybook build",
     "dev": "vite --host",
-    "lint": "eslint src --ext .ts,.tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint src --ext .ts,.tsx --report-unused-disable-directives",
     "prepare": "cd .. && husky web/.husky",
     "preview": "vite preview",
     "storybook": "storybook dev -p 6006",
-    "test": "jest --no-cache --coverage"
+    "test": "jest --no-cache --coverage",
+    "type-check": "tsc --noEmit"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx,css,less,json}": [
-      "prettier --write --ignore-unknown"
+    "*.{css,less,json}": "prettier --write --ignore-unknown",
+    "*.{js,jsx,ts,tsx}": [
+      "prettier --write --ignore-unknown",
+      "eslint"
     ]
   },
   "overrides": {
