@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import copy
 import inspect
 import json
@@ -54,8 +55,9 @@ from api.db.services.canvas_service import completion as agent_completion
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
 @login_required
-def templates():
-    return get_json_result(data=[c.to_dict() for c in CanvasTemplateService.get_all()])
+async def templates():
+    all_templates = await thread_pool_exec(CanvasTemplateService.get_all)
+    return get_json_result(data=[c.to_dict() for c in all_templates])
 
 
 @manager.route('/rm', methods=['POST'])  # noqa: F821
@@ -64,11 +66,11 @@ def templates():
 async def rm():
     req = await get_request_json()
     for i in req["canvas_ids"]:
-        if not UserCanvasService.accessible(i, current_user.id):
+        if not await thread_pool_exec(UserCanvasService.accessible, i, current_user.id):
             return get_json_result(
                 data=False, message='Only owner of canvas authorized for this operation.',
                 code=RetCode.OPERATING_ERROR)
-        UserCanvasService.delete_by_id(i)
+        await thread_pool_exec(UserCanvasService.delete_by_id, i)
     return get_json_result(data=True)
 
 
@@ -79,31 +81,31 @@ async def save():
     req = await get_request_json()
     req['release'] = bool(req.get("release", ""))
     try:
-        req["dsl"] = CanvasReplicaService.normalize_dsl(req["dsl"])
+        req["dsl"] = await thread_pool_exec(CanvasReplicaService.normalize_dsl, req["dsl"])
     except ValueError as e:
         return get_data_error_result(message=str(e))
     cate = req.get("canvas_category", CanvasCategory.Agent)
     if "id" not in req:
         req["user_id"] = current_user.id
-        if UserCanvasService.query(user_id=current_user.id, title=req["title"].strip(), canvas_category=cate):
+        if await thread_pool_exec(UserCanvasService.query, user_id=current_user.id, title=req["title"].strip(), canvas_category=cate):
             return get_data_error_result(message=f"{req['title'].strip()} already exists.")
         req["id"] = get_uuid()
-        if not UserCanvasService.save(**req):
+        if not await thread_pool_exec(UserCanvasService.save, **req):
             return get_data_error_result(message="Fail to save canvas.")
     else:
-        if not UserCanvasService.accessible(req["id"], current_user.id):
+        if not await thread_pool_exec(UserCanvasService.accessible, req["id"], current_user.id):
             return get_json_result(
                 data=False, message='Only owner of canvas authorized for this operation.',
                 code=RetCode.OPERATING_ERROR)
-        UserCanvasService.update_by_id(req["id"], req)
+        await thread_pool_exec(UserCanvasService.update_by_id, req["id"], req)
     # save version
-    UserCanvasVersionService.save_or_replace_latest(
+    await thread_pool_exec(UserCanvasVersionService.save_or_replace_latest,
         user_canvas_id=req["id"],
         dsl=req["dsl"],
         title=UserCanvasVersionService.build_version_title(getattr(current_user, "nickname", current_user.id), req.get("title")),
         release=req.get("release"),
     )
-    replica_ok = CanvasReplicaService.replace_for_set(
+    replica_ok = await thread_pool_exec(CanvasReplicaService.replace_for_set,
         canvas_id=req["id"],
         tenant_id=str(current_user.id),
         runtime_user_id=str(current_user.id),
@@ -118,15 +120,15 @@ async def save():
 
 @manager.route('/get/<canvas_id>', methods=['GET'])  # noqa: F821
 @login_required
-def get(canvas_id):
-    if not UserCanvasService.accessible(canvas_id, current_user.id):
+async def get(canvas_id):
+    if not await thread_pool_exec(UserCanvasService.accessible, canvas_id, current_user.id):
         return get_data_error_result(message="canvas not found.")
-    e, c = UserCanvasService.get_by_canvas_id(canvas_id)
+    e, c = await thread_pool_exec(UserCanvasService.get_by_canvas_id, canvas_id)
     if not e:
         return get_data_error_result(message="canvas not found.")
     try:
         # DELETE
-        CanvasReplicaService.bootstrap(
+        await thread_pool_exec(CanvasReplicaService.bootstrap,
             canvas_id=canvas_id,
             tenant_id=str(current_user.id),
             runtime_user_id=str(current_user.id),
@@ -139,7 +141,7 @@ def get(canvas_id):
 
     # Get the last publication time (latest released version's update_time)
     last_publish_time = None
-    versions = UserCanvasVersionService.list_by_canvas_id(canvas_id)
+    versions = await thread_pool_exec(UserCanvasVersionService.list_by_canvas_id, canvas_id)
     if versions:
         released_versions = [v for v in versions if v.release]
         if released_versions:
@@ -159,29 +161,29 @@ def get(canvas_id):
 
     # For pipeline type, get associated datasets
     if c.get("canvas_category") == CanvasCategory.DataFlow:
-        datasets = list(KnowledgebaseService.query(pipeline_id=canvas_id))
+        datasets = list(await thread_pool_exec(KnowledgebaseService.query, pipeline_id=canvas_id))
         c["datasets"] = [{"id": d.id, "name": d.name, "avatar": d.avatar} for d in datasets]
 
     return get_json_result(data=c)
 
 
 @manager.route('/getsse/<canvas_id>', methods=['GET'])  # type: ignore # noqa: F821
-def getsse(canvas_id):
+async def getsse(canvas_id):
     token = request.headers.get('Authorization').split()
     if len(token) != 2:
         return get_data_error_result(message='Authorization is not valid!')
     token = token[1]
-    objs = APIToken.query(beta=token)
+    objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_data_error_result(message='Authentication error: API key is invalid!"')
     tenant_id = objs[0].tenant_id
-    if not UserCanvasService.query(user_id=tenant_id, id=canvas_id):
+    if not await thread_pool_exec(UserCanvasService.query, user_id=tenant_id, id=canvas_id):
         return get_json_result(
             data=False,
             message='Only owner of canvas authorized for this operation.',
             code=RetCode.OPERATING_ERROR
         )
-    e, c = UserCanvasService.get_by_id(canvas_id)
+    e, c = await thread_pool_exec(UserCanvasService.get_by_id, canvas_id)
     if not e or c.user_id != tenant_id:
         return get_data_error_result(message="canvas not found.")
     return get_json_result(data=c.to_dict())
@@ -203,7 +205,7 @@ async def run():
             data=False, message='Only owner of canvas authorized for this operation.',
             code=RetCode.OPERATING_ERROR)
 
-    replica_payload = CanvasReplicaService.load_for_run(
+    replica_payload = await thread_pool_exec(CanvasReplicaService.load_for_run,
         canvas_id=req["id"],
         tenant_id=tenant_id,
         runtime_user_id=user_id,
@@ -237,7 +239,7 @@ async def run():
             async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
                 yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
-            commit_ok = CanvasReplicaService.commit_after_run(
+            commit_ok = await thread_pool_exec(CanvasReplicaService.commit_after_run,
                 canvas_id=req["id"],
                 tenant_id=tenant_id,
                 runtime_user_id=user_id,
@@ -316,7 +318,7 @@ async def exp_agent_completion(canvas_id):
 @login_required
 async def rerun():
     req = await get_request_json()
-    doc = PipelineOperationLogService.get_documents_info(req["id"])
+    doc = await thread_pool_exec(PipelineOperationLogService.get_documents_info, req["id"])
     if not doc:
         return get_data_error_result(message="Document not found.")
     doc = doc[0]
@@ -328,22 +330,22 @@ async def rerun():
     doc["progress_msg"] = ""
     doc["chunk_num"] = 0
     doc["token_num"] = 0
-    DocumentService.clear_chunk_num_when_rerun(doc["id"])
-    DocumentService.update_by_id(id, doc)
-    TaskService.filter_delete([Task.doc_id == id])
+    await thread_pool_exec(DocumentService.clear_chunk_num_when_rerun, doc["id"])
+    await thread_pool_exec(DocumentService.update_by_id, doc["id"], doc)
+    await thread_pool_exec(TaskService.filter_delete, [Task.doc_id == doc["id"]])
 
     dsl = req["dsl"]
     dsl["path"] = [req["component_id"]]
-    PipelineOperationLogService.update_by_id(req["id"], {"dsl": dsl})
-    queue_dataflow(tenant_id=current_user.id, flow_id=req["id"], task_id=get_uuid(), doc_id=doc["id"], priority=0, rerun=True)
+    await thread_pool_exec(PipelineOperationLogService.update_by_id, req["id"], {"dsl": dsl})
+    await thread_pool_exec(queue_dataflow, tenant_id=current_user.id, flow_id=req["id"], task_id=get_uuid(), doc_id=doc["id"], priority=0, rerun=True)
     return get_json_result(data=True)
 
 
 @manager.route('/cancel/<task_id>', methods=['PUT'])  # noqa: F821
 @login_required
-def cancel(task_id):
+async def cancel(task_id):
     try:
-        REDIS_CONN.set(f"{task_id}-cancel", "x")
+        await thread_pool_exec(REDIS_CONN.set, f"{task_id}-cancel", "x")
     except Exception as e:
         logging.exception(e)
     return get_json_result(data=True)
@@ -354,19 +356,19 @@ def cancel(task_id):
 @login_required
 async def reset():
     req = await get_request_json()
-    if not UserCanvasService.accessible(req["id"], current_user.id):
+    if not await thread_pool_exec(UserCanvasService.accessible, req["id"], current_user.id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
             code=RetCode.OPERATING_ERROR)
     try:
-        e, user_canvas = UserCanvasService.get_by_id(req["id"])
+        e, user_canvas = await thread_pool_exec(UserCanvasService.get_by_id, req["id"])
         if not e:
             return get_data_error_result(message="canvas not found.")
 
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id, canvas_id=user_canvas.id)
         canvas.reset()
         req["dsl"] = json.loads(str(canvas))
-        UserCanvasService.update_by_id(req["id"], {"dsl": req["dsl"]})
+        await thread_pool_exec(UserCanvasService.update_by_id, req["id"], {"dsl": req["dsl"]})
         return get_json_result(data=req["dsl"])
     except Exception as e:
         return server_error_response(e)
@@ -374,7 +376,7 @@ async def reset():
 
 @manager.route("/upload/<canvas_id>", methods=["POST"])  # noqa: F821
 async def upload(canvas_id):
-    e, cvs = UserCanvasService.get_by_canvas_id(canvas_id)
+    e, cvs = await thread_pool_exec(UserCanvasService.get_by_canvas_id, canvas_id)
     if not e:
         return get_data_error_result(message="canvas not found.")
 
@@ -383,8 +385,8 @@ async def upload(canvas_id):
     file_objs = files.getlist("file") if files and files.get("file") else []
     try:
         if len(file_objs) == 1:
-            return get_json_result(data=FileService.upload_info(user_id, file_objs[0], request.args.get("url")))
-        results = [FileService.upload_info(user_id, f) for f in file_objs]
+            return get_json_result(data=await thread_pool_exec(FileService.upload_info, user_id, file_objs[0], request.args.get("url")))
+        results = await asyncio.gather(*[thread_pool_exec(FileService.upload_info, user_id, f) for f in file_objs])
         return get_json_result(data=results)
     except Exception as e:
         return server_error_response(e)
@@ -392,14 +394,14 @@ async def upload(canvas_id):
 
 @manager.route('/input_form', methods=['GET'])  # noqa: F821
 @login_required
-def input_form():
+async def input_form():
     cvs_id = request.args.get("id")
     cpn_id = request.args.get("component_id")
     try:
-        e, user_canvas = UserCanvasService.get_by_id(cvs_id)
+        e, user_canvas = await thread_pool_exec(UserCanvasService.get_by_id, cvs_id)
         if not e:
             return get_data_error_result(message="canvas not found.")
-        if not UserCanvasService.query(user_id=current_user.id, id=cvs_id):
+        if not await thread_pool_exec(UserCanvasService.query, user_id=current_user.id, id=cvs_id):
             return get_json_result(
                 data=False, message='Only owner of canvas authorized for this operation.',
                 code=RetCode.OPERATING_ERROR)
@@ -415,12 +417,12 @@ def input_form():
 @login_required
 async def debug():
     req = await get_request_json()
-    if not UserCanvasService.accessible(req["id"], current_user.id):
+    if not await thread_pool_exec(UserCanvasService.accessible, req["id"], current_user.id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
             code=RetCode.OPERATING_ERROR)
     try:
-        e, user_canvas = UserCanvasService.get_by_id(req["id"])
+        e, user_canvas = await thread_pool_exec(UserCanvasService.get_by_id, req["id"])
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id, canvas_id=user_canvas.id)
         canvas.reset()
         canvas.message_id = get_uuid()
@@ -555,9 +557,10 @@ async def test_db_connect():
 #api get list version dsl of canvas
 @manager.route('/getlistversion/<canvas_id>', methods=['GET'])  # noqa: F821
 @login_required
-def getlistversion(canvas_id):
+async def getlistversion(canvas_id):
     try:
-        versions =sorted([c.to_dict() for c in UserCanvasVersionService.list_by_canvas_id(canvas_id)], key=lambda x: x["update_time"]*-1)
+        all_versions = await thread_pool_exec(UserCanvasVersionService.list_by_canvas_id, canvas_id)
+        versions = sorted([c.to_dict() for c in all_versions], key=lambda x: x["update_time"]*-1)
         return get_json_result(data=versions)
     except Exception as e:
         return get_data_error_result(message=f"Error getting history files: {e}")
@@ -566,9 +569,9 @@ def getlistversion(canvas_id):
 #api get version dsl of canvas
 @manager.route('/getversion/<version_id>', methods=['GET'])  # noqa: F821
 @login_required
-def getversion( version_id):
+async def getversion(version_id):
     try:
-        e, version = UserCanvasVersionService.get_by_id(version_id)
+        e, version = await thread_pool_exec(UserCanvasVersionService.get_by_id, version_id)
         if version:
             return get_json_result(data=version.to_dict())
     except Exception as e:
@@ -577,7 +580,7 @@ def getversion( version_id):
 
 @manager.route('/list', methods=['GET'])  # noqa: F821
 @login_required
-def list_canvas():
+async def list_canvas():
     keywords = request.args.get("keywords", "")
     page_number = int(request.args.get("page", 0))
     items_per_page = int(request.args.get("page_size", 0))
@@ -589,15 +592,15 @@ def list_canvas():
         desc = True
     owner_ids = [id for id in request.args.get("owner_ids", "").strip().split(",") if id]
     if not owner_ids:
-        tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
+        tenants = await thread_pool_exec(TenantService.get_joined_tenants_by_user_id, current_user.id)
         tenants = [m["tenant_id"] for m in tenants]
         tenants.append(current_user.id)
-        canvas, total = UserCanvasService.get_by_tenant_ids(
+        canvas, total = await thread_pool_exec(UserCanvasService.get_by_tenant_ids,
             tenants, current_user.id, page_number,
             items_per_page, orderby, desc, keywords, canvas_category)
     else:
         tenants = owner_ids
-        canvas, total = UserCanvasService.get_by_tenant_ids(
+        canvas, total = await thread_pool_exec(UserCanvasService.get_by_tenant_ids,
             tenants, current_user.id, 0,
             0, orderby, desc, keywords, canvas_category)
     return get_json_result(data={"canvas": canvas, "total": total})
@@ -610,12 +613,12 @@ async def setting():
     req = await get_request_json()
     req["user_id"] = current_user.id
 
-    if not UserCanvasService.accessible(req["id"], current_user.id):
+    if not await thread_pool_exec(UserCanvasService.accessible, req["id"], current_user.id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
             code=RetCode.OPERATING_ERROR)
 
-    e,flow = UserCanvasService.get_by_id(req["id"])
+    e, flow = await thread_pool_exec(UserCanvasService.get_by_id, req["id"])
     if not e:
         return get_data_error_result(message="canvas not found.")
     flow = flow.to_dict()
@@ -625,16 +628,16 @@ async def setting():
         if value := req.get(key):
             flow[key] = value
 
-    num= UserCanvasService.update_by_id(req["id"], flow)
+    num = await thread_pool_exec(UserCanvasService.update_by_id, req["id"], flow)
     return get_json_result(data=num)
 
 
 @manager.route('/trace', methods=['GET'])  # noqa: F821
-def trace():
+async def trace():
     cvs_id = request.args.get("canvas_id")
     msg_id = request.args.get("message_id")
     try:
-        binary = REDIS_CONN.get(f"{cvs_id}-{msg_id}-logs")
+        binary = await thread_pool_exec(REDIS_CONN.get, f"{cvs_id}-{msg_id}-logs")
         if not binary:
             return get_json_result(data={})
 
@@ -645,9 +648,9 @@ def trace():
 
 @manager.route('/<canvas_id>/sessions', methods=['GET'])  # noqa: F821
 @login_required
-def sessions(canvas_id):
+async def sessions(canvas_id):
     tenant_id = current_user.id
-    if not UserCanvasService.accessible(canvas_id, tenant_id):
+    if not await thread_pool_exec(UserCanvasService.accessible, canvas_id, tenant_id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
             code=RetCode.OPERATING_ERROR)
@@ -666,12 +669,12 @@ def sessions(canvas_id):
         desc = True
 
     if exp_user_id:
-        sess = API4ConversationService.get_names(canvas_id, exp_user_id)
+        sess = await thread_pool_exec(API4ConversationService.get_names, canvas_id, exp_user_id)
         return get_json_result(data={"total": len(sess), "sessions": sess})
-    
+
     # dsl defaults to True in all cases except for False and false
     include_dsl = request.args.get("dsl") != "False" and request.args.get("dsl") != "false"
-    total, sess = API4ConversationService.get_list(canvas_id, tenant_id, page_number, items_per_page, orderby, desc,
+    total, sess = await thread_pool_exec(API4ConversationService.get_list, canvas_id, tenant_id, page_number, items_per_page, orderby, desc,
                                              None, user_id, include_dsl, keywords, from_date, to_date, exp_user_id=exp_user_id)
     try:
         return get_json_result(data={"total": total, "sessions": sess})
@@ -684,7 +687,7 @@ def sessions(canvas_id):
 async def set_session(canvas_id):
     req = await get_request_json()
     tenant_id = current_user.id
-    e, cvs = UserCanvasService.get_by_id(canvas_id)
+    e, cvs = await thread_pool_exec(UserCanvasService.get_by_id, canvas_id)
     assert e, "Agent not found."
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
@@ -692,7 +695,7 @@ async def set_session(canvas_id):
     canvas = Canvas(cvs.dsl, tenant_id, canvas_id, canvas_id=cvs.id)
     canvas.reset()
     # Get the version title for this canvas (using latest, not necessarily released)
-    version_title = UserCanvasVersionService.get_latest_version_title(cvs.id, release_mode=False)
+    version_title = await thread_pool_exec(UserCanvasVersionService.get_latest_version_title, cvs.id, release_mode=False)
     conv = {
         "id": session_id,
         "name": req.get("name", ""),
@@ -705,36 +708,36 @@ async def set_session(canvas_id):
         "reference": [],
         "version_title": version_title
     }
-    API4ConversationService.save(**conv)
+    await thread_pool_exec(API4ConversationService.save, **conv)
     return get_json_result(data=conv)
 
 
 @manager.route('/<canvas_id>/sessions/<session_id>', methods=['GET'])  # noqa: F821
 @login_required
-def get_session(canvas_id, session_id):
+async def get_session(canvas_id, session_id):
     tenant_id = current_user.id
-    if not UserCanvasService.accessible(canvas_id, tenant_id):
+    if not await thread_pool_exec(UserCanvasService.accessible, canvas_id, tenant_id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
             code=RetCode.OPERATING_ERROR)
-    _, conv = API4ConversationService.get_by_id(session_id)
+    _, conv = await thread_pool_exec(API4ConversationService.get_by_id, session_id)
     return get_json_result(data=conv.to_dict())
 
 
 @manager.route('/<canvas_id>/sessions/<session_id>', methods=['DELETE'])  # noqa: F821
 @login_required
-def del_session(canvas_id, session_id):
+async def del_session(canvas_id, session_id):
     tenant_id = current_user.id
-    if not UserCanvasService.accessible(canvas_id, tenant_id):
+    if not await thread_pool_exec(UserCanvasService.accessible, canvas_id, tenant_id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
             code=RetCode.OPERATING_ERROR)
-    return get_json_result(data=API4ConversationService.delete_by_id(session_id))
+    return get_json_result(data=await thread_pool_exec(API4ConversationService.delete_by_id, session_id))
 
 
 @manager.route('/prompts', methods=['GET'])  # noqa: F821
 @login_required
-def prompts():
+async def prompts():
     from rag.prompts.generator import ANALYZE_TASK_SYSTEM, ANALYZE_TASK_USER, NEXT_STEP, REFLECT, CITATION_PROMPT_TEMPLATE
 
     return get_json_result(data={
@@ -751,5 +754,5 @@ def prompts():
 async def download():
     id = request.args.get("id")
     created_by = request.args.get("created_by")
-    blob = FileService.get_blob(created_by, id)
+    blob = await thread_pool_exec(FileService.get_blob, created_by, id)
     return await make_response(blob)
