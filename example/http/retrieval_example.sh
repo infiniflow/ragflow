@@ -1,3 +1,4 @@
+#!/bin/bash
 #
 #  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
@@ -15,13 +16,27 @@
 #
 
 # Variables
-HOST_ADDRESS="http://localhost:9380"
-API_KEY="ragflow-IzZmY1MGVhYTBhMjExZWZiYTdjMDI0Mm"
-DATASET_ID="your_dataset_id"
+HOST_ADDRESS="${RAGFLOW_HOST_ADDRESS:-http://localhost:9380}"
+API_KEY="${RAGFLOW_API_KEY:-ragflow-IzZmY1MGVhYTBhMjExZWZiYTdjMDI0Mm}"
+
+# Check for jq
+if ! command -v jq &> /dev/null; then
+    echo "jq could not be found, please install it to run this example."
+    exit 1
+fi
+
+# 0. Setup: Create a dataset to retrieve from
+echo -e "\n-- Creating a dataset"
+DATASET_ID=$(curl -s --request POST \
+     --url "${HOST_ADDRESS}/api/v1/datasets" \
+     --header 'Content-Type: application/json' \
+     --header "Authorization: Bearer ${API_KEY}" \
+     --data '{"name": "retrieval_shell_example"}' | jq -r '.data.id')
+echo "Dataset ID: ${DATASET_ID}"
 
 # 1. Perform semantic retrieval from a dataset
 echo -e "\n-- Perform semantic retrieval"
-curl --request POST \
+curl -s --request POST \
      --url "${HOST_ADDRESS}/api/v1/retrieval" \
      --header 'Content-Type: application/json' \
      --header "Authorization: Bearer ${API_KEY}" \
@@ -33,11 +48,11 @@ curl --request POST \
       \"similarity_threshold\": 0.2,
       \"vector_similarity_weight\": 0.3,
       \"top_k\": 1024
-      }"
+      }" | jq .
 
 # 2. Perform retrieval with keyword search enabled
 echo -e "\n-- Perform retrieval with keyword search"
-curl --request POST \
+curl -s --request POST \
      --url "${HOST_ADDRESS}/api/v1/retrieval" \
      --header 'Content-Type: application/json' \
      --header "Authorization: Bearer ${API_KEY}" \
@@ -46,4 +61,12 @@ curl --request POST \
       \"question\": \"workflow features\",
       \"keyword\": true,
       \"top_k\": 10
-      }"
+      }" | jq .
+
+# Cleanup
+echo -e "\n-- Cleaning up dataset"
+curl -s --request DELETE \
+     --url "${HOST_ADDRESS}/api/v1/datasets" \
+     --header 'Content-Type: application/json' \
+     --header "Authorization: Bearer ${API_KEY}" \
+     --data "{\"ids\": [\"${DATASET_ID}\"]}" | jq .

@@ -22,9 +22,10 @@ within a RAGFlow dataset using the Python SDK.
 from ragflow_sdk import RAGFlow
 import sys
 import time
+import os
 
-HOST_ADDRESS = "http://127.0.0.1"
-API_KEY = "ragflow-IzZmY1MGVhYTBhMjExZWZiYTdjMDI0Mm"
+HOST_ADDRESS = os.environ.get("RAGFLOW_HOST_ADDRESS", "http://127.0.0.1")
+API_KEY = os.environ.get("RAGFLOW_API_KEY", "ragflow-IzZmY1MGVhYTBhMjExZWZiYTdjMDI0Mm")
 
 try:
     rag = RAGFlow(api_key=API_KEY, base_url=HOST_ADDRESS)
@@ -44,14 +45,20 @@ try:
     print("Parsing document...")
     dataset.async_parse_documents([doc.id])
     
-    # Wait for parsing to complete (simplified wait)
-    while True:
+    # Wait for parsing to complete with timeout
+    MAX_WAIT = 120  # seconds
+    elapsed = 0
+    while elapsed < MAX_WAIT:
         doc_status = dataset.list_documents(id=doc.id)[0]
         if doc_status.run == "1" and doc_status.progress >= 1.0:
              print("Parsing completed.")
              break
         print(f"Parsing progress: {doc_status.progress:.2f}")
         time.sleep(2)
+        elapsed += 2
+    else:
+        print("Parsing timed out.")
+        sys.exit(-1)
 
     # 4. Add a manual chunk
     print("Adding a manual chunk...")

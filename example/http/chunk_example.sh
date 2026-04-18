@@ -1,3 +1,4 @@
+#!/bin/bash
 #
 #  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
@@ -15,45 +16,74 @@
 #
 
 # Variables
-HOST_ADDRESS="http://localhost:9380"
-API_KEY="ragflow-IzZmY1MGVhYTBhMjExZWZiYTdjMDI0Mm"
-DATASET_ID="your_dataset_id"
-DOC_ID="your_document_id"
-CHUNK_ID="your_chunk_id"
+HOST_ADDRESS="${RAGFLOW_HOST_ADDRESS:-http://localhost:9380}"
+API_KEY="${RAGFLOW_API_KEY:-ragflow-IzZmY1MGVhYTBhMjExZWZiYTdjMDI0Mm}"
+
+# Check for jq
+if ! command -v jq &> /dev/null; then
+    echo "jq could not be found, please install it to run this example."
+    exit 1
+fi
+
+# 0. Setup: Create a dataset and upload a document to get IDs
+echo -e "\n-- Creating a dataset"
+DATASET_ID=$(curl -s --request POST \
+     --url "${HOST_ADDRESS}/api/v1/datasets" \
+     --header 'Content-Type: application/json' \
+     --header "Authorization: Bearer ${API_KEY}" \
+     --data '{"name": "chunk_shell_example"}' | jq -r '.data.id')
+echo "Dataset ID: ${DATASET_ID}"
+
+echo -e "\n-- Uploading a document"
+DOC_ID=$(curl -s --request POST \
+     --url "${HOST_ADDRESS}/api/v1/datasets/${DATASET_ID}/documents" \
+     --header "Authorization: Bearer ${API_KEY}" \
+     --form 'file=@sample.txt;type=text/plain' \
+     --form 'display_name=sample.txt' | jq -r '.data[0].id')
+echo "Document ID: ${DOC_ID}"
 
 # 1. Add a chunk to a document
 echo -e "\n-- Add a chunk to a document"
-curl --request POST \
+CHUNK_ID=$(curl -s --request POST \
      --url "${HOST_ADDRESS}/api/v1/datasets/${DATASET_ID}/documents/${DOC_ID}/chunks" \
      --header 'Content-Type: application/json' \
      --header "Authorization: Bearer ${API_KEY}" \
      --data '{
       "content": "RAGFlow is an open-source RAG engine.",
       "important_keywords": ["RAGFlow", "open-source"]
-      }'
+      }' | jq -r '.data.chunk.id')
+echo "Chunk ID: ${CHUNK_ID}"
 
 # 2. List chunks of a document
 echo -e "\n-- List chunks of a document"
-curl --request GET \
+curl -s --request GET \
      --url "${HOST_ADDRESS}/api/v1/datasets/${DATASET_ID}/documents/${DOC_ID}/chunks?page=1&page_size=10" \
-     --header "Authorization: Bearer ${API_KEY}"
+     --header "Authorization: Bearer ${API_KEY}" | jq .
 
 # 3. Update a chunk
 echo -e "\n-- Update a chunk"
-curl --request PUT \
+curl -s --request PUT \
      --url "${HOST_ADDRESS}/api/v1/datasets/${DATASET_ID}/documents/${DOC_ID}/chunks/${CHUNK_ID}" \
      --header 'Content-Type: application/json' \
      --header "Authorization: Bearer ${API_KEY}" \
      --data '{
       "content": "RAGFlow is a powerful open-source RAG engine."
-      }'
+      }' | jq .
 
 # 4. Delete chunks
 echo -e "\n-- Delete chunks"
-curl --request DELETE \
+curl -s --request DELETE \
      --url "${HOST_ADDRESS}/api/v1/datasets/${DATASET_ID}/documents/${DOC_ID}/chunks" \
      --header 'Content-Type: application/json' \
      --header "Authorization: Bearer ${API_KEY}" \
      --data "{
       \"chunk_ids\": [\"${CHUNK_ID}\"]
-      }"
+      }" | jq .
+
+# Cleanup
+echo -e "\n-- Cleaning up dataset"
+curl -s --request DELETE \
+     --url "${HOST_ADDRESS}/api/v1/datasets" \
+     --header 'Content-Type: application/json' \
+     --header "Authorization: Bearer ${API_KEY}" \
+     --data "{\"ids\": [\"${DATASET_ID}\"]}" | jq .
