@@ -21,9 +21,10 @@ and perform both standard and streaming chat.
 
 from ragflow_sdk import RAGFlow
 import sys
+import os
 
-HOST_ADDRESS = "http://127.0.0.1"
-API_KEY = "ragflow-IzZmY1MGVhYTBhMjExZWZiYTdjMDI0Mm"
+HOST_ADDRESS = os.environ.get("RAGFLOW_HOST_ADDRESS", "http://127.0.0.1")
+API_KEY = os.environ.get("RAGFLOW_API_KEY", "ragflow-IzZmY1MGVhYTBhMjExZWZiYTdjMDI0Mm")
 
 try:
     rag = RAGFlow(api_key=API_KEY, base_url=HOST_ADDRESS)
