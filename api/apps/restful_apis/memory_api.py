@@ -33,7 +33,7 @@ async def create_memory():
     timing_enabled = os.getenv("RAGFLOW_API_TIMING")
     t_start = time.perf_counter() if timing_enabled else None
     req = await get_request_json()
-    req = ensure_tenant_model_id_for_params(current_user.id, req)
+    req = ensure_tenant_model_id_for_params(current_user.id, req, strict=True)
     t_parsed = time.perf_counter() if timing_enabled else None
     try:
         memory_info = {
