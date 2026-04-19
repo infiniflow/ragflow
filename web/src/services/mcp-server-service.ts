@@ -11,9 +11,6 @@ const {
   getMcpServer,
   importMcpServer,
   exportMcpServer,
-  listMcpServerTools,
-  testMcpServerTool,
-  cacheMcpServerTool,
   testMcpServer,
 } = api;
 
@@ -44,18 +41,6 @@ const methods = {
   },
   export: {
     url: exportMcpServer,
-    method: 'post',
-  },
-  listTools: {
-    url: listMcpServerTools,
-    method: 'post',
-  },
-  testTool: {
-    url: testMcpServerTool,
-    method: 'post',
-  },
-  cacheTool: {
-    url: cacheMcpServerTool,
     method: 'post',
   },
   test: {

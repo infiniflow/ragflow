@@ -12,12 +12,12 @@ export function useWatchFormChange(
   id?: string,
   form?: UseFormReturn<LoopFormSchemaType>,
 ) {
-  let values = useWatch({ control: form?.control });
+  const values = useWatch({ control: form?.control });
   const { replaceNodeForm } = useGraphStore((state) => state);
 
   useEffect(() => {
     if (id) {
-      let nextValues = {
+      const nextValues = {
         ...values,
         outputs: values.loop_variables?.reduce((pre, cur) => {
           const variable = cur.variable;

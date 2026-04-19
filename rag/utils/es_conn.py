@@ -31,6 +31,32 @@ ATTEMPT_TIME = 2
 MAX_RESULT_WINDOW = 10000
 SEARCH_AFTER_BATCH_SIZE = 1000
 
+# Single-document atomic pagerank_fea adjust (chunk feedback). Clamps using params.min_w / max_w;
+# removes field at zero for rank_feature compatibility.
+_PAGERANK_FEA_ADJUST_SCRIPT = """
+double cur = 0.0;
+if (ctx._source.containsKey(params.pf)) {
+  Object v = ctx._source[params.pf];
+  if (v != null) {
+    if (v instanceof Number) {
+      cur = ((Number)v).doubleValue();
+    } else {
+      try { cur = Double.parseDouble(v.toString()); } catch (Exception e) { cur = 0.0; }
+    }
+  }
+}
+double nw = cur + params.delta;
+if (nw < params.min_w) { nw = params.min_w; }
+if (nw > params.max_w) { nw = params.max_w; }
+if (nw <= 0.0) {
+  if (ctx._source.containsKey(params.pf)) {
+    ctx._source.remove(params.pf);
+  }
+} else {
+  ctx._source[params.pf] = nw;
+}
+"""
+
 
 @singleton
 class ESConnection(ESConnectionBase):
@@ -227,7 +253,18 @@ class ESConnection(ESConnectionBase):
 
         if limit > 0 and not use_search_after:
             s = s[offset:offset + limit]
+        # Filter _source to only requested fields for efficiency, and add vector
+        # fields to "fields" param so they appear in hit.fields when ES 9.x
+        # exclude_source_vectors is enabled (dense_vector not in _source).
+        if select_fields:
+            s = s.source(select_fields)
         q = s.to_dict()
+        # ES 9.x: dense_vector fields excluded from _source; request them via fields.
+        # Note: knn does NOT have a "fields" parameter - adding it inside the knn
+        # object causes BadRequestError on ES 9.x. We add "fields" at top level.
+        vector_fields = [f for f in (select_fields or []) if f.endswith("_vec")]
+        if vector_fields:
+            q["fields"] = vector_fields
         self.logger.debug(f"ESConnection.search {str(index_names)} query: " + json.dumps(q))
 
         for i in range(ATTEMPT_TIME):
@@ -303,7 +340,11 @@ class ESConnection(ESConnectionBase):
             # update specific single document
             chunk_id = condition["id"]
             for i in range(ATTEMPT_TIME):
-                for k in doc.keys():
+                doc_part = copy.deepcopy(doc)
+                remove_value = doc_part.pop("remove", None)
+                remove_field = remove_value if isinstance(remove_value, str) else None
+                remove_dict = remove_value if isinstance(remove_value, dict) else None
+                for k in doc_part.keys():
                     if "feas" != k.split("_")[-1]:
                         continue
                     try:
@@ -312,8 +353,32 @@ class ESConnection(ESConnectionBase):
                         self.logger.exception(
                             f"ESConnection.update(index={index_name}, id={chunk_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
                 try:
-                    self.es.update(index=index_name, id=chunk_id, doc=doc)
-                    return True
+                    if remove_field is not None:
+                        self.es.update(
+                            index=index_name,
+                            id=chunk_id,
+                            script=f"ctx._source.remove('{remove_field}');",
+                        )
+                    if remove_dict is not None:
+                        scripts = []
+                        params = {}
+                        for kk, vv in remove_dict.items():
+                            scripts.append(
+                                f"if (ctx._source.containsKey('{kk}') && ctx._source.{kk} != null) "
+                                f"{{ int i = ctx._source.{kk}.indexOf(params.p_{kk}); "
+                                f"if (i >= 0) {{ ctx._source.{kk}.remove(i); }} }}"
+                            )
+                            params[f"p_{kk}"] = vv
+                        if scripts:
+                            self.es.update(
+                                index=index_name,
+                                id=chunk_id,
+                                script={"source": "".join(scripts), "params": params},
+                            )
+                    if doc_part:
+                        self.es.update(index=index_name, id=chunk_id, doc=doc_part)
+                    if remove_field is not None or remove_dict is not None or doc_part:
+                        return True
                 except Exception as e:
                     self.logger.exception(
                         f"ESConnection.update(index={index_name}, id={chunk_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception: " + str(
@@ -389,6 +454,61 @@ class ESConnection(ESConnectionBase):
                 break
         return False
 
+    def adjust_chunk_pagerank_fea(
+        self,
+        chunk_id: str,
+        index_name: str,
+        knowledgebase_id: str,
+        delta: float,
+        min_w: float = 0.0,
+        max_w: float = 100.0,
+        row_id: int | None = None,
+    ) -> bool:
+        """Atomically adjust pagerank_fea on one chunk (painless script)."""
+        _ = row_id
+        for _ in range(ATTEMPT_TIME):
+            try:
+                self.es.update(
+                    index=index_name,
+                    id=chunk_id,
+                    retry_on_conflict=3,
+                    script={
+                        "source": _PAGERANK_FEA_ADJUST_SCRIPT.strip(),
+                        "lang": "painless",
+                        "params": {
+                            "pf": PAGERANK_FLD,
+                            "delta": float(delta),
+                            "min_w": float(min_w),
+                            "max_w": float(max_w),
+                        },
+                    },
+                )
+                self.logger.debug(
+                    "ESConnection.adjust_chunk_pagerank_fea(index=%s, id=%s, delta=%s) succeeded",
+                    index_name,
+                    chunk_id,
+                    delta,
+                )
+                return True
+            except ConnectionTimeout:
+                self.logger.exception("ES request timeout")
+                time.sleep(3)
+                self._connect()
+                continue
+            except Exception as e:
+                self.logger.exception(
+                    "ESConnection.adjust_chunk_pagerank_fea(index=%s, id=%s): %s",
+                    index_name,
+                    chunk_id,
+                    e,
+                )
+                if re.search(r"connection", str(e).lower()):
+                    time.sleep(3)
+                    self._connect()
+                    continue
+                break
+        return False
+
     def delete(self, condition: dict, index_name: str, knowledgebase_id: str) -> int:
         assert "_id" not in condition
         condition["kb_id"] = knowledgebase_id
@@ -456,8 +576,24 @@ class ESConnection(ESConnectionBase):
         res_fields = {}
         if not fields:
             return {}
-        for d in self._get_source(res):
-            m = {n: d.get(n) for n in fields if d.get(n) is not None}
+        hits = res.get("hits", {}).get("hits", [])
+        for hit in hits:
+            doc_id = hit.get("_id")
+            d = hit.get("_source", {})
+            # Also extract fields from ES "fields" response (used by dense_vector in ES 9.x)
+            hit_fields = hit.get("fields", {})
+            m = {}
+            for n in fields:
+                # First check _source
+                if d.get(n) is not None:
+                    m[n] = d.get(n)
+                # Then check fields (ES 9.x stores dense_vector here, not in _source)
+                elif n in hit_fields:
+                    vals = hit_fields[n]
+                    # ES fields response wraps dense_vector in 2 levels: [[v1,v2,...]] -> [v1,v2,...]
+                    if isinstance(vals, list) and len(vals) == 1:
+                        vals = vals[0]
+                    m[n] = vals
             for n, v in m.items():
                 if isinstance(v, list):
                     m[n] = v
@@ -471,5 +607,5 @@ class ESConnection(ESConnectionBase):
                 #     m[n] = remove_redundant_spaces(m[n])
 
             if m:
-                res_fields[d["id"]] = m
+                res_fields[doc_id] = m
         return res_fields

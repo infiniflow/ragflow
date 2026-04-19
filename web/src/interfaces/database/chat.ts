@@ -1,6 +1,13 @@
 import { MessageType } from '@/constants/chat';
 import { IAttachment } from '@/hooks/use-send-message';
 
+export interface IDocumentDownloadInfo {
+  doc_id: string;
+  filename: string;
+  mime_type: string;
+  size?: number;
+}
+
 export interface PromptConfig {
   empty_response: string;
   parameters: Parameter[];
@@ -108,6 +115,7 @@ export interface Message {
   files?: (File | UploadResponseDataType)[];
   chatBoxId?: string;
   attachment?: IAttachment;
+  downloads?: IDocumentDownloadInfo[];
 }
 
 export interface IReferenceChunk {
@@ -139,6 +147,7 @@ export interface IReferenceObject {
 export interface IAnswer {
   answer: string;
   attachment?: IAttachment;
+  downloads?: IDocumentDownloadInfo[];
   reference?: IReference;
   conversationId?: string;
   prompt?: string;

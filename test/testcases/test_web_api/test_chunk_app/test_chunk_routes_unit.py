@@ -220,6 +220,7 @@ def _load_chunk_module(monkeypatch):
 
     string_utils_mod = ModuleType("common.string_utils")
     string_utils_mod.remove_redundant_spaces = lambda text: " ".join(str(text).split())
+    string_utils_mod.is_content_empty = lambda content: content is None or not str(content).strip()
     monkeypatch.setitem(sys.modules, "common.string_utils", string_utils_mod)
 
     metadata_utils_mod = ModuleType("common.metadata_utils")
@@ -587,6 +588,14 @@ def test_set_chunk_bytes_qa_image_and_guard_matrix_unit(monkeypatch):
     _set_request_json(
         monkeypatch,
         module,
+        {"doc_id": "doc-1", "chunk_id": "chunk-1", "content_with_weight": "abc", "tag_feas": [0.1]},
+    )
+    res = _run(module.set())
+    assert "`tag_feas` must be an object mapping string tags to finite numeric scores" in res["message"], res
+
+    _set_request_json(
+        monkeypatch,
+        module,
         {
             "doc_id": "doc-1",
             "chunk_id": "chunk-1",
@@ -594,7 +603,7 @@ def test_set_chunk_bytes_qa_image_and_guard_matrix_unit(monkeypatch):
             "important_kwd": ["important"],
             "question_kwd": ["question"],
             "tag_kwd": ["tag"],
-            "tag_feas": [0.1],
+            "tag_feas": {"tag": 0.1},
             "available_int": 0,
         },
     )
@@ -769,12 +778,20 @@ def test_create_chunk_guards_pagerank_and_success_unit(monkeypatch):
     _set_request_json(
         monkeypatch,
         module,
+        {"doc_id": "doc-1", "content_with_weight": "chunk", "tag_feas": [0.2]},
+    )
+    res = _run(module.create())
+    assert "`tag_feas` must be an object mapping string tags to finite numeric scores" in res["message"], res
+
+    _set_request_json(
+        monkeypatch,
+        module,
         {
             "doc_id": "doc-1",
             "content_with_weight": "chunk",
             "important_kwd": ["i1"],
             "question_kwd": ["q1"],
-            "tag_feas": [0.2],
+            "tag_feas": {"tag": 0.2},
         },
     )
     res = _run(module.create())

@@ -17,15 +17,19 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"mime/multipart"
 	"os"
 	"path/filepath"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/logger"
 	"ragflow/internal/storage"
-	"ragflow/internal/util"
+	"ragflow/internal/utility"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -69,9 +73,9 @@ func (s *FileService) GetRootFolder(tenantID string) (map[string]interface{}, er
 }
 
 // ListFiles lists files by parent folder ID (matching Python /files endpoint)
-// This method includes init_knowledgebase_docs initialization when parent_id is empty
+// This method includes init_dataset_docs initialization when parent_id is empty
 func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, orderby string, desc bool, keywords string) (*ListFilesResponse, error) {
-	// If pfID is empty, get root folder and initialize knowledgebase docs
+	// If pfID is empty, get root folder and initialize dataset docs
 	if pfID == "" {
 		rootFolder, err := s.fileDAO.GetRootFolder(tenantID)
 		if err != nil {
@@ -79,9 +83,9 @@ func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, order
 		}
 		pfID = rootFolder.ID
 
-		// Initialize knowledgebase docs (matching Python init_knowledgebase_docs logic)
-		if err := s.initKnowledgebaseDocs(pfID, tenantID); err != nil {
-			return nil, fmt.Errorf("failed to initialize knowledgebase docs: %w", err)
+		// Initialize dataset docs (matching Python init_knowledgebase_docs logic)
+		if err := s.initDatasetDocs(pfID, tenantID); err != nil {
+			return nil, fmt.Errorf("failed to initialize dataset docs: %w", err)
 		}
 	}
 
@@ -137,17 +141,17 @@ func (s *FileService) ListFiles(tenantID, pfID string, page, pageSize int, order
 	}, nil
 }
 
-// initKnowledgebaseDocs initializes knowledgebase documents for tenant
-// This matches Python's FileService.init_knowledgebase_docs method
-func (s *FileService) initKnowledgebaseDocs(rootID, tenantID string) error {
-	return s.fileDAO.InitKnowledgebaseDocs(rootID, tenantID, s.file2DocumentDAO)
+// initDatasetDocs initializes dataset documents for tenant
+// This matches Python's FileService.init_dataset_docs method
+func (s *FileService) initDatasetDocs(rootID, tenantID string) error {
+	return s.fileDAO.InitDatasetDocs(rootID, tenantID, s.file2DocumentDAO)
 }
 
-// KnowledgebaseFolderName is the folder name for knowledgebase
-const KnowledgebaseFolderName = ".knowledgebase"
+// DatasetFolderName is the folder name for dataset
+const DatasetFolderName = ".knowledgebase"
 
-// FileSourceKnowledgebase represents knowledgebase as file source
-const FileSourceKnowledgebase = "knowledgebase"
+// FileSourceDataset represents dataset as file source
+const FileSourceDataset = "knowledgebase"
 
 // toFileResponse converts file model to response format
 func (s *FileService) toFileResponse(file *entity.File) map[string]interface{} {
@@ -299,7 +303,7 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 			return nil, fmt.Errorf("No file selected!")
 		}
 
-		fileType := util.FilenameType(filename)
+		fileType := utility.FilenameType(filename)
 
 		fileObjNames := s.parseFilePath(filename)
 
@@ -458,4 +462,519 @@ func (s *FileService) CreateFolder(tenantID, name, parentID, fileType string) (m
 	}
 
 	return s.toFileResponse(folder), nil
+}
+
+// DeleteFiles deletes files by IDs
+// Returns (success, message) where success is true if all files were deleted
+func (s *FileService) DeleteFiles(ctx context.Context, uid string, fileIDs []string) (bool, string) {
+	for _, fileID := range fileIDs {
+		// 1. Get file
+		file, err := s.fileDAO.GetByID(fileID)
+		if err != nil || file == nil {
+			return false, "File or Folder not found!"
+		}
+
+		// 2. Check tenant_id
+		if file.TenantID == "" {
+			return false, "Tenant not found!"
+		}
+
+		// Block root-folder deletion (root folders have parent_id == id)
+		if file.ParentID == file.ID {
+			return false, "Root folder cannot be deleted."
+		}
+
+		// 3. Permission check
+		if !s.checkFileTeamPermission(file, uid) {
+			return false, "No authorization."
+		}
+
+		// 4. Skip dataset source files
+		if file.SourceType == FileSourceDataset {
+			continue
+		}
+
+		// 5. Delete based on type
+		if file.Type == FileTypeFolder {
+			if err := s.deleteFolderRecursive(ctx, file, uid); err != nil {
+				return false, fmt.Sprintf("Failed to delete folder: %v", err)
+			}
+		} else {
+			if err := s.deleteSingleFile(ctx, file); err != nil {
+				return false, fmt.Sprintf("Failed to delete file: %v", err)
+			}
+		}
+	}
+
+	return true, ""
+}
+
+// checkFileTeamPermission checks if user has permission to access the file
+// Matches Python's check_file_team_permission function
+func (s *FileService) checkFileTeamPermission(file *entity.File, uid string) bool {
+	// File's tenant directly authorized
+	if file.TenantID == uid {
+		return true
+	}
+
+	// Check KB permissions
+	datasetIDs, err := s.fileDAO.GetDatasetIDByFileID(file.ID)
+	if err != nil || len(datasetIDs) == 0 {
+		return false
+	}
+
+	kbDAO := dao.NewKnowledgebaseDAO()
+	userTenantDAO := dao.NewUserTenantDAO()
+
+	for _, datasetID := range datasetIDs {
+		ds, err := kbDAO.GetByID(datasetID)
+		if err != nil || ds == nil {
+			continue
+		}
+
+		// Check KB tenant permission
+		if s.checkDatasetTeamPermission(ds, uid, userTenantDAO) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// checkDatasetTeamPermission checks if user has permission to access the dataset
+// Matches Python's check_kb_team_permission function
+func (s *FileService) checkDatasetTeamPermission(ds *entity.Knowledgebase, uid string, userTenantDAO *dao.UserTenantDAO) bool {
+	// KB's tenant directly authorized
+	if ds.TenantID == uid {
+		return true
+	}
+
+	// Check permission type
+	permission := ds.Permission
+	if permission != string(entity.TenantPermissionTeam) {
+		return false
+	}
+
+	// Check if user joined the tenant
+	joinedTenantIDs, err := userTenantDAO.GetTenantIDsByUserID(uid)
+	if err != nil || len(joinedTenantIDs) == 0 {
+		return false
+	}
+
+	for _, tenantID := range joinedTenantIDs {
+		if tenantID == ds.TenantID {
+			return true
+		}
+	}
+
+	return false
+}
+
+// deleteSingleFile deletes a single file (not folder)
+// Matches Python's _delete_single_file function
+func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) error {
+	// 1. Delete storage object
+	if file.Location != nil && *file.Location != "" {
+		storageImpl := storage.GetStorageFactory().GetStorage()
+		if storageImpl != nil {
+			if err := storageImpl.Remove(file.ParentID, *file.Location); err != nil {
+				logger.Logger.Error(fmt.Sprintf("Fail to remove object: %s/%s, error: %v", file.ParentID, *file.Location, err))
+			}
+		}
+	}
+
+	// 2. Handle associated documents
+	informs, err := s.file2DocumentDAO.GetByFileID(file.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get file2document mappings: %w", err)
+	}
+	if len(informs) > 0 {
+		documentDAO := dao.NewDocumentDAO()
+		datasetDAO := dao.NewKnowledgebaseDAO()
+
+		for _, inform := range informs {
+			if inform.DocumentID == nil {
+				continue
+			}
+			docID := *inform.DocumentID
+
+			doc, err := documentDAO.GetByID(docID)
+			if err == nil && doc != nil {
+				// Get tenant ID from KB
+				ds, err := datasetDAO.GetByID(doc.KbID)
+				if err == nil && ds != nil {
+					tenantID := ds.TenantID
+					if tenantID != "" {
+						// Delete from document engine
+						if err := s.deleteDocumentFromEngine(ctx, doc, tenantID); err != nil {
+							logger.Logger.Error(fmt.Sprintf("Fail to delete document from engine: %s, error: %v", doc.ID, err))
+						}
+					}
+				}
+
+				// Delete document record
+				if err := documentDAO.Delete(docID); err != nil {
+					logger.Logger.Error(fmt.Sprintf("Fail to delete document: %s, error: %v", docID, err))
+				}
+			}
+
+		}
+
+		// Delete file2document mapping (outside the loop, called once - matching Python behavior)
+		if err := s.file2DocumentDAO.DeleteByFileID(file.ID); err != nil {
+			return fmt.Errorf("failed to delete file2document mapping: %w", err)
+		}
+	}
+
+	// 3. Delete file record
+	if err := s.fileDAO.Delete(file.ID); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// deleteDocumentFromEngine deletes a document from the document engine
+func (s *FileService) deleteDocumentFromEngine(ctx context.Context, doc *entity.Document, tenantID string) error {
+	// Get document engine
+	docEngine := engine.Get()
+	if docEngine == nil {
+		return nil
+	}
+
+	// Build index name: ragflow_<tenant_id>_<kb_id>
+	indexName := fmt.Sprintf("ragflow_%s_%s", tenantID, doc.KbID)
+
+	// Delete document from engine with timeout
+	reqCtx, cancel := context.WithTimeout(ctx, 300*time.Second)
+	defer cancel()
+	condition := map[string]interface{}{"doc_id": doc.ID}
+	if _, err := docEngine.Delete(reqCtx, condition, indexName, doc.KbID); err != nil {
+		return fmt.Errorf("delete document from engine: %w", err)
+	}
+	return nil
+}
+
+// deleteFolderRecursive recursively deletes a folder and its contents
+// Matches Python's _delete_folder_recursive function
+func (s *FileService) deleteFolderRecursive(ctx context.Context, folder *entity.File, uid string) error {
+	// Get all sub-files
+	subFiles, err := s.fileDAO.ListByParentID(folder.ID)
+	if err != nil {
+		return err
+	}
+
+	for _, subFile := range subFiles {
+		if subFile.Type == FileTypeFolder {
+			// Recursively delete subfolder
+			if err := s.deleteFolderRecursive(ctx, subFile, uid); err != nil {
+				return err
+			}
+		} else {
+			// Delete single file
+			if err := s.deleteSingleFile(ctx, subFile); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Delete the folder itself
+	if err := s.fileDAO.Delete(folder.ID); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// MoveFileReq represents the request body for move files operation
+type MoveFileReq struct {
+	SrcFileIDs []string `json:"src_file_ids" binding:"required,min=1"`
+	DestFileID string   `json:"dest_file_id"`
+	NewName    string   `json:"new_name"`
+}
+
+// MoveFiles moves and/or renames files
+// Follows Linux mv semantics:
+// - new_name only: rename in place (no storage operation)
+// - dest_file_id only: move to new folder (keep names)
+// - both: move and rename simultaneously
+func (s *FileService) MoveFiles(uid string, srcFileIDs []string, destFileID string, newName string) (bool, string) {
+	// 1. Get all source files
+	files, err := s.fileDAO.GetByIDs(srcFileIDs)
+	if err != nil || len(files) == 0 {
+		return false, "Source files not found!"
+	}
+
+	// Create a map for quick lookup
+	filesMap := make(map[string]*entity.File)
+	for _, f := range files {
+		filesMap[f.ID] = f
+	}
+
+	// 2. Validate all source files
+	for _, fileID := range srcFileIDs {
+		file, ok := filesMap[fileID]
+		if !ok {
+			return false, "File or folder not found!"
+		}
+		if file.TenantID == "" {
+			return false, "Tenant not found!"
+		}
+		// 3. Permission check
+		if !s.checkFileTeamPermission(file, uid) {
+			return false, "No authorization."
+		}
+	}
+
+	// 4. Validate destination folder if provided
+	var destFolder *entity.File
+	if destFileID != "" {
+		destFolder, err = s.fileDAO.GetByID(destFileID)
+		if err != nil || destFolder == nil {
+			return false, "Parent folder not found!"
+		}
+		// Check destination folder permission
+		if !s.checkFileTeamPermission(destFolder, uid) {
+			return false, "No authorization to write to destination folder."
+		}
+	}
+
+	// 5. Validate new_name if provided
+	if newName != "" {
+		if len(srcFileIDs) > 1 {
+			return false, "new_name can only be used with a single file"
+		}
+
+		file := filesMap[srcFileIDs[0]]
+		// Check extension for non-folder files
+		if file.Type != FileTypeFolder {
+			oldExt := utility.GetFileExtension(file.Name)
+			newExt := utility.GetFileExtension(newName)
+			if oldExt != newExt {
+				return false, "The extension of file can't be changed"
+			}
+		}
+
+		// Check for duplicate names in target folder
+		targetParentID := file.ParentID
+		if destFolder != nil {
+			targetParentID = destFolder.ID
+		}
+		existingFiles := s.fileDAO.Query(newName, targetParentID)
+		for _, f := range existingFiles {
+			if f.Name == newName {
+				return false, "Duplicated file name in the same folder."
+			}
+		}
+	} else if destFolder != nil {
+		// Plain move (no rename): check for duplicate names in destination folder
+		for _, file := range files {
+			existingFiles := s.fileDAO.Query(file.Name, destFolder.ID)
+			for _, f := range existingFiles {
+				// Ignore the source file itself
+				if f.ID != file.ID {
+					return false, "Duplicated file name in the same folder."
+				}
+			}
+		}
+	}
+
+	// 6. Perform the move operation
+	if destFolder != nil {
+		// Move to destination folder
+		for _, file := range files {
+			if err := s.moveEntryRecursive(file, destFolder, newName); err != nil {
+				return false, err.Error()
+			}
+		}
+	} else {
+		// Pure rename: no storage operation needed
+		if newName == "" {
+			return false, "new_name is required for rename"
+		}
+		if len(srcFileIDs) == 0 {
+			return false, "Source files not found!"
+		}
+		file := filesMap[srcFileIDs[0]]
+		if err := s.fileDAO.UpdateByID(file.ID, map[string]interface{}{"name": newName}); err != nil {
+			return false, "Database error (File rename)!"
+		}
+
+		// Update associated document name if exists
+		informs, err := s.file2DocumentDAO.GetByFileID(file.ID)
+		if err == nil && len(informs) > 0 && informs[0].DocumentID != nil {
+			docID := *informs[0].DocumentID
+			documentDAO := dao.NewDocumentDAO()
+			if err := documentDAO.UpdateByID(docID, map[string]interface{}{"name": newName}); err != nil {
+				return false, "Database error (Document rename)!"
+			}
+		}
+	}
+
+	return true, ""
+}
+
+// moveEntryRecursive recursively moves a file or folder entry
+func (s *FileService) moveEntryRecursive(sourceFile *entity.File, destFolder *entity.File, overrideName string) error {
+	effectiveName := overrideName
+	if effectiveName == "" {
+		effectiveName = sourceFile.Name
+	}
+
+	if sourceFile.Type == FileTypeFolder {
+		// Handle folder move
+		existingFolders := s.fileDAO.Query(effectiveName, destFolder.ID)
+		var newFolder *entity.File
+		if len(existingFolders) > 0 {
+			// Prevent moving a folder into itself (self-target merge)
+			if existingFolders[0].ID == sourceFile.ID {
+				return fmt.Errorf("cannot move folder into itself")
+			}
+			newFolder = existingFolders[0]
+		} else {
+			// Create new folder
+			var err error
+			newFolder, err = s.fileDAO.CreateFolder(destFolder.ID, sourceFile.TenantID, effectiveName, FileTypeFolder)
+			if err != nil {
+				return fmt.Errorf("failed to create destination folder: %w", err)
+			}
+		}
+
+		// Recursively move sub-files
+		subFiles, err := s.fileDAO.ListAllFilesByParentID(sourceFile.ID)
+		if err != nil {
+			return err
+		}
+		for _, subFile := range subFiles {
+			if err := s.moveEntryRecursive(subFile, newFolder, ""); err != nil {
+				return err
+			}
+		}
+
+		// Delete the source folder
+		return s.fileDAO.Delete(sourceFile.ID)
+	}
+
+	// Handle non-folder file move
+	needStorageMove := destFolder.ID != sourceFile.ParentID
+	updates := map[string]interface{}{}
+
+	if needStorageMove {
+		// Get storage
+		storageImpl := storage.GetStorageFactory().GetStorage()
+		if storageImpl == nil {
+			return fmt.Errorf("storage not initialized")
+		}
+
+		// Calculate new location
+		newLocation := effectiveName
+		for storageImpl.ObjExist(destFolder.ID, newLocation) {
+			newLocation += "_"
+		}
+
+		// Perform storage move (copy + delete)
+		if sourceFile.Location == nil || *sourceFile.Location == "" {
+			return fmt.Errorf("file location is empty")
+		}
+
+		if !storageImpl.Move(sourceFile.ParentID, *sourceFile.Location, destFolder.ID, newLocation) {
+			return fmt.Errorf("move file failed at storage layer")
+		}
+
+		updates["parent_id"] = destFolder.ID
+		updates["location"] = newLocation
+	}
+
+	if overrideName != "" {
+		updates["name"] = overrideName
+	}
+
+	if len(updates) > 0 {
+		if err := s.fileDAO.UpdateByID(sourceFile.ID, updates); err != nil {
+			return fmt.Errorf("database error (File update): %w", err)
+		}
+	}
+
+	// Update associated document name if renamed
+	if overrideName != "" {
+		informs, err := s.file2DocumentDAO.GetByFileID(sourceFile.ID)
+		if err == nil && len(informs) > 0 && informs[0].DocumentID != nil {
+			docID := *informs[0].DocumentID
+			documentDAO := dao.NewDocumentDAO()
+			if err := documentDAO.UpdateByID(docID, map[string]interface{}{"name": overrideName}); err != nil {
+				return fmt.Errorf("database error (Document rename): %w", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// GetFileContent gets file metadata and checks permission for download
+// Matches Python's file_api_service.get_file_content function
+func (s *FileService) GetFileContent(uid, fileID string) (*entity.File, error) {
+	file, err := s.fileDAO.GetByID(fileID)
+	if err != nil || file == nil {
+		return nil, fmt.Errorf("Document not found!")
+	}
+	if !s.checkFileTeamPermission(file, uid) {
+		return nil, fmt.Errorf("No authorization.")
+	}
+	return file, nil
+}
+
+// StorageAddress represents bucket and object name for storage
+type StorageAddress struct {
+	Bucket string
+	Name   string
+}
+
+// GetStorageAddress gets storage address for a file (fallback for when direct blob is empty)
+// Matches Python's File2DocumentService.get_storage_address function
+func (s *FileService) GetStorageAddress(fileID string) (*StorageAddress, error) {
+	// Get file2document mapping
+	f2d, err := s.file2DocumentDAO.GetByFileID(fileID)
+	if err != nil || len(f2d) == 0 {
+		return nil, fmt.Errorf("file2document mapping not found")
+	}
+
+	// Get the file
+	if f2d[0].FileID == nil {
+		return nil, fmt.Errorf("file_id is nil in file2document mapping")
+	}
+	file, err := s.fileDAO.GetByID(*f2d[0].FileID)
+	if err != nil || file == nil {
+		return nil, fmt.Errorf("file not found")
+	}
+
+	// If source_type is empty or local, return file's parent_id and location
+	if file.SourceType == "" || entity.FileSource(file.SourceType) == entity.FileSourceLocal {
+		if file.Location == nil || *file.Location == "" {
+			return nil, fmt.Errorf("file location is empty")
+		}
+		return &StorageAddress{
+			Bucket: file.ParentID,
+			Name:   *file.Location,
+		}, nil
+	}
+
+	// Otherwise, use document's kb_id and location
+	if f2d[0].DocumentID == nil {
+		return nil, fmt.Errorf("document_id is required")
+	}
+
+	documentDAO := dao.NewDocumentDAO()
+	doc, err := documentDAO.GetByID(*f2d[0].DocumentID)
+	if err != nil || doc == nil {
+		return nil, fmt.Errorf("document not found")
+	}
+
+	if doc.Location == nil || *doc.Location == "" {
+		return nil, fmt.Errorf("document location is empty")
+	}
+
+	return &StorageAddress{
+		Bucket: doc.KbID,
+		Name:   *doc.Location,
+	}, nil
 }

@@ -122,7 +122,7 @@ def list_documents(auth, dataset_id, params=None):
 
 def update_document(auth, dataset_id, document_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_API_URL}/{document_id}".format(dataset_id=dataset_id)
-    res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
+    res = requests.patch(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 

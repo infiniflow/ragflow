@@ -342,10 +342,10 @@ export const useRenameSearch = () => {
       setLoading(true);
       if (search?.id) {
         try {
-          const reponse = await searchService.getSearchDetail({
+          const response = await searchService.getSearchDetail({
             search_id: search?.id,
           });
-          const detail = reponse.data?.data;
+          const detail = response.data?.data;
           console.log('detail-->', detail);
 
           // eslint-disable-next-line @typescript-eslint/no-unused-vars

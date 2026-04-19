@@ -46,8 +46,7 @@ export const useGetSharedSearchParams = () => {
   const [searchParams] = useSearchParams();
   const data_prefix = 'data_';
   const data = Object.fromEntries(
-    searchParams
-      .entries()
+    Array.from(searchParams.entries())
       .filter(([key]) => key.startsWith(data_prefix))
       .map(([key, value]) => [key.replace(data_prefix, ''), value]),
   );
@@ -139,7 +138,7 @@ export const useTestChunkRetrieval = (
   const shared_id = searchParams.get('shared_id');
   const retrievalTestFunc = shared_id
     ? kbService.retrievalTestShare
-    : kbService.retrieval_test;
+    : kbService.retrievalTest;
   const {
     data,
     isPending: loading,
@@ -190,7 +189,7 @@ export const useTestChunkAllRetrieval = (
   const shared_id = searchParams.get('shared_id');
   const retrievalTestFunc = shared_id
     ? kbService.retrievalTestShare
-    : kbService.retrieval_test;
+    : kbService.retrievalTest;
   const {
     data,
     isPending: loading,

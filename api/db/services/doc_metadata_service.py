@@ -733,9 +733,11 @@ class DocMetadataService:
 
             # Aggregate metadata
             meta = {}
+            doc_count = 0
 
             # Use helper to iterate over results in any format
             for doc_id, doc in cls._iter_search_results(results):
+                doc_count += 1
                 # Extract metadata fields (exclude system fields)
                 doc_meta = cls._extract_metadata(doc)
 
@@ -751,6 +753,9 @@ class DocMetadataService:
                         if sv not in meta[k]:
                             meta[k][sv] = []
                         meta[k][sv].append(doc_id)
+
+            if doc_count >= 10000:
+                logging.warning(f"[get_flatted_meta_by_kbs] Results hit the 10000 limit for KBs {kb_ids}.")
 
             logging.debug(f"[get_flatted_meta_by_kbs] KBs: {kb_ids}, Returning metadata: {meta}")
             return meta

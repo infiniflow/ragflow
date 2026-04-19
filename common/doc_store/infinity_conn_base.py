@@ -270,7 +270,8 @@ class InfinityConnectionBase(DocStoreConnection):
             fp_mapping = os.path.join(get_project_base_directory(), "conf", self.mapping_file_name)
             if not os.path.exists(fp_mapping):
                 raise Exception(f"Mapping file not found at {fp_mapping}")
-            schema = json.load(open(fp_mapping))
+            with open(fp_mapping) as f:
+                schema = json.load(f)
 
             if parser_id is not None:
                 from common.constants import ParserType
@@ -490,17 +491,29 @@ class InfinityConnectionBase(DocStoreConnection):
         return len(res)
 
     def get_doc_ids(self, res: tuple[pd.DataFrame, int] | pd.DataFrame) -> list[str]:
+        # Extract DataFrame from result
         if isinstance(res, tuple):
-            res = res[0]
-        return list(res["id"])
+            df, count = res
+            if count == 0:
+                return []
+        else:
+            df = res
+        return list(df["id"])
 
     @abstractmethod
     def get_fields(self, res: tuple[pd.DataFrame, int] | pd.DataFrame, fields: list[str]) -> dict[str, dict]:
         raise NotImplementedError("Not implemented")
 
     def get_highlight(self, res: tuple[pd.DataFrame, int] | pd.DataFrame, keywords: list[str], field_name: str):
+        # Extract DataFrame from result
         if isinstance(res, tuple):
-            res = res[0]
+            df, _ = res
+        else:
+            df = res
+
+        if df.empty or field_name not in df.columns:
+            return {}
+
         ans = {}
         num_rows = len(res)
         column_id = res["id"]

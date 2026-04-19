@@ -89,6 +89,9 @@ func main() {
 		}
 	}
 	server.SetLogger(logger.Logger)
+	if config.Log.Level == "" {
+		config.Log.Level = logger.GetLevel()
+	}
 
 	logger.Info("Server mode", zap.String("mode", config.Server.Mode))
 

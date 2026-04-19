@@ -767,6 +767,9 @@ export default {
       delete: 'Удалить',
     },
     chat: {
+      chatSupport: 'Чат-поддержка',
+      replyInstantly: 'Обычно мы отвечаем мгновенно',
+      typeYourMessage: 'Введите сообщение...',
       messagePlaceholder: 'Введите ваше сообщение здесь...',
       exit: 'Выход',
       multipleModels: 'Несколько моделей',
@@ -985,6 +988,7 @@ export default {
       selectModelPlaceholder: 'Выберите модель',
       configureModelTitle: 'Настроить модель',
       connectorNameTip: 'Укажите понятное имя для коннектора',
+      syncDeletedFiles: 'Синхронизировать удалённые файлы',
       confluenceIsCloudTip:
         'Отметьте, если это экземпляр Confluence Cloud, снимите для Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
@@ -1686,10 +1690,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Компонент, который выполняет поиск через ваш предоставленный URL экземпляра SearXNG. Укажите TopN и URL экземпляра.',
-      pdfGenerator: 'Генератор документов',
-      pDFGenerator: 'Генератор документов',
-      pdfGeneratorDescription: `Компонент, который генерирует документы (PDF, DOCX, TXT) из содержимого в формате markdown с настраиваемым стилем, изображениями и таблицами. Поддерживает: **жирный**, *курсив*, # заголовки, - списки, таблицы с синтаксисом |.`,
-      pDFGeneratorDescription: `Компонент, который генерирует документы (PDF, DOCX, TXT) из содержимого в формате markdown с настраиваемым стилем, изображениями и таблицами. Поддерживает: **жирный**, *курсив*, # заголовки, - списки, таблицы с синтаксисом |.`,
+      docGenerator: 'Генератор документов',
+      docGeneratorDescription: `Создает файл из содержимого Markdown.`,
       subtitle: 'Подзаголовок',
       logoImage: 'Изображение логотипа',
       logoPosition: 'Позиция логотипа',

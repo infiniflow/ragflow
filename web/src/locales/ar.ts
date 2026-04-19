@@ -652,6 +652,9 @@ export default {
       delete: 'يمسح',
     },
     chat: {
+      chatSupport: 'دعم الدردشة',
+      replyInstantly: 'نرد عادةً على الفور',
+      typeYourMessage: 'اكتب رسالتك...',
       messagePlaceholder: 'اكتب رسالتك هنا...',
       exit: 'مخرج',
       multipleModels: 'نماذج متعددة',
@@ -857,6 +860,7 @@ export default {
       selectModelPlaceholder: 'حدد النموذج',
       configureModelTitle: 'تكوين النموذج',
       connectorNameTip: 'اسم وصفي للموصل',
+      syncDeletedFiles: 'مزامنة الملفات المحذوفة',
       confluenceIsCloudTip:
         'تحقق مما إذا كان هذا هو مثيل Confluence Cloud، قم بإلغاء تحديد Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
@@ -1516,12 +1520,8 @@ export default {
       searXNG: 'احرق XNG',
       searXNGDescription:
         'مكون يبحث عبر عنوان URL لمثيل SearXNG المقدم. حدد TopN وعنوان URL للمثيل.',
-      pdfGenerator: 'مولد المستندات',
-      pDFGenerator: 'مولد المستندات',
-      pdfGeneratorDescription:
-        'مكون يقوم بإنشاء المستندات (PDF، DOCX، TXT) من محتوى بتنسيق تخفيض السعر مع تصميم وصور وجداول قابلة للتخصيص. يدعم: **غامق**، *مائل*، # عناوين، - قوائم، جداول مع | بناء الجملة.',
-      pDFGeneratorDescription:
-        'مكون يقوم بإنشاء المستندات (PDF، DOCX، TXT) من محتوى بتنسيق تخفيض السعر مع تصميم وصور وجداول قابلة للتخصيص. يدعم: **غامق**، *مائل*، # عناوين، - قوائم، جداول مع | بناء الجملة.',
+      docGenerator: 'مولد المستندات',
+      docGeneratorDescription: 'ينشئ ملفًا من محتوى Markdown.',
       subtitle: 'الترجمة',
       logoImage: 'صورة الشعار',
       logoPosition: 'موقف الشعار',

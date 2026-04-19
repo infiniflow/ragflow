@@ -14,23 +14,22 @@ import {
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { IReference } from '@/interfaces/database/chat';
 import { cn } from '@/lib/utils';
-import { citationMarkerReg } from '@/utils/citation-utils';
-import { getDirAttribute } from '@/utils/text-direction';
-import DOMPurify from 'dompurify';
 import { isEmpty } from 'lodash';
-import { BrainCircuit, Search, X } from 'lucide-react';
+import { ListTree, Search, X } from 'lucide-react';
 import { Dispatch, SetStateAction, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ISearchAppDetailProps } from '../next-searches/hooks';
 import PdfDrawer from './document-preview-modal';
+import ExpandableContent from './expandable-content';
 import { ISearchReturnProps } from './hooks';
 import './index.less';
 import MarkdownContent from './markdown-content';
 import MindMapDrawer from './mindmap-drawer';
+import { RAGFlowLogo } from './ragflow-logo';
 import RetrievalDocuments from './retrieval-documents';
 
 const getDirectionText = (content: string) =>
-  content.replace(/<[^>]+>/g, ' ').replace(citationMarkerReg, '');
+  content.replace(/<[^>]+>/g, ' ');
 
 const formatMetadataValue = (value: unknown) => {
   if (Array.isArray(value)) return value.join(', ');
@@ -38,7 +37,6 @@ const formatMetadataValue = (value: unknown) => {
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 };
-
 export default function SearchingView({
   setIsSearching,
   searchData,
@@ -68,17 +66,14 @@ export default function SearchingView({
   handleSearch,
   pagination,
   onChange,
+  showEmbedLogo,
 }: ISearchReturnProps & {
   setIsSearching?: Dispatch<SetStateAction<boolean>>;
   searchData: ISearchAppDetailProps;
+  showEmbedLogo?: boolean;
 }) {
   const { t } = useTranslation();
-  // useEffect(() => {
-  //   const changeLanguage = async () => {
-  //     await i18n.changeLanguage('zh');
-  //   };
-  //   changeLanguage();
-  // }, [i18n]);
+
   const [searchtext, setSearchtext] = useState<string>('');
   const [retrievalLoading, setRetrievalLoading] = useState(false);
 
@@ -88,28 +83,24 @@ export default function SearchingView({
   return (
     <section
       className={cn(
-        'relative w-full flex transition-all justify-start items-center',
+        'relative w-full flex transition-all justify-start items-center h-full',
       )}
     >
       {/* search header */}
       <div
         className={cn(
-          'relative z-10 px-8 pt-8 flex  text-transparent justify-start items-start w-full',
+          'relative z-10 px-8 pt-8 flex  text-transparent justify-start items-start w-full h-full',
         )}
       >
-        <h1
-          className={cn(
-            'text-4xl font-bold bg-gradient-to-l from-[#40EBE3] to-[#4A51FF] bg-clip-text cursor-pointer',
-          )}
+        <RAGFlowLogo
           onClick={() => {
             setIsSearching?.(false);
           }}
-        >
-          RAGFlow
-        </h1>
+          showEmbedIcon={showEmbedLogo}
+        ></RAGFlowLogo>
         <div
           className={cn(
-            ' rounded-lg text-primary text-xl sticky flex flex-col justify-center w-2/3 max-w-[780px] transform scale-100 ml-16 ',
+            ' rounded-lg text-primary text-xl sticky flex flex-col justify-center w-2/3 transform scale-100 ml-16 h-full',
           )}
         >
           <div className={cn('flex flex-col justify-start items-start w-full')}>
@@ -163,7 +154,7 @@ export default function SearchingView({
           </div>
           {/* search body */}
           <div
-            className="w-full mt-5 overflow-auto scrollbar-none "
+            className="w-full mt-5 overflow-auto scrollbar-thin "
             style={{ height: 'calc(100vh - 250px)' }}
           >
             {searchData.search_config.summary && !isSearchStrEmpty && (
@@ -175,13 +166,15 @@ export default function SearchingView({
                   <SkeletonCard className=" mt-2" />
                 ) : (
                   answer.answer && (
-                    <div className="border rounded-lg p-4 mt-3 max-h-52 overflow-auto scrollbar-none">
-                      <MarkdownContent
-                        loading={sendingLoading}
-                        content={answer.answer}
-                        reference={answer.reference ?? ({} as IReference)}
-                        clickDocumentButton={clickDocumentButton}
-                      ></MarkdownContent>
+                    <div className="border rounded-lg p-4 mt-3">
+                      <ExpandableContent maxHeight={208}>
+                        <MarkdownContent
+                          loading={sendingLoading}
+                          content={answer.answer}
+                          reference={answer.reference ?? ({} as IReference)}
+                          clickDocumentButton={clickDocumentButton}
+                        />
+                      </ExpandableContent>
                     </div>
                   )
                 )}
@@ -213,42 +206,15 @@ export default function SearchingView({
                     return (
                       <div key={index}>
                         <div className="w-full flex flex-col">
-                          <div className="w-full highlightContent">
+                          <div className="w-full">
                             {(chunk.image_id || chunk.img_id) && (
                               <ImageWithPopover
                                 id={chunk.image_id || chunk.img_id}
                               ></ImageWithPopover>
                             )}
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <div
-                                  dangerouslySetInnerHTML={{
-                                    __html: DOMPurify.sanitize(
-                                      `${
-                                        chunk.highlight ??
-                                        chunk.content_with_weight ??
-                                        ''
-                                      }...`,
-                                    ),
-                                  }}
-                                  className="text-sm text-text-primary mb-1"
-                                  dir={getDirAttribute(
-                                    getDirectionText(
-                                      chunk.highlight ??
-                                        chunk.content_with_weight ??
-                                        '',
-                                    ),
-                                  )}
-                                ></div>
-                              </PopoverTrigger>
-                              <PopoverContent className="text-text-primary !w-full max-w-lg ">
-                                <div className="max-h-96 overflow-auto scrollbar-thin">
-                                  <HighLightMarkdown>
-                                    {chunk.content_with_weight}
-                                  </HighLightMarkdown>
-                                </div>
-                              </PopoverContent>
-                            </Popover>
+                            <HighLightMarkdown>
+                              {chunk.highlight || chunk.content_with_weight}
+                            </HighLightMarkdown>
                           </div>
                           {chunk.document_metadata &&
                             Object.keys(chunk.document_metadata).length > 0 && (
@@ -358,13 +324,13 @@ export default function SearchingView({
         searchData.search_config.query_mindmap && (
           <Popover>
             <PopoverTrigger asChild>
-              <div
-                className="rounded-lg h-16 w-16 p-0 absolute top-28 right-3 z-30 border cursor-pointer flex justify-center items-center bg-bg-card"
+              <Button
                 onClick={showMindMapModal}
+                variant={'outline'}
+                className="absolute top-28 right-3 z-30 rounded-full size-6"
               >
-                {/* <SvgIcon name="paper-clip" width={24} height={30}></SvgIcon> */}
-                <BrainCircuit size={36} />
-              </div>
+                <ListTree />
+              </Button>
             </PopoverTrigger>
             <PopoverContent className="w-fit">{t('chunk.mind')}</PopoverContent>
           </Popover>
