@@ -351,6 +351,13 @@ class DoclingParser(RAGFlowPdfParser):
         docling_server_url: Optional[str] = None,
         request_timeout: Optional[int] = None,
     ):
+        """
+        Parses a PDF document using a remote Docling server.
+        
+        Prioritizes native chunking endpoints (/v1/chunk/source, /v1alpha/chunk/source) 
+        to prevent token overflow, with a graceful fallback to standard conversion 
+        endpoints if chunking is unavailable.
+        """
         server_url = self._effective_server_url(docling_server_url)
         if not server_url:
             raise RuntimeError("[Docling] DOCLING_SERVER_URL is not configured.")
