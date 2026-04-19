@@ -1,11 +1,10 @@
 import { Authorization } from '@/constants/authorization';
+import { markdownRemarkPluginsLite } from '@/constants/markdown-remark-plugins';
 import { cn } from '@/lib/utils';
 import FileError from '@/pages/document-viewer/file-error';
 import { getAuthorization } from '@/utils/authorization-util';
 import React, { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import remarkBreaks from 'remark-breaks';
-import remarkGfm from 'remark-gfm';
 
 interface MdProps {
   // filePath: string;
@@ -35,7 +34,7 @@ export const Md: React.FC<MdProps> = ({ url, className }) => {
       style={{ padding: 4, overflow: 'scroll' }}
       className={cn(className, 'markdown-body h-[calc(100vh - 200px)]')}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+      <ReactMarkdown remarkPlugins={markdownRemarkPluginsLite}>
         {content}
       </ReactMarkdown>
     </div>
