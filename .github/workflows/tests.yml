@@ -157,9 +157,6 @@ jobs:
           echo "RAGFLOW_CONTAINER=${GITHUB_RUN_ID}-ragflow-cpu-1" >> ${GITHUB_ENV}
 
       - name: Run unit test
-        env:
-          HYPOTHESIS_PROFILE: ""
-          HYPOTHESIS_DISABLE_EAGER_EVALUATION: "1"
         run: |
           uv sync --python 3.12 --group test --frozen
           source .venv/bin/activate

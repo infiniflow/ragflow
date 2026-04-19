@@ -169,7 +169,12 @@ EXAMPLES:
 
         # Run pytest
         try:
-            result = subprocess.run(cmd, check=False)
+            my_env = {
+                **os.environ,
+                "HYPOTHESIS_PROFILE": "default"
+            }
+            
+            result = subprocess.run(cmd, check=False, env=my_env)
 
             if result.returncode == 0:
                 print(f"\n{Colors.GREEN}[SUCCESS]{Colors.NC} All tests passed!")
