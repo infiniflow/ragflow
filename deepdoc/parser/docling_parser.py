@@ -449,7 +449,7 @@ class DoclingParser(RAGFlowPdfParser):
                 if not chunk_text and isinstance(chunk_data.get("chunk"), dict):
                     chunk_text = chunk_data["chunk"].get("text", "")
                 
-                if chunk_text.strip():
+                if isinstance(chunk_text, str) and chunk_text.strip():
                     # Feed the pre-sliced chunks directly into RAGFlow's expected format
                     sections.extend(self._sections_from_remote_text(chunk_text, parse_method=parse_method))
                     
