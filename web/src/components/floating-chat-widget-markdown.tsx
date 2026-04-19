@@ -35,7 +35,7 @@ import {
 } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
-import { markdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
+import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 import styles from './floating-chat-widget-markdown.module.less';
 import { useIsDarkTheme } from './theme-provider';
@@ -290,7 +290,7 @@ const FloatingChatWidgetMarkdown = ({
     <div className="floating-chat-widget" dir={dir}>
       <Markdown
         rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
-        remarkPlugins={markdownRemarkPlugins}
+        remarkPlugins={MarkdownRemarkPlugins}
         className="text-sm leading-relaxed space-y-2 prose-sm max-w-full"
         components={
           {

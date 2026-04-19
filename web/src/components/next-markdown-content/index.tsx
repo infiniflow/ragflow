@@ -10,7 +10,7 @@ import Markdown from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
-import { markdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
+import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 
 import { useTranslation } from 'react-i18next';
@@ -353,7 +353,7 @@ function MarkdownContent({
     <div dir={dir} className={styles.markdownContentWrapper}>
       <Markdown
         rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
-        remarkPlugins={markdownRemarkPlugins}
+        remarkPlugins={MarkdownRemarkPlugins}
         components={
           {
             p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
