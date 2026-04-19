@@ -790,7 +790,13 @@
                     "max_tokens": 1000000,
                     "model_type": "chat",
                     "is_tools": true
-                }
+                },
+                {
+                    "llm_name": "gte-rerank-v2",
+                    "tags": "RE-RANK,30k",
+                    "max_tokens": 4000,
+                    "model_type": "rerank"
+                },
             ]
         },
         {
