@@ -569,6 +569,12 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
         # For aggregate queries (COUNT, SUM, etc.), chunks may be empty but answer is still valid
         if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
+            if include_reference_metadata and ans.get("reference", {}).get("chunks"):
+                kb_id = dialog.kb_ids[0] if len(dialog.kb_ids) == 1 else None
+                if kb_id:
+                    for c in ans["reference"]["chunks"]:
+                        c["kb_id"] = kb_id
+                _enrich_chunks_with_document_metadata(ans["reference"]["chunks"], metadata_fields)
             yield ans
             return
         else:
