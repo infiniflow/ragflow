@@ -49,6 +49,27 @@ from common.string_utils import remove_redundant_spaces
 from common import settings
 
 
+def _normalize_internet_flag(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off", ""}:
+            return False
+    return None
+
+
+def _should_use_web_search(prompt_config, internet=None):
+    if not prompt_config.get("tavily_api_key"):
+        return False
+    normalized = _normalize_internet_flag(internet)
+    return normalized is True
+
+
 class DialogService(CommonService):
     model = Dialog
 
@@ -220,7 +241,14 @@ async def async_chat_solo(dialog, messages, stream=True):
         else:
             text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
         attachments = "\n\n".join(text_attachments)
-    model_config = get_model_config_by_id(dialog.tenant_llm_id)
+    
+    if dialog.llm_id:
+        model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+    elif dialog.tenant_llm_id:
+        model_config = get_model_config_by_id(dialog.tenant_llm_id)
+    else:
+        model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
+
     chat_mdl = LLMBundle(dialog.tenant_id, model_config)
     factory = model_config.get("llm_factory", "") if model_config else ""
 
@@ -269,10 +297,10 @@ def get_models(dialog):
         if not embd_mdl:
             raise LookupError("Embedding model(%s) not found" % embedding_list[0])
 
-    if dialog.tenant_llm_id:
-        chat_model_config = get_model_config_by_id(dialog.tenant_llm_id)
-    elif dialog.llm_id:
+    if dialog.llm_id:
         chat_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+    elif dialog.tenant_llm_id:
+        chat_model_config = get_model_config_by_id(dialog.tenant_llm_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
@@ -461,7 +489,9 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
 async def async_chat(dialog, messages, stream=True, **kwargs):
     logging.debug("Begin async_chat")
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
-    if not dialog.kb_ids and not dialog.prompt_config.get("tavily_api_key"):
+    use_web_search = _should_use_web_search(dialog.prompt_config, kwargs.get("internet"))
+    logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(dialog.prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
+    if not dialog.kb_ids and not use_web_search:
         async for ans in async_chat_solo(dialog, messages, stream):
             yield ans
         return
@@ -531,9 +561,13 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             logging.debug("SQL failed or returned no results, falling back to vector search")
 
     param_keys = [p["key"] for p in prompt_config.get("parameters", [])]
+    if dialog.kb_ids and "knowledge" not in param_keys and "{knowledge}" in prompt_config.get("system", ""):
+        logging.warning("prompt_config['parameters'] is missing 'knowledge' entry despite kb_ids being set; auto-fixing.")
+        prompt_config.setdefault("parameters", []).append({"key": "knowledge", "optional": False})
+        param_keys.append("knowledge")
     logging.debug(f"attachments={attachments}, param_keys={param_keys}, embd_mdl={embd_mdl}")
 
-    for p in prompt_config["parameters"]:
+    for p in prompt_config.get("parameters", []):
         if p["key"] == "knowledge":
             continue
         if p["key"] not in kwargs and not p["optional"]:
@@ -560,8 +594,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         )
 
     if prompt_config.get("keyword", False):
-        questions[-1] += await keyword_extraction(chat_mdl, questions[-1])
-
+        questions[-1] = questions[-1] + "," + await keyword_extraction(chat_mdl, questions[-1])
     refine_question_ts = timer()
 
     thought = ""
@@ -587,6 +620,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     vector_similarity_weight=0.3,
                     doc_ids=attachments,
                 ),
+                internet_enabled=use_web_search,
             )
             queue = asyncio.Queue()
             async def callback(msg:str):
@@ -629,7 +663,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     if cks:
                         kbinfos["chunks"] = cks
                 kbinfos["chunks"] = retriever.retrieval_by_children(kbinfos["chunks"], tenant_ids)
-            if prompt_config.get("tavily_api_key"):
+            if use_web_search:
                 tav = Tavily(prompt_config["tavily_api_key"])
                 tav_res = tav.retrieve_chunks(" ".join(questions))
                 kbinfos["chunks"].extend(tav_res["chunks"])
@@ -771,7 +805,6 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             final = decorate_answer(thought + full_answer)
             final["final"] = True
             final["audio_binary"] = None
-            final["answer"] = ""
             yield final
     else:
         if llm_type == "chat":
@@ -1441,7 +1474,6 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     full_answer = last_state.full_text if last_state else ""
     final = decorate_answer(full_answer)
     final["final"] = True
-    final["answer"] = ""
     yield final
 
 

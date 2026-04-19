@@ -458,9 +458,6 @@ async def patch_chat(chat_id):
             return get_data_error_result(message="Chat not found!")
         current_chat = current_chat.to_dict()
 
-        if req.get("tenant_id"):
-            return get_data_error_result(message="`tenant_id` must not be provided.")
-
         if "name" in req:
             name, err = _validate_name(req.get("name"), required=False)
             if err:

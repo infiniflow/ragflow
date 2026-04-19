@@ -175,17 +175,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
 
-		chats := v1.Group("/chats")
-		{
-			chats.GET("", r.chatHandler.ListChats)
-			chats.GET("/:chat_id", r.chatHandler.GetChat)
-		}
+			chats := v1.Group("/chats")
+			{
+				chats.GET("", r.chatHandler.ListChats)
+				chats.GET("/:chat_id", r.chatHandler.GetChat)
+			}
 
 			searches := v1.Group("/searches")
 			{
 				searches.GET("", r.searchHandler.ListSearches)
 				searches.POST("", r.searchHandler.CreateSearch)
 				searches.GET("/:search_id", r.searchHandler.GetSearch)
+				searches.PUT("/:search_id", r.searchHandler.UpdateSearch)
 				searches.DELETE("/:search_id", r.searchHandler.DeleteSearch)
 			}
 
@@ -195,6 +196,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				file.GET("", r.fileHandler.ListFiles)
 				file.DELETE("", r.fileHandler.DeleteFiles)
 				file.POST("/move", r.fileHandler.MoveFiles)
+				file.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
 				file.GET("/:id", r.fileHandler.Download)
 			}
 
@@ -202,7 +204,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			provider := v1.Group("/providers")
 			{
 				provider.GET("/", r.providerHandler.ListProviders)
-				provider.POST("/", r.providerHandler.AddProvider)
+				provider.PUT("/", r.providerHandler.AddProvider)
 				provider.GET("/:provider_name", r.providerHandler.ShowProvider)
 				provider.DELETE("/:provider_name", r.providerHandler.DeleteProvider)
 				provider.GET("/:provider_name/models", r.providerHandler.ListModels)
@@ -211,10 +213,16 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances", r.providerHandler.ListProviderInstances)
 				provider.GET("/:provider_name/instances/:instance_name", r.providerHandler.ShowProviderInstance)
 				provider.PUT("/:provider_name/instances/:instance_name", r.providerHandler.AlterProviderInstance)
-				provider.DELETE("/:provider_name/instances/:instance_name", r.providerHandler.DropProviderInstance)
+				provider.DELETE("/:provider_name/instances", r.providerHandler.DropProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
-				provider.PUT("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.EnableOrDisableModel)
+				provider.PATCH("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.EnableOrDisableModel)
 				provider.POST("/:provider_name/instances/:instance_name/models/:model_name", r.providerHandler.ChatToModel)
+			}
+
+			model := v1.Group("/models")
+			{
+				model.GET("/", r.tenantHandler.GetModels)
+				model.PATCH("/", r.tenantHandler.SetModels)
 			}
 
 			system := v1.Group("/system")
@@ -244,12 +252,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Knowledge base routes
 		kb := authorized.Group("/v1/kb")
 		{
-			kb.POST("/create", r.knowledgebaseHandler.CreateKB)
 			kb.POST("/update", r.knowledgebaseHandler.UpdateKB)
 			kb.POST("/update_metadata_setting", r.knowledgebaseHandler.UpdateMetadataSetting)
 			kb.GET("/detail", r.knowledgebaseHandler.GetDetail)
-			kb.POST("/list", r.knowledgebaseHandler.ListKbs)
-			kb.POST("/rm", r.knowledgebaseHandler.DeleteKB)
 			kb.GET("/tags", r.knowledgebaseHandler.ListTagsFromKbs)
 			kb.GET("/get_meta", r.knowledgebaseHandler.GetMeta)
 			kb.GET("/basic_info", r.knowledgebaseHandler.GetBasicInfo)
