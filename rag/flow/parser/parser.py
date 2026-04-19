@@ -110,6 +110,7 @@ class ParserParam(ProcessParamBase):
             "pdf": {
                 "parse_method": "deepdoc",  # deepdoc/plain_text/tcadp_parser/vlm
                 "lang": "Chinese",
+                "flatten_media_to_text": False,
                 "remove_toc": False,
                 "suffix": [
                     "pdf",
@@ -118,6 +119,7 @@ class ParserParam(ProcessParamBase):
             },
             "spreadsheet": {
                 "parse_method": "deepdoc",  # deepdoc/tcadp_parser
+                "flatten_media_to_text": False,
                 "output_format": "html",
                 "suffix": [
                     "xls",
@@ -133,6 +135,7 @@ class ParserParam(ProcessParamBase):
                 "output_format": "json",
             },
             "docx": {
+                "flatten_media_to_text": False,
                 "remove_toc": False,
                 "suffix": [
                     "docx",
@@ -140,6 +143,7 @@ class ParserParam(ProcessParamBase):
                 "output_format": "json",
             },
             "markdown": {
+                "flatten_media_to_text": False,
                 "suffix": ["md", "markdown", "mdx"],
                 "remove_toc": False,
                 "output_format": "json",
@@ -312,6 +316,7 @@ class Parser(ProcessBase):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PDF.")
         conf = self._param.setups["pdf"]
         self.set_output("output_format", conf["output_format"])
+        flatten_media_to_text = conf.get("flatten_media_to_text")
         pdf_parser = None
 
         # Optional PDF post-processing flags applied after parsing.
@@ -578,7 +583,9 @@ class Parser(ProcessBase):
                 layout_counters[layout] = seq + 1
                 b["layoutno"] = f"{layout}-{seq}"
 
-            if layout == "table":
+            if flatten_media_to_text:
+                b["doc_type_kwd"] = "text"
+            elif layout == "table":
                 b["doc_type_kwd"] = "table"
             elif layout == "figure":
                 b["doc_type_kwd"] = "image"
@@ -675,6 +682,7 @@ class Parser(ProcessBase):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a Spreadsheet.")
         conf = self._param.setups["spreadsheet"]
         self.set_output("output_format", conf["output_format"])
+        flatten_media_to_text = conf.get("flatten_media_to_text")
 
         parse_method = conf.get("parse_method", "deepdoc")
 
@@ -730,7 +738,12 @@ class Parser(ProcessBase):
                 # Add tables as text
                 for table in tables:
                     if table:
-                        result.append({"text": table, "doc_type_kwd": "table"})
+                        result.append(
+                            {
+                                "text": table,
+                                "doc_type_kwd": "text" if flatten_media_to_text else "table",
+                            }
+                        )
 
                 self.set_output("json", result)
 
@@ -778,6 +791,7 @@ class Parser(ProcessBase):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a DOCX document")
         conf = self._param.setups["docx"]
         self.set_output("output_format", conf["output_format"])
+        flatten_media_to_text = conf.get("flatten_media_to_text")
         
         if re.search(r"\.doc$", name, re.IGNORECASE):
             self.set_output("file", {**kwargs.get("file", {}), "outlines": []})
@@ -830,7 +844,7 @@ class Parser(ProcessBase):
                     {
                         "text": text,
                         "image": image,
-                        "doc_type_kwd": "image" if image is not None else "text",
+                        "doc_type_kwd": "text" if flatten_media_to_text or image is None else "image",
                     }
                 )
                 if html:
@@ -838,7 +852,7 @@ class Parser(ProcessBase):
                         {
                             "text": html,
                             "image": None,
-                            "doc_type_kwd": "table",
+                            "doc_type_kwd": "text" if flatten_media_to_text else "table",
                         }
                     )
             enhance_media_sections_with_vision(
@@ -934,6 +948,7 @@ class Parser(ProcessBase):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a markdown.")
         conf = self._param.setups["markdown"]
         self.set_output("output_format", conf["output_format"])
+        flatten_media_to_text = conf.get("flatten_media_to_text")
 
         markdown_parser = naive_markdown_parser()
         sections, tables, section_images = markdown_parser(
@@ -959,7 +974,11 @@ class Parser(ProcessBase):
                     # If multiple images found, combine them using concat_img
                     combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
                     json_result["image"] = combined_image
-                json_result["doc_type_kwd"] = "image" if json_result.get("image") is not None else "text"
+                json_result["doc_type_kwd"] = (
+                    "text"
+                    if flatten_media_to_text or json_result.get("image") is None
+                    else "image"
+                )
                 json_results.append(json_result)
 
             for table in tables:
@@ -968,7 +987,7 @@ class Parser(ProcessBase):
                     json_results.append(
                         {
                             "text": table_text,
-                            "doc_type_kwd": "table",
+                            "doc_type_kwd": "text" if flatten_media_to_text else "table",
                         }
                     )
 

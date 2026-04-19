@@ -356,6 +356,11 @@ export default {
       delimiter: `文本分段标识符`,
       delimiterTip:
         '支持多字符作为分隔符，多字符用两个反引号 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
+      enableChildrenDelimiter: '子文本块用于检索',
+      childrenDelimiter: '文本分段标识符',
+      childrenDelimiterTip:
+        '支持多字符作为分隔符，多字符用两个反引号 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
+
       html4excel: '表格转HTML',
       html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel 97-2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dev/enable_excel2html。`,
       autoKeywords: '自动关键词提取',
@@ -687,6 +692,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       delete: '删除',
     },
     chat: {
+      chatSupport: '聊天支持',
+      replyInstantly: '我们通常会即时回复',
+      typeYourMessage: '输入您的消息...',
       messagePlaceholder: '请输入消息...',
       exit: '退出',
       multipleModels: '多模型',
@@ -1260,6 +1268,19 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         author: '作者',
         sectionTitle: '章节标题',
       },
+      includeHeadingContent: '包含标题内容',
+      includeHeadingContentTip:
+        '启用后，标题下的直接内容将作为一个独立的块保留。子块仅保留标题路径。',
+      hierarchyTip: `构建标题树并生成独立的块，每个块携带其完整的祖先标题路径（例如 第1部分 › 第3章 › 第2节 + 正文）。\n
+适用场景：具有独立的、结构性重要章节的文档——如法律条款、法规、合同和技术规范——其中每个块即使没有上下文也能通过其结构位置来识别。`,
+      groupTip: `在选定的标题级别将文档扁平分割，并自动合并相邻的小节以保持内容连续性。不注入父标题路径。\n
+适用场景：具有流动性的、内容相关联的文档——如书籍、手册、报告和文章——其中相邻段落应保持在一起以维持叙述连贯性。`,
+      enableMultiColumn: '启用多栏',
+      enableMultiColumnTip:
+        '检测并解析多栏页面布局以保持正确的阅读顺序。对于具有双栏或报纸式布局的PDF或文档，请开启此功能。',
+      removeToc: '移除原始目录',
+      removeTocTip:
+        '移除原始PDF中包含的目录，这样它就不会被解析为常规内容或作为检索块。',
       autoPlay: '自动播放',
       downloadFileTypeTip: '文件下载的类型',
       downloadFileType: '文件类型',
@@ -1315,6 +1336,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       oneChunkTitle: 'Note',
       oneChunkDescription:
         '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
+      flattenMediaToText: '禁用视觉模型',
+      flattenMediaToTextTip: '将图片和表格区块按普通文本处理，并跳过视觉增强。',
       merge: '合并',
       split: '拆分',
       script: '脚本',
@@ -1449,10 +1472,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       searXNG: 'SearXNG',
       searXNGDescription:
         '该组件通过您提供的 SearXNG 实例地址进行搜索。请设置 Top N 和实例 URL。',
-      pdfGenerator: '文档生成器',
-      pDFGenerator: '文档生成器',
-      pdfGeneratorDescription: `该组件从 markdown 格式的内容生成文档（PDF、DOCX、TXT），支持自定义样式、图片和表格。支持：**粗体**、*斜体*、# 标题、- 列表、使用 | 语法的表格。`,
-      pDFGeneratorDescription: `该组件从 markdown 格式的内容生成文档（PDF、DOCX、TXT），支持自定义样式、图片和表格。支持：**粗体**、*斜体*、# 标题、- 列表、使用 | 语法的表格。`,
+      docGenerator: '文档生成器',
+      docGeneratorDescription: `从 Markdown 内容生成文件。`,
       subtitle: '副标题',
       logoImage: '标志图片',
       logoPosition: '标志位置',
@@ -1950,7 +1971,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tokenChunkerDescription:
         '根据分词器长度将文本拆分成块，并带有可选的分隔符和重叠。',
       titleChunkerDescription:
-        '使用正则表达式规则按标题层次结构将文档拆分成多个部分，以实现更精细的控制。',
+        '按标题层级拆分文档。通过正则表达式定义各级标题，再选择层级或分组模式控制切片方式。',
       titleChunker: '按标题分块',
       extractor: '提取器',
       extractorDescription:
@@ -1973,7 +1994,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       },
       fields: '字段',
       addParser: '增加解析器',
-      hierarchy: '层次结构',
+      rule: '规则',
+      addRule: '增加规则',
+      addRegularExpressions: '增加正则表达式',
+      // group: '聚合',
+      // hierarchy: '层次结构',
       regularExpressions: '正则表达式',
       overlappedPercent: '重叠百分比（%）',
       searchMethod: '搜索方法',

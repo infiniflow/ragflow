@@ -9,11 +9,11 @@ export default {
   logout: `${webAPI}/user/logout`,
   register: `${webAPI}/user/register`,
   setting: `${webAPI}/user/setting`,
-  user_info: `${webAPI}/user/info`,
-  tenant_info: `${webAPI}/user/tenant_info`,
-  set_tenant_info: `${webAPI}/user/set_tenant_info`,
-  login_channels: `${webAPI}/user/login/channels`,
-  login_channel: (channel: string) => `${webAPI}/user/login/${channel}`,
+  userInfo: `${webAPI}/user/info`,
+  tenantInfo: `${webAPI}/user/tenant_info`,
+  setTenantInfo: `${webAPI}/user/set_tenant_info`,
+  loginChannels: `${webAPI}/user/login/channels`,
+  loginChannel: (channel: string) => `${webAPI}/user/login/${channel}`,
 
   // team
   addTenantUser: (tenantId: string) => `${webAPI}/tenant/${tenantId}/user`,
@@ -25,13 +25,13 @@ export default {
   agreeTenant: (tenantId: string) => `${webAPI}/tenant/agree/${tenantId}`,
 
   // llm model
-  factories_list: `${webAPI}/llm/factories`,
-  llm_list: `${webAPI}/llm/list`,
-  my_llm: `${webAPI}/llm/my_llms`,
-  set_api_key: `${webAPI}/llm/set_api_key`,
-  add_llm: `${webAPI}/llm/add_llm`,
-  delete_llm: `${webAPI}/llm/delete_llm`,
-  enable_llm: `${webAPI}/llm/enable_llm`,
+  factoriesList: `${webAPI}/llm/factories`,
+  llmList: `${webAPI}/llm/list`,
+  myLlm: `${webAPI}/llm/my_llms`,
+  setApiKey: `${webAPI}/llm/set_api_key`,
+  addLlm: `${webAPI}/llm/add_llm`,
+  deleteLlm: `${webAPI}/llm/delete_llm`,
+  enableLlm: `${webAPI}/llm/enable_llm`,
   deleteFactory: `${webAPI}/llm/delete_factory`,
 
   // data source
@@ -50,18 +50,18 @@ export default {
   boxWebAuthResult: () => `${webAPI}/connector/box/oauth/web/result`,
 
   // plugin
-  llm_tools: `${webAPI}/plugin/llm_tools`,
+  llmTools: `${webAPI}/plugin/llm_tools`,
 
   chatsTranscriptions: `${restAPIv1}/chats/transcriptions`,
 
   // knowledge base
 
-  check_embedding: `${webAPI}/kb/check_embedding`,
-  kb_list: `${restAPIv1}/datasets`,
-  create_kb: `${restAPIv1}/datasets`,
-  update_kb: (datasetId: string) => `${restAPIv1}/datasets/${datasetId}`,
-  rm_kb: `${restAPIv1}/datasets`,
-  get_kb_detail: `${webAPI}/kb/detail`,
+  checkEmbedding: `${webAPI}/kb/check_embedding`,
+  kbList: `${restAPIv1}/datasets`,
+  createKb: `${restAPIv1}/datasets`,
+  updateKb: (datasetId: string) => `${restAPIv1}/datasets/${datasetId}`,
+  rmKb: `${restAPIv1}/datasets`,
+  getKbDetail: `${webAPI}/kb/detail`,
   getKnowledgeGraph: (knowledgeId: string) =>
     `${restAPIv1}/datasets/${knowledgeId}/knowledge_graph`,
   deleteKnowledgeGraph: (knowledgeId: string) =>
@@ -70,7 +70,7 @@ export default {
   getKnowledgeBasicInfo: `${webAPI}/kb/basic_info`,
   // data pipeline log
   fetchDataPipelineLog: `${webAPI}/kb/list_pipeline_logs`,
-  get_pipeline_detail: `${webAPI}/kb/pipeline_log_detail`,
+  getPipelineDetail: `${webAPI}/kb/pipeline_log_detail`,
   fetchPipelineDatasetLogs: `${webAPI}/kb/list_pipeline_dataset_logs`,
   runGraphRag: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/run_graphrag`,
@@ -96,36 +96,36 @@ export default {
   renameTag: (knowledgeId: string) => `${webAPI}/kb/${knowledgeId}/rename_tag`,
 
   // chunk
-  chunk_list: `${webAPI}/chunk/list`,
-  create_chunk: `${webAPI}/chunk/create`,
-  set_chunk: `${webAPI}/chunk/set`,
-  get_chunk: `${webAPI}/chunk/get`,
-  switch_chunk: `${webAPI}/chunk/switch`,
-  rm_chunk: `${webAPI}/chunk/rm`,
-  retrieval_test: `${webAPI}/chunk/retrieval_test`,
-  knowledge_graph: `${webAPI}/chunk/knowledge_graph`,
+  chunkList: `${webAPI}/chunk/list`,
+  createChunk: `${webAPI}/chunk/create`,
+  setChunk: `${webAPI}/chunk/set`,
+  getChunk: `${webAPI}/chunk/get`,
+  switchChunk: `${webAPI}/chunk/switch`,
+  rmChunk: `${webAPI}/chunk/rm`,
+  retrievalTest: `${webAPI}/chunk/retrieval_test`,
+  knowledgeGraph: `${webAPI}/chunk/knowledge_graph`,
 
   // document
-  get_document_list: `${webAPI}/document/list`,
-  document_change_status: `${webAPI}/document/change_status`,
-  document_rm: `${webAPI}/document/rm`,
-  document_delete: `${webAPI}/api/document`,
-  document_rename: (datasetId: string, documentId: string) =>
+  getDocumentList: `${webAPI}/document/list`,
+  documentChangeStatus: `${webAPI}/document/change_status`,
+  documentRm: `${webAPI}/document/rm`,
+  documentDelete: `${webAPI}/api/document`,
+  documentRename: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
-  document_create: `${webAPI}/document/create`,
-  document_run: `${webAPI}/document/run`,
-  document_change_parser: `${webAPI}/document/change_parser`,
-  document_thumbnails: `${webAPI}/document/thumbnails`,
-  get_document_file: `${webAPI}/document/get`,
-  get_document_file_download: (docId: string) =>
+  documentCreate: `${webAPI}/document/create`,
+  documentRun: `${webAPI}/document/run`,
+  documentChangeParser: `${webAPI}/document/change_parser`,
+  documentThumbnails: `${webAPI}/document/thumbnails`,
+  getDocumentFile: `${webAPI}/document/get`,
+  getDocumentFileDownload: (docId: string) =>
     `${webAPI}/document/download/${docId}`,
-  document_upload: `${webAPI}/document/upload`,
-  web_crawl: `${webAPI}/document/web_crawl`,
-  document_infos: `${webAPI}/document/infos`,
-  upload_and_parse: `${webAPI}/document/upload_info`,
-  parse: `${webAPI}/document/parse`,
+  documentUpload: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents`,
+  webCrawl: `${webAPI}/document/web_crawl`,
+  documentInfos: `${webAPI}/document/infos`,
+  uploadAndParse: `${webAPI}/document/upload_info`,
   setMeta: `${webAPI}/document/set_meta`,
-  get_dataset_filter: `${webAPI}/document/filter`,
+  getDatasetFilter: `${webAPI}/document/filter`,
 
   // chat
   createChat: `${restAPIv1}/chats`,
@@ -223,9 +223,6 @@ export default {
   deleteMcpServer: `${webAPI}/mcp_server/rm`,
   importMcpServer: `${webAPI}/mcp_server/import`,
   exportMcpServer: `${webAPI}/mcp_server/export`,
-  listMcpServerTools: `${webAPI}/mcp_server/list_tools`,
-  testMcpServerTool: `${webAPI}/mcp_server/test_tool`,
-  cacheMcpServerTool: `${webAPI}/mcp_server/cache_tools`,
   testMcpServer: `${webAPI}/mcp_server/test_mcp`,
 
   // next-search

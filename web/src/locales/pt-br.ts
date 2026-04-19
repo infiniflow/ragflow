@@ -356,6 +356,9 @@ export default {
       questionTip: `Se houver perguntas fornecidas, a incorporação do fragmento será baseada nelas.`,
     },
     chat: {
+      chatSupport: 'Suporte por chat',
+      replyInstantly: 'Normalmente respondemos instantaneamente',
+      typeYourMessage: 'Digite sua mensagem...',
       newConversation: 'Nova conversa',
       createAssistant: 'Criar um Assistente',
       assistantSetting: 'Configuração do Assistente',
@@ -781,10 +784,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Um componente que realiza buscas via URL da instância SearXNG que você fornece. Especifique TopN e URL da instância.',
-      pdfGenerator: 'Gerador de Documentos',
-      pDFGenerator: 'Gerador de Documentos',
-      pdfGeneratorDescription: `Um componente que gera documentos (PDF, DOCX, TXT) de conteúdo formatado em markdown com estilo personalizável, imagens e tabelas. Suporta: **negrito**, *itálico*, # títulos, - listas, tabelas com sintaxe |.`,
-      pDFGeneratorDescription: `Um componente que gera documentos (PDF, DOCX, TXT) de conteúdo formatado em markdown com estilo personalizável, imagens e tabelas. Suporta: **negrito**, *itálico*, # títulos, - listas, tabelas com sintaxe |.`,
+      docGenerator: 'Gerador de Documentos',
+      docGeneratorDescription: `Gera um arquivo a partir de conteúdo Markdown.`,
       subtitle: 'Subtítulo',
       logoImage: 'Imagem Logo',
       logoPosition: 'Posição Logo',

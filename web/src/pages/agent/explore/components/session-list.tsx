@@ -13,7 +13,7 @@ interface SessionListProps {
 }
 
 export function SessionList({
-  selectedSessionId,
+  selectedSessionId = '',
   onSelectSession,
 }: SessionListProps) {
   const { t } = useTranslation();

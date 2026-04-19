@@ -397,6 +397,9 @@ export default {
         'Nếu có những câu hỏi được đưa ra, việc nhúng phần đó sẽ dựa trên những câu hỏi đó.',
     },
     chat: {
+      chatSupport: 'Hỗ trợ trò chuyện',
+      replyInstantly: 'Chúng tôi thường phản hồi ngay lập tức',
+      typeYourMessage: 'Nhập tin nhắn của bạn...',
       newConversation: 'Cuộc trò chuyện mới',
       createAssistant: 'Tạo trợ lý',
       assistantSetting: 'Cài đặt trợ lý',
@@ -861,10 +864,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Một thành phần tìm kiếm thông qua URL phiên bản SearXNG bạn cung cấp. Chỉ định TopN và URL phiên bản.',
-      pdfGenerator: 'Trình tạo Tài liệu',
-      pDFGenerator: 'Trình tạo Tài liệu',
-      pdfGeneratorDescription: `Một thành phần tạo tài liệu (PDF, DOCX, TXT) từ nội dung định dạng markdown với kiểu tùy chỉnh, hình ảnh và bảng. Hỗ trợ: **in đậm**, *in nghiêng*, # tiêu đề, - danh sách, bảng với cú pháp |.`,
-      pDFGeneratorDescription: `Một thành phần tạo tài liệu (PDF, DOCX, TXT) từ nội dung định dạng markdown với kiểu tùy chỉnh, hình ảnh và bảng. Hỗ trợ: **in đậm**, *in nghiêng*, # tiêu đề, - danh sách, bảng với cú pháp |.`,
+      docGenerator: 'Trình tạo Tài liệu',
+      docGeneratorDescription: `Tạo tệp từ nội dung Markdown.`,
       subtitle: 'Phụ đề',
       logoImage: 'Hình ảnh Logo',
       logoPosition: 'Vị trí Logo',

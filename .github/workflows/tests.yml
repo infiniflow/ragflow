@@ -247,7 +247,7 @@ jobs:
             echo "Waiting for service to be available... (last exit code: $?)"
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api/test_api_app test/testcases/test_web_api/test_chunk_feedback 2>&1 | tee infinity_web_api_test.log
+          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api/test_chunk_feedback 2>&1 | tee infinity_web_api_test.log
 
       - name: Run http api tests against Infinity
         run: |

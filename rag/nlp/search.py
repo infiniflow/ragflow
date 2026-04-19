@@ -26,6 +26,7 @@ from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, OrderByE
 from common.string_utils import remove_redundant_spaces
 from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
+from common.tag_feature_utils import parse_tag_features
 from common import settings
 
 from common.misc_utils import thread_pool_exec
@@ -279,12 +280,18 @@ class Dealer:
             return np.array([0 for _ in range(len(search_res.ids))]) + pageranks
 
         q_denor = np.sqrt(np.sum([s * s for t, s in query_rfea.items() if t != PAGERANK_FLD]))
+        if q_denor == 0:
+            return np.array([0 for _ in range(len(search_res.ids))]) + pageranks
         for i in search_res.ids:
             nor, denor = 0, 0
             if not search_res.field[i].get(TAG_FLD):
                 rank_fea.append(0)
                 continue
-            for t, sc in eval(search_res.field[i].get(TAG_FLD, "{}")).items():
+            tag_feas = parse_tag_features(search_res.field[i].get(TAG_FLD), allow_json_string=True, allow_python_literal=True)
+            if not tag_feas:
+                rank_fea.append(0)
+                continue
+            for t, sc in tag_feas.items():
                 if t in query_rfea:
                     nor += query_rfea[t] * sc
                 denor += sc * sc
@@ -383,13 +390,18 @@ class Dealer:
         if not question:
             return ranks
 
-        # Ensure RERANK_LIMIT is multiple of page_size
+        # Keep the historical windowing strategy by default, but when an external
+        # reranker is enabled cap candidate count by both top_k and provider-safe 64.
         RERANK_LIMIT = math.ceil(64 / page_size) * page_size if page_size > 1 else 1
         RERANK_LIMIT = max(30, RERANK_LIMIT)
+        if rerank_mdl and top > 0:
+            RERANK_LIMIT = min(RERANK_LIMIT, top, 64)
+        page = max(page, 1)
+        global_offset = (page - 1) * page_size
         req = {
             "kb_ids": kb_ids,
             "doc_ids": doc_ids,
-            "page": math.ceil(page_size * page / RERANK_LIMIT),
+            "page": global_offset // RERANK_LIMIT + 1,
             "size": RERANK_LIMIT,
             "question": question,
             "vector": True,
@@ -453,9 +465,7 @@ class Dealer:
             ranks["doc_aggs"] = []
             return ranks
 
-        max_pages = max(RERANK_LIMIT // max(page_size, 1), 1)
-        page_index = (page - 1) % max_pages
-        begin = page_index * page_size
+        begin = global_offset % RERANK_LIMIT
         end = begin + page_size
         page_idx = valid_idx[begin:end]
 
@@ -644,6 +654,7 @@ class Dealer:
             chunk = self.dataStore.get(cid, idx_nms[0], kb_ids)
             if not chunk:
                 continue
+            has_highlights = any(ck.get("highlight") for ck in chunks)
             d = {
                 "chunk_id": cid,
                 "content_ltks": chunk["content_ltks"],
@@ -660,6 +671,8 @@ class Dealer:
                 "positions": chunk.get("position_int", []),
                 "doc_type_kwd": chunk.get("doc_type_kwd", "")
             }
+            if has_highlights:
+                d["highlight"] = chunk["content_with_weight"]
             for k in chunk.keys():
                 if k[-4:] == "_vec":
                     d["vector"] = chunk[k]
@@ -692,6 +705,7 @@ class Dealer:
         vector_size = 1024
         for id, cks in mom_chunks.items():
             chunk = self.dataStore.get(id, idx_nms[0], [ck["kb_id"] for ck in cks])
+            child_highlights = [ck["highlight"] for ck in cks if ck.get("highlight")]
             d = {
                 "chunk_id": id,
                 "content_ltks": " ".join([ck["content_ltks"] for ck in cks]),
@@ -708,6 +722,8 @@ class Dealer:
                 "positions": chunk.get("position_int", []),
                 "doc_type_kwd": chunk.get("doc_type_kwd", "")
             }
+            if child_highlights:
+                d["highlight"] = " ".join(child_highlights)
             for k in cks[0].keys():
                 if k[-4:] == "_vec":
                     d["vector"] = cks[0][k]

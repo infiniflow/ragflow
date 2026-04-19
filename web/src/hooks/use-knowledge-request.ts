@@ -2,10 +2,10 @@ import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-f
 import message from '@/components/ui/message';
 import { ParseType } from '@/constants/knowledge';
 import { ResponsePostType } from '@/interfaces/database/base';
+import { IDataset, IDatasetListResult } from '@/interfaces/database/dataset';
 import {
   IKnowledge,
   IKnowledgeGraph,
-  IKnowledgeResult,
   INextTestingResult,
   IRenameTag,
   ITestingResult,
@@ -78,7 +78,7 @@ export const useTestRetrieval = () => {
 
   const mutation = useMutation<INextTestingResult, Error, typeof queryParams>({
     mutationFn: async (params) => {
-      const { data } = await kbService.retrieval_test(params);
+      const { data } = await kbService.retrievalTest(params);
       const result = data?.data ?? {};
       return { ...result, isRuned: true };
     },
@@ -148,7 +148,7 @@ export const useFetchNextKnowledgeListByPage = () => {
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
   const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
 
-  const { data, isFetching: loading } = useQuery<IKnowledgeResult>({
+  const { data, isFetching: loading } = useQuery<IDatasetListResult>({
     queryKey: [
       KnowledgeApiAction.FetchKnowledgeListByPage,
       {
@@ -302,6 +302,9 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
       filename_embd_weight,
       task_page_size,
       pages,
+      children_delimiter,
+      use_parent_child,
+      enable_children,
       ext,
       ...parserExt
     } = parserConfig;
@@ -319,6 +322,12 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
       filename_embd_weight,
       task_page_size,
       pages,
+      parent_child: enable_children
+        ? {
+            children_delimiter,
+            use_parent_child: use_parent_child ?? enable_children,
+          }
+        : undefined,
       ext: { ...ext, ...parserExt },
     };
   };
@@ -386,33 +395,22 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
 
 export const useFetchKnowledgeBaseConfiguration = (props?: {
   isEdit?: boolean;
-  refreshCount?: number;
 }) => {
-  const { isEdit = true, refreshCount } = props || { isEdit: true };
+  const { isEdit = true } = props || { isEdit: true };
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const knowledgeBaseId = searchParams.get('id') || id;
 
-  let queryKey: (KnowledgeApiAction | number)[] = [
-    KnowledgeApiAction.FetchKnowledgeDetail,
-  ];
-  if (typeof refreshCount === 'number') {
-    queryKey = [KnowledgeApiAction.FetchKnowledgeDetail, refreshCount];
-  }
-
   const { data, isFetching: loading } = useQuery<IKnowledge>({
-    queryKey,
+    queryKey: [KnowledgeApiAction.FetchKnowledgeDetail, knowledgeBaseId],
     initialData: {} as IKnowledge,
     gcTime: 0,
+    enabled: !!knowledgeBaseId && isEdit,
     queryFn: async () => {
-      if (isEdit) {
-        const { data } = await kbService.get_kb_detail({
-          kb_id: knowledgeBaseId,
-        });
-        return data?.data ?? {};
-      } else {
-        return {};
-      }
+      const { data } = await kbService.getKbDetail({
+        kb_id: knowledgeBaseId,
+      });
+      return data?.data ?? {};
     },
   });
 
@@ -481,7 +479,7 @@ export const useRemoveKnowledgeGraph = () => {
 export const useFetchKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
 ): {
-  list: IKnowledge[];
+  list: IDataset[];
   loading: boolean;
 } => {
   const { data, isFetching: loading } = useQuery({
@@ -492,7 +490,7 @@ export const useFetchKnowledgeList = (
       const { data } = await listDataset();
       const list = data?.data ?? [];
       return shouldFilterListWithoutDocument
-        ? list.filter((x: IKnowledge) => x.chunk_count > 0)
+        ? list.filter((x: IDataset) => x.chunk_count > 0)
         : list;
     },
   });
@@ -621,9 +619,10 @@ export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
     mutationKey: ['testChunk'], // This method is invalid
     gcTime: 0,
     mutationFn: async (values: any) => {
-      const { data } = await kbService.retrieval_test({
+      const { data } = await kbService.retrievalTest({
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
+        highlight: true,
         page,
         size: pageSize,
       });
@@ -665,9 +664,10 @@ export const useTestChunkAllRetrieval = (): ResponsePostType<ITestingResult> & {
     mutationKey: ['testChunkAll'], // This method is invalid
     gcTime: 0,
     mutationFn: async (values: any) => {
-      const { data } = await kbService.retrieval_test({
+      const { data } = await kbService.retrievalTest({
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
+        highlight: true,
         doc_ids: [],
         page,
         size: pageSize,
