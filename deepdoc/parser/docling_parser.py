@@ -41,7 +41,7 @@ except Exception:
     class RAGFlowPdfParser:  
         pass
 
-    from deepdoc.parser.utils import extract_pdf_outlines
+from deepdoc.parser.utils import extract_pdf_outlines
 
 
 
@@ -430,6 +430,8 @@ class DoclingParser(RAGFlowPdfParser):
             # The chunking endpoint returns an array of chunk items
             chunks = response_json if isinstance(response_json, list) else response_json.get("results", [])
             for chunk_data in chunks:
+                if not isinstance(chunk_data, dict):
+                    continue
                 # Depending on the exact docling-serve spec, the text might be nested
                 chunk_text = chunk_data.get("text", "")
                 if not chunk_text and "chunk" in chunk_data:
