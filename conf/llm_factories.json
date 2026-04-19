@@ -793,10 +793,16 @@
                 },
                 {
                     "llm_name": "gte-rerank-v2",
-                    "tags": "RE-RANK,30k",
+                    "tags": "RE-RANK,4k",
                     "max_tokens": 4000,
                     "model_type": "rerank"
                 },
+                {
+                    "llm_name": "qwen3-rerank",
+                    "tags": "RE-RANK,4k",
+                    "max_tokens": 4000,
+                    "model_type": "rerank"
+                }
             ]
         },
         {
