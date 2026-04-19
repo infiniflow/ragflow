@@ -415,9 +415,21 @@ class DoclingParser(RAGFlowPdfParser):
                     response_json = resp.json()
                     is_chunked_response = chunk_flag
                     break
+                
+                # --- UPDATED LOGIC ---
+                if chunk_flag and resp.status_code != 404:
+                    self.logger.error(f"[Docling] Chunking failed with {resp.status_code}: {resp.text[:300]}")
+                    errors.append(f"{endpoint}: HTTP {resp.status_code}")
+                    break  # <-- THE MAGIC FIX: This instantly kills the loop so it cannot fallback
+                # ---------------------
+
                 errors.append(f"{endpoint}: HTTP {resp.status_code} {resp.text[:300]}")
+                
             except Exception as exc:
+                self.logger.error(f"[Docling] Request error on {endpoint}: {exc}")
                 errors.append(f"{endpoint}: {exc}")
+                if chunk_flag:
+                    break  # Kill the loop on hard network failures too!
 
         if response_json is None:
             raise RuntimeError("[Docling] remote convert failed: " + " | ".join(errors))
