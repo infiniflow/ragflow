@@ -41,7 +41,8 @@ except Exception:
     class RAGFlowPdfParser:  
         pass
 
-from deepdoc.parser.utils import extract_pdf_outlines
+    from deepdoc.parser.utils import extract_pdf_outlines
+
 
 
 class DoclingContentType(str, Enum):
@@ -372,36 +373,37 @@ class DoclingParser(RAGFlowPdfParser):
 
         filename = Path(filepath).name or "input.pdf"
         b64 = base64.b64encode(pdf_bytes).decode("ascii")
+        
+        # Standard payloads
         v1_payload = {
-            "options": {
-                "from_formats": ["pdf"],
-                "to_formats": ["json", "md", "text"],
-            },
-            "sources": [
-                {
-                    "kind": "file",
-                    "filename": filename,
-                    "base64_string": b64,
-                }
-            ],
+            "options": {"from_formats": ["pdf"], "to_formats": ["json", "md", "text"]},
+            "sources": [{"kind": "file", "filename": filename, "base64_string": b64}],
         }
         v1alpha_payload = {
-            "options": {
-                "from_formats": ["pdf"],
-                "to_formats": ["json", "md", "text"],
-            },
-            "file_sources": [
-                {
-                    "filename": filename,
-                    "base64_string": b64,
-                }
-            ],
+            "options": {"from_formats": ["pdf"], "to_formats": ["json", "md", "text"]},
+            "file_sources": [{"filename": filename, "base64_string": b64}],
         }
+        
+        # --- NEW: Chunking Payload ---
+        # Docling-serve's native chunking endpoint parameters
+        chunking_payload = {
+            "sources": [{"kind": "file", "filename": filename, "base64_string": b64}],
+            "options": {
+                "max_tokens": 512, # A safe default to prevent embedding overflows
+                "overlap_tokens": 50
+            }
+        }
+
         errors = []
         response_json = None
-        for endpoint, payload in (
-            ("/v1/convert/source", v1_payload),
-            ("/v1alpha/convert/source", v1alpha_payload),
+        is_chunked_response = False
+        
+        # We prioritize the new chunking endpoints first!
+        for endpoint, payload, chunk_flag in (
+            ("/v1/chunk/source", chunking_payload, True),          # New stable chunking
+            ("/v1alpha/chunk/source", chunking_payload, True),     # New alpha chunking
+            ("/v1/convert/source", v1_payload, False),             # Fallback to standard
+            ("/v1alpha/convert/source", v1alpha_payload, False),   # Fallback to alpha standard
         ):
             try:
                 resp = requests.post(
@@ -411,6 +413,7 @@ class DoclingParser(RAGFlowPdfParser):
                 )
                 if resp.status_code < 300:
                     response_json = resp.json()
+                    is_chunked_response = chunk_flag
                     break
                 errors.append(f"{endpoint}: HTTP {resp.status_code} {resp.text[:300]}")
             except Exception as exc:
@@ -419,12 +422,32 @@ class DoclingParser(RAGFlowPdfParser):
         if response_json is None:
             raise RuntimeError("[Docling] remote convert failed: " + " | ".join(errors))
 
+        sections: list[tuple[str, ...]] = []
+        tables = []
+        
+        # --- NEW: Handle Native Chunked Response ---
+        if is_chunked_response:
+            # The chunking endpoint returns an array of chunk items
+            chunks = response_json if isinstance(response_json, list) else response_json.get("results", [])
+            for chunk_data in chunks:
+                # Depending on the exact docling-serve spec, the text might be nested
+                chunk_text = chunk_data.get("text", "")
+                if not chunk_text and "chunk" in chunk_data:
+                    chunk_text = chunk_data["chunk"].get("text", "")
+                
+                if chunk_text.strip():
+                    # Feed the pre-sliced chunks directly into RAGFlow's expected format
+                    sections.extend(self._sections_from_remote_text(chunk_text, parse_method=parse_method))
+                    
+            if callback:
+                callback(0.95, f"[Docling] Native chunks received: {len(sections)}")
+            return sections, tables
+
+        # --- FALLBACK: Standard RAGFlow parsing for older docling servers ---
         docs = self._extract_remote_document_entries(response_json)
         if not docs:
             raise RuntimeError("[Docling] remote response does not contain parsed documents.")
 
-        sections: list[tuple[str, ...]] = []
-        tables = []
         for doc in docs:
             md = doc.get("md_content")
             txt = doc.get("text_content")
