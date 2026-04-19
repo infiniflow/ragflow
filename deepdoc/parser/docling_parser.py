@@ -382,41 +382,47 @@ class DoclingParser(RAGFlowPdfParser):
         b64 = base64.b64encode(pdf_bytes).decode("ascii")
         
         # Standard payloads
-        v1_payload = {
+        # Standard fallback payloads (no chunking)
+        v1_payload_standard = {
             "options": {"from_formats": ["pdf"], "to_formats": ["json", "md", "text"]},
             "sources": [{"kind": "file", "filename": filename, "base64_string": b64}],
         }
-        v1alpha_payload = {
+        v1alpha_payload_standard = {
             "options": {"from_formats": ["pdf"], "to_formats": ["json", "md", "text"]},
             "file_sources": [{"filename": filename, "base64_string": b64}],
         }
         
-        # --- NEW: Chunking Payload ---
-        # Docling-serve's native chunking endpoint parameters
-        chunking_payload = {
-            "sources": [{"kind": "file", "filename": filename, "base64_string": b64}],
-            "options": {
-                "max_tokens": 512, # A safe default to prevent embedding overflows
-                "overlap_tokens": 50
+        # --- NEW: Correct API Contract for Chunking ---
+        chunking_opts = {
+            "from_formats": ["pdf"], 
+            "to_formats": ["json", "md", "text"],
+            "do_chunking": True,
+            "chunking_options": {
+                "max_tokens": 512,
+                "overlap": 50,
+                "tokenizer": "sentencepiece" # Required by Docling contract
             }
+        }
+        v1_payload_chunked = {
+            "options": chunking_opts,
+            "sources": [{"kind": "file", "filename": filename, "base64_string": b64}],
+        }
+        v1alpha_payload_chunked = {
+            "options": chunking_opts,
+            "file_sources": [{"filename": filename, "base64_string": b64}],
         }
 
         errors = []
         response_json = None
         is_chunked_response = False
-        chunking_failed_hard = False  # Track if chunking failed for a real reason
 
-        # We prioritize the new chunking endpoints first!
+        # Try chunked endpoints first, then fall back to standard if the server is older
         for endpoint, payload, chunk_flag in (
-            ("/v1/chunk/source", chunking_payload, True),          # New stable chunking
-            ("/v1alpha/chunk/source", chunking_payload, True),     # New alpha chunking
-            ("/v1/convert/source", v1_payload, False),             # Fallback to standard
-            ("/v1alpha/convert/source", v1alpha_payload, False),   # Fallback to alpha standard
+            ("/v1/convert/source", v1_payload_chunked, True),
+            ("/v1alpha/convert/source", v1alpha_payload_chunked, True),
+            ("/v1/convert/source", v1_payload_standard, False),
+            ("/v1alpha/convert/source", v1alpha_payload_standard, False),
         ):
-            # If native chunking had a real error (not 404), skip the fallback endpoints
-            if not chunk_flag and chunking_failed_hard:
-                break
-
             try:
                 resp = requests.post(
                     f"{server_url}{endpoint}",
@@ -427,27 +433,23 @@ class DoclingParser(RAGFlowPdfParser):
                     response_json = resp.json()
                     is_chunked_response = chunk_flag
                     
-                    # --- ADDED: Explicit logging for the server admins ---
                     if chunk_flag:
-                        self.logger.info(f"[Docling] Successfully routed to native chunking endpoint: {endpoint}")
+                        self.logger.info(f"[Docling] Successfully used native chunking on: {endpoint}")
                     else:
-                        self.logger.info(f"[Docling] Native chunking unavailable, fell back to standard convert: {endpoint}")
+                        self.logger.info(f"[Docling] Chunking unavailable, fell back to standard: {endpoint}")
                     break
                 
-                if chunk_flag and resp.status_code != 404:
-                    self.logger.error(f"[Docling] Chunking failed with {resp.status_code}: {resp.text[:300]}")
-                    errors.append(f"{endpoint}: HTTP {resp.status_code}")
-                    chunking_failed_hard = True
-                    continue  # Let it try the alpha chunking endpoint before giving up!
+                # If chunking request is rejected (e.g., 422 Unprocessable Entity on older servers), 
+                # log it and let the loop naturally fall back to the standard payload.
+                if chunk_flag:
+                    self.logger.warning(f"[Docling] Server rejected chunking parameters: HTTP {resp.status_code}")
+                    continue
 
                 errors.append(f"{endpoint}: HTTP {resp.status_code} {resp.text[:300]}")
                 
             except Exception as exc:
                 self.logger.error(f"[Docling] Request error on {endpoint}: {exc}")
                 errors.append(f"{endpoint}: {exc}")
-                if chunk_flag:
-                    chunking_failed_hard = True
-                    continue
 
         if response_json is None:
             raise RuntimeError("[Docling] remote convert failed: " + " | ".join(errors))
