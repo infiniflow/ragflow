@@ -1535,6 +1535,13 @@ async def retrieval_test(tenant_id):
             c.pop("vector", None)
 
         if include_metadata:
+            import logging
+            logging.info(
+                "sdk.retrieval reference_metadata enabled dataset_ids=%s fields=%s chunks=%s",
+                kb_ids,
+                sorted(metadata_fields) if metadata_fields else None,
+                len(ranks["chunks"]),
+            )
             enrich_chunks_with_document_metadata(ranks["chunks"], metadata_fields)
 
         ##rename keys

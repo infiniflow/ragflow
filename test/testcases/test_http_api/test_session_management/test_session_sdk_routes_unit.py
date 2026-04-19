@@ -1412,6 +1412,7 @@ def test_searchbots_retrieval_test_embedded_matrix_unit(monkeypatch):
     assert retrieval_capture["rank_feature"] == ["label-1"]
     assert retrieval_capture["rerank_mdl"] is not None
     assert res["data"]["chunks"][0]["document_metadata"]["author"] == "alice"
+    assert "year" not in res["data"]["chunks"][0]["document_metadata"]
     assert any(call[1] == module.LLMType.EMBEDDING.value and call[2] == "embd-model" for call in llm_calls)
 
     llm_calls.clear()

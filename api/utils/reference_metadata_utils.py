@@ -94,6 +94,7 @@ def enrich_chunks_with_document_metadata(
         meta_map = metadata_getter(list(doc_ids), kb_id)
         if meta_map:
             meta_by_doc.update(meta_map)
+            logging.debug("Fetched metadata for %d docs in kb_id=%s", len(meta_map), kb_id)
 
     for chunk in chunks:
         doc_id = chunk.get(doc_field)
@@ -106,3 +107,4 @@ def enrich_chunks_with_document_metadata(
             meta = {k: v for k, v in meta.items() if k in metadata_fields}
         if meta:
             chunk[output_field] = meta
+            logging.debug("Enriched chunk for doc_id=%s with %d metadata fields: %s", doc_id, len(meta), list(meta.keys()))

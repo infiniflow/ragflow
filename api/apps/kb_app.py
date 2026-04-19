@@ -460,7 +460,7 @@ def delete_knowledge_graph(kb_id):
 @manager.route("/get_meta", methods=["GET"])  # noqa: F821
 @login_required
 def get_meta():
-    kb_ids = [kb_id for kb_id in request.args.get("kb_ids", "").split(",") if kb_id]
+    kb_ids = [kb_id.strip() for kb_id in request.args.get("kb_ids", "").split(",") if kb_id.strip()]
     for kb_id in kb_ids:
         if not KnowledgebaseService.accessible(kb_id, current_user.id):
             return get_json_result(
@@ -474,7 +474,7 @@ def get_meta():
 @manager.route("/get_meta_keys", methods=["GET"])  # noqa: F821
 @login_required
 def get_meta_keys():
-    kb_ids = [kb_id for kb_id in request.args.get("kb_ids", "").split(",") if kb_id]
+    kb_ids = [kb_id.strip() for kb_id in request.args.get("kb_ids", "").split(",") if kb_id.strip()]
     for kb_id in kb_ids:
         if not KnowledgebaseService.accessible(kb_id, current_user.id):
             return get_json_result(

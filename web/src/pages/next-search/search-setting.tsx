@@ -228,6 +228,18 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
     }));
   }, [metadataKeys]);
 
+  useEffect(() => {
+    const currentFields = formMethods.getValues('search_config.reference_metadata.fields');
+    if (referenceMetadataEnabled && Array.isArray(currentFields) && currentFields.length > 0 && metadataKeys) {
+      const validFields = currentFields.filter((field) => metadataKeys.includes(field));
+      if (validFields.length !== currentFields.length) {
+        formMethods.setValue('search_config.reference_metadata.fields', validFields);
+      }
+    } else if (!referenceMetadataEnabled) {
+        formMethods.setValue('search_config.reference_metadata.fields', undefined);
+    }
+  }, [selectedKbIds, metadataKeys, referenceMetadataEnabled, formMethods]);
+
   // Reset top_k to 1024 only when user actively disables rerank (from true to false)
   const prevRerankEnabled = useRef<boolean | undefined>(undefined);
   useEffect(() => {

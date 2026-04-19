@@ -42,6 +42,18 @@ export default function ChatBasicSetting() {
     }));
   }, [metadataKeys]);
 
+  useEffect(() => {
+    const currentFields = form.getValues('prompt_config.reference_metadata.fields');
+    if (metadataInclude && Array.isArray(currentFields) && currentFields.length > 0 && metadataKeys) {
+      const validFields = currentFields.filter((field) => metadataKeys.includes(field));
+      if (validFields.length !== currentFields.length) {
+        form.setValue('prompt_config.reference_metadata.fields', validFields);
+      }
+    } else if (!metadataInclude) {
+        form.setValue('prompt_config.reference_metadata.fields', undefined);
+    }
+  }, [kbIds, metadataKeys, metadataInclude, form]);
+
   return (
     <div className="space-y-8">
       <AvatarNameDescription />

@@ -993,8 +993,10 @@ async def retrieval_test_embedded():
         chat_mdl = None
         if req.get("search_id", ""):
             nonlocal search_config
-            search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
-            meta_data_filter = search_config.get("meta_data_filter", {})
+            detail = SearchService.get_detail(req.get("search_id", ""))
+            if detail:
+                search_config = detail.get("search_config", {})
+                meta_data_filter = search_config.get("meta_data_filter", {})
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_id = search_config.get("chat_id", "")
                 if chat_id:

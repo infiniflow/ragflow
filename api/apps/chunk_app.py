@@ -552,6 +552,13 @@ async def retrieval_test():
 
         include_metadata, metadata_fields = _resolve_reference_metadata(req, search_config)
         if include_metadata:
+            import logging
+            logging.info(
+                "retrieval_test reference_metadata enabled kb_ids=%s fields=%s chunks=%s",
+                kb_ids,
+                sorted(metadata_fields) if metadata_fields else None,
+                len(ranks["chunks"]),
+            )
             _enrich_chunks_with_document_metadata(ranks["chunks"], metadata_fields)
 
         ranks["labels"] = labels

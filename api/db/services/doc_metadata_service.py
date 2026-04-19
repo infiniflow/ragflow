@@ -778,6 +778,7 @@ class DocMetadataService:
         if not kb_ids:
             return []
 
+        logging.debug(f"get_metadata_keys_by_kbs start: n_kbs={len(kb_ids)}")
         keys: set[str] = set()
         try:
             for kb_id in kb_ids:
@@ -787,6 +788,7 @@ class DocMetadataService:
                     if not isinstance(doc_meta, dict):
                         continue
                     keys.update(str(k) for k in doc_meta.keys())
+            logging.debug(f"get_metadata_keys_by_kbs end: n_keys={len(keys)}, kb_ids={kb_ids}")
             return sorted(keys)
         except Exception as e:
             logging.error(f"Error getting metadata keys for KBs {kb_ids}: {e}")

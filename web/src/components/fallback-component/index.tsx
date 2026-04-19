@@ -12,12 +12,7 @@ const FallbackComponent: React.FC<FallbackComponentProps> = ({
   reset,
 }) => {
   const { t } = useTranslation();
-  let routeError: unknown;
-  try {
-    routeError = useRouteError();
-  } catch {
-    routeError = undefined;
-  }
+  const routeError = useRouteError() as unknown;
   const error =
     errorProp ?? (routeError instanceof Error ? routeError : undefined);
   const errorMessage =
