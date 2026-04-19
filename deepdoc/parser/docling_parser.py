@@ -434,7 +434,7 @@ class DoclingParser(RAGFlowPdfParser):
                     continue
                 # Depending on the exact docling-serve spec, the text might be nested
                 chunk_text = chunk_data.get("text", "")
-                if not chunk_text and "chunk" in chunk_data:
+                if not chunk_text and isinstance(chunk_data.get("chunk"), dict):
                     chunk_text = chunk_data["chunk"].get("text", "")
                 
                 if chunk_text.strip():
