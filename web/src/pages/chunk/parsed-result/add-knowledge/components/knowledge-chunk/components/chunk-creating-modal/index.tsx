@@ -140,7 +140,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               <FormItem>
                 <FormLabel>{t('chunk.chunk')}</FormLabel>
                 <FormControl>
-                  <Textarea {...field} autoSize={{ minRows: 4, maxRows: 10 }} />
+                  <Textarea {...field} autoSize={{ minRows: 4, maxRows: 10 }} resize="vertical" />
                 </FormControl>
                 <FormMessage />
               </FormItem>
