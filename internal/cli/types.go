@@ -90,10 +90,9 @@ const (
 	TokenPipeline
 	TokenSearch
 	TokenCurrent
-	TokenLLM
-	TokenVLM
+	TokenVision
 	TokenEmbedding
-	TokenReranker
+	TokenRerank
 	TokenASR
 	TokenTTS
 	TokenOCR

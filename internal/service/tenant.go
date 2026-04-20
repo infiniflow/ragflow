@@ -387,7 +387,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 			ModelProvider: defaultChatModelProvider,
 			ModelInstance: defaultChatModelInstance,
 			ModelName:     defaultChatModelName,
-			ModelType:     "llm",
+			ModelType:     "chat",
 			Enable:        defaultChatModelEnable,
 		})
 	}
@@ -425,13 +425,13 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 		})
 	}
 
-	defaultImage2TextModelProvider, defaultImage2TextModelInstance, defaultImage2TextModelName, defaultImage2TextModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.Img2TxtID, "image2text")
+	defaultImage2TextModelProvider, defaultImage2TextModelInstance, defaultImage2TextModelName, defaultImage2TextModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.Img2TxtID, "vision")
 	if err == nil {
 		result = append(result, ModelItem{
 			ModelProvider: defaultImage2TextModelProvider,
 			ModelInstance: defaultImage2TextModelInstance,
 			ModelName:     defaultImage2TextModelName,
-			ModelType:     "image2text",
+			ModelType:     "vision",
 			Enable:        defaultImage2TextModelEnable,
 		})
 	}
@@ -510,11 +510,7 @@ func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInsta
 	}
 
 	ownedTenant := tenantInfos[0]
-	err = s.checkModelAvailable(ownedTenant.TenantID, modelProvider, modelInstance, modelName, modelType)
-	if err != nil {
-		return err
-	}
-
+	var defaultModel string
 	var modelTypeID string
 	if modelType == "chat" {
 		modelTypeID = "llm_id"
@@ -528,17 +524,31 @@ func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInsta
 	if modelType == "asr" {
 		modelTypeID = "asr_id"
 	}
-	if modelType == "image2text" {
+	if modelType == "vision" {
 		modelTypeID = "img2txt_id"
 	}
 	if modelType == "tts" {
 		modelTypeID = "tts_id"
 	}
+	if modelType == "ocr" {
+		modelTypeID = "ocr_id"
+	}
 	if modelTypeID == "" {
 		return fmt.Errorf("model type %s is invalid", modelType)
 	}
 
-	defaultModel := fmt.Sprintf("%s@%s@%s", modelName, modelInstance, modelProvider)
+	if modelProvider == "" && modelInstance == "" && modelName == "" {
+		defaultModel = ""
+	} else if modelProvider != "" && modelInstance != "" && modelName != "" {
+		err = s.checkModelAvailable(ownedTenant.TenantID, modelProvider, modelInstance, modelName, modelType)
+		if err != nil {
+			return err
+		}
+		defaultModel = fmt.Sprintf("%s@%s@%s", modelName, modelInstance, modelProvider)
+	} else {
+		return fmt.Errorf("model provider, instance and name must be specified together")
+	}
+
 	err = s.tenantDAO.Update(ownedTenant.TenantID, map[string]interface{}{
 		modelTypeID: defaultModel,
 	})

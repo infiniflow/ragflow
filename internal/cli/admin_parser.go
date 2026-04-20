@@ -1187,37 +1187,36 @@ func (p *Parser) parseAdminSetVariable() (*Command, error) {
 func (p *Parser) parseAdminSetDefault() (*Command, error) {
 	p.nextToken() // consume DEFAULT
 
-	var modelType, modelID string
+	var modelType string
 
 	switch p.curToken.Type {
-	case TokenLLM:
-		modelType = "llm_id"
-	case TokenVLM:
-		modelType = "vlm_id"
+	case TokenChat:
+		modelType = "chat"
+	case TokenVision:
+		modelType = "vision"
 	case TokenEmbedding:
-		modelType = "embedding_id"
-	case TokenReranker:
-		modelType = "reranker_id"
+		modelType = "embedding"
+	case TokenRerank:
+		modelType = "rerank"
 	case TokenASR:
-		modelType = "asr_id"
+		modelType = "asr"
 	case TokenTTS:
-		modelType = "tts_id"
+		modelType = "tts"
 	case TokenOCR:
-		modelType = "ocr_id"
+		modelType = "ocr"
 	default:
 		return nil, fmt.Errorf("unknown model type: %s", p.curToken.Value)
 	}
 
 	p.nextToken()
-	id, err := p.parseQuotedString()
+	compositeModelName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	modelID = id
 
 	cmd := NewCommand("set_default_model")
 	cmd.Params["model_type"] = modelType
-	cmd.Params["model_id"] = modelID
+	cmd.Params["composite_model_name"] = compositeModelName
 
 	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
@@ -1256,20 +1255,20 @@ func (p *Parser) parseAdminResetCommand() (*Command, error) {
 
 	var modelType string
 	switch p.curToken.Type {
-	case TokenLLM:
-		modelType = "llm_id"
-	case TokenVLM:
-		modelType = "vlm_id"
+	case TokenChat:
+		modelType = "chat"
+	case TokenVision:
+		modelType = "vision"
 	case TokenEmbedding:
-		modelType = "embedding_id"
-	case TokenReranker:
-		modelType = "reranker_id"
+		modelType = "embedding"
+	case TokenRerank:
+		modelType = "rerank"
 	case TokenASR:
-		modelType = "asr_id"
+		modelType = "asr"
 	case TokenTTS:
-		modelType = "tts_id"
+		modelType = "tts"
 	case TokenOCR:
-		modelType = "ocr_id"
+		modelType = "ocr"
 	default:
 		return nil, fmt.Errorf("unknown model type: %s", p.curToken.Value)
 	}
