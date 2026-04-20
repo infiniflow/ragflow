@@ -38,7 +38,7 @@ from api.utils.api_utils import (
 )
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
-from api.db.db_models import APIToken, Task
+from api.db.db_models import Task
 
 from rag.flow.pipeline import Pipeline
 from rag.nlp import search
@@ -47,28 +47,6 @@ from common import settings
 from api.apps import login_required, current_user
 from api.apps.services.canvas_replica_service import CanvasReplicaService
 from api.db.services.canvas_service import completion as agent_completion
-
-
-@manager.route('/getsse/<canvas_id>', methods=['GET'])  # type: ignore # noqa: F821
-def getsse(canvas_id):
-    token = request.headers.get('Authorization').split()
-    if len(token) != 2:
-        return get_data_error_result(message='Authorization is not valid!')
-    token = token[1]
-    objs = APIToken.query(beta=token)
-    if not objs:
-        return get_data_error_result(message='Authentication error: API key is invalid!"')
-    tenant_id = objs[0].tenant_id
-    if not UserCanvasService.query(user_id=tenant_id, id=canvas_id):
-        return get_json_result(
-            data=False,
-            message='Only owner of canvas authorized for this operation.',
-            code=RetCode.OPERATING_ERROR
-        )
-    e, c = UserCanvasService.get_by_id(canvas_id)
-    if not e or c.user_id != tenant_id:
-        return get_data_error_result(message="canvas not found.")
-    return get_json_result(data=c.to_dict())
 
 
 @manager.route('/completion', methods=['POST'])  # noqa: F821

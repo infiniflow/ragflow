@@ -180,7 +180,6 @@ export default {
   createAgent: `${restAPIv1}/agents`,
   updateAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
-  getCanvasSSE: (canvasId: string) => `${webAPI}/canvas/getsse/${canvasId}`,
   getListVersion: `${webAPI}/canvas/getlistversion`,
   getVersion: `${webAPI}/canvas/getversion`,
   resetCanvas: (agentId: string) => `${restAPIv1}/agents/${agentId}/reset`,
@@ -196,7 +195,6 @@ export default {
   fetchVersionList: (id: string) => `${webAPI}/canvas/getlistversion/${id}`,
   fetchVersion: (id: string) => `${webAPI}/canvas/getversion/${id}`,
   fetchCanvas: (id: string) => `${restAPIv1}/agents/${id}`,
-  fetchAgentAvatar: (id: string) => `${webAPI}/canvas/getsse/${id}`,
   uploadAgentFile: (id?: string) => `${webAPI}/canvas/upload/${id}`,
   fetchAgentLogs: (canvasId: string) => `${webAPI}/canvas/${canvasId}/sessions`,
   fetchAgentLogsById: (canvasId: string, sessionId: string) =>

@@ -8,7 +8,6 @@ import { registerNextServer } from '@/utils/register-server';
 import request from '@/utils/request';
 
 const {
-  getCanvasSSE,
   createAgent,
   updateAgent: updateAgentApi,
   listAgents,
@@ -25,7 +24,6 @@ const {
   fetchVersionList,
   fetchVersion,
   fetchCanvas,
-  fetchAgentAvatar,
   fetchAgentLogs,
   fetchExternalAgentInputs,
   prompt,
@@ -36,10 +34,6 @@ const {
 const methods = {
   fetchCanvas: {
     url: fetchCanvas,
-    method: 'get',
-  },
-  getCanvasSSE: {
-    url: getCanvasSSE,
     method: 'get',
   },
   createAgent: {
@@ -96,10 +90,6 @@ const methods = {
   },
   inputForm: {
     url: inputForm,
-    method: 'get',
-  },
-  fetchAgentAvatar: {
-    url: fetchAgentAvatar,
     method: 'get',
   },
   fetchAgentLogs: {

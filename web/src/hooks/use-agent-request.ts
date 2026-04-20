@@ -60,7 +60,6 @@ export const enum AgentApiAction {
   FetchInputForm = 'fetchInputForm',
   FetchVersionList = 'fetchVersionList',
   FetchVersion = 'fetchVersion',
-  FetchAgentAvatar = 'fetchAgentAvatar',
   FetchExternalAgentInputs = 'fetchExternalAgentInputs',
   SetAgentSetting = 'setAgentSetting',
   FetchPrompt = 'fetchPrompt',
@@ -73,7 +72,7 @@ export const enum AgentApiAction {
   DeleteAgentSession = 'deleteAgentSession',
   FetchSessionByIdManually = 'fetchSessionByIdManually',
   FetchAgentLog = 'fetchAgentLog',
-  FetchFlowDetailSSE = 'flowDetailSSE',
+  FetchSharedAgent = 'fetchSharedAgent',
 }
 
 export const useFetchAgentTemplates = () => {
@@ -620,35 +619,6 @@ export const useFetchVersion = (
   return { data, loading };
 };
 
-export const useFetchAgentAvatar = (): {
-  data: IFlow;
-  loading: boolean;
-  refetch: () => void;
-} => {
-  const { sharedId } = useGetSharedChatSearchParams();
-
-  const {
-    data,
-    isFetching: loading,
-    refetch,
-  } = useQuery({
-    queryKey: [AgentApiAction.FetchAgentAvatar],
-    initialData: {} as IFlow,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
-    gcTime: 0,
-    queryFn: async () => {
-      if (!sharedId) return {};
-      const { data } = await agentService.fetchAgentAvatar(sharedId);
-
-      return data?.data ?? {};
-    },
-  });
-
-  return { data, loading, refetch };
-};
-
 export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
   const { id } = useParams();
   const { data, isFetching: loading } = useQuery<IAgentLogsResponse>({
@@ -819,7 +789,7 @@ export function useCancelConversation() {
   return { data, loading, cancelConversation: mutateAsync };
 }
 
-export const useFetchFlowSSE = (): {
+export const useFetchSharedAgent = (): {
   data: IFlow;
   loading: boolean;
   refetch: () => void;
@@ -831,7 +801,7 @@ export const useFetchFlowSSE = (): {
     isFetching: loading,
     refetch,
   } = useQuery({
-    queryKey: [AgentApiAction.FetchFlowDetailSSE],
+    queryKey: [AgentApiAction.FetchSharedAgent, sharedId],
     initialData: {} as IFlow,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -839,7 +809,7 @@ export const useFetchFlowSSE = (): {
     gcTime: 0,
     queryFn: async () => {
       if (!sharedId) return {};
-      const { data } = await agentService.getCanvasSSE(sharedId);
+      const { data } = await agentService.fetchCanvas(sharedId);
 
       const messageList = buildMessageListWithUuid(
         get(data, 'data.dsl.messages', []),
