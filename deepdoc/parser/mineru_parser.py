@@ -447,6 +447,7 @@ class MinerUParser(RAGFlowPdfParser):
             if x1 <= x0 or y1 <= y0:
                 continue
             crop0 = img0.crop((x0, y0, x1, y1))
+            self.logger.debug(f"[MinerU] crop: page={pns[0]} coords=({x0},{y0},{x1},{y1}) is_context={is_context} page_count={page_count}")
             imgs_with_flags.append((crop0, is_context))
             if 0 < ii < poss_last_idx:
                 positions.append((pns[0] + self.page_from, x0, x1, y0, y1))
