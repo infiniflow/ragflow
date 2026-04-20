@@ -158,11 +158,7 @@ class TestDocumentsUpdated:
         res = update_document(HttpApiAuth, dataset_id, document_ids[0], {"meta_fields": meta_fields})
         if expected_code == 0:
             res = list_documents(HttpApiAuth, dataset_id, {"id": document_ids[0]})
-            for doc in res["data"]["docs"]:
-                if doc["id"] != document_ids[0]:
-                    continue
-                else:
-                    assert doc["meta_fields"] == meta_fields
+            assert res["data"]["docs"][0]["meta_fields"] == meta_fields
         else:
             assert expected_message in res["message"] or res["message"] == expected_message
 
@@ -212,14 +208,11 @@ class TestDocumentsUpdated:
         assert res["code"] == expected_code
         if expected_code == 0:
             res = list_documents(HttpApiAuth, dataset_id, {"id": document_ids[0]})
-            doc_of_id = None
-            for doc in res["data"]["docs"]:
-                if doc["id"] == document_ids[0]:
-                    doc_of_id = doc
-                    break
+            doc_of_id = res["data"]["docs"][0]
             if chunk_method == "":
                 assert doc_of_id["chunk_method"] == "naive"
             else:
+                print(f"doc:{doc_of_id}")
                 assert doc_of_id["chunk_method"] == chunk_method
         else:
             assert res["message"] == expected_message
@@ -609,12 +602,7 @@ class TestUpdateDocumentParserConfig:
         if expected_code == 0:
             res = list_documents(HttpApiAuth, dataset_id, {"id": document_ids[0]})
 
-            doc_of_id = None
-            for doc in res["data"]["docs"]:
-                if doc["id"] == document_ids[0]:
-                    doc_of_id = doc
-                    break
-
+            doc_of_id = res["data"]["docs"][0]
             if parser_config == {}:
                 assert doc_of_id["parser_config"] == DEFAULT_PARSER_CONFIG
             else:

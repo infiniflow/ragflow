@@ -234,18 +234,48 @@ class TestDocumentsList:
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
+        "params, expected_code, expected_num, expected_message",
+        [
+            ({"name": None}, 0, 5, ""),
+            ({"name": ""}, 0, 5, ""),
+            ({"name": "ragflow_test_upload_0.txt"}, 0, 1, ""),
+            (
+                    {"name": "unknown.txt"},
+                    102,
+                    0,
+                    "You don't own the document unknown.txt.",
+            ),
+        ],
+    )
+    def test_name(
+            self,
+            HttpApiAuth,
+            add_documents,
+            params,
+            expected_code,
+            expected_num,
+            expected_message,
+    ):
+        dataset_id, _ = add_documents
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
+        assert res["code"] == expected_code
+        if expected_code == 0:
+            if params["name"] in [None, ""]:
+                assert len(res["data"]["docs"]) == expected_num
+            else:
+                assert res["data"]["docs"][0]["name"] == params["name"]
+        else:
+            assert res["message"] == expected_message
+
+
+    @pytest.mark.p1
+    @pytest.mark.parametrize(
         "document_id, expected_code, expected_num, expected_message",
         [
             (None, 0, 5, ""),
             ("", 0, 5, ""),
-            pytest.param(
-                lambda r: r[0], 0, 1, "",
-                marks=pytest.mark.skip(reason="currently list docs API can not filter by document id"),
-            ),
-            pytest.param(
-                "unknown.txt", 102, 0, "You don't own the document unknown.txt.",
-                marks=pytest.mark.skip(reason="currently list docs API can not filter by document id"),
-            ),
+            (lambda r: r[0], 0, 1, ""),
+            ("unknown.txt", 102, 0, "You don't own the document unknown.txt."),
         ],
     )
     def test_id(
@@ -269,8 +299,47 @@ class TestDocumentsList:
             if params["id"] in [None, ""]:
                 assert len(res["data"]["docs"]) == expected_num
             else:
-                doc = [doc for doc in res["data"]["docs"] if doc["id"] == document_id][0]
+                doc = res["data"]["docs"][0]
                 assert doc["id"] == params["id"]
+        else:
+            assert res["message"] == expected_message
+
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "document_id, name, expected_code, expected_num, expected_message",
+        [
+            (lambda r: r[0], "ragflow_test_upload_0.txt", 0, 1, ""),
+            (lambda r: r[0], "ragflow_test_upload_1.txt", 0, 0, ""),
+            (lambda r: r[0], "unknown", 102, 0, "You don't own the document unknown."),
+            (
+                    "id",
+                    "ragflow_test_upload_0.txt",
+                    102,
+                    0,
+                    "You don't own the document id.",
+            ),
+        ],
+    )
+    def test_name_and_id(
+            self,
+            HttpApiAuth,
+            add_documents,
+            document_id,
+            name,
+            expected_code,
+            expected_num,
+            expected_message,
+    ):
+        dataset_id, document_ids = add_documents
+        if callable(document_id):
+            params = {"id": document_id(document_ids), "name": name}
+        else:
+            params = {"id": document_id, "name": name}
+
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
+        if expected_code == 0:
+            assert len(res["data"]["docs"]) == expected_num
         else:
             assert res["message"] == expected_message
 
@@ -301,12 +370,12 @@ class TestDocumentsList:
             (
                 {"metadata_condition": "{bad json"},
                 102,
-                "metadata_condition must be valid JSON.",
+                "metadata_condition must be valid JSON",
             ),
             (
                 {"metadata_condition": "[1]"},
                 102,
-                "metadata_condition must be an object.",
+                "metadata_condition must be an object",
             ),
         ],
     )

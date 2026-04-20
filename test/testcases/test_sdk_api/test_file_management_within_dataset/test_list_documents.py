@@ -162,7 +162,6 @@ class TestDocumentsList:
             ({"name": "unknown.txt"}, 0, "You don't own the document unknown.txt"),
         ],
     )
-    @pytest.mark.skip(reason="currently list docs API does not support document id filtering")
     def test_name(self, add_documents, params, expected_num, expected_message):
         dataset, _ = add_documents
         if expected_message:
@@ -185,7 +184,6 @@ class TestDocumentsList:
             ("unknown.txt", 0, "You don't own the document unknown.txt"),
         ],
     )
-    @pytest.mark.skip(reason="currently list docs API does not support document id filtering")
     def test_id(self, add_documents, document_id, expected_num, expected_message):
         dataset, documents = add_documents
         if callable(document_id):
@@ -213,7 +211,6 @@ class TestDocumentsList:
             ("invalid_id", "ragflow_test_upload_0.txt", 0, "You don't own the document invalid_id"),
         ],
     )
-    @pytest.mark.skip(reason="currently list docs API does not support document id filtering")
     def test_name_and_id(self, add_documents, document_id, name, expected_num, expected_message):
         dataset, documents = add_documents
         params = {"id": document_id(documents) if callable(document_id) else document_id, "name": name}

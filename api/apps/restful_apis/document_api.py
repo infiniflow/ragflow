@@ -432,7 +432,57 @@ def list_docs(dataset_id, tenant_id):
         logging.error(f"You don't own the dataset {dataset_id}. ")
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
 
-    q = request.args
+    err_code, err_msg, docs, total = _get_docs_with_request(request, dataset_id)
+    if err_code != RetCode.SUCCESS:
+        return get_data_error_result(code=err_code, message=err_msg)
+
+    renamed_doc_list = [map_doc_keys(doc) for doc in docs]
+    for doc_item in renamed_doc_list:
+        if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
+            doc_item["thumbnail"] = f"/v1/document/image/{dataset_id}-{doc_item['thumbnail']}"
+        if doc_item.get("source_type"):
+            doc_item["source_type"] = doc_item["source_type"].split("/")[0]
+        if doc_item["parser_config"].get("metadata"):
+            doc_item["parser_config"]["metadata"] = turn2jsonschema(doc_item["parser_config"]["metadata"])
+
+    return get_json_result(data={"total": total, "docs": renamed_doc_list})
+
+
+def _get_docs_with_request(req, dataset_id:str):
+    """Get documents with request parameters from a dataset.
+
+    This function extracts filtering parameters from the request and returns
+    a list of documents matching the specified criteria.
+
+    Args:
+        req: The request object containing query parameters.
+            - page (int): Page number for pagination (default: 1).
+            - page_size (int): Number of documents per page (default: 30).
+            - orderby (str): Field to order by (default: "create_time").
+            - desc (bool): Whether to order in descending order (default: True).
+            - keywords (str): Keywords to search in document names.
+            - suffix (list): File suffix filters.
+            - types (list): Document type filters.
+            - run (list): Processing status filters.
+            - create_time_from (int): Start timestamp for time range filter.
+            - create_time_to (int): End timestamp for time range filter.
+            - return_empty_metadata (bool|str): Whether to return documents with empty metadata.
+            - metadata_condition (str): JSON string for complex metadata conditions.
+            - metadata (str): JSON string for simple metadata key-value matching.
+        dataset_id: The dataset ID to retrieve documents from.
+
+    Returns:
+        A tuple of (err_code, err_message, docs, total):
+            - err_code (int): Success code (RetCode.SUCCESS) if successful, or error code if validation fails.
+            - err_message (str): Empty string if successful, or error message if validation fails.
+            - docs (list): List of document dictionaries matching the criteria, or empty list on error.
+            - total (int): Total number of documents matching the criteria.
+
+    Note:
+        - The function supports filtering by document types, processing status, keywords, and time range.
+        - Metadata filtering supports both simple key-value matching and complex conditions with operators.
+    """
+    q = req.args
 
     page = int(q.get("page", 1))
     page_size = int(q.get("page_size", 30))
@@ -448,8 +498,8 @@ def list_docs(dataset_id, tenant_id):
     if types:
         invalid_types = {t for t in types if t not in VALID_FILE_TYPES}
         if invalid_types:
-            logging.error(msg=f"------------Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}")
-            return get_data_error_result(message=f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}")
+            msg = f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}"
+            return RetCode.DATA_ERROR, msg, [], 0
 
     # map run status (text or numeric) - align with API parameter
     run_status = q.getlist("run")
@@ -458,15 +508,22 @@ def list_docs(dataset_id, tenant_id):
     if run_status_converted:
         invalid_status = {s for s in run_status_converted if s not in run_status_text_to_numeric.values()}
         if invalid_status:
-            logging.error(msg=f"----------Invalid filter run status conditions: {', '.join(invalid_status)}")
-            return get_data_error_result(message=f"Invalid filter run status conditions: {', '.join(invalid_status)}")
+            msg = f"Invalid filter run status conditions: {', '.join(invalid_status)}"
+            return RetCode.DATA_ERROR, msg, [], 0
 
-    doc_ids_filter, empty_result_or_error, return_empty_metadata = _parse_doc_id_filter_with_metadata(q, dataset_id)
-    if empty_result_or_error is not None:
-        logging.error(msg=f"----------empty_result_or_error: {empty_result_or_error}")
-        return empty_result_or_error
+    err_code, err_message, doc_ids_filter, return_empty_metadata = _parse_doc_id_filter_with_metadata(q, dataset_id)
+    if err_code != RetCode.SUCCESS:
+        return err_code, err_message, [], 0
 
-    docs, total = DocumentService.get_by_kb_id(dataset_id, page, page_size, orderby, desc, keywords, run_status_converted, types, suffix, doc_ids_filter, return_empty_metadata=return_empty_metadata)
+    doc_name = q.get("name")
+    doc_id = q.get("id")
+    if doc_id and not DocumentService.query(id=doc_id, kb_id=dataset_id):
+        return RetCode.DATA_ERROR, f"You don't own the document {doc_id}.", [], 0
+    if doc_name and not DocumentService.query(name=doc_name, kb_id=dataset_id):
+        return RetCode.DATA_ERROR, f"You don't own the document {doc_name}.", [], 0
+
+    docs, total = DocumentService.get_by_kb_id(dataset_id, page, page_size, orderby, desc, keywords, run_status_converted, types, suffix,
+                                               doc_id=doc_id, name=doc_name, doc_ids_filter=doc_ids_filter, return_empty_metadata=return_empty_metadata)
 
     # time range filter (0 means no bound)
     create_time_from = int(q.get("create_time_from", 0))
@@ -474,54 +531,69 @@ def list_docs(dataset_id, tenant_id):
     if create_time_from or create_time_to:
         docs = [d for d in docs if (create_time_from == 0 or d.get("create_time", 0) >= create_time_from) and (create_time_to == 0 or d.get("create_time", 0) <= create_time_to)]
 
-    renamed_doc_list = [map_doc_keys(doc) for doc in docs]
-    for doc_item in renamed_doc_list:
-        if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-            doc_item["thumbnail"] = f"/v1/document/image/{dataset_id}-{doc_item['thumbnail']}"
-        if doc_item.get("source_type"):
-            doc_item["source_type"] = doc_item["source_type"].split("/")[0]
-        if doc_item["parser_config"].get("metadata"):
-            doc_item["parser_config"]["metadata"] = turn2jsonschema(doc_item["parser_config"]["metadata"])
-
-    return get_result(data={"total": total, "docs": renamed_doc_list})
+    return RetCode.SUCCESS, "", docs, total
 
 def _parse_doc_id_filter_with_metadata(req, kb_id):
     """Parse document ID filter based on metadata conditions from the request.
 
     This function extracts and processes metadata filtering parameters from the request
-    and returns a list of document IDs that match the specified criteria.
+    and returns a list of document IDs that match the specified criteria. It supports
+    two filtering modes: simple metadata key-value matching and complex metadata
+    conditions with operators.
 
     Args:
         req: The request object containing filtering parameters.
             - return_empty_metadata (bool|str): If True, returns all documents regardless
               of their metadata. Can be a boolean or string "true"/"false".
             - metadata_condition (str): JSON string containing complex metadata conditions
-              with optional "logic" (and/or) and "conditions" list.
+              with optional "logic" (and/or) and "conditions" list. Each condition should
+              have "name" (key), "comparison_operator", and "value" fields.
             - metadata (str): JSON string containing key-value pairs for exact metadata
-              matching. Can include special key "empty_metadata" to indicate documents
+              matching. Values can be a single value or list of values (OR logic within
+              same key). Can include special key "empty_metadata" to indicate documents
               with empty metadata.
         kb_id: The knowledge base ID to filter documents from.
 
     Returns:
-        A tuple of (doc_ids_filter, error, return_empty_metadata):
-            - doc_ids_filter (list): List of document IDs matching the metadata criteria,
-              or empty list if no filter should be applied.
-            - error: None if successful, or an error response dict if validation fails.
+        A tuple of (err_code, err_message, docs, return_empty_metadata):
+            - err_code (int): Success code (RetCode.SUCCESS) if successful, or error code if validation fails.
+            - err_message (str): Empty string if successful, or error message if validation fails.
+            - docs (list): List of document IDs matching the metadata criteria,
+              or empty list if no filter should be applied or on error.
             - return_empty_metadata (bool): The processed flag indicating whether to
               return documents with empty metadata.
 
+    Note:
+        - When both metadata and metadata_condition are provided, they are combined with AND logic.
+        - The metadata_condition uses operators like: =, !=, >, <, >=, <=, contains, not contains,
+          in, not in, start with, end with, empty, not empty.
+        - The metadata parameter performs exact matching where values are OR'd within the same key
+          and AND'd across different keys.
+
     Examples:
-        Simple metadata filter:
+        Simple metadata filter (exact match):
             req = {"metadata": '{"author": ["John", "Jane"]}'}
-            # Returns documents where author is John or Jane
+            # Returns documents where author is John OR Jane
+
+        Simple metadata filter with multiple keys:
+            req = {"metadata": '{"author": "John", "status": "published"}'}
+            # Returns documents where author is John AND status is published
 
         Complex metadata conditions:
-            req = {"metadata_condition": '{"logic": "and", "conditions": [{"key": "status", "operator": "eq", "value": "published"}]}'}
-        # Returns documents where status equals "published"
+            req = {"metadata_condition": '{"logic": "and", "conditions": [{"name": "status", "comparison_operator": "eq", "value": "published"}]}'}
+            # Returns documents where status equals "published"
+
+        Complex conditions with multiple operators:
+            req = {"metadata_condition": '{"logic": "or", "conditions": [{"name": "priority", "comparison_operator": "=", "value": "high"}, {"name": "status", "comparison_operator": "contains", "value": "urgent"}]}'}
+            # Returns documents where priority is high OR status contains "urgent"
 
         Return empty metadata:
             req = {"return_empty_metadata": True}
             # Returns all documents regardless of metadata
+
+        Combined metadata and metadata_condition:
+            req = {"metadata": '{"author": "John"}', "metadata_condition": '{"logic": "and", "conditions": [{"name": "status", "comparison_operator": "=", "value": "published"}]}'}
+            # Returns documents where author is John AND status equals published
     """
     return_empty_metadata = req.get("return_empty_metadata", False)
     if isinstance(return_empty_metadata, str):
@@ -530,13 +602,13 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
     try:
         metadata_condition = json.loads(req.get("metadata_condition", "{}"))
     except json.JSONDecodeError:
-        logging.error(msg=f'----------metadata_condition must be valid JSON: {req.get("metadata_condition")}.')
-        return None, get_data_error_result(message="metadata_condition must be valid JSON."), return_empty_metadata
+        msg = f'metadata_condition must be valid JSON: {req.get("metadata_condition")}.'
+        return RetCode.DATA_ERROR, msg, [], return_empty_metadata
     try:
         metadata = json.loads(req.get("metadata", "{}"))
     except json.JSONDecodeError:
-        logging.error(msg=f'------------metadata must be valid JSON: {req.get("metadata")}.')
-        return None, get_data_error_result(message="metadata must be valid JSON."), return_empty_metadata
+        logging.error(msg=f'metadata must be valid JSON: {req.get("metadata")}.')
+        return RetCode.DATA_ERROR, "metadata must be valid JSON.", [], return_empty_metadata
 
     if isinstance(metadata, dict) and metadata.get("empty_metadata"):
         return_empty_metadata = True
@@ -546,9 +618,9 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
         metadata = {}
     else:
         if metadata_condition and not isinstance(metadata_condition, dict):
-            return None, get_data_error_result(message="metadata_condition must be an object."), return_empty_metadata
+            return RetCode.DATA_ERROR, "metadata_condition must be an object.", [], return_empty_metadata
         if metadata and not isinstance(metadata, dict):
-            return None, get_data_error_result(message="metadata must be an object."), return_empty_metadata
+            return RetCode.DATA_ERROR, "metadata must be an object.", [], return_empty_metadata
 
     doc_ids_filter = None
     metas = None
@@ -558,7 +630,7 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
     if metadata_condition:
         doc_ids_filter = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
         if metadata_condition.get("conditions") and not doc_ids_filter:
-            return None, get_json_result(data={"total": 0, "docs": []}), return_empty_metadata
+            return RetCode.SUCCESS, "", [], return_empty_metadata
 
     if metadata:
         metadata_doc_ids = None
@@ -578,13 +650,13 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
             else:
                 metadata_doc_ids &= key_doc_ids
             if not metadata_doc_ids:
-                return None, get_json_result(data={"total": 0, "docs": []}), return_empty_metadata
+                return RetCode.SUCCESS, "", [], return_empty_metadata
         if metadata_doc_ids is not None:
             if doc_ids_filter is None:
                 doc_ids_filter = metadata_doc_ids
             else:
                 doc_ids_filter &= metadata_doc_ids
             if not doc_ids_filter:
-                return None, get_json_result(data={"total": 0, "docs": []}), return_empty_metadata
+                return RetCode.SUCCESS, "", [], return_empty_metadata
 
-    return list(doc_ids_filter) if doc_ids_filter is not None else list(), None, return_empty_metadata
+    return RetCode.SUCCESS, "", list(doc_ids_filter) if doc_ids_filter is not None else [], return_empty_metadata

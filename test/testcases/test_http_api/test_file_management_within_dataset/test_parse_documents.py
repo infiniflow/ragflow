@@ -43,15 +43,14 @@ def condition(_auth, _dataset_id, _document_ids=None):
 
 def validate_document_details(auth, dataset_id, document_ids):
     # currently list_documents not support search by document id
-    res = list_documents(auth, dataset_id, params={})
     for document_id in document_ids:
-        for doc_of_id in res["data"]["docs"]:
-            if doc_of_id["id"] == document_id:
-                assert doc_of_id["run"] == "DONE"
-                assert len(doc_of_id["process_begin_at"]) > 0
-                assert doc_of_id["process_duration"] > 0
-                assert doc_of_id["progress"] > 0
-                assert "Task done" in doc_of_id["progress_msg"]
+        res = list_documents(auth, dataset_id, params={"id": document_id})
+        doc = res["data"]["docs"][0]
+        assert doc["run"] == "DONE"
+        assert len(doc["process_begin_at"]) > 0
+        assert doc["process_duration"] > 0
+        assert doc["progress"] > 0
+        assert "Task done" in doc["progress_msg"]
 
 
 @pytest.mark.p1
