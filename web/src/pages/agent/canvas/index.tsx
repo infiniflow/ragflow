@@ -331,6 +331,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           }}
           deleteKeyCode={['Delete', 'Backspace']}
           onBeforeDelete={handleBeforeDelete}
+          panActivationKeyCode={null}
         >
           <AgentBackground></AgentBackground>
           <Spotlight className="z-0" opcity={0.7} coverage={70} />
