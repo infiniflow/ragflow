@@ -1,0 +1,3 @@
+fastapi>=0.109.1
+uvicorn[standard]>=0.27.0
+opendataloader-pdf>=0.1.0

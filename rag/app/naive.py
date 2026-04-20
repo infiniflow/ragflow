@@ -37,6 +37,7 @@ from deepdoc.parser import DocxParser, EpubParser, ExcelParser, HtmlParser, Json
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
+from deepdoc.parser.opendataloader_parser import OpenDataLoaderParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from common.float_utils import normalize_overlapped_percent
 from common.parser_config_utils import normalize_layout_recognizer
@@ -169,6 +170,34 @@ def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
     return sections, tables, pdf_parser
 
 
+def by_opendataloader(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
+    pdf_parser = OpenDataLoaderParser()
+    parse_method = kwargs.get("parse_method", "raw")
+
+    if not pdf_parser.check_installation():
+        if callback:
+            callback(-1, "OpenDataLoader not found.")
+        return None, None, pdf_parser
+
+    hybrid = os.environ.get("OPENDATALOADER_HYBRID", "") or None
+    image_output = os.environ.get("OPENDATALOADER_IMAGE_OUTPUT", "") or None
+    sanitize_env = os.environ.get("OPENDATALOADER_SANITIZE", "")
+    sanitize = None
+    if sanitize_env:
+        sanitize = sanitize_env.strip().lower() in {"1", "true", "yes", "on"}
+
+    sections, tables = pdf_parser.parse_pdf(
+        filepath=filename,
+        binary=binary,
+        callback=callback,
+        parse_method=parse_method,
+        hybrid=hybrid,
+        image_output=image_output,
+        sanitize=sanitize,
+    )
+    return sections, tables, pdf_parser
+
+
 def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
     tcadp_parser = TCADPParser()
 
@@ -255,6 +284,7 @@ PARSERS = {
     "deepdoc": by_deepdoc,
     "mineru": by_mineru,
     "docling": by_docling,
+    "opendataloader": by_opendataloader,
     "tcadp parser": by_tcadp,
     "paddleocr": by_paddleocr,
     "plaintext": by_plaintext,  # default
@@ -849,7 +879,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         if table_context_size or image_context_size:
             tables = append_context2table_image4pdf(sections, tables, image_context_size)
 
-        if name in ["tcadp", "docling", "mineru", "paddleocr"]:
+        if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader"]:
             if int(parser_config.get("chunk_token_num", 0)) <= 0:
                 parser_config["chunk_token_num"] = 0
 

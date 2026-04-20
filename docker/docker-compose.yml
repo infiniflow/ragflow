@@ -108,6 +108,24 @@ services:
               capabilities: [gpu]
 
 
+  # OpenDataLoader PDF parsing service.
+  # Encapsulates the JRE dependency so the RAGFlow host does not need Java.
+  # To enable:
+  #   1. Add `opendataloader` to COMPOSE_PROFILES in .env, e.g.:
+  #        COMPOSE_PROFILES=${COMPOSE_PROFILES},opendataloader
+  #   2. Set OPENDATALOADER_APISERVER=http://opendataloader:9383 in .env
+  #   3. Run: docker compose up -d --build opendataloader
+  opendataloader:
+    profiles:
+      - opendataloader
+    build:
+      context: ./opendataloader-service
+      dockerfile: Dockerfile
+    networks:
+      - ragflow
+    restart: unless-stopped
+
+
   # executor:
   #   depends_on:
   #     mysql:
