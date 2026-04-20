@@ -358,7 +358,6 @@ class MinerUParser(RAGFlowPdfParser):
         return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format("-".join([str(p) for p in pn]), x0, x1, top, bott)
 
     def crop(self, text, ZM=1, need_position=False):
-        imgs = []
         poss = self.extract_positions(text)
         if not poss:
             if need_position:
@@ -416,7 +415,12 @@ class MinerUParser(RAGFlowPdfParser):
         )
 
         positions = []
+        imgs = []
+        head_ctx_end = 0
+        tail_ctx_start = 0
         for ii, (pns, left, right, top, bottom) in enumerate(poss):
+            if ii + 1 == len(poss):
+                tail_ctx_start = len(imgs)
             right = left + max_width
 
             if bottom <= top:
@@ -468,6 +472,9 @@ class MinerUParser(RAGFlowPdfParser):
                     positions.append((pn + self.page_from, x0, x1, y0, y1))
                 bottom -= page.size[1]
 
+            if ii == 0:
+                head_ctx_end = len(imgs)
+
         if not imgs:
             if need_position:
                 return None, None
@@ -481,7 +488,7 @@ class MinerUParser(RAGFlowPdfParser):
         pic = Image.new("RGB", (width, height), (245, 245, 245))
         height = 0
         for ii, img in enumerate(imgs):
-            if ii == 0 or ii + 1 == len(imgs):
+            if ii < head_ctx_end or ii >= tail_ctx_start:
                 img = img.convert("RGBA")
                 overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
                 overlay.putalpha(128)
