@@ -308,7 +308,11 @@ export const useSendQuestion = (
   related_search: boolean = false,
 ) => {
   const { sharedId } = useGetSharedSearchParams();
-  const askUrl = sharedId ? api.askShare : api.ask;
+  const askUrl = sharedId
+    ? api.askShare
+    : searchId
+      ? api.searchCompletion(searchId)
+      : '';
   const { send, answer, done, stopOutputMessage } = useSendMessageWithSse();
 
   const { testChunk, loading } = useTestChunkRetrieval(tenantId);
@@ -331,12 +335,15 @@ export const useSendQuestion = (
       setIsFirstRender(false);
       setCurrentAnswer({} as IAnswer);
       if (enableAI) {
+        if (!sharedId && !searchId) {
+          message.error('Search ID is required.');
+          return;
+        }
         setSendingLoading(true);
         send(askUrl, {
           kb_ids: kbIds,
           question: q,
           tenantId,
-          search_id: searchId,
         });
       }
       testChunk({

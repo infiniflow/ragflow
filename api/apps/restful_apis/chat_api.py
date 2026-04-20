@@ -20,6 +20,7 @@ import os
 import re
 import tempfile
 from copy import deepcopy
+from types import SimpleNamespace
 
 from quart import Response, request
 
@@ -122,6 +123,39 @@ def _ensure_owned_chat(chat_id):
     return DialogService.query(
         tenant_id=current_user.id, id=chat_id, status=StatusEnum.VALID.value
     )
+
+
+def _build_default_completion_dialog():
+    return SimpleNamespace(
+        tenant_id=current_user.id,
+        llm_id="",
+        tenant_llm_id=None,
+        llm_setting={},
+        prompt_config=deepcopy(_DEFAULT_PROMPT_CONFIG),
+        kb_ids=[],
+        top_n=6,
+        top_k=1024,
+        rerank_id="",
+        similarity_threshold=0.1,
+        vector_similarity_weight=0.3,
+        meta_data_filter=None,
+    )
+
+
+def _create_session_for_completion(chat_id, dialog, user_id):
+    conv = {
+        "id": get_uuid(),
+        "dialog_id": chat_id,
+        "name": "New session",
+        "message": [{"role": "assistant", "content": dialog.prompt_config.get("prologue", "")}],
+        "user_id": user_id,
+        "reference": [],
+    }
+    ConversationService.save(**conv)
+    ok, conv_obj = ConversationService.get_by_id(conv["id"])
+    if not ok:
+        raise LookupError("Fail to create a session!")
+    return conv_obj
 
 
 def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
@@ -671,7 +705,7 @@ async def get_session(chat_id, session_id):
         return server_error_response(ex)
 
 
-@manager.route("/chats/<chat_id>/sessions/<session_id>", methods=["PUT"])  # noqa: F821
+@manager.route("/chats/<chat_id>/sessions/<session_id>", methods=["PATCH"])  # noqa: F821
 @login_required
 async def update_session(chat_id, session_id):
     if not _ensure_owned_chat(chat_id):
@@ -829,7 +863,7 @@ async def update_message_feedback(chat_id, session_id, msg_id):
         return server_error_response(ex)
 
 
-@manager.route("/chats/tts", methods=["POST"])  # noqa: F821
+@manager.route("/chat/audio/speech", methods=["POST"])  # noqa: F821
 @login_required
 async def tts():
     req = await get_request_json()
@@ -857,9 +891,9 @@ async def tts():
     return resp
 
 
-@manager.route("/chats/transcriptions", methods=["POST"])  # noqa: F821
+@manager.route("/chat/audio/transcription", methods=["POST"])  # noqa: F821
 @login_required
-async def transcriptions():
+async def transcription():
     req = await request.form
     stream_mode = req.get("stream", "false").lower() == "true"
     files = await request.files
@@ -915,7 +949,7 @@ async def transcriptions():
     return Response(event_stream(), content_type="text/event-stream")
 
 
-@manager.route("/chats/mindmap", methods=["POST"])  # noqa: F821
+@manager.route("/chat/mindmap", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("question", "kb_ids")
 async def mindmap():
@@ -933,10 +967,10 @@ async def mindmap():
     return get_json_result(data=mind_map)
 
 
-@manager.route("/chats/related_questions", methods=["POST"])  # noqa: F821
+@manager.route("/chat/recommandation", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("question")
-async def related_questions():
+async def recommandation():
     req = await get_request_json()
 
     search_id = req.get("search_id", "")
@@ -971,10 +1005,10 @@ async def related_questions():
     return get_json_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])
 
 
-@manager.route("/chats/<chat_id>/sessions/<session_id>/completions", methods=["POST"])  # noqa: F821
+@manager.route("/chat/completions", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("messages")
-async def session_completion(chat_id, session_id):
+async def session_completion():
     req = await get_request_json()
     msg = []
     for m in req["messages"]:
@@ -984,6 +1018,8 @@ async def session_completion(chat_id, session_id):
             continue
         msg.append(m)
     message_id = msg[-1].get("id") if msg else None
+    chat_id = req.pop("chat_id", "") or ""
+    session_id = req.pop("session_id", "") or ""
     chat_model_id = req.pop("llm_id", "")
 
     chat_model_config = {}
@@ -993,21 +1029,42 @@ async def session_completion(chat_id, session_id):
             chat_model_config[model_config] = config
 
     try:
-        e, conv = ConversationService.get_by_id(session_id)
-        if not e:
-            return get_data_error_result(message="Session not found!")
-        if conv.dialog_id != chat_id:
-            return get_data_error_result(message="Session does not belong to this chat!")
-        conv.message = deepcopy(req["messages"])
-        e, dia = DialogService.get_by_id(chat_id)
-        if not e:
-            return get_data_error_result(message="Chat not found!")
+        conv = None
+        if session_id and not chat_id:
+            return get_data_error_result(message="`chat_id` is required when `session_id` is provided.")
+
+        if chat_id:
+            if not _ensure_owned_chat(chat_id):
+                return get_json_result(
+                    data=False,
+                    message="No authorization.",
+                    code=RetCode.AUTHENTICATION_ERROR,
+                )
+            e, dia = DialogService.get_by_id(chat_id)
+            if not e:
+                return get_data_error_result(message="Chat not found!")
+            if session_id:
+                e, conv = ConversationService.get_by_id(session_id)
+                if not e:
+                    return get_data_error_result(message="Session not found!")
+                if conv.dialog_id != chat_id:
+                    return get_data_error_result(message="Session does not belong to this chat!")
+            else:
+                conv = _create_session_for_completion(chat_id, dia, req.get("user_id", current_user.id))
+                session_id = conv.id
+            conv.message = deepcopy(req["messages"])
+        else:
+            dia = _build_default_completion_dialog()
+            dia.llm_setting = chat_model_config
+            chat_model_id = ""
+
         del req["messages"]
 
-        if not conv.reference:
-            conv.reference = []
-        conv.reference = [r for r in conv.reference if r]
-        conv.reference.append({"chunks": [], "doc_aggs": []})
+        if conv is not None:
+            if not conv.reference:
+                conv.reference = []
+            conv.reference = [r for r in conv.reference if r]
+            conv.reference.append({"chunks": [], "doc_aggs": []})
 
         if chat_model_id:
             if not TenantLLMService.get_api_key(tenant_id=dia.tenant_id, model_name=chat_model_id):
@@ -1018,13 +1075,19 @@ async def session_completion(chat_id, session_id):
         is_embedded = bool(chat_model_id)
         stream_mode = req.pop("stream", True)
 
+        def _format_answer(ans):
+            formatted = structure_answer(conv, ans, message_id, session_id)
+            if chat_id:
+                formatted["chat_id"] = chat_id
+            return formatted
+
         async def stream():
             nonlocal dia, msg, req, conv
             try:
                 async for ans in async_chat(dia, msg, True, **req):
-                    ans = structure_answer(conv, ans, message_id, conv.id)
+                    ans = _format_answer(ans)
                     yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
-                if not is_embedded:
+                if conv is not None and not is_embedded:
                     ConversationService.update_by_id(conv.id, conv.to_dict())
             except Exception as ex:
                 logging.exception(ex)
@@ -1041,40 +1104,11 @@ async def session_completion(chat_id, session_id):
 
         answer = None
         async for ans in async_chat(dia, msg, **req):
-            answer = structure_answer(conv, ans, message_id, conv.id)
-            if not is_embedded:
+            answer = _format_answer(ans)
+            if conv is not None and not is_embedded:
                 ConversationService.update_by_id(conv.id, conv.to_dict())
             break
         return get_json_result(data=answer)
     except Exception as ex:
         return server_error_response(ex)
 
-
-@manager.route("/chats/ask", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("question", "kb_ids")
-async def ask():
-    req = await get_request_json()
-    uid = current_user.id
-
-    search_id = req.get("search_id", "")
-    search_config = {}
-    if search_id:
-        if search_app := SearchService.get_detail(search_id):
-            search_config = search_app.get("search_config", {})
-
-    async def stream():
-        nonlocal req, uid
-        try:
-            async for ans in async_ask(req["question"], req["kb_ids"], uid, search_config=search_config):
-                yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
-        except Exception as ex:
-            yield "data:" + json.dumps({"code": 500, "message": str(ex), "data": {"answer": "**ERROR**: " + str(ex), "reference": []}}, ensure_ascii=False) + "\n\n"
-        yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
-
-    resp = Response(stream(), mimetype="text/event-stream")
-    resp.headers.add_header("Cache-control", "no-cache")
-    resp.headers.add_header("Connection", "keep-alive")
-    resp.headers.add_header("X-Accel-Buffering", "no")
-    resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
-    return resp
