@@ -542,7 +542,7 @@ def generate_migration_content(new_tables: list, field_changes: dict, migrate_di
         table_name = model._meta.table_name
         model_name = model.__name__
         
-        lines.append(f'    @migrator.create_model')
+        lines.append('    @migrator.create_model')
         lines.append(f'    class {model_name}(pw.Model):')
         
         # Get all fields
@@ -612,7 +612,7 @@ def generate_migration_content(new_tables: list, field_changes: dict, migrate_di
         if changes.get('changed'):
             for field_name, (old_info, field) in changes['changed'].items():
                 rollback_modify_sql = generate_rollback_modify_sql(table_name, old_info, field_name)
-                lines.append(f'    # Note: Data values may need manual handling if type conversion caused data loss')
+                lines.append('    # Note: Data values may need manual handling if type conversion caused data loss')
                 lines.append(f'    migrator.sql("{rollback_modify_sql}")')
     
     # Rollback: remove added fields using SQL
