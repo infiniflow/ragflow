@@ -21,9 +21,7 @@ when the top context strip had zero height and was skipped.
 """
 
 import logging
-from unittest.mock import MagicMock
 
-import pytest
 from PIL import Image
 
 from deepdoc.parser.mineru_parser import MinerUParser
