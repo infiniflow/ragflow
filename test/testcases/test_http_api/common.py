@@ -432,3 +432,86 @@ def chat_completions_openai(auth, chat_id, payload=None):
     url = f"{HOST_ADDRESS}/api/{VERSION}/chats_openai/{chat_id}/chat/completions"
     res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
+
+
+# NEW DATASET ENDPOINTS
+def get_dataset(auth, dataset_id, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}"
+    res = requests.get(url=url, headers=headers, auth=auth)
+    return res.json()
+
+
+def get_ingestion_summary(auth, dataset_id, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/ingestions/summary"
+    res = requests.get(url=url, headers=headers, auth=auth)
+    return res.json()
+
+
+def list_ingestion_logs(auth, dataset_id, params=None, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/ingestions"
+    res = requests.get(url=url, headers=headers, auth=auth, params=params)
+    return res.json()
+
+
+def get_ingestion_log(auth, dataset_id, log_id, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/ingestions/{log_id}"
+    res = requests.get(url=url, headers=headers, auth=auth)
+    return res.json()
+
+
+def run_index(auth, dataset_id, index_type, payload=None, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/index"
+    params = {"type": index_type}
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload, params=params)
+    return res.json()
+
+
+def trace_index(auth, dataset_id, index_type, params=None, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/index"
+    all_params = {"type": index_type}
+    if params:
+        all_params.update(params)
+    res = requests.get(url=url, headers=headers, auth=auth, params=all_params)
+    return res.json()
+
+
+def delete_index(auth, dataset_id, index_type, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/{index_type}"
+    res = requests.delete(url=url, headers=headers, auth=auth)
+    return res.json()
+
+
+def run_embedding(auth, dataset_id, payload=None, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/embedding"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def list_tags(auth, dataset_id, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/tags"
+    res = requests.get(url=url, headers=headers, auth=auth)
+    return res.json()
+
+
+def aggregate_tags(auth, dataset_ids, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/tags/aggregation"
+    res = requests.get(url=url, headers=headers, auth=auth, params={"dataset_ids": ",".join(dataset_ids)})
+    return res.json()
+
+
+def delete_tags(auth, dataset_id, tags, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/tags"
+    res = requests.delete(url=url, headers=headers, auth=auth, json={"tags": tags})
+    return res.json()
+
+
+def rename_tag(auth, dataset_id, from_tag, to_tag, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/tags"
+    res = requests.put(url=url, headers=headers, auth=auth, json={"from_tag": from_tag, "to_tag": to_tag})
+    return res.json()
+
+
+def get_flattened_metadata(auth, dataset_ids, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/metadata/flattened"
+    res = requests.get(url=url, headers=headers, auth=auth, params={"dataset_ids": ",".join(dataset_ids)})
+    return res.json()
