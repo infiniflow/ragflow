@@ -34,7 +34,6 @@ const {
   documentUpload,
   webCrawl,
   knowledgeGraph,
-  documentInfos,
   listTagByKnowledgeIds,
   setMeta,
   getMeta,
@@ -99,10 +98,6 @@ const methods = {
   },
   webCrawl: {
     url: webCrawl,
-    method: 'post',
-  },
-  documentInfos: {
-    url: documentInfos,
     method: 'post',
   },
   setMeta: {
