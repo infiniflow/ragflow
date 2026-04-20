@@ -68,6 +68,15 @@ _DEFAULT_PROMPT_CONFIG = {
     "tts": False,
     "refine_multiturn": True,
 }
+_DEFAULT_DIRECT_CHAT_PROMPT_CONFIG = {
+    "system": "",
+    "prologue": "",
+    "parameters": [],
+    "empty_response": "",
+    "quote": False,
+    "tts": False,
+    "refine_multiturn": True,
+}
 _DEFAULT_RERANK_MODELS = {"BAAI/bge-reranker-v2-m3", "maidalun1020/bce-reranker-base_v1"}
 _READONLY_FIELDS = {"id", "tenant_id", "created_by", "create_time", "create_date", "update_time", "update_date"}
 _PERSISTED_FIELDS = set(DialogService.model._meta.fields)
@@ -131,7 +140,7 @@ def _build_default_completion_dialog():
         llm_id="",
         tenant_llm_id=None,
         llm_setting={},
-        prompt_config=deepcopy(_DEFAULT_PROMPT_CONFIG),
+        prompt_config=deepcopy(_DEFAULT_DIRECT_CHAT_PROMPT_CONFIG),
         kb_ids=[],
         top_n=6,
         top_k=1024,
@@ -1056,7 +1065,6 @@ async def session_completion():
         else:
             dia = _build_default_completion_dialog()
             dia.llm_setting = chat_model_config
-            chat_model_id = ""
 
         del req["messages"]
 
@@ -1111,4 +1119,3 @@ async def session_completion():
         return get_json_result(data=answer)
     except Exception as ex:
         return server_error_response(ex)
-
