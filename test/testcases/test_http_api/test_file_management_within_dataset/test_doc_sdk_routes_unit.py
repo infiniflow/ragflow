@@ -975,6 +975,7 @@ class TestDocRoutesUnit:
                     "keyword": True,
                     "toc_enhance": True,
                     "use_kg": True,
+                    "reference_metadata": {"include": True, "fields": ["author"]},
                 }
             ),
         )
@@ -985,6 +986,16 @@ class TestDocRoutesUnit:
         monkeypatch.setattr(module.settings, "kg_retriever", _FeatureKgRetriever())
         monkeypatch.setattr(module, "label_question", lambda *_args, **_kwargs: {})
         monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: SimpleNamespace())
+        monkeypatch.setattr(
+            module.DocMetadataService,
+            "get_metadata_for_documents",
+            lambda _doc_ids, _kb_id: {
+                "doc-1": {"author": "alice", "year": "2025"},
+                "doc-toc": {"author": "bob"},
+                "doc-child": {"author": "carol"},
+                "doc-kg": {"author": "kg-author"},
+            },
+        )
         res = _run(module.retrieval_test.__wrapped__("tenant-1"))
         assert res["code"] == 0, res["message"]
         assert feature_calls["cross"] == ("fr",)
@@ -992,6 +1003,7 @@ class TestDocRoutesUnit:
         assert feature_calls["retrieval_question"] == "q-xl-kw"
         assert res["data"]["chunks"][0]["id"] == "kg-1"
         assert res["data"]["chunks"][0]["content"] == "kg content"
+        assert res["data"]["chunks"][0]["document_metadata"]["author"] == "kg-author"
         assert any(chunk["id"] == "toc-1" for chunk in res["data"]["chunks"])
         assert any(chunk["id"] == "child-1" for chunk in res["data"]["chunks"])
 

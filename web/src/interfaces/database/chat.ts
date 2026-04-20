@@ -21,6 +21,10 @@ export interface PromptConfig {
   reasoning?: boolean;
   cross_languages?: Array<string>;
   tavily_api_key?: string;
+  reference_metadata?: {
+    include?: boolean;
+    fields?: string[];
+  };
   toc_enhance?: boolean;
 }
 
@@ -126,6 +130,7 @@ export interface IReferenceChunk {
   term_similarity: number;
   positions: number[];
   doc_type?: string;
+  document_metadata?: Record<string, any>;
 }
 
 export interface IReference {

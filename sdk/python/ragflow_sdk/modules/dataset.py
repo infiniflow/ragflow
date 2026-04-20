@@ -13,9 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from typing import Any
 from .base import Base
 from .document import Document
+
+logger = logging.getLogger(__name__)
 
 
 class DataSet(Base):
@@ -96,6 +99,10 @@ class DataSet(Base):
         raise Exception(res["message"])
 
     def delete_documents(self, ids: list[str] | None = None, delete_all: bool = False):
+        # Handle empty ID list as no-op if delete_all is False
+        if ids is not None and not ids and not delete_all:
+            logger.debug("delete_documents called with empty ids list; skipping API call")
+            return
         res = self.rm(f"/datasets/{self.id}/documents", {"ids": ids, "delete_all": delete_all})
         res = res.json()
         if res.get("code") != 0:

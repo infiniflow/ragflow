@@ -460,7 +460,7 @@ def delete_knowledge_graph(kb_id):
 @manager.route("/get_meta", methods=["GET"])  # noqa: F821
 @login_required
 def get_meta():
-    kb_ids = request.args.get("kb_ids", "").split(",")
+    kb_ids = [kb_id.strip() for kb_id in request.args.get("kb_ids", "").split(",") if kb_id.strip()]
     for kb_id in kb_ids:
         if not KnowledgebaseService.accessible(kb_id, current_user.id):
             return get_json_result(
@@ -469,6 +469,20 @@ def get_meta():
                 code=RetCode.AUTHENTICATION_ERROR
             )
     return get_json_result(data=DocMetadataService.get_flatted_meta_by_kbs(kb_ids))
+
+
+@manager.route("/get_meta_keys", methods=["GET"])  # noqa: F821
+@login_required
+def get_meta_keys():
+    kb_ids = [kb_id.strip() for kb_id in request.args.get("kb_ids", "").split(",") if kb_id.strip()]
+    for kb_id in kb_ids:
+        if not KnowledgebaseService.accessible(kb_id, current_user.id):
+            return get_json_result(
+                data=False,
+                message='No authorization.',
+                code=RetCode.AUTHENTICATION_ERROR
+            )
+    return get_json_result(data=DocMetadataService.get_metadata_keys_by_kbs(kb_ids))
 
 
 @manager.route("/basic_info", methods=["GET"])  # noqa: F821

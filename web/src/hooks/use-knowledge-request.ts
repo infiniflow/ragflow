@@ -47,6 +47,7 @@ export const enum KnowledgeApiAction {
   FetchKnowledgeDetail = 'fetchKnowledgeDetail',
   FetchKnowledgeGraph = 'fetchKnowledgeGraph',
   FetchMetadata = 'fetchMetadata',
+  FetchMetadataKeys = 'fetchMetadataKeys',
   FetchKnowledgeList = 'fetchKnowledgeList',
   RemoveKnowledgeGraph = 'removeKnowledgeGraph',
 }
@@ -445,6 +446,21 @@ export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
     queryFn: async () => {
       const { data } = await kbService.getMeta({ kb_ids: kbIds.join(',') });
       return data?.data ?? {};
+    },
+  });
+
+  return { data, loading };
+}
+
+export function useFetchKnowledgeMetadataKeys(kbIds: string[] = []) {
+  const { data, isFetching: loading } = useQuery<string[]>({
+    queryKey: [KnowledgeApiAction.FetchMetadataKeys, kbIds],
+    initialData: [],
+    enabled: kbIds.length > 0,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await kbService.getMetaKeys({ kb_ids: kbIds.join(',') });
+      return data?.data ?? [];
     },
   });
 

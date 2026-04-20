@@ -29,6 +29,10 @@ from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
+from api.utils.reference_metadata_utils import (
+    enrich_chunks_with_document_metadata,
+    resolve_reference_metadata_preferences,
+)
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_tenant_default_model_by_type, get_model_config_by_type_and_name
 from api.utils.api_utils import (
     get_data_error_result,
@@ -47,6 +51,14 @@ from common.string_utils import is_content_empty, remove_redundant_spaces
 from common.constants import RetCode, LLMType, ParserType, PAGERANK_FLD
 from common import settings
 from api.apps import login_required, current_user
+
+def _resolve_reference_metadata(req: dict, search_config: dict | None = None) -> tuple[bool, set[str] | None]:
+    return resolve_reference_metadata_preferences(req, search_config)
+
+
+def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields: set[str] | None = None) -> None:
+    enrich_chunks_with_document_metadata(chunks, metadata_fields)
+
 
 @manager.route('/list', methods=['POST'])  # noqa: F821
 @login_required
@@ -434,6 +446,7 @@ async def retrieval_test():
     async def _retrieval():
         local_doc_ids = list(doc_ids) if doc_ids else []
         tenant_ids = []
+        search_config = {}
 
         meta_data_filter = {}
         chat_mdl = None
@@ -536,6 +549,18 @@ async def retrieval_test():
 
         for c in ranks["chunks"]:
             c.pop("vector", None)
+
+        include_metadata, metadata_fields = _resolve_reference_metadata(req, search_config)
+        if include_metadata:
+            import logging
+            logging.info(
+                "retrieval_test reference_metadata enabled kb_ids=%s fields=%s chunks=%s",
+                kb_ids,
+                sorted(metadata_fields) if metadata_fields else None,
+                len(ranks["chunks"]),
+            )
+            _enrich_chunks_with_document_metadata(ranks["chunks"], metadata_fields)
+
         ranks["labels"] = labels
 
         return get_json_result(data=ranks)
