@@ -101,9 +101,39 @@ def message_fit_in(msg, max_length=4000):
     return max_length, msg
 
 
-def kb_prompt(kbinfos, max_tokens, hash_id=False):
+def kb_prompt(kbinfos, max_tokens, hash_id=False, meta_fields=None):
+    """
+    Build the knowledge-base prompt block from retrieved chunks.
+
+    Args:
+        kbinfos: retrieval result with "chunks" / "doc_aggs".
+        max_tokens: token budget for the produced prompt block.
+        hash_id: whether to hash chunk IDs in the prompt.
+        meta_fields: optional iterable controlling which document metadata
+            fields to surface in the prompt:
+
+            - ``None`` (default): include every metadata field for each doc
+              (legacy behaviour, used when no conversation-level
+              ``meta_data_filter`` is configured or when the filter mode is
+              ``auto``, which is unpredictable).
+            - empty collection (``set()``/``[]``): suppress all metadata, and
+              skip the per-document metadata DB queries entirely. This is
+              what conversation mode ``disabled`` should pass.
+            - non-empty collection: include only the named metadata keys.
+              Used by ``manual`` / ``semi_auto`` so the prompt only shows
+              fields the user actually filtered on (token-efficient).
+    """
     from api.db.services.document_service import DocumentService
     from api.db.services.doc_metadata_service import DocMetadataService
+
+    meta_fields_set: set[str] | None
+    skip_metadata = False
+    if meta_fields is None:
+        meta_fields_set = None
+    else:
+        meta_fields_set = set(meta_fields)
+        if not meta_fields_set:
+            skip_metadata = True
 
     knowledges = [get_value(ck, "content", "content_with_weight") for ck in kbinfos["chunks"]]
     kwlg_len = len(knowledges)
@@ -121,10 +151,30 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
 
     docs = DocumentService.get_by_ids([get_value(ck, "doc_id", "document_id") for ck in kbinfos["chunks"][:chunks_num]])
 
-    docs_with_meta = {}
-    for d in docs:
-        meta = DocMetadataService.get_document_metadata(d.id)
-        docs_with_meta[d.id] = meta if meta else {}
+    docs_with_meta: dict[str, dict] = {}
+    if skip_metadata:
+        # Conversation explicitly disabled metadata filtering — don't pay
+        # the per-document DB round-trips and don't leak metadata into the
+        # LLM prompt.
+        for d in docs:
+            docs_with_meta[d.id] = {}
+        logging.debug("kb_prompt: meta_data_filter disabled, skipping %d metadata lookup(s)", len(docs))
+    else:
+        skipped_keys = 0
+        for d in docs:
+            meta = DocMetadataService.get_document_metadata(d.id) or {}
+            if meta_fields_set is not None:
+                filtered = {k: v for k, v in meta.items() if k in meta_fields_set}
+                skipped_keys += len(meta) - len(filtered)
+                meta = filtered
+            docs_with_meta[d.id] = meta
+        if meta_fields_set is not None:
+            logging.debug(
+                "kb_prompt: filtered metadata to %s; %d key(s) suppressed across %d doc(s)",
+                sorted(meta_fields_set),
+                skipped_keys,
+                len(docs),
+            )
     docs = docs_with_meta
 
     def draw_node(k, line):
