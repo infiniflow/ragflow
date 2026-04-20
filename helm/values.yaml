@@ -75,7 +75,7 @@ env:
   DOC_BULK_SIZE: 128
 
   # The number of text chunks processed in a single batch during embedding vectorization.
-  EMBEDDING_BATCH_SIZE: 256
+  EMBEDDING_BATCH_SIZE: 128
 
 ragflow:
   image:
