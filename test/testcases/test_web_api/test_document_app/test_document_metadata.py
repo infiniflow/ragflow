@@ -37,7 +37,7 @@ class TestAuthorization:
     @pytest.mark.p2
     @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
     def test_filter_auth_invalid(self, invalid_auth, expected_code, expected_fragment):
-        res = document_filter(invalid_auth, {"kb_id": "kb_id"})
+        res = document_filter(invalid_auth, "kb_id", {})
         assert res["code"] == expected_code, res
         assert expected_fragment in res["message"], res
 
@@ -84,7 +84,7 @@ class TestDocumentMetadata:
     @pytest.mark.p2
     def test_filter(self, WebApiAuth, add_dataset_func):
         kb_id = add_dataset_func
-        res = document_filter(WebApiAuth, {"kb_id": kb_id})
+        res = document_filter(WebApiAuth, kb_id, {})
         assert res["code"] == 0, res
         assert "filter" in res["data"], res
         assert "total" in res["data"], res
@@ -148,12 +148,12 @@ class TestDocumentMetadata:
 
 
 class TestDocumentMetadataNegative:
-    @pytest.mark.p3
+    @pytest.mark.p2
     def test_filter_missing_kb_id(self, WebApiAuth, add_document_func):
-        _, doc_id = add_document_func
-        res = document_filter(WebApiAuth, {"doc_ids": [doc_id]})
-        assert res["code"] == 101, res
-        assert "KB ID" in res["message"], res
+        kb_id, doc_id = add_document_func
+        res = document_filter(WebApiAuth, "", {"doc_ids": [doc_id]})
+        assert res["code"] == 100, res
+        assert "<MethodNotAllowed '405: Method Not Allowed'>" == res["message"], res
 
     @pytest.mark.p3
     def test_metadata_summary_missing_kb_id(self, WebApiAuth, add_document_func):
@@ -228,77 +228,6 @@ class TestDocumentMetadataUnit:
         monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id=tenant_id)])
         monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: True if _kwargs.get("id") == kb_id else False)
 
-    def test_filter_missing_kb_id(self, document_app_module, monkeypatch):
-        module = document_app_module
-
-        async def fake_request_json():
-            return {}
-
-        monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.get_filter())
-        assert res["code"] == 101
-        assert "KB ID" in res["message"]
-
-    def test_filter_unauthorized(self, document_app_module, monkeypatch):
-        module = document_app_module
-        monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant1")])
-        monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: False)
-
-        async def fake_request_json():
-            return {"kb_id": "kb1"}
-
-        monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.get_filter())
-        assert res["code"] == 103
-
-    def test_filter_invalid_filters(self, document_app_module, monkeypatch):
-        module = document_app_module
-        self._allow_kb(module, monkeypatch)
-
-        async def fake_request_json():
-            return {"kb_id": "kb1", "run_status": ["INVALID"]}
-
-        monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.get_filter())
-        assert res["code"] == 102
-        assert "Invalid filter run status" in res["message"]
-
-        async def fake_request_json_types():
-            return {"kb_id": "kb1", "types": ["INVALID"]}
-
-        monkeypatch.setattr(module, "get_request_json", fake_request_json_types)
-        res = _run(module.get_filter())
-        assert res["code"] == 102
-        assert "Invalid filter conditions" in res["message"]
-
-    def test_filter_keywords_suffix(self, document_app_module, monkeypatch):
-        module = document_app_module
-        self._allow_kb(module, monkeypatch)
-        monkeypatch.setattr(module.DocumentService, "get_filter_by_kb_id", lambda *_args, **_kwargs: ({"run": {}}, 1))
-
-        async def fake_request_json():
-            return {"kb_id": "kb1", "keywords": "ragflow", "suffix": ["txt"]}
-
-        monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.get_filter())
-        assert res["code"] == 0
-        assert "filter" in res["data"]
-
-    def test_filter_exception(self, document_app_module, monkeypatch):
-        module = document_app_module
-        self._allow_kb(module, monkeypatch)
-
-        def raise_error(*_args, **_kwargs):
-            raise RuntimeError("boom")
-
-        monkeypatch.setattr(module.DocumentService, "get_filter_by_kb_id", raise_error)
-
-        async def fake_request_json():
-            return {"kb_id": "kb1"}
-
-        monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.get_filter())
-        assert res["code"] == 100
 
     def test_infos_meta_fields(self, document_app_module, monkeypatch):
         module = document_app_module
