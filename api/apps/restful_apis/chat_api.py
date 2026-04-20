@@ -976,10 +976,10 @@ async def mindmap():
     return get_json_result(data=mind_map)
 
 
-@manager.route("/chat/recommandation", methods=["POST"])  # noqa: F821
+@manager.route("/chat/recommendation", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("question")
-async def recommandation():
+async def recommendation():
     req = await get_request_json()
 
     search_id = req.get("search_id", "")
@@ -1080,7 +1080,6 @@ async def session_completion():
             dia.llm_id = chat_model_id
             dia.llm_setting = chat_model_config
 
-        is_embedded = bool(chat_model_id)
         stream_mode = req.pop("stream", True)
 
         def _format_answer(ans):
@@ -1095,7 +1094,7 @@ async def session_completion():
                 async for ans in async_chat(dia, msg, True, **req):
                     ans = _format_answer(ans)
                     yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
-                if conv is not None and not is_embedded:
+                if conv is not None:
                     ConversationService.update_by_id(conv.id, conv.to_dict())
             except Exception as ex:
                 logging.exception(ex)
@@ -1113,7 +1112,7 @@ async def session_completion():
         answer = None
         async for ans in async_chat(dia, msg, **req):
             answer = _format_answer(ans)
-            if conv is not None and not is_embedded:
+            if conv is not None:
                 ConversationService.update_by_id(conv.id, conv.to_dict())
             break
         return get_json_result(data=answer)

@@ -362,12 +362,14 @@ export const useSendQuestion = (
     [
       send,
       testChunk,
+      askUrl,
       kbIds,
       fetchRelatedQuestions,
       setPagination,
       pagination.pageSize,
       tenantId,
       searchId,
+      sharedId,
       related_search,
     ],
   );

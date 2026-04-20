@@ -94,6 +94,7 @@ export function useSendSingleMessage({
     [
       derivedMessages,
       conversationId,
+      chatId,
       removeLatestMessage,
       setValue,
       send,
