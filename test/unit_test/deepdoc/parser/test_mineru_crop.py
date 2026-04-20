@@ -22,6 +22,7 @@ when the top context strip had zero height and was skipped.
 
 import logging
 
+import pytest
 from PIL import Image
 
 from deepdoc.parser.mineru_parser import MinerUParser
@@ -45,6 +46,7 @@ def _sample_center(img):
 
 
 class TestCropOverlay:
+    @pytest.mark.p2
     def test_content_not_darkened_when_top_context_skipped(self):
         """
         Bug #14197: image at top of page (top=0) produces a zero-height top
@@ -62,6 +64,7 @@ class TestCropOverlay:
         # darkened overlay would halve the red channel to ~127
         assert r > 200, f"Content image darkened (r={r}); overlay incorrectly applied to content"
 
+    @pytest.mark.p2
     def test_content_not_darkened_when_image_near_top(self):
         """Image within GAP(6px) of page top also produces zero-height top strip."""
         RED = (255, 0, 0)
@@ -75,6 +78,7 @@ class TestCropOverlay:
         r, g, b = _sample_center(result)
         assert r > 200, f"Content image darkened (r={r}); overlay incorrectly applied to content"
 
+    @pytest.mark.p2
     def test_context_strips_are_darkened(self):
         """Context strips above and below content must receive the overlay."""
         WHITE = (255, 255, 255)
@@ -89,6 +93,7 @@ class TestCropOverlay:
         r, g, b = result.getpixel((result.size[0] // 2, 0))
         assert r < 200, f"Top context strip not darkened (r={r})"
 
+    @pytest.mark.p1
     def test_single_image_not_darkened_when_both_context_strips_skipped(self):
         """
         Core bug from #14197: when both context strips are skipped (len(imgs)==1),
@@ -108,6 +113,7 @@ class TestCropOverlay:
         # Before fix: r≈127 (darkened). After fix: r≈255 (clear).
         assert r > 200, f"Single content image darkened (r={r}); both-strips-skipped bug not fixed"
 
+    @pytest.mark.p2
     def test_multi_page_content_not_darkened(self):
         """Content spanning multiple pages must not be darkened."""
         RED = (255, 0, 0)
