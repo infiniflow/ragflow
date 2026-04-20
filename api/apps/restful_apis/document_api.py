@@ -627,10 +627,11 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
         if metadata and not isinstance(metadata, dict):
             return RetCode.DATA_ERROR, "metadata must be an object.", [], return_empty_metadata
 
-    metas = None
+    metas = dict()
     if metadata_condition or metadata:
         metas = DocMetadataService.get_flatted_meta_by_kbs([kb_id])
 
+    doc_ids_filter = None
     if metadata_condition:
         doc_ids_filter = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
         if metadata_condition.get("conditions") and not doc_ids_filter:

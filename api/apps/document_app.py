@@ -22,7 +22,7 @@ from quart import make_response, request
 from api.apps import current_user, login_required
 from api.common.check_team_permission import check_kb_team_permission
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
-from api.db import VALID_FILE_TYPES, FileType
+from api.db import FileType
 from api.db.db_models import Task
 from api.db.services import duplicate_name
 from api.db.services.doc_metadata_service import DocMetadataService
