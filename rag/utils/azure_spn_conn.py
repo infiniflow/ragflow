@@ -71,7 +71,7 @@ class RAGFlowAzureSpnBlob:
     def put(self, bucket, fnm, binary):
         for _ in range(3):
             try:
-                f = self.conn.create_file(fnm)
+                f = self.conn.create_file(f"{bucket}/{fnm}")
                 f.append_data(binary, offset=0, length=len(binary))
                 return f.flush_data(len(binary))
             except Exception:
@@ -83,14 +83,14 @@ class RAGFlowAzureSpnBlob:
 
     def rm(self, bucket, fnm):
         try:
-            self.conn.delete_file(fnm)
+            self.conn.delete_file(f"{bucket}/{fnm}")
         except Exception:
             logging.exception(f"Fail rm {bucket}/{fnm}")
 
     def get(self, bucket, fnm):
         for _ in range(1):
             try:
-                client = self.conn.get_file_client(fnm)
+                client = self.conn.get_file_client(f"{bucket}/{fnm}")
                 r = client.download_file()
                 return r.read()
             except Exception:
@@ -101,7 +101,7 @@ class RAGFlowAzureSpnBlob:
 
     def obj_exist(self, bucket, fnm):
         try:
-            client = self.conn.get_file_client(fnm)
+            client = self.conn.get_file_client(f"{bucket}/{fnm}")
             return client.exists()
         except Exception:
             logging.exception(f"Fail put {bucket}/{fnm}")
