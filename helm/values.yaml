@@ -72,7 +72,7 @@ env:
   # After making the change, ensure you update `client_max_body_size` in nginx/nginx.conf correspondingly.
 
   # The number of document chunks processed in a single batch during document parsing.
-  DOC_BULK_SIZE: 128
+  DOC_BULK_SIZE: 64
 
   # The number of text chunks processed in a single batch during embedding vectorization.
   EMBEDDING_BATCH_SIZE: 128
