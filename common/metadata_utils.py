@@ -170,14 +170,16 @@ async def apply_meta_data_filter(
     """
     Apply metadata filtering rules and return the filtered doc_ids.
 
-    meta_data_filter supports three modes:
+    meta_data_filter supports four modes:
+    - disabled: skip all metadata filtering; return base_doc_ids unchanged
     - auto: generate filter conditions via LLM (gen_meta_filter)
     - semi_auto: generate conditions using selected metadata keys only
     - manual: directly filter based on provided conditions
 
     Returns:
-        list of doc_ids, ["-999"] when manual filters yield no result, or None
-        when auto/semi_auto filters return empty.
+        list of doc_ids, ["-999"] when manual filters yield no result, None
+        when auto/semi_auto filters return empty, or the original base_doc_ids
+        (possibly None) when method is "disabled".
     """
     from rag.prompts.generator import gen_meta_filter # move from the top of the file to avoid circular import
 
@@ -187,6 +189,9 @@ async def apply_meta_data_filter(
         return doc_ids
 
     method = meta_data_filter.get("method")
+
+    if method == "disabled":
+        return list(base_doc_ids) if base_doc_ids else None
 
     if method == "auto":
         filters: dict = await gen_meta_filter(chat_mdl, metas, question)

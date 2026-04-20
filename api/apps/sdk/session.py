@@ -1011,7 +1011,7 @@ async def retrieval_test_embedded():
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
                 chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
-        if meta_data_filter:
+        if meta_data_filter and meta_data_filter.get("method") != "disabled":
             metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
             local_doc_ids = await apply_meta_data_filter(meta_data_filter, metas, _question, chat_mdl, local_doc_ids)
 
