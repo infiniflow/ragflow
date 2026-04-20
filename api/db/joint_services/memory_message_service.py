@@ -154,7 +154,7 @@ async def extract_by_llm(tenant_id: str, tenant_llm_id: int, extract_conf: dict,
     else:
         user_prompts.append({"role": "user", "content": PromptAssembler.assemble_user_prompt(conversation_content, conversation_time, conversation_time)})
     if tenant_llm_id:
-        llm_config = get_model_config_by_id(tenant_llm_id, LLMType.CHAT)
+        llm_config = get_model_config_by_id(tenant_llm_id)
     else:
         llm_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, llm_id)
     llm = LLMBundle(tenant_id, llm_config)

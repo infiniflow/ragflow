@@ -21,39 +21,11 @@ from api.db.services.llm_service import LLMService
 from api.db.services.tenant_llm_service import TenantLLMService, TenantService
 
 
-def _normalize_model_type(model_type):
-    return model_type.value if hasattr(model_type, "value") else model_type
-
-
-def _coerce_model_config_type(config_dict: dict, model_type=None) -> dict:
-    if model_type is None:
-        return config_dict
-
-    model_type_val = _normalize_model_type(model_type)
-    config_model_type = _normalize_model_type(config_dict.get("model_type"))
-    if config_model_type == model_type_val:
-        return config_dict
-
-    if TenantLLMService.model_supports_type(
-        config_dict["llm_name"],
-        model_type_val,
-        config_dict.get("llm_factory"),
-    ):
-        adjusted = dict(config_dict)
-        adjusted["model_type"] = model_type_val
-        return adjusted
-
-    raise LookupError(
-        f"Tenant Model with name {config_dict['llm_name']} has type {config_model_type}, expected {model_type_val}"
-    )
-
-
-def get_model_config_by_id(tenant_model_id: int, model_type: str | enum.Enum | None = None) -> dict:
+def get_model_config_by_id(tenant_model_id: int) -> dict:
     found, model_config = TenantLLMService.get_by_id(tenant_model_id)
     if not found:
         raise LookupError(f"Tenant Model with id {tenant_model_id} not found")
     config_dict = model_config.to_dict()
-    config_dict = _coerce_model_config_type(config_dict, model_type)
     llm = LLMService.query(llm_name=config_dict["llm_name"])
     if llm:
         config_dict["is_tools"] = llm[0].is_tools
@@ -63,7 +35,7 @@ def get_model_config_by_id(tenant_model_id: int, model_type: str | enum.Enum | N
 def get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_name: str):
     if not model_name:
         raise Exception("Model Name is required")
-    model_type_val = _normalize_model_type(model_type)
+    model_type_val = model_type.value if hasattr(model_type, "value") else model_type
     model_config = TenantLLMService.get_api_key(tenant_id, model_name, model_type_val)
     if not model_config:
         # model_name in format 'name@factory', split model_name and try again
@@ -93,7 +65,12 @@ def get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_nam
     else:
         # model_name without @factory
         config_dict = model_config.to_dict()
-    config_dict = _coerce_model_config_type(config_dict, model_type_val)
+    config_model_type = config_dict.get("model_type")
+    config_model_type = config_model_type.value if hasattr(config_model_type, "value") else config_model_type
+    if config_model_type != model_type_val:
+        raise LookupError(
+            f"Tenant Model with name {model_name} has type {config_model_type}, expected {model_type_val}"
+        )
     llm = LLMService.query(llm_name=config_dict["llm_name"])
     if llm:
         config_dict["is_tools"] = llm[0].is_tools

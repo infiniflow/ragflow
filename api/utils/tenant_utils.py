@@ -31,6 +31,8 @@ def ensure_tenant_model_id_for_params(tenant_id: str, param_dict: dict, *, stric
         if param_dict.get(key) and not param_dict.get(f"tenant_{key}"):
             model_type = _KEY_TO_MODEL_TYPE.get(key)
             tenant_model = TenantLLMService.get_api_key(tenant_id, param_dict[key], model_type)
+            if not tenant_model and model_type == LLMType.CHAT:
+                tenant_model = TenantLLMService.get_api_key(tenant_id, param_dict[key])
             if tenant_model:
                 param_dict.update({f"tenant_{key}": tenant_model.id})
             else:

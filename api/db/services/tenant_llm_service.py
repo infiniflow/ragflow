@@ -34,97 +34,20 @@ class LLMFactoriesService(CommonService):
 class TenantLLMService(CommonService):
     model = TenantLLM
 
-    _MODEL_TYPE_TAGS = {
-        LLMType.CHAT.value: {"CHAT"},
-        LLMType.EMBEDDING.value: {"EMBEDDING", "TEXT EMBEDDING"},
-        LLMType.SPEECH2TEXT.value: {"SPEECH2TEXT", "ASR"},
-        LLMType.IMAGE2TEXT.value: {"IMAGE2TEXT"},
-        LLMType.RERANK.value: {"RERANK"},
-        LLMType.TTS.value: {"TTS"},
-        LLMType.OCR.value: {"OCR"},
-    }
-
-    @classmethod
-    def _normalize_model_type(cls, model_type):
-        return model_type.value if hasattr(model_type, "value") else model_type
-
-    @classmethod
-    def _query_model_records(cls, tenant_id, llm_name, llm_factory=None, model_type=None):
-        query_kwargs = {"tenant_id": tenant_id, "llm_name": llm_name}
-        model_type_val = cls._normalize_model_type(model_type)
-        if model_type_val is not None:
-            query_kwargs["model_type"] = model_type_val
-        if llm_factory:
-            query_kwargs["llm_factory"] = llm_factory
-        return cls.query(**query_kwargs)
-
-    @classmethod
-    def _iter_catalog_models(cls, model_name: str, llm_factory: str | None = None):
-        for factory_info in settings.FACTORY_LLM_INFOS:
-            if llm_factory and factory_info["name"] != llm_factory:
-                continue
-            for llm in factory_info.get("llm", []):
-                if llm.get("llm_name") == model_name:
-                    yield llm, factory_info["name"]
-
-    @classmethod
-    def model_supports_type(cls, model_name, model_type, llm_factory=None) -> bool:
-        from api.db.services.llm_service import LLMService
-
-        model_type_val = cls._normalize_model_type(model_type)
-        if model_type_val is None:
-            return True
-
-        expected_tags = cls._MODEL_TYPE_TAGS.get(model_type_val, {str(model_type_val).upper()})
-        for llm, _factory in cls._iter_catalog_models(model_name, llm_factory):
-            declared_type = cls._normalize_model_type(llm.get("model_type"))
-            if declared_type == model_type_val:
-                return True
-            tags = {tag.strip().upper() for tag in str(llm.get("tags", "")).split(",") if tag.strip()}
-            if tags & expected_tags:
-                return True
-
-        llm_query_kwargs = {"llm_name": model_name}
-        if llm_factory:
-            llm_query_kwargs["fid"] = llm_factory
-        for llm in LLMService.query(**llm_query_kwargs):
-            declared_type = cls._normalize_model_type(llm.model_type)
-            if declared_type == model_type_val:
-                return True
-            tags = {tag.strip().upper() for tag in str(getattr(llm, "tags", "")).split(",") if tag.strip()}
-            if tags & expected_tags:
-                return True
-        return False
-
-    @classmethod
-    def _get_api_key_for_name(cls, tenant_id, model_name, llm_factory=None, model_type=None):
-        objs = cls._query_model_records(tenant_id, model_name, llm_factory=llm_factory, model_type=model_type)
-        if objs:
-            return objs[0]
-
-        model_type_val = cls._normalize_model_type(model_type)
-        if model_type_val is None:
-            return None
-
-        compatible_objs = cls._query_model_records(tenant_id, model_name, llm_factory=llm_factory)
-        if not compatible_objs:
-            return None
-
-        candidate = compatible_objs[0]
-        if cls.model_supports_type(candidate.llm_name, model_type_val, candidate.llm_factory):
-            return candidate
-        return None
-
     @classmethod
     @DB.connection_context()
     def get_api_key(cls, tenant_id, model_name, model_type=None):
         mdlnm, fid = TenantLLMService.split_model_name_and_factory(model_name)
-        model_type_val = cls._normalize_model_type(model_type)
-        obj = cls._get_api_key_for_name(tenant_id, mdlnm, llm_factory=fid, model_type=model_type_val)
-        if obj:
-            return obj
+        model_type_val = model_type.value if hasattr(model_type, "value") else model_type
+        query_kwargs = {"tenant_id": tenant_id, "llm_name": mdlnm}
+        if model_type_val is not None:
+            query_kwargs["model_type"] = model_type_val
+        if not fid:
+            objs = cls.query(**query_kwargs)
+        else:
+            objs = cls.query(**query_kwargs, llm_factory=fid)
 
-        if fid:
+        if (not objs) and fid:
             if fid == "LocalAI":
                 mdlnm += "___LocalAI"
             elif fid == "HuggingFace":
@@ -133,8 +56,11 @@ class TenantLLMService(CommonService):
                 mdlnm += "___OpenAI-API"
             elif fid == "VLLM":
                 mdlnm += "___VLLM"
-            return cls._get_api_key_for_name(tenant_id, mdlnm, llm_factory=fid, model_type=model_type_val)
-        return None
+            query_kwargs["llm_name"] = mdlnm
+            objs = cls.query(**query_kwargs, llm_factory=fid)
+        if not objs:
+            return None
+        return objs[0]
 
     @classmethod
     @DB.connection_context()
@@ -197,10 +123,6 @@ class TenantLLMService(CommonService):
             model_config = cls.get_api_key(tenant_id, mdlnm, llm_type)
         if model_config:
             model_config = model_config.to_dict()
-            resolved_type = cls._normalize_model_type(model_config.get("model_type"))
-            requested_type = cls._normalize_model_type(llm_type)
-            if resolved_type != requested_type and cls.model_supports_type(model_config["llm_name"], requested_type, model_config.get("llm_factory")):
-                model_config["model_type"] = requested_type
         elif llm_type == LLMType.EMBEDDING and fid == "Builtin" and "tei-" in os.getenv("COMPOSE_PROFILES", "") and mdlnm == os.getenv("TEI_MODEL", ""):
             embedding_cfg = settings.EMBEDDING_CFG
             model_config = {"llm_factory": "Builtin", "api_key": embedding_cfg["api_key"], "llm_name": mdlnm, "api_base": embedding_cfg["base_url"]}

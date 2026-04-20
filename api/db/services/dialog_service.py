@@ -245,7 +245,7 @@ async def async_chat_solo(dialog, messages, stream=True):
     if dialog.llm_id:
         model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
     elif dialog.tenant_llm_id:
-        model_config = get_model_config_by_id(dialog.tenant_llm_id, LLMType.CHAT)
+        model_config = get_model_config_by_id(dialog.tenant_llm_id)
     else:
         model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
@@ -300,7 +300,7 @@ def get_models(dialog):
     if dialog.llm_id:
         chat_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
     elif dialog.tenant_llm_id:
-        chat_model_config = get_model_config_by_id(dialog.tenant_llm_id, LLMType.CHAT)
+        chat_model_config = get_model_config_by_id(dialog.tenant_llm_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
