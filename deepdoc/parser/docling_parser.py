@@ -440,7 +440,7 @@ class DoclingParser(RAGFlowPdfParser):
                     sections.extend(self._sections_from_remote_text(md_fallback, parse_method=parse_method))
 
         if callback:
-            callback(0.95, f"[Docling] Remote sections: {len(sections)}")
+            callback(0.79, f"[Docling] Remote sections: {len(sections)}")
         return sections, tables
 
     def parse_pdf(
@@ -507,7 +507,7 @@ class DoclingParser(RAGFlowPdfParser):
         tables = self._transfer_to_tables(doc)
 
         if callback:
-            callback(0.95, f"[Docling] Sections: {len(sections)}, Tables: {len(tables)}")
+            callback(0.79, f"[Docling] Sections: {len(sections)}, Tables: {len(tables)}")
 
         if binary is not None and delete_output:
             try:
@@ -516,7 +516,7 @@ class DoclingParser(RAGFlowPdfParser):
                 pass
 
         if callback:
-            callback(1.0, "[Docling] Done.")
+            callback(0.8, "[Docling] Done.")
         return sections, tables
 
 

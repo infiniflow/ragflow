@@ -494,6 +494,10 @@ Quanto sopra è il contenuto che devi riassumere.`,
       paddleocrOptions: 'Opzioni PaddleOCR',
       paddleocrApiUrl: 'URL API di PaddleOCR',
       paddleocrApiUrlTip: 'URL dell’endpoint API del servizio PaddleOCR',
+      paddleocrRequestTimeout: 'Timeout della richiesta (secondi)',
+      paddleocrRequestTimeoutTip:
+        'PDF di grandi dimensioni o libri potrebbero richiedere un timeout più alto.',
+      paddleocrRequestTimeoutPlaceholder: '600',
       paddleocrApiUrlPlaceholder:
         'Ad esempio: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Token di accesso AI Studio',
@@ -811,6 +815,12 @@ Quanto sopra è il contenuto che devi riassumere.`,
         apiUrl: 'URL API di PaddleOCR',
         apiUrlPlaceholder:
           'Ad esempio: https://paddleocr-server.com/layout-parsing',
+        requestTimeout: 'Timeout della richiesta (secondi)',
+        requestTimeoutTip:
+          'PDF di grandi dimensioni o libri potrebbero richiedere un timeout più alto.',
+        requestTimeoutPlaceholder: '600',
+        requestTimeoutMin:
+          'Il timeout della richiesta deve essere di almeno 1 secondo',
         accessToken: 'Token di accesso AI Studio',
         accessTokenPlaceholder: 'Il tuo token AI Studio (facoltativo)',
         algorithm: 'Algoritmo PaddleOCR',

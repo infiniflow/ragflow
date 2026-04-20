@@ -411,6 +411,7 @@ def get_parser_config(chunk_method, parser_config):
     base_defaults = {
         "table_context_size": 0,
         "image_context_size": 0,
+        "paddleocr_request_timeout": 600,
     }
     key_mapping = {
         "naive": {

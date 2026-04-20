@@ -446,6 +446,10 @@ export default {
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip:
         'URL адресът на API крайната точка за PaddleOCR услугата',
+      paddleocrRequestTimeout: 'Време за изчакване на заявката (секунди)',
+      paddleocrRequestTimeoutTip:
+        'Големи PDF файлове или книги може да изискват по-дълго време за изчакване.',
+      paddleocrRequestTimeoutPlaceholder: '600',
       paddleocrApiUrlPlaceholder:
         'напр. https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio токен за достъп',
@@ -1187,6 +1191,11 @@ The above is the content you need to summarize.`,
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder:
           'Например: https://paddleocr-server.com/layout-parsing',
+        requestTimeout: 'Време за изчакване на заявката (секунди)',
+        requestTimeoutTip:
+          'Големи PDF файлове или книги може да изискват по-дълго време за изчакване.',
+        requestTimeoutPlaceholder: '600',
+        requestTimeoutMin: 'Времето за изчакване трябва да е поне 1 секунда',
         accessToken: 'AI Studio токен за достъп',
         accessTokenPlaceholder: 'Вашият AI Studio токен (незадължителен)',
         algorithm: 'PaddleOCR алгоритъм',

@@ -29,6 +29,15 @@ const FormSchema = z.object({
   }),
   paddleocr_access_token: z.string().optional(),
   paddleocr_algorithm: z.string().default('PaddleOCR-VL'),
+  paddleocr_request_timeout: z.coerce
+    .number()
+    .int()
+    .min(1, {
+      message: t(
+        'setting.paddleocr.requestTimeoutMin',
+        'Request timeout must be at least 1 second',
+      ),
+    }),
 });
 
 export type PaddleOCRFormValues = z.infer<typeof FormSchema>;
@@ -60,6 +69,7 @@ const PaddleOCRModal = ({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       paddleocr_algorithm: 'PaddleOCR-VL',
+      paddleocr_request_timeout: 600,
     },
   });
 
@@ -120,6 +130,27 @@ const PaddleOCRModal = ({
                   placeholder={t('setting.paddleocr.selectAlgorithm')}
                 />
               )}
+            </RAGFlowFormItem>
+            <RAGFlowFormItem
+              name="paddleocr_request_timeout"
+              label={t(
+                'setting.paddleocr.requestTimeout',
+                'Request timeout (seconds)',
+              )}
+              tooltip={t(
+                'setting.paddleocr.requestTimeoutTip',
+                'Large PDFs or books may require a higher timeout.',
+              )}
+            >
+              <Input
+                type="number"
+                min={1}
+                step={1}
+                placeholder={t(
+                  'setting.paddleocr.requestTimeoutPlaceholder',
+                  '600',
+                )}
+              />
             </RAGFlowFormItem>
             {onVerify && (
               <VerifyButton

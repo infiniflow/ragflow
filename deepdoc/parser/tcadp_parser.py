@@ -499,14 +499,14 @@ class TCADPParser(RAGFlowPdfParser):
             if callback:
                 # Shorten file path display, only show filename
                 zip_filename = os.path.basename(zip_path)
-                callback(0.8, f"[TCADP] Parsing result downloaded: {zip_filename}")
+                callback(0.75, f"[TCADP] Parsing result downloaded: {zip_filename}")
 
             # Extract ZIP file content
             content_data = self._extract_content_from_zip(zip_path)
             self.logger.info(f"[TCADP] Extracted {len(content_data)} content blocks")
 
             if callback:
-                callback(0.9, f"[TCADP] Extracted {len(content_data)} content blocks")
+                callback(0.78, f"[TCADP] Extracted {len(content_data)} content blocks")
 
             # Convert to sections and tables format
             sections = self._parse_content_to_sections(content_data)
@@ -515,7 +515,7 @@ class TCADPParser(RAGFlowPdfParser):
             self.logger.info(f"[TCADP] Parsing completed: {len(sections)} sections, {len(tables)} tables")
 
             if callback:
-                callback(1.0, f"[TCADP] Parsing completed: {len(sections)} sections, {len(tables)} tables")
+                callback(0.8, f"[TCADP] Parsing completed: {len(sections)} sections, {len(tables)} tables")
 
             return sections, tables
 

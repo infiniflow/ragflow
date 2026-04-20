@@ -1,22 +1,10 @@
-import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { Input } from '@/components/ui/input';
-import { RAGFlowSelect } from '@/components/ui/select';
 import { LLMFactory } from '@/constants/llm';
-import { buildOptions } from '@/utils/form';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
-const algorithmOptions = buildOptions(['PaddleOCR-VL']);
-
-export function PaddleOCROptionsFormField({
-  namePrefix = 'parser_config',
-}: {
-  namePrefix?: string;
-}) {
+export function PaddleOCROptionsFormField() {
   const form = useFormContext();
   const { t } = useTranslation();
-  const buildName = (field: string) =>
-    namePrefix ? `${namePrefix}.${field}` : field;
 
   const layoutRecognize = useWatch({
     control: form.control,
@@ -38,58 +26,59 @@ export function PaddleOCROptionsFormField({
         {t('knowledgeConfiguration.paddleocrOptions', 'PaddleOCR Options')}
       </div>
 
-      <RAGFlowFormItem
-        name={buildName('paddleocr_api_url')}
-        label={t('knowledgeConfiguration.paddleocrApiUrl', 'PaddleOCR API URL')}
-        tooltip={t(
-          'knowledgeConfiguration.paddleocrApiUrlTip',
-          'The API endpoint URL for PaddleOCR service',
-        )}
-        horizontal={true}
-      >
-        {(field) => (
-          <Input
-            {...field}
-            placeholder={t('knowledgeConfiguration.paddleocrApiUrlPlaceholder')}
-          />
-        )}
-      </RAGFlowFormItem>
-
-      <RAGFlowFormItem
-        name={buildName('paddleocr_access_token')}
-        label={t('knowledgeConfiguration.paddleocrAccessToken', 'AI Studio Access Token')}
-        tooltip={t(
-          'knowledgeConfiguration.paddleocrAccessTokenTip',
-          'Access token for PaddleOCR API (optional)',
-        )}
-        horizontal={true}
-      >
-        {(field) => (
-          <Input
-            {...field}
-            placeholder={t('knowledgeConfiguration.paddleocrAccessTokenPlaceholder')}
-          />
-        )}
-      </RAGFlowFormItem>
-
-      <RAGFlowFormItem
-        name={buildName('paddleocr_algorithm')}
-        label={t('knowledgeConfiguration.paddleocrAlgorithm', 'PaddleOCR Algorithm')}
-        tooltip={t(
-          'knowledgeConfiguration.paddleocrAlgorithmTip',
-          'Algorithm to use for PaddleOCR parsing',
-        )}
-        horizontal={true}
-      >
-        {(field) => (
-          <RAGFlowSelect
-            value={field.value || undefined}
-            onChange={field.onChange}
-            options={algorithmOptions}
-            placeholder={t('common.selectPlaceholder', 'Select value')}
-          />
-        )}
-      </RAGFlowFormItem>
+      <div className="rounded-md border border-dashed border-border/60 bg-muted/20 px-3 py-3 text-sm">
+        <div className="font-medium text-text-secondary">
+          {t(
+            'knowledgeConfiguration.paddleocrPresetManaged',
+            'These settings are defined by the selected PaddleOCR model preset.',
+          )}
+        </div>
+        <div className="mt-2 space-y-1.5">
+          {[
+            {
+              id: 'api-url',
+              label: t(
+                'knowledgeConfiguration.paddleocrApiUrl',
+                'PaddleOCR API URL',
+              ),
+            },
+            {
+              id: 'access-token',
+              label: t(
+                'knowledgeConfiguration.paddleocrAccessToken',
+                'AI Studio Access Token',
+              ),
+            },
+            {
+              id: 'algorithm',
+              label: t(
+                'knowledgeConfiguration.paddleocrAlgorithm',
+                'PaddleOCR Algorithm',
+              ),
+            },
+            {
+              id: 'request-timeout',
+              label: t(
+                'knowledgeConfiguration.paddleocrRequestTimeout',
+                'Request timeout (seconds)',
+              ),
+            },
+          ].map(({ id, label }) => (
+            <div
+              key={id}
+              className="flex items-center justify-between gap-3 rounded-md bg-background/60 px-3 py-2"
+            >
+              <span className="text-text-secondary">{label}</span>
+              <span className="text-xs text-muted-foreground">
+                {t(
+                  'knowledgeConfiguration.paddleocrPresetManagedValue',
+                  'Preset-defined',
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

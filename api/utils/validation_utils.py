@@ -392,6 +392,7 @@ class ParserConfig(Base):
     graphrag: Annotated[GraphragConfig, Field(default_factory=lambda: GraphragConfig(use_graphrag=False))]
     html4excel: Annotated[bool, Field(default=False)]
     layout_recognize: Annotated[str, Field(default="DeepDOC")]
+    paddleocr_request_timeout: Annotated[int | None, Field(default=600, ge=1)]
     parent_child: Annotated[ParentChildConfig, Field(default_factory=lambda: ParentChildConfig(use_parent_child=False))]
     raptor: Annotated[RaptorConfig, Field(default_factory=lambda: RaptorConfig(use_raptor=False))]
     tag_kb_ids: Annotated[list[str], Field(default_factory=list)]
@@ -957,4 +958,3 @@ def validate_chunk_method(doc, chunk_method=None):
     if doc.type == FileType.VISUAL or re.search(r"\.(ppt|pptx|pages)$", doc.name):
         return "Not supported yet!", RetCode.DATA_ERROR
     return None, None
-
