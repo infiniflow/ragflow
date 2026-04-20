@@ -33,6 +33,7 @@ warnings.filterwarnings(
 def _install_cv2_stub_if_unavailable():
     try:
         import cv2  # noqa: F401
+
         return
     except Exception:
         pass
@@ -67,12 +68,11 @@ def _install_cv2_stub_if_unavailable():
 _install_cv2_stub_if_unavailable()
 
 from api.db.services import dialog_service
-from api.db.services.dialog_service import use_sql
-
 
 # ---------------------------------------------------------------------------
 # _validate_uuid — unit tests
 # ---------------------------------------------------------------------------
+
 
 def _validate_uuid(value, label="id"):
     """Re-invoke the inner helper via use_sql's closure for direct unit testing."""
@@ -113,9 +113,8 @@ class TestValidateUuid:
     def test_output_is_always_canonical_form(self):
         """Regardless of input format, the returned value must match xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx."""
         import re
-        canonical_re = re.compile(
-            r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-        )
+
+        canonical_re = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
         for val in [
             "123e4567-e89b-12d3-a456-426614174000",
             "123e4567e89b12d3a456426614174000",
