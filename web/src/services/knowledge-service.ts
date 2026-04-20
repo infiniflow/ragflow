@@ -249,7 +249,16 @@ export const listDocument = (
   if (!params || !params.id) {
     throw new Error('params and params.id are required');
   }
-  return request.get(api.getDocumentList(params.id), { params: body });
+  // Extract page, page_size, and ext.keywords from params
+  const { page, page_size, ext } = params;
+  // Merge: page, page_size, keywords (from ext), body, and remaining params
+  const mergedParams = {
+    page,
+    page_size,
+    keywords: ext?.keywords,
+    ...body,
+  };
+  return request.get(api.getDocumentList(params.id), { params: mergedParams });
 };
 
 export const documentFilter = (kb_id: string) =>
