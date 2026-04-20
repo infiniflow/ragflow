@@ -31,6 +31,7 @@ from openai import OpenAI, AsyncOpenAI
 from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
+from rag.llm.retry import retry
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
 
@@ -258,6 +259,7 @@ class GptV4(Base):
         self.lang = lang
         super().__init__(**kwargs)
 
+    @retry
     def describe(self, image):
         b64 = self.image2base64(image)
         res = self.client.chat.completions.create(
@@ -267,6 +269,7 @@ class GptV4(Base):
         )
         return res.choices[0].message.content.strip(), total_token_count_from_response(res)
 
+    @retry
     def describe_with_prompt(self, image, prompt=None):
         b64 = self.image2base64(image)
         res = self.client.chat.completions.create(
@@ -495,6 +498,7 @@ class Zhipu4V(GptV4):
     def describe(self, image):
         return self.describe_with_prompt(image)
 
+    @retry
     def describe_with_prompt(self, image, prompt=None):
         b64 = self.image2base64(image)
         if prompt is None:
@@ -723,31 +727,27 @@ class OllamaCV(Base):
                 break
         return hist
 
+    @retry
     def describe(self, image):
         prompt = self.prompt("")
-        try:
-            response = self.client.generate(
-                model=self.model_name,
-                prompt=prompt[0]["content"],
-                images=[image],
-            )
-            ans = response["response"].strip()
-            return ans, 128
-        except Exception as e:
-            return "**ERROR**: " + str(e), 0
+        response = self.client.generate(
+            model=self.model_name,
+            prompt=prompt[0]["content"],
+            images=[image],
+        )
+        ans = response["response"].strip()
+        return ans, 128
 
+    @retry
     def describe_with_prompt(self, image, prompt=None):
         vision_prompt = self.vision_llm_prompt("", prompt) if prompt else self.vision_llm_prompt("")
-        try:
-            response = self.client.generate(
-                model=self.model_name,
-                prompt=vision_prompt[0]["content"],
-                images=[image],
-            )
-            ans = response["response"].strip()
-            return ans, 128
-        except Exception as e:
-            return "**ERROR**: " + str(e), 0
+        response = self.client.generate(
+            model=self.model_name,
+            prompt=vision_prompt[0]["content"],
+            images=[image],
+        )
+        ans = response["response"].strip()
+        return ans, 128
 
     async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
         try:
@@ -848,6 +848,7 @@ class GeminiCV(Base):
 
         return contents
 
+    @retry
     def describe(self, image):
         from google.genai import types
 
@@ -873,6 +874,7 @@ class GeminiCV(Base):
         )
         return res.text, total_token_count_from_response(res)
 
+    @retry
     def describe_with_prompt(self, image, prompt=None):
         from google.genai import types
 
@@ -1018,6 +1020,7 @@ class NvidiaCV(Base):
             htmls += ' <img src="{}"/>'.format(f"data:image/jpeg;base64,{img}" if img[:4] != "data" else img)
         return text + htmls
 
+    @retry
     def describe(self, image):
         b64 = self.image2base64(image)
         response = requests.post(
@@ -1047,6 +1050,7 @@ class NvidiaCV(Base):
         )
         return response.json()
 
+    @retry
     def describe_with_prompt(self, image, prompt=None):
         b64 = self.image2base64(image)
         vision_prompt = self.vision_llm_prompt(b64, prompt) if prompt else self.vision_llm_prompt(b64)
@@ -1106,11 +1110,13 @@ class AnthropicCV(Base):
             )
         return pmpt
 
+    @retry
     def describe(self, image):
         b64 = self.image2base64(image)
         response = self.client.messages.create(model=self.model_name, max_tokens=self.max_tokens, messages=self.prompt(b64))
         return response["content"][0]["text"].strip(), response["usage"]["input_tokens"] + response["usage"]["output_tokens"]
 
+    @retry
     def describe_with_prompt(self, image, prompt=None):
         b64 = self.image2base64(image)
         prompt = self.prompt(b64, prompt if prompt else vision_llm_describe_prompt())
