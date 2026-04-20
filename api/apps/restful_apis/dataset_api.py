@@ -593,66 +593,6 @@ def get_ingestion_log(tenant_id, dataset_id, log_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/run_graphrag", methods=["POST"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-async def run_graphrag(tenant_id, dataset_id):
-    try:
-        success, result = dataset_api_service.run_graphrag(dataset_id, tenant_id)
-        if success:
-            return get_result(data=result)
-        else:
-            return get_error_data_result(message=result)
-    except Exception as e:
-        logging.exception(e)
-        return get_error_data_result(message="Internal server error")
-
-
-@manager.route("/datasets/<dataset_id>/trace_graphrag", methods=["GET"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-def trace_graphrag(tenant_id, dataset_id):
-    try:
-        success, result = dataset_api_service.trace_graphrag(dataset_id, tenant_id)
-        if success:
-            return get_result(data=result)
-        else:
-            return get_error_data_result(message=result)
-    except Exception as e:
-        logging.exception(e)
-        return get_error_data_result(message="Internal server error")
-
-
-@manager.route("/datasets/<dataset_id>/run_raptor", methods=["POST"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-async def run_raptor(tenant_id, dataset_id):
-    try:
-        success, result = dataset_api_service.run_raptor(dataset_id, tenant_id)
-        if success:
-            return get_result(data=result)
-        else:
-            return get_error_data_result(message=result)
-    except Exception as e:
-        logging.exception(e)
-        return get_error_data_result(message="Internal server error")
-
-
-@manager.route("/datasets/<dataset_id>/trace_raptor", methods=["GET"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-def trace_raptor(tenant_id, dataset_id):
-    try:
-        success, result = dataset_api_service.trace_raptor(dataset_id, tenant_id)
-        if success:
-            return get_result(data=result)
-        else:
-            return get_error_data_result(message=result)
-    except Exception as e:
-        logging.exception(e)
-        return get_error_data_result(message="Internal server error")
-
-
 @manager.route("/datasets/<dataset_id>/auto_metadata", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs

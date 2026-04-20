@@ -19,33 +19,12 @@ from test_common import (
     kb_list_pipeline_dataset_logs,
     kb_list_pipeline_logs,
     kb_pipeline_log_detail,
-    run_graphrag,
-    trace_graphrag,
-    run_raptor,
-    trace_raptor,
-    kb_run_mindmap,
-    kb_trace_mindmap,
     list_documents,
     parse_documents,
 )
 from utils import wait_for
 
 TASK_STATUS_DONE = "3"
-
-def _find_task(data, task_id):
-    if isinstance(data, dict):
-        if data.get("id") == task_id:
-            return data
-        tasks = data.get("tasks")
-        if isinstance(tasks, list):
-            for item in tasks:
-                if isinstance(item, dict) and item.get("id") == task_id:
-                    return item
-    elif isinstance(data, list):
-        for item in data:
-            if isinstance(item, dict) and item.get("id") == task_id:
-                return item
-    return None
 
 
 def _assert_progress_in_scale(progress, payload):
@@ -56,20 +35,6 @@ def _assert_progress_in_scale(progress, payload):
     # Infer scale from observed payload (0..1 or 0..100).
     assert 0 <= progress <= scale, payload
     return scale
-
-
-def _wait_for_task(trace_func, auth, kb_id, task_id, timeout=60, use_params_payload=False):
-    @wait_for(timeout, 1, "Pipeline task trace timeout")
-    def _condition():
-        if use_params_payload:
-            res = trace_func(auth, {"kb_id": kb_id})
-        else:
-            res = trace_func(auth, kb_id)
-        if res["code"] != 0:
-            return False
-        return _find_task(res["data"], task_id) is not None
-
-    _condition()
 
 
 def _wait_for_docs_parsed(auth, kb_id, timeout=60):
@@ -98,59 +63,6 @@ def _wait_for_pipeline_logs(auth, kb_id, timeout=30):
         return bool(res["data"]["logs"])
 
     _condition()
-
-
-class TestKbPipelineTasks:
-    @pytest.mark.p3
-    def test_graphrag_run_and_trace(self, WebApiAuth, add_chunks):
-        kb_id, _, _ = add_chunks
-        run_res = run_graphrag(WebApiAuth, kb_id)
-        assert run_res["code"] == 0, run_res
-        task_id = run_res["data"]["graphrag_task_id"]
-        assert task_id, run_res
-
-        _wait_for_task(trace_graphrag, WebApiAuth, kb_id, task_id)
-        trace_res = trace_graphrag(WebApiAuth, kb_id)
-        assert trace_res["code"] == 0, trace_res
-        task = _find_task(trace_res["data"], task_id)
-        assert task, trace_res
-        assert task["id"] == task_id, trace_res
-        progress = task.get("progress")
-        _assert_progress_in_scale(progress, task)
-
-    @pytest.mark.p3
-    def test_raptor_run_and_trace(self, WebApiAuth, add_chunks):
-        kb_id, _, _ = add_chunks
-        run_res = run_raptor(WebApiAuth, kb_id)
-        assert run_res["code"] == 0, run_res
-        task_id = run_res["data"]["raptor_task_id"]
-        assert task_id, run_res
-
-        _wait_for_task(trace_raptor, WebApiAuth, kb_id, task_id)
-        trace_res = trace_raptor(WebApiAuth, kb_id)
-        assert trace_res["code"] == 0, trace_res
-        task = _find_task(trace_res["data"], task_id)
-        assert task, trace_res
-        assert task["id"] == task_id, trace_res
-        progress = task.get("progress")
-        _assert_progress_in_scale(progress, task)
-
-    @pytest.mark.p3
-    def test_mindmap_run_and_trace(self, WebApiAuth, add_chunks):
-        kb_id, _, _ = add_chunks
-        run_res = kb_run_mindmap(WebApiAuth, {"kb_id": kb_id})
-        assert run_res["code"] == 0, run_res
-        task_id = run_res["data"]["mindmap_task_id"]
-        assert task_id, run_res
-
-        _wait_for_task(kb_trace_mindmap, WebApiAuth, kb_id, task_id, use_params_payload=True)
-        trace_res = kb_trace_mindmap(WebApiAuth, {"kb_id": kb_id})
-        assert trace_res["code"] == 0, trace_res
-        task = _find_task(trace_res["data"], task_id)
-        assert task, trace_res
-        assert task["id"] == task_id, trace_res
-        progress = task.get("progress")
-        _assert_progress_in_scale(progress, task)
 
 
 class TestKbPipelineLogs:

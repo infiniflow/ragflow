@@ -560,165 +560,6 @@ def trace_index(dataset_id: str, tenant_id: str, index_type: str):
     return True, task.to_dict()
 
 
-def run_graphrag(dataset_id: str, tenant_id: str):
-    """
-    Run GraphRAG for a dataset.
-
-    :param dataset_id: dataset ID
-    :param tenant_id: tenant ID
-    :return: (success, result) or (success, error_message)
-    """
-    if not dataset_id:
-        return False, 'Lack of "Dataset ID"'
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
-
-    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
-    if not ok:
-        return False, "Invalid Dataset ID"
-
-    task_id = kb.graphrag_task_id
-    if task_id:
-        ok, task = TaskService.get_by_id(task_id)
-        if not ok:
-            logging.warning(f"A valid GraphRAG task id is expected for Dataset {dataset_id}")
-
-        if task and task.progress not in [-1, 1]:
-            return False, f"Task {task_id} in progress with status {task.progress}. A Graph Task is already running."
-
-    documents, _ = DocumentService.get_by_kb_id(
-        kb_id=dataset_id,
-        page_number=0,
-        items_per_page=0,
-        orderby="create_time",
-        desc=False,
-        keywords="",
-        run_status=[],
-        types=[],
-        suffix=[],
-    )
-    if not documents:
-        return False, f"No documents in Dataset {dataset_id}"
-
-    sample_document = documents[0]
-    document_ids = [document["id"] for document in documents]
-
-    task_id = queue_raptor_o_graphrag_tasks(sample_doc=sample_document, ty="graphrag", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
-
-    if not KnowledgebaseService.update_by_id(kb.id, {"graphrag_task_id": task_id}):
-        logging.warning(f"Cannot save graphrag_task_id for Dataset {dataset_id}")
-
-    return True, {"graphrag_task_id": task_id}
-
-
-def trace_graphrag(dataset_id: str, tenant_id: str):
-    """
-    Trace GraphRAG task for a dataset.
-
-    :param dataset_id: dataset ID
-    :param tenant_id: tenant ID
-    :return: (success, result) or (success, error_message)
-    """
-    if not dataset_id:
-        return False, 'Lack of "Dataset ID"'
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
-
-    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
-    if not ok:
-        return False, "Invalid Dataset ID"
-
-    task_id = kb.graphrag_task_id
-    if not task_id:
-        return True, {}
-
-    ok, task = TaskService.get_by_id(task_id)
-    if not ok:
-        return True, {}
-
-    return True, task.to_dict()
-
-
-def run_raptor(dataset_id: str, tenant_id: str):
-    """
-    Run RAPTOR for a dataset.
-
-    :param dataset_id: dataset ID
-    :param tenant_id: tenant ID
-    :return: (success, result) or (success, error_message)
-    """
-    if not dataset_id:
-        return False, 'Lack of "Dataset ID"'
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
-
-    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
-    if not ok:
-        return False, "Invalid Dataset ID"
-
-    task_id = kb.raptor_task_id
-    if task_id:
-        ok, task = TaskService.get_by_id(task_id)
-        if not ok:
-            logging.warning(f"A valid RAPTOR task id is expected for Dataset {dataset_id}")
-
-        if task and task.progress not in [-1, 1]:
-            return False, f"Task {task_id} in progress with status {task.progress}. A RAPTOR Task is already running."
-
-    documents, _ = DocumentService.get_by_kb_id(
-        kb_id=dataset_id,
-        page_number=0,
-        items_per_page=0,
-        orderby="create_time",
-        desc=False,
-        keywords="",
-        run_status=[],
-        types=[],
-        suffix=[],
-    )
-    if not documents:
-        return False, f"No documents in Dataset {dataset_id}"
-
-    sample_document = documents[0]
-    document_ids = [document["id"] for document in documents]
-
-    task_id = queue_raptor_o_graphrag_tasks(sample_doc=sample_document, ty="raptor", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
-
-    if not KnowledgebaseService.update_by_id(kb.id, {"raptor_task_id": task_id}):
-        logging.warning(f"Cannot save raptor_task_id for Dataset {dataset_id}")
-
-    return True, {"raptor_task_id": task_id}
-
-
-def trace_raptor(dataset_id: str, tenant_id: str):
-    """
-    Trace RAPTOR task for a dataset.
-
-    :param dataset_id: dataset ID
-    :param tenant_id: tenant ID
-    :return: (success, result) or (success, error_message)
-    """
-    if not dataset_id:
-        return False, 'Lack of "Dataset ID"'
-
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
-
-    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
-    if not ok:
-        return False, "Invalid Dataset ID"
-
-    task_id = kb.raptor_task_id
-    if not task_id:
-        return True, {}
-
-    ok, task = TaskService.get_by_id(task_id)
-    if not ok:
-        return False, "RAPTOR Task Not Found or Error Occurred"
-
-    return True, task.to_dict()
-
-
 def list_tags(dataset_id: str, tenant_id: str):
     """
     List tags for a dataset.
@@ -761,9 +602,7 @@ def aggregate_tags(dataset_ids: list[str], tenant_id: str):
         tags += settings.retriever.all_tags(tenant["tenant_id"], dataset_ids)
     return True, tags
 
-    ok, task = TaskService.get_by_id(task_id)
-    if not ok:
-        return True, {}
+
 def get_flattened_metadata(dataset_ids: list[str], tenant_id: str):
     """
     Get flattened metadata for datasets.
@@ -930,28 +769,6 @@ def get_ingestion_log(dataset_id: str, tenant_id: str, log_id: str):
 
     return True, log.to_dict()
 
-
-def trace_mindmap(dataset_id: str, tenant_id: str):
-    """
-    Trace mindmap task for a dataset.
-
-    :param dataset_id: dataset ID
-    :param tenant_id: tenant ID
-    :return: (success, result) or (success, error_message)
-    """
-    if not dataset_id:
-        return False, 'Lack of "Dataset ID"'
-
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
-
-    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
-    if not ok:
-        return False, "Invalid Dataset ID"
-
-    task_id = kb.mindmap_task_id
-    if not task_id:
-        return True, {}
 
 def delete_index(dataset_id: str, tenant_id: str, index_type: str):
     """

@@ -268,40 +268,6 @@ def delete_knowledge_graph(auth, dataset_id, payload=None):
     return res.json()
 
 
-def run_graphrag(auth, dataset_id, payload=None):
-    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/run_graphrag"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
-    return res.json()
-
-
-def trace_graphrag(auth, dataset_id, params=None):
-    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/trace_graphrag"
-    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
-    return res.json()
-
-
-def run_raptor(auth, dataset_id, payload=None):
-    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/run_raptor"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
-    return res.json()
-
-
-def trace_raptor(auth, dataset_id, params=None):
-    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/trace_raptor"
-    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
-    return res.json()
-
-
-def kb_run_mindmap(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/run_mindmap", headers=headers, auth=auth, json=payload, data=data)
-    return res.json()
-
-
-def kb_trace_mindmap(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/trace_mindmap", headers=headers, auth=auth, params=params)
-    return res.json()
-
-
 def list_tags_from_kbs(auth, params=None, *, headers=HEADERS):
     res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/tags", headers=headers, auth=auth, params=params)
     return res.json()

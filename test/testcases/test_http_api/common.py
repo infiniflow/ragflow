@@ -305,30 +305,6 @@ def delete_knowledge_graph(auth, dataset_id, payload=None):
     return res.json()
 
 
-def run_graphrag(auth, dataset_id, payload=None):
-    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/run_graphrag"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
-    return res.json()
-
-
-def trace_graphrag(auth, dataset_id, params=None):
-    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/trace_graphrag"
-    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
-    return res.json()
-
-
-def run_raptor(auth, dataset_id, payload=None):
-    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/run_raptor"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
-    return res.json()
-
-
-def trace_raptor(auth, dataset_id, params=None):
-    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/trace_raptor"
-    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
-    return res.json()
-
-
 def metadata_summary(auth, dataset_id, params=None):
     url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/metadata/summary"
     res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)

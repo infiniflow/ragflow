@@ -72,14 +72,10 @@ export default {
   fetchDataPipelineLog: `${webAPI}/kb/list_pipeline_logs`,
   getPipelineDetail: `${webAPI}/kb/pipeline_log_detail`,
   fetchPipelineDatasetLogs: `${webAPI}/kb/list_pipeline_dataset_logs`,
-  runGraphRag: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/run_graphrag`,
-  traceGraphRag: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/trace_graphrag`,
-  runRaptor: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/run_raptor`,
-  traceRaptor: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/trace_raptor`,
+  runIndex: (datasetId: string, indexType: string) =>
+    `${restAPIv1}/datasets/${datasetId}/index?type=${indexType}`,
+  traceIndex: (datasetId: string, indexType: string) =>
+    `${restAPIv1}/datasets/${datasetId}/index?type=${indexType}`,
   unbindPipelineTask: ({ kb_id, type }: { kb_id: string; type: string }) =>
     `${webAPI}/kb/unbind_task?kb_id=${kb_id}&pipeline_task_type=${type}`,
   pipelineRerun: `${webAPI}/canvas/rerun`,

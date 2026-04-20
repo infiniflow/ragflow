@@ -229,17 +229,11 @@ export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>
 export const updateKb = (datasetId: string, data: Record<string, any>) =>
   request.put(api.updateKb(datasetId), { data });
 
-export const runGraphRag = (datasetId: string) =>
-  request.post(api.runGraphRag(datasetId));
+export const runIndex = (datasetId: string, indexType: string) =>
+  request.post(api.runIndex(datasetId, indexType));
 
-export const traceGraphRag = (datasetId: string) =>
-  request.get(api.traceGraphRag(datasetId));
-
-export const runRaptor = (datasetId: string) =>
-  request.post(api.runRaptor(datasetId));
-
-export const traceRaptor = (datasetId: string) =>
-  request.get(api.traceRaptor(datasetId));
+export const traceIndex = (datasetId: string, indexType: string) =>
+  request.get(api.traceIndex(datasetId, indexType));
 
 export const listDocument = (
   params?: IFetchKnowledgeListRequestParams,
