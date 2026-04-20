@@ -127,7 +127,7 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, keywords, run_status, types, suffix, doc_ids=None, return_empty_metadata=False):
+    def get_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, keywords, run_status, types, suffix, doc_id=None, name=None, doc_ids_filter=None, return_empty_metadata=False):
         fields = cls.get_cls_model_fields()
         if keywords:
             docs = (
@@ -147,17 +147,19 @@ class DocumentService(CommonService):
                 .join(User, on=(cls.model.created_by == User.id), join_type=JOIN.LEFT_OUTER)
                 .where(cls.model.kb_id == kb_id)
             )
-
-        if doc_ids:
-            docs = docs.where(cls.model.id.in_(doc_ids))
+        if doc_id:
+            docs = docs.where(cls.model.id == doc_id)
+        if doc_ids_filter:
+            docs = docs.where(cls.model.id.in_(doc_ids_filter))
         if run_status:
             docs = docs.where(cls.model.run.in_(run_status))
         if types:
             docs = docs.where(cls.model.type.in_(types))
         if suffix:
             docs = docs.where(cls.model.suffix.in_(suffix))
+        if name:
+            docs = docs.where(cls.model.name == name)
 
-        metadata_map = {}
         if return_empty_metadata:
             metadata_map = DocMetadataService.get_metadata_for_documents(None, kb_id)
             doc_ids_with_metadata = set(metadata_map.keys())
