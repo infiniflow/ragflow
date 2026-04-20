@@ -508,8 +508,8 @@ func (p *DatasetProvider) listDocuments(ctx stdctx.Context, datasetName string, 
 	}
 
 	var apiResp struct {
-		Code    int                      `json:"code"`
-		Data    struct {
+		Code int `json:"code"`
+		Data struct {
 			Docs []map[string]interface{} `json:"docs"`
 		} `json:"data"`
 		Message string `json:"message"`

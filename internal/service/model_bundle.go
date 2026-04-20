@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
 
@@ -39,10 +40,22 @@ func NewModelBundle(tenantID string, modelType entity.ModelType, modelName ...st
 		modelType: modelType,
 	}
 
-	// Use provided model name if available
+	// Determine the model name to use
+	useModelName := ""
 	if len(modelName) > 0 && modelName[0] != "" {
-		bundle.modelName = modelName[0]
+		useModelName = modelName[0]
+	} else {
+		// No model name provided, get tenant default model
+		tenantLLM, err := dao.NewTenantLLMDAO().GetByTenantAndType(tenantID, modelType)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get tenant default %s model: %w", modelType, err)
+		}
+		if tenantLLM == nil || tenantLLM.LLMName == nil || *tenantLLM.LLMName == "" {
+			return nil, fmt.Errorf("no default %s model found for tenant %s", modelType, tenantID)
+		}
+		useModelName = fmt.Sprintf("%s@%s", *tenantLLM.LLMName, tenantLLM.LLMFactory)
 	}
+	bundle.modelName = useModelName
 
 	// Get model instance based on type
 	provider := NewModelProvider()

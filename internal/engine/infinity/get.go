@@ -173,19 +173,18 @@ func getFields(chunk map[string]interface{}) {
 	}
 
 	// position_int: convert from hex string to array format (grouped by 5)
+	// Only convert if it's a string; if already converted (array/slice), leave it
 	if val, ok := chunk["position_int"].(string); ok {
 		chunk["position_int"] = utility.ConvertHexToPositionIntArray(val)
-	} else {
-		chunk["position_int"] = []interface{}{}
 	}
+	// Don't overwrite with empty array if already converted
 
 	// Convert page_num_int and top_int from hex string to array
 	for _, colName := range []string{"page_num_int", "top_int"} {
 		if val, ok := chunk[colName].(string); ok && val != "" {
 			chunk[colName] = utility.ConvertHexToIntArray(val)
-		} else {
-			chunk[colName] = []int{}
 		}
+		// Don't overwrite with empty array if already converted
 	}
 
 	// Post-process: convert nil/empty values to empty slices for array-like fields
@@ -197,7 +196,7 @@ func getFields(chunk map[string]interface{}) {
 	arrayFields := []string{
 		"doc_type_kwd", "important_kwd", "important_tks", "question_tks",
 		"question_kwd", "authors_tks", "authors_sm_tks", "title_tks",
-		"title_sm_tks", "content_ltks", "content_sm_ltks",
+		"title_sm_tks", "content_ltks", "content_sm_ltks", "tag_kwd",
 	}
 	for _, colName := range arrayFields {
 		if val, ok := chunk[colName]; !ok || val == nil || val == "" {

@@ -81,6 +81,8 @@ class Dealer:
         if highlight is None:
             highlight = False
 
+        logging.debug(f"[RAGFLOW DEBUG] search() received rank_feature: {rank_feature}")
+
         filters = self.get_filters(req)
         orderBy = OrderByExpr()
 
@@ -390,6 +392,7 @@ class Dealer:
         if not question:
             return ranks
 
+
         # Keep the historical windowing strategy by default, but when an external
         # reranker is enabled cap candidate count by both top_k and provider-safe 64.
         RERANK_LIMIT = math.ceil(64 / page_size) * page_size if page_size > 1 else 1
@@ -413,6 +416,7 @@ class Dealer:
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
 
+        logging.debug(f"[RAGFLOW DEBUG] retrieval() calling search() with rank_feature: {rank_feature}")
         sres = await self.search(req, [index_name(tid) for tid in tenant_ids], kb_ids, embd_mdl, highlight,
                            rank_feature=rank_feature)
 
@@ -606,6 +610,7 @@ class Dealer:
         else:
             idx_nms = [index_name(tid) for tid in tenant_ids]
         match_txt, _ = self.qryr.question(question, min_match=0.0)
+        logging.debug(f"tag_query match_txt: {match_txt}")
         res = self.dataStore.search([], [], {}, [match_txt], OrderByExpr(), 0, 0, idx_nms, kb_ids, ["tag_kwd"])
         aggs = self.dataStore.get_aggregation(res, "tag_kwd")
         if not aggs:

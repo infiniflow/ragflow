@@ -22,8 +22,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strconv"
-	"strings"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"go.uber.org/zap"
@@ -59,27 +57,23 @@ type SearchResponse struct {
 	Aggregations map[string]interface{} `json:"aggregations"`
 }
 
-// Search executes search (supports both unified engine.SearchRequest and legacy SearchRequest)
-func (e *elasticsearchEngine) Search(ctx context.Context, req interface{}) (interface{}, error) {
-
-	switch searchReq := req.(type) {
-	case *types.SearchRequest:
-		return e.searchUnified(ctx, searchReq)
-	case *SearchRequest:
-		return e.searchLegacy(ctx, searchReq)
-	default:
-		return nil, fmt.Errorf("invalid search request type: %T", req)
-	}
+// Search executes search with unified types.SearchRequest
+func (e *elasticsearchEngine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	return e.searchUnified(ctx, req)
 }
 
 // searchUnified handles the unified engine.SearchRequest
-func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.SearchRequest) (*types.SearchResponse, error) {
+func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	if len(req.IndexNames) == 0 {
 		return nil, fmt.Errorf("index names cannot be empty")
 	}
 
 	// Build pagination parameters
-	offset, limit := calculatePagination(req.Page, req.Size, req.TopK)
+	offset := req.Offset
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 30 // default ES size
+	}
 
 	// Build filter clauses (default: available=1, meaning available_int >= 1)
 	// Reference: rag/utils/es_conn.py L60-L78
@@ -88,20 +82,36 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 	// Build search query body
 	queryBody := make(map[string]interface{})
 
-	// Use MatchText if available (from QueryBuilder), otherwise use original Question
-	matchText := req.MatchText
-	if matchText == "" {
-		matchText = req.Question
+	// Determine search type from MatchExprs
+	var matchText string
+	var matchDense interface{}
+	var textWeight float64 = 1.0
+	var hasVectorMatch bool
+
+	for _, expr := range req.MatchExprs {
+		if expr == nil {
+			continue
+		}
+		switch e := expr.(type) {
+		case string:
+			matchText = e
+		case *types.MatchDenseExpr:
+			hasVectorMatch = true
+			matchDense = e
+			textWeight = 0.3 // default, should be passed via SimilarityThreshold
+		}
 	}
 
 	var vectorFieldName string
-	if req.KeywordOnly || len(req.Vector) == 0 {
+	if !hasVectorMatch {
 		// Keyword-only search
 		queryBody["query"] = buildESKeywordQuery(matchText, filterClauses, 1.0)
 	} else {
 		// Hybrid search: keyword + vector
-		// Calculate text weight
-		textWeight := 1.0 - req.VectorSimilarityWeight
+		// Calculate text weight (use SimilarityThreshold as text weight if provided)
+		if req.SimilarityThreshold > 0 {
+			textWeight = req.SimilarityThreshold
+		}
 		// Build boolean query for text match and filters
 		boolQuery := buildESKeywordQuery(matchText, filterClauses, 1.0)
 		// Add boost to the bool query (as in Python code)
@@ -109,12 +119,11 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 			boolMap["boost"] = textWeight
 		}
 		// Build kNN query
-		dimension := len(req.Vector)
-		var fieldBuilder strings.Builder
-		fieldBuilder.WriteString("q_")
-		fieldBuilder.WriteString(strconv.Itoa(dimension))
-		fieldBuilder.WriteString("_vec")
-		vectorFieldName = fieldBuilder.String()
+		var vectorData []float64
+		if md, ok := matchDense.(*types.MatchDenseExpr); ok {
+			vectorData = md.EmbeddingData
+			vectorFieldName = md.VectorColumnName
+		}
 
 		k := req.TopK
 		if k <= 0 {
@@ -124,7 +133,7 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 
 		knnQuery := map[string]interface{}{
 			"field":          vectorFieldName,
-			"query_vector":   req.Vector,
+			"query_vector":   vectorData,
 			"k":              k,
 			"num_candidates": numCandidates,
 			"filter":         boolQuery,
@@ -133,6 +142,24 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 
 		queryBody["knn"] = knnQuery
 		queryBody["query"] = boolQuery
+
+		// Add vector column to Source fields (matching Python ES: src.append(f"q_{len(q_vec)}_vec"))
+		// Only modify Source if it was explicitly set by the caller
+		if vectorFieldName != "" && len(req.Source) > 0 {
+			sourceFields := req.Source
+			// Check if vector column already in source
+			found := false
+			for _, f := range sourceFields {
+				if f == vectorFieldName {
+					found = true
+					break
+				}
+			}
+			if !found {
+				sourceFields = append(sourceFields, vectorFieldName)
+			}
+			req.Source = sourceFields
+		}
 	}
 
 	queryBody["size"] = limit
@@ -179,7 +206,7 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 
 	// Convert to unified response
 	chunks := convertESResponse(&esResp, vectorFieldName)
-	return &types.SearchResponse{
+	return &types.SearchResult{
 		Chunks: chunks,
 		Total:  esResp.Hits.Total.Value,
 	}, nil

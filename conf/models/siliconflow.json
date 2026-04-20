@@ -1,0 +1,24 @@
+{
+  "name": "SILICONFLOW",
+  "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,IMAGE2TEXT",
+  "url": "https://api.siliconflow.cn/v1",
+  "url_suffix": {
+    "chat": "chat/completions",
+    "async_chat": "async/chat/completions",
+    "async_result": "async-result",
+    "embedding": "embedding",
+    "rerank": "rerank"
+  },
+  "models": [
+    {
+      "name": "BAAI/bge-reranker-v2-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "rerank"
+      ],
+      "features": {}
+    }
+  ]
+}
+
+

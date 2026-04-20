@@ -77,22 +77,16 @@ func (s *MetadataService) SearchMetadata(kbID, tenantID string, docIDs []string,
 	indexName := BuildMetadataIndexName(tenantID)
 
 	searchReq := &types.SearchRequest{
-		IndexNames:   []string{indexName},
-		KbIDs:        []string{kbID},
-		DocIDs:       docIDs,
-		Page:         1,
-		Size:         size,
-		KeywordOnly:  true,
+		IndexNames: []string{indexName},
+		KbIDs:      []string{kbID},
+		DocIDs:     docIDs,
+		Offset:     0,
+		Limit:      size,
 	}
 
-	result, err := s.docEngine.Search(context.Background(), searchReq)
+	searchResp, err := s.docEngine.Search(context.Background(), searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
-	}
-
-	searchResp, ok := result.(*types.SearchResponse)
-	if !ok {
-		return nil, fmt.Errorf("invalid search response type")
 	}
 
 	return &SearchMetadataResult{
@@ -115,27 +109,122 @@ func (s *MetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*Search
 	indexName := BuildMetadataIndexName(tenantID)
 
 	searchReq := &types.SearchRequest{
-		IndexNames:   []string{indexName},
-		KbIDs:        kbIDs,
-		Page:         1,
-		Size:         size,
-		KeywordOnly:  true,
+		IndexNames: []string{indexName},
+		KbIDs:      kbIDs,
+		Offset:     0,
+		Limit:      size,
 	}
 
-	result, err := s.docEngine.Search(context.Background(), searchReq)
+	searchResp, err := s.docEngine.Search(context.Background(), searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
-	}
-
-	searchResp, ok := result.(*types.SearchResponse)
-	if !ok {
-		return nil, fmt.Errorf("invalid search response type")
 	}
 
 	return &SearchMetadataResult{
 		IndexName: indexName,
 		Chunks:    searchResp.Chunks,
 	}, nil
+}
+
+// GetFlattedMetaByKBs returns flattened metadata in the format:
+// {field_name: {value: [doc_ids]}}
+// This corresponds to api/db/services/doc_metadata_service.py:get_flatted_meta_by_kbs()
+func (s *MetadataService) GetFlattedMetaByKBs(kbIDs []string) (map[string]interface{}, error) {
+	if len(kbIDs) == 0 {
+		return make(map[string]interface{}), nil
+	}
+
+	// Get metadata for all docs in KBs (use large limit like Python's 10000)
+	result, err := s.SearchMetadataByKBs(kbIDs, 10000)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build flattened metadata: {field: {value: [doc_ids]}}
+	flattedMeta := make(map[string]interface{})
+
+	for _, chunk := range result.Chunks {
+		// Extract doc_id from chunk
+		docID := ""
+		if id, ok := chunk["id"].(string); ok {
+			docID = id
+		} else if id, ok := chunk["doc_id"].(string); ok {
+			docID = id
+		}
+
+		if docID == "" {
+			continue
+		}
+
+		// Extract metadata fields
+		metaFields, err := ExtractMetaFields(chunk)
+		if err != nil || len(metaFields) == 0 {
+			continue
+		}
+
+		// Flatten each field
+		for fieldName, fieldValue := range metaFields {
+			if fieldValue == nil {
+				continue
+			}
+
+			// Initialize field map if not exists
+			if _, exists := flattedMeta[fieldName]; !exists {
+				flattedMeta[fieldName] = make(map[string]interface{})
+			}
+
+			valueMap, ok := flattedMeta[fieldName].(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			// Handle different value types
+			switch v := fieldValue.(type) {
+			case string:
+				// Single string value
+				if v == "" {
+					continue
+				}
+				if _, exists := valueMap[v]; !exists {
+					valueMap[v] = []string{docID}
+				} else {
+					valueMap[v] = appendDocID(valueMap[v], docID)
+				}
+			case []interface{}:
+				// List of values
+				for _, item := range v {
+					if itemStr, ok := item.(string); ok && itemStr != "" {
+						if _, exists := valueMap[itemStr]; !exists {
+							valueMap[itemStr] = []string{docID}
+						} else {
+							valueMap[itemStr] = appendDocID(valueMap[itemStr], docID)
+						}
+					}
+				}
+			case map[string]interface{}:
+				// Nested object - flatten it
+				for nestedKey, nestedValue := range v {
+					if nestedStr, ok := nestedValue.(string); ok && nestedStr != "" {
+						fullKey := fieldName + "." + nestedKey
+						if _, exists := flattedMeta[fullKey]; !exists {
+							flattedMeta[fullKey] = make(map[string]interface{})
+						}
+						if subMap, ok := flattedMeta[fullKey].(map[string]interface{}); ok {
+							if _, exists := subMap[nestedStr]; !exists {
+								subMap[nestedStr] = []string{docID}
+							} else {
+								if ids, ok := subMap[nestedStr].([]string); ok {
+									subMap[nestedStr] = append(ids, docID)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return flattedMeta, nil
 }
 
 // ExtractDocumentID extracts the document ID from a chunk
@@ -160,17 +249,80 @@ func ExtractMetaFields(chunk map[string]interface{}) (map[string]interface{}, er
 			return make(map[string]interface{}), nil
 		}
 	case []byte:
-		metaFields = ParseLengthPrefixedJSON(v)
-		if metaFields == nil {
-			if err := json.Unmarshal(v, &metaFields); err != nil {
-				return make(map[string]interface{}), nil
+		// Try length-prefixed format (Infinity stores data this way)
+		allResults := ParseAllLengthPrefixedJSON(v)
+		if len(allResults) > 0 {
+			// Merge all JSON objects - when same key appears with different values, collect all
+			metaFields = make(map[string]interface{})
+			for _, result := range allResults {
+				for k, val := range result {
+					if existing, exists := metaFields[k]; exists {
+						// Key already exists - merge values
+						metaFields[k] = mergeFieldValues(existing, val)
+					} else {
+						metaFields[k] = val
+					}
+				}
 			}
+		} else if err := json.Unmarshal(v, &metaFields); err != nil {
+			return make(map[string]interface{}), nil
 		}
 	default:
 		return make(map[string]interface{}), nil
 	}
 
 	return metaFields, nil
+}
+
+// mergeFieldValues merges two field values when the same key appears multiple times
+// If both are arrays, append all elements. If one is array and other is string, append string to array.
+// Returns []interface{} with all merged values (flattened).
+func mergeFieldValues(existing, new interface{}) []interface{} {
+	result := []interface{}{}
+
+	var addValue func(v interface{})
+	addValue = func(v interface{}) {
+		if v == nil {
+			return
+		}
+		switch val := v.(type) {
+		case string:
+			if val != "" {
+				result = append(result, val)
+			}
+		case []interface{}:
+			for _, item := range val {
+				addValue(item)
+			}
+		}
+	}
+
+	addValue(existing)
+	addValue(new)
+
+	return result
+}
+
+// appendDocID appends a docID to an existing value that may be []string or []interface{}
+func appendDocID(existing interface{}, docID string) []string {
+	result := []string{docID}
+	if existing == nil {
+		return result
+	}
+	switch v := existing.(type) {
+	case []string:
+		return append(v, docID)
+	case []interface{}:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	case string:
+		return append(result, v)
+	}
+	return result
 }
 
 // ParseLengthPrefixedJSON parses Infinity's length-prefixed JSON format

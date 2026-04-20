@@ -1,6 +1,9 @@
 ragflow:
   host: 0.0.0.0
   http_port: 9380
+log:
+  level: debug
+  format: text
 admin:
   host: 0.0.0.0
   http_port: 9381
@@ -9,6 +12,7 @@ mysql:
   user: 'root'
   password: 'infini_rag_flow'
   host: 'localhost'
+  #port: 5455
   port: 3306
   max_connections: 900
   stale_timeout: 300

@@ -366,7 +366,7 @@ parse_dataset_docs: PARSE quoted_string OF DATASET quoted_string ";"
 parse_dataset_sync: PARSE DATASET quoted_string SYNC ";"
 parse_dataset_async: PARSE DATASET quoted_string ASYNC ";"
 
-// Internal CLI only for GO
+// Internal CLI for GO
 create_dataset_table: CREATE DATASET TABLE quoted_string VECTOR SIZE NUMBER ";"
 drop_dataset_table: DROP DATASET TABLE quoted_string ";"
 create_metadata_table: CREATE METADATA TABLE ";"
