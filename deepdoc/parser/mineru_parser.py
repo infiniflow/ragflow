@@ -416,7 +416,11 @@ class MinerUParser(RAGFlowPdfParser):
         )
 
         positions = []
+        # Each entry is (PIL.Image, is_context) so overlay logic is decoupled from final index.
+        imgs_with_flags = []
+        poss_last_idx = len(poss) - 1
         for ii, (pns, left, right, top, bottom) in enumerate(poss):
+            is_context = ii == 0 or ii == poss_last_idx
             right = left + max_width
 
             if bottom <= top:
@@ -443,8 +447,8 @@ class MinerUParser(RAGFlowPdfParser):
             if x1 <= x0 or y1 <= y0:
                 continue
             crop0 = img0.crop((x0, y0, x1, y1))
-            imgs.append(crop0)
-            if 0 < ii < len(poss) - 1:
+            imgs_with_flags.append((crop0, is_context))
+            if 0 < ii < poss_last_idx:
                 positions.append((pns[0] + self.page_from, x0, x1, y0, y1))
 
             bottom -= img0.size[1]
@@ -463,25 +467,25 @@ class MinerUParser(RAGFlowPdfParser):
                     bottom -= page.size[1]
                     continue
                 cimgp = page.crop((x0, y0, x1, y1))
-                imgs.append(cimgp)
-                if 0 < ii < len(poss) - 1:
+                imgs_with_flags.append((cimgp, is_context))
+                if 0 < ii < poss_last_idx:
                     positions.append((pn + self.page_from, x0, x1, y0, y1))
                 bottom -= page.size[1]
 
-        if not imgs:
+        if not imgs_with_flags:
             if need_position:
                 return None, None
             return
 
         height = 0
-        for img in imgs:
+        for img, _ in imgs_with_flags:
             height += img.size[1] + GAP
         height = int(height)
-        width = int(np.max([i.size[0] for i in imgs]))
+        width = int(np.max([i.size[0] for i, _ in imgs_with_flags]))
         pic = Image.new("RGB", (width, height), (245, 245, 245))
         height = 0
-        for ii, img in enumerate(imgs):
-            if ii == 0 or ii + 1 == len(imgs):
+        for img, is_context in imgs_with_flags:
+            if is_context:
                 img = img.convert("RGBA")
                 overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
                 overlay.putalpha(128)
