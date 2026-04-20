@@ -18,6 +18,7 @@ import re
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from quart import make_response, request
+from pydantic import ValidationError
 
 from api.apps import current_user, login_required
 from api.common.check_team_permission import check_kb_team_permission
@@ -40,6 +41,7 @@ from api.utils.api_utils import (
     validate_request,
 )
 from api.utils.file_utils import filename_type, thumbnail
+from api.utils.validation_utils import UpdateDocumentMetadataSettingReq, format_validation_error_message
 from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers, html2pdf, is_valid_url
 from common import settings
 from common.constants import SANDBOX_ARTIFACT_BUCKET, VALID_TASK_STATUS, ParserType, RetCode, TaskStatus
@@ -269,7 +271,16 @@ async def metadata_update():
 @login_required
 @validate_request("doc_id", "metadata")
 async def update_metadata_setting():
+    """Update document-level auto-metadata settings.
+
+    Persists metadata schema configuration and optional switches
+    (`enable_metadata`, `built_in_metadata`) into document parser config.
+    """
     req = await get_request_json()
+    try:
+        req = UpdateDocumentMetadataSettingReq(**req).model_dump(exclude_unset=True)
+    except ValidationError as e:
+        return get_data_error_result(message=format_validation_error_message(e), code=RetCode.DATA_ERROR)
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
@@ -277,7 +288,15 @@ async def update_metadata_setting():
     if not e:
         return get_data_error_result(message="Document not found!")
 
-    DocumentService.update_parser_config(doc.id, {"metadata": req["metadata"]})
+    update_payload = {"metadata": req["metadata"]}
+    if "enable_metadata" in req:
+        update_payload["enable_metadata"] = req.get("enable_metadata")
+
+    built_in_metadata = req.get("built_in_metadata")
+    if built_in_metadata is not None:
+        update_payload["built_in_metadata"] = built_in_metadata
+
+    DocumentService.update_parser_config(doc.id, update_payload)
     e, doc = DocumentService.get_by_id(doc.id)
     if not e:
         return get_data_error_result(message="Document not found!")
@@ -447,6 +466,7 @@ async def run():
                         doc.parser_config["llm_id"] = kb.parser_config.get("llm_id")
                         doc.parser_config["enable_metadata"] = kb.parser_config.get("enable_metadata", False)
                         doc.parser_config["metadata"] = kb.parser_config.get("metadata", {})
+                        doc.parser_config["built_in_metadata"] = kb.parser_config.get("built_in_metadata", [])
                         DocumentService.update_parser_config(doc.id, doc.parser_config)
                     doc_dict = doc.to_dict()
                     DocumentService.run(tenant_id, doc_dict, kb_table_num_map)

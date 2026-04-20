@@ -236,42 +236,56 @@ def dedupe_list(values: list) -> list:
     return deduped
 
 
-def update_metadata_to(metadata, meta):
-    if not meta:
-        return metadata
-    if isinstance(meta, str):
+def update_metadata_to(existing_metadata, incoming_metadata):
+    """Merge incoming metadata payload into an existing metadata mapping.
+
+    Supports JSON-string or dict inputs. Accepted values include string/number
+    scalars and lists of those scalars, with list de-duplication applied.
+    """
+    if not incoming_metadata:
+        return existing_metadata
+    if isinstance(incoming_metadata, str):
         try:
-            meta = json_repair.loads(meta)
+            incoming_metadata = json_repair.loads(incoming_metadata)
         except Exception:
             logging.error("Meta data format error.")
-            return metadata
-    if not isinstance(meta, dict):
-        return metadata
+            return existing_metadata
+    if not isinstance(incoming_metadata, dict):
+        return existing_metadata
 
-    for k, v in meta.items():
+    def _is_supported_scalar(value):
+        # bool is a subclass of int in Python, exclude it explicitly.
+        return isinstance(value, (str, int, float)) and not isinstance(value, bool)
+
+    for k, v in incoming_metadata.items():
         if isinstance(v, list):
-            v = [vv for vv in v if isinstance(vv, str)]
+            v = [vv for vv in v if _is_supported_scalar(vv)]
             if not v:
                 continue
             v = dedupe_list(v)
-        if not isinstance(v, list) and not isinstance(v, str):
+        if not isinstance(v, list) and not _is_supported_scalar(v):
             continue
-        if k not in metadata:
-            metadata[k] = v
+        if k not in existing_metadata:
+            existing_metadata[k] = v
             continue
-        if isinstance(metadata[k], list):
+        if isinstance(existing_metadata[k], list):
             if isinstance(v, list):
-                metadata[k].extend(v)
+                existing_metadata[k].extend(v)
             else:
-                metadata[k].append(v)
-            metadata[k] = dedupe_list(metadata[k])
+                existing_metadata[k].append(v)
+            existing_metadata[k] = dedupe_list(existing_metadata[k])
         else:
-            metadata[k] = v
+            existing_metadata[k] = v
 
-    return metadata
+    return existing_metadata
 
 
 def metadata_schema(metadata: dict|list|None) -> Dict[str, Any]:
+    """Convert metadata field definitions into a JSON Schema object.
+
+    Each field item may define `type`, `description`, and optional `enum`
+    constraints. The function returns an object schema with strict properties.
+    """
     if not metadata:
         return {}
     properties = {}
@@ -281,12 +295,29 @@ def metadata_schema(metadata: dict|list|None) -> Dict[str, Any]:
         if not key:
             continue
 
+        value_type = item.get("type") or "string"
         prop_schema = {
             "description": item.get("description", "")
         }
-        if "enum" in item and item["enum"]:
-            prop_schema["enum"] = item["enum"]
+
+        if value_type == "list":
+            prop_schema["type"] = "array"
+            prop_schema["items"] = {"type": "string"}
+            if "enum" in item and item["enum"]:
+                prop_schema["items"]["enum"] = item["enum"]
+        elif value_type == "number":
+            prop_schema["type"] = "number"
+            if "enum" in item and item["enum"]:
+                prop_schema["enum"] = item["enum"]
+        elif value_type == "time":
             prop_schema["type"] = "string"
+            prop_schema["format"] = "date-time"
+            if "enum" in item and item["enum"]:
+                prop_schema["enum"] = item["enum"]
+        else:
+            prop_schema["type"] = "string"
+            if "enum" in item and item["enum"]:
+                prop_schema["enum"] = item["enum"]
 
         properties[key] = prop_schema
 
@@ -322,10 +353,17 @@ def _is_metadata_list(obj: list) -> bool:
             return False
         if "descriptions" in item and not isinstance(item["descriptions"], str):
             return False
+        if "type" in item and item["type"] not in {"string", "list", "time", "number"}:
+            return False
     return True
 
 
 def turn2jsonschema(obj: dict | list) -> Dict[str, Any]:
+    """Normalize metadata settings into a JSON Schema object.
+
+    Accepts either an existing JSON Schema dict or legacy metadata list format
+    and returns a JSON Schema representation used by metadata extraction flow.
+    """
     if isinstance(obj, dict) and _is_json_schema(obj):
         return obj
     if isinstance(obj, list) and _is_metadata_list(obj):
@@ -335,6 +373,7 @@ def turn2jsonschema(obj: dict | list) -> Dict[str, Any]:
             normalized_item = {
                 "key": item.get("key"),
                 "description": description,
+                "type": item.get("type", "string"),
             }
             if "enum" in item:
                 normalized_item["enum"] = item["enum"]
