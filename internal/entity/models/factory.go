@@ -30,7 +30,7 @@ func NewModelFactory() *ModelFactory {
 }
 
 // CreateModelDriver creates a ModelDriver for the given provider and model
-func (f *ModelFactory) CreateModelDriver(providerName string, baseURL string, urlSuffix URLSuffix) (ModelDriver, error) {
+func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string]string, urlSuffix URLSuffix) (ModelDriver, error) {
 	providerLower := strings.ToLower(providerName)
 	switch providerLower {
 	case "zhipu-ai":

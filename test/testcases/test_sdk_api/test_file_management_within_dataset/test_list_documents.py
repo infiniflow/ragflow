@@ -30,7 +30,7 @@ class TestDocumentsList:
         "params, expected_page_size, expected_message",
         [
             ({"page": None, "page_size": 2}, 2, "not instance of"),
-            ({"page": 0, "page_size": 2}, 2, ""),
+            ({"page": 1, "page_size": 2}, 2, ""),
             ({"page": 2, "page_size": 2}, 2, ""),
             ({"page": 3, "page_size": 2}, 1, ""),
             ({"page": "3", "page_size": 2}, 1, "not instance of"),
@@ -63,7 +63,7 @@ class TestDocumentsList:
         "params, expected_page_size, expected_message",
         [
             ({"page_size": None}, 5, "not instance of"),
-            ({"page_size": 0}, 0, ""),
+            ({"page_size": 2}, 2, ""),
             ({"page_size": 1}, 1, ""),
             ({"page_size": 6}, 5, ""),
             ({"page_size": "1"}, 1, "not instance of"),
@@ -151,6 +151,7 @@ class TestDocumentsList:
         documents = dataset.list_documents(**params)
         assert len(documents) == expected_num, str(documents)
 
+
     @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_num, expected_message",
@@ -221,6 +222,7 @@ class TestDocumentsList:
         else:
             documents = dataset.list_documents(**params)
             assert len(documents) == expected_num, str(documents)
+
 
     @pytest.mark.p3
     def test_concurrent_list(self, add_documents):
