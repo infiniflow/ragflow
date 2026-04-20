@@ -268,6 +268,7 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
       threshold,
       max_cluster,
       random_seed,
+      scope,
       auto_disable_for_structured_data,
       ext,
       ...raptorExt
@@ -279,6 +280,7 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
       threshold,
       max_cluster,
       random_seed,
+      scope,
       auto_disable_for_structured_data,
       ext: { ...ext, ...raptorExt },
     };
