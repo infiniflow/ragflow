@@ -7,7 +7,7 @@ export interface IDocumentInfo {
   created_by: string;
   nickname: string;
   id: string;
-  kb_id: string;
+  dataset_id: string;
   location: string;
   name: string;
   parser_config: IParserConfig;
