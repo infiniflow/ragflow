@@ -25,9 +25,29 @@ from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.connector_service import Connector2KbService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
-from api.db.services.user_service import TenantService, UserService
+from api.db.services.user_service import TenantService, UserService, UserTenantService
 from common.constants import FileSource, StatusEnum
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
+
+_VALID_INDEX_TYPES = {"graph", "raptor", "mindmap"}
+
+_INDEX_TYPE_TO_TASK_TYPE = {
+    "graph": "graphrag",
+    "raptor": "raptor",
+    "mindmap": "mindmap",
+}
+
+_INDEX_TYPE_TO_TASK_ID_FIELD = {
+    "graph": "graphrag_task_id",
+    "raptor": "raptor_task_id",
+    "mindmap": "mindmap_task_id",
+}
+
+_INDEX_TYPE_TO_DISPLAY_NAME = {
+    "graph": "Graph",
+    "raptor": "RAPTOR",
+    "mindmap": "Mindmap",
+}
 
 
 async def create_dataset(tenant_id: str, req: dict):
@@ -156,6 +176,49 @@ async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = F
         return False, error_message
 
     return True, {"success_count": success_count, "errors": errors[:5]}
+
+
+def get_dataset(dataset_id: str, tenant_id: str):
+    """
+    Get a single dataset.
+
+    :param dataset_id: dataset ID
+    :param tenant_id: tenant ID
+    :return: (success, result) or (success, error_message)
+    """
+    if not dataset_id:
+        return False, 'Lack of "Dataset ID"'
+
+    kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
+    if kb is None:
+        return False, f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
+
+    response_data = remap_dictionary_keys(kb.to_dict())
+    return True, response_data
+
+
+def get_ingestion_summary(dataset_id: str, tenant_id: str):
+    """
+    Get ingestion summary for a dataset.
+
+    :param dataset_id: dataset ID
+    :param tenant_id: tenant ID
+    :return: (success, result) or (success, error_message)
+    """
+    if not dataset_id:
+        return False, 'Lack of "Dataset ID"'
+
+    kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
+    if kb is None:
+        return False, f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
+
+    status = DocumentService.get_parsing_status_by_kb_ids([dataset_id]).get(dataset_id, {})
+    return True, {
+        "doc_num": kb.doc_num,
+        "chunk_num": kb.chunk_num,
+        "token_num": kb.token_num,
+        "status": status,
+    }
 
 
 async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
@@ -404,6 +467,99 @@ def delete_knowledge_graph(dataset_id: str, tenant_id: str):
     return True, True
 
 
+def run_index(dataset_id: str, tenant_id: str, index_type: str):
+    """
+    Run an indexing task (graph/raptor/mindmap) for a dataset.
+
+    :param dataset_id: dataset ID
+    :param tenant_id: tenant ID
+    :param index_type: one of "graph", "raptor", "mindmap"
+    :return: (success, result) or (success, error_message)
+    """
+    if index_type not in _VALID_INDEX_TYPES:
+        return False, f"Invalid index type '{index_type}'. Must be one of {sorted(_VALID_INDEX_TYPES)}"
+
+    if not dataset_id:
+        return False, 'Lack of "Dataset ID"'
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not ok:
+        return False, "Invalid Dataset ID"
+
+    task_type = _INDEX_TYPE_TO_TASK_TYPE[index_type]
+    task_id_field = _INDEX_TYPE_TO_TASK_ID_FIELD[index_type]
+    display_name = _INDEX_TYPE_TO_DISPLAY_NAME[index_type]
+
+    existing_task_id = getattr(kb, task_id_field, None)
+    if existing_task_id:
+        ok, task = TaskService.get_by_id(existing_task_id)
+        if not ok:
+            logging.warning(f"A valid {display_name} task id is expected for Dataset {dataset_id}")
+
+        if task and task.progress not in [-1, 1]:
+            return False, f"Task {existing_task_id} in progress with status {task.progress}. A {display_name} Task is already running."
+
+    documents, _ = DocumentService.get_by_kb_id(
+        kb_id=dataset_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=False,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
+    )
+    if not documents:
+        return False, f"No documents in Dataset {dataset_id}"
+
+    sample_document = documents[0]
+    document_ids = [document["id"] for document in documents]
+
+    task_id = queue_raptor_o_graphrag_tasks(sample_doc=sample_document, ty=task_type, priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
+
+    if not KnowledgebaseService.update_by_id(kb.id, {task_id_field: task_id}):
+        logging.warning(f"Cannot save {task_id_field} for Dataset {dataset_id}")
+
+    return True, {"task_id": task_id}
+
+
+def trace_index(dataset_id: str, tenant_id: str, index_type: str):
+    """
+    Trace an indexing task (graph/raptor/mindmap) for a dataset.
+
+    :param dataset_id: dataset ID
+    :param tenant_id: tenant ID
+    :param index_type: one of "graph", "raptor", "mindmap"
+    :return: (success, result) or (success, error_message)
+    """
+    if index_type not in _VALID_INDEX_TYPES:
+        return False, f"Invalid index type '{index_type}'. Must be one of {sorted(_VALID_INDEX_TYPES)}"
+
+    if not dataset_id:
+        return False, 'Lack of "Dataset ID"'
+
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not ok:
+        return False, "Invalid Dataset ID"
+
+    task_id_field = _INDEX_TYPE_TO_TASK_ID_FIELD[index_type]
+    task_id = getattr(kb, task_id_field, None)
+    if not task_id:
+        return True, {}
+
+    ok, task = TaskService.get_by_id(task_id)
+    if not ok:
+        return True, {}
+
+    return True, task.to_dict()
+
+
 def run_graphrag(dataset_id: str, tenant_id: str):
     """
     Run GraphRAG for a dataset.
@@ -563,6 +719,70 @@ def trace_raptor(dataset_id: str, tenant_id: str):
     return True, task.to_dict()
 
 
+def list_tags(dataset_id: str, tenant_id: str):
+    """
+    List tags for a dataset.
+
+    :param dataset_id: dataset ID
+    :param tenant_id: tenant ID
+    :return: (success, result) or (success, error_message)
+    """
+    if not dataset_id:
+        return False, 'Lack of "Dataset ID"'
+
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+
+    tenants = UserTenantService.get_tenants_by_user_id(tenant_id)
+    tags = []
+    for tenant in tenants:
+        tags += settings.retriever.all_tags(tenant["tenant_id"], [dataset_id])
+    return True, tags
+
+
+def aggregate_tags(dataset_ids: list[str], tenant_id: str):
+    """
+    Aggregate tags across multiple datasets.
+
+    :param dataset_ids: list of dataset IDs
+    :param tenant_id: tenant ID
+    :return: (success, result) or (success, error_message)
+    """
+    if not dataset_ids:
+        return False, 'Lack of "dataset_ids"'
+
+    for dataset_id in dataset_ids:
+        if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+            return False, f"No authorization for dataset '{dataset_id}'"
+
+    tenants = UserTenantService.get_tenants_by_user_id(tenant_id)
+    tags = []
+    for tenant in tenants:
+        tags += settings.retriever.all_tags(tenant["tenant_id"], dataset_ids)
+    return True, tags
+
+    ok, task = TaskService.get_by_id(task_id)
+    if not ok:
+        return True, {}
+def get_flattened_metadata(dataset_ids: list[str], tenant_id: str):
+    """
+    Get flattened metadata for datasets.
+
+    :param dataset_ids: list of dataset IDs
+    :param tenant_id: tenant ID
+    :return: (success, result) or (success, error_message)
+    """
+    if not dataset_ids:
+        return False, 'Lack of "dataset_ids"'
+
+    for dataset_id in dataset_ids:
+        if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+            return False, f"No authorization for dataset '{dataset_id}'"
+
+    from api.db.services.doc_metadata_service import DocMetadataService
+    return True, DocMetadataService.get_flatted_meta_by_kbs(dataset_ids)
+
+
 def get_auto_metadata(dataset_id: str, tenant_id: str):
     """
     Get auto-metadata configuration for a dataset.
@@ -627,3 +847,218 @@ async def update_auto_metadata(dataset_id: str, tenant_id: str, cfg: dict):
         return False, "Update auto-metadata error.(Database error)"
 
     return True, {"enabled": parser_cfg["enable_metadata"], "fields": fields}
+
+
+def delete_tags(dataset_id: str, tenant_id: str, tags: list[str]):
+    """
+    Delete tags from a dataset.
+
+    :param dataset_id: dataset ID
+    :param tenant_id: tenant ID
+    :param tags: list of tags to delete
+    :return: (success, result) or (success, error_message)
+    """
+    if not dataset_id:
+        return False, 'Lack of "Dataset ID"'
+
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not ok:
+        return False, "Invalid Dataset ID"
+
+    from rag.nlp import search
+    for t in tags:
+        settings.docStoreConn.update({"tag_kwd": t, "kb_id": [dataset_id]},
+                                     {"remove": {"tag_kwd": t}},
+                                     search.index_name(kb.tenant_id),
+                                     dataset_id)
+
+    return True, {}
+
+def list_ingestion_logs(dataset_id: str, tenant_id: str, page: int, page_size: int, orderby: str, desc: bool, operation_status: list = None, create_date_from: str = None, create_date_to: str = None):
+    """
+    List ingestion logs for a dataset.
+
+    :param dataset_id: dataset ID
+    :param tenant_id: tenant ID
+    :param page: page number
+    :param page_size: items per page
+    :param orderby: order by field
+    :param desc: descending order
+    :param operation_status: filter by operation status
+    :param create_date_from: filter start date
+    :param create_date_to: filter end date
+    :return: (success, result) or (success, error_message)
+    """
+    if not dataset_id:
+        return False, 'Lack of "Dataset ID"'
+
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+
+    from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
+    logs, total = PipelineOperationLogService.get_dataset_logs_by_kb_id(
+        dataset_id, page, page_size, orderby, desc, operation_status or [], create_date_from, create_date_to
+    )
+    return True, {"total": total, "logs": logs}
+
+
+def get_ingestion_log(dataset_id: str, tenant_id: str, log_id: str):
+    """
+    Get a single ingestion log.
+
+    :param dataset_id: dataset ID
+    :param tenant_id: tenant ID
+    :param log_id: log ID
+    :return: (success, result) or (success, error_message)
+    """
+    if not dataset_id:
+        return False, 'Lack of "Dataset ID"'
+
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+
+    from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
+    fields = PipelineOperationLogService.get_dataset_logs_fields()
+    log = PipelineOperationLogService.model.select(*fields).where(
+        (PipelineOperationLogService.model.id == log_id) & (PipelineOperationLogService.model.kb_id == dataset_id)
+    ).first()
+    if not log:
+        return False, "Log not found"
+
+    return True, log.to_dict()
+
+
+def trace_mindmap(dataset_id: str, tenant_id: str):
+    """
+    Trace mindmap task for a dataset.
+
+    :param dataset_id: dataset ID
+    :param tenant_id: tenant ID
+    :return: (success, result) or (success, error_message)
+    """
+    if not dataset_id:
+        return False, 'Lack of "Dataset ID"'
+
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not ok:
+        return False, "Invalid Dataset ID"
+
+    task_id = kb.mindmap_task_id
+    if not task_id:
+        return True, {}
+
+def delete_index(dataset_id: str, tenant_id: str, index_type: str):
+    """
+    Delete an indexing task (graph/raptor/mindmap) for a dataset.
+
+    :param dataset_id: dataset ID
+    :param tenant_id: tenant ID
+    :param index_type: one of "graph", "raptor", "mindmap"
+    :return: (success, result) or (success, error_message)
+    """
+    if index_type not in _VALID_INDEX_TYPES:
+        return False, f"Invalid index type '{index_type}'. Must be one of {sorted(_VALID_INDEX_TYPES)}"
+
+    if not dataset_id:
+        return False, 'Lack of "Dataset ID"'
+
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not ok:
+        return False, "Invalid Dataset ID"
+
+    task_id_field = _INDEX_TYPE_TO_TASK_ID_FIELD[index_type]
+    task_finish_at_field = f"{task_id_field.replace('_task_id', '_task_finish_at')}"
+    task_id = getattr(kb, task_id_field, None)
+
+    if task_id:
+        from rag.utils.redis_conn import REDIS_CONN
+        try:
+            REDIS_CONN.set(f"{task_id}-cancel", "x")
+        except Exception as e:
+            logging.exception(e)
+        TaskService.delete_by_id(task_id)
+
+    if index_type == "graph":
+        from rag.nlp import search
+        settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]},
+                                     search.index_name(kb.tenant_id), dataset_id)
+    elif index_type == "raptor":
+        from rag.nlp import search
+        settings.docStoreConn.delete({"raptor_kwd": ["raptor"]},
+                                     search.index_name(kb.tenant_id), dataset_id)
+
+    KnowledgebaseService.update_by_id(kb.id, {task_id_field: "", task_finish_at_field: None})
+    return True, {}
+
+
+def run_embedding(dataset_id: str, tenant_id: str):
+    """
+    Run embedding for all documents in a dataset.
+
+    :param dataset_id: dataset ID
+    :param tenant_id: tenant ID
+    :return: (success, result) or (success, error_message)
+    """
+    if not dataset_id:
+        return False, 'Lack of "Dataset ID"'
+
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not ok:
+        return False, "Invalid Dataset ID"
+
+    documents, _ = DocumentService.get_by_kb_id(
+        kb_id=dataset_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=False,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
+    )
+    if not documents:
+        return False, f"No documents in Dataset {dataset_id}"
+
+    kb_table_num_map = {}
+    for doc in documents:
+        doc["tenant_id"] = tenant_id
+        DocumentService.run(tenant_id, doc, kb_table_num_map)
+def rename_tag(dataset_id: str, tenant_id: str, from_tag: str, to_tag: str):
+    """
+    Rename a tag in a dataset.
+
+    :param dataset_id: dataset ID
+    :param tenant_id: tenant ID
+    :param from_tag: original tag name
+    :param to_tag: new tag name
+    :return: (success, result) or (success, error_message)
+    """
+    if not dataset_id:
+        return False, 'Lack of "Dataset ID"'
+
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not ok:
+        return False, "Invalid Dataset ID"
+
+    from rag.nlp import search
+    settings.docStoreConn.update({"tag_kwd": from_tag, "kb_id": [dataset_id]},
+                                 {"remove": {"tag_kwd": from_tag.strip()}, "add": {"tag_kwd": to_tag}},
+                                 search.index_name(kb.tenant_id),
+                                 dataset_id)
+

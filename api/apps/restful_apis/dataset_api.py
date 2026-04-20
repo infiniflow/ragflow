@@ -31,6 +31,46 @@ from api.utils.validation_utils import (
 from api.apps.services import dataset_api_service
 
 
+@manager.route("/datasets/tags/aggregation", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def aggregate_tags(tenant_id):
+    dataset_ids = request.args.get("dataset_ids", "").split(",")
+    dataset_ids = [d for d in dataset_ids if d]
+    if not dataset_ids:
+        return get_error_data_result(message="Lack of dataset_ids in query parameters")
+
+    try:
+        success, result = dataset_api_service.aggregate_tags(dataset_ids, tenant_id)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/metadata/flattened", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def get_flattened_metadata(tenant_id):
+    dataset_ids = request.args.get("dataset_ids", "").split(",")
+    dataset_ids = [d for d in dataset_ids if d]
+    if not dataset_ids:
+        return get_error_data_result(message="Lack of dataset_ids in query parameters")
+
+    try:
+        success, result = dataset_api_service.get_flattened_metadata(dataset_ids, tenant_id)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -330,6 +370,89 @@ def list_datasets(tenant_id):
         return get_error_data_result(message="Internal server error")
 
 
+@manager.route("/datasets/<dataset_id>", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def get_dataset(tenant_id, dataset_id):
+    try:
+        success, result = dataset_api_service.get_dataset(dataset_id, tenant_id)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/ingestions/summary", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def get_ingestion_summary(tenant_id, dataset_id):
+    try:
+        success, result = dataset_api_service.get_ingestion_summary(dataset_id, tenant_id)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/tags", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def list_tags(tenant_id, dataset_id):
+    try:
+        success, result = dataset_api_service.list_tags(dataset_id, tenant_id)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/tags", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def delete_tags(tenant_id, dataset_id):
+    req = await request.get_json()
+    if not req or "tags" not in req:
+        return get_error_data_result(message="Lack of tags in request body")
+
+    try:
+        success, result = dataset_api_service.delete_tags(dataset_id, tenant_id, req["tags"])
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/tags", methods=["PUT"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def rename_tag(tenant_id, dataset_id):
+    req = await request.get_json()
+    if not req or "from_tag" not in req or "to_tag" not in req:
+        return get_error_data_result(message="Lack of from_tag or to_tag in request body")
+
+    try:
+        success, result = dataset_api_service.rename_tag(dataset_id, tenant_id, req["from_tag"], req["to_tag"])
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route('/datasets/<dataset_id>/knowledge_graph', methods=['GET'])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -363,6 +486,108 @@ def delete_knowledge_graph(tenant_id, dataset_id):
                 message=result,
                 code=RetCode.AUTHENTICATION_ERROR
             )
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/index", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def run_index(tenant_id, dataset_id):
+    index_type = request.args.get("type", "")
+    try:
+        success, result = dataset_api_service.run_index(dataset_id, tenant_id, index_type)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/index", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def trace_index(tenant_id, dataset_id):
+    index_type = request.args.get("type", "")
+    try:
+        success, result = dataset_api_service.trace_index(dataset_id, tenant_id, index_type)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/<index_type>", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def delete_index(tenant_id, dataset_id, index_type):
+    try:
+        success, result = dataset_api_service.delete_index(dataset_id, tenant_id, index_type)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/embedding", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def run_embedding(tenant_id, dataset_id):
+    try:
+        success, result = dataset_api_service.run_embedding(dataset_id, tenant_id)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/ingestions", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def list_ingestion_logs(tenant_id, dataset_id):
+    page = int(request.args.get("page", 0))
+    page_size = int(request.args.get("page_size", 0))
+    orderby = request.args.get("orderby", "create_time")
+    desc = request.args.get("desc", "true").lower() != "false"
+    operation_status = request.args.getlist("operation_status")
+    create_date_from = request.args.get("create_date_from", None)
+    create_date_to = request.args.get("create_date_to", None)
+
+    try:
+        success, result = dataset_api_service.list_ingestion_logs(
+            dataset_id, tenant_id, page, page_size, orderby, desc, operation_status, create_date_from, create_date_to
+        )
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/ingestions/<log_id>", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def get_ingestion_log(tenant_id, dataset_id, log_id):
+    try:
+        success, result = dataset_api_service.get_ingestion_log(dataset_id, tenant_id, log_id)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -431,6 +656,41 @@ def trace_raptor(tenant_id, dataset_id):
 @manager.route("/datasets/<dataset_id>/auto_metadata", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+def get_auto_metadata_legacy(tenant_id, dataset_id):
+    try:
+        success, result = dataset_api_service.get_auto_metadata(dataset_id, tenant_id)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/auto_metadata", methods=["PUT"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def update_auto_metadata_legacy(tenant_id, dataset_id):
+    from api.utils.validation_utils import AutoMetadataConfig
+    cfg, err = await validate_and_parse_json_request(request, AutoMetadataConfig)
+    if err is not None:
+        return get_error_argument_result(err)
+
+    try:
+        success, result = await dataset_api_service.update_auto_metadata(dataset_id, tenant_id, cfg)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/metadata/config", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
 def get_auto_metadata(tenant_id, dataset_id):
     """
     Get auto-metadata configuration for a dataset.
@@ -467,7 +727,7 @@ def get_auto_metadata(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/auto_metadata", methods=["PUT"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/metadata/config", methods=["PUT"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def update_auto_metadata(tenant_id, dataset_id):
