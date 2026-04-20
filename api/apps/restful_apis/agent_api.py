@@ -64,7 +64,18 @@ def list_agents(tenant_id):
     order_by = request.args.get("orderby", "create_time")
     desc = str(request.args.get("desc", "true")).lower() != "false"
 
-    if not owner_ids:
+    if owner_ids:
+        canvas, total = UserCanvasService.get_by_tenant_ids(
+            owner_ids,
+            tenant_id,
+            0,
+            0,
+            order_by,
+            desc,
+            keywords,
+            canvas_category,
+        )
+    else:
         tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
         tenants = [member["tenant_id"] for member in tenants]
         tenants.append(tenant_id)
@@ -73,17 +84,6 @@ def list_agents(tenant_id):
             tenant_id,
             page_number,
             items_per_page,
-            order_by,
-            desc,
-            keywords,
-            canvas_category,
-        )
-    else:
-        canvas, total = UserCanvasService.get_by_tenant_ids(
-            owner_ids,
-            tenant_id,
-            0,
-            0,
             order_by,
             desc,
             keywords,

@@ -230,13 +230,7 @@ class RAGFlow:
             return chunks
         raise Exception(res.get("message"))
 
-    def list_agents(self, page: int = 1, page_size: int = 30, orderby: str = "update_time", desc: bool = True, id: str | None = None, title: str | None = None) -> list[Agent]:
-        if id is not None:
-            agent = self.get_agent(id)
-            if title is not None and agent.title != title:
-                return []
-            return [agent]
-
+    def list_agents(self, page: int = 1, page_size: int = 30, orderby: str = "update_time", desc: bool = True) -> list[Agent]:
         res = self.get(
             "/agents",
             {
@@ -252,8 +246,6 @@ class RAGFlow:
             data = res.get("data") or {}
             data_list = data.get("canvas", [])
             for data in data_list:
-                if title is not None and data.get("title") != title:
-                    continue
                 result_list.append(Agent(self, data))
             return result_list
         raise Exception(res["message"])

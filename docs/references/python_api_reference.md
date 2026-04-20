@@ -1910,13 +1910,11 @@ RAGFlow.list_agents(
     page: int = 1, 
     page_size: int = 30, 
     orderby: str = "update_time", 
-    desc: bool = True,
-    id: str = None,
-    title: str = None
+    desc: bool = True
 ) -> List[Agent]
 ```
 
-Lists agents.
+Lists agents. This is a collection API and always returns a list.
 
 #### Parameters
 
@@ -1938,14 +1936,6 @@ The attribute by which the results are sorted. Available options:
 ##### desc: `bool`
 
 Indicates whether the retrieved agents should be sorted in descending order. Defaults to `True`.
-
-##### id: `string`  
-
-The ID of the agent to retrieve. Defaults to `None`.
-
-##### title: `string`  
-
-The name of the agent to retrieve. Defaults to `None`.
 
 #### Returns
 
@@ -1969,7 +1959,7 @@ for agent in rag_object.list_agents():
 RAGFlow.get_agent(agent_id: str) -> Agent
 ```
 
-Gets an agent by ID.
+Gets a single agent by ID and returns the detailed agent payload.
 
 #### Parameters
 
