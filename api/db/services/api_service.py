@@ -30,7 +30,7 @@ class APITokenService(CommonService):
     def used(cls, token):
         return cls.model.update({
             "update_time": current_timestamp(),
-            "update_date": datetime_format(datetime.now()),
+            "update_date": datetime_format(datetime.utcnow()),
         }).where(
             cls.model.token == token
         )

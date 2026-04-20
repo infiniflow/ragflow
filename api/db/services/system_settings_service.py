@@ -33,7 +33,7 @@ class SystemSettingsService(CommonService):
     @DB.connection_context()
     def update_by_name(cls, name, obj):
         obj["update_time"] = current_timestamp()
-        obj["update_date"] = datetime_format(datetime.now())
+        obj["update_date"] = datetime_format(datetime.utcnow())
         cls.model.update(obj).where(cls.model.name == name).execute()
         return SystemSettings(**obj)
 

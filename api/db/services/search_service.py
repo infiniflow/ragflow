@@ -29,7 +29,7 @@ class SearchService(CommonService):
     @classmethod
     def save(cls, **kwargs):
         current_ts = current_timestamp()
-        current_date = datetime_format(datetime.now())
+        current_date = datetime_format(datetime.utcnow())
 
         kwargs["create_time"] = current_ts
         kwargs["create_date"] = current_date

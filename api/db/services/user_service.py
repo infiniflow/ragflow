@@ -117,7 +117,7 @@ class UserService(CommonService):
                 str(kwargs["password"]))
 
         current_ts = current_timestamp()
-        current_date = datetime_format(datetime.now())
+        current_date = datetime_format(datetime.utcnow())
 
         kwargs["create_time"] = current_ts
         kwargs["create_date"] = current_date
@@ -139,7 +139,7 @@ class UserService(CommonService):
         with DB.atomic():
             if user_dict:
                 user_dict["update_time"] = current_timestamp()
-                user_dict["update_date"] = datetime_format(datetime.now())
+                user_dict["update_date"] = datetime_format(datetime.utcnow())
                 cls.model.update(user_dict).where(
                     cls.model.id == user_id).execute()
 
@@ -150,7 +150,7 @@ class UserService(CommonService):
             update_dict = {
                 "password": generate_password_hash(str(new_password)),
                 "update_time": current_timestamp(),
-                "update_date": datetime_format(datetime.now())
+                "update_date": datetime_format(datetime.utcnow())
             }
             cls.model.update(update_dict).where(cls.model.id == user_id).execute()
 

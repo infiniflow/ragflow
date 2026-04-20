@@ -59,13 +59,13 @@ class TenantLangfuseService(CommonService):
     @classmethod
     def update_by_tenant(cls, tenant_id, langfuse_keys):
         langfuse_keys["update_time"] = current_timestamp()
-        langfuse_keys["update_date"] = datetime_format(datetime.now())
+        langfuse_keys["update_date"] = datetime_format(datetime.utcnow())
         return cls.model.update(**langfuse_keys).where(cls.model.tenant_id == tenant_id).execute()
 
     @classmethod
     def save(cls, **kwargs):
         current_ts = current_timestamp()
-        current_date = datetime_format(datetime.now())
+        current_date = datetime_format(datetime.utcnow())
 
         kwargs["create_time"] = current_ts
         kwargs["create_date"] = current_date

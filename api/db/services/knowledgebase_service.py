@@ -526,7 +526,7 @@ class KnowledgebaseService(CommonService):
     def atomic_increase_doc_num_by_id(cls, kb_id):
         data = {}
         data["update_time"] = current_timestamp()
-        data["update_date"] = datetime_format(datetime.now())
+        data["update_date"] = datetime_format(datetime.utcnow())
         data["doc_num"] = cls.model.doc_num + 1
         num = cls.model.update(data).where(cls.model.id == kb_id).execute()
         return num
@@ -568,7 +568,7 @@ class KnowledgebaseService(CommonService):
             'chunk_num': kb_row.chunk_num - doc_num_info['chunk_num'],
             'token_num': kb_row.token_num - doc_num_info['token_num'],
             'update_time': current_timestamp(),
-            'update_date': datetime_format(datetime.now())
+            'update_date': datetime_format(datetime.utcnow())
         }
         return cls.model.update(update_dict).where(cls.model.id == kb_id).execute()
 
