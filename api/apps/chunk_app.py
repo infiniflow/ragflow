@@ -427,6 +427,7 @@ async def retrieval_test():
 
     doc_ids = req.get("doc_ids", [])
     use_kg = req.get("use_kg", False)
+    use_compiled_pages = req.get("use_compiled_pages", False)
     top = int(req.get("top_k", 1024))
     langs = req.get("cross_languages", [])
     user_id = current_user.id
@@ -532,6 +533,20 @@ async def retrieval_test():
                                                    LLMBundle(kb.tenant_id, default_chat_model_config))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
+        if use_compiled_pages and embd_mdl:
+            compiled_chunks = await settings.retriever.retrieval_compiled_pages(
+                _question,
+                embd_mdl,
+                tenant_ids,
+                kb_ids,
+                page_size=size,
+                similarity_threshold=float(req.get("similarity_threshold", 0.2)),
+                vector_similarity_weight=float(req.get("vector_similarity_weight", 0.3)),
+                doc_ids=local_doc_ids or None,
+            )
+            if compiled_chunks:
+                logging.debug(f"use_compiled_pages: prepending {len(compiled_chunks)} compiled page(s) to retrieval results")
+                ranks["chunks"] = compiled_chunks + ranks["chunks"]
         ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
 
         for c in ranks["chunks"]:

@@ -67,7 +67,7 @@ class Dealer:
                 condition[field] = req[key]
         # TODO(yzc): `available_int` is nullable however infinity doesn't support nullable columns.
         for key in ["knowledge_graph_kwd", "available_int", "entity_kwd", "from_entity_kwd", "to_entity_kwd",
-                    "removed_kwd"]:
+                    "removed_kwd", "compiled_page_kwd"]:
             if key in req and req[key] is not None:
                 condition[key] = req[key]
         return condition
@@ -93,7 +93,8 @@ class Dealer:
                       ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
                        "doc_id", "chunk_order_int", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
                        "question_kwd", "question_tks", "doc_type_kwd",
-                       "available_int", "content_with_weight", "mom_id", PAGERANK_FLD, TAG_FLD, "row_id()"])
+                       "available_int", "content_with_weight", "mom_id", PAGERANK_FLD, TAG_FLD, "row_id()",
+                       "compiled_page_kwd", "compiled_page_type_kwd", "source_chunk_ids_kwd"])
         kwds = set([])
 
         qst = req.get("question", "")
@@ -732,3 +733,99 @@ class Dealer:
             chunks.append(d)
 
         return sorted(chunks, key=lambda x: x["similarity"] * -1)
+
+    async def retrieval_compiled_pages(
+        self,
+        question: str,
+        embd_mdl,
+        tenant_ids: list[str] | str,
+        kb_ids: list[str],
+        page_size: int = 6,
+        similarity_threshold: float = 0.2,
+        vector_similarity_weight: float = 0.3,
+        doc_ids: list[str] | None = None,
+    ) -> list[dict]:
+        """
+        Retrieve compiled knowledge pages matching *question*.
+
+        Pages are filtered by ``compiled_page_kwd = "page"`` before scoring,
+        so raw document chunks are never returned here.  Results are formatted
+        in the same shape as the chunks returned by :meth:`retrieval` so they
+        can be prepended to ``kbinfos["chunks"]`` without further conversion.
+
+        When *doc_ids* is provided (e.g. attachment or metadata-filter mode),
+        retrieval is skipped entirely: compiled pages are KB-level aggregates
+        and cannot be scoped to a specific document subset without risking
+        contamination of filtered answers.
+        """
+        if not question:
+            return []
+
+        # Skip when a doc-level scope is active — compiled pages are KB-wide aggregates.
+        if doc_ids:
+            logging.debug("retrieval_compiled_pages: skipping because doc_ids filter is active")
+            return []
+
+        if isinstance(tenant_ids, str):
+            tenant_ids = tenant_ids.split(",")
+
+        idx_nms = [index_name(tid) for tid in tenant_ids]
+
+        req = {
+            "kb_ids": kb_ids,
+            "size": page_size,
+            "question": question,
+            "vector": True,
+            "topk": page_size * 4,
+            "similarity": similarity_threshold,
+            "available_int": 1,
+            # Filter to compiled pages only
+            "compiled_page_kwd": ["page"],
+        }
+
+        sres = await self.search(req, idx_nms, kb_ids, embd_mdl, highlight=False, rank_feature=None)
+        if sres.total == 0:
+            return []
+
+        sim, tsim, vsim = self.rerank(
+            sres,
+            question,
+            1 - vector_similarity_weight,
+            vector_similarity_weight,
+            rank_feature=None,
+        )
+
+        chunks = []
+        vector_size = 1024
+        for i, cid in enumerate(sres.ids):
+            if sim[i] < similarity_threshold:
+                continue
+            fld = sres.field.get(cid, {})
+            d = {
+                "chunk_id": cid,
+                "content_ltks": fld.get("content_ltks", ""),
+                "content_with_weight": fld.get("content_with_weight", ""),
+                "doc_id": fld.get("doc_id", ""),
+                "docnm_kwd": fld.get("docnm_kwd", ""),
+                "kb_id": fld.get("kb_id", kb_ids[0] if kb_ids else ""),
+                "important_kwd": fld.get("important_kwd", []),
+                "image_id": fld.get("img_id", ""),
+                "similarity": sim[i],
+                "vector_similarity": vsim[i],
+                "term_similarity": tsim[i],
+                "vector": [0.0] * vector_size,
+                "positions": fld.get("position_int", []),
+                "doc_type_kwd": fld.get("doc_type_kwd", "text"),
+                # Compiled-page specific fields (passed through for UI if needed)
+                "compiled_page_kwd": fld.get("compiled_page_kwd", "page"),
+                "compiled_page_type_kwd": fld.get("compiled_page_type_kwd", ""),
+                "source_chunk_ids_kwd": fld.get("source_chunk_ids_kwd", []),
+            }
+            for k, v in fld.items():
+                if k.endswith("_vec"):
+                    d["vector"] = v if isinstance(v, list) else [float(x) for x in str(v).split("\t") if x]
+                    vector_size = len(d["vector"])
+                    break
+            chunks.append(d)
+
+        return sorted(chunks, key=lambda x: x["similarity"] * -1)[:page_size]

@@ -877,6 +877,8 @@ class Knowledgebase(DataBaseModel):
     raptor_task_finish_at = DateTimeField(null=True)
     mindmap_task_id = CharField(max_length=32, null=True, help_text="Mindmap task ID", index=True)
     mindmap_task_finish_at = DateTimeField(null=True)
+    compiled_page_task_id = CharField(max_length=32, null=True, help_text="Compiled pages task ID", index=True)
+    compiled_page_task_finish_at = DateTimeField(null=True)
 
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
@@ -1113,6 +1115,7 @@ class Search(DataBaseModel):
             "similarity_threshold": 0.2,
             "vector_similarity_weight": 0.3,
             "use_kg": False,
+            "use_compiled_pages": False,
             # rerank settings
             "rerank_id": "",
             "top_k": 1024,
@@ -1625,6 +1628,8 @@ def migrate_db():
     alter_db_add_column(migrator, "knowledgebase", "raptor_task_finish_at", CharField(null=True))
     alter_db_add_column(migrator, "knowledgebase", "mindmap_task_id", CharField(max_length=32, null=True, help_text="Mindmap task ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "mindmap_task_finish_at", CharField(null=True))
+    alter_db_add_column(migrator, "knowledgebase", "compiled_page_task_id", CharField(max_length=32, null=True, help_text="Compiled pages task ID", index=True))
+    alter_db_add_column(migrator, "knowledgebase", "compiled_page_task_finish_at", DateTimeField(null=True))
     alter_db_column_type(migrator, "tenant_llm", "api_key", TextField(null=True, help_text="API KEY"))
     alter_db_add_column(migrator, "tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True))
     alter_db_add_column(migrator, "connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False))
