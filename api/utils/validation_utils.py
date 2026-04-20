@@ -635,6 +635,12 @@ class CreateDatasetReq(Base):
         """
         Validate pipeline_id as 32-char lowercase hex string if provided.
         """
+        if v is None:
+            return None
+
+        if v == "":
+            return None
+
         return validate_uuid1_hex(v)
 
     @model_validator(mode="after")
