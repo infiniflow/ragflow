@@ -49,8 +49,8 @@ export const RAGFlowAvatar = memo(
     const { initials, from, to } = useMemo(
       () => ({
         initials: getInitials(name),
-        from: 'hsl(0, 0%, 30%)',
-        to: 'hsl(0, 0%, 80%)',
+        from: 'hsl(0, 100%, 46.7%)',
+        to: 'hsl(308, 49.8%, 40.6%)',
         ...(name ? getColorForName(name) : {}),
       }),
       [name],

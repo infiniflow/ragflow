@@ -176,7 +176,7 @@ function LoginFormContent({
                 data-testid="auth-submit"
                 type="submit"
                 loading={loading}
-                className="bg-metallic-gradient border-b-[#00BEB4] border-b-2 hover:bg-metallic-gradient hover:border-b-[#02bcdd] w-full my-8"
+                className="bg-metallic-gradient border-b-[#ee0000] border-b-2 hover:bg-metallic-gradient hover:border-b-[#ee0000] w-full my-8"
               >
                 {title === 'login' ? t('login') : t('continue')}
               </ButtonLoading>
@@ -209,7 +209,7 @@ function LoginFormContent({
         )}
 
         {!disablePasswordLogin && title === 'login' && registerEnabled && (
-          <div className="mt-10 text-right">
+          <div className="mt-10 text-center">
             <p className="text-text-disabled text-sm">
               {t('signInTip')}
               <Button
@@ -224,7 +224,7 @@ function LoginFormContent({
           </div>
         )}
         {!disablePasswordLogin && title === 'register' && (
-          <div className="mt-10 text-right">
+          <div className="mt-10 text-center">
             <p className="text-text-disabled text-sm">
               {t('signUpTip')}
               <Button
@@ -343,20 +343,20 @@ const Login = () => {
 
   return (
     <>
-      <Spotlight opcity={0.4} coverage={60} color={'rgb(128, 255, 248)'} />
+      <Spotlight opcity={0.4} coverage={60} color={'rgb(238, 0, 0)'} />
       <Spotlight
         opcity={0.3}
         coverage={12}
         X={'10%'}
         Y={'-10%'}
-        color={'rgb(128, 255, 248)'}
+        color={'rgb(238, 0, 0)'}
       />
       <Spotlight
         opcity={0.3}
         coverage={12}
         X={'90%'}
         Y={'-10%'}
-        color={'rgb(128, 255, 248)'}
+        color={'rgb(238, 0, 0)'}
       />
       <div className=" h-[inherit] relative overflow-auto">
         <BgSvg isPaused />

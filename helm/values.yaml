@@ -24,7 +24,7 @@ env:
   # The version of Elasticsearch.
   STACK_VERSION: "8.11.3"
   USE_DOCLING: true
-  REGISTER_ENABLED: 0
+  REGISTER_ENABLED: "0"
   # The password for Elasticsearch
   ELASTIC_PASSWORD: infini_rag_flow_helm
   ES_HOST: "ragflow-es.ragflow.svc.cluster.local"
@@ -72,10 +72,10 @@ env:
   # After making the change, ensure you update `client_max_body_size` in nginx/nginx.conf correspondingly.
 
   # The number of document chunks processed in a single batch during document parsing.
-  DOC_BULK_SIZE: 8
+  DOC_BULK_SIZE: 128
 
   # The number of text chunks processed in a single batch during embedding vectorization.
-  EMBEDDING_BATCH_SIZE: 32
+  EMBEDDING_BATCH_SIZE: 256
 
 ragflow:
   image:
