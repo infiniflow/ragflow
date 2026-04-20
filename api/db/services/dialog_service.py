@@ -18,7 +18,10 @@ import binascii
 import logging
 import re
 import time
+import uuid
 from copy import deepcopy
+
+logger = logging.getLogger(__name__)
 from datetime import datetime
 from functools import partial
 from timeit import default_timer as timer
@@ -552,13 +555,16 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     # try to use sql if field mapping is good to go
     if field_map:
         logging.debug("Use SQL to retrieval:{}".format(questions[-1]))
-        ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
-        # For aggregate queries (COUNT, SUM, etc.), chunks may be empty but answer is still valid
-        if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
-            yield ans
-            return
-        else:
-            logging.debug("SQL failed or returned no results, falling back to vector search")
+        try:
+            ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
+            # For aggregate queries (COUNT, SUM, etc.), chunks may be empty but answer is still valid
+            if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
+                yield ans
+                return
+            else:
+                logging.debug("SQL failed or returned no results, falling back to vector search")
+        except ValueError as e:
+            logging.warning(f"SQL validation failed: {e}, falling back to vector search")
 
     param_keys = [p["key"] for p in prompt_config.get("parameters", [])]
     if dialog.kb_ids and "knowledge" not in param_keys and "{knowledge}" in prompt_config.get("system", ""):
@@ -821,6 +827,25 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
 
 async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):
+    """Answer a natural-language question by generating and executing SQL against the document index.
+
+    Detects the active document engine (Infinity, OceanBase, or Elasticsearch), asks the
+    chat model to produce the appropriate SQL, injects a validated kb_id filter, executes
+    the query, and returns formatted results with optional source citations.
+
+    Args:
+        question: Natural-language question from the user.
+        field_map: Mapping of field names to types describing the indexed document schema.
+        tenant_id: Tenant identifier used to derive the target index/table name.
+        chat_mdl: LLM bundle used to generate SQL from the question.
+        quota: Whether to enforce token-quota checks (default True).
+        kb_ids: Optional list of knowledge-base UUIDs to restrict the query scope.
+
+    Returns:
+        A dict with keys ``answer`` (formatted response string), ``reference``
+        (dict of supporting document chunks and doc_aggs), and ``prompt``
+        (the system prompt used), or ``None`` if SQL generation or execution fails.
+    """
     logging.debug(f"use_sql: Question: {question}")
 
     # Determine which document engine we're using
@@ -831,13 +856,22 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
     else:
         doc_engine = "es"
 
+    def _validate_uuid(value: str, label: str = "id") -> str:
+        """Raise ValueError if value is not a valid UUID; return its canonical form."""
+        try:
+            canonical = str(uuid.UUID(str(value)))
+        except (ValueError, AttributeError, TypeError):
+            logger.warning("SQL injection guard rejected invalid %s value (length=%d)", label, len(str(value)))
+            raise ValueError(f"Invalid {label} format: {value!r}")
+        return canonical
+
     # Construct the full table name
     # For Elasticsearch: ragflow_{tenant_id} (kb_id is in WHERE clause)
     # For Infinity: ragflow_{tenant_id}_{kb_id} (each KB has its own table)
     base_table = index_name(tenant_id)
     if doc_engine == "infinity" and kb_ids and len(kb_ids) == 1:
-        # Infinity: append kb_id to table name
-        table_name = f"{base_table}_{kb_ids[0]}"
+        # Infinity: append kb_id to table name — validate before interpolating
+        table_name = f"{base_table}_{_validate_uuid(kb_ids[0], 'kb_id')}"
         logging.debug(f"use_sql: Using Infinity table name: {table_name}")
     else:
         # Elasticsearch/OpenSearch: use base index name
@@ -847,13 +881,20 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
     expected_doc_name_column = "docnm" if doc_engine == "infinity" else "docnm_kwd"
 
     def has_source_columns(columns):
+        """Return True if the result set contains the columns needed to build source citations."""
         normalized_names = {str(col.get("name", "")).lower() for col in columns}
         return "doc_id" in normalized_names and bool({"docnm_kwd", "docnm"} & normalized_names)
 
     def is_aggregate_sql(sql_text):
+        """Return True if *sql_text* contains an aggregate function (COUNT, SUM, AVG, MAX, MIN, DISTINCT)."""
         return bool(re.search(r"(count|sum|avg|max|min|distinct)\s*\(", (sql_text or "").lower()))
 
     def normalize_sql(sql):
+        """Strip LLM artefacts from *sql* and return a clean, executable SQL string.
+
+        Removes ``<think>`` reasoning blocks, Chinese reasoning markers, markdown
+        code fences, and trailing semicolons that some engines reject.
+        """
         logging.debug(f"use_sql: Raw SQL from LLM: {repr(sql[:500])}")
         # Remove think blocks if present (format: </think>...)
         sql = re.sub(r"</think>\n.*?\n\s*", "", sql, flags=re.DOTALL)
@@ -865,15 +906,24 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         return sql.rstrip().rstrip(';').strip()
 
     def add_kb_filter(sql):
+        """Inject a validated kb_id WHERE filter into *sql* for ES/OceanBase engines.
+
+        Infinity encodes the knowledge-base scope in the table name, so this
+        function is a no-op for that engine.  All kb_id values are validated as
+        canonical UUIDs before interpolation to prevent SQL injection.
+        """
         # Add kb_id filter for ES/OS only (Infinity already has it in table name)
         if doc_engine == "infinity" or not kb_ids:
             return sql
 
+        # Validate all kb_ids are UUIDs before interpolating into SQL
+        safe_kb_ids = [_validate_uuid(kid, "kb_id") for kid in kb_ids]
+
         # Build kb_filter: single KB or multiple KBs with OR
-        if len(kb_ids) == 1:
-            kb_filter = f"kb_id = '{kb_ids[0]}'"
+        if len(safe_kb_ids) == 1:
+            kb_filter = f"kb_id = '{safe_kb_ids[0]}'"
         else:
-            kb_filter = "(" + " OR ".join([f"kb_id = '{kb_id}'" for kb_id in kb_ids]) + ")"
+            kb_filter = "(" + " OR ".join([f"kb_id = '{kid}'" for kid in safe_kb_ids]) + ")"
 
         if "where " not in sql.lower():
             o = sql.lower().split("order by")
@@ -886,6 +936,7 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         return sql
 
     def is_row_count_question(q: str) -> bool:
+        """Return True if *q* is asking for a total row count of a dataset or table."""
         q = (q or "").lower()
         if not re.search(r"\bhow many rows\b|\bnumber of rows\b|\brow count\b", q):
             return False
