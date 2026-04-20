@@ -18,7 +18,7 @@ import os
 import time
 
 from quart import request
-from common.constants import RetCode
+from common.constants import LLMType, RetCode
 from common.exceptions import ArgumentException, NotFoundException
 from api.apps import login_required, current_user
 from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result
@@ -35,7 +35,11 @@ async def create_memory():
     req = await get_request_json()
     t_parsed = time.perf_counter() if timing_enabled else None
     try:
-        req = ensure_tenant_model_id_for_params(current_user.id, req, strict=True)
+        req = ensure_tenant_model_id_for_params(current_user.id, req)
+        if not req.get("tenant_llm_id"):
+            raise ArgumentException(
+                f"Tenant Model with name {req['llm_id']} and type {LLMType.CHAT.value} not found"
+            )
         memory_info = {
             "name": req["name"],
             "memory_type": req["memory_type"],
