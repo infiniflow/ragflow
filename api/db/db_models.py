@@ -1334,6 +1334,63 @@ class SystemSettings(DataBaseModel):
     class Meta:
         db_table = "system_settings"
 
+class TenantModelProvider(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    provider_name = CharField(max_length=128, null=False, index=False, help_text="LLM provider name")
+    tenant_id = CharField(max_length=32, null=False, index=True)
+
+    class Meta:
+        db_table = "tenant_model_provider"
+        indexes = (
+            (("tenant_id", "provider_name"), True),
+        )
+
+class TenantModelInstance(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    instance_name = CharField(max_length=128, null=False, index=False, help_text="Model instance name")
+    provider_id = CharField(max_length=32, null=False, index=False)
+    api_key = CharField(max_length=512, null=False, index=False, help_text="API key")
+    status = CharField(max_length=32, default="active", index=False)
+    extra = CharField(max_length=512, default="active", index=False)
+
+    class Meta:
+        db_table = "tenant_model_instance"
+        indexes = (
+            (("api_key", "provider_id"), True),
+        )
+
+class TenantModel(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    model_name = CharField(max_length=128, null=True, index=False, help_text="Model name")
+    provider_id = CharField(max_length=32, null=False, index=False)
+    instance_id = CharField(max_length=32, null=False, index=True)
+    model_type = CharField(max_length=32, null=False, index=False, help_text="Model type")
+    status = CharField(max_length=32, default="active", index=False)
+
+    class Meta:
+        db_table = "tenant_model"
+
+class TenantModelGroup(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    group_type = CharField(max_length=32, null=False, index=False, help_text="Group type")
+    model_name = CharField(max_length=128, null=True, index=False, help_text="Model name")
+    strategy = CharField(max_length=32, default="weighted", index=False, help_text="Routing strategy")
+
+    class Meta:
+        db_table = "tenant_model_group"
+
+class TenantModelGroupMapping(DataBaseModel):
+    group_id = CharField(max_length=32, null=False, index=True, help_text="Group ID")
+    provider_id = CharField(max_length=32, null=False, index=False)
+    instance_id = CharField(max_length=32, null=False, index=False)
+    model_id = CharField(max_length=32, null=False, index=True)
+    weight = IntegerField(default=100, index=False, help_text="Routing weight")
+    status = CharField(max_length=32, default="active", index=False)
+
+    class Meta:
+        db_table = "tenant_model_group_mapping"
+        primary_key = CompositeKey("group_id", "provider_id", "instance_id", "model_id")
+
 def alter_db_add_column(migrator, table_name, column_name, column_type):
     try:
         migrate(migrator.add_column(table_name, column_name, column_type))
