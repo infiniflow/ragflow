@@ -823,6 +823,7 @@ def delete_kb_task():
     # running task while keeping prior progress so it can be resumed.
     wipe_arg = (request.args.get("wipe", "true") or "true").strip().lower()
     wipe = wipe_arg not in ("false", "0", "no", "off")
+    logging.info("unbind_task: kb=%s task_type=%s wipe=%s", kb_id, pipeline_task_type, wipe)
 
     def cancel_task(task_id):
         REDIS_CONN.set(f"{task_id}-cancel", "x")
@@ -841,6 +842,7 @@ def delete_kb_task():
                 # for resolution / community detection.
                 from rag.graphrag.phase_markers import clear_phase_markers
                 clear_phase_markers(kb_id)
+                logging.info("unbind_task: cleared GraphRAG artefacts and phase markers for kb=%s", kb_id)
         case PipelineTaskType.RAPTOR:
             kb_task_id_field = "raptor_task_id"
             task_id = kb.raptor_task_id

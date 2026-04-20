@@ -338,6 +338,10 @@ class Extractor:
                         graph.add_edge(nodes[0], neighbor, **edge0_attrs)
                     else:
                         graph.add_edge(nodes[0], neighbor, **edge1_attrs)
+                        # Track the redirected neighbour so a later node1 in this
+                        # merge that also points to it takes the merge branch
+                        # above instead of overwriting the edge we just added.
+                        node0_neighbors.add(neighbor)
             graph.remove_node(node1)
         node0_attrs["description"] = await self._handle_entity_relation_summary(nodes[0], node0_attrs["description"], task_id=task_id)
         graph.nodes[nodes[0]].update(node0_attrs)

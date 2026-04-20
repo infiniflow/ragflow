@@ -824,6 +824,7 @@ def test_unbind_task_wipe_flag(monkeypatch):
     assert res["code"] == module.RetCode.SUCCESS, res
     assert ("graph-task-cancel", "x") in cancelled, cancelled
     assert deleted == [], f"docStore.delete must not be called when wipe=false: {deleted}"
+    assert cleared_phase_markers == [], f"phase markers must not be cleared when wipe=false: {cleared_phase_markers}"
 
     # wipe=false also honoured for raptor.
     _set_request_args(
@@ -848,6 +849,7 @@ def test_unbind_task_wipe_flag(monkeypatch):
     res = route()
     assert res["code"] == module.RetCode.SUCCESS, res
     assert len(deleted) == 1, f"default wipe must call docStore.delete once: {deleted}"
+    assert cleared_phase_markers == ["kb-1"], f"default wipe must clear phase markers once: {cleared_phase_markers}"
 
 
 @pytest.mark.p3
