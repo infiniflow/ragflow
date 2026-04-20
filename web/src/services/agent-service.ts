@@ -8,24 +8,22 @@ import { registerNextServer } from '@/utils/register-server';
 import request from '@/utils/request';
 
 const {
-  getCanvasSSE,
-  setCanvas,
-  listCanvas,
+  createAgent,
+  updateAgent: updateAgentApi,
+  listAgents,
+  deleteAgent,
   resetCanvas,
-  removeCanvas,
   runCanvas,
-  listTemplates,
+  listAgentTemplate,
   testDbConnect,
   getInputElements,
   debug,
-  settingCanvas,
   uploadCanvasFile,
   trace,
   inputForm,
   fetchVersionList,
   fetchVersion,
   fetchCanvas,
-  fetchAgentAvatar,
   fetchAgentLogs,
   fetchExternalAgentInputs,
   prompt,
@@ -38,12 +36,8 @@ const methods = {
     url: fetchCanvas,
     method: 'get',
   },
-  getCanvasSSE: {
-    url: getCanvasSSE,
-    method: 'get',
-  },
-  setCanvas: {
-    url: setCanvas,
+  createAgent: {
+    url: createAgent,
     method: 'post',
   },
   fetchVersionList: {
@@ -54,24 +48,24 @@ const methods = {
     url: fetchVersion,
     method: 'get',
   },
-  listCanvas: {
-    url: listCanvas,
+  listAgents: {
+    url: listAgents,
     method: 'get',
   },
   resetCanvas: {
     url: resetCanvas,
     method: 'post',
   },
-  removeCanvas: {
-    url: removeCanvas,
-    method: 'post',
+  deleteAgent: {
+    url: deleteAgent,
+    method: 'delete',
   },
   runCanvas: {
     url: runCanvas,
     method: 'post',
   },
-  listTemplates: {
-    url: listTemplates,
+  listAgentTemplate: {
+    url: listAgentTemplate,
     method: 'get',
   },
   testDbConnect: {
@@ -86,10 +80,6 @@ const methods = {
     url: debug,
     method: 'post',
   },
-  settingCanvas: {
-    url: settingCanvas,
-    method: 'post',
-  },
   uploadCanvasFile: {
     url: uploadCanvasFile,
     method: 'post',
@@ -100,10 +90,6 @@ const methods = {
   },
   inputForm: {
     url: inputForm,
-    method: 'get',
-  },
-  fetchAgentAvatar: {
-    url: fetchAgentAvatar,
     method: 'get',
   },
   fetchAgentLogs: {
@@ -134,6 +120,20 @@ const methods = {
 
 const agentService = registerNextServer<keyof typeof methods>(methods);
 
+export const updateAgent = (
+  agentId: string,
+  params: {
+    title?: string;
+    dsl?: Record<string, any>;
+    avatar?: string;
+    description?: string | null;
+    permission?: string;
+    release?: string;
+  },
+) => {
+  return request(updateAgentApi(agentId), { method: 'put', data: params });
+};
+
 export const fetchTrace = (data: { canvas_id: string; message_id: string }) => {
   return request.get(methods.trace.url, { params: data });
 };
@@ -149,7 +149,7 @@ export const fetchAgentLogsById = (canvasId: string, sessionId: string) => {
 };
 
 export const fetchPipeLineList = (params: IPipeLineListRequest) => {
-  return request.get(api.listCanvas, { params: params });
+  return request.get(api.listAgents, { params: params });
 };
 
 export const fetchWebhookTrace = (
