@@ -80,8 +80,18 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/run_raptor`,
   traceRaptor: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/trace_raptor`,
-  unbindPipelineTask: ({ kb_id, type }: { kb_id: string; type: string }) =>
-    `${webAPI}/kb/unbind_task?kb_id=${kb_id}&pipeline_task_type=${type}`,
+  unbindPipelineTask: ({
+    kb_id,
+    type,
+    wipe,
+  }: {
+    kb_id: string;
+    type: string;
+    wipe?: boolean;
+  }) => {
+    const base = `${webAPI}/kb/unbind_task?kb_id=${kb_id}&pipeline_task_type=${type}`;
+    return wipe === false ? `${base}&wipe=false` : base;
+  },
   pipelineRerun: `${webAPI}/canvas/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,

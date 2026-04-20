@@ -779,6 +779,78 @@ def test_unbind_task_branch_matrix(monkeypatch):
 
 
 @pytest.mark.p3
+def test_unbind_task_wipe_flag(monkeypatch):
+    """wipe=false must cancel the task without deleting graph/raptor artefacts.
+
+    This is the backend plumbing that allows GraphRAG tasks to be paused and
+    resumed without losing the partial knowledge graph.
+    """
+    module = _load_kb_module(monkeypatch)
+    route = inspect.unwrap(module.delete_kb_task)
+
+    kb = SimpleNamespace(
+        id="kb-1",
+        tenant_id="tenant-1",
+        graphrag_task_id="graph-task",
+        raptor_task_id="raptor-task",
+        mindmap_task_id="mindmap-task",
+    )
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
+
+    cancelled = []
+    deleted = []
+    update_payloads = []
+    monkeypatch.setattr(module.REDIS_CONN, "set", lambda key, value: cancelled.append((key, value)))
+    monkeypatch.setattr(module.search, "index_name", lambda _tenant_id: "idx")
+    monkeypatch.setattr(module.settings, "docStoreConn", SimpleNamespace(delete=lambda *args, **_kwargs: deleted.append(args)))
+
+    def _record_update(_kb_id, payload):
+        update_payloads.append((_kb_id, payload))
+        return True
+
+    monkeypatch.setattr(module.KnowledgebaseService, "update_by_id", _record_update)
+
+    # wipe=false: task is cancelled but graph artefacts are preserved.
+    _set_request_args(
+        monkeypatch,
+        module,
+        {
+            "kb_id": "kb-1",
+            "pipeline_task_type": module.PipelineTaskType.GRAPH_RAG,
+            "wipe": "false",
+        },
+    )
+    res = route()
+    assert res["code"] == module.RetCode.SUCCESS, res
+    assert ("graph-task-cancel", "x") in cancelled, cancelled
+    assert deleted == [], f"docStore.delete must not be called when wipe=false: {deleted}"
+
+    # wipe=false also honoured for raptor.
+    _set_request_args(
+        monkeypatch,
+        module,
+        {
+            "kb_id": "kb-1",
+            "pipeline_task_type": module.PipelineTaskType.RAPTOR,
+            "wipe": "0",
+        },
+    )
+    res = route()
+    assert res["code"] == module.RetCode.SUCCESS, res
+    assert deleted == [], f"docStore.delete must not be called when wipe=0: {deleted}"
+
+    # Default (no wipe arg) preserves historical behaviour: graph IS deleted.
+    _set_request_args(
+        monkeypatch,
+        module,
+        {"kb_id": "kb-1", "pipeline_task_type": module.PipelineTaskType.GRAPH_RAG},
+    )
+    res = route()
+    assert res["code"] == module.RetCode.SUCCESS, res
+    assert len(deleted) == 1, f"default wipe must call docStore.delete once: {deleted}"
+
+
+@pytest.mark.p3
 def test_check_embedding_similarity_threshold_matrix_unit(monkeypatch):
     module = _load_kb_module(monkeypatch)
     route = inspect.unwrap(module.check_embedding)

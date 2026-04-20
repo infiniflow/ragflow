@@ -110,8 +110,18 @@ export const useUnBindTask = () => {
   const { id } = useParams();
   const { mutateAsync: handleUnbindTask } = useMutation({
     mutationKey: [DatasetKey.pauseGenerate],
-    mutationFn: async ({ type }: { type: ProcessingType }) => {
-      const { data } = await deletePipelineTask({ kb_id: id as string, type });
+    mutationFn: async ({
+      type,
+      wipe,
+    }: {
+      type: ProcessingType;
+      wipe?: boolean;
+    }) => {
+      const { data } = await deletePipelineTask({
+        kb_id: id as string,
+        type,
+        wipe,
+      });
       if (data.code === 0) {
         message.success(t('message.operated'));
         // queryClient.invalidateQueries({
@@ -161,8 +171,13 @@ export const useDatasetGenerate = () => {
     }) => {
       const { data } = await agentService.cancelDataflow(task_id);
 
+      // For GraphRAG, pause must preserve partial progress (subgraphs,
+      // entities, relations, community reports) so the next run_graphrag
+      // call can resume instead of redoing hours of LLM extraction. Raptor
+      // keeps the prior wipe-on-pause behaviour for now.
       const unbindData = await handleUnbindTask({
         type: GenerateTypeMap[type as GenerateType],
+        wipe: type === GenerateType.KnowledgeGraph ? false : undefined,
       });
       if (data.code === 0 && unbindData.code === 0) {
         // message.success(t('message.operated'));

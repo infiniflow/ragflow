@@ -316,11 +316,13 @@ export const listPipelineDatasetLogs = (
 export function deletePipelineTask({
   kb_id,
   type,
+  wipe,
 }: {
   kb_id: string;
   type: ProcessingType;
+  wipe?: boolean;
 }) {
-  return request.delete(api.unbindPipelineTask({ kb_id, type }));
+  return request.delete(api.unbindPipelineTask({ kb_id, type, wipe }));
 }
 
 export default kbService;

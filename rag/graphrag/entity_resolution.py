@@ -159,8 +159,14 @@ class EntityResolution(Extractor):
         connect_graph = nx.Graph()
         connect_graph.add_edges_from(resolution_result)
 
+        # Merges must be serialized: _merge_graph_nodes mutates the shared
+        # nx.Graph (add_edge/remove_node) which is not thread-safe and can
+        # cause "dictionary keys changed during iteration" even with the
+        # neighbor snapshot, when two components share a node.
+        merge_semaphore = asyncio.Semaphore(1)
+
         async def limited_merge_nodes(graph, nodes, change):
-            async with semaphore:
+            async with merge_semaphore:
                 await self._merge_graph_nodes(graph, nodes, change, task_id)
 
         tasks = []

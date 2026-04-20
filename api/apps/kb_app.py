@@ -817,6 +817,13 @@ def delete_kb_task():
     if not pipeline_task_type or pipeline_task_type not in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP]:
         return get_error_data_result(message="Invalid task type")
 
+    # "wipe" controls whether the task's persisted artefacts (knowledge graph,
+    # raptor summaries, ...) are deleted from the doc store.  Default is true
+    # to preserve the historical behaviour; pass wipe=false to cancel the
+    # running task while keeping prior progress so it can be resumed.
+    wipe_arg = (request.args.get("wipe", "true") or "true").strip().lower()
+    wipe = wipe_arg not in ("false", "0", "no", "off")
+
     def cancel_task(task_id):
         REDIS_CONN.set(f"{task_id}-cancel", "x")
 
@@ -828,13 +835,19 @@ def delete_kb_task():
             task_id = kb.graphrag_task_id
             kb_task_finish_at = "graphrag_task_finish_at"
             cancel_task(task_id)
-            settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
+            if wipe:
+                settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation", "community_report"]}, search.index_name(kb.tenant_id), kb_id)
+                # Wiping the graph invalidates any phase-completion markers
+                # for resolution / community detection.
+                from rag.graphrag.phase_markers import clear_phase_markers
+                clear_phase_markers(kb_id)
         case PipelineTaskType.RAPTOR:
             kb_task_id_field = "raptor_task_id"
             task_id = kb.raptor_task_id
             kb_task_finish_at = "raptor_task_finish_at"
             cancel_task(task_id)
-            settings.docStoreConn.delete({"raptor_kwd": ["raptor"]}, search.index_name(kb.tenant_id), kb_id)
+            if wipe:
+                settings.docStoreConn.delete({"raptor_kwd": ["raptor"]}, search.index_name(kb.tenant_id), kb_id)
         case PipelineTaskType.MINDMAP:
             kb_task_id_field = "mindmap_task_id"
             task_id = kb.mindmap_task_id
