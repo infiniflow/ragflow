@@ -49,6 +49,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       prompt_config: {
         quote: true,
         keyword: false,
+        include_document_metadata: true,
         tts: false,
         use_kg: false,
         refine_multiturn: true,
@@ -103,6 +104,10 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     );
     const nextData = {
       ...data,
+      prompt_config: {
+        include_document_metadata: true,
+        ...(data.prompt_config ?? {}),
+      },
       ...llmSettingEnabledValues,
     };
 

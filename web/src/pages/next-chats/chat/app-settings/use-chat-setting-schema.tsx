@@ -20,6 +20,7 @@ export function useChatSettingSchema() {
     keyword: z.boolean(),
     tts: z.boolean(),
     empty_response: z.string().optional(),
+    include_document_metadata: z.boolean().optional(),
     prologue: z.string().optional(),
     system: z.string().min(1, { message: t('systemMessage') }),
     refine_multiturn: z.boolean(),

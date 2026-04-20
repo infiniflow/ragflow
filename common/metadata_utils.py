@@ -19,6 +19,14 @@ from typing import Any, Callable, Dict
 
 import json_repair
 
+
+def is_metadata_filter_enabled(meta_data_filter: dict | None) -> bool:
+    if not meta_data_filter:
+        return False
+
+    return meta_data_filter.get("method") in {"auto", "semi_auto", "manual"}
+
+
 def convert_conditions(metadata_condition):
     if metadata_condition is None:
         metadata_condition = {}

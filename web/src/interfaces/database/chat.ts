@@ -10,6 +10,7 @@ export interface IDocumentDownloadInfo {
 
 export interface PromptConfig {
   empty_response: string;
+  include_document_metadata?: boolean;
   parameters: Parameter[];
   prologue: string;
   system: string;

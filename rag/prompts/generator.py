@@ -101,7 +101,7 @@ def message_fit_in(msg, max_length=4000):
     return max_length, msg
 
 
-def kb_prompt(kbinfos, max_tokens, hash_id=False):
+def kb_prompt(kbinfos, max_tokens, hash_id=False, include_document_metadata=True):
     from api.db.services.document_service import DocumentService
     from api.db.services.doc_metadata_service import DocMetadataService
 
@@ -119,13 +119,14 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
             logging.warning(f"Not all the retrieval into prompt: {len(knowledges)}/{kwlg_len}")
             break
 
-    docs = DocumentService.get_by_ids([get_value(ck, "doc_id", "document_id") for ck in kbinfos["chunks"][:chunks_num]])
-
-    docs_with_meta = {}
-    for d in docs:
-        meta = DocMetadataService.get_document_metadata(d.id)
-        docs_with_meta[d.id] = meta if meta else {}
-    docs = docs_with_meta
+    docs = {}
+    if include_document_metadata:
+        documents = DocumentService.get_by_ids([get_value(ck, "doc_id", "document_id") for ck in kbinfos["chunks"][:chunks_num]])
+        docs_with_meta = {}
+        for d in documents:
+            meta = DocMetadataService.get_document_metadata(d.id)
+            docs_with_meta[d.id] = meta if meta else {}
+        docs = docs_with_meta
 
     def draw_node(k, line):
         if line is not None and not isinstance(line, str):
