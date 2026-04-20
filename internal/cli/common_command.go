@@ -373,6 +373,109 @@ func (c *RAGFlowClient) ShowModel(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+func (c *RAGFlowClient) SetDefaultModel(cmd *Command) (ResponseIf, error) {
+
+	modelType, ok := cmd.Params["model_type"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model_type not provided")
+	}
+
+	compositeModelName, ok := cmd.Params["composite_model_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model_name not provided")
+	}
+
+	var providerName, instanceName, modelName string
+	names := strings.Split(compositeModelName, "/")
+	if len(names) != 3 {
+		return nil, fmt.Errorf("model name must be in format 'provider/instance/model'")
+	}
+	providerName = names[0]
+	instanceName = names[1]
+	modelName = names[2]
+
+	payload := map[string]interface{}{
+		"model_type":     modelType,
+		"model_provider": providerName,
+		"model_instance": instanceName,
+		"model_name":     modelName,
+	}
+
+	resp, err := c.HTTPClient.Request("PATCH", "/models", true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set default model: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to set default model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to set default model: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) ResetDefaultModel(cmd *Command) (ResponseIf, error) {
+
+	modelType, ok := cmd.Params["model_type"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model_type not provided")
+	}
+
+	payload := map[string]interface{}{
+		"model_type": modelType,
+	}
+
+	resp, err := c.HTTPClient.Request("PATCH", "/models", true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reset default model: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to reset default model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to reset default model: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) ListDefaultModels(cmd *Command) (ResponseIf, error) {
+	resp, err := c.HTTPClient.Request("GET", "/models", true, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list default models: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list default models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to list default models: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // readPassword reads password from terminal without echoing
 func ReadPassword() (string, error) {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {

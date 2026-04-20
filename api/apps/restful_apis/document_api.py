@@ -523,8 +523,7 @@ def _get_docs_with_request(req, dataset_id:str):
     if doc_id:
         if not DocumentService.query(id=doc_id, kb_id=dataset_id):
             return RetCode.DATA_ERROR, f"You don't own the document {doc_id}.", [], 0
-        # id provided, ignore other filters
-        doc_ids_filter = [doc_id]
+        doc_ids_filter = [doc_id] # id provided, ignore other filters
     if doc_name and not DocumentService.query(name=doc_name, kb_id=dataset_id):
         return RetCode.DATA_ERROR, f"You don't own the document {doc_name}.", [], 0
 
@@ -632,7 +631,6 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
     if metadata_condition or metadata:
         metas = DocMetadataService.get_flatted_meta_by_kbs([kb_id])
 
-    doc_ids_filter = None
     if metadata_condition:
         doc_ids_filter = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
         if metadata_condition.get("conditions") and not doc_ids_filter:
