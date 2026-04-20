@@ -79,8 +79,10 @@ from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.exceptions import TaskCanceledException
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
+from rag.utils.table_es_metadata import aggregate_table_manual_doc_metadata, merge_table_parser_config_from_kb
 
 BATCH_SIZE = 64
+
 
 FACTORY = {
     "general": naive,
@@ -268,6 +270,16 @@ async def build_chunks(task, progress_callback):
         logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
         raise
 
+    # Table parser column roles / mode are stored on the dataset (KB) parser_config;
+    # chunk tasks carry document-level parser_config only — merge KB keys so manual roles apply.
+    parser_config_for_chunk = merge_table_parser_config_from_kb(task)
+    if task.get("parser_id", "").lower() == "table" and task.get("kb_parser_config"):
+        logging.debug(
+            "[TASK_EXECUTOR_DEBUG] table parser: merged KB keys into parser_config for chunk; "
+            f"mode={parser_config_for_chunk.get('table_column_mode')}, "
+            f"roles_keys={list((parser_config_for_chunk.get('table_column_roles') or {}).keys())}"
+        )
+
     try:
         async with chunk_limiter:
             cks = await thread_pool_exec(
@@ -279,7 +291,7 @@ async def build_chunks(task, progress_callback):
                 lang=task["language"],
                 callback=progress_callback,
                 kb_id=task["kb_id"],
-                parser_config=task["parser_config"],
+                parser_config=parser_config_for_chunk,
                 tenant_id=task["tenant_id"],
             )
         logging.info("Chunking({}) {}/{} done".format(timer() - st, task["location"], task["name"]))
@@ -1216,6 +1228,45 @@ async def do_handle_task(task):
         )
 
         DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0)
+
+        # Table parser (manual): push metadata/both column values to document-level metadata for UI / chat filters
+        if task.get("parser_id", "").lower() == "table":
+            eff_pc = merge_table_parser_config_from_kb(task)
+            logging.debug(
+                f"[TABLE_META_DEBUG] table post-index: table_column_mode={eff_pc.get('table_column_mode')!r}"
+            )
+            if eff_pc.get("table_column_mode") == "manual":
+                try:
+                    agg = aggregate_table_manual_doc_metadata(chunks, task)
+                    logging.debug(f"[TABLE_META_DEBUG] aggregated metadata: {agg}")
+                    if not agg:
+                        logging.debug(
+                            "[TABLE_META_DEBUG] skip update_document_metadata: empty aggregate (see logs above)"
+                        )
+                    if agg:
+                        existing = DocMetadataService.get_document_metadata(task_doc_id)
+                        existing = existing if isinstance(existing, dict) else {}
+                        merged = update_metadata_to(dict(existing), agg)
+                        logging.debug(
+                            f"[TABLE_META_DEBUG] calling update_document_metadata for doc_id={task_doc_id}, "
+                            f"meta_fields keys={list(merged.keys())}"
+                        )
+                        try:
+                            DocMetadataService.update_document_metadata(task_doc_id, merged)
+                            logging.debug("[TABLE_META_DEBUG] update_document_metadata succeeded")
+                        except Exception as ue:
+                            logging.error(
+                                "update_document_metadata failed (table parser, doc_id=%s): %s",
+                                task_doc_id,
+                                ue,
+                                exc_info=True,
+                            )
+                except Exception as e:
+                    logging.exception(
+                        "Table parser document metadata aggregation failed (doc_id=%s): %s",
+                        task_doc_id,
+                        e,
+                    )
 
         progress_callback(msg="Indexing done ({:.2f}s).".format(timer() - start_ts))
 
