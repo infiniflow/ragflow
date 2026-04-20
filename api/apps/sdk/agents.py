@@ -30,7 +30,7 @@ from api.db import CanvasCategory
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.file_service import FileService
 from common.constants import RetCode
-from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json
+from api.utils.api_utils import get_data_error_result, get_json_result
 from quart import request, Response
 from rag.utils.redis_conn import REDIS_CONN
 
