@@ -319,7 +319,7 @@ class Extractor:
             node1_attrs = graph.nodes[node1]
             node0_attrs["description"] += f"{GRAPH_FIELD_SEP}{node1_attrs['description']}"
             node0_attrs["source_id"] = sorted(set(node0_attrs["source_id"] + node1_attrs["source_id"]))
-            for neighbor in graph.neighbors(node1):
+            for neighbor in list(graph.neighbors(node1)):
                 change.removed_edges.add(get_from_to(node1, neighbor))
                 if neighbor not in nodes_set:
                     edge1_attrs = graph.get_edge_data(node1, neighbor)
