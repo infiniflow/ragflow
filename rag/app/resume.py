@@ -2494,9 +2494,9 @@ def chunk(filename, binary, tenant_id, from_page=0, to_page=100000,
 
         # Build document chunks (with coordinate info)
         chunks = _build_chunk_document(filename, resume, lang)
-        callback(0.9, f"Document chunk construction complete, {len(chunks)} chunks total")
+        callback(0.79, f"Document chunk construction complete, {len(chunks)} chunks total")
 
-        callback(1.0, "Resume parsing complete")
+        callback(0.8, "Resume parsing complete")
         return chunks
 
     except Exception as e:

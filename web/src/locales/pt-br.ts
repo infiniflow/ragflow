@@ -316,6 +316,10 @@ export default {
       paddleocrOptions: 'Opções do PaddleOCR',
       paddleocrApiUrl: 'URL da API do PaddleOCR',
       paddleocrApiUrlTip: 'A URL do endpoint da API para o serviço PaddleOCR',
+      paddleocrRequestTimeout: 'Tempo limite da requisição (segundos)',
+      paddleocrRequestTimeoutTip:
+        'PDFs grandes ou livros podem exigir um tempo limite maior.',
+      paddleocrRequestTimeoutPlaceholder: '600',
       paddleocrApiUrlPlaceholder: 'ex: https://servidor-paddleocr.com/api',
       paddleocrAccessToken: 'Token de Acesso do AI Studio',
       paddleocrAccessTokenTip:
@@ -326,6 +330,9 @@ export default {
         'Algoritmo a ser usado para a análise do PaddleOCR',
       paddleocrSelectAlgorithm: 'Selecionar algoritmo',
       paddleocrModelNamePlaceholder: 'ex: paddleocr-do-ambiente-1',
+      paddleocrPresetManaged:
+        'Essas configurações são definidas pelo preset do modelo PaddleOCR selecionado.',
+      paddleocrPresetManagedValue: 'Definido pelo preset',
     },
     chunk: {
       chunk: 'Fragmento',
@@ -571,6 +578,12 @@ export default {
         apiUrl: 'URL da API do PaddleOCR',
         apiUrlPlaceholder:
           'Por exemplo: https://paddleocr-server.com/layout-parsing',
+        requestTimeout: 'Tempo limite da requisição (segundos)',
+        requestTimeoutTip:
+          'PDFs grandes ou livros podem exigir um tempo limite maior.',
+        requestTimeoutPlaceholder: '600',
+        requestTimeoutMin:
+          'O tempo limite da requisição deve ser de pelo menos 1 segundo',
         accessToken: 'Token de acesso do AI Studio',
         accessTokenPlaceholder: 'Seu token do AI Studio (opcional)',
         algorithm: 'Algoritmo do PaddleOCR',

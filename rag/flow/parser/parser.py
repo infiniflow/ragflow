@@ -497,12 +497,19 @@ class Parser(ProcessBase):
             ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, parser_model_name)
             ocr_model = LLMBundle(tenant_id, ocr_model_config)
             pdf_parser = ocr_model.mdl
+            request_timeout = conf.get("paddleocr_request_timeout")
+            logging.debug(
+                "Resolved PaddleOCR request timeout=%s (source=%s)",
+                request_timeout,
+                "conf.paddleocr_request_timeout" if request_timeout is not None else "parser default",
+            )
 
             lines, _ = pdf_parser.parse_pdf(
                 filepath=name,
                 binary=blob,
                 callback=self.callback,
                 parse_method="pipeline",
+                request_timeout=request_timeout,
             )
             bboxes = []
             for line in lines or []:

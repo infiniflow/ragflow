@@ -295,11 +295,11 @@ class PaddleOCRParser(RAGFlowPdfParser):
         # Process response
         sections = self._transfer_to_sections(result, algorithm=cfg.algorithm, parse_method=parse_method)
         if callback:
-            callback(0.9, f"[PaddleOCR] done, sections: {len(sections)}")
+            callback(0.78, f"[PaddleOCR] done, sections: {len(sections)}")
 
         tables = self._transfer_to_tables(result)
         if callback:
-            callback(1.0, f"[PaddleOCR] done, tables: {len(tables)}")
+            callback(0.8, f"[PaddleOCR] done, tables: {len(tables)}")
 
         return sections, tables
 
@@ -351,19 +351,26 @@ class PaddleOCRParser(RAGFlowPdfParser):
         """Send request to PaddleOCR API and parse response."""
         # Build payload
         payload = self._build_payload(data, self.file_type, config)
+        request_timeout = config.request_timeout or self.request_timeout
+        try:
+            request_timeout = int(request_timeout)
+        except (TypeError, ValueError):
+            request_timeout = self.request_timeout
+        if request_timeout <= 0:
+            request_timeout = self.request_timeout
 
         # Prepare headers
         headers = {"Content-Type": "application/json", "Client-Platform": "ragflow"}
         if config.access_token:
             headers["Authorization"] = f"token {config.access_token}"
 
-        self.logger.info("[PaddleOCR] invoking API")
+        self.logger.info(f"[PaddleOCR] invoking API timeout={request_timeout}s")
         if callback:
             callback(0.1, "[PaddleOCR] submitting request")
 
         # Send request
         try:
-            resp = requests.post(config.api_url, json=payload, headers=headers, timeout=self.request_timeout)
+            resp = requests.post(config.api_url, json=payload, headers=headers, timeout=request_timeout)
             resp.raise_for_status()
         except Exception as exc:
             if callback:
@@ -377,7 +384,7 @@ class PaddleOCRParser(RAGFlowPdfParser):
             raise RuntimeError(f"[PaddleOCR] response is not JSON: {exc}") from exc
 
         if callback:
-            callback(0.8, "[PaddleOCR] response received")
+            callback(0.75, "[PaddleOCR] response received")
 
         # Validate response format
         if response_data.get("errorCode") != 0 or not isinstance(response_data.get("result"), dict):

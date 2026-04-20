@@ -71,6 +71,7 @@ export default function DatasetSettings() {
       language: 'English',
       parser_config: {
         layout_recognize: DocumentType.DeepDOC,
+        paddleocr_request_timeout: 600,
         chunk_token_num: 512,
         delimiter: `\n`,
         enable_children: false,

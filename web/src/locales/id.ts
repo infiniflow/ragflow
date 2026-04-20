@@ -321,6 +321,10 @@ export default {
       paddleocrOptions: 'Opsi PaddleOCR',
       paddleocrApiUrl: 'URL API PaddleOCR',
       paddleocrApiUrlTip: 'URL endpoint API layanan PaddleOCR',
+      paddleocrRequestTimeout: 'Waktu tunggu permintaan (detik)',
+      paddleocrRequestTimeoutTip:
+        'PDF besar atau buku mungkin memerlukan waktu tunggu yang lebih lama.',
+      paddleocrRequestTimeoutPlaceholder: '600',
       paddleocrApiUrlPlaceholder:
         'Contoh: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Token Akses AI Studio',
@@ -576,6 +580,11 @@ export default {
         apiUrl: 'URL API PaddleOCR',
         apiUrlPlaceholder:
           'Contoh: https://paddleocr-server.com/layout-parsing',
+        requestTimeout: 'Waktu tunggu permintaan (detik)',
+        requestTimeoutTip:
+          'PDF besar atau buku mungkin memerlukan waktu tunggu yang lebih lama.',
+        requestTimeoutPlaceholder: '600',
+        requestTimeoutMin: 'Waktu tunggu permintaan harus setidaknya 1 detik',
         accessToken: 'Token Akses AI Studio',
         accessTokenPlaceholder: 'Token AI Studio Anda (opsional)',
         algorithm: 'Algoritma PaddleOCR',

@@ -1712,14 +1712,14 @@ class RAGFlowPdfParser:
         start = timer()
         self._table_transformer_job(zoomin, auto_rotate=auto_rotate_tables)
         if callback:
-            callback(0.83, "Table analysis ({:.2f}s)".format(timer() - start))
+            callback(0.74, "Table analysis ({:.2f}s)".format(timer() - start))
 
         start = timer()
         self._text_merge()
         self._concat_downward()
         self._naive_vertical_merge(zoomin)
         if callback:
-            callback(0.92, "Text merged ({:.2f}s)".format(timer() - start))
+            callback(0.79, "Text merged ({:.2f}s)".format(timer() - start))
 
         start = timer()
         tbls, figs = self._extract_table_figure(True, zoomin, True, True, True)

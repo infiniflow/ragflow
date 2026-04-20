@@ -448,6 +448,10 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       paddleocrOptions: 'PaddleOCR-Optionen',
       paddleocrApiUrl: 'PaddleOCR API-URL',
       paddleocrApiUrlTip: 'API-Endpunkt-URL des PaddleOCR-Dienstes',
+      paddleocrRequestTimeout: 'Anfrage-Timeout (Sekunden)',
+      paddleocrRequestTimeoutTip:
+        'Große PDFs oder Bücher benötigen möglicherweise ein höheres Timeout.',
+      paddleocrRequestTimeoutPlaceholder: '600',
       paddleocrApiUrlPlaceholder:
         'Zum Beispiel: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio-Zugriffstoken',
@@ -1229,6 +1233,12 @@ Beispiel: Virtual Hosted Style`,
         apiUrl: 'PaddleOCR API-URL',
         apiUrlPlaceholder:
           'Zum Beispiel: https://paddleocr-server.com/layout-parsing',
+        requestTimeout: 'Anfrage-Timeout (Sekunden)',
+        requestTimeoutTip:
+          'Große PDFs oder Bücher benötigen möglicherweise ein höheres Timeout.',
+        requestTimeoutPlaceholder: '600',
+        requestTimeoutMin:
+          'Das Anfrage-Timeout muss mindestens 1 Sekunde betragen',
         accessToken: 'AI Studio-Zugriffstoken',
         accessTokenPlaceholder: 'Ihr AI Studio-Token (optional)',
         algorithm: 'PaddleOCR-Algorithmus',
