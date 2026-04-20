@@ -18,10 +18,15 @@ package infinity
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/utility"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
@@ -32,20 +37,13 @@ const (
 	TAG_FLD      = "tag_feas"
 )
 
-type SortType int
-
-const (
-	SortAsc  SortType = 0
-	SortDesc SortType = 1
-)
-
-type OrderByExpr struct {
-	Fields []OrderByField
-}
-
-type OrderByField struct {
-	Field string
-	Type  SortType
+// floatToString formats a float like Python's str() - adds ".0" if needed
+func floatToString(f float64) string {
+	s := strconv.FormatFloat(f, 'f', -1, 64)
+	if !strings.Contains(s, ".") && !strings.Contains(s, "e") {
+		s = s + ".0"
+	}
+	return s
 }
 
 // fieldKeyword checks if field is a keyword field
@@ -161,7 +159,7 @@ type SearchRequest struct {
 	Offset      int
 	Limit       int
 	Filter      map[string]interface{}
-	OrderBy     *OrderByExpr
+	OrderBy     *types.OrderByExpr
 }
 
 // SearchResponse Infinity search response
@@ -196,14 +194,9 @@ type FusionExpr struct {
 	FusionParams map[string]interface{}
 }
 
-// Search executes search (supports unified engine.SearchRequest only)
-func (e *infinityEngine) Search(ctx context.Context, req interface{}) (interface{}, error) {
-	switch searchReq := req.(type) {
-	case *types.SearchRequest:
-		return e.searchUnified(ctx, searchReq)
-	default:
-		return nil, fmt.Errorf("invalid search request type: %T", req)
-	}
+// Search executes search with unified types.SearchRequest
+func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	return e.searchUnified(ctx, req)
 }
 
 // convertSelectFields converts field names to Infinity format
@@ -355,7 +348,7 @@ func convertMatchingField(fieldWeightStr string) string {
 }
 
 // searchUnified handles the unified engine.SearchRequest
-func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchRequest) (*types.SearchResponse, error) {
+func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	if len(req.IndexNames) == 0 {
 		return nil, fmt.Errorf("index names cannot be empty")
 	}
@@ -366,12 +359,13 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 		topK = 1024
 	}
 
-	pageSize := req.Size
+	pageSize := req.Limit
 	if pageSize <= 0 {
 		pageSize = 30
 	}
 
-	offset := (req.Page - 1) * pageSize
+	// Use Offset/Limit if provided (matching Python's offset, limit passed to dataStore.search)
+	offset := req.Offset
 	if offset < 0 {
 		offset = 0
 	}
@@ -394,6 +388,11 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 	// Build output columns
 	// For metadata tables, only use: id, kb_id, meta_fields
 	// For chunk tables, use all the standard fields
+	// Matching Python's search() fields (rag/nlp/search.py L92-95):
+	// ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
+	//  "doc_id", "chunk_order_int", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
+	//  "question_kwd", "question_tks", "doc_type_kwd",
+	//  "available_int", "content_with_weight", "mom_id", PAGERANK_FLD, TAG_FLD, "row_id()"]
 	var outputColumns []string
 	if isMetadataTable {
 		outputColumns = []string{"id", "kb_id", "meta_fields"}
@@ -402,7 +401,6 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 			"id",
 			"doc_id",
 			"kb_id",
-			"content",
 			"content_ltks",
 			"content_with_weight",
 			"title_tks",
@@ -412,16 +410,40 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 			"important_kwd",
 			"position_int",
 			"page_num_int",
+			"top_int",
+			"chunk_order_int",
+			"create_timestamp_flt",
+			"knowledge_graph_kwd",
+			"question_kwd",
+			"question_tks",
 			"doc_type_kwd",
 			"mom_id",
-			"question_tks",
+			"tag_kwd",
 		}
 	}
 	outputColumns = convertSelectFields(outputColumns)
 
-	// Determine if text or vector search
-	hasTextMatch := req.Question != ""
-	hasVectorMatch := !req.KeywordOnly && len(req.Vector) > 0
+	// Determine if text or vector search based on MatchExprs (matching Python: matchExprs = [matchText, matchDense, fusionExpr])
+	hasTextMatch := false
+	hasVectorMatch := false
+	var matchText *MatchTextExpr
+	var matchDense *types.MatchDenseExpr
+	if req.MatchExprs != nil && len(req.MatchExprs) > 0 {
+		for _, expr := range req.MatchExprs {
+			if expr == nil {
+				continue
+			}
+			switch e := expr.(type) {
+			case *MatchTextExpr:
+				hasTextMatch = true
+				matchText = e
+			case *types.MatchDenseExpr:
+				hasVectorMatch = true
+				matchDense = e
+			}
+		}
+	}
+	// If MatchExprs is empty/nil, both remain false (keyword-only search won't happen)
 
 	// Determine score column
 	scoreColumn := ""
@@ -438,12 +460,30 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 		} else if hasVectorMatch {
 			outputColumns = append(outputColumns, "similarity()")
 		}
-		// Add pagerank field
-		outputColumns = append(outputColumns, PAGERANK_FLD)
+		// Add pagerank and tag fields (matching Python L142-143)
+		if !contains(outputColumns, PAGERANK_FLD) {
+			outputColumns = append(outputColumns, PAGERANK_FLD)
+		}
+		if !contains(outputColumns, TAG_FLD) {
+			outputColumns = append(outputColumns, TAG_FLD)
+		}
+	}
+
+	// Add row_id() - Infinity requires the function syntax for internal row ID
+	if !contains(outputColumns, "row_id") && !contains(outputColumns, "row_id()") {
+		outputColumns = append(outputColumns, "row_id()")
 	}
 
 	// Remove duplicates
 	outputColumns = convertSelectFields(outputColumns)
+
+	// Add vector column if vector search (matching Python: chunk.get(vector_column))
+	// This is needed for insert_citations() in Dialog flow
+	if hasVectorMatch && req.MatchExprs != nil && len(req.MatchExprs) > 1 {
+		if matchDense, ok := req.MatchExprs[1].(*types.MatchDenseExpr); ok {
+			outputColumns = append(outputColumns, matchDense.VectorColumnName)
+		}
+	}
 
 	// Build filter string
 	var filterParts []string
@@ -470,40 +510,89 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 		}
 	}
 
-	// Only add available_int filter when there's text/vector match or AvailableInt is explicitly set
+	// Only add available_int filter when there's text/vector match or available_int is explicitly set in MetaDataFilter
 	// This matches Python's behavior where chunk_list doesn't filter by available_int
-	if !isMetadataTable && (hasTextMatch || hasVectorMatch || req.AvailableInt != nil) {
-		if req.AvailableInt != nil {
-			filterParts = append(filterParts, fmt.Sprintf("available_int=%d", *req.AvailableInt))
+	if !isMetadataTable && (hasTextMatch || hasVectorMatch) {
+		if req.MetaDataFilter != nil {
+			if availInt, ok := req.MetaDataFilter["available_int"]; ok {
+				filterParts = append(filterParts, fmt.Sprintf("available_int=%v", availInt))
+			} else {
+				filterParts = append(filterParts, "available_int=1")
+			}
 		} else {
 			filterParts = append(filterParts, "available_int=1")
 		}
 	}
 
-	filterStr := strings.Join(filterParts, " AND ")
-
-	// Build order_by
-	var orderBy *OrderByExpr
-	if req.OrderBy != "" {
-		orderBy = &OrderByExpr{Fields: []OrderByField{}}
-		// Parse order_by field and direction
-		fields := strings.Split(req.OrderBy, ",")
-		for _, field := range fields {
-			field = strings.TrimSpace(field)
-			if strings.HasSuffix(field, " desc") || strings.HasSuffix(field, " DESC") {
-				fieldName := strings.TrimSuffix(field, " desc")
-				fieldName = strings.TrimSuffix(fieldName, " DESC")
-				orderBy.Fields = append(orderBy.Fields, OrderByField{Field: fieldName, Type: SortDesc})
+	// Handle MetaDataFilter - skip if method is "auto" or "semi_auto" (requires LLM)
+	// Note: auto/semi_auto filtering is handled upstream in metadata_filter.go before searchUnified is called
+	// For simple filters, convert them to filter conditions
+	// Note: For chunk tables (not metadata table), skip kb_id filter as tables are already separated per KB
+	// This matches Python's infinity_conn.py L155-157
+	if req.MetaDataFilter != nil {
+		if method, ok := req.MetaDataFilter["method"].(string); ok {
+			if method == "auto" || method == "semi_auto" {
+				// Skip silently - upstream already handled this and logged if LLM failed
 			} else {
-				orderBy.Fields = append(orderBy.Fields, OrderByField{Field: field, Type: SortAsc})
+				// Process other filter conditions
+				for k, v := range req.MetaDataFilter {
+					if k == "method" || k == "kb_id" {
+						continue
+					}
+					filterParts = append(filterParts, fmt.Sprintf("%s='%v'", k, v))
+				}
+			}
+		} else {
+			// No method specified, treat as simple key-value filters
+			for k, v := range req.MetaDataFilter {
+				// Skip kb_id for chunk tables (matching Python behavior)
+				// kb_id is NOT added to filter for chunk tables since tables are already per-KB
+				if k == "kb_id" {
+					continue
+				}
+				// Handle slice values (like kb_id=[]string{"uuid"}) properly
+				// to avoid formatting as "[uuid]" instead of "uuid"
+				switch val := v.(type) {
+				case []string:
+					if len(val) == 1 {
+						filterParts = append(filterParts, fmt.Sprintf("%s='%s'", k, val[0]))
+					} else if len(val) > 1 {
+						filterParts = append(filterParts, fmt.Sprintf("%s IN ('%s')", k, strings.Join(val, "', '")))
+					}
+				case []int:
+					if len(val) == 1 {
+						filterParts = append(filterParts, fmt.Sprintf("%s=%d", k, val[0]))
+					} else if len(val) > 1 {
+						strs := make([]string, len(val))
+						for i, n := range val {
+							strs[i] = strconv.Itoa(n)
+						}
+						filterParts = append(filterParts, fmt.Sprintf("%s IN (%s)", k, strings.Join(strs, ",")))
+					}
+				default:
+					filterParts = append(filterParts, fmt.Sprintf("%s='%v'", k, v))
+				}
 			}
 		}
 	}
+
+	filterStr := strings.Join(filterParts, " AND ")
+
+	// Build order_by (matching Python's orderBy = OrderByExpr())
+	orderBy := req.OrderBy
 
 	// rank_feature support
 	var rankFeature map[string]float64
 	if req.RankFeature != nil {
 		rankFeature = req.RankFeature
+	}
+
+	// Extract fusionExpr from MatchExprs (index 2)
+	var fusionExpr *types.FusionExpr
+	if len(req.MatchExprs) > 2 {
+		if fe, ok := req.MatchExprs[2].(*types.FusionExpr); ok {
+			fusionExpr = fe
+		}
 	}
 
 	// Results from all tables
@@ -539,6 +628,25 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 		minMatch := 0.3
 		hasDocIDFilter := len(req.DocIDs) > 0
 
+		// Extract question text and vector data from MatchExprs for reuse in retry loops
+		var questionText string
+		var vectorData []float64
+		var textTopN int = topK  // Default to topK if no MatchTextExpr
+		var originalQuery string // Extract original_query from MatchTextExpr for Infinity extra_options
+		if matchText != nil {
+			questionText = matchText.MatchingText
+			textTopN = int(matchText.TopN) // Use MatchTextExpr.TopN (typically 100) for text match
+			// Extract original_query from ExtraOptions
+			if matchText.ExtraOptions != nil {
+				if oq, ok := matchText.ExtraOptions["original_query"].(string); ok {
+					originalQuery = oq
+				}
+			}
+		}
+		if matchDense != nil {
+			vectorData = matchDense.EmbeddingData
+		}
+
 		for _, tableName := range tableNames {
 			fmt.Printf("[DEBUG] Searching table: %s\n", tableName)
 			// Try to get table
@@ -549,7 +657,7 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 			}
 
 			// Build query for this table
-			result, err := e.executeTableSearch(db, tableName, outputColumns, req.Question, req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, req.SimilarityThreshold, minMatch)
+			result, err := e.executeTableSearch(db, tableName, outputColumns, questionText, vectorData, filterStr, topK, textTopN, pageSize, offset, orderBy, rankFeature, originalQuery, req.SimilarityThreshold, minMatch, fusionExpr, matchText)
 			if err != nil {
 				// Skip this table on error
 				continue
@@ -573,8 +681,8 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 					if err != nil {
 						continue
 					}
-					// Search without match - pass empty question
-					result, err := e.executeTableSearch(db, tableName, outputColumns, "", req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, req.SimilarityThreshold, 0.0)
+					// Search without match - pass empty question and vector
+					result, err := e.executeTableSearch(db, tableName, outputColumns, "", nil, filterStr, topK, topK, pageSize, offset, orderBy, rankFeature, "", req.SimilarityThreshold, 0.0, fusionExpr, nil)
 					if err != nil {
 						continue
 					}
@@ -590,8 +698,9 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 					if err != nil {
 						continue
 					}
-					result, err := e.executeTableSearch(db, tableName, outputColumns, req.Question, req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, lowerThreshold, 0.1)
+					result, err := e.executeTableSearch(db, tableName, outputColumns, questionText, vectorData, filterStr, topK, textTopN, pageSize, offset, orderBy, rankFeature, originalQuery, lowerThreshold, 0.1, fusionExpr, matchText)
 					if err != nil {
+						fmt.Printf("[DEBUG] executeTableSearch error for table %s: %v\n", tableName, err)
 						continue
 					}
 					allResults = append(allResults, result.Chunks...)
@@ -602,7 +711,7 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 	}
 
 	if hasTextMatch || hasVectorMatch {
-		allResults = calculateScores(allResults, scoreColumn, PAGERANK_FLD)
+		allResults = calculateScores(allResults, scoreColumn)
 	}
 
 	if hasTextMatch || hasVectorMatch {
@@ -633,30 +742,27 @@ func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchReq
 		allResults = allResults[:pageSize]
 	}
 
-	return &types.SearchResponse{
+	fmt.Printf("[INFO] searchUnified completed: returnedRows=%d, totalHits=%d, indexName=%s\n", len(allResults), totalHits, req.IndexNames[0])
+
+	return &types.SearchResult{
 		Chunks: allResults,
 		Total:  totalHits,
 	}, nil
 }
 
 // calculateScores calculates _score = score_column + pagerank
-func calculateScores(chunks []map[string]interface{}, scoreColumn, pagerankField string) []map[string]interface{} {
-	fmt.Printf("[DEBUG] calculateScores: scoreColumn=%s, pagerankField=%s\n", scoreColumn, pagerankField)
+// For Infinity: pagerank is included in _score by the database
+// For ES: pagerank is added separately via computeRankFeatureScores
+func calculateScores(chunks []map[string]interface{}, scoreColumn string) []map[string]interface{} {
+	fmt.Printf("[DEBUG] calculateScores: scoreColumn=%s\n", scoreColumn)
 	for i := range chunks {
 		score := 0.0
 		if scoreVal, ok := chunks[i][scoreColumn]; ok {
 			if f, ok := utility.ToFloat64(scoreVal); ok {
 				score += f
-				fmt.Printf("[DEBUG]   chunk[%d]: %s=%f\n", i, scoreColumn, f)
-			}
-		}
-		if pagerankVal, ok := chunks[i][pagerankField]; ok {
-			if f, ok := utility.ToFloat64(pagerankVal); ok {
-				score += f
 			}
 		}
 		chunks[i]["_score"] = score
-		fmt.Printf("[DEBUG]   chunk[%d]: _score=%f\n", i, score)
 	}
 	return chunks
 }
@@ -708,9 +814,14 @@ func getScore(chunk map[string]interface{}) float64 {
 }
 
 // executeTableSearch executes search on a single table
-func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName string, outputColumns []string, question string, vector []float64, filterStr string, topK, pageSize, offset int, orderBy *OrderByExpr, rankFeature map[string]float64, similarityThreshold float64, minMatch float64) (*types.SearchResponse, error) {
-	// Debug logging
-	fmt.Printf("[DEBUG] executeTableSearch: question=%s, topK=%d, pageSize=%d, similarityThreshold=%f, filterStr=%s\n", question, topK, pageSize, similarityThreshold, filterStr)
+func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName string, outputColumns []string, question string, vector []float64, filterStr string, topK, textTopN, pageSize, offset int, orderBy *types.OrderByExpr, rankFeature map[string]float64, originalQuery string, similarityThreshold float64, minMatch float64, fusionExpr *types.FusionExpr, matchTextExpr *MatchTextExpr) (*types.SearchResult, error) {
+	fmt.Printf("[START] executeTableSearch: tableName=%s, question=%s, topK=%d, pageSize=%d, offset=%d, similarityThreshold=%f, minMatch=%f\n",
+		tableName, question, topK, pageSize, offset, similarityThreshold, minMatch)
+
+	// Debug: log text fields if available
+	if matchTextExpr != nil && len(matchTextExpr.Fields) > 0 {
+		fmt.Printf("[DEBUG] executeTableSearch using matchTextExpr.Fields: %v\n", matchTextExpr.Fields)
+	}
 
 	// Get table
 	table, err := db.GetTable(tableName)
@@ -724,15 +835,20 @@ func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName str
 
 	table = table.Output(outputColumns)
 
-	// Define text fields
-	textFields := []string{
-		"title_tks^10",
-		"title_sm_tks^5",
-		"important_kwd^30",
-		"important_tks^20",
-		"question_tks^20",
-		"content_ltks^2",
-		"content_sm_ltks",
+	// Use matchTextExpr.Fields if provided, otherwise fallback to default fields (matching Python infinity_conn.py L183)
+	var textFields []string
+	if matchTextExpr != nil && len(matchTextExpr.Fields) > 0 {
+		textFields = matchTextExpr.Fields
+	} else {
+		textFields = []string{
+			"title_tks^10",
+			"title_sm_tks^5",
+			"important_kwd^30",
+			"important_tks^20",
+			"question_tks^20",
+			"content_ltks^2",
+			"content_sm_ltks",
+		}
 	}
 
 	// Convert field names for Infinity
@@ -743,55 +859,60 @@ func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName str
 	}
 	fields := strings.Join(convertedFields, ",")
 
-	// Format question
-	formattedQuestion := formatQuestion(question)
-
-	// Compute full filter with filter_fulltext for MatchDense extra_options
-	var fullFilterWithFulltext string
-	if filterStr != "" && fields != "" {
-		fullFilterWithFulltext = fmt.Sprintf("(%s) AND FILTER_FULLTEXT('%s', '%s')", filterStr, fields, formattedQuestion)
-	}
+	// Question is already formatted by QueryBuilder (MatchTextExpr.MatchingText),
+	// so use it directly without re-formatting to avoid double-formatting issues.
+	formattedQuestion := question
 
 	// Add text match if question is provided
 	if hasTextMatch {
 		extraOptions := map[string]string{
-			"topn":                 fmt.Sprintf("%d", topK),
 			"minimum_should_match": fmt.Sprintf("%d%%", int(minMatch*100)),
+		}
+
+		// Add filter to extraOptions (matching Python's infinity_conn.py L181-182)
+		// Python adds filter_cond to MatchTextExpr.extra_options if filter_cond is truthy
+		// filterStr is built from condition and includes available_int=1 (and doc_id IN (...) if hasDocIDFilter)
+		if filterStr != "" {
+			extraOptions["filter"] = filterStr
 		}
 
 		// Add rank_features support
 		if rankFeature != nil {
 			var rankFeaturesList []string
 			for featureName, weight := range rankFeature {
-				rankFeaturesList = append(rankFeaturesList, fmt.Sprintf("%s^%s^%f", TAG_FLD, featureName, weight))
+				rankFeaturesList = append(rankFeaturesList, fmt.Sprintf("%s^%s^%.0f", TAG_FLD, featureName, weight))
 			}
 			if len(rankFeaturesList) > 0 {
 				extraOptions["rank_features"] = strings.Join(rankFeaturesList, ",")
 			}
 		}
 
-		table = table.MatchText(fields, formattedQuestion, topK, extraOptions)
-		fmt.Printf("[DEBUG] MatchTextExpr: fields=%s, matching_text=%s, topn=%d, extra_options=%v\n", fields, formattedQuestion, topK, extraOptions)
+		// Add original_query if provided (matching Python's extra_options)
+		if originalQuery != "" {
+			extraOptions["original_query"] = originalQuery
+		}
+
+		table = table.MatchText(fields, formattedQuestion, textTopN, extraOptions)
+		fmt.Printf("[DEBUG] MatchTextExpr: fields=%s, matching_text=%s, topn=%d, extra_options=%v\n", fields, formattedQuestion, textTopN, extraOptions)
 	}
 
 	// Add vector match if provided
 	if hasVectorMatch {
 		vectorSize := len(vector)
 		fieldName := fmt.Sprintf("q_%d_vec", vectorSize)
-		threshold := similarityThreshold
-		if threshold <= 0 {
-			threshold = 0.1 // default
+
+		// Build filter for MatchDense - matching Python's approach
+		// Python builds: (available_int=1) AND filter_fulltext('fields', 'question')
+		filterStr := "available_int=1"
+		if hasTextMatch {
+			// Build filter_fulltext expression like Python does
+			fieldsStr := strings.Join(convertedFields, ",")
+			filterFulltext := fmt.Sprintf("filter_fulltext('%s', '%s')", fieldsStr, question)
+			filterStr = fmt.Sprintf("(%s) AND %s", filterStr, filterFulltext)
 		}
 		extraOptions := map[string]string{
-			// Add threshold
-			"threshold": fmt.Sprintf("%f", threshold),
-		}
-
-		// Add filter with filter_fulltext, add to MatchDense extra_options
-		// This is the full filter that includes both available_int=1 AND filter_fulltext
-		if fullFilterWithFulltext != "" {
-			extraOptions["filter"] = fullFilterWithFulltext
-			fmt.Printf("[DEBUG] filterStr=%s, fullFilterWithFulltext=%s\n", filterStr, fullFilterWithFulltext)
+			"threshold": floatToString(similarityThreshold),
+			"filter":    filterStr,
 		}
 
 		fmt.Printf("[DEBUG] MatchDenseExpr: field=%s, topn=%d, extra_options=%v\n", fieldName, topK, extraOptions)
@@ -800,14 +921,24 @@ func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName str
 	}
 
 	// Add fusion (for text+vector combination)
-	if hasTextMatch && hasVectorMatch {
+	if hasTextMatch && hasVectorMatch && fusionExpr != nil {
+		fusionMethod := fusionExpr.Method
+		fusionTopK := fusionExpr.TopN
+		if fusionTopK == 0 {
+			fusionTopK = topK
+		}
+		// Python adds normalize="atan" for weighted_sum to avoid zero scores for last doc
+		// Reference: memory/utils/infinity_conn.py L209-211
 		fusionParams := map[string]interface{}{
 			"normalize": "atan",
-			"weights":   "0.05,0.95",
 		}
-		fmt.Printf("[DEBUG] FusionExpr: method=weighted_sum, topn=%d, fusion_params=%v\n", topK, fusionParams)
-		fmt.Printf("[DEBUG] Before Fusion - table has MatchText=%v, MatchDense=%v\n", hasTextMatch, hasVectorMatch)
-		table = table.Fusion("weighted_sum", topK, fusionParams)
+		if fusionExpr.FusionParams != nil {
+			for k, v := range fusionExpr.FusionParams {
+				fusionParams[k] = v
+			}
+		}
+		fmt.Printf("[DEBUG] FusionExpr: method=%s, topn=%d, fusion_params=%v\n", fusionMethod, fusionTopK, fusionParams)
+		table = table.Fusion(fusionMethod, fusionTopK, fusionParams)
 	}
 
 	// Add order_by if provided
@@ -815,7 +946,7 @@ func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName str
 		var sortFields [][2]interface{}
 		for _, field := range orderBy.Fields {
 			sortType := infinity.SortTypeAsc
-			if field.Type == SortDesc {
+			if field.Type == types.SortDesc {
 				sortType = infinity.SortTypeDesc
 			}
 			sortFields = append(sortFields, [2]interface{}{field.Field, sortType})
@@ -836,6 +967,9 @@ func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName str
 		table = table.Offset(offset)
 	}
 
+	// Request total_hits_count from Infinity (matching Python's builder.option({"total_hits_count": True}))
+	table = table.Option(map[string]interface{}{"total_hits_count": true})
+
 	// Execute query - get the raw query and execute via SDK
 	result, err := e.executeQuery(table)
 	if err != nil {
@@ -847,19 +981,7 @@ func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName str
 	if hasTextMatch {
 		scoreColumn = "SCORE"
 	}
-	fmt.Printf("[DEBUG] executeTableSearch returned %d chunks\n", len(result.Chunks))
-
-	result.Chunks = calculateScores(result.Chunks, scoreColumn, PAGERANK_FLD)
-
-	// Debug after calculateScores
-	for i, chunk := range result.Chunks {
-		chunkID := ""
-		if id, ok := chunk["id"]; ok {
-			chunkID = fmt.Sprintf("%v", id)
-		}
-		score := getScore(chunk)
-		fmt.Printf("[DEBUG]   chunk[%d]: id=%s, _score=%f\n", i, chunkID, score)
-	}
+	result.Chunks = calculateScores(result.Chunks, scoreColumn)
 
 	// Sort by score
 	result.Chunks = sortByScore(result.Chunks, len(result.Chunks))
@@ -867,27 +989,28 @@ func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName str
 	if len(result.Chunks) > pageSize {
 		result.Chunks = result.Chunks[:pageSize]
 	}
-	result.Total = int64(len(result.Chunks))
+	// Note: result.Total is already set correctly by executeQuery from ExtraInfo
+	// Do not overwrite with len(result.Chunks) as that would lose the correct total
+	fmt.Printf("[END] executeTableSearch: returned %d chunks, total=%d\n", len(result.Chunks), result.Total)
 
 	return result, nil
 }
 
 // executeQuery executes the query and returns results
-func (e *infinityEngine) executeQuery(table *infinity.Table) (*types.SearchResponse, error) {
+func (e *infinityEngine) executeQuery(table *infinity.Table) (*types.SearchResult, error) {
 	// Use ToResult() to execute query
 	result, err := table.ToResult()
 	if err != nil {
 		return nil, fmt.Errorf("Infinity query failed: %w", err)
 	}
 
-	// Debug: print raw result info
-	// fmt.Printf("[DEBUG] Infinity raw result: %+v\n", result)
-
 	// Convert result to SearchResponse format
 	// The SDK returns QueryResult with Data as map[string][]interface{}
 	qr, ok := result.(*infinity.QueryResult)
 	if !ok {
-		return &types.SearchResponse{
+		fmt.Printf("[DEBUG] ToResult() returned unexpected type: %T (expected *infinity.QueryResult)\n", result)
+		fmt.Printf("[DEBUG] Result value: %+v\n", result)
+		return &types.SearchResult{
 			Chunks: []map[string]interface{}{},
 			Total:  0,
 		}, nil
@@ -902,6 +1025,63 @@ func (e *infinityEngine) executeQuery(table *infinity.Table) (*types.SearchRespo
 				chunks = append(chunks, make(map[string]interface{}))
 			}
 			chunks[i][colName] = val
+		}
+	}
+
+	// Handle Infinity SDK bug: meta_fields may come back as a single concatenated
+	// byte slice containing all rows' meta_fields instead of one per row.
+	// Detect this and split into individual values per row.
+	if metaFieldsData, ok := qr.Data["meta_fields"]; ok && len(metaFieldsData) > 0 {
+		if len(metaFieldsData) == 1 && len(chunks) > 1 {
+			// meta_fields is concatenated - need to split it
+			if metaFieldsBytes, ok := metaFieldsData[0].([]uint8); ok {
+				parsedMetaFields := parseLengthPrefixedJSON(metaFieldsBytes)
+				if len(parsedMetaFields) == len(chunks) {
+					// Successfully parsed - distribute to each chunk
+					for i, mf := range parsedMetaFields {
+						chunks[i]["meta_fields"] = mf
+					}
+					fmt.Printf("[DEBUG] Split concatenated meta_fields into %d individual values\n", len(parsedMetaFields))
+				} else if len(parsedMetaFields) > 0 {
+					// Partial match - assign first parsed to first chunk, clear others
+					fmt.Printf("[DEBUG] Parsed %d meta_fields but have %d chunks\n", len(parsedMetaFields), len(chunks))
+				}
+			}
+		}
+	}
+
+	// Handle ROW_ID - it may come back as concatenated raw int64 values (not JSON)
+	// Similar to meta_fields, Infinity may return it as a single concatenated byte slice
+	if rowIDData, ok := qr.Data["ROW_ID"]; ok && len(rowIDData) > 0 {
+		if len(rowIDData) == 1 && len(chunks) > 1 {
+			// ROW_ID is concatenated - need to split into individual int64 values
+			if rowIDBytes, ok := rowIDData[0].([]uint8); ok {
+				fmt.Printf("[DEBUG] ROW_ID concatenated bytes length: %d\n", len(rowIDBytes))
+				// Each row_id is an int64 (8 bytes)
+				const int64Size = 8
+				if len(rowIDBytes)%int64Size == 0 && len(rowIDBytes)/int64Size == len(chunks) {
+					for i := 0; i < len(chunks); i++ {
+						offset := i * int64Size
+						// Parse little-endian int64
+						val := int64(rowIDBytes[offset]) |
+							int64(rowIDBytes[offset+1])<<8 |
+							int64(rowIDBytes[offset+2])<<16 |
+							int64(rowIDBytes[offset+3])<<24 |
+							int64(rowIDBytes[offset+4])<<32 |
+							int64(rowIDBytes[offset+5])<<40 |
+							int64(rowIDBytes[offset+6])<<48 |
+							int64(rowIDBytes[offset+7])<<56
+						chunks[i]["ROW_ID"] = val
+					}
+					fmt.Printf("[DEBUG] Successfully parsed %d ROW_ID values from concatenated bytes\n", len(chunks))
+				} else {
+					fmt.Printf("[DEBUG] ROW_ID bytes length %d doesn't match %d chunks or isn't divisible by 8\n", len(rowIDBytes), len(chunks))
+					// Fallback: copy the value to all chunks
+					for i := range chunks {
+						chunks[i]["ROW_ID"] = rowIDData[0]
+					}
+				}
+			}
 		}
 	}
 
@@ -938,10 +1118,61 @@ func (e *infinityEngine) executeQuery(table *infinity.Table) (*types.SearchRespo
 		}
 	}
 
-	return &types.SearchResponse{
+	// Apply reverse field name mapping (matching Python's get_fields in infinity_conn.py L682-760)
+	// This undoes the convertSelectFields renaming so chunks use original field names
+	chunks = reverseConvertFields(chunks)
+
+	// Parse total_hits_count from ExtraInfo (matching Python's extra_result["total_hits_count"])
+	// ExtraInfo is a JSON string like: {"total_hits_count": 100}
+	var totalHits int64
+	if qr.ExtraInfo != "" {
+		var extraResult map[string]interface{}
+		if err := json.Unmarshal([]byte(qr.ExtraInfo), &extraResult); err == nil {
+			if count, ok := extraResult["total_hits_count"].(float64); ok {
+				totalHits = int64(count)
+			}
+		}
+	}
+
+	return &types.SearchResult{
 		Chunks: chunks,
-		Total:  int64(len(chunks)),
+		Total:  totalHits,
 	}, nil
+}
+
+// reverseConvertFields undoes the convertSelectFields renaming to restore original field names
+// This mirrors Python's get_fields() in infinity_conn.py (L682-760) which reverses field mappings
+func reverseConvertFields(chunks []map[string]interface{}) []map[string]interface{} {
+	if len(chunks) == 0 {
+		return chunks
+	}
+
+	// Fields that should NOT be in the output (Python L755-757 deletes these)
+	fieldsToRemove := []string{"docnm", "important_keywords", "questions", "content", "authors"}
+
+	for i := range chunks {
+		// Apply getFields first to handle the main field mappings
+		getFields(chunks[i])
+
+		// Handle row_id mapping (Python L723-724)
+		// Infinity returns "ROW_ID" (uppercase) - check all variants
+		if val, ok := chunks[i]["row_id"]; ok {
+			chunks[i]["row_id()"] = val
+			delete(chunks[i], "row_id")
+		} else if val, ok := chunks[i]["row_id()"]; ok {
+			chunks[i]["row_id()"] = val
+		} else if val, ok := chunks[i]["ROW_ID"]; ok {
+			chunks[i]["row_id()"] = val
+			delete(chunks[i], "ROW_ID")
+		}
+
+		// Remove original renamed fields (matching Python L755-757)
+		for _, field := range fieldsToRemove {
+			delete(chunks[i], field)
+		}
+	}
+
+	return chunks
 }
 
 // contains checks if slice contains string
@@ -952,4 +1183,320 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+// parseLengthPrefixedJSON parses Infinity's length-prefixed JSON format
+// Format: [4-byte length (little-endian)][JSON][4-byte length][JSON]...
+// Returns all JSON objects found
+func parseLengthPrefixedJSON(data []byte) []map[string]interface{} {
+	if len(data) < 4 {
+		return nil
+	}
+
+	var results []map[string]interface{}
+	offset := 0
+
+	for offset+4 <= len(data) {
+		// Read 4-byte length (little-endian)
+		length := uint32(data[offset]) | uint32(data[offset+1])<<8 |
+			uint32(data[offset+2])<<16 | uint32(data[offset+3])<<24
+
+		if length == 0 || offset+4+int(length) > len(data) {
+			break
+		}
+
+		jsonStart := offset + 4
+		jsonEnd := jsonStart + int(length)
+		jsonBytes := data[jsonStart:jsonEnd]
+
+		var result map[string]interface{}
+		if err := json.Unmarshal(jsonBytes, &result); err == nil {
+			results = append(results, result)
+		}
+
+		offset = jsonEnd
+	}
+
+	return results
+}
+
+// GetAggregation aggregates field values from search results.
+// Corresponds to Python's infinity_conn_base.py:get_aggregation() (L547-588).
+// For tag_kwd field, splits values by "###". For other fields, uses comma separation.
+// Returns list of {key, count} maps sorted by count descending.
+func GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{} {
+	if len(chunks) == 0 {
+		return []map[string]interface{}{}
+	}
+
+	// Check if field exists in first chunk (matching Python: field_name not in df.columns)
+	hasField := false
+	for _, chunk := range chunks {
+		if _, ok := chunk[fieldName]; ok {
+			hasField = true
+			break
+		}
+	}
+	if !hasField {
+		return []map[string]interface{}{}
+	}
+
+	// Count occurrences (matching Python: tag_counter = Counter())
+	tagCounts := make(map[string]int)
+	for _, chunk := range chunks {
+		value, ok := chunk[fieldName]
+		if !ok || value == nil {
+			continue
+		}
+
+		// Handle string value (matching Python L570-580)
+		if valueStr, ok := value.(string); ok {
+			if valueStr == "" {
+				continue
+			}
+
+			var tags []string
+			// Split by "###" for tag_kwd field (matching Python L572-573)
+			if fieldName == "tag_kwd" && strings.Contains(valueStr, "###") {
+				for _, tag := range strings.Split(valueStr, "###") {
+					tag = strings.TrimSpace(tag)
+					if tag != "" {
+						tags = append(tags, tag)
+					}
+				}
+			} else {
+				// Fallback to comma separation (matching Python L575-576)
+				for _, tag := range strings.Split(valueStr, ",") {
+					tag = strings.TrimSpace(tag)
+					if tag != "" {
+						tags = append(tags, tag)
+					}
+				}
+			}
+
+			for _, tag := range tags {
+				tagCounts[tag]++
+			}
+			continue
+		}
+
+		// Handle list value (matching Python L581-585)
+		if valueList, ok := value.([]interface{}); ok {
+			for _, item := range valueList {
+				if itemStr, ok := item.(string); ok {
+					tag := strings.TrimSpace(itemStr)
+					if tag != "" {
+						tagCounts[tag]++
+					}
+				}
+			}
+		}
+	}
+
+	if len(tagCounts) == 0 {
+		return []map[string]interface{}{}
+	}
+
+	// Convert to slice and sort by count descending (matching Python: tag_counter.most_common())
+	type tagCountPair struct {
+		tag   string
+		count int
+	}
+	pairs := make([]tagCountPair, 0, len(tagCounts))
+	for tag, count := range tagCounts {
+		pairs = append(pairs, tagCountPair{tag, count})
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		return pairs[i].count > pairs[j].count
+	})
+
+	// Convert to []map[string]interface{} directly
+	result := make([]map[string]interface{}, len(pairs))
+	for i, p := range pairs {
+		result[i] = map[string]interface{}{"key": p.tag, "count": p.count}
+	}
+
+	return result
+}
+
+// GetTotal extracts total hits from search response options.
+// Corresponds to Python's infinity_conn_base.py:get_total() (L488-491).
+// In Python: get_total returns res[1] (total count from tuple) or len(res) (DataFrame length).
+// In Go: total is stored in Options["total"] by searchUnified().
+func GetTotal(options map[string]interface{}) int64 {
+	if options == nil {
+		return 0
+	}
+	if total, ok := options["total"].(int64); ok {
+		return total
+	}
+	if total, ok := options["total"].(int); ok {
+		return int64(total)
+	}
+	return 0
+}
+
+// GetDocIDs extracts document IDs from search results.
+// Corresponds to Python's infinity_conn_base.py:get_doc_ids() (L493-496).
+// Extracts "id" field from each chunk and returns as a list.
+func GetDocIDs(chunks []map[string]interface{}) []string {
+	if len(chunks) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		if id, ok := chunk["id"].(string); ok {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// GetFields builds a field map from chunks, keyed by chunk ID.
+// Corresponds to Python's infinity_conn.py:get_fields() (L682-761) and search.py (line 170).
+// When fields is nil/empty, returns all fields from chunks.
+// When fields is provided, only includes those fields.
+func GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
+	result := make(map[string]map[string]interface{})
+	if len(chunks) == 0 {
+		return result
+	}
+
+	// If fields is provided, create a set for lookup
+	var fieldSet map[string]bool
+	if len(fields) > 0 {
+		fieldSet = make(map[string]bool)
+		for _, f := range fields {
+			fieldSet[f] = true
+		}
+	}
+
+	// Build field map for each chunk
+	for _, chunk := range chunks {
+		if id, ok := chunk["id"].(string); ok {
+			fieldMap := make(map[string]interface{})
+			// Include all fields or only the requested fields
+			for field, value := range chunk {
+				if fieldSet == nil || fieldSet[field] {
+					fieldMap[field] = value
+				}
+			}
+			result[id] = fieldMap
+		}
+	}
+	return result
+}
+
+// GetHighlight generates highlighted text snippets for search results.
+// Corresponds to Python's infinity_conn_base.py:get_highlight() (L502-545).
+// Matches keywords in text and wraps them with <em> tags.
+func GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
+	result := make(map[string]string)
+	if len(chunks) == 0 || len(keywords) == 0 {
+		return result
+	}
+
+	// Check if field exists
+	hasField := false
+	for _, chunk := range chunks {
+		if _, ok := chunk[fieldName]; ok {
+			hasField = true
+			break
+		}
+	}
+	if !hasField {
+		// Try alternative field names
+		if fieldName == "content_with_weight" {
+			if _, ok := chunks[0]["content"]; ok {
+				fieldName = "content"
+				hasField = true
+			}
+		}
+	}
+	if !hasField {
+		return result
+	}
+
+	emTag := regexp.MustCompile(`<em>[^<>]+</em>`)
+
+	for _, chunk := range chunks {
+		id := ""
+		if idVal, ok := chunk["id"].(string); ok {
+			id = idVal
+		}
+
+		txt, ok := chunk[fieldName].(string)
+		if !ok || txt == "" {
+			continue
+		}
+
+		// Check if already highlighted
+		if emTag.MatchString(txt) {
+			result[id] = txt
+			continue
+		}
+
+		// Replace newlines with spaces
+		txt = regexp.MustCompile(`[\r\n]`).ReplaceAllString(txt, " ")
+
+		// Split by sentence delimiters
+		delimiters := regexp.MustCompile(`[.?!;\n]`)
+		segments := delimiters.Split(txt, -1)
+
+		var highlightedSegments []string
+		for _, segment := range segments {
+			// Check if segment is English or contains keywords
+			isEnglish := isEnglishText(segment)
+			segmentToCheck := segment
+			if isEnglish {
+				// For English: match whole words with boundaries
+				for _, kw := range keywords {
+					re := regexp.MustCompile(`(^|[ .?/'\"\(\)!,:;-])` + regexp.QuoteMeta(kw) + `([ .?/'\"\(\)!,:;-]|$)`)
+					segmentToCheck = re.ReplaceAllString(segmentToCheck, "$1<em>"+kw+"</em>$2")
+				}
+			} else {
+				// For non-English: simple keyword replacement (sorted by length desc for longer matches first)
+				sortedKeywords := make([]string, len(keywords))
+				copy(sortedKeywords, keywords)
+				sort.Slice(sortedKeywords, func(i, j int) bool {
+					return len(sortedKeywords[i]) > len(sortedKeywords[j])
+				})
+				for _, kw := range sortedKeywords {
+					re := regexp.MustCompile(regexp.QuoteMeta(kw))
+					segmentToCheck = re.ReplaceAllString(segmentToCheck, "<em>"+kw+"</em>")
+				}
+			}
+
+			// Check if any keywords were highlighted
+			if emTag.MatchString(segmentToCheck) {
+				highlightedSegments = append(highlightedSegments, segmentToCheck)
+			}
+		}
+
+		if len(highlightedSegments) > 0 {
+			result[id] = "..." + strings.Join(highlightedSegments, "...") + "..."
+		} else {
+			result[id] = txt
+		}
+	}
+
+	return result
+}
+
+// isEnglishText checks if a text is primarily English.
+func isEnglishText(text string) bool {
+	englishCount := 0
+	totalCount := 0
+	for _, r := range text {
+		if unicode.IsLetter(r) {
+			totalCount++
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				englishCount++
+			}
+		}
+	}
+	if totalCount == 0 {
+		return false
+	}
+	return float64(englishCount)/float64(totalCount) > 0.5
 }

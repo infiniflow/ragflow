@@ -444,14 +444,18 @@ async def retrieval_test():
                 chat_id = search_config.get("chat_id", "")
                 if chat_id:
                     chat_model_config = get_model_config_by_type_and_name(user_id, LLMType.CHAT, search_config["chat_id"])
+                    logging.info(f"Retrieved chat model from search_config for meta_data_filter: chat_id={chat_id}, config={chat_model_config}")
                 else:
                     chat_model_config = get_tenant_default_model_by_type(user_id, LLMType.CHAT)
+                    logging.info(f"Retrieved tenant default chat model for meta_data_filter: config={chat_model_config}")
                 chat_mdl = LLMBundle(user_id, chat_model_config)
+                logging.info(f"Chat model bundle created: {chat_mdl}")
         else:
             meta_data_filter = req.get("meta_data_filter") or {}
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_model_config = get_tenant_default_model_by_type(user_id, LLMType.CHAT)
                 chat_mdl = LLMBundle(user_id, chat_model_config)
+                logging.info(f"Retrieved tenant default chat model for meta_data_filter (no search_id): config={chat_model_config}, bundle={chat_mdl}")
 
         if meta_data_filter:
             metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
@@ -478,11 +482,15 @@ async def retrieval_test():
             _question = await cross_languages(kb.tenant_id, None, _question, langs)
         if kb.tenant_embd_id:
             embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+            logging.info(f"Retrieved embedding model by tenant_embd_id: tenant_embd_id={kb.tenant_embd_id}, config={embd_model_config}")
         elif kb.embd_id:
             embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+            logging.info(f"Retrieved embedding model by embd_id: embd_id={kb.embd_id}, config={embd_model_config}")
         else:
             embd_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.EMBEDDING)
+            logging.info(f"Retrieved tenant default embedding model: config={embd_model_config}")
         embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
+        logging.info(f"Embedding model bundle created: {embd_mdl}")
 
         rerank_mdl = None
         if req.get("tenant_rerank_id"):
@@ -495,6 +503,7 @@ async def retrieval_test():
         if req.get("keyword", False):
             default_chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
             chat_mdl = LLMBundle(kb.tenant_id, default_chat_model_config)
+            logging.info(f"Retrieved shared chat model for keyword_extraction: config={default_chat_model_config}, bundle={chat_mdl}")
             _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
@@ -533,6 +542,7 @@ async def retrieval_test():
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
         ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
+        ranks["total"] = len(ranks["chunks"])
 
         for c in ranks["chunks"]:
             c.pop("vector", None)

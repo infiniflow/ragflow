@@ -191,6 +191,7 @@ class InfinityConnection(InfinityConnectionBase):
                         matchExpr.extra_options["minimum_should_match"] = str_minimum_should_match
 
                     # Add rank_feature support
+                    self.logger.debug(f"[RAGFLOW DEBUG] rank_feature value: {rank_feature}")
                     if rank_feature and "rank_features" not in matchExpr.extra_options:
                         # Convert rank_feature dict to Infinity's rank_features string format
                         # Format: "field^feature_name^weight,field^feature_name^weight"
@@ -208,6 +209,7 @@ class InfinityConnection(InfinityConnectionBase):
                 elif isinstance(matchExpr, MatchDenseExpr):
                     if filter_fulltext and "filter" not in matchExpr.extra_options:
                         matchExpr.extra_options.update({"filter": filter_fulltext})
+                    print(f"[RAGFLOW DEBUG] Python MatchDense extra_options: {matchExpr.extra_options}")
                     for k, v in matchExpr.extra_options.items():
                         if not isinstance(v, str):
                             matchExpr.extra_options[k] = str(v)

@@ -121,4 +121,13 @@ func init() {
 			httpClient: httpClient,
 		}
 	})
+	// Register SILICONFLOW chat model factory (OpenAI-compatible API)
+	RegisterChatModelFactory("SILICONFLOW", func(apiKey, apiBase, modelName string, httpClient *http.Client) entity.ChatModel {
+		return &openAIChatModel{
+			apiKey:     apiKey,
+			apiBase:    apiBase,
+			model:      modelName,
+			httpClient: httpClient,
+		}
+	})
 }

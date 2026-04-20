@@ -30,6 +30,15 @@ import (
 	"ragflow/internal/logger"
 )
 
+// engineType tracks the current document engine type (elasticsearch or infinity)
+var engineType string = "elasticsearch"
+
+// SetEngineType sets the document engine type for tokenizer behavior differences
+// For Infinity, fine_grained_tokenize returns input unchanged (matching Python's DOC_ENGINE_INFINITY behavior)
+func SetEngineType(t string) {
+	engineType = t
+}
+
 // PoolConfig configures the elastic analyzer pool
 type PoolConfig struct {
 	DictPath       string        // Path to dictionary files
@@ -408,7 +417,14 @@ func withAnalyzerResult[T any](fn func(*rag.Analyzer) (T, error)) (T, error) {
 
 // Tokenize tokenizes the text and returns a space-separated string of tokens
 // Example: "hello world" -> "hello world"
+//
+// NOTE: For Infinity engine, Python's tokenize returns input unchanged
+// (see rag_tokenizer.py L20-25: DOC_ENGINE_INFINITY returns line unchanged).
+// We match this behavior to ensure identical query construction.
 func Tokenize(text string) (string, error) {
+	if engineType == "infinity" {
+		return text, nil
+	}
 	return withAnalyzerResult(func(a *rag.Analyzer) (string, error) {
 		return a.Tokenize(text)
 	})
@@ -440,7 +456,14 @@ func SetFineGrained(fineGrained bool) {
 // FineGrainedTokenize performs fine-grained tokenization on space-separated tokens
 // Input: space-separated tokens (e.g., "hello world 测试")
 // Output: space-separated fine-grained tokens (e.g., "hello world 测 试")
+//
+// NOTE: For Infinity engine, Python's fine_grained_tokenize returns input unchanged
+// (see rag_tokenizer.py L27-32: DOC_ENGINE_INFINITY returns tks unchanged).
+// We match this behavior to ensure identical query construction.
 func FineGrainedTokenize(tokens string) (string, error) {
+	if engineType == "infinity" {
+		return tokens, nil
+	}
 	return withAnalyzerResult(func(a *rag.Analyzer) (string, error) {
 		return a.FineGrainedTokenize(tokens)
 	})

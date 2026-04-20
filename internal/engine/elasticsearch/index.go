@@ -154,7 +154,7 @@ func (e *elasticsearchEngine) CreateMetadata(ctx context.Context, indexName stri
 
 // InsertDataset inserts documents into a dataset index
 func (e *elasticsearchEngine) InsertDataset(ctx context.Context, documents []map[string]interface{}, indexName string, knowledgebaseID string) ([]string, error) {
-    // TODO
+	// TODO
 	return []string{}, nil
 }
 
@@ -163,7 +163,6 @@ func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, documents []ma
 	// TODO
 	return []string{}, nil
 }
-
 
 // UpdateDataset updates a chunk by condition
 func (e *elasticsearchEngine) UpdateDataset(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, tableNamePrefix string, knowledgebaseID string) error {

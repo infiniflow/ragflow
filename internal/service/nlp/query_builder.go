@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"ragflow/internal/engine/infinity"
 	"ragflow/internal/tokenizer"
@@ -198,7 +199,7 @@ func (qb *QueryBuilder) Traditional2Simplified(line string) string {
 // NeedFineGrainedTokenize determines if fine-grained tokenization is needed for a token.
 // Reference: rag/nlp/query.py L88-93
 func (qb *QueryBuilder) NeedFineGrainedTokenize(tk string) bool {
-	if len(tk) < 3 {
+	if utf8.RuneCountInString(tk) < 3 {
 		return false
 	}
 	if matched, _ := regexp.MatchString(`^[0-9a-z\.\+#_\*-]+$`, tk); matched {
@@ -208,8 +209,16 @@ func (qb *QueryBuilder) NeedFineGrainedTokenize(tk string) bool {
 }
 
 // Question builds a full-text query expression based on input text.
-// References Python FulltextQueryer.question method.
-// Currently, a simplified version, returns basic MatchTextExpr; future integration of term weight and synonyms.
+// References Python FulltextQueryer.question method (rag/nlp/query.py L41+).
+//
+// The method performs:
+//   - Text preprocessing: space handling, full-width to half-width, traditional to simplified Chinese
+//   - Tokenization: using rag_tokenizer
+//   - Term weight calculation: using TermWeightDealer
+//   - Synonym expansion: using Synonym.Lookup() (WordNet + custom dictionary)
+//   - Query building: with field boosting and proximity operators
+//
+// Returns MatchTextExpr for Infinity search and a list of extracted keywords.
 func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*infinity.MatchTextExpr, []string) {
 	// originalQuery stores the original input text for later use in query expression.
 	originalQuery := txt
@@ -299,10 +308,27 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 			tksW = tksW[:256]
 		}
 
-		// TODO: Synonym expansion (reference L61-67)
-		// For now, use empty synonyms
-		// syns is a placeholder for synonym expansion (currently empty).
+		// Synonym expansion (reference rag/nlp/query.py L61-67)
+		// Look up synonyms for each token
 		syns := make([]string, len(tksW))
+		for i, tw := range tksW {
+			tk := tw.tk
+			// Lookup synonyms (limit to 8 per Python)
+			tkSyns := qb.synonym.Lookup(tk, 8)
+			if len(tkSyns) > 0 {
+				// Format synonyms with weight boost: term^weight
+				var synParts []string
+				for _, syn := range tkSyns {
+					syn = strings.TrimSpace(syn)
+					if syn != "" {
+						synParts = append(synParts, fmt.Sprintf(`"%s"^%.1f`, syn, tw.w/4.0))
+					}
+				}
+				syns[i] = strings.Join(synParts, " ")
+			} else {
+				syns[i] = ""
+			}
+		}
 
 		// Build query parts
 		// Reference: rag/nlp/query.py L69-70
@@ -316,7 +342,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 				continue
 			}
 			// Format: (token^weight synonym)
-			q = append(q, fmt.Sprintf("(%s^%.4f %s)", tk, w, syns[i]))
+			q = append(q, fmt.Sprintf("(%s^%.1f %s)", tk, w, syns[i]))
 		}
 
 		// Add phrase queries for adjacent tokens
@@ -332,7 +358,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 			if tksW[i].w > maxW {
 				maxW = tksW[i].w
 			}
-			q = append(q, fmt.Sprintf(`"%s %s"^%.4f`, left, right, maxW*2))
+			q = append(q, fmt.Sprintf(`"%s %s"^%.1f`, left, right, maxW*2))
 		}
 
 		if len(q) == 0 {
@@ -504,7 +530,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*inf
 		// termParts collects query parts for each term in the segment.
 		var termParts []string
 		for _, termWeight := range terms {
-			termParts = append(termParts, fmt.Sprintf("(%s)^%.4f", termWeight.term, termWeight.weight))
+			termParts = append(termParts, fmt.Sprintf("(%s)^%.1f", termWeight.term, termWeight.weight))
 		}
 		// tmsStr is the query string for the current segment.
 		tmsStr := strings.Join(termParts, " ")

@@ -304,13 +304,13 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 
 	// Allowed fields for update (exclude ID fields)
 	allowedFields := map[string]bool{
-		"content":              true,
-		"important_keywords":    true,
-		"questions":             true,
-		"available":             true,
-		"positions":             true,
-		"tag_kwd":              true,
-		"tag_feas":             true,
+		"content":            true,
+		"important_keywords": true,
+		"questions":          true,
+		"available":          true,
+		"positions":          true,
+		"tag_kwd":            true,
+		"tag_feas":           true,
 	}
 	for field := range rawBody {
 		if field != "dataset_id" && field != "document_id" && field != "chunk_id" && !allowedFields[field] {

@@ -65,9 +65,9 @@ func (e *infinityEngine) CreateMetadata(ctx context.Context, indexName string) e
 	var columns infinity.TableSchema
 	for fieldName, fieldInfo := range schema {
 		col := infinity.ColumnDefinition{
-			Name:    fieldName,
+			Name:     fieldName,
 			DataType: fieldInfo.Type,
-			Default: fieldInfo.Default,
+			Default:  fieldInfo.Default,
 			// Comment: fieldInfo.Comment,
 		}
 		columns = append(columns, &col)
@@ -283,4 +283,3 @@ func (e *infinityEngine) UpdateMetadata(ctx context.Context, docID string, kbID 
 	logger.Info("InfinityConnection.UpdateMetadata completes", zap.String("tableName", tableName), zap.String("docID", docID))
 	return nil
 }
-

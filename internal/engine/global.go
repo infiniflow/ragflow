@@ -19,6 +19,7 @@ package engine
 import (
 	"fmt"
 	"ragflow/internal/server"
+	"ragflow/internal/tokenizer"
 	"sync"
 
 	"go.uber.org/zap"
@@ -30,13 +31,20 @@ import (
 
 var (
 	globalEngine DocEngine
+	engineType   EngineType
 	once         sync.Once
 )
+
+// GetEngineType returns the document engine type
+func GetEngineType() EngineType {
+	return engineType
+}
 
 // Init initializes document engine
 func Init(cfg *server.DocEngineConfig) error {
 	var initErr error
 	once.Do(func() {
+		engineType = EngineType(cfg.Type)
 		var err error
 		switch EngineType(cfg.Type) {
 		case EngineElasticsearch:
@@ -51,6 +59,11 @@ func Init(cfg *server.DocEngineConfig) error {
 			initErr = fmt.Errorf("failed to create doc engine: %w", err)
 			return
 		}
+
+		// Set engine type for tokenizer behavior differences
+		// For Infinity, fine_grained_tokenize returns input unchanged (matching Python's DOC_ENGINE_INFINITY)
+		tokenizer.SetEngineType(string(cfg.Type))
+
 		logger.Info("Doc engine initialized", zap.String("type", string(cfg.Type)))
 	})
 	return initErr

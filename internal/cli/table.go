@@ -293,5 +293,3 @@ func isHalfWidth(r rune) bool {
 	}
 	return false
 }
-
-

@@ -28,10 +28,30 @@ func NewTenantLLMDAO() *TenantLLMDAO {
 	return &TenantLLMDAO{}
 }
 
+// GetByID get tenant LLM by primary key ID
+func (dao *TenantLLMDAO) GetByID(id int64) (*entity.TenantLLM, error) {
+	var tenantLLM entity.TenantLLM
+	err := DB.Where("id = ?", id).First(&tenantLLM).Error
+	if err != nil {
+		return nil, err
+	}
+	return &tenantLLM, nil
+}
+
 // GetByTenantAndModelName get tenant LLM by tenant ID and model name
 func (dao *TenantLLMDAO) GetByTenantAndModelName(tenantID, providerName string, modelName string) (*entity.TenantLLM, error) {
 	var tenantLLM entity.TenantLLM
 	err := DB.Where("tenant_id = ? AND llm_factory = ? AND llm_name = ?", tenantID, providerName, modelName).First(&tenantLLM).Error
+	if err != nil {
+		return nil, err
+	}
+	return &tenantLLM, nil
+}
+
+// GetByTenantNameAndType get tenant LLM by tenant ID, model name, and model type (factory is optional)
+func (dao *TenantLLMDAO) GetByTenantNameAndType(tenantID, modelName string, modelType entity.ModelType) (*entity.TenantLLM, error) {
+	var tenantLLM entity.TenantLLM
+	err := DB.Where("tenant_id = ? AND llm_name = ? AND model_type = ?", tenantID, modelName, modelType).First(&tenantLLM).Error
 	if err != nil {
 		return nil, err
 	}

@@ -127,10 +127,10 @@ func (e *infinityEngine) TableExists(ctx context.Context, indexName string) (boo
 // fieldInfo represents a field in the infinity mapping schema
 type fieldInfo struct {
 	Type      string      `json:"type"`
-	Default  interface{} `json:"default"`
-	Analyzer interface{} `json:"analyzer"`  // string or []string
+	Default   interface{} `json:"default"`
+	Analyzer  interface{} `json:"analyzer"`   // string or []string
 	IndexType interface{} `json:"index_type"` // string or map
-	Comment  string      `json:"comment"`
+	Comment   string      `json:"comment"`
 }
 
 // orderedFields preserves the order of fields as defined in JSON
@@ -176,7 +176,7 @@ func (o *orderedFields) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// existsCondition builds a NOT EXISTS or field!='' condition
+// existsCondition builds a NOT EXISTS or field!=” condition
 func existsCondition(field string, tableColumns map[string]struct {
 	Type    string
 	Default interface{}
