@@ -152,7 +152,7 @@ const methods = {
   },
   documentFilter: {
     url: api.getDatasetFilter,
-    method: 'post',
+    method: 'get',
   },
   getMeta: {
     url: getMeta,
@@ -262,7 +262,7 @@ export const listDocument = (
 };
 
 export const documentFilter = (kb_id: string) =>
-  request.post(api.getDatasetFilter, { kb_id });
+  request.get(api.getDatasetFilter(kb_id), { params: {} });
 
 // Custom upload function that handles dynamic URL using axios directly
 export const uploadDocument = async (datasetId: string, formData: FormData) => {

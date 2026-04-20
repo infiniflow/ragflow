@@ -184,44 +184,6 @@ async def create():
         return server_error_response(e)
 
 
-@manager.route("/filter", methods=["POST"])  # noqa: F821
-@login_required
-async def get_filter():
-    req = await get_request_json()
-
-    kb_id = req.get("kb_id")
-    if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-    tenants = UserTenantService.query(user_id=current_user.id)
-    for tenant in tenants:
-        if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
-            break
-    else:
-        return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
-
-    keywords = req.get("keywords", "")
-
-    suffix = req.get("suffix", [])
-
-    run_status = req.get("run_status", [])
-    if run_status:
-        invalid_status = {s for s in run_status if s not in VALID_TASK_STATUS}
-        if invalid_status:
-            return get_data_error_result(message=f"Invalid filter run status conditions: {', '.join(invalid_status)}")
-
-    types = req.get("types", [])
-    if types:
-        invalid_types = {t for t in types if t not in VALID_FILE_TYPES}
-        if invalid_types:
-            return get_data_error_result(message=f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}")
-
-    try:
-        filter, total = DocumentService.get_filter_by_kb_id(kb_id, keywords, run_status, types, suffix)
-        return get_json_result(data={"total": total, "filter": filter})
-    except Exception as e:
-        return server_error_response(e)
-
-
 @manager.route("/infos", methods=["POST"])  # noqa: F821
 @login_required
 async def doc_infos():
