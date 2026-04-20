@@ -34,6 +34,8 @@ type Tenant struct {
 	TTSID           *string `gorm:"column:tts_id;size:256;index" json:"tts_id,omitempty"`
 	TenantTTSID     *int64  `gorm:"column:tenant_tts_id;index" json:"tenant_tts_id,omitempty"`
 	ParserIDs       string  `gorm:"column:parser_ids;size:256;not null;index" json:"parser_ids"`
+	OCRID           string  `gorm:"column:ocr_id;size:256;not null" json:"ocr_id"`
+	TenantOCRID     *int64  `gorm:"column:tenant_ocr_id" json:"tenant_ocr_id,omitempty"`
 	Credit          int64   `gorm:"column:credit;default:512;index" json:"credit"`
 	Status          *string `gorm:"column:status;size:1;index" json:"status,omitempty"`
 	BaseModel

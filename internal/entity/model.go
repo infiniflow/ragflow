@@ -145,11 +145,10 @@ type Model struct {
 
 // Provider represents an LLM provider
 type Provider struct {
-	Name        string           `json:"name"`
-	Tags        string           `json:"tags"`
-	URL         string           `json:"url"`
-	URLSuffix   models.URLSuffix `json:"url_suffix"`
-	Models      []*Model         `json:"models"`
+	Name        string            `json:"name"`
+	URL         map[string]string `json:"url"`
+	URLSuffix   models.URLSuffix  `json:"url_suffix"`
+	Models      []*Model          `json:"models"`
 	ModelDriver models.ModelDriver
 }
 
@@ -236,11 +235,24 @@ func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 	var providers []map[string]interface{}
 
 	for _, provider := range pm.Providers {
+
+		modelTypeSet := make(map[string]struct{})
+		for _, model := range provider.Models {
+			for _, modelType := range model.ModelTypes {
+				modelTypeSet[modelType] = struct{}{}
+			}
+		}
+
+		var modelTypes []string
+		for modelType := range modelTypeSet {
+			modelTypes = append(modelTypes, modelType)
+		}
+
 		providerData := map[string]interface{}{
-			"name":       provider.Name,
-			"tags":       provider.Tags,
-			"url":        provider.URL,
-			"url_suffix": provider.URLSuffix,
+			"name":        provider.Name,
+			"url":         provider.URL,
+			"model_types": modelTypes,
+			"url_suffix":  provider.URLSuffix,
 		}
 		providers = append(providers, providerData)
 	}
@@ -262,7 +274,6 @@ func (pm *ProviderManager) GetProviderByName(providerName string) (map[string]in
 
 	providerInfo := map[string]interface{}{
 		"name":         provider.Name,
-		"tags":         provider.Tags,
 		"base_url":     provider.URL,
 		"total_models": len(provider.Models),
 	}
