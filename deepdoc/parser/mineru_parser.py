@@ -543,7 +543,18 @@ class MinerUParser(RAGFlowPdfParser):
                     json_file = nested_alt
 
         if not json_file:
-            raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(p) for p in attempted)}")
+            # Fallback: recursively search for any *content_list.json file
+            # to handle MinerU versions that use different naming conventions
+            found = sorted(output_dir.rglob("*content_list.json"))
+            if found:
+                json_file = found[0]
+                subdir = json_file.parent
+                if len(found) > 1:
+                    self.logger.warning(f"[MinerU] Multiple content_list.json found, using: {json_file}")
+                else:
+                    self.logger.info(f"[MinerU] Found via recursive search: {json_file}")
+            else:
+                raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(p) for p in attempted)}")
 
         with open(json_file, "r", encoding="utf-8") as f:
             data = json.load(f)
