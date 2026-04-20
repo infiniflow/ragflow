@@ -18,7 +18,10 @@ package handler
 
 import (
 	"net/http"
+	"net/url"
 	"ragflow/internal/common"
+	"ragflow/internal/storage"
+	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 
@@ -216,6 +219,41 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 	})
 }
 
+// GetFileAncestors gets all ancestor folders of a file (matches Python /files/<file_id>/ancestors)
+// @Summary Get File Ancestors
+// @Description Get all ancestor folders in path from file to root
+// @Tags file
+// @Accept json
+// @Produce json
+// @Param id path string true "file ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/files/{id}/ancestors [get]
+func (h *FileHandler) GetFileAncestors(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	fileID := c.Param("id")
+	if fileID == "" {
+		jsonError(c, common.CodeBadRequest, "file id is required")
+		return
+	}
+
+	parentFolders, err := h.fileService.GetAllParentFolders(fileID)
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    gin.H{"parent_folders": parentFolders},
+		"message": common.CodeSuccess.Message(),
+	})
+}
+
 type CreateFolderRequest struct {
 	Name     string `json:"name" binding:"required"`
 	ParentID string `json:"parent_id"`
@@ -328,4 +366,185 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 
 	jsonError(c, common.CodeBadRequest, "Unsupported content type")
 	return
+}
+
+type DeleteFileRequest struct {
+	IDs []string `json:"ids" binding:"required,min=1"`
+}
+
+// DeleteFiles deletes files
+// @Summary Delete Files
+// @Description Delete files by IDs
+// @Tags file
+// @Accept json
+// @Produce json
+// @Param ids body DeleteFileRequest true "file IDs to delete"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/files [delete]
+func (h *FileHandler) DeleteFiles(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req DeleteFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeBadRequest, err.Error())
+		return
+	}
+
+	success, message := h.fileService.DeleteFiles(c.Request.Context(), user.ID, req.IDs)
+	if !success {
+		jsonError(c, common.CodeBadRequest, message)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    true,
+		"message": common.CodeSuccess.Message(),
+	})
+}
+
+// MoveFileRequest represents the request body for move files operation
+type MoveFileRequest struct {
+	SrcFileIDs []string `json:"src_file_ids" binding:"required,min=1"`
+	DestFileID string   `json:"dest_file_id"`
+	NewName    string   `json:"new_name" binding:"max=255"`
+}
+
+// MoveFiles moves and/or renames files
+// @Summary Move Files
+// @Description Move and/or rename files. Follows Linux mv semantics:
+//   - dest_file_id only: move files to a new folder (names unchanged)
+//   - new_name only: rename a single file in place (no storage operation)
+//   - both: move and rename simultaneously
+//
+// @Tags file
+// @Accept json
+// @Produce json
+// @Param body body MoveFileRequest true "Move file request"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/files/move [post]
+func (h *FileHandler) MoveFiles(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req MoveFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeBadRequest, err.Error())
+		return
+	}
+
+	// Validate: at least one of dest_file_id or new_name must be provided
+	if req.DestFileID == "" && req.NewName == "" {
+		jsonError(c, common.CodeParamError, "At least one of dest_file_id or new_name must be provided")
+		return
+	}
+
+	// Validate: new_name can only be used with a single file
+	if req.NewName != "" && len(req.SrcFileIDs) > 1 {
+		jsonError(c, common.CodeParamError, "new_name can only be used with a single file")
+		return
+	}
+
+	success, message := h.fileService.MoveFiles(user.ID, req.SrcFileIDs, req.DestFileID, req.NewName)
+	if !success {
+		jsonError(c, common.CodeBadRequest, message)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    true,
+		"message": common.CodeSuccess.Message(),
+	})
+}
+
+// Download handles file download
+// @Summary Download File
+// @Description Download a file by ID
+// @Tags file
+// @Accept json
+// @Produce octet-stream
+// @Param file_id path string true "file ID"
+// @Success 200 {file} binary "File stream"
+// @Router /api/v1/files/{file_id} [get]
+func (h *FileHandler) Download(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	userID := user.ID
+
+	fileID := c.Param("id")
+	if fileID == "" {
+		jsonError(c, common.CodeParamError, "id is required")
+		return
+	}
+
+	// Get file metadata and check permission
+	file, err := h.fileService.GetFileContent(userID, fileID)
+	if err != nil {
+		jsonError(c, common.CodeUnauthorized, err.Error())
+		return
+	}
+
+	// Get storage
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		jsonError(c, common.CodeServerError, "storage not initialized")
+		return
+	}
+
+	// Try to get file blob from primary location (parent_id, location)
+	var blob []byte
+	var getErr error
+	if file.Location != nil && *file.Location != "" {
+		blob, getErr = storageImpl.Get(file.ParentID, *file.Location)
+	}
+
+	// If blob is empty, try fallback via file2document
+	if len(blob) == 0 {
+		storageAddr, err := h.fileService.GetStorageAddress(fileID)
+		if err != nil {
+			jsonError(c, common.CodeServerError, "Failed to get file storage address: "+err.Error())
+			return
+		}
+		blob, getErr = storageImpl.Get(storageAddr.Bucket, storageAddr.Name)
+	}
+
+	// Check if we got valid data
+	if len(blob) == 0 {
+		errMsg := "Failed to retrieve file blob"
+		if getErr != nil {
+			errMsg += ": " + getErr.Error()
+		}
+		jsonError(c, common.CodeServerError, errMsg)
+		return
+	}
+
+	// Extract file extension
+	ext := utility.GetFileExtension(file.Name)
+
+	// Determine content type based on extension and file type
+	contentType := utility.GetContentType(ext, file.Type)
+
+	// Set response headers
+	if contentType != "" {
+		c.Header("Content-Type", contentType)
+	}
+	if utility.ShouldForceAttachment(ext, contentType) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		encodedName := url.QueryEscape(file.Name)
+		c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+encodedName)
+	}
+
+	// Send file data
+	c.Data(http.StatusOK, contentType, blob)
 }

@@ -566,6 +566,9 @@ curl --request POST \
       - Defaults to: `{"use_raptor": false}`
     - `"graphrag"`: `object` GRAPHRAG-specific settings.
       - Defaults to: `{"use_graphrag": false}`
+    - `"parent_child"`: `object` Parent-child chunking settings. When enabled, each chunk is further split into smaller child chunks using `children_delimiter`. At retrieval time, matched child chunks are replaced by their parent's full text before being passed to the LLM, giving precise vector matching with broader context.
+      - `"use_parent_child"`: `bool` Whether to enable parent-child chunking. Defaults to `false`.
+      - `"children_delimiter"`: `string` The delimiter used to split a parent chunk into child chunks. Only takes effect when `"use_parent_child"` is `true`. Defaults to `"\n"`.
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:  
     - `"raptor"`: `object` RAPTOR-specific settings.
       - Defaults to: `{"use_raptor": false}`.
@@ -820,6 +823,9 @@ curl --request PUT \
       - Defaults to: `{"use_raptor": false}`
     - `"graphrag"`: `object` GRAPHRAG-specific settings.
       - Defaults to: `{"use_graphrag": false}`
+    - `"parent_child"`: `object` Parent-child chunking settings. When enabled, each chunk is further split into smaller child chunks using `children_delimiter`. At retrieval time, matched child chunks are replaced by their parent's full text before being passed to the LLM, giving precise vector matching with broader context.
+      - `"use_parent_child"`: `bool` Whether to enable parent-child chunking. Defaults to `false`.
+      - `"children_delimiter"`: `string` The delimiter used to split a parent chunk into child chunks. Only takes effect when `"use_parent_child"` is `true`. Defaults to `"\n"`.
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:  
     - `"raptor"`: `object` RAPTOR-specific settings.
       - Defaults to: `{"use_raptor": false}`.
@@ -6829,20 +6835,20 @@ Failure
 
 ---
 
-### System
+## System
 
 ---
 
 ### Check system health
 
-**GET** `/v1/system/healthz`
+**GET** `/api/v1/system/healthz`
 
 Check the health status of RAGFlow’s dependencies (database, Redis, document engine, object storage).
 
 #### Request
 
 - Method: GET
-- URL: `/v1/system/healthz`
+- URL: `/api/v1/system/healthz`
 - Headers:
   - 'Content-Type: application/json'
   (no Authorization required)
@@ -6851,7 +6857,7 @@ Check the health status of RAGFlow’s dependencies (database, Redis, document e
 
 ```bash
 curl --request GET
-     --url http://{address}/v1/system/healthz
+     --url http://{address}/api/v1/system/healthz
      --header 'Content-Type: application/json'
 ```
 

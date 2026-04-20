@@ -16,7 +16,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import add_chunk, delete_document, get_chunk, list_chunks
+from test_common import add_chunk, delete_document, get_chunk, list_chunks
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
@@ -166,7 +166,7 @@ class TestAddChunk:
         payload = {
             "doc_id": doc_id,
             "content_with_weight": "chunk with tags",
-            "tag_feas": [0.1, 0.2],
+            "tag_feas": {"tag1": 0.1, "tag2": 0.2},
             "important_kwd": ["tag"],
             "question_kwd": ["question"],
         }

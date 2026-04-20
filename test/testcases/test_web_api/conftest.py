@@ -18,7 +18,7 @@ from time import sleep
 from ragflow_sdk import RAGFlow
 from configs import HOST_ADDRESS, VERSION
 import pytest
-from common import (
+from test_common import (
     batch_add_chunks,
     batch_create_datasets,
     bulk_upload_documents,
@@ -51,7 +51,7 @@ from utils.file_utils import (
 def condition(_auth, _kb_id):
     res = list_documents(_auth, {"kb_id": _kb_id})
     for doc in res["data"]["docs"]:
-        if doc["run"] != "3":
+        if doc["run"] != "DONE":
             return False
     return True
 

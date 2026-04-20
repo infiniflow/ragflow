@@ -7,7 +7,7 @@ import { useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { RAGFlowAvatar } from './ragflow-avatar';
-import { FormControl, FormField, FormItem, FormLabel } from './ui/form';
+import { RAGFlowFormItem } from './ragflow-form';
 import { MultiSelect } from './ui/multi-select';
 
 function buildQueryVariableOptionsByShowVariable(showVariable?: boolean) {
@@ -71,10 +71,9 @@ export function KnowledgeBaseFormField({
   required = false,
 }: {
   showVariable?: boolean;
-  name: string;
+  name?: string;
   required?: boolean;
 }) {
-  const form = useFormContext();
   const { t } = useTranslation();
 
   const { datasetOptions } = useDisableDifferenceEmbeddingDataset(name);
@@ -113,31 +112,27 @@ export function KnowledgeBaseFormField({
   }, [knowledgeOptions, nextOptions, showVariable, t]);
 
   return (
-    <FormField
-      control={form.control}
+    <RAGFlowFormItem
       name={name}
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel tooltip={t('chat.knowledgeBasesTip')} required={required}>
-            {t('chat.knowledgeBases')}
-          </FormLabel>
-          <FormControl>
-            <MultiSelect
-              data-testid="chat-datasets-combobox"
-              options={options}
-              onValueChange={field.onChange}
-              placeholder={t('chat.knowledgeBasesPlaceholder')}
-              variant="inverted"
-              maxCount={100}
-              defaultValue={field.value}
-              showSelectAll={false}
-              popoverTestId="datasets-options"
-              optionTestIdPrefix="datasets"
-              {...field}
-            />
-          </FormControl>
-        </FormItem>
+      tooltip={t('chat.knowledgeBasesTip')}
+      required={required}
+      label={t('chat.knowledgeBases')}
+    >
+      {(field) => (
+        <MultiSelect
+          data-testid="chat-datasets-combobox"
+          options={options}
+          onValueChange={field.onChange}
+          placeholder={t('chat.knowledgeBasesPlaceholder')}
+          variant="inverted"
+          maxCount={100}
+          defaultValue={field.value}
+          showSelectAll={false}
+          popoverTestId="datasets-options"
+          optionTestIdPrefix="datasets"
+          {...field}
+        />
       )}
-    />
+    </RAGFlowFormItem>
   );
 }

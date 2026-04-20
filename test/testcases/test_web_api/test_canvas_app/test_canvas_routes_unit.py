@@ -515,12 +515,12 @@ def test_templates_rm_save_get_matrix_unit(monkeypatch):
             self.template_id = template_id
 
         def to_dict(self):
-            return {"id": self.template_id}
+            return {"id": self.template_id, "canvas_type": "Recommended", "canvas_types": ["Recommended", "Agent"]}
 
     monkeypatch.setattr(module.CanvasTemplateService, "get_all", lambda: [_Template("tpl-1")])
     res = module.templates()
     assert res["code"] == module.RetCode.SUCCESS
-    assert res["data"] == [{"id": "tpl-1"}]
+    assert res["data"] == [{"id": "tpl-1", "canvas_type": "Recommended", "canvas_types": ["Recommended", "Agent"]}]
 
     _set_request_json(monkeypatch, module, {"canvas_ids": ["c1", "c2"]})
     monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: False)

@@ -26,6 +26,17 @@ const inspectorBabelPlugin = (): import('vite').Plugin => ({
   },
 });
 
+type MinifyValue = boolean | 'esbuild' | 'terser';
+
+function resolveMinify(value: string | undefined): MinifyValue {
+  if (value === undefined) return 'terser';
+  const lower = value.toLowerCase();
+  if (lower === 'false') return false;
+  if (lower === 'esbuild') return 'esbuild';
+  if (lower === 'terser') return 'terser';
+  return 'terser';
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -49,7 +60,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     hybrid: {
-      '^(/api/v1/memories)|^(/v1/user/info)|^(/v1/user/tenant_info)|^(/v1/tenant/list)|^(/v1/system/config)|^(/v1/user/login)|^(/v1/user/logout)|^(/api/v1/files)':
+      '^(/v1/kb)|^(/v1/document)|^(/v1/llm/list)|^(/api/v1/datasets)|^(/api/v1/memories)|^(/v1/user)|^(/v1/user/tenant_info)|^(/v1/tenant/list)|^(/v1/system/config)|^(/v1/user/login)|^(/v1/user/logout)|^(/api/v1/files)':
         {
           target: 'http://127.0.0.1:9384/',
           changeOrigin: true,
@@ -229,7 +240,7 @@ export default defineConfig(({ mode }) => {
         plugins: [],
         treeshake: true,
       },
-      minify: 'terser',
+      minify: resolveMinify(env.VITE_MINIFY),
       terserOptions: {
         compress: {
           drop_console: true, // delete console
@@ -246,7 +257,7 @@ export default defineConfig(({ mode }) => {
           comments: false, // Delete comments
         },
       },
-      sourcemap: true,
+      sourcemap: env.VITE_BUILD_SOURCEMAP !== 'false',
       cssCodeSplit: true,
       target: 'es2015',
     },

@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from test_web_api.common import (
+from test_common import (
     kb_delete_pipeline_logs,
     kb_list_pipeline_dataset_logs,
     kb_list_pipeline_logs,

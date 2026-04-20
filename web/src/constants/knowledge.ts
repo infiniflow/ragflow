@@ -8,12 +8,12 @@ export enum KnowledgeRouteKey {
 export const DatasetBaseKey = 'dataset';
 
 export enum RunningStatus {
-  UNSTART = '0', // need to run
-  RUNNING = '1', // need to cancel
-  CANCEL = '2', // need to refresh
-  DONE = '3', // need to refresh
-  FAIL = '4', // need to refresh
-  SCHEDULE = '5',
+  UNSTART = 'UNSTART', // need to run
+  RUNNING = 'RUNNING', // need to cancel
+  CANCEL = 'CANCEL', // need to refresh
+  DONE = 'DONE', // need to refresh
+  FAIL = 'FAIL', // need to refresh
+  SCHEDULE = 'SCHEDULE',
 }
 
 export const RunningStatusMap = {
@@ -95,3 +95,8 @@ export enum DocumentParserType {
 }
 
 export const TagRenameId = 'tagRename';
+
+export enum ParseType {
+  BuiltIn = 1,
+  Pipeline = 2,
+}
