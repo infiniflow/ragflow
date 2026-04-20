@@ -75,7 +75,7 @@ class TestDocumentCreate:
 
         res = create_document(WebApiAuth, {"name": filename, "kb_id": kb_id})
         assert res["code"] == 0, res
-        assert res["data"]["kb_id"] == kb_id, res
+        assert res["data"]["dataset_id"] == kb_id, res
         assert res["data"]["name"] == filename, f"Expected: {filename}, Got: {res['data']['name']}"
 
     @pytest.mark.p3
