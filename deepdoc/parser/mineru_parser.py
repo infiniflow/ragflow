@@ -358,7 +358,6 @@ class MinerUParser(RAGFlowPdfParser):
         return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format("-".join([str(p) for p in pn]), x0, x1, top, bott)
 
     def crop(self, text, ZM=1, need_position=False):
-        imgs = []
         poss = self.extract_positions(text)
         if not poss:
             if need_position:
