@@ -340,6 +340,8 @@ async def build_chunks(task, progress_callback):
     el = timer() - st
     logging.info("MINIO PUT({}) cost {:.3f} s".format(task["name"], el))
 
+    rag_tokenizer.tokenizer.set_language(task["language"])
+
     if task["parser_config"].get("auto_keywords", 0):
         st = timer()
         progress_callback(msg="Start to generate keywords for every chunk ...")
@@ -646,6 +648,7 @@ async def run_dataflow(task: dict):
         dsl = pipeline_log.dsl
         dataflow_id = pipeline_log.pipeline_id
     pipeline = Pipeline(dsl, tenant_id=task["tenant_id"], doc_id=doc_id, task_id=task_id, flow_id=dataflow_id)
+    rag_tokenizer.tokenizer.set_language(task.get("language", "English"))
     chunks = await pipeline.run(file=task["file"]) if task.get("file") else await pipeline.run()
     if doc_id == CANVAS_DEBUG_DOC_ID:
         return
@@ -814,6 +817,8 @@ async def has_raptor_chunks(doc_id: str, tenant_id: str, kb_id: str) -> bool:
 @timeout(3600)
 async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_size, callback=None, doc_ids=[]):
     fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
+
+    rag_tokenizer.tokenizer.set_language(row.get("language", "English"))
 
     raptor_config = kb_parser_config.get("raptor", {})
     vctr_nm = "q_%d_vec" % vector_size
@@ -1028,6 +1033,7 @@ async def do_handle_task(task):
     task_tenant_id = task["tenant_id"]
     task_embedding_id = task["embd_id"]
     task_language = task["language"]
+    rag_tokenizer.tokenizer.set_language(task_language)
     doc_task_llm_id = task["parser_config"].get("llm_id") or task["llm_id"]
     kb_task_llm_id = task['kb_parser_config'].get("llm_id") or task["llm_id"]
     task['llm_id'] = kb_task_llm_id

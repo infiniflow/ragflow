@@ -810,7 +810,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         callback(0.8, "Finish parsing.")
         st = timer()
 
-        res.extend(doc_tokenize_chunks_with_images(chunks, doc, is_english, child_delimiters_pattern=child_deli))
+        res.extend(doc_tokenize_chunks_with_images(chunks, doc, is_english, child_delimiters_pattern=child_deli, language=lang))
         logging.info("naive_merge({}): {}".format(filename, timer() - st))
         res.extend(embed_res)
         res.extend(url_res)
@@ -853,7 +853,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             if int(parser_config.get("chunk_token_num", 0)) <= 0:
                 parser_config["chunk_token_num"] = 0
 
-        res = tokenize_table(tables, doc, is_english)
+        res = tokenize_table(tables, doc, is_english, language=lang)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
@@ -875,7 +875,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             sections, tables = tcadp_parser.parse_pdf(filepath=filename, binary=binary, callback=callback, output_dir=os.environ.get("TCADP_OUTPUT_DIR", ""), file_type=file_type)
             sections = _normalize_section_text_for_rtl_presentation_forms(sections)
             parser_config["chunk_token_num"] = 0
-            res = tokenize_table(tables, doc, is_english)
+            res = tokenize_table(tables, doc, is_english, language=lang)
             callback(0.8, "Finish parsing.")
         else:
             # Default DeepDOC parser
@@ -945,7 +945,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 soup = markdown_parser.md_to_html(section_text)
                 hyperlink_urls = markdown_parser.get_hyperlink_urls(soup)
                 urls.update(hyperlink_urls)
-        res = tokenize_table(tables, doc, is_english)
+        res = tokenize_table(tables, doc, is_english, language=lang)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
@@ -1042,9 +1042,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         has_images = merged_images and any(img is not None for img in merged_images)
 
         if has_images:
-            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, merged_images, child_delimiters_pattern=child_deli))
+            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, merged_images, child_delimiters_pattern=child_deli, language=lang))
         else:
-            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
+            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli, language=lang))
     else:
         if section_images:
             if all(image is None for image in section_images):
@@ -1052,11 +1052,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         if section_images:
             chunks, images = naive_merge_with_images(sections, section_images, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), overlapped_percent)
-            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli))
+            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli, language=lang))
         else:
             chunks = naive_merge(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), overlapped_percent)
 
-            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
+            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli, language=lang))
 
     if urls and parser_config.get("analyze_hyperlink", False) and is_root:
         for index, url in enumerate(urls):
