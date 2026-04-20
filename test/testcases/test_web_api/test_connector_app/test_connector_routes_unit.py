@@ -321,7 +321,7 @@ def _load_connector_app(monkeypatch):
     box_mod.GetAuthorizeUrlOptions = _GetAuthorizeUrlOptions
     monkeypatch.setitem(sys.modules, "box_sdk_gen", box_mod)
 
-    module_path = repo_root / "api" / "apps" / "connector_app.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "connector_api.py"
     spec = importlib.util.spec_from_file_location("test_connector_routes_unit", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
