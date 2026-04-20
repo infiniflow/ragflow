@@ -303,31 +303,6 @@ type ModelItem struct {
 
 type DefaultModelResponse struct {
 	Models []ModelItem `json:"models,omitempty"`
-	//TenantID                string  `json:"tenant_id"`
-	//ChatModelProvider       *string `json:"chat_model_provider"`
-	//ChatModelInstance       *string `json:"chat_model_instance"`
-	//ChatModelName           *string `json:"chat_model_name"`
-	//ChatModelEnable         bool    `json:"chat_model_enable"`
-	//EmbeddingModelProvider  *string `json:"embedding_model_provider"`
-	//EmbeddingModelInstance  *string `json:"embedding_model_instance"`
-	//EmbeddingModelName      *string `json:"embedding_model_name"`
-	//EmbeddingModelEnable    bool    `json:"embedding_model_enable"`
-	//RerankModelProvider     *string `json:"rerank_model_provider"`
-	//RerankModelInstance     *string `json:"rerank_model_instance"`
-	//RerankModelName         *string `json:"rerank_model_name"`
-	//RerankModelEnable       bool    `json:"rerank_model_enable"`
-	//ASRModelProvider        *string `json:"asr_model_provider"`
-	//ASRModelInstance        *string `json:"asr_model_instance"`
-	//ASRModelName            *string `json:"asr_model_name"`
-	//ASREnable               bool    `json:"asr_enable"`
-	//Image2TextModelProvider *string `json:"image2text_model_provider"`
-	//Image2TextModelInstance *string `json:"image2text_model_instance"`
-	//Image2TextModelName     *string `json:"image2text_model_name"`
-	//Image2TextModelEnable   bool    `json:"image2text_model_enable"`
-	//TTSModelProvider        *string `json:"tts_model_provider"`
-	//TTSModelInstance        *string `json:"tts_model_instance"`
-	//TTSModelName            *string `json:"tts_model_name"`
-	//TTSModelEnable          bool    `json:"tts_model_enable"`
 }
 
 func (s *TenantService) GetModelInfo(tenantID string, defaultModel string, modelType string) (*string, *string, *string, bool, error) {
@@ -349,6 +324,12 @@ func (s *TenantService) GetModelInfo(tenantID string, defaultModel string, model
 		modelName = &defaultChatModelParts[0]
 	} else {
 		return nil, nil, nil, false, fmt.Errorf("invalid model string: %s", defaultModel)
+	}
+
+	if modelType == "ocr" {
+		if *providerName == "infiniflow" && *instanceName == "default" && *modelName == "deepdoc" {
+			return providerName, instanceName, modelName, true, nil
+		}
 	}
 
 	// Check if the provider and instance exists
@@ -452,6 +433,17 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 			ModelName:     defaultImage2TextModelName,
 			ModelType:     "image2text",
 			Enable:        defaultImage2TextModelEnable,
+		})
+	}
+
+	defaultOCRModelProvider, defaultOCRModelInstance, defaultOCRModelName, defaultOCRModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.OCRID, "ocr")
+	if err == nil {
+		result = append(result, ModelItem{
+			ModelProvider: defaultOCRModelProvider,
+			ModelInstance: defaultOCRModelInstance,
+			ModelName:     defaultOCRModelName,
+			ModelType:     "ocr",
+			Enable:        defaultOCRModelEnable,
 		})
 	}
 

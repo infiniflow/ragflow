@@ -96,6 +96,7 @@ const (
 	TokenReranker
 	TokenASR
 	TokenTTS
+	TokenOCR
 	TokenAsync
 	TokenSync
 	TokenBenchmark

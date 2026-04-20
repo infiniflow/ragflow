@@ -1604,7 +1604,7 @@ func (p *Parser) parseSetDefault() (*Command, error) {
 	case TokenLLM:
 		modelType = "chat"
 	case TokenVLM:
-		modelType = "image2text"
+		modelType = "vision"
 	case TokenEmbedding:
 		modelType = "embedding"
 	case TokenReranker:
@@ -1613,6 +1613,8 @@ func (p *Parser) parseSetDefault() (*Command, error) {
 		modelType = "asr"
 	case TokenTTS:
 		modelType = "tts"
+	case TokenOCR:
+		modelType = "ocr"
 	default:
 		return nil, fmt.Errorf("unknown model type: %s", p.curToken.Value)
 	}
@@ -1720,15 +1722,17 @@ func (p *Parser) parseResetCommand() (*Command, error) {
 	case TokenLLM:
 		modelType = "llm_id"
 	case TokenVLM:
-		modelType = "img2txt_id"
+		modelType = "vlm_id"
 	case TokenEmbedding:
-		modelType = "embd_id"
+		modelType = "embedding_id"
 	case TokenReranker:
 		modelType = "reranker_id"
 	case TokenASR:
 		modelType = "asr_id"
 	case TokenTTS:
 		modelType = "tts_id"
+	case TokenOCR:
+		modelType = "ocr_id"
 	default:
 		return nil, fmt.Errorf("unknown model type: %s", p.curToken.Value)
 	}
