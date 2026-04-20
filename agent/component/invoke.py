@@ -133,12 +133,20 @@ class Invoke(ComponentBase, ABC):
         return self._render_template(content, self.header_variable_ref_patt, kwargs)
 
     def _resolve_arg_value(self, para: dict, kwargs: dict) -> object:
+        ref = (para.get("ref") or "").strip()
+        if ref and (ref in kwargs or self._canvas.get_variable_value(ref) is not None):
+            return self._resolve_variable_value(ref, kwargs)
+
         if para.get("value") is not None:
             value = para["value"]
             if isinstance(value, str):
                 return self._resolve_template_text(value, kwargs)
             return value
-        return self._resolve_variable_value(para["ref"], kwargs)
+
+        if ref:
+            return self._resolve_variable_value(ref, kwargs)
+
+        return ""
 
     def _is_json_mode(self) -> bool:
         return self._param.datatype.lower() == "json"
