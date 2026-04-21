@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import logging
 import random
 import re
 
@@ -23,10 +22,9 @@ import numpy as np
 
 from api.db.services.connector_service import Connector2KbService
 from api.db.services.llm_service import LLMBundle
-from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
+from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from api.db.services.task_service import TaskService, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.user_service import UserTenantService
 from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_model_config_by_id
 from api.utils.api_utils import (
