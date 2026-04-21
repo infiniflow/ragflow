@@ -1,7 +1,8 @@
 {
   "name": "ZHIPU-AI",
-  "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
-  "url": "https://open.bigmodel.cn/api/paas/v4",
+  "url": {
+    "default": "https://open.bigmodel.cn/api/paas/v4"
+  },
   "url_suffix": {
     "chat": "chat/completions",
     "async_chat": "async/chat/completions",
@@ -31,7 +32,7 @@
       "max_tokens": 128000,
       "model_types": [
         "chat",
-        "image2text"
+        "vision"
       ],
       "features": {}
     },
@@ -71,7 +72,7 @@
       "name": "glm-4.5v",
       "max_tokens": 64000,
       "model_types": [
-        "image2text"
+        "vision"
       ],
       "features": {}
     },
@@ -151,7 +152,7 @@
       "name": "glm-4v",
       "max_tokens": 2000,
       "model_types": [
-        "image2text"
+        "vision"
       ],
       "features": {}
     },
@@ -183,9 +184,48 @@
       "name": "glm-asr",
       "max_tokens": 4096,
       "model_types": [
-        "speech2text"
+        "asr"
+      ],
+      "features": {}
+    },
+    {
+      "name": "glm-tts",
+      "model_types": [
+        "tts"
+      ],
+      "features": {}
+    },
+    {
+      "name": "glm-ocr",
+      "model_types": [
+        "ocr"
+      ],
+      "features": {}
+    },
+    {
+      "name": "glm-rerank",
+      "model_types": [
+        "rerank"
       ],
       "features": {}
     }
-  ]
+  ],
+  "features": {
+    "thinking": {
+      "default_value": true,
+      "supported_models": [
+        "glm-5.1",
+        "glm-5",
+        "glm-5v-turbo",
+        "glm-4.7",
+        "glm-4.6",
+        "glm-4.6v",
+        "glm-4.5",
+        "glm-4.5v"
+      ],
+      "clear": {
+        "default_value": true
+      }
+    }
+  }
 }
