@@ -19,7 +19,6 @@ from urllib.parse import urljoin
 from typing import Tuple, List
 from http import HTTPStatus
 
-import httpx
 import numpy as np
 import requests
 from yarl import URL
@@ -29,10 +28,6 @@ from common.token_utils import num_tokens_from_string, truncate, total_token_cou
 
 class Base(ABC):
     def __init__(self, key, model_name, **kwargs):
-        """
-        Abstract base class constructor.
-        Parameters are not stored; initialization is left to subclasses.
-        """
         pass
 
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
@@ -40,10 +35,6 @@ class Base(ABC):
 
     @staticmethod
     def _normalize_rank(rank: np.ndarray) -> np.ndarray:
-        """
-        Normalize rank values to the range 0 to 1.
-        Avoids division by zero if all ranks are identical.
-        """
         if rank.size == 0:
             return rank
         min_rank = np.min(rank)
@@ -61,7 +52,6 @@ class JinaRerank(Base):
     _FACTORY_NAME = "Jina"
 
     def __init__(self, key, model_name="jina-reranker-v2-base-multilingual", base_url="https://api.jina.ai/v1/rerank"):
-        # FIX: Honor passed base_url instead of hardcoding
         self.base_url = base_url or "https://api.jina.ai/v1/rerank"
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name
@@ -71,17 +61,12 @@ class JinaRerank(Base):
             return np.zeros(len(texts) if texts else 0, dtype=float), 0
         texts = [truncate(t, 8196) for t in texts]
         data = {"model": self.model_name, "query": query, "documents": texts, "top_n": len(texts)}
-        # FIX: Add timeout + HTTP status check
         response = requests.post(self.base_url, headers=self.headers, json=data, timeout=30)
         response.raise_for_status()
         res = response.json()
         rank = np.zeros(len(texts), dtype=float)
         try:
-            # FIX: Use get() to avoid KeyError
-            results = res.get("results", [])
-            if not results:
-                raise ValueError(f"Missing rerank results from {self.__class__.__name__}: {res}")
-            for d in results:
+            for d in res.get("results", []):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, res)
@@ -103,7 +88,6 @@ class XInferenceRerank(Base):
             self.headers["Authorization"] = f"Bearer {key}"
 
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
-        # FIX: Unified empty query/texts guard, same return spec as all providers
         if not query or not texts:
             return np.zeros(len(texts) if texts else 0, dtype=float), 0
         pairs = [(query, truncate(t, 4096)) for t in texts]
@@ -111,16 +95,12 @@ class XInferenceRerank(Base):
         for _, t in pairs:
             token_count += num_tokens_from_string(t)
         data = {"model": self.model_name, "query": query, "return_documents": "true", "return_len": "true", "documents": texts}
-        # FIX: Add timeout + HTTP status check
         response = requests.post(self.base_url, headers=self.headers, json=data, timeout=30)
         response.raise_for_status()
         res = response.json()
         rank = np.zeros(len(texts), dtype=float)
         try:
-            results = res.get("results", [])
-            if not results:
-                raise ValueError(f"Missing rerank results from {self.__class__.__name__}: {res}")
-            for d in results:
+            for d in res.get("results", []):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, res)
@@ -151,16 +131,12 @@ class LocalAIRerank(Base):
         token_count = 0
         for t in texts:
             token_count += num_tokens_from_string(t)
-        # FIX: Add timeout + HTTP status check
         response = requests.post(self.base_url, headers=self.headers, json=data, timeout=30)
         response.raise_for_status()
         res = response.json()
         rank = np.zeros(len(texts), dtype=float)
         try:
-            results = res.get("results", [])
-            if not results:
-                raise ValueError(f"Missing rerank results from {self.__class__.__name__}: {res}")
-            for d in results:
+            for d in res.get("results", []):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, res)
@@ -201,16 +177,12 @@ class NvidiaRerank(Base):
             "truncate": "END",
             "top_n": len(texts),
         }
-        # FIX: Add timeout + HTTP status check
         response = requests.post(self.base_url, headers=self.headers, json=data, timeout=30)
         response.raise_for_status()
         res = response.json()
         rank = np.zeros(len(texts), dtype=float)
         try:
-            rankings = res.get("rankings", [])
-            if not rankings:
-                raise ValueError(f"Missing rerank rankings from {self.__class__.__name__}: {res}")
-            for d in rankings:
+            for d in res.get("rankings", []):
                 rank[d["index"]] = d["logit"]
         except Exception as _e:
             log_exception(_e, res)
@@ -252,16 +224,12 @@ class OpenAI_APIRerank(Base):
         token_count = 0
         for t in texts:
             token_count += num_tokens_from_string(t)
-        # FIX: Add timeout + HTTP status check
         response = requests.post(self.base_url, headers=self.headers, json=data, timeout=30)
         response.raise_for_status()
         res = response.json()
         rank = np.zeros(len(texts), dtype=float)
         try:
-            results = res.get("results", [])
-            if not results:
-                raise ValueError(f"Missing rerank results from {self.__class__.__name__}: {res}")
-            for d in results:
+            for d in res.get("results", []):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, res)
@@ -276,11 +244,9 @@ class CoHereRerank(Base):
     def __init__(self, key, model_name, base_url=None):
         from cohere import Client
 
-        client_kwargs = {"api_key": key}
+        client_kwargs = {"api_key": key, "timeout": 30.0}
         if base_url and base_url.strip():
             client_kwargs["base_url"] = base_url
-        # FIX: Add 30s timeout to SDK client
-        client_kwargs["timeout"] = 30.0
         self.client = Client(**client_kwargs)
         self.model_name = model_name.split("___")[0]
 
@@ -343,16 +309,12 @@ class SILICONFLOWRerank(Base):
             "max_chunks_per_doc": 1024,
             "overlap_tokens": 80,
         }
-        # FIX: Add timeout + HTTP status check
         response = requests.post(self.base_url, json=payload, headers=self.headers, timeout=30)
         response.raise_for_status()
         res = response.json()
         rank = np.zeros(len(texts), dtype=float)
         try:
-            results = res.get("results", [])
-            if not results:
-                raise ValueError(f"Missing rerank results from {self.__class__.__name__}: {res}")
-            for d in results:
+            for d in res.get("results", []):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, response)
@@ -368,7 +330,6 @@ class BaiduYiyanRerank(Base):
         key = json.loads(key)
         ak = key.get("yiyan_ak", "")
         sk = key.get("yiyan_sk", "")
-        # FIX: Add 30s request timeout to SDK
         self.client = Reranker(ak=ak, sk=sk, request_timeout=30)
         self.model_name = model_name
 
@@ -383,10 +344,7 @@ class BaiduYiyanRerank(Base):
         ).body
         rank = np.zeros(len(texts), dtype=float)
         try:
-            results = res.get("results", [])
-            if not results:
-                raise ValueError(f"Missing rerank results from {self.__class__.__name__}: {res}")
-            for d in results:
+            for d in res.get("results", []):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, res)
@@ -399,7 +357,6 @@ class VoyageRerank(Base):
     def __init__(self, key, model_name, base_url=None):
         import voyageai
 
-        # FIX: Add 30s timeout to Voyage SDK client
         self.client = voyageai.Client(api_key=key, timeout=30.0)
         self.model_name = model_name
 
@@ -424,7 +381,6 @@ class QWenRerank(Base):
         import dashscope
         self.api_key = key
         self.model_name = dashscope.TextReRank.Models.gte_rerank if model_name is None else model_name
-        # FIX: Add 30s global timeout for dashscope SDK
         dashscope.timeout = 30.0
 
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
@@ -465,7 +421,6 @@ class HuggingfaceRerank(Base):
         exc = None
         scores = [0 for _ in range(len(texts))]
         batch_size = 8
-        # FIX: Fix double http:// protocol prefix bug
         base_url = url.rstrip("/")
         if base_url.startswith(("http://", "https://")):
             request_url = f"{base_url}/rerank"
@@ -476,7 +431,7 @@ class HuggingfaceRerank(Base):
             try:
                 res = requests.post(
                     request_url, headers={"Content-Type": "application/json"}, 
-                    json={"query": query, "texts": texts[i : i + batch_size], "raw_scores": False, "truncate": True},
+                    json={"query": query, "texts": texts[i:i+batch_size], "raw_scores": False, "truncate": True},
                     timeout=30
                 )
                 res.raise_for_status()
@@ -534,14 +489,9 @@ class GPUStackRerank(Base):
             response_json = response.json()
 
             rank = np.zeros(len(texts), dtype=float)
-            token_count = 0
-            for t in texts:
-                token_count += num_tokens_from_string(t)
+            token_count = sum(num_tokens_from_string(t) for t in texts)
             try:
-                results = response_json.get("results", [])
-                if not results:
-                    raise ValueError(f"Missing rerank results from {self.__class__.__name__}: {response_json}")
-                for result in results:
+                for result in response_json.get("results", []):
                     rank[result["index"]] = result["relevance_score"]
             except Exception as _e:
                 log_exception(_e, response)
@@ -583,16 +533,12 @@ class Ai302Rerank(Base):
             return np.zeros(len(texts), dtype=float), 0
         texts = [truncate(t, 500) for t in texts]
         data = {"model": self.model_name, "query": query, "documents": texts, "top_n": len(texts)}
-        # FIX: Add timeout + HTTP status check
         response = requests.post(self.base_url, headers=self.headers, json=data, timeout=30)
         response.raise_for_status()
         res = response.json()
         rank = np.zeros(len(texts), dtype=float)
         try:
-            results = res.get("results", [])
-            if not results:
-                raise ValueError(f"Missing rerank results from {self.__class__.__name__}: {res}")
-            for d in results:
+            for d in res.get("results", []):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, res)
@@ -608,12 +554,6 @@ class JiekouAIRerank(JinaRerank):
         super().__init__(key, model_name, base_url)
 
 class RAGconRerank(Base):
-    """
-    RAGcon Rerank Provider - routes through LiteLLM proxy
-    
-    Assumes LiteLLM proxy supports /rerank endpoint.
-    Default Base URL: https://connect.ragcon.ai/v1
-    """
     _FACTORY_NAME = "RAGcon"
     
     def __init__(self, key, model_name, base_url=None, **kwargs):
@@ -638,19 +578,13 @@ class RAGconRerank(Base):
             "documents": texts,
             "top_n": len(texts),
         }
-        token_count = 0
-        for t in texts:
-            token_count += num_tokens_from_string(t)
-        # FIX: Add timeout + HTTP status check
+        token_count = sum(num_tokens_from_string(t) for t in texts)
         response = requests.post(self._base_url + "/rerank", headers=self.headers, json=data, timeout=30)
         response.raise_for_status()
         res = response.json()
         rank = np.zeros(len(texts), dtype=float)
         try:
-            results = res.get("results", [])
-            if not results:
-                raise ValueError(f"Missing rerank results from {self.__class__.__name__}: {res}")
-            for d in results:
+            for d in res.get("results", []):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, res)
