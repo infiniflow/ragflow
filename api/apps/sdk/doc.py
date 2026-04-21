@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 import datetime
-import json
 import re
 from io import BytesIO
 
@@ -38,7 +37,7 @@ from common import settings
 from common.constants import FileSource, LLMType, ParserType, RetCode, TaskStatus
 from common.metadata_utils import convert_conditions, meta_filter
 from common.misc_utils import thread_pool_exec
-from common.string_utils import remove_redundant_spaces
+from common.string_utils import is_content_empty, remove_redundant_spaces
 from common.tag_feature_utils import validate_tag_features
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
@@ -157,187 +156,6 @@ async def download_doc(document_id):
         attachment_filename=doc[0].name,
         mimetype="application/octet-stream",  # Set a default MIME type
     )
-
-
-@manager.route("/datasets/<dataset_id>/documents", methods=["GET"])  # noqa: F821
-@token_required
-def list_docs(dataset_id, tenant_id):
-    """
-    List documents in a dataset.
-    ---
-    tags:
-      - Documents
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: query
-        name: id
-        type: string
-        required: false
-        description: Filter by document ID.
-      - in: query
-        name: page
-        type: integer
-        required: false
-        default: 1
-        description: Page number.
-      - in: query
-        name: page_size
-        type: integer
-        required: false
-        default: 30
-        description: Number of items per page.
-      - in: query
-        name: orderby
-        type: string
-        required: false
-        default: "create_time"
-        description: Field to order by.
-      - in: query
-        name: desc
-        type: boolean
-        required: false
-        default: true
-        description: Order in descending.
-      - in: query
-        name: create_time_from
-        type: integer
-        required: false
-        default: 0
-        description: Unix timestamp for filtering documents created after this time. 0 means no filter.
-      - in: query
-        name: create_time_to
-        type: integer
-        required: false
-        default: 0
-        description: Unix timestamp for filtering documents created before this time. 0 means no filter.
-      - in: query
-        name: suffix
-        type: array
-        items:
-          type: string
-        required: false
-        description: Filter by file suffix (e.g., ["pdf", "txt", "docx"]).
-      - in: query
-        name: run
-        type: array
-        items:
-          type: string
-        required: false
-        description: Filter by document run status. Supports both numeric ("0", "1", "2", "3", "4") and text formats ("UNSTART", "RUNNING", "CANCEL", "DONE", "FAIL").
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: List of documents.
-        schema:
-          type: object
-          properties:
-            total:
-              type: integer
-              description: Total number of documents.
-            docs:
-              type: array
-              items:
-                type: object
-                properties:
-                  id:
-                    type: string
-                    description: Document ID.
-                  name:
-                    type: string
-                    description: Document name.
-                  chunk_count:
-                    type: integer
-                    description: Number of chunks.
-                  token_count:
-                    type: integer
-                    description: Number of tokens.
-                  dataset_id:
-                    type: string
-                    description: ID of the dataset.
-                  chunk_method:
-                    type: string
-                    description: Chunking method used.
-                  run:
-                    type: string
-                    description: Processing status.
-    """
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
-
-    q = request.args
-    document_id = q.get("id")
-    name = q.get("name")
-
-    if document_id and not DocumentService.query(id=document_id, kb_id=dataset_id):
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
-    if name and not DocumentService.query(name=name, kb_id=dataset_id):
-        return get_error_data_result(message=f"You don't own the document {name}.")
-
-    page = int(q.get("page", 1))
-    page_size = int(q.get("page_size", 30))
-    orderby = q.get("orderby", "create_time")
-    desc = str(q.get("desc", "true")).strip().lower() != "false"
-    keywords = q.get("keywords", "")
-
-    # filters - align with OpenAPI parameter names
-    suffix = q.getlist("suffix")
-    run_status = q.getlist("run")
-    create_time_from = int(q.get("create_time_from", 0))
-    create_time_to = int(q.get("create_time_to", 0))
-    metadata_condition_raw = q.get("metadata_condition")
-    metadata_condition = {}
-    if metadata_condition_raw:
-        try:
-            metadata_condition = json.loads(metadata_condition_raw)
-        except Exception:
-            return get_error_data_result(message="metadata_condition must be valid JSON.")
-    if metadata_condition and not isinstance(metadata_condition, dict):
-        return get_error_data_result(message="metadata_condition must be an object.")
-
-    # map run status (text or numeric) - align with API parameter
-    run_status_text_to_numeric = {"UNSTART": "0", "RUNNING": "1", "CANCEL": "2", "DONE": "3", "FAIL": "4"}
-    run_status_converted = [run_status_text_to_numeric.get(v, v) for v in run_status]
-
-    doc_ids_filter = None
-    if metadata_condition:
-        metas = DocMetadataService.get_flatted_meta_by_kbs([dataset_id])
-        doc_ids_filter = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
-        if metadata_condition.get("conditions") and not doc_ids_filter:
-            return get_result(data={"total": 0, "docs": []})
-
-    docs, total = DocumentService.get_list(dataset_id, page, page_size, orderby, desc, keywords, document_id, name, suffix, run_status_converted, doc_ids_filter)
-
-    # time range filter (0 means no bound)
-    if create_time_from or create_time_to:
-        docs = [d for d in docs if (create_time_from == 0 or d.get("create_time", 0) >= create_time_from) and (create_time_to == 0 or d.get("create_time", 0) <= create_time_to)]
-
-    # rename keys + map run status back to text for output
-    key_mapping = {
-        "chunk_num": "chunk_count",
-        "kb_id": "dataset_id",
-        "token_num": "token_count",
-        "parser_id": "chunk_method",
-    }
-    run_status_numeric_to_text = {"0": "UNSTART", "1": "RUNNING", "2": "CANCEL", "3": "DONE", "4": "FAIL"}
-
-    output_docs = []
-    for d in docs:
-        renamed_doc = {key_mapping.get(k, k): v for k, v in d.items()}
-        if "run" in d:
-            renamed_doc["run"] = run_status_numeric_to_text.get(str(d["run"]), d["run"])
-        output_docs.append(renamed_doc)
-
-    return get_result(data={"total": total, "docs": output_docs})
 
 
 @manager.route("/datasets/<dataset_id>/metadata/update", methods=["POST"])  # noqa: F821
@@ -933,7 +751,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         return get_error_data_result(message=f"You don't own the document {document_id}.")
     doc = doc[0]
     req = await get_request_json()
-    if not str(req.get("content", "")).strip():
+    if is_content_empty(req.get("content")):
         return get_error_data_result(message="`content` is required")
     if "important_keywords" in req:
         if not isinstance(req["important_keywords"], list):
@@ -1176,8 +994,10 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         return get_error_data_result(message=f"You don't own the document {document_id}.")
     doc = doc[0]
     req = await get_request_json()
-    if "content" in req and req["content"] is not None:
-        content = req["content"]
+    content = req.get("content")
+    if content is not None:
+        if is_content_empty(content):
+            return get_error_data_result(message="`content` is required")
     else:
         content = chunk.get("content_with_weight", "")
     d = {"id": chunk_id, "content_with_weight": content}

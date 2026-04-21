@@ -34,7 +34,6 @@ const {
   documentUpload,
   webCrawl,
   knowledgeGraph,
-  documentInfos,
   listTagByKnowledgeIds,
   setMeta,
   getMeta,
@@ -101,10 +100,6 @@ const methods = {
     url: webCrawl,
     method: 'post',
   },
-  documentInfos: {
-    url: documentInfos,
-    method: 'post',
-  },
   setMeta: {
     url: setMeta,
     method: 'post',
@@ -152,7 +147,7 @@ const methods = {
   },
   documentFilter: {
     url: api.getDatasetFilter,
-    method: 'post',
+    method: 'get',
   },
   getMeta: {
     url: getMeta,
@@ -241,13 +236,28 @@ export const runRaptor = (datasetId: string) =>
 export const traceRaptor = (datasetId: string) =>
   request.get(api.traceRaptor(datasetId));
 
+// Using RESTful API: GET /api/v1/datasets/{dataset_id}/documents
 export const listDocument = (
   params?: IFetchKnowledgeListRequestParams,
   body?: IFetchDocumentListRequestBody,
-) => request.post(api.getDocumentList, { data: body || {}, params });
+) => {
+  if (!params || !params.id) {
+    throw new Error('params and params.id are required');
+  }
+  // Extract page, page_size, and ext.keywords from params
+  const { page, page_size, ext } = params;
+  // Merge: page, page_size, keywords (from ext), body, and remaining params
+  const mergedParams = {
+    page,
+    page_size,
+    keywords: ext?.keywords,
+    ...body,
+  };
+  return request.get(api.getDocumentList(params.id), { params: mergedParams });
+};
 
 export const documentFilter = (kb_id: string) =>
-  request.post(api.getDatasetFilter, { kb_id });
+  request.get(api.getDatasetFilter(kb_id), { params: {} });
 
 // Custom upload function that handles dynamic URL using axios directly
 export const uploadDocument = async (datasetId: string, formData: FormData) => {

@@ -106,7 +106,8 @@ export default {
   knowledgeGraph: `${webAPI}/chunk/knowledge_graph`,
 
   // document
-  getDocumentList: `${webAPI}/document/list`,
+  getDocumentList: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents`,
   documentChangeStatus: `${webAPI}/document/change_status`,
   documentRm: `${webAPI}/document/rm`,
   documentDelete: `${webAPI}/api/document`,
@@ -122,11 +123,10 @@ export default {
   documentUpload: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents`,
   webCrawl: `${webAPI}/document/web_crawl`,
-  documentInfos: `${webAPI}/document/infos`,
   uploadAndParse: `${webAPI}/document/upload_info`,
-  parse: `${webAPI}/document/parse`,
   setMeta: `${webAPI}/document/set_meta`,
-  getDatasetFilter: `${webAPI}/document/filter`,
+  getDatasetFilter: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents?type=filter`,
 
   // chat
   createChat: `${restAPIv1}/chats`,
@@ -224,9 +224,6 @@ export default {
   deleteMcpServer: `${webAPI}/mcp_server/rm`,
   importMcpServer: `${webAPI}/mcp_server/import`,
   exportMcpServer: `${webAPI}/mcp_server/export`,
-  listMcpServerTools: `${webAPI}/mcp_server/list_tools`,
-  testMcpServerTool: `${webAPI}/mcp_server/test_tool`,
-  cacheMcpServerTool: `${webAPI}/mcp_server/cache_tools`,
   testMcpServer: `${webAPI}/mcp_server/test_mcp`,
 
   // next-search

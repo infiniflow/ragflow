@@ -113,28 +113,33 @@ func (r *SimpleResponse) PrintOut() {
 	}
 }
 
-type MessageResponse struct {
-	Code         int    `json:"code"`
-	Message      string `json:"message"`
-	Duration     float64
-	OutputFormat OutputFormat
+type NonStreamResponse struct {
+	Code             int    `json:"code"`
+	ReasoningContent string `json:"reasoning_content"`
+	Answer           string `json:"answer"`
+	Message          string `json:"message"`
+	Duration         float64
+	OutputFormat     OutputFormat
 }
 
-func (r *MessageResponse) Type() string {
-	return "message"
+func (r *NonStreamResponse) Type() string {
+	return "non_stream_message"
 }
 
-func (r *MessageResponse) TimeCost() float64 {
+func (r *NonStreamResponse) TimeCost() float64 {
 	return r.Duration
 }
 
-func (r *MessageResponse) SetOutputFormat(format OutputFormat) {
+func (r *NonStreamResponse) SetOutputFormat(format OutputFormat) {
 	r.OutputFormat = format
 }
 
-func (r *MessageResponse) PrintOut() {
+func (r *NonStreamResponse) PrintOut() {
 	if r.Code == 0 {
-		fmt.Println(r.Message)
+		if r.ReasoningContent != "" {
+			fmt.Printf("Thinking: %s\n", r.ReasoningContent)
+		}
+		fmt.Printf("Answer: %s\n", r.Answer)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)

@@ -374,9 +374,11 @@ def create_document(auth, payload=None, *, headers=HEADERS, data=None):
 
 
 def list_documents(auth, params=None, payload=None, *, headers=HEADERS, data=None):
+    kb_id = params.get("kb_id") if params else None
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{kb_id}/documents"
     if payload is None:
         payload = {}
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/list", headers=headers, auth=auth, params=params, json=payload, data=data)
+    res = requests.get(url=url, headers=headers, auth=auth, params=params, json=payload, data=data)
     return res.json()
 
 
@@ -390,13 +392,13 @@ def parse_documents(auth, payload=None, *, headers=HEADERS, data=None):
     return res.json()
 
 
-def document_filter(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/filter", headers=headers, auth=auth, json=payload, data=data)
+def document_filter(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents?type=filter", params=payload, headers=headers, auth=auth, data=data)
     return res.json()
 
 
-def document_infos(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/infos", headers=headers, auth=auth, json=payload, data=data)
+def document_infos(auth, dataset_id, params=None, payload=None, *, headers=HEADERS, data=None):
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents", params=params, json=payload, headers=headers, auth=auth, data=data)
     return res.json()
 
 

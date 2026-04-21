@@ -26,22 +26,14 @@ class TestUpdatedChunk:
         "payload, expected_message",
         [
             ({"content": None}, ""),
-            pytest.param(
-                {"content": ""},
-                """APIRequestFailedError(\'Error code: 400, with error text {"error":{"code":"1213","message":"未正常接收到prompt参数。"}}\')""",
-                marks=pytest.mark.skip(reason="issues/6541"),
-            ),
+            ({"content": ""}, "`content` is required"),
             pytest.param(
                 {"content": 1},
                 "TypeError('expected string or bytes-like object')",
                 marks=pytest.mark.skip,
             ),
             ({"content": "update chunk"}, ""),
-            pytest.param(
-                {"content": " "},
-                """APIRequestFailedError(\'Error code: 400, with error text {"error":{"code":"1213","message":"未正常接收到prompt参数。"}}\')""",
-                marks=pytest.mark.skip(reason="issues/6541"),
-            ),
+            ({"content": " "}, "`content` is required"),
             ({"content": "\n!?。；！？\"'"}, ""),
         ],
     )
