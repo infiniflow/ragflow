@@ -318,7 +318,6 @@ class SILICONFLOWRerank(Base):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, response)
-        # FIX: Pass parsed JSON response instead of raw HTTP response for token counting
         return rank, total_token_count_from_response(res)
 
 
@@ -382,7 +381,7 @@ class QWenRerank(Base):
         import dashscope
         self.api_key = key
         self.model_name = dashscope.TextReRank.Models.gte_rerank if model_name is None else model_name
-        # FIX: Remove invalid global timeout, use official SDK request timeout parameter
+        # Remove invalid global timeout, use official SDK per-request timeout parameter
         self.request_timeout = 30.0
 
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
@@ -391,7 +390,7 @@ class QWenRerank(Base):
             
         import dashscope
 
-        # FIX: Pass official request_timeout parameter to both API call branches
+        # Pass official request_timeout parameter to both API call branches
         if self.model_name.startswith("qwen3-rerank"):  
             resp = dashscope.TextReRank.call(  
                 api_key=self.api_key, model=self.model_name,  
@@ -426,11 +425,12 @@ class HuggingfaceRerank(Base):
         exc = None
         scores = [0 for _ in range(len(texts))]
         batch_size = 8
+        # FIX: Robust URL construction to avoid duplicate "/rerank" path suffix
         base_url = url.rstrip("/")
-        if base_url.startswith(("http://", "https://")):
-            request_url = f"{base_url}/rerank"
-        else:
-            request_url = f"http://{base_url}/rerank"
+        if not base_url.startswith(("http://", "https://")):
+            base_url = f"http://{base_url}"
+        # Only append "/rerank" when endpoint does not already end with it
+        request_url = base_url if base_url.endswith("/rerank") else f"{base_url}/rerank"
 
         for i in range(0, len(texts), batch_size):
             try:
