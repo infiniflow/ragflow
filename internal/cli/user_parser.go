@@ -163,6 +163,8 @@ func (p *Parser) parseListCommand() (*Command, error) {
 		return p.parseListTokens()
 	case TokenModel:
 		return p.parseListModelProviders()
+	case TokenSupported:
+		return p.parseListModelsOfProvider()
 	case TokenModels:
 		return p.parseListModelsOfProvider()
 	case TokenProviders:
@@ -2014,11 +2016,55 @@ func (p *Parser) parseSearchCommand() (*Command, error) {
 }
 
 func (p *Parser) parseListModelsOfProvider() (*Command, error) {
+
+	if p.curToken.Type == TokenSupported {
+		// List supported models
+		p.nextToken()
+
+		cmd := NewCommand("list_supported_models")
+		if p.curToken.Type != TokenModels {
+			return nil, fmt.Errorf("expected MODELS")
+		}
+		p.nextToken()
+
+		if p.curToken.Type != TokenFrom {
+			return nil, fmt.Errorf("expected FROM")
+		}
+		p.nextToken()
+
+		if p.curToken.Type != TokenQuotedString {
+			return nil, fmt.Errorf("expected quoted string for provider name")
+		}
+		firstName, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken()
+
+		if p.curToken.Type != TokenQuotedString {
+			return nil, fmt.Errorf("expected quoted string for instance name")
+		}
+		secondName, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken()
+
+		cmd.Params["provider_name"] = firstName
+		cmd.Params["instance_name"] = secondName
+
+		// Semicolon is optional for UNSET TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
+		}
+		return cmd, nil
+	}
+
 	if p.curToken.Type != TokenModels {
 		return nil, fmt.Errorf("expected MODELS")
 	}
-
 	p.nextToken()
+
 	if p.curToken.Type != TokenFrom {
 		return nil, fmt.Errorf("expected FROM")
 	}
@@ -2194,19 +2240,47 @@ func (p *Parser) parseChatCommand() (*Command, error) {
 		cmd.Params["composite_model_name"] = compositeModelName
 	}
 	cmd.Params["message"] = message
-	cmd.Params["reasoning"] = false
+	cmd.Params["thinking"] = false
+	cmd.Params["stream"] = false
 	return cmd, nil
 }
 
 func (p *Parser) parseThinkCommand() (*Command, error) {
 
 	p.nextToken() // consume THINK
+
+	if p.curToken.Type != TokenChat {
+		return nil, fmt.Errorf("expected CHAT after THINK")
+	}
+
 	command, err := p.parseChatCommand()
 	if err != nil {
 		return nil, err
 	}
-	command.Type = "think_chat_to_model"
-	command.Params["reasoning"] = true
+	command.Params["thinking"] = true
+	return command, nil
+}
+
+func (p *Parser) parseStreamCommand() (*Command, error) {
+
+	p.nextToken() // consume STREAM
+
+	var command *Command
+	var err error
+
+	if p.curToken.Type == TokenChat {
+		command, err = p.parseChatCommand()
+		if err != nil {
+			return nil, err
+		}
+	} else if p.curToken.Type == TokenThink {
+		command, err = p.parseThinkCommand()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	command.Params["stream"] = true
 	return command, nil
 }
 
