@@ -187,7 +187,8 @@ export default {
   resetAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}/reset`,
   testDbConnect: `${webAPI}/canvas/test_db_connect`,
   getInputElements: `${webAPI}/canvas/input_elements`,
-  debug: `${webAPI}/canvas/debug`,
+  debug: (agentId: string, componentId: string) =>
+    `${restAPIv1}/agents/${agentId}/components/${componentId}/debug`,
   trace: `${webAPI}/canvas/trace`,
   cancelCanvas: (taskId: string) => `${webAPI}/canvas/cancel/${taskId}`, // cancel conversation
   // agent

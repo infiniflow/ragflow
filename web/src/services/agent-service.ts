@@ -17,7 +17,6 @@ const {
   listAgentTemplate,
   testDbConnect,
   getInputElements,
-  debug,
   trace,
   fetchVersionList,
   fetchVersion,
@@ -75,7 +74,8 @@ const methods = {
     method: 'get',
   },
   debugSingle: {
-    url: debug,
+    url: (config: { agentId: string; componentId: string }) =>
+      api.debug(config.agentId, config.componentId),
     method: 'post',
   },
   uploadAgentFile: {

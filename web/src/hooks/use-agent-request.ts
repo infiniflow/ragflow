@@ -537,9 +537,18 @@ export const useDebugSingle = () => {
     isPending: loading,
     mutateAsync,
   } = useMutation({
-    mutationKey: [AgentApiAction.FetchInputForm],
+    mutationKey: [AgentApiAction.DebugSingle],
     mutationFn: async (params: IDebugSingleRequestBody) => {
-      const ret = await agentService.debugSingle({ id, ...params });
+      const ret = await agentService.debugSingle(
+        {
+          agentId: id as string,
+          componentId: params.component_id,
+          data: {
+            params: params.params,
+          },
+        },
+        true,
+      );
       if (ret?.data?.code !== 0) {
         message.error(ret?.data?.message);
       }

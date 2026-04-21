@@ -14,12 +14,15 @@
 #  limitations under the License.
 #
 
+import inspect
 import copy
 import json
 import logging
+from functools import partial
 
 from quart import Response, jsonify, request
 
+from agent.component import LLM
 from agent.canvas import Canvas
 from agent.dsl_migration import normalize_chunker_dsl
 from api.apps import login_required
@@ -44,6 +47,7 @@ from api.utils.api_utils import (
     get_result,
     get_request_json,
     server_error_response,
+    validate_request,
 )
 from common.constants import RetCode
 from common.misc_utils import get_uuid, thread_pool_exec
@@ -250,6 +254,46 @@ def get_agent_component_input_form(agent_id, component_id, tenant_id):
 
         canvas = Canvas(json.dumps(user_canvas.dsl), tenant_id, canvas_id=user_canvas.id)
         return get_json_result(data=canvas.get_component_input_form(component_id))
+    except Exception as exc:
+        return server_error_response(exc)
+
+
+@manager.route("/agents/<agent_id>/components/<component_id>/debug", methods=["POST"])  # noqa: F821
+@validate_request("params")
+@login_required
+@add_tenant_id_to_kwargs
+async def debug_agent_component(agent_id, component_id, tenant_id):
+    req = await get_request_json()
+    if not UserCanvasService.accessible(agent_id, tenant_id):
+        return get_json_result(
+            data=False,
+            message="Only owner of canvas authorized for this operation.",
+            code=RetCode.OPERATING_ERROR,
+        )
+    try:
+        _, user_canvas = UserCanvasService.get_by_id(agent_id)
+        canvas = Canvas(json.dumps(user_canvas.dsl), tenant_id, canvas_id=user_canvas.id)
+        canvas.reset()
+        canvas.message_id = get_uuid()
+        component = canvas.get_component(component_id)["obj"]
+        component.reset()
+
+        if isinstance(component, LLM):
+            component.set_debug_inputs(req["params"])
+        component.invoke(**{k: o["value"] for k, o in req["params"].items()})
+        outputs = component.output()
+        for k in outputs.keys():
+            if isinstance(outputs[k], partial):
+                txt = ""
+                iter_obj = outputs[k]()
+                if inspect.isasyncgen(iter_obj):
+                    async for c in iter_obj:
+                        txt += c
+                else:
+                    for c in iter_obj:
+                        txt += c
+                outputs[k] = txt
+        return get_json_result(data=outputs)
     except Exception as exc:
         return server_error_response(exc)
 
