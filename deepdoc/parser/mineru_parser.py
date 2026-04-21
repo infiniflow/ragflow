@@ -541,6 +541,21 @@ class MinerUParser(RAGFlowPdfParser):
                 if nested_alt.exists():
                     subdir = nested_alt.parent
                     json_file = nested_alt
+                else:
+                      # Try vlm subdirectory (for vlm-http-client backend)
+                      vlm_path = output_dir / "vlm" / f"{file_stem}_content_list.json"
+                      self.logger.info(f"[MinerU] Trying vlm subdirectory: {vlm_path}")
+                      attempted.append(vlm_path)
+                      if vlm_path.exists():
+                          subdir = vlm_path.parent
+                          json_file = vlm_path
+                      else:
+                          vlm_safe = output_dir / "vlm" / f"{safe_stem}_content_list.json"
+                          self.logger.info(f"[MinerU] Trying vlm subdirectory with sanitized name: {vlm_safe}")
+                          attempted.append(vlm_safe)
+                          if vlm_safe.exists():
+                              subdir = vlm_safe.parent
+                              json_file = vlm_safe
 
         if not json_file:
             raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(p) for p in attempted)}")
