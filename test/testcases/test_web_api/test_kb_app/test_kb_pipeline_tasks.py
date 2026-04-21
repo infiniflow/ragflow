@@ -40,7 +40,7 @@ def _assert_progress_in_scale(progress, payload):
 def _wait_for_docs_parsed(auth, kb_id, timeout=60):
     @wait_for(timeout, 2, "Document parsing timeout")
     def _condition():
-        res = list_documents(auth, {"id": kb_id})
+        res = list_documents(auth, {"kb_id": kb_id})
         if res["code"] != 0:
             return False
         for doc in res["data"]["docs"]:

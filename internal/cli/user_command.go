@@ -1417,8 +1417,8 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 
 	var providerName, instanceName, modelName string
 
-	// Check if model_name is provided in command
-	if compositeModelName, ok := cmd.Params["model_name"].(string); ok && compositeModelName != "" {
+	// Check if composite_model_name is provided in command
+	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
 		names := strings.Split(compositeModelName, "/")
 		if len(names) != 3 {
 			return nil, fmt.Errorf("model name must be in format 'provider/instance/model'")
@@ -1524,12 +1524,12 @@ func (c *RAGFlowClient) UseModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	modelIdentifier, ok := cmd.Params["model_identifier"].(string)
-	if !ok || modelIdentifier == "" {
+	compositeModelName, ok := cmd.Params["composite_model_name"].(string)
+	if !ok || compositeModelName == "" {
 		return nil, fmt.Errorf("model identifier not provided")
 	}
 
-	names := strings.Split(modelIdentifier, "/")
+	names := strings.Split(compositeModelName, "/")
 	if len(names) != 3 {
 		return nil, fmt.Errorf("model identifier must be in format 'provider/instance/model'")
 	}

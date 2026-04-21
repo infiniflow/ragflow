@@ -94,7 +94,7 @@ export function useDatasetTableColumns({
                 className="flex items-center gap-2 cursor-pointer"
                 onClick={navigateToChunkParsedResult(
                   row.original.id,
-                  row.original.kb_id,
+                  row.original.dataset_id,
                 )}
               >
                 <FileIcon name={name}></FileIcon>
@@ -176,10 +176,10 @@ export function useDatasetTableColumns({
       },
     },
     {
-      accessorKey: 'chunk_num',
+      accessorKey: 'chunk_count',
       header: t('chunkNumber'),
       cell: ({ row }) => (
-        <div className="capitalize">{row.getValue('chunk_num')}</div>
+        <div className="capitalize">{row.getValue('chunk_count')}</div>
       ),
     },
     {

@@ -47,7 +47,7 @@ export function useBulkOperateDataset({
     return documents
       .filter((item) => selectedRowKeys.includes(item.id) && item.id)
       ?.reduce((acc, cur) => {
-        return acc + cur.chunk_num;
+        return acc + cur.chunk_count;
       }, 0);
   }, [documents, selectedRowKeys]);
 
