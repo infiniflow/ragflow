@@ -415,5 +415,5 @@ func (z *ZhipuAIModel) EncodeToEmbedding(modelName *string, texts []string, apiC
 }
 
 func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, fmt.Errorf("no such method")
 }
