@@ -72,51 +72,68 @@ class BaseTitleChunker(ABC):
 
 
     def extract_line_records(self):
-    # Normalize all upstream payloads into an ordered record stream.
-    # Level resolution and chunk construction operate on this stream only,
-    # so strategy code does not depend on source-specific output layouts.
-    import logging
-    logger = logging.getLogger(__name__)
-
-    payload = ""
-    if self.from_upstream.output_format == "markdown":
-        payload = self.from_upstream.markdown_result or ""
-    elif self.from_upstream.output_format == "text":
-        payload = self.from_upstream.text_result or ""
-    elif self.from_upstream.output_format == "html":
-        payload = self.from_upstream.html_result or ""
+        """
+        Normalize all upstream input payloads into a unified ordered record stream.
+        All level resolution and chunk construction logic operates on this standard stream,
+        decoupling downstream chunking strategies from different upstream output formats.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
     
-    if payload:
-        lines = payload.split("\n")
-        input_line_count = len(lines)
-        # 核心修复：分支区分格式，保住Markdown/HTML排版语义
-        if self.from_upstream.output_format == "text":
-            # 纯文本：执行清洗+去空行，优化脏数据
-            clean_lines = [line.strip() for line in lines if line.strip()]
-        else:
-            # Markdown/HTML：**保留原始空格换行，只过滤纯空行，不strip**，不破坏排版
-            clean_lines = [line for line in lines if line.strip()]
-        
-        output_line_count = len(clean_lines)
-        # 官方要求：添加过滤日志，线上可观测效果
-        logger.info(f"payload filter: before={input_line_count} after={output_line_count}")
+        payload = None
+        # Extract raw content payload based on upstream output format type
+        if self.from_upstream.output_format == "markdown":
+            payload = self.from_upstream.markdown_result or ""
+        elif self.from_upstream.output_format == "text":
+            payload = self.from_upstream.text_result or ""
+        elif self.from_upstream.output_format == "html":
+            payload = self.from_upstream.html_result or ""
 
-        return [{"text": line, "doc_type_kwd": "text", "img_id": None, "layout": "", PDF_POSITIONS_KEY: []} 
-                for line in clean_lines]
+        # Boundary robustness fix: explicit None check to distinguish `None` and empty string ""
+        # Prevents empty payload from unexpectedly falling through to structured chunk branch
+        if payload is not None:
+            lines = payload.split("\n")
+            input_line_count = len(lines)
+    
+            # Format-branched text processing to preserve original document semantics
+            # Plain text: perform full whitespace stripping and invalid empty line filtering
+            if self.from_upstream.output_format == "text":
+                clean_lines = [line.strip() for line in lines if line.strip()]
+            # Markdown & HTML: retain original indentation/spacing, only filter pure blank lines
+            else:
+                clean_lines = [line for line in lines if line.strip()]
+    
+            output_line_count = len(clean_lines)
+            # Production observability log: added format dimension per project coding guidelines
+            logger.info(
+                f"payload filter: format={self.from_upstream.output_format} before={input_line_count} after={output_line_count}"
+            )
+    
+            return [
+                {
+                    "text": line,
+                    "doc_type_kwd": "text",
+                    "img_id": None,
+                    "layout": "",
+                    PDF_POSITIONS_KEY: []
+                }
+                for line in clean_lines
+            ]
+        # Return empty array directly for null payload to block invalid branch fallthrough
+        return []
 
-    items = self.from_upstream.chunks if self.from_upstream.output_format == "chunks" else self.from_upstream.json_result
-    return [
-        {
-            # 核心修复：解决None序列化为"None"字符串问题
-            "text": item.get("text") or "",
-            "doc_type_kwd": str(item.get("doc_type_kwd") or "text"),
-            "img_id": item.get("img_id"),
-            "layout": "{} {}".format(item.get("layout_type", ""), item.get("layoutno", "")).strip(),
-            PDF_POSITIONS_KEY: extract_pdf_positions(item),
-        }
-        for item in items or []
-    ]
-
+        items = self.from_upstream.chunks if self.from_upstream.output_format == "chunks" else self.from_upstream.json_result
+        return [
+            {
+                # Serialization fix: avoid None value being converted into literal "None" string
+                "text": item.get("text") or "",
+                "doc_type_kwd": str(item.get("doc_type_kwd") or "text"),
+                "img_id": item.get("img_id"),
+                "layout": "{} {}".format(item.get("layout_type", ""), item.get("layoutno", "")).strip(),
+                PDF_POSITIONS_KEY: extract_pdf_positions(item),
+            }
+            for item in items or []
+        ]
 
     def extract_outlines(self):
         file = self.from_upstream.file or {}
