@@ -6294,6 +6294,124 @@
             ]
         },
         {
+            "name": "Astraflow",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
+            "status": "1",
+            "rank": "200",
+            "url": "https://api-us-ca.umodelverse.ai/v1",
+            "llm": [
+                {
+                    "llm_name": "deepseek-v3",
+                    "tags": "LLM,CHAT,64K",
+                    "max_tokens": 65536,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-r1",
+                    "tags": "LLM,CHAT,64K",
+                    "max_tokens": 65536,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "gpt-4o",
+                    "tags": "LLM,CHAT,128K,IMAGE2TEXT",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-4o-mini",
+                    "tags": "LLM,CHAT,128K,IMAGE2TEXT",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-3-5-sonnet-20241022",
+                    "tags": "LLM,CHAT,200K",
+                    "max_tokens": 200000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gemini-2.0-flash",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "text-embedding-3-small",
+                    "tags": "TEXT EMBEDDING,8K",
+                    "max_tokens": 8191,
+                    "model_type": "embedding",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "text-embedding-3-large",
+                    "tags": "TEXT EMBEDDING,8K",
+                    "max_tokens": 8191,
+                    "model_type": "embedding",
+                    "is_tools": false
+                }
+            ]
+        },
+        {
+            "name": "Astraflow-CN",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
+            "status": "1",
+            "rank": "199",
+            "url": "https://api.modelverse.cn/v1",
+            "llm": [
+                {
+                    "llm_name": "deepseek-v3",
+                    "tags": "LLM,CHAT,64K",
+                    "max_tokens": 65536,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-r1",
+                    "tags": "LLM,CHAT,64K",
+                    "max_tokens": 65536,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "qwen3-235b-a22b",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3-30b-a3b",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "text-embedding-3-small",
+                    "tags": "TEXT EMBEDDING,8K",
+                    "max_tokens": 8191,
+                    "model_type": "embedding",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "text-embedding-3-large",
+                    "tags": "TEXT EMBEDDING,8K",
+                    "max_tokens": 8191,
+                    "model_type": "embedding",
+                    "is_tools": false
+                }
+            ]
+        },
+        {
             "name": "Avian",
             "logo": "",
             "tags": "LLM",
