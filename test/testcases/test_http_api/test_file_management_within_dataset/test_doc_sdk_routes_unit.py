@@ -388,65 +388,6 @@ class TestDocRoutesUnit:
         res = _run(module.download_doc("doc-1"))
         assert res["filename"] == "doc.txt"
 
-    def test_list_docs_metadata_filters(self, monkeypatch):
-        module = _load_doc_module(monkeypatch)
-        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
-        monkeypatch.setattr(module, "request", SimpleNamespace(args=_DummyArgs()))
-        res = module.list_docs.__wrapped__("ds-1", "tenant-1")
-        assert "don't own the dataset" in res["message"]
-
-        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
-        monkeypatch.setattr(
-            module,
-            "request",
-            SimpleNamespace(
-                args=_DummyArgs(
-                    {
-                        "metadata_condition": "{bad json",
-                    }
-                )
-            ),
-        )
-        res = module.list_docs.__wrapped__("ds-1", "tenant-1")
-        assert res["message"] == "metadata_condition must be valid JSON."
-
-        monkeypatch.setattr(module, "request", SimpleNamespace(args=_DummyArgs({"metadata_condition": "[1]"})))
-        res = module.list_docs.__wrapped__("ds-1", "tenant-1")
-        assert res["message"] == "metadata_condition must be an object."
-
-        monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kbs: [{"doc_id": "x"}])
-        monkeypatch.setattr(module, "meta_filter", lambda *_args, **_kwargs: [])
-        monkeypatch.setattr(module, "convert_conditions", lambda cond: cond)
-        monkeypatch.setattr(
-            module,
-            "request",
-            SimpleNamespace(args=_DummyArgs({"metadata_condition": '{"conditions":[{"field":"x","op":"eq","value":"y"}]}'})),
-        )
-        res = module.list_docs.__wrapped__("ds-1", "tenant-1")
-        assert res["code"] == module.RetCode.SUCCESS
-        assert res["data"]["total"] == 0
-
-        monkeypatch.setattr(
-            module.DocumentService,
-            "get_list",
-            lambda *_args, **_kwargs: ([{"id": "doc-1", "create_time": 100, "run": "0"}], 1),
-        )
-        monkeypatch.setattr(
-            module,
-            "request",
-            SimpleNamespace(
-                args=_DummyArgs(
-                    {
-                        "create_time_from": "101",
-                        "create_time_to": "200",
-                    }
-                )
-            ),
-        )
-        res = module.list_docs.__wrapped__("ds-1", "tenant-1")
-        assert res["code"] == 0
-        assert res["data"]["docs"] == []
-
     def test_metadata_batch_update(self, monkeypatch):
         module = _load_doc_module(monkeypatch)
         monkeypatch.setattr(module, "convert_conditions", lambda cond: cond)

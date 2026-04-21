@@ -42,6 +42,7 @@ def condition(_auth, _dataset_id, _document_ids=None):
 
 
 def validate_document_details(auth, dataset_id, document_ids):
+    # currently list_documents not support search by document id
     for document_id in document_ids:
         res = list_documents(auth, dataset_id, params={"id": document_id})
         doc = res["data"]["docs"][0]

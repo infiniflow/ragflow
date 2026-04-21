@@ -165,6 +165,7 @@ def validate_document_update_fields(update_doc_req:UpdateDocumentReq, doc, req):
 
     return None, None
 
+
 def map_doc_keys(doc):
     """
     Rename document keys to match API response format.
@@ -241,9 +242,9 @@ def _process_run_mapping(doc, run_status):
 
     Args:
         doc: The document model from the database OR a dictionary.
-        run_status: Optional explicit run status value. If not provided:
-            - If doc has 'run' field, it will be mapped using run_mapping
-            - Otherwise, 'run' will be set to 'UNSTART' (for new uploads)
+        run_status: Optional explicit run status value.
+        If provided, 'run' field of doc will be set to run_status.
+        If not provided, 'run' will be set to 'UNSTART' (for new uploads)
 
     Returns:
         A dictionary with renamed keys for API response.
@@ -262,5 +263,3 @@ def _process_run_mapping(doc, run_status):
 
     doc["run"] = run_mapping[run_status]
     return doc
-
-

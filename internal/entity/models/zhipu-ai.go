@@ -30,13 +30,13 @@ import (
 
 // ZhipuAIModel implements ModelDriver for Zhipu AI
 type ZhipuAIModel struct {
-	BaseURL    string
+	BaseURL    map[string]string
 	URLSuffix  URLSuffix
 	httpClient *http.Client // Reusable HTTP client with connection pool
 }
 
 // NewZhipuAIModel creates a new Zhipu AI model instance
-func NewZhipuAIModel(baseURL string, urlSuffix URLSuffix) *ZhipuAIModel {
+func NewZhipuAIModel(baseURL map[string]string, urlSuffix URLSuffix) *ZhipuAIModel {
 	return &ZhipuAIModel{
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
@@ -53,7 +53,7 @@ func NewZhipuAIModel(baseURL string, urlSuffix URLSuffix) *ZhipuAIModel {
 }
 
 // Chat sends a message and returns response
-func (z *ZhipuAIModel) Chat(modelName, apiKey, message *string, genConf map[string]interface{}) (string, error) {
+func (z *ZhipuAIModel) Chat(modelName, apiKey, message *string, chatModelConfig *ChatConfig) (string, error) {
 	if message == nil {
 		return "", fmt.Errorf("message is nil")
 	}
@@ -70,16 +70,17 @@ func (z *ZhipuAIModel) Chat(modelName, apiKey, message *string, genConf map[stri
 		"temperature": 1,
 	}
 
-	// Add generation config if provided
-	if genConf != nil {
-		if maxTokens, ok := genConf["max_tokens"]; ok {
-			reqBody["max_tokens"] = maxTokens
+	if chatModelConfig != nil {
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
 		}
-		if temperature, ok := genConf["temperature"]; ok {
-			reqBody["temperature"] = temperature
+
+		if chatModelConfig.Temperature != nil {
+			reqBody["temperature"] = *chatModelConfig.Temperature
 		}
-		if topP, ok := genConf["top_p"]; ok {
-			reqBody["top_p"] = topP
+
+		if chatModelConfig.TopP != nil {
+			reqBody["top_p"] = *chatModelConfig.TopP
 		}
 	}
 
@@ -140,229 +141,14 @@ func (z *ZhipuAIModel) Chat(modelName, apiKey, message *string, genConf map[stri
 	return content, nil
 }
 
-// ChatStreamly sends a message and streams response
-func (z *ZhipuAIModel) ChatStreamly(modelName, apiKey, message *string, genConf map[string]interface{}) (<-chan string, error) {
-	url := fmt.Sprintf("%s/chat/completions", z.BaseURL)
-
-	// Build request body with streaming enabled
-	reqBody := map[string]interface{}{
-		"model": modelName,
-		"messages": []map[string]string{
-			{"role": "user", "content": *message},
-		},
-		"stream":      true,
-		"temperature": 1,
-	}
-
-	// Add generation config if provided
-	if genConf != nil {
-		if maxTokens, ok := genConf["max_tokens"]; ok {
-			reqBody["max_tokens"] = maxTokens
-		}
-		if temperature, ok := genConf["temperature"]; ok {
-			reqBody["temperature"] = temperature
-		}
-		if topP, ok := genConf["top_p"]; ok {
-			reqBody["top_p"] = topP
-		}
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
-
-	resp, err := z.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Create channel for streaming
-	resultChan := make(chan string)
-
-	go func() {
-		defer close(resultChan)
-		defer resp.Body.Close()
-
-		// SSE parsing: read line by line
-		scanner := bufio.NewScanner(resp.Body)
-		for scanner.Scan() {
-			line := scanner.Text()
-
-			// SSE data line starts with "data:"
-			if !strings.HasPrefix(line, "data:") {
-				continue
-			}
-
-			// Extract JSON after "data:"
-			data := strings.TrimSpace(line[5:])
-
-			// [DONE] marks the end of stream
-			if data == "[DONE]" {
-				break
-			}
-
-			// Parse the JSON event
-			var event map[string]interface{}
-			if err := json.Unmarshal([]byte(data), &event); err != nil {
-				continue
-			}
-
-			choices, ok := event["choices"].([]interface{})
-			if !ok || len(choices) == 0 {
-				continue
-			}
-
-			firstChoice, ok := choices[0].(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			delta, ok := firstChoice["delta"].(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			content, ok := delta["content"].(string)
-			if ok && content != "" {
-				resultChan <- content
-			}
-
-			finishReason, ok := firstChoice["finish_reason"].(string)
-			if ok && finishReason != "" {
-				break
-			}
-		}
-	}()
-
-	return resultChan, nil
-}
-
-// ChatStreamlyWithChannel sends a message and streams response to channel (better performance)
-func (z *ZhipuAIModel) ChatStreamlyWithChannel(modelName, apiKey, message *string, genConf map[string]interface{}, resultChan chan<- string) error {
-	url := fmt.Sprintf("%s/chat/completions", z.BaseURL)
-
-	// Build request body with streaming enabled
-	reqBody := map[string]interface{}{
-		"model": modelName,
-		"messages": []map[string]string{
-			{"role": "user", "content": *message},
-		},
-		"stream":      true,
-		"temperature": 1,
-	}
-
-	// Add generation config if provided
-	if genConf != nil {
-		if maxTokens, ok := genConf["max_tokens"]; ok {
-			reqBody["max_tokens"] = maxTokens
-		}
-		if temperature, ok := genConf["temperature"]; ok {
-			reqBody["temperature"] = temperature
-		}
-		if topP, ok := genConf["top_p"]; ok {
-			reqBody["top_p"] = topP
-		}
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
-
-	resp, err := z.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// SSE parsing: read line by line
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := scanner.Text()
-		logger.Info(line)
-
-		// SSE data line starts with "data:"
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		// Extract JSON after "data:"
-		data := strings.TrimSpace(line[5:])
-
-		// [DONE] marks the end of stream
-		if data == "[DONE]" {
-			break
-		}
-
-		// Parse the JSON event
-		var event map[string]interface{}
-		if err := json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			continue
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			resultChan <- content
-		}
-
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			break
-		}
-	}
-
-	// Send [DONE] marker for OpenAI compatibility
-	resultChan <- "[DONE]"
-
-	return scanner.Err()
-}
-
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string, modelConfig *ChatConfig, sender func(*string, *string) error) error {
-	url := fmt.Sprintf("%s/chat/completions", z.BaseURL)
+func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	var region = "default"
+	if chatModelConfig.Region != nil {
+		region = *chatModelConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/chat/completions", z.BaseURL[region])
 
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
@@ -374,33 +160,33 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string
 		"temperature": 1,
 	}
 
-	if modelConfig != nil {
-		if modelConfig.Stream != nil {
-			reqBody["stream"] = *modelConfig.Stream
+	if chatModelConfig != nil {
+		if chatModelConfig.Stream != nil {
+			reqBody["stream"] = *chatModelConfig.Stream
 		}
 
-		if modelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *modelConfig.MaxTokens
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
 		}
 
-		if modelConfig.Temperature != nil {
-			reqBody["temperature"] = *modelConfig.Temperature
+		if chatModelConfig.Temperature != nil {
+			reqBody["temperature"] = *chatModelConfig.Temperature
 		}
 
-		if modelConfig.DoSample != nil {
-			reqBody["do_sample"] = *modelConfig.DoSample
+		if chatModelConfig.DoSample != nil {
+			reqBody["do_sample"] = *chatModelConfig.DoSample
 		}
 
-		if modelConfig.TopP != nil {
-			reqBody["top_p"] = *modelConfig.TopP
+		if chatModelConfig.TopP != nil {
+			reqBody["top_p"] = *chatModelConfig.TopP
 		}
 
-		if modelConfig.Stop != nil {
-			reqBody["stop"] = *modelConfig.Stop
+		if chatModelConfig.Stop != nil {
+			reqBody["stop"] = *chatModelConfig.Stop
 		}
 
-		if modelConfig.Reasoning != nil {
-			if *modelConfig.Reasoning {
+		if chatModelConfig.Reasoning != nil {
+			if *chatModelConfig.Reasoning {
 				reqBody["thinking"] = map[string]interface{}{
 					"type": "enabled",
 				}
@@ -506,8 +292,13 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string
 }
 
 // EncodeToEmbedding encodes a list of texts into embeddings
-func (z *ZhipuAIModel) EncodeToEmbedding(modelName, apiKey *string, texts []string) ([][]float64, error) {
-	url := fmt.Sprintf("%s/embedding", z.BaseURL)
+func (z *ZhipuAIModel) EncodeToEmbedding(modelName, apiKey *string, texts []string, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+	var region = "default"
+	if embeddingConfig.Region != nil {
+		region = *embeddingConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/embedding", z.BaseURL[region])
 
 	embeddings := make([][]float64, len(texts))
 

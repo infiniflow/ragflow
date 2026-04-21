@@ -76,9 +76,9 @@ func (h *TenantHandler) GetModels(c *gin.Context) {
 }
 
 type SetModelRequest struct {
-	ModelProvider string `json:"model_provider" binding:"required"`
-	ModelInstance string `json:"model_instance" binding:"required"`
-	ModelName     string `json:"model_name" binding:"required"`
+	ModelProvider string `json:"model_provider"`
+	ModelInstance string `json:"model_instance"`
+	ModelName     string `json:"model_name"`
 	ModelType     string `json:"model_type" binding:"required"`
 }
 

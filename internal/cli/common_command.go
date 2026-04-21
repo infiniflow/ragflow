@@ -375,27 +375,29 @@ func (c *RAGFlowClient) ShowModel(cmd *Command) (ResponseIf, error) {
 
 func (c *RAGFlowClient) SetDefaultModel(cmd *Command) (ResponseIf, error) {
 
-	modeType, ok := cmd.Params["model_type"].(string)
+	modelType, ok := cmd.Params["model_type"].(string)
 	if !ok {
 		return nil, fmt.Errorf("model_type not provided")
 	}
-	modelProvider, ok := cmd.Params["model_provider"].(string)
-	if !ok {
-		return nil, fmt.Errorf("model_provider not provided")
-	}
-	modelInstance, ok := cmd.Params["model_instance"].(string)
-	if !ok {
-		return nil, fmt.Errorf("model_instance not provided")
-	}
-	modelName, ok := cmd.Params["model_name"].(string)
+
+	compositeModelName, ok := cmd.Params["composite_model_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("model_name not provided")
 	}
 
+	var providerName, instanceName, modelName string
+	names := strings.Split(compositeModelName, "/")
+	if len(names) != 3 {
+		return nil, fmt.Errorf("model name must be in format 'provider/instance/model'")
+	}
+	providerName = names[0]
+	instanceName = names[1]
+	modelName = names[2]
+
 	payload := map[string]interface{}{
-		"model_type":     modeType,
-		"model_provider": modelProvider,
-		"model_instance": modelInstance,
+		"model_type":     modelType,
+		"model_provider": providerName,
+		"model_instance": instanceName,
 		"model_name":     modelName,
 	}
 
@@ -411,6 +413,38 @@ func (c *RAGFlowClient) SetDefaultModel(cmd *Command) (ResponseIf, error) {
 	var result SimpleResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("failed to set default model: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) ResetDefaultModel(cmd *Command) (ResponseIf, error) {
+
+	modelType, ok := cmd.Params["model_type"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model_type not provided")
+	}
+
+	payload := map[string]interface{}{
+		"model_type": modelType,
+	}
+
+	resp, err := c.HTTPClient.Request("PATCH", "/models", true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reset default model: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to reset default model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to reset default model: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {

@@ -190,7 +190,7 @@ export function DatasetTable({
       {changeParserVisible && (
         <ChunkMethodDialog
           documentId={changeParserRecord.id}
-          parserId={changeParserRecord.parser_id}
+          parserId={changeParserRecord.chunk_method}
           pipelineId={changeParserRecord.pipeline_id}
           parserConfig={changeParserRecord.parser_config}
           documentExtension={getExtension(changeParserRecord.name)}

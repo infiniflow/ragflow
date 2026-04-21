@@ -37,7 +37,7 @@ def add_document_func(request: FixtureRequest, add_dataset: DataSet, ragflow_tmp
 def add_documents(request: FixtureRequest, add_dataset: DataSet, ragflow_tmp_dir) -> tuple[DataSet, list[Document]]:
     dataset = add_dataset
     documents = bulk_upload_documents(dataset, 5, ragflow_tmp_dir)
-
+    
     def cleanup():
         delete_all_documents(dataset)
 
