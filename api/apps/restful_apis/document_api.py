@@ -437,16 +437,19 @@ def list_docs(dataset_id, tenant_id):
     if err_code != RetCode.SUCCESS:
         return get_data_error_result(code=err_code, message=err_msg)
 
-    renamed_doc_list = [map_doc_keys(doc) for doc in docs]
-    for doc_item in renamed_doc_list:
-        if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-            doc_item["thumbnail"] = f"/v1/document/image/{dataset_id}-{doc_item['thumbnail']}"
-        if doc_item.get("source_type"):
-            doc_item["source_type"] = doc_item["source_type"].split("/")[0]
-        if doc_item["parser_config"].get("metadata"):
-            doc_item["parser_config"]["metadata"] = turn2jsonschema(doc_item["parser_config"]["metadata"])
-
-    return get_json_result(data={"total": total, "docs": renamed_doc_list})
+    if request.args.get("type") == "filter":
+        docs_filter = _aggregate_filters(docs)
+        return get_json_result(data={"total": total, "filter": docs_filter})
+    else:
+        renamed_doc_list = [map_doc_keys(doc) for doc in docs]
+        for doc_item in renamed_doc_list:
+            if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
+                doc_item["thumbnail"] = f"/v1/document/image/{dataset_id}-{doc_item['thumbnail']}"
+            if doc_item.get("source_type"):
+                doc_item["source_type"] = doc_item["source_type"].split("/")[0]
+            if doc_item["parser_config"].get("metadata"):
+                doc_item["parser_config"]["metadata"] = turn2jsonschema(doc_item["parser_config"]["metadata"])
+        return get_json_result(data={"total": total, "docs": renamed_doc_list})
 
 
 def _get_docs_with_request(req, dataset_id:str):
@@ -518,13 +521,15 @@ def _get_docs_with_request(req, dataset_id:str):
 
     doc_name = q.get("name")
     doc_id = q.get("id")
-    if doc_id and not DocumentService.query(id=doc_id, kb_id=dataset_id):
-        return RetCode.DATA_ERROR, f"You don't own the document {doc_id}.", [], 0
+    if doc_id:
+        if not DocumentService.query(id=doc_id, kb_id=dataset_id):
+            return RetCode.DATA_ERROR, f"You don't own the document {doc_id}.", [], 0
+        doc_ids_filter = [doc_id] # id provided, ignore other filters
     if doc_name and not DocumentService.query(name=doc_name, kb_id=dataset_id):
         return RetCode.DATA_ERROR, f"You don't own the document {doc_name}.", [], 0
 
     docs, total = DocumentService.get_by_kb_id(dataset_id, page, page_size, orderby, desc, keywords, run_status_converted, types, suffix,
-                                               doc_id=doc_id, name=doc_name, doc_ids_filter=doc_ids_filter, return_empty_metadata=return_empty_metadata)
+                                               name=doc_name, doc_ids=doc_ids_filter, return_empty_metadata=return_empty_metadata)
 
     # time range filter (0 means no bound)
     create_time_from = int(q.get("create_time_from", 0))
@@ -623,11 +628,11 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
         if metadata and not isinstance(metadata, dict):
             return RetCode.DATA_ERROR, "metadata must be an object.", [], return_empty_metadata
 
-    doc_ids_filter = None
-    metas = None
+    metas = dict()
     if metadata_condition or metadata:
         metas = DocMetadataService.get_flatted_meta_by_kbs([kb_id])
 
+    doc_ids_filter = None
     if metadata_condition:
         doc_ids_filter = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
         if metadata_condition.get("conditions") and not doc_ids_filter:
@@ -652,6 +657,7 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
                 metadata_doc_ids &= key_doc_ids
             if not metadata_doc_ids:
                 return RetCode.SUCCESS, "", [], return_empty_metadata
+
         if metadata_doc_ids is not None:
             if doc_ids_filter is None:
                 doc_ids_filter = metadata_doc_ids
@@ -746,3 +752,60 @@ async def delete_documents(tenant_id, dataset_id):
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
+def _aggregate_filters(docs):
+    """Aggregate filter options from a list of documents.
+
+    This function processes a list of document dictionaries and aggregates
+    available filter values for building filter UI on the client side.
+
+    Args:
+        docs (list): List of document dictionaries, each containing:
+            - id (str): Document ID
+            - suffix (str): File extension (e.g., "pdf", "docx")
+            - run (int): Parsing status code (0=UNSTART, 1=RUNNING, 2=CANCEL, 3=DONE, 4=FAIL)
+
+    Returns:
+        tuple: A tuple containing:
+            - dict: Aggregated filter options with keys:
+                - suffix: Dict mapping file extensions to document counts
+                - run_status: Dict mapping status codes to document counts
+                - metadata: Dict mapping metadata field names to value counts
+            - int: Total number of documents processed
+    """
+    suffix_counter = {}
+    run_status_counter = {}
+    metadata_counter = {}
+    empty_metadata_count = 0
+
+    for doc in docs:
+        suffix_counter[doc.get("suffix")] = suffix_counter.get(doc.get("suffix"), 0) + 1
+        key_of_run = str(doc.get("run"))
+        run_status_counter[key_of_run] = run_status_counter.get(key_of_run, 0) + 1
+        meta_fields = doc.get("meta_fields", {})
+
+        if not meta_fields:
+            empty_metadata_count += 1
+            continue
+        has_valid_meta = False
+
+        for key, value in meta_fields.items():
+            values = value if isinstance(value, list) else [value]
+            for vv in values:
+                if vv is None:
+                    continue
+                if isinstance(vv, str) and not vv.strip():
+                    continue
+                sv = str(vv)
+                if key not in metadata_counter:
+                    metadata_counter[key] = {}
+                metadata_counter[key][sv] = metadata_counter[key].get(sv, 0) + 1
+                has_valid_meta = True
+        if not has_valid_meta:
+            empty_metadata_count += 1
+
+    metadata_counter["empty_metadata"] = {"true": empty_metadata_count}
+    return {
+        "suffix": suffix_counter,
+        "run_status": run_status_counter,
+        "metadata": metadata_counter,
+    }
