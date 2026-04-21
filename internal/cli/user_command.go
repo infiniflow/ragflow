@@ -1014,7 +1014,7 @@ func (c *RAGFlowClient) AddProvider(cmd *Command) (ResponseIf, error) {
 		"provider_name": providerName,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/providers", true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("PUT", "/providers", true, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add provider: %w", err)
 	}
@@ -1301,9 +1301,13 @@ func (c *RAGFlowClient) DropProviderInstance(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("provider name not provided")
 	}
 
-	url := fmt.Sprintf("/providers/%s/instances/%s", providerName, instanceName)
+	payload := map[string]interface{}{
+		"instances": []string{instanceName},
+	}
 
-	resp, err := c.HTTPClient.Request("DELETE", url, true, "web", nil, nil)
+	url := fmt.Sprintf("/providers/%s/instances", providerName)
+
+	resp, err := c.HTTPClient.Request("DELETE", url, true, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop instance: %w", err)
 	}
@@ -1388,7 +1392,7 @@ func (c *RAGFlowClient) EnableOrDisableModel(cmd *Command, status string) (Respo
 		"status": status,
 	}
 
-	resp, err := c.HTTPClient.Request("PUT", url, true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("PATCH", url, true, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to enable/disable model: %w", err)
 	}
@@ -1413,8 +1417,8 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 
 	var providerName, instanceName, modelName string
 
-	// Check if model_name is provided in command
-	if compositeModelName, ok := cmd.Params["model_name"].(string); ok && compositeModelName != "" {
+	// Check if composite_model_name is provided in command
+	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
 		names := strings.Split(compositeModelName, "/")
 		if len(names) != 3 {
 			return nil, fmt.Errorf("model name must be in format 'provider/instance/model'")
@@ -1520,12 +1524,12 @@ func (c *RAGFlowClient) UseModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	modelIdentifier, ok := cmd.Params["model_identifier"].(string)
-	if !ok || modelIdentifier == "" {
+	compositeModelName, ok := cmd.Params["composite_model_name"].(string)
+	if !ok || compositeModelName == "" {
 		return nil, fmt.Errorf("model identifier not provided")
 	}
 
-	names := strings.Split(modelIdentifier, "/")
+	names := strings.Split(compositeModelName, "/")
 	if len(names) != 3 {
 		return nil, fmt.Errorf("model identifier must be in format 'provider/instance/model'")
 	}

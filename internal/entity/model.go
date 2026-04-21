@@ -59,6 +59,18 @@ type Reasoning struct {
 	RawType string           `json:"type"`
 }
 
+// Reasoning represents the reasoning capability (can be one of three types)
+type ClearReasoningContent struct {
+	DefaultValue bool `json:"default_value"`
+}
+
+// Reasoning represents the reasoning capability (can be one of three types)
+type Thinking struct {
+	DefaultValue    bool                  `json:"default_value"`
+	SupportedModels []string              `json:"supported_models"`
+	Clear           ClearReasoningContent `json:"clear"`
+}
+
 // UnmarshalJSON custom unmarshal for Reasoning
 func (r *Reasoning) UnmarshalJSON(data []byte) error {
 	var temp map[string]interface{}
@@ -132,24 +144,30 @@ type Multimodal struct {
 type Features struct {
 	Multimodal *Multimodal `json:"multimodal,omitempty"`
 	Reasoning  *Reasoning  `json:"reasoning,omitempty"`
+	Thinking   *Thinking   `json:"thinking,omitempty"`
+}
+
+type ModelThinking struct {
+	DefaultValue bool `json:"default_value"`
+	ClearContent bool `json:"clear_content"`
 }
 
 // Model represents a single LLM model
 type Model struct {
-	Name         string   `json:"name"`
-	MaxTokens    int      `json:"max_tokens"`
-	ModelTypes   []string `json:"model_types"`
-	Features     Features `json:"features"`
+	Name         string         `json:"name"`
+	MaxTokens    int            `json:"max_tokens"`
+	ModelTypes   []string       `json:"model_types"`
+	Thinking     *ModelThinking `json:"thinking"`
 	ModelTypeMap map[string]bool
 }
 
 // Provider represents an LLM provider
 type Provider struct {
-	Name        string           `json:"name"`
-	Tags        string           `json:"tags"`
-	URL         string           `json:"url"`
-	URLSuffix   models.URLSuffix `json:"url_suffix"`
-	Models      []Model          `json:"models"`
+	Name        string            `json:"name"`
+	URL         map[string]string `json:"url"`
+	URLSuffix   models.URLSuffix  `json:"url_suffix"`
+	Models      []*Model          `json:"models"`
+	Features    Features          `json:"features"`
 	ModelDriver models.ModelDriver
 }
 
@@ -205,7 +223,24 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 			return nil, fmt.Errorf("error parsing JSON from file %s: %w", filePath, err)
 		}
 
+		// Get support thinking models
+		modelSupportThinking := make(map[string]bool)
+		if provider.Features.Thinking != nil {
+			for _, modelName := range provider.Features.Thinking.SupportedModels {
+				modelSupportThinking[modelName] = true
+			}
+		}
+
 		for _, model := range provider.Models {
+			// if the prefix of mode.Name is matched with keys of modelSupportThinking
+			for modelPrefix, _ := range modelSupportThinking {
+				if strings.HasPrefix(model.Name, modelPrefix) {
+					model.Thinking = &ModelThinking{
+						DefaultValue: provider.Features.Thinking.DefaultValue,
+						ClearContent: provider.Features.Thinking.Clear.DefaultValue,
+					}
+				}
+			}
 			model.ModelTypeMap = make(map[string]bool)
 			for _, modelType := range model.ModelTypes {
 				model.ModelTypeMap[modelType] = true
@@ -236,11 +271,24 @@ func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 	var providers []map[string]interface{}
 
 	for _, provider := range pm.Providers {
+
+		modelTypeSet := make(map[string]struct{})
+		for _, model := range provider.Models {
+			for _, modelType := range model.ModelTypes {
+				modelTypeSet[modelType] = struct{}{}
+			}
+		}
+
+		var modelTypes []string
+		for modelType := range modelTypeSet {
+			modelTypes = append(modelTypes, modelType)
+		}
+
 		providerData := map[string]interface{}{
-			"name":       provider.Name,
-			"tags":       provider.Tags,
-			"url":        provider.URL,
-			"url_suffix": provider.URLSuffix,
+			"name":        provider.Name,
+			"url":         provider.URL,
+			"model_types": modelTypes,
+			"url_suffix":  provider.URLSuffix,
 		}
 		providers = append(providers, providerData)
 	}
@@ -262,7 +310,6 @@ func (pm *ProviderManager) GetProviderByName(providerName string) (map[string]in
 
 	providerInfo := map[string]interface{}{
 		"name":         provider.Name,
-		"tags":         provider.Tags,
 		"base_url":     provider.URL,
 		"total_models": len(provider.Models),
 	}
@@ -283,7 +330,7 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 			"name":        model.Name,
 			"max_tokens":  model.MaxTokens,
 			"model_types": model.ModelTypes,
-			"features":    getFeaturesMap(model.Features),
+			"features":    GetFeatures(model),
 		}
 		models = append(models, modelData)
 	}
@@ -391,7 +438,7 @@ func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filte
 			"name":        model.Name,
 			"max_tokens":  model.MaxTokens,
 			"model_types": model.ModelTypes,
-			"features":    getFeaturesMap(model.Features),
+			//"features":    getFeaturesMap(model.Features),
 		}
 
 		if filterBy != "" && filterValue != nil {
@@ -415,20 +462,20 @@ func (pm *ProviderManager) SearchByFeature(featureType string) ModelResponse {
 		Message: "success",
 	}
 
-	for _, provider := range pm.Providers {
-		for _, model := range provider.Models {
-			if modelHasFeature(model.Features, featureType) {
-				modelData := map[string]interface{}{
-					"provider":    provider.Name,
-					"name":        model.Name,
-					"max_tokens":  model.MaxTokens,
-					"model_types": model.ModelTypes,
-					"features":    getFeaturesMap(model.Features),
-				}
-				resp.Data = append(resp.Data, modelData)
-			}
-		}
-	}
+	//for _, provider := range pm.Providers {
+	//	for _, model := range provider.Models {
+	//		if modelHasFeature(model.Features, featureType) {
+	//			modelData := map[string]interface{}{
+	//				"provider":    provider.Name,
+	//				"name":        model.Name,
+	//				"max_tokens":  model.MaxTokens,
+	//				"model_types": model.ModelTypes,
+	//				"features":    getFeaturesMap(model.Features),
+	//			}
+	//			resp.Data = append(resp.Data, modelData)
+	//		}
+	//	}
+	//}
 
 	if len(resp.Data) == 0 {
 		resp.Code = 404
@@ -454,7 +501,7 @@ func (pm *ProviderManager) SearchByType(modelType string) ModelResponse {
 					"name":        model.Name,
 					"max_tokens":  model.MaxTokens,
 					"model_types": model.ModelTypes,
-					"features":    getFeaturesMap(model.Features),
+					//"features":    getFeaturesMap(model.Features),
 				}
 				resp.Data = append(resp.Data, modelData)
 			}
@@ -467,6 +514,26 @@ func (pm *ProviderManager) SearchByType(modelType string) ModelResponse {
 	}
 
 	return resp
+}
+
+func GetFeatures(model *Model) []string {
+	var features []string
+	if model.Thinking != nil {
+		features = append(features, "thinking")
+	}
+	return features
+}
+
+func ConvertToFeaturesMap(model *Model) map[string]interface{} {
+	featuresMap := make(map[string]interface{})
+	if model.Thinking != nil {
+		thinkingMap := map[string]interface{}{
+			"default_value":   model.Thinking.DefaultValue,
+			"clear_reasoning": model.Thinking.ClearContent,
+		}
+		featuresMap["thinking"] = thinkingMap
+	}
+	return featuresMap
 }
 
 // Helper: Get features map for response
@@ -547,7 +614,7 @@ func (pm *ProviderManager) FindProvider(name string) *Provider {
 func (pm *ProviderManager) findModel(provider *Provider, modelName string) *Model {
 	for i := range provider.Models {
 		if strings.EqualFold(provider.Models[i].Name, modelName) {
-			return &provider.Models[i]
+			return provider.Models[i]
 		}
 	}
 	return nil
