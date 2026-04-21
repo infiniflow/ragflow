@@ -181,19 +181,8 @@ async def test_db_connect():
         return get_json_result(data="Database Connection Successful!")
     except Exception as e:
         return server_error_response(e)
-
-#api get version dsl of canvas
-@manager.route('/getversion/<version_id>', methods=['GET'])  # noqa: F821
-@login_required
-def getversion( version_id):
-    try:
-        e, version = UserCanvasVersionService.get_by_id(version_id)
-        if version:
-            return get_json_result(data=version.to_dict())
-    except Exception as e:
-        return get_json_result(data=f"Error getting history file: {e}")
-
-
+    
+    
 @manager.route('/<canvas_id>/sessions', methods=['GET'])  # noqa: F821
 @login_required
 def sessions(canvas_id):

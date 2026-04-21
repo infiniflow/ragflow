@@ -182,7 +182,6 @@ export default {
   updateAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   agentChatCompletion: `${restAPIv1}/agents/chat/completion`,
-  getVersion: `${webAPI}/canvas/getversion`,
   resetAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}/reset`,
   testDbConnect: `${webAPI}/canvas/test_db_connect`,
   getInputElements: `${webAPI}/canvas/input_elements`,
@@ -195,7 +194,8 @@ export default {
   inputForm: (agentId: string, componentId: string) =>
     `${restAPIv1}/agents/${agentId}/components/${componentId}/input-form`,
   fetchVersionList: (id: string) => `${restAPIv1}/agents/${id}/versions`,
-  fetchVersion: (id: string) => `${webAPI}/canvas/getversion/${id}`,
+  fetchVersion: (agentId: string, versionId: string) =>
+    `${restAPIv1}/agents/${agentId}/versions/${versionId}`,
   getAgent: (id: string) => `${restAPIv1}/agents/${id}`,
   uploadAgentFile: (id?: string) => `${restAPIv1}/agents/${id}/upload`,
   fetchAgentLogs: (canvasId: string) => `${webAPI}/canvas/${canvasId}/sessions`,

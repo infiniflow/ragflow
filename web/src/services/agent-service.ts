@@ -42,7 +42,8 @@ const methods = {
     method: 'get',
   },
   fetchVersion: {
-    url: fetchVersion,
+    url: (config: { agentId: string; versionId: string }) =>
+      fetchVersion(config.agentId, config.versionId),
     method: 'get',
   },
   listAgents: {

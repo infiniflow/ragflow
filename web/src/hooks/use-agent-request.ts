@@ -603,15 +603,19 @@ export const useFetchVersion = (
   data?: IFlow;
   loading: boolean;
 } => {
+  const { id } = useParams();
   const { data, isFetching: loading } = useQuery({
-    queryKey: [AgentApiAction.FetchVersion, version_id],
+    queryKey: [AgentApiAction.FetchVersion, id, version_id],
     initialData: undefined,
     gcTime: 0,
-    enabled: !!version_id, // Only call API when both values are provided
+    enabled: !!id && !!version_id,
     queryFn: async () => {
-      if (!version_id) return undefined;
+      if (!id || !version_id) return undefined;
 
-      const { data } = await agentService.fetchVersion(version_id);
+      const { data } = await agentService.fetchVersion({
+        agentId: id,
+        versionId: version_id,
+      });
 
       return data?.data ?? undefined;
     },

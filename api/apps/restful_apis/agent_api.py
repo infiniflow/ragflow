@@ -361,6 +361,26 @@ def list_agent_versions(agent_id, tenant_id):
         return get_data_error_result(message=f"Error getting history files: {exc}")
 
 
+@manager.route("/agents/<agent_id>/versions/<version_id>", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def get_agent_version(agent_id, version_id, tenant_id):
+    if not UserCanvasService.accessible(agent_id, tenant_id):
+        return get_json_result(
+            data=False,
+            message="Only owner of canvas authorized for this operation.",
+            code=RetCode.OPERATING_ERROR,
+        )
+
+    try:
+        exists, version = UserCanvasVersionService.get_by_id(version_id)
+        if not exists or not version or str(version.user_canvas_id) != str(agent_id):
+            return get_data_error_result(message="Version not found.")
+        return get_json_result(data=version.to_dict())
+    except Exception as exc:
+        return get_data_error_result(message=f"Error getting history file: {exc}")
+
+
 @manager.route("/agents/<agent_id>/logs/<message_id>", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
