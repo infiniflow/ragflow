@@ -810,3 +810,71 @@ def _aggregate_filters(docs):
         "run_status": run_status_counter,
         "metadata": metadata_counter,
     }
+
+@manager.route("/api/v1/datasets/<dataset_id>/documents/<document_id>/metadata/config",methods=["PUT"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def update_metadata_config(tenant_id, dataset_id, document_id):
+    """
+    Update document metadata configuration.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: path
+        name: document_id
+        type: string
+        required: true
+        description: ID of the document.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: body
+        name: body
+        description: Metadata configuration.
+        required: true
+        schema:
+          type: object
+          properties:
+            metadata:
+              type: object
+              description: Metadata configuration JSON.
+    responses:
+      200:
+        description: Document updated successfully.
+    """
+    # Verify ownership and existence of dataset
+    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+        return get_error_data_result(message="You don't own the dataset.")
+
+    # Verify document exists in the dataset
+    doc = DocumentService.query(id=document_id, kb_id=dataset_id)
+    if not doc:
+        return get_error_data_result(
+            message=f"Document {document_id} not found in dataset {dataset_id}"
+        )
+    doc = doc[0]
+
+    # Get request body
+    req = await get_request_json()
+    if "metadata" not in req:
+        return get_error_argument_result(message="metadata is required")
+
+    # Update parser config with metadata
+    DocumentService.update_parser_config(doc.id, {"metadata": req["metadata"]})
+
+    # Get updated document
+    e, doc = DocumentService.get_by_id(doc.id)
+    if not e:
+        return get_data_error_result(message="Document not found!")
+
+    return get_result(data=doc.to_dict())

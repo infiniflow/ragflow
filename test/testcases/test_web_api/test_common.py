@@ -221,11 +221,6 @@ def kb_basic_info(auth, params=None, *, headers=HEADERS):
     return res.json()
 
 
-def kb_update_metadata_setting(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/update_metadata_setting", headers=headers, auth=auth, json=payload, data=data)
-    return res.json()
-
-
 def kb_list_pipeline_logs(auth, params=None, payload=None, *, headers=HEADERS, data=None):
     if payload is None:
         payload = {}
@@ -416,6 +411,27 @@ def document_metadata_update(auth, payload=None, *, headers=HEADERS, data=None):
 
 def document_update_metadata_setting(auth, payload=None, *, headers=HEADERS, data=None):
     res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/update_metadata_setting", headers=headers, auth=auth, json=payload, data=data)
+    return res.json()
+
+
+def document_update_metadata_config(auth, dataset_id, document_id, payload=None, *, headers=HEADERS, data=None):
+    """New RESTful endpoint for updating document metadata config.
+    
+    Args:
+        auth: Authentication credentials
+        dataset_id: ID of the dataset
+        document_id: ID of the document
+        payload: Request body with metadata
+        headers: Additional headers
+        data: Additional data
+    """
+    res = requests.put(
+        url=f"{HOST_ADDRESS}/api/v1/datasets/{dataset_id}/documents/{document_id}/metadata/config",
+        headers=headers,
+        auth=auth,
+        json=payload,
+        data=data
+    )
     return res.json()
 
 

@@ -42,7 +42,6 @@ const {
   fetchPipelineDatasetLogs,
   checkEmbedding,
   kbUpdateMetaData,
-  documentUpdateMetaData,
 } = api;
 
 const methods = {
@@ -182,10 +181,6 @@ const methods = {
     url: kbUpdateMetaData,
     method: 'post',
   },
-  documentUpdateMetaData: {
-    url: documentUpdateMetaData,
-    method: 'post',
-  },
   // getMetaData: {
   //   url: getMetaData,
   //   method: 'get',
@@ -293,6 +288,19 @@ export const updateMetaData = ({
   doc_ids?: string[];
   data: any;
 }) => request.post(api.updateMetaData, { data: { kb_id, doc_ids, ...data } });
+
+export const updateDocumentMetaDataConfig = ({
+  kb_id,
+  doc_id,
+  data,
+}: {
+  kb_id: string;
+  doc_id: string;
+  data: any;
+}) =>
+  request.put(api.documentUpdateMetaDataConfig(kb_id, doc_id), {
+    data: { ...data },
+  });
 
 export const listDataPipelineLogDocument = (
   params?: IFetchKnowledgeListRequestParams,
