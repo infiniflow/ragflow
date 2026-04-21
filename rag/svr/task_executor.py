@@ -656,16 +656,25 @@ async def run_dataflow(task: dict):
         return
 
     embedding_token_consumption = chunks.get("embedding_token_consumption", 0)
-    if chunks.get("chunks"):
+    # The output key may exist with an empty payload; check presence, not truthiness.
+    if "chunks" in chunks:
         chunks = copy.deepcopy(chunks["chunks"])
-    elif chunks.get("json"):
+    elif "json" in chunks:
         chunks = copy.deepcopy(chunks["json"])
-    elif chunks.get("markdown"):
-        chunks = [{"text": [chunks["markdown"]]}]
-    elif chunks.get("text"):
-        chunks = [{"text": [chunks["text"]]}]
-    elif chunks.get("html"):
-        chunks = [{"text": [chunks["html"]]}]
+    elif "markdown" in chunks:
+        chunks = [{"text": [chunks["markdown"]]}] if chunks["markdown"] else []
+    elif "text" in chunks:
+        chunks = [{"text": [chunks["text"]]}] if chunks["text"] else []
+    elif "html" in chunks:
+        chunks = [{"text": [chunks["html"]]}] if chunks["html"] else []
+    else:
+        chunks = []
+
+    # An empty normalized payload means "nothing parsed", so stop before embedding/indexing.
+    if not chunks:
+        PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id,
+                                           task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
+        return
 
     keys = [k for o in chunks for k in list(o.keys())]
     if not any([re.match(r"q_[0-9]+_vec", k) for k in keys]):
@@ -768,6 +777,40 @@ async def run_dataflow(task: dict):
                                        dsl=str(pipeline))
 
 
+async def has_raptor_chunks(doc_id: str, tenant_id: str, kb_id: str) -> bool:
+    """Return True if RAPTOR chunks already exist for doc_id in the doc store.
+
+    Queries directly for raptor_kwd="raptor" rows so a non-RAPTOR leading
+    chunk cannot produce a false-negative result.  Uses thread_pool_exec so
+    the blocking doc-store call does not stall the event loop.
+    """
+    from common.doc_store.doc_store_base import OrderByExpr
+    from rag.nlp import search as nlp_search
+    try:
+        condition = {"doc_id": doc_id, "raptor_kwd": ["raptor"]}
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["raptor_kwd"], [], condition, [], OrderByExpr(),
+            0, 1, nlp_search.index_name(tenant_id), [kb_id]
+        )
+        field_map = settings.docStoreConn.get_fields(res, ["raptor_kwd"])
+        found = bool(field_map)
+        if found:
+            logging.info(
+                "Checkpoint hit: RAPTOR chunks for doc %s (tenant=%s kb=%s) already exist",
+                doc_id, tenant_id, kb_id,
+            )
+        else:
+            logging.info(
+                "Checkpoint miss: no RAPTOR chunks for doc %s (tenant=%s kb=%s)",
+                doc_id, tenant_id, kb_id,
+            )
+        return found
+    except Exception:
+        logging.exception("Failed to check RAPTOR chunks for doc %s", doc_id)
+        return False
+
+
 @timeout(3600)
 async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_size, callback=None, doc_ids=[]):
     fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
@@ -825,6 +868,12 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
 
     if raptor_config.get("scope", "file") == "file":
         for x, doc_id in enumerate(doc_ids):
+            # CHECKPOINT: skip docs that already have RAPTOR chunks in the doc store
+            if await has_raptor_chunks(doc_id, row["tenant_id"], row["kb_id"]):
+                callback(msg=f"[RAPTOR] doc:{doc_id} already has RAPTOR chunks, skipping.")
+                callback(prog=(x + 1.) / len(doc_ids))
+                continue
+
             chunks = []
             skipped_chunks = 0
             for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
@@ -836,15 +885,15 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
                     logging.warning(f"RAPTOR: Chunk missing vector field '{vctr_nm}' in doc {doc_id}, skipping")
                     continue
                 chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
-            
+
             if skipped_chunks > 0:
                 callback(msg=f"[WARN] Skipped {skipped_chunks} chunks without vector field '{vctr_nm}' for doc {doc_id}. Consider re-parsing the document with the current embedding model.")
-            
+
             if not chunks:
                 logging.warning(f"RAPTOR: No valid chunks with vectors found for doc {doc_id}")
                 callback(msg=f"[WARN] No valid chunks with vectors found for doc {doc_id}, skipping")
                 continue
-                
+
             await generate(chunks, doc_id)
             callback(prog=(x + 1.) / len(doc_ids))
     else:
@@ -1256,13 +1305,13 @@ async def handle_task():
             pass
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
     finally:
-        task_document_ids = []
-        if task_type in ["graphrag", "raptor", "mindmap"]:
-            task_document_ids = task["doc_ids"]
         if not task.get("dataflow_id", ""):
+            referred_document_id = None
+            if task_type in ["graphrag", "raptor", "mindmap"]:
+                referred_document_id = task["doc_ids"][0]
             PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id="",
                                                                   task_type=pipeline_task_type,
-                                                                  fake_document_ids=task_document_ids)
+                                                                  task_id=task_id, referred_document_id=referred_document_id)
 
     redis_msg.ack()
 

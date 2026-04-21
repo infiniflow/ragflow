@@ -38,11 +38,12 @@ from api.utils.api_utils import (
     get_request_json,
 )
 from common.misc_utils import thread_pool_exec
+from common.tag_feature_utils import validate_tag_features
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import cross_languages, keyword_extraction
-from common.string_utils import remove_redundant_spaces
+from common.string_utils import is_content_empty, remove_redundant_spaces
 from common.constants import RetCode, LLMType, ParserType, PAGERANK_FLD
 from common import settings
 from api.apps import login_required, current_user
@@ -139,6 +140,8 @@ async def set():
         raise TypeError("expected string or bytes-like object")
     if isinstance(content_with_weight, bytes):
         content_with_weight = content_with_weight.decode("utf-8", errors="ignore")
+    if is_content_empty(content_with_weight):
+        return get_data_error_result(message="`content_with_weight` is required")
     d = {
         "id": req["chunk_id"],
         "content_with_weight": content_with_weight}
@@ -161,7 +164,10 @@ async def set():
             return get_data_error_result(message="`tag_kwd` must be a list of strings")
         d["tag_kwd"] = req["tag_kwd"]
     if "tag_feas" in req:
-        d["tag_feas"] = req["tag_feas"]
+        try:
+            d["tag_feas"] = validate_tag_features(req["tag_feas"])
+        except ValueError as exc:
+            return get_data_error_result(message=f"`tag_feas` {exc}")
     if "available_int" in req:
         d["available_int"] = req["available_int"]
 
@@ -328,7 +334,10 @@ async def create():
             return get_data_error_result(message="`tag_kwd` must be a list of strings")
         d["tag_kwd"] = req["tag_kwd"]
     if "tag_feas" in req:
-        d["tag_feas"] = req["tag_feas"]
+        try:
+            d["tag_feas"] = validate_tag_features(req["tag_feas"])
+        except ValueError as exc:
+            return get_data_error_result(message=f"`tag_feas` {exc}")
     image_base64 = req.get("image_base64", None)
 
     try:
@@ -489,6 +498,15 @@ async def retrieval_test():
             _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
+        highlight_val = req.get("highlight", None)
+        if highlight_val is None:
+            highlight = False
+        elif isinstance(highlight_val, bool):
+            highlight = highlight_val
+        elif isinstance(highlight_val, str):
+            highlight = highlight_val.lower() in ("true", "1", "yes", "on")
+        else:
+            highlight = bool(highlight_val)
         ranks = await settings.retriever.retrieval(
                         _question,
                         embd_mdl,
@@ -501,6 +519,7 @@ async def retrieval_test():
                         doc_ids=local_doc_ids,
                         top=top,
                         rerank_mdl=rerank_mdl,
+                        highlight=highlight,
                         rank_feature=labels
                     )
 

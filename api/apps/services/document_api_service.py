@@ -165,7 +165,8 @@ def validate_document_update_fields(update_doc_req:UpdateDocumentReq, doc, req):
 
     return None, None
 
-def rename_doc_key(doc):
+
+def map_doc_keys(doc):
     """
     Rename document keys to match API response format.
 
@@ -178,12 +179,76 @@ def rename_doc_key(doc):
     Returns:
         A dictionary with renamed keys for API response.
     """
+    renamed_doc = _process_key_mappings(doc)
+    if "run" in renamed_doc.keys():
+        renamed_doc = _process_run_mapping(renamed_doc, renamed_doc["run"])
+    return renamed_doc
+
+
+def map_doc_keys_with_run_status(doc, run_status):
+    """
+    Map document keys to match API response format.
+
+    Converts internal document model field names to the external API
+    response field names (e.g., 'chunk_num' -> 'chunk_count').
+
+    Args:
+        doc: The document model from the database OR a dictionary.
+        run_status: Optional explicit run status value. If not provided:
+            - If doc has 'run' field, it will be mapped using run_mapping
+            - Otherwise, 'run' will be set to 'UNSTART' (for new uploads)
+
+    Returns:
+        A dictionary with renamed keys for API response.
+    """
+    renamed_doc = _process_key_mappings(doc)
+    renamed_doc = _process_run_mapping(renamed_doc, run_status)
+    return renamed_doc
+
+
+def _process_key_mappings(doc):
+    """
+    Map document keys to match API response format.
+
+    Converts internal document model field names to the external API
+    response field names (e.g., 'chunk_num' -> 'chunk_count').
+
+    Args:
+        doc: The document model from the database OR a dictionary.
+
+    Returns:
+        A dictionary with renamed keys for API response.
+    """
     key_mapping = {
         "chunk_num": "chunk_count",
         "kb_id": "dataset_id",
         "token_num": "token_count",
         "parser_id": "chunk_method",
     }
+
+    # Handle both dict and model input
+    items = doc.to_dict().items() if hasattr(doc, 'to_dict') else doc.items()
+
+    renamed_doc = {}
+    for key, value in items:
+        new_key = key_mapping.get(key, key)
+        renamed_doc[new_key] = value
+    return renamed_doc
+
+
+def _process_run_mapping(doc, run_status):
+    """
+    Map document keys to match API response format.
+
+    Args:
+        doc: The document model from the database OR a dictionary.
+        run_status: Optional explicit run status value.
+        If provided, 'run' field of doc will be set to run_status.
+        If not provided, 'run' will be set to 'UNSTART' (for new uploads)
+
+    Returns:
+        A dictionary with renamed keys for API response.
+    """
     run_mapping = {
         "0": "UNSTART",
         "1": "RUNNING",
@@ -191,11 +256,10 @@ def rename_doc_key(doc):
         "3": "DONE",
         "4": "FAIL",
     }
-    renamed_doc = {}
-    for key, value in doc.to_dict().items():
-        new_key = key_mapping.get(key, key)
-        renamed_doc[new_key] = value
-        if key == "run":
-            renamed_doc["run"] = run_mapping.get(str(value))
-    return renamed_doc
 
+    # Handle run field
+    if run_status is None or run_status not in run_mapping.keys():
+        run_status = "0"
+
+    doc["run"] = run_mapping[run_status]
+    return doc

@@ -1,3 +1,4 @@
+import { Authorization } from '@/constants/authorization';
 import { IRenameTag } from '@/interfaces/database/knowledge';
 import {
   IFetchDocumentListRequestBody,
@@ -5,8 +6,10 @@ import {
 } from '@/interfaces/request/knowledge';
 import { ProcessingType } from '@/pages/dataset/dataset-overview/dataset-common';
 import api from '@/utils/api';
+import { getAuthorization } from '@/utils/authorization-util';
 import registerServer from '@/utils/register-server';
 import request, { post } from '@/utils/request';
+import axios from 'axios';
 
 const {
   createKb,
@@ -27,7 +30,6 @@ const {
   switchChunk,
   rmChunk,
   retrievalTest,
-  documentRename,
   documentRun,
   documentUpload,
   webCrawl,
@@ -74,10 +76,6 @@ const methods = {
   documentRm: {
     url: documentRm,
     method: 'post',
-  },
-  documentRename: {
-    url: documentRename,
-    method: 'put',
   },
   documentCreate: {
     url: documentCreate,
@@ -243,19 +241,45 @@ export const runRaptor = (datasetId: string) =>
 export const traceRaptor = (datasetId: string) =>
   request.get(api.traceRaptor(datasetId));
 
+// Using RESTful API: GET /api/v1/datasets/{dataset_id}/documents
 export const listDocument = (
   params?: IFetchKnowledgeListRequestParams,
   body?: IFetchDocumentListRequestBody,
-) => request.post(api.getDocumentList, { data: body || {}, params });
+) => {
+  if (!params || !params.id) {
+    throw new Error('params and params.id are required');
+  }
+  // Extract page, page_size, and ext.keywords from params
+  const { page, page_size, ext } = params;
+  // Merge: page, page_size, keywords (from ext), body, and remaining params
+  const mergedParams = {
+    page,
+    page_size,
+    keywords: ext?.keywords,
+    ...body,
+  };
+  return request.get(api.getDocumentList(params.id), { params: mergedParams });
+};
 
 export const documentFilter = (kb_id: string) =>
   request.post(api.getDatasetFilter, { kb_id });
+
+// Custom upload function that handles dynamic URL using axios directly
+export const uploadDocument = async (datasetId: string, formData: FormData) => {
+  const url = api.documentUpload(datasetId);
+  const response = await axios.post(url, formData, {
+    headers: {
+      [Authorization]: getAuthorization(),
+    },
+  });
+  return response.data;
+};
 
 export const renameDocument = (
   datasetId: string,
   documentId: string,
   data: { name?: string },
-) => request.put(api.documentRename(datasetId, documentId), { data });
+) => request.patch(api.documentRename(datasetId, documentId), { data });
 
 export const getMetaDataService = ({
   kb_id,

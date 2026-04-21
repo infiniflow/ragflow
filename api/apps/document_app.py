@@ -44,7 +44,6 @@ from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_heade
 from common import settings
 from common.constants import SANDBOX_ARTIFACT_BUCKET, VALID_TASK_STATUS, ParserType, RetCode, TaskStatus
 from common.file_utils import get_project_base_directory
-from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
 from common.misc_utils import get_uuid, thread_pool_exec
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search
@@ -60,56 +59,6 @@ def _is_safe_download_filename(name: str) -> bool:
     if name != PureWindowsPath(name).name:
         return False
     return True
-
-
-@manager.route("/upload", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("kb_id")
-async def upload():
-    form = await request.form
-    kb_id = form.get("kb_id")
-    if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-    files = await request.files
-    if "file" not in files:
-        return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
-
-    file_objs = files.getlist("file")
-
-    def _close_file_objs(objs):
-        for obj in objs:
-            try:
-                obj.close()
-            except Exception:
-                try:
-                    obj.stream.close()
-                except Exception:
-                    pass
-
-    for file_obj in file_objs:
-        if file_obj.filename == "":
-            _close_file_objs(file_objs)
-            return get_json_result(data=False, message="No file selected!", code=RetCode.ARGUMENT_ERROR)
-        if len(file_obj.filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-            _close_file_objs(file_objs)
-            return get_json_result(data=False, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=RetCode.ARGUMENT_ERROR)
-
-    e, kb = KnowledgebaseService.get_by_id(kb_id)
-    if not e:
-        raise LookupError("Can't find this dataset!")
-    if not check_kb_team_permission(kb, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-
-    err, files = await thread_pool_exec(FileService.upload_document, kb, file_objs, current_user.id)
-    if err:
-        files = [f[0] for f in files] if files else []
-        return get_json_result(data=files, message="\n".join(err), code=RetCode.SERVER_ERROR)
-
-    if not files:
-        return get_json_result(data=files, message="There seems to be an issue with your file format. Please verify it is correct and not corrupted.", code=RetCode.DATA_ERROR)
-    files = [f[0] for f in files]  # remove the blob
-
-    return get_json_result(data=files)
 
 
 @manager.route("/web_crawl", methods=["POST"])  # noqa: F821
@@ -231,139 +180,6 @@ async def create():
         FileService.add_file_from_kb(doc.to_dict(), kb_folder["id"], kb.tenant_id)
 
         return get_json_result(data=doc.to_json())
-    except Exception as e:
-        return server_error_response(e)
-
-
-@manager.route("/list", methods=["POST"])  # noqa: F821
-@login_required
-async def list_docs():
-    kb_id = request.args.get("id")
-    if not kb_id:
-        return get_json_result(data=False, message='Dataset ID is required for listing files.', code=RetCode.ARGUMENT_ERROR)
-    tenants = UserTenantService.query(user_id=current_user.id)
-    for tenant in tenants:
-        if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
-            break
-    else:
-        return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
-    keywords = request.args.get("keywords", "")
-
-    page_number = int(request.args.get("page", 0))
-    items_per_page = int(request.args.get("page_size", 0))
-    orderby = request.args.get("orderby", "create_time")
-    if request.args.get("desc", "true").lower() == "false":
-        desc = False
-    else:
-        desc = True
-    create_time_from = int(request.args.get("create_time_from", 0))
-    create_time_to = int(request.args.get("create_time_to", 0))
-
-    req = await get_request_json()
-
-    return_empty_metadata = req.get("return_empty_metadata", False)
-    if isinstance(return_empty_metadata, str):
-        return_empty_metadata = return_empty_metadata.lower() == "true"
-
-    run_status = req.get("run_status", [])
-    if run_status:
-        invalid_status = {s for s in run_status if s not in VALID_TASK_STATUS}
-        if invalid_status:
-            return get_data_error_result(message=f"Invalid filter run status conditions: {', '.join(invalid_status)}")
-
-    types = req.get("types", [])
-    if types:
-        invalid_types = {t for t in types if t not in VALID_FILE_TYPES}
-        if invalid_types:
-            return get_data_error_result(message=f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}")
-
-    suffix = req.get("suffix", [])
-    metadata_condition = req.get("metadata_condition", {}) or {}
-    metadata = req.get("metadata", {}) or {}
-    if isinstance(metadata, dict) and metadata.get("empty_metadata"):
-        return_empty_metadata = True
-        metadata = {k: v for k, v in metadata.items() if k != "empty_metadata"}
-    if return_empty_metadata:
-        metadata_condition = {}
-        metadata = {}
-    else:
-        if metadata_condition and not isinstance(metadata_condition, dict):
-            return get_data_error_result(message="metadata_condition must be an object.")
-        if metadata and not isinstance(metadata, dict):
-            return get_data_error_result(message="metadata must be an object.")
-
-    doc_ids_filter = None
-    metas = None
-    if metadata_condition or metadata:
-        metas = DocMetadataService.get_flatted_meta_by_kbs([kb_id])
-
-    if metadata_condition:
-        doc_ids_filter = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
-        if metadata_condition.get("conditions") and not doc_ids_filter:
-            return get_json_result(data={"total": 0, "docs": []})
-
-    if metadata:
-        metadata_doc_ids = None
-        for key, values in metadata.items():
-            if not values:
-                continue
-            if not isinstance(values, list):
-                values = [values]
-            values = [str(v) for v in values if v is not None and str(v).strip()]
-            if not values:
-                continue
-            key_doc_ids = set()
-            for value in values:
-                key_doc_ids.update(metas.get(key, {}).get(value, []))
-            if metadata_doc_ids is None:
-                metadata_doc_ids = key_doc_ids
-            else:
-                metadata_doc_ids &= key_doc_ids
-            if not metadata_doc_ids:
-                return get_json_result(data={"total": 0, "docs": []})
-        if metadata_doc_ids is not None:
-            if doc_ids_filter is None:
-                doc_ids_filter = metadata_doc_ids
-            else:
-                doc_ids_filter &= metadata_doc_ids
-            if not doc_ids_filter:
-                return get_json_result(data={"total": 0, "docs": []})
-
-    if doc_ids_filter is not None:
-        doc_ids_filter = list(doc_ids_filter)
-
-    try:
-        docs, tol = DocumentService.get_by_kb_id(
-            kb_id,
-            page_number,
-            items_per_page,
-            orderby,
-            desc,
-            keywords,
-            run_status,
-            types,
-            suffix,
-            doc_ids_filter,
-            return_empty_metadata=return_empty_metadata,
-        )
-
-        if create_time_from or create_time_to:
-            filtered_docs = []
-            for doc in docs:
-                doc_create_time = doc.get("create_time", 0)
-                if (create_time_from == 0 or doc_create_time >= create_time_from) and (create_time_to == 0 or doc_create_time <= create_time_to):
-                    filtered_docs.append(doc)
-            docs = filtered_docs
-
-        for doc_item in docs:
-            if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-                doc_item["thumbnail"] = f"/v1/document/image/{kb_id}-{doc_item['thumbnail']}"
-            if doc_item.get("source_type"):
-                doc_item["source_type"] = doc_item["source_type"].split("/")[0]
-            if doc_item["parser_config"].get("metadata"):
-                doc_item["parser_config"]["metadata"] = turn2jsonschema(doc_item["parser_config"]["metadata"])
-
-        return get_json_result(data={"total": tol, "docs": docs})
     except Exception as e:
         return server_error_response(e)
 

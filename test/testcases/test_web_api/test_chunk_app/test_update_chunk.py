@@ -46,10 +46,10 @@ class TestUpdateChunk:
         "payload, expected_code, expected_message",
         [
             ({"content_with_weight": None}, 100, "TypeError('expected string or bytes-like object')"),
-            ({"content_with_weight": ""}, 100, """Exception('Error: 413 - {"error":"Input validation error: `inputs` cannot be empty","error_type":"Validation"}')"""),
+            ({"content_with_weight": ""}, 102, "`content_with_weight` is required"),
             ({"content_with_weight": 1}, 100, "TypeError('expected string or bytes-like object')"),
             ({"content_with_weight": "update chunk"}, 0, ""),
-            ({"content_with_weight": " "}, 0, ""),
+            ({"content_with_weight": " "}, 102, "`content_with_weight` is required"),
             ({"content_with_weight": "\n!?。；！？\"'"}, 0, ""),
         ],
     )

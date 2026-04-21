@@ -187,7 +187,8 @@ class InfinityConnectionBase(DocStoreConnection):
                         strInCond = f"({strInCond})"
                         cond.append(strInCond)
                 else:
-                    cond.append(f"filter_fulltext('{self.convert_matching_field(k)}', '{v}')")
+                    escaped_v = str(v).replace("'", "''")
+                    cond.append(f"filter_fulltext('{self.convert_matching_field(k)}', '{escaped_v}')")
             elif isinstance(v, list):
                 inCond = list()
                 for item in v:
@@ -206,7 +207,8 @@ class InfinityConnectionBase(DocStoreConnection):
                         if kk == "exists":
                             cond.append("NOT (%s)" % exists(vv))
             elif isinstance(v, str):
-                cond.append(f"{k}='{v}'")
+                escaped_v = v.replace("'", "''")
+                cond.append(f"{k}='{escaped_v}'")
             elif k == "exists":
                 cond.append(exists(v))
             else:
@@ -491,17 +493,29 @@ class InfinityConnectionBase(DocStoreConnection):
         return len(res)
 
     def get_doc_ids(self, res: tuple[pd.DataFrame, int] | pd.DataFrame) -> list[str]:
+        # Extract DataFrame from result
         if isinstance(res, tuple):
-            res = res[0]
-        return list(res["id"])
+            df, count = res
+            if count == 0:
+                return []
+        else:
+            df = res
+        return list(df["id"])
 
     @abstractmethod
     def get_fields(self, res: tuple[pd.DataFrame, int] | pd.DataFrame, fields: list[str]) -> dict[str, dict]:
         raise NotImplementedError("Not implemented")
 
     def get_highlight(self, res: tuple[pd.DataFrame, int] | pd.DataFrame, keywords: list[str], field_name: str):
+        # Extract DataFrame from result
         if isinstance(res, tuple):
-            res = res[0]
+            df, _ = res
+        else:
+            df = res
+
+        if df.empty or field_name not in df.columns:
+            return {}
+
         ans = {}
         num_rows = len(res)
         column_id = res["id"]

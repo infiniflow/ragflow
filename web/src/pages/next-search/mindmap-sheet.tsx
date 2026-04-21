@@ -1,4 +1,4 @@
-import IndentedTree from '@/components/indented-tree/indented-tree';
+import { IndentedTree } from '@/components/indented-tree/indented-tree';
 import { Progress } from '@/components/ui/progress';
 import {
   Sheet,
@@ -15,13 +15,13 @@ interface IProps extends IModalProps<any> {
   data: any;
 }
 
-const MindMapDrawer = ({ data, hideModal, loading, visible }: IProps) => {
+const MindMapSheet = ({ data, hideModal, loading, visible }: IProps) => {
   const { t } = useTranslation();
   const percent = usePendingMindMap();
   return (
     <Sheet open={visible} modal={false}>
       <SheetContent
-        className="top-16 p-0 flex flex-col gap-0"
+        className="top-24 p-0 flex flex-col gap-0 h-auto"
         closeIcon={false}
       >
         <SheetHeader className="border-b py-2 px-4">
@@ -47,14 +47,7 @@ const MindMapDrawer = ({ data, hideModal, loading, visible }: IProps) => {
           )}
           {!loading && (
             <div className="bg-bg-card rounded-lg w-full h-full">
-              <IndentedTree
-                data={data}
-                show
-                style={{
-                  width: '100%',
-                  height: '100%',
-                }}
-              ></IndentedTree>
+              <IndentedTree data={data}></IndentedTree>
             </div>
           )}
         </div>
@@ -63,4 +56,4 @@ const MindMapDrawer = ({ data, hideModal, loading, visible }: IProps) => {
   );
 };
 
-export default MindMapDrawer;
+export default MindMapSheet;
