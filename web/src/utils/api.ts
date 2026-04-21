@@ -189,7 +189,8 @@ export default {
   getInputElements: `${webAPI}/canvas/input_elements`,
   debug: (agentId: string, componentId: string) =>
     `${restAPIv1}/agents/${agentId}/components/${componentId}/debug`,
-  trace: `${webAPI}/canvas/trace`,
+  trace: (agentId: string, messageId: string) =>
+    `${restAPIv1}/agents/${agentId}/logs/${messageId}`,
   cancelCanvas: (taskId: string) => `${webAPI}/canvas/cancel/${taskId}`, // cancel conversation
   // agent
   inputForm: (agentId: string, componentId: string) =>

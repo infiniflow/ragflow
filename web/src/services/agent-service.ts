@@ -83,7 +83,8 @@ const methods = {
     method: 'post',
   },
   trace: {
-    url: trace,
+    url: (config: { agentId: string; messageId: string }) =>
+      trace(config.agentId, config.messageId),
     method: 'get',
   },
   inputForm: {
@@ -134,7 +135,12 @@ export const updateAgent = (
 };
 
 export const fetchTrace = (data: { canvas_id: string; message_id: string }) => {
-  return request.get(methods.trace.url, { params: data });
+  return request.get(
+    methods.trace.url({
+      agentId: data.canvas_id,
+      messageId: data.message_id,
+    }),
+  );
 };
 export const fetchAgentLogsByCanvasId = (
   canvasId: string,

@@ -52,6 +52,7 @@ from api.utils.api_utils import (
 from common.constants import RetCode
 from common.misc_utils import get_uuid, thread_pool_exec
 from rag.flow.pipeline import Pipeline
+from rag.utils.redis_conn import REDIS_CONN
 
 
 def _get_user_nickname(user_id: str) -> str:
@@ -337,6 +338,28 @@ def get_agent(agent_id, tenant_id):
         canvas["datasets"] = [{"id": item.id, "name": item.name, "avatar": item.avatar} for item in datasets]
 
     return get_json_result(data=canvas)
+
+
+@manager.route("/agents/<agent_id>/logs/<message_id>", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def get_agent_logs(agent_id, message_id, tenant_id):
+    if not UserCanvasService.accessible(agent_id, tenant_id):
+        return get_json_result(
+            data=False,
+            message="Only owner of canvas authorized for this operation.",
+            code=RetCode.OPERATING_ERROR,
+        )
+
+    try:
+        binary = REDIS_CONN.get(f"{agent_id}-{message_id}-logs")
+        if not binary:
+            return get_json_result(data={})
+
+        return get_json_result(data=json.loads(binary.encode("utf-8")))
+    except Exception as exc:
+        logging.exception(exc)
+        return server_error_response(exc)
 
 
 @manager.route("/agents/<agent_id>", methods=["DELETE"])  # noqa: F821

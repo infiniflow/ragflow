@@ -13,12 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import inspect
 import json
 import logging
-from functools import partial
 from quart import request, make_response
-from agent.component import LLM
 from api.db.services.canvas_service import UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
@@ -207,20 +204,6 @@ def getversion( version_id):
             return get_json_result(data=version.to_dict())
     except Exception as e:
         return get_json_result(data=f"Error getting history file: {e}")
-
-
-@manager.route('/trace', methods=['GET'])  # noqa: F821
-def trace():
-    cvs_id = request.args.get("canvas_id")
-    msg_id = request.args.get("message_id")
-    try:
-        binary = REDIS_CONN.get(f"{cvs_id}-{msg_id}-logs")
-        if not binary:
-            return get_json_result(data={})
-
-        return get_json_result(data=json.loads(binary.encode("utf-8")))
-    except Exception as e:
-        logging.exception(e)
 
 
 @manager.route('/<canvas_id>/sessions', methods=['GET'])  # noqa: F821
