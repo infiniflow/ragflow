@@ -138,7 +138,7 @@ def delete_all_documents(auth, dataset_id, *, page_size=1000):
 
 def parse_documents(auth, dataset_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
@@ -163,7 +163,7 @@ def bulk_upload_documents(auth, dataset_id, num, tmp_path):
 # CHUNK MANAGEMENT WITHIN DATASET
 def add_chunk(auth, dataset_id, document_id, payload=None):
     url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
@@ -191,7 +191,7 @@ def delete_all_chunks(auth, dataset_id, document_id, *, page_size=1000):
 
 def retrieval_chunks(auth, payload=None):
     url = f"{HOST_ADDRESS}{RETRIEVAL_API_URL}"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
@@ -206,7 +206,7 @@ def batch_add_chunks(auth, dataset_id, document_id, num):
 # CHAT ASSISTANT MANAGEMENT
 def create_chat_assistant(auth, payload=None):
     url = f"{HOST_ADDRESS}{CHAT_ASSISTANT_API_URL}"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
@@ -255,7 +255,7 @@ def batch_create_chat_assistants(auth, num):
 # SESSION MANAGEMENT
 def create_session_with_chat_assistant(auth, chat_assistant_id, payload=None):
     url = f"{HOST_ADDRESS}{SESSION_WITH_CHAT_ASSISTANT_API_URL}".format(chat_id=chat_assistant_id)
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
@@ -313,21 +313,21 @@ def metadata_summary(auth, dataset_id, params=None):
 
 def metadata_batch_update(auth, dataset_id, payload=None):
     url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/metadata/update"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
 # CHAT COMPLETIONS AND RELATED QUESTIONS
 def related_questions(auth, payload=None):
     url = f"{HOST_ADDRESS}/api/{VERSION}/sessions/related_questions"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
 # AGENT MANAGEMENT AND SESSIONS
 def create_agent(auth, payload=None):
     url = f"{HOST_ADDRESS}{AGENT_API_URL}"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
@@ -367,7 +367,7 @@ def delete_all_agent_sessions(auth, agent_id, *, page_size=1000):
 
 def agent_completions(auth, agent_id, payload=None):
     url = f"{HOST_ADDRESS}{AGENT_API_URL}/{agent_id}/completions"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
@@ -387,7 +387,7 @@ def chat_completions(auth, chat_id, payload=None):
         Response JSON with answer data
     """
     url = f"{HOST_ADDRESS}/api/{VERSION}/chats/{chat_id}/completions"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
@@ -406,7 +406,7 @@ def chat_completions_openai(auth, chat_id, payload=None):
         Response JSON in OpenAI chat completions format with usage information
     """
     url = f"{HOST_ADDRESS}/api/{VERSION}/chats_openai/{chat_id}/chat/completions"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
@@ -459,7 +459,7 @@ def delete_index(auth, dataset_id, index_type, *, headers=HEADERS):
 
 def run_embedding(auth, dataset_id, payload=None, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/embedding"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 

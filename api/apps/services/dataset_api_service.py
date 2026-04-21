@@ -189,9 +189,12 @@ def get_dataset(dataset_id: str, tenant_id: str):
     if not dataset_id:
         return False, 'Lack of "Dataset ID"'
 
-    kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
-    if kb is None:
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return False, f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
+
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not ok:
+        return False, "Invalid Dataset ID"
 
     response_data = remap_dictionary_keys(kb.to_dict())
     return True, response_data
@@ -208,9 +211,12 @@ def get_ingestion_summary(dataset_id: str, tenant_id: str):
     if not dataset_id:
         return False, 'Lack of "Dataset ID"'
 
-    kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
-    if kb is None:
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return False, f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
+
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not ok:
+        return False, "Invalid Dataset ID"
 
     status = DocumentService.get_parsing_status_by_kb_ids([dataset_id]).get(dataset_id, {})
     return True, {
@@ -596,11 +602,20 @@ def aggregate_tags(dataset_ids: list[str], tenant_id: str):
         if not KnowledgebaseService.accessible(dataset_id, tenant_id):
             return False, f"No authorization for dataset '{dataset_id}'"
 
-    tenants = UserTenantService.get_tenants_by_user_id(tenant_id)
-    tags = []
-    for tenant in tenants:
-        tags += settings.retriever.all_tags(tenant["tenant_id"], dataset_ids)
-    return True, tags
+    dataset_ids_by_tenant = {}
+    for dataset_id in dataset_ids:
+        ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+        if not ok:
+            return False, f"Invalid Dataset ID '{dataset_id}'"
+        dataset_ids_by_tenant.setdefault(kb.tenant_id, []).append(dataset_id)
+
+    merged = {}
+    for kb_tenant_id, kb_ids in dataset_ids_by_tenant.items():
+        for bucket in settings.retriever.all_tags(kb_tenant_id, kb_ids):
+            tag = bucket["value"]
+            merged[tag] = merged.get(tag, 0) + bucket["count"]
+
+    return True, [{"value": tag, "count": count} for tag, count in merged.items()]
 
 
 def get_flattened_metadata(dataset_ids: list[str], tenant_id: str):
@@ -853,6 +868,10 @@ def run_embedding(dataset_id: str, tenant_id: str):
     for doc in documents:
         doc["tenant_id"] = tenant_id
         DocumentService.run(tenant_id, doc, kb_table_num_map)
+
+    return True, {"scheduled_count": len(documents)}
+
+
 def rename_tag(dataset_id: str, tenant_id: str, from_tag: str, to_tag: str):
     """
     Rename a tag in a dataset.
@@ -878,4 +897,6 @@ def rename_tag(dataset_id: str, tenant_id: str, from_tag: str, to_tag: str):
                                  {"remove": {"tag_kwd": from_tag.strip()}, "add": {"tag_kwd": to_tag}},
                                  search.index_name(kb.tenant_id),
                                  dataset_id)
+
+    return True, {"from": from_tag, "to": to_tag}
 

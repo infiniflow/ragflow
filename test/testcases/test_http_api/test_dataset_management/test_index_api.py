@@ -28,14 +28,22 @@ from utils import wait_for
 @wait_for(200, 1, "Document parsing timeout")
 def _parse_done(auth, dataset_id, document_ids=None):
     res = list_documents(auth, dataset_id)
-    target_docs = res["data"]["docs"]
+    if res.get("code") != 0:
+        return False
+    target_docs = res.get("data", {}).get("docs", [])
+    if not target_docs:
+        return False
     if document_ids is None:
         return all(doc.get("run") == "DONE" for doc in target_docs)
     target_ids = set(document_ids)
+    seen_ids = set()
     for doc in target_docs:
-        if doc.get("id") in target_ids and doc.get("run") != "DONE":
-            return False
-    return True
+        doc_id = doc.get("id")
+        if doc_id in target_ids:
+            seen_ids.add(doc_id)
+            if doc.get("run") != "DONE":
+                return False
+    return seen_ids == target_ids
 
 
 @pytest.mark.usefixtures("clear_datasets")
