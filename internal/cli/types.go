@@ -110,6 +110,7 @@ const (
 	TokenSize
 	TokenName // For ALTER PROVIDER <name> NAME <new_name>
 	TokenPool
+	TokenBalance
 	TokenInstance
 	TokenInstances
 	TokenDisable

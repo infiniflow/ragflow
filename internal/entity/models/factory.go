@@ -38,7 +38,7 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 	case "deepseek":
 		return NewDeepSeekModel(baseURL, urlSuffix), nil
 	case "moonshot":
-		return NewMooshotModel(baseURL, urlSuffix), nil
+		return NewMoonshotModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

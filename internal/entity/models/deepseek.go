@@ -49,6 +49,10 @@ func NewDeepSeekModel(baseURL map[string]string, urlSuffix URLSuffix) *DeepSeekM
 	}
 }
 
+func (z *DeepSeekModel) Name() string {
+	return "deepseek"
+}
+
 // Chat sends a message and returns response
 func (z *DeepSeekModel) Chat(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	return nil, fmt.Errorf("not implemented")
@@ -144,4 +148,8 @@ func (z *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	return models, nil
+}
+
+func (z *DeepSeekModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
