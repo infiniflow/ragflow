@@ -31,6 +31,14 @@ The **Parser** component supports parsing the following file types:
 | Audio         | MP3, WAV                 |
 | Video         | MP4, AVI, MKV            |
 
+### Detect multi-column layout
+
+Optimizes the parser to detect and reorder multi-column pages into a logical sequence. Ideal for PDF documents with two-column or newspaper-style layouts.
+
+### Remove original table of contents
+
+Strip the original table of contents (TOC) from PDF files. Once enabled, the TOC is not chunked or parsed for retrieval.
+
 ### PDF parser
 
 The output of a PDF parser is `json`. In the PDF parser, you select the parsing method that works best with your PDFs.
