@@ -163,6 +163,8 @@ func (p *Parser) parseListCommand() (*Command, error) {
 		return p.parseListTokens()
 	case TokenModel:
 		return p.parseListModelProviders()
+	case TokenSupported:
+		return p.parseListModelsOfProvider()
 	case TokenModels:
 		return p.parseListModelsOfProvider()
 	case TokenProviders:
@@ -1597,49 +1599,48 @@ func (p *Parser) parseSetVariable() (*Command, error) {
 func (p *Parser) parseSetDefault() (*Command, error) {
 	p.nextToken() // consume DEFAULT
 
-	var modelType, modelProvider, modelInstance, modelName string
+	var modelType, compositeModelName string
 	var err error
 
 	switch p.curToken.Type {
-	case TokenLLM:
+	case TokenChat:
 		modelType = "chat"
-	case TokenVLM:
-		modelType = "image2text"
+	case TokenVision:
+		modelType = "vision"
 	case TokenEmbedding:
 		modelType = "embedding"
-	case TokenReranker:
+	case TokenRerank:
 		modelType = "rerank"
 	case TokenASR:
 		modelType = "asr"
 	case TokenTTS:
 		modelType = "tts"
+	case TokenOCR:
+		modelType = "ocr"
 	default:
 		return nil, fmt.Errorf("unknown model type: %s", p.curToken.Value)
 	}
+	p.nextToken() // pass model type
 
-	p.nextToken()
-	modelProvider, err = p.parseQuotedString()
+	if p.curToken.Type != TokenModel {
+		return nil, fmt.Errorf("expected MODEL")
+	}
+	p.nextToken() // pass MODEL
+
+	// Format: 'provider/instance/model' or just 'message'
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected quoted string with format provider/instance/model")
+	}
+
+	compositeModelName, err = p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-
 	p.nextToken()
-	modelInstance, err = p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	modelName, err = p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
 
 	cmd := NewCommand("set_default_model")
 	cmd.Params["model_type"] = modelType
-	cmd.Params["model_provider"] = modelProvider
-	cmd.Params["model_instance"] = modelInstance
-	cmd.Params["model_name"] = modelName
+	cmd.Params["composite_model_name"] = compositeModelName
 
 	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
@@ -1717,26 +1718,33 @@ func (p *Parser) parseResetCommand() (*Command, error) {
 
 	var modelType string
 	switch p.curToken.Type {
-	case TokenLLM:
-		modelType = "llm_id"
-	case TokenVLM:
-		modelType = "img2txt_id"
+	case TokenChat:
+		modelType = "chat"
+	case TokenVision:
+		modelType = "vision"
 	case TokenEmbedding:
-		modelType = "embd_id"
-	case TokenReranker:
-		modelType = "reranker_id"
+		modelType = "embedding"
+	case TokenRerank:
+		modelType = "rerank"
 	case TokenASR:
-		modelType = "asr_id"
+		modelType = "asr"
 	case TokenTTS:
-		modelType = "tts_id"
+		modelType = "tts"
+	case TokenOCR:
+		modelType = "ocr"
 	default:
 		return nil, fmt.Errorf("unknown model type: %s", p.curToken.Value)
 	}
 
 	cmd := NewCommand("reset_default_model")
 	cmd.Params["model_type"] = modelType
-
 	p.nextToken()
+
+	if p.curToken.Type != TokenModel {
+		return nil, fmt.Errorf("expected MODEL")
+	}
+	p.nextToken() // pass MODEL
+
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
@@ -2008,11 +2016,55 @@ func (p *Parser) parseSearchCommand() (*Command, error) {
 }
 
 func (p *Parser) parseListModelsOfProvider() (*Command, error) {
+
+	if p.curToken.Type == TokenSupported {
+		// List supported models
+		p.nextToken()
+
+		cmd := NewCommand("list_supported_models")
+		if p.curToken.Type != TokenModels {
+			return nil, fmt.Errorf("expected MODELS")
+		}
+		p.nextToken()
+
+		if p.curToken.Type != TokenFrom {
+			return nil, fmt.Errorf("expected FROM")
+		}
+		p.nextToken()
+
+		if p.curToken.Type != TokenQuotedString {
+			return nil, fmt.Errorf("expected quoted string for provider name")
+		}
+		firstName, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken()
+
+		if p.curToken.Type != TokenQuotedString {
+			return nil, fmt.Errorf("expected quoted string for instance name")
+		}
+		secondName, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken()
+
+		cmd.Params["provider_name"] = firstName
+		cmd.Params["instance_name"] = secondName
+
+		// Semicolon is optional for UNSET TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
+		}
+		return cmd, nil
+	}
+
 	if p.curToken.Type != TokenModels {
 		return nil, fmt.Errorf("expected MODELS")
 	}
-
 	p.nextToken()
+
 	if p.curToken.Type != TokenFrom {
 		return nil, fmt.Errorf("expected FROM")
 	}
@@ -2144,7 +2196,7 @@ func (p *Parser) parseDisableCommand() (*Command, error) {
 func (p *Parser) parseChatCommand() (*Command, error) {
 	p.nextToken() // consume CHAT
 
-	var modelName string
+	var compositeModelName string
 	var message string
 
 	// Check if we have a quoted string that looks like a model identifier (contains two slashes)
@@ -2156,7 +2208,7 @@ func (p *Parser) parseChatCommand() (*Command, error) {
 		slashCount := strings.Count(firstArg, "/")
 		if slashCount == 2 {
 			// This is likely a model identifier, expect another quoted string for message
-			modelName = firstArg
+			compositeModelName = firstArg
 			p.nextToken()
 
 			// After model name, expect message
@@ -2184,23 +2236,51 @@ func (p *Parser) parseChatCommand() (*Command, error) {
 	}
 
 	cmd := NewCommand("chat_to_model")
-	if modelName != "" {
-		cmd.Params["model_name"] = modelName
+	if compositeModelName != "" {
+		cmd.Params["composite_model_name"] = compositeModelName
 	}
 	cmd.Params["message"] = message
-	cmd.Params["reasoning"] = false
+	cmd.Params["thinking"] = false
+	cmd.Params["stream"] = false
 	return cmd, nil
 }
 
 func (p *Parser) parseThinkCommand() (*Command, error) {
 
 	p.nextToken() // consume THINK
+
+	if p.curToken.Type != TokenChat {
+		return nil, fmt.Errorf("expected CHAT after THINK")
+	}
+
 	command, err := p.parseChatCommand()
 	if err != nil {
 		return nil, err
 	}
-	command.Type = "think_chat_to_model"
-	command.Params["reasoning"] = true
+	command.Params["thinking"] = true
+	return command, nil
+}
+
+func (p *Parser) parseStreamCommand() (*Command, error) {
+
+	p.nextToken() // consume STREAM
+
+	var command *Command
+	var err error
+
+	if p.curToken.Type == TokenChat {
+		command, err = p.parseChatCommand()
+		if err != nil {
+			return nil, err
+		}
+	} else if p.curToken.Type == TokenThink {
+		command, err = p.parseThinkCommand()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	command.Params["stream"] = true
 	return command, nil
 }
 
@@ -2213,7 +2293,7 @@ func (p *Parser) parseUseCommand() (*Command, error) {
 	p.nextToken() // consume MODEL
 
 	// Parse model identifier in format 'provider/instance/model'
-	modelIdentifier, err := p.parseQuotedString()
+	compositeModelName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, fmt.Errorf("expected model identifier in format 'provider/instance/model': %w", err)
 	}
@@ -2225,7 +2305,7 @@ func (p *Parser) parseUseCommand() (*Command, error) {
 	}
 
 	cmd := NewCommand("use_model")
-	cmd.Params["model_identifier"] = modelIdentifier
+	cmd.Params["composite_model_name"] = compositeModelName
 	return cmd, nil
 }
 

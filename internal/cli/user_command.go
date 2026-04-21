@@ -1417,8 +1417,8 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 
 	var providerName, instanceName, modelName string
 
-	// Check if model_name is provided in command
-	if compositeModelName, ok := cmd.Params["model_name"].(string); ok && compositeModelName != "" {
+	// Check if composite_model_name is provided in command
+	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
 		names := strings.Split(compositeModelName, "/")
 		if len(names) != 3 {
 			return nil, fmt.Errorf("model name must be in format 'provider/instance/model'")
@@ -1436,83 +1436,106 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	}
 
 	message := cmd.Params["message"].(string)
-	reasoning := cmd.Params["reasoning"].(bool)
+	thinking := cmd.Params["thinking"].(bool)
+	stream := cmd.Params["stream"].(bool)
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
 
 	payload := map[string]interface{}{
-		"message":   message,
-		"stream":    true, // use stream API
-		"reasoning": reasoning,
+		"message":  message,
+		"stream":   stream, // use stream API
+		"thinking": thinking,
 	}
 
-	// Call stream http api
-	reader, duration, err := c.HTTPClient.RequestStream("POST", url, true, "web", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to chat model: %w", err)
-	}
-	defer reader.Close()
-
-	// Parse SSE and output to console
-	scanner := bufio.NewScanner(reader)
-	var fullMessage strings.Builder
-
-	reasoningPrint := true
-	messagePrint := true
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "data:") {
-			data := strings.TrimPrefix(line, "data:")
-			data = strings.TrimSpace(data)
-
-			if strings.HasPrefix(data, "[REASONING]") {
-				data = strings.TrimPrefix(data, "[REASONING]")
-				if reasoningPrint {
-					fmt.Print("Thinking: ")
-					reasoningPrint = false
-				} else {
-					fmt.Print(data)
-				}
-				os.Stdout.Sync()
-			}
-			if strings.HasPrefix(data, "[MESSAGE]") {
-				data = strings.TrimPrefix(data, "[MESSAGE]")
-				if messagePrint {
-					if reasoning {
-						fmt.Println()
-					}
-					fmt.Print("Answer: ")
-					messagePrint = false
-				} else {
-					fmt.Print(data)
-					os.Stdout.Sync()
-					fullMessage.WriteString(data)
-				}
-			}
-		} else if strings.HasPrefix(line, "event:error") {
-			// error event
-			if scanner.Scan() {
-				errData := strings.TrimPrefix(scanner.Text(), "data:")
-				errData = strings.TrimSpace(errData)
-				return nil, fmt.Errorf("chat error: %s", errData)
-			}
-			// If there's an error, return a generic error
-			return nil, fmt.Errorf("chat error: received error event from server")
+	if stream {
+		// Call stream http api
+		reader, duration, err := c.HTTPClient.RequestStream("POST", url, true, "web", nil, payload)
+		if err != nil {
+			return nil, fmt.Errorf("failed to chat model: %w", err)
 		}
+		defer reader.Close()
+
+		// Parse SSE and output to console
+		scanner := bufio.NewScanner(reader)
+		var fullMessage strings.Builder
+
+		reasoningPrint := true
+		messagePrint := true
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "data:") {
+				data := strings.TrimPrefix(line, "data:")
+				data = strings.TrimSpace(data)
+
+				if strings.HasPrefix(data, "[REASONING]") {
+					data = strings.TrimPrefix(data, "[REASONING]")
+					if reasoningPrint {
+						fmt.Print("Thinking: ")
+						reasoningPrint = false
+					} else {
+						fmt.Print(data)
+					}
+					os.Stdout.Sync()
+				}
+				if strings.HasPrefix(data, "[MESSAGE]") {
+					data = strings.TrimPrefix(data, "[MESSAGE]")
+					if messagePrint {
+						if thinking {
+							fmt.Println()
+						}
+						fmt.Print("Answer: ")
+						messagePrint = false
+					} else {
+						fmt.Print(data)
+						os.Stdout.Sync()
+						fullMessage.WriteString(data)
+					}
+				}
+			} else if strings.HasPrefix(line, "event:error") {
+				// error event
+				if scanner.Scan() {
+					errData := strings.TrimPrefix(scanner.Text(), "data:")
+					errData = strings.TrimSpace(errData)
+					return nil, fmt.Errorf("chat error: %s", errData)
+				}
+				// If there's an error, return a generic error
+				return nil, fmt.Errorf("chat error: received error event from server")
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			return nil, fmt.Errorf("error reading stream: %w", err)
+		}
+
+		fmt.Println()
+
+		result := &StreamMessageResponse{
+			Code:     0,
+			Message:  fullMessage.String(),
+			Duration: duration,
+		}
+		return result, nil
 	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading stream: %w", err)
+	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list instance models: %w", err)
 	}
 
-	fmt.Println()
-
-	result := &StreamMessageResponse{
-		Code:     0,
-		Message:  fullMessage.String(),
-		Duration: duration,
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list instance models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
-	return result, nil
+
+	var result NonStreamResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to list instance models: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
 }
 
 // UseModel sets the current model for chat
@@ -1524,12 +1547,12 @@ func (c *RAGFlowClient) UseModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	modelIdentifier, ok := cmd.Params["model_identifier"].(string)
-	if !ok || modelIdentifier == "" {
+	compositeModelName, ok := cmd.Params["composite_model_name"].(string)
+	if !ok || compositeModelName == "" {
 		return nil, fmt.Errorf("model identifier not provided")
 	}
 
-	names := strings.Split(modelIdentifier, "/")
+	names := strings.Split(compositeModelName, "/")
 	if len(names) != 3 {
 		return nil, fmt.Errorf("model identifier must be in format 'provider/instance/model'")
 	}

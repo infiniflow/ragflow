@@ -192,7 +192,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		})
 		return
 	}
-	models, err := dao.GetModelProviderManager().ListModels(providerName)
+	providerModels, err := dao.GetModelProviderManager().ListModels(providerName)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeNotFound,
@@ -203,7 +203,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
-		"data":    models,
+		"data":    providerModels,
 	})
 }
 
@@ -274,7 +274,7 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	_, err := h.modelProviderService.CreateProviderInstance(providerName, req.InstanceName, req.APIKey, userID)
+	_, err := h.modelProviderService.CreateProviderInstance(providerName, req.InstanceName, req.APIKey, userID, "default")
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeServerError,
@@ -458,7 +458,42 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 		})
 		return
 	}
-	models, err := h.modelProviderService.ListInstanceModels(providerName, instanceName, c.GetString("user_id"))
+
+	keywords := ""
+	if queryKeywords := c.Query("supported"); queryKeywords != "" {
+		keywords = queryKeywords
+	}
+
+	// convert keywords to small case
+	keywords = strings.ToLower(keywords)
+	if keywords == "true" {
+		// list supported models
+
+		modelList, err := h.modelProviderService.ListSupportedModels(providerName, instanceName, c.GetString("user_id"))
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeServerError,
+				"message": err.Error(),
+			})
+			return
+		}
+
+		var modelResponse []map[string]string
+		for _, modelName := range modelList {
+			modelResponse = append(modelResponse, map[string]string{
+				"model_name": modelName,
+			})
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"message": "success",
+			"data":    modelResponse,
+		})
+		return
+	}
+
+	modelInstances, err := h.modelProviderService.ListInstanceModels(providerName, instanceName, c.GetString("user_id"))
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeNotFound,
@@ -469,7 +504,7 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
-		"data":    models,
+		"data":    modelInstances,
 	})
 }
 
@@ -533,9 +568,9 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 }
 
 type ChatToModelRequest struct {
-	Message   string `json:"message" binding:"required"`
-	Stream    bool   `json:"stream"`
-	Reasoning bool   `json:"reasoning"`
+	Message  string `json:"message" binding:"required"`
+	Stream   bool   `json:"stream"`
+	Thinking bool   `json:"thinking"`
 }
 
 func (h *ProviderHandler) ChatToModel(c *gin.Context) {
@@ -610,8 +645,13 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 			return nil
 		}
 
+		apiConfig := models.APIConfig{
+			ApiKey: nil,
+			Region: nil,
+		}
+
 		chatConfig := models.ChatConfig{
-			Reasoning:   &req.Reasoning,
+			Thinking:    &req.Thinking,
 			Stream:      &req.Stream,
 			Stop:        &[]string{},
 			DoSample:    nil,
@@ -621,7 +661,7 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		}
 
 		// Stream response using sender function (best performance, no channel)
-		errorCode := h.modelProviderService.ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, req.Message, &chatConfig, sender)
+		errorCode := h.modelProviderService.ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, req.Message, &apiConfig, &chatConfig, sender)
 
 		if errorCode != common.CodeSuccess {
 			c.SSEvent("error", "stream failed")
@@ -629,8 +669,23 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		return
 	}
 
+	apiConfig := models.APIConfig{
+		ApiKey: nil,
+		Region: nil,
+	}
+
+	chatConfig := models.ChatConfig{
+		Thinking:    &req.Thinking,
+		Stream:      &req.Stream,
+		Stop:        &[]string{},
+		DoSample:    nil,
+		MaxTokens:   nil,
+		Temperature: nil,
+		TopP:        nil,
+	}
+
 	// Non-stream response
-	response, errorCode, err := h.modelProviderService.ChatToModel(providerName, instanceName, modelName, userID, req.Message)
+	response, errorCode, err := h.modelProviderService.ChatToModel(providerName, instanceName, modelName, userID, req.Message, &apiConfig, &chatConfig)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    errorCode,
@@ -640,7 +695,8 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": response,
+		"code":              0,
+		"reasoning_content": response.ReasonContent,
+		"answer":            response.Answer,
 	})
 }
