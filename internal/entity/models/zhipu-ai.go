@@ -91,6 +91,22 @@ func (z *ZhipuAIModel) Chat(modelName, apiKey, message *string, chatModelConfig 
 		reqBody["top_p"] = *chatModelConfig.TopP
 	}
 
+	if chatModelConfig.Stop != nil {
+		reqBody["stop"] = *chatModelConfig.Stop
+	}
+
+	if chatModelConfig.Thinking != nil {
+		if *chatModelConfig.Thinking {
+			reqBody["thinking"] = map[string]interface{}{
+				"type": "enabled",
+			}
+		} else {
+			reqBody["thinking"] = map[string]interface{}{
+				"type": "disabled",
+			}
+		}
+	}
+
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
