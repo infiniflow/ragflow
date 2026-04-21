@@ -374,27 +374,6 @@ async def change_status():
     return get_json_result(data=result)
 
 
-@manager.route("/rm", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("doc_id")
-async def rm():
-    req = await get_request_json()
-    doc_ids = req["doc_id"]
-    if isinstance(doc_ids, str):
-        doc_ids = [doc_ids]
-
-    for doc_id in doc_ids:
-        if not DocumentService.accessible4deletion(doc_id, current_user.id):
-            return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-
-    errors = await thread_pool_exec(FileService.delete_docs, doc_ids, current_user.id)
-
-    if errors:
-        return get_json_result(data=False, message=errors, code=RetCode.SERVER_ERROR)
-
-    return get_json_result(data=True)
-
-
 @manager.route("/run", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_ids", "run")

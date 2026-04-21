@@ -109,8 +109,8 @@ export default {
   getDocumentList: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents`,
   documentChangeStatus: `${webAPI}/document/change_status`,
-  documentRm: `${webAPI}/document/rm`,
-  documentDelete: `${webAPI}/api/document`,
+  documentDelete: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents`,
   documentRename: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
   documentCreate: `${webAPI}/document/create`,
