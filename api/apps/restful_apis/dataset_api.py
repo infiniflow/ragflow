@@ -46,8 +46,8 @@ def aggregate_tags(tenant_id):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
-    except ValueError:
-        return get_error_argument_result("page and page_size must be integers")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -68,8 +68,8 @@ def get_flattened_metadata(tenant_id):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
-    except ValueError:
-        return get_error_argument_result("page and page_size must be integers")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -146,8 +146,8 @@ async def create(tenant_id: str=None):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
-    except ValueError:
-        return get_error_argument_result("page and page_size must be integers")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -386,8 +386,8 @@ def get_dataset(tenant_id, dataset_id):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
-    except ValueError:
-        return get_error_argument_result("page and page_size must be integers")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -403,8 +403,8 @@ def get_ingestion_summary(tenant_id, dataset_id):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
-    except ValueError:
-        return get_error_argument_result("page and page_size must be integers")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -420,8 +420,8 @@ def list_tags(tenant_id, dataset_id):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
-    except ValueError:
-        return get_error_argument_result("page and page_size must be integers")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -443,8 +443,8 @@ async def delete_tags(tenant_id, dataset_id):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
-    except ValueError:
-        return get_error_argument_result("page and page_size must be integers")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -466,8 +466,8 @@ async def rename_tag(tenant_id, dataset_id):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
-    except ValueError:
-        return get_error_argument_result("page and page_size must be integers")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -522,8 +522,8 @@ async def run_index(tenant_id, dataset_id):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
-    except ValueError:
-        return get_error_argument_result("page and page_size must be integers")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -540,8 +540,8 @@ def trace_index(tenant_id, dataset_id):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
-    except ValueError:
-        return get_error_argument_result("page and page_size must be integers")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -551,14 +551,16 @@ def trace_index(tenant_id, dataset_id):
 @login_required
 @add_tenant_id_to_kwargs
 def delete_index(tenant_id, dataset_id, index_type):
+    if index_type not in dataset_api_service._VALID_INDEX_TYPES:
+        return get_error_argument_result(f"Invalid index type '{index_type}'")
     try:
         success, result = dataset_api_service.delete_index(dataset_id, tenant_id, index_type)
         if success:
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
-    except ValueError:
-        return get_error_argument_result("page and page_size must be integers")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -598,8 +600,8 @@ def list_ingestion_logs(tenant_id, dataset_id):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
-    except ValueError:
-        return get_error_argument_result("page and page_size must be integers")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -615,8 +617,8 @@ def get_ingestion_log(tenant_id, dataset_id, log_id):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
-    except ValueError:
-        return get_error_argument_result("page and page_size must be integers")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -632,8 +634,8 @@ def get_auto_metadata_legacy(tenant_id, dataset_id):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
-    except ValueError:
-        return get_error_argument_result("page and page_size must be integers")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -654,8 +656,8 @@ async def update_auto_metadata_legacy(tenant_id, dataset_id):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
-    except ValueError:
-        return get_error_argument_result("page and page_size must be integers")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -695,8 +697,8 @@ def get_auto_metadata(tenant_id, dataset_id):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
-    except ValueError:
-        return get_error_argument_result("page and page_size must be integers")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -747,8 +749,8 @@ async def update_auto_metadata(tenant_id, dataset_id):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
-    except ValueError:
-        return get_error_argument_result("page and page_size must be integers")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")

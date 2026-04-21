@@ -136,7 +136,7 @@ def delete_all_documents(auth, dataset_id, *, page_size=1000):
     return delete_documents(auth, dataset_id, {"ids": None, "delete_all": True})
 
 
-def parse_documents(auth, dataset_id, payload=None):
+def parse_documents(auth, dataset_id, payload=None, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
     res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
@@ -161,7 +161,7 @@ def bulk_upload_documents(auth, dataset_id, num, tmp_path):
 
 
 # CHUNK MANAGEMENT WITHIN DATASET
-def add_chunk(auth, dataset_id, document_id, payload=None):
+def add_chunk(auth, dataset_id, document_id, payload=None, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
     res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
@@ -189,7 +189,7 @@ def delete_all_chunks(auth, dataset_id, document_id, *, page_size=1000):
     return delete_chunks(auth, dataset_id, document_id, {"chunk_ids": None, "delete_all": True})
 
 
-def retrieval_chunks(auth, payload=None):
+def retrieval_chunks(auth, payload=None, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}{RETRIEVAL_API_URL}"
     res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
@@ -204,7 +204,7 @@ def batch_add_chunks(auth, dataset_id, document_id, num):
 
 
 # CHAT ASSISTANT MANAGEMENT
-def create_chat_assistant(auth, payload=None):
+def create_chat_assistant(auth, payload=None, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}{CHAT_ASSISTANT_API_URL}"
     res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
@@ -253,7 +253,7 @@ def batch_create_chat_assistants(auth, num):
 
 
 # SESSION MANAGEMENT
-def create_session_with_chat_assistant(auth, chat_assistant_id, payload=None):
+def create_session_with_chat_assistant(auth, chat_assistant_id, payload=None, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}{SESSION_WITH_CHAT_ASSISTANT_API_URL}".format(chat_id=chat_assistant_id)
     res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
@@ -311,21 +311,21 @@ def metadata_summary(auth, dataset_id, params=None):
     return res.json()
 
 
-def metadata_batch_update(auth, dataset_id, payload=None):
+def metadata_batch_update(auth, dataset_id, payload=None, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/metadata/update"
     res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
 # CHAT COMPLETIONS AND RELATED QUESTIONS
-def related_questions(auth, payload=None):
+def related_questions(auth, payload=None, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}/api/{VERSION}/sessions/related_questions"
     res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
 # AGENT MANAGEMENT AND SESSIONS
-def create_agent(auth, payload=None):
+def create_agent(auth, payload=None, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}{AGENT_API_URL}"
     res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
@@ -365,13 +365,13 @@ def delete_all_agent_sessions(auth, agent_id, *, page_size=1000):
     return delete_agent_sessions(auth, agent_id, {"ids": None, "delete_all": True})
 
 
-def agent_completions(auth, agent_id, payload=None):
+def agent_completions(auth, agent_id, payload=None, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}{AGENT_API_URL}/{agent_id}/completions"
     res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
-def chat_completions(auth, chat_id, payload=None):
+def chat_completions(auth, chat_id, payload=None, *, headers=HEADERS):
     """
     Send a question/message to a chat assistant and get completion.
 
@@ -391,7 +391,7 @@ def chat_completions(auth, chat_id, payload=None):
     return res.json()
 
 
-def chat_completions_openai(auth, chat_id, payload=None):
+def chat_completions_openai(auth, chat_id, payload=None, *, headers=HEADERS):
     """
     Send a request to the OpenAI-compatible chat completions endpoint.
 
