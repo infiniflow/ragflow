@@ -185,8 +185,8 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
 
-		if chatModelConfig.Reasoning != nil {
-			if *chatModelConfig.Reasoning {
+		if chatModelConfig.Thinking != nil {
+			if *chatModelConfig.Thinking {
 				reqBody["thinking"] = map[string]interface{}{
 					"type": "enabled",
 				}

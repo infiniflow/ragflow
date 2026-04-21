@@ -533,9 +533,9 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 }
 
 type ChatToModelRequest struct {
-	Message   string `json:"message" binding:"required"`
-	Stream    bool   `json:"stream"`
-	Reasoning bool   `json:"reasoning"`
+	Message  string `json:"message" binding:"required"`
+	Stream   bool   `json:"stream"`
+	Thinking bool   `json:"thinking"`
 }
 
 func (h *ProviderHandler) ChatToModel(c *gin.Context) {
@@ -611,7 +611,7 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		}
 
 		chatConfig := models.ChatConfig{
-			Reasoning:   &req.Reasoning,
+			Thinking:    &req.Thinking,
 			Stream:      &req.Stream,
 			Stop:        &[]string{},
 			DoSample:    nil,
@@ -631,7 +631,7 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	}
 
 	chatConfig := models.ChatConfig{
-		Reasoning:   &req.Reasoning,
+		Thinking:    &req.Thinking,
 		Stream:      &req.Stream,
 		Stop:        &[]string{},
 		DoSample:    nil,

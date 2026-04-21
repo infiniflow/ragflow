@@ -2194,7 +2194,7 @@ func (p *Parser) parseChatCommand() (*Command, error) {
 		cmd.Params["composite_model_name"] = compositeModelName
 	}
 	cmd.Params["message"] = message
-	cmd.Params["reasoning"] = false
+	cmd.Params["thinking"] = false
 	return cmd, nil
 }
 
@@ -2206,7 +2206,7 @@ func (p *Parser) parseThinkCommand() (*Command, error) {
 		return nil, err
 	}
 	command.Type = "think_chat_to_model"
-	command.Params["reasoning"] = true
+	command.Params["thinking"] = true
 	return command, nil
 }
 

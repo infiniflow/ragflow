@@ -1436,14 +1436,14 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	}
 
 	message := cmd.Params["message"].(string)
-	reasoning := cmd.Params["reasoning"].(bool)
+	thinking := cmd.Params["thinking"].(bool)
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
 
 	payload := map[string]interface{}{
-		"message":   message,
-		"stream":    true, // use stream API
-		"reasoning": reasoning,
+		"message":  message,
+		"stream":   true, // use stream API
+		"thinking": thinking,
 	}
 
 	// Call stream http api
@@ -1478,7 +1478,7 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 			if strings.HasPrefix(data, "[MESSAGE]") {
 				data = strings.TrimPrefix(data, "[MESSAGE]")
 				if messagePrint {
-					if reasoning {
+					if thinking {
 						fmt.Println()
 					}
 					fmt.Print("Answer: ")

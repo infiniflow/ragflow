@@ -106,7 +106,6 @@ const (
 	TokenIndex
 	TokenVector
 	TokenSize
-	TokenDocMeta
 	TokenName // For ALTER PROVIDER <name> NAME <new_name>
 	TokenInstance
 	TokenInstances
