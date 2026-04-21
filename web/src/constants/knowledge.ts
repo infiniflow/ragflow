@@ -16,6 +16,15 @@ export enum RunningStatus {
   SCHEDULE = 'SCHEDULE',
 }
 
+export enum RunningStatusOld {
+  UNSTART = '0', // need to run
+  RUNNING = '1', // need to cancel
+  CANCEL = '2', // need to refresh
+  DONE = '3', // need to refresh
+  FAIL = '4', // need to refresh
+  SCHEDULE = '5',
+}
+
 export const RunningStatusMap = {
   [RunningStatus.UNSTART]: 'Pending',
   [RunningStatus.RUNNING]: 'Running',
@@ -23,6 +32,13 @@ export const RunningStatusMap = {
   [RunningStatus.DONE]: 'Success',
   [RunningStatus.FAIL]: 'Failed',
   [RunningStatus.SCHEDULE]: 'Schedule',
+
+  [RunningStatusOld.UNSTART]: 'Pending',
+  [RunningStatusOld.RUNNING]: 'Running',
+  [RunningStatusOld.CANCEL]: 'Cancel',
+  [RunningStatusOld.DONE]: 'Success',
+  [RunningStatusOld.FAIL]: 'Failed',
+  [RunningStatusOld.SCHEDULE]: 'Schedule',
 };
 
 export enum ModelVariableType {
