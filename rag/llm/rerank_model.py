@@ -63,7 +63,8 @@ class JinaRerank(Base):
     _FACTORY_NAME = "Jina"
 
     def __init__(self, key, model_name="jina-reranker-v2-base-multilingual", base_url="https://api.jina.ai/v1/rerank"):
-        self.base_url = "https://api.jina.ai/v1/rerank"
+        # Fix: Honor passed base_url parameter, fallback to default only when empty
+        self.base_url = base_url or "https://api.jina.ai/v1/rerank"
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name
 
@@ -548,8 +549,8 @@ class GPUStackRerank(Base):
             )
 
         except requests.exceptions.RequestException as e:
-            # Fix: Correct exception type for requests library
-            raise ValueError(f"Error calling GPUStackRerank model {self.model_name}: {str(e)}")
+            # Fix: Preserve original exception stack trace with `from e` for debugging
+            raise ValueError(f"Error calling GPUStackRerank model {self.model_name}: {str(e)}") from e
 
 
 class NovitaRerank(JinaRerank):
