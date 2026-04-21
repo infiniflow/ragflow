@@ -53,14 +53,14 @@ func NewZhipuAIModel(baseURL map[string]string, urlSuffix URLSuffix) *ZhipuAIMod
 }
 
 // Chat sends a message and returns response
-func (z *ZhipuAIModel) Chat(modelName, apiKey, message *string, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (z *ZhipuAIModel) Chat(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if message == nil {
 		return nil, fmt.Errorf("message is nil")
 	}
 
 	var region = "default"
-	if chatModelConfig.Region != nil {
-		region = *chatModelConfig.Region
+	if apiConfig.Region != nil {
+		region = *apiConfig.Region
 	}
 
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
@@ -118,7 +118,7 @@ func (z *ZhipuAIModel) Chat(modelName, apiKey, message *string, chatModelConfig 
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := z.httpClient.Do(req)
 	if err != nil {
@@ -182,10 +182,10 @@ func (z *ZhipuAIModel) Chat(modelName, apiKey, message *string, chatModelConfig 
 }
 
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	var region = "default"
-	if chatModelConfig.Region != nil {
-		region = *chatModelConfig.Region
+	if apiConfig.Region != nil {
+		region = *apiConfig.Region
 	}
 
 	url := fmt.Sprintf("%s/chat/completions", z.BaseURL[region])
@@ -247,7 +247,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := z.httpClient.Do(req)
 	if err != nil {
@@ -330,10 +330,10 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string
 }
 
 // EncodeToEmbedding encodes a list of texts into embeddings
-func (z *ZhipuAIModel) EncodeToEmbedding(modelName, apiKey *string, texts []string, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+func (z *ZhipuAIModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
 	var region = "default"
-	if embeddingConfig.Region != nil {
-		region = *embeddingConfig.Region
+	if apiConfig.Region != nil {
+		region = *apiConfig.Region
 	}
 
 	url := fmt.Sprintf("%s/embedding", z.BaseURL[region])
@@ -357,7 +357,7 @@ func (z *ZhipuAIModel) EncodeToEmbedding(modelName, apiKey *string, texts []stri
 		}
 
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 		resp, err := z.httpClient.Do(req)
 		if err != nil {
@@ -412,4 +412,8 @@ func (z *ZhipuAIModel) EncodeToEmbedding(modelName, apiKey *string, texts []stri
 	}
 
 	return embeddings, nil
+}
+
+func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+	return nil, fmt.Errorf("not implemented")
 }

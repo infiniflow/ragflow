@@ -73,6 +73,7 @@ const (
 	TokenKeys
 	TokenGenerate
 	TokenAvailable
+	TokenSupported
 	TokenModel
 	TokenModels
 	TokenProvider

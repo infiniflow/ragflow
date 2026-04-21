@@ -35,16 +35,20 @@ func NewDummyModel(baseURL map[string]string, urlSuffix URLSuffix) *DummyModel {
 }
 
 // Chat sends a message and returns response
-func (z *DummyModel) Chat(modelName, apiKey, message *string, modelConfig *ChatConfig) (*ChatResponse, error) {
+func (z *DummyModel) Chat(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig) (*ChatResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (z *DummyModel) ChatStreamlyWithSender(modelName, apiKey, message *string, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (z *DummyModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("not implemented")
 }
 
 // EncodeToEmbedding encodes a list of texts into embeddings
-func (z *DummyModel) EncodeToEmbedding(modelName, apiKey *string, texts []string, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+func (z *DummyModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (z *DummyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return nil, fmt.Errorf("not implemented")
 }

@@ -163,6 +163,8 @@ func (p *Parser) parseListCommand() (*Command, error) {
 		return p.parseListTokens()
 	case TokenModel:
 		return p.parseListModelProviders()
+	case TokenSupported:
+		return p.parseListModelsOfProvider()
 	case TokenModels:
 		return p.parseListModelsOfProvider()
 	case TokenProviders:
@@ -2014,11 +2016,55 @@ func (p *Parser) parseSearchCommand() (*Command, error) {
 }
 
 func (p *Parser) parseListModelsOfProvider() (*Command, error) {
+
+	if p.curToken.Type == TokenSupported {
+		// List supported models
+		p.nextToken()
+
+		cmd := NewCommand("list_supported_models")
+		if p.curToken.Type != TokenModels {
+			return nil, fmt.Errorf("expected MODELS")
+		}
+		p.nextToken()
+
+		if p.curToken.Type != TokenFrom {
+			return nil, fmt.Errorf("expected FROM")
+		}
+		p.nextToken()
+
+		if p.curToken.Type != TokenQuotedString {
+			return nil, fmt.Errorf("expected quoted string for provider name")
+		}
+		firstName, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken()
+
+		if p.curToken.Type != TokenQuotedString {
+			return nil, fmt.Errorf("expected quoted string for instance name")
+		}
+		secondName, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken()
+
+		cmd.Params["provider_name"] = firstName
+		cmd.Params["instance_name"] = secondName
+
+		// Semicolon is optional for UNSET TOKEN
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
+		}
+		return cmd, nil
+	}
+
 	if p.curToken.Type != TokenModels {
 		return nil, fmt.Errorf("expected MODELS")
 	}
-
 	p.nextToken()
+
 	if p.curToken.Type != TokenFrom {
 		return nil, fmt.Errorf("expected FROM")
 	}
