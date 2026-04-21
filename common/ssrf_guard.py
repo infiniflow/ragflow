@@ -18,12 +18,77 @@
 Uses only the standard library so it can be imported from both ``api/`` and
 ``common/`` without pulling in any heavyweight dependencies.
 """
+
 import ipaddress
 import logging
 import socket
+import threading
+from contextlib import contextmanager
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# DNS pinning — closes the TOCTOU / rebinding window between SSRF validation
+# and the actual TCP connection.  The monkey-patch is a no-op for any host
+# that has no active pin, so it cannot affect unrelated code.
+# ---------------------------------------------------------------------------
+
+_tl = threading.local()
+_global_dns_pins: dict[str, str] = {}
+_global_pin_lock = threading.Lock()
+_orig_getaddrinfo = socket.getaddrinfo
+
+
+def _getaddrinfo_with_pins(host, port, *args, **kwargs):
+    # Thread-local pins (synchronous callers: requests.get in the same thread)
+    local_pins: dict = getattr(_tl, "dns_pins", {})
+    if host in local_pins:
+        ip = local_pins[host]
+        family = socket.AF_INET6 if ":" in ip else socket.AF_INET
+        return [(family, socket.SOCK_STREAM, 6, "", (ip, port or 0))]
+    # Process-global pins (async callers whose DNS resolves in executor threads)
+    with _global_pin_lock:
+        ip = _global_dns_pins.get(host)
+    if ip is not None:
+        family = socket.AF_INET6 if ":" in ip else socket.AF_INET
+        return [(family, socket.SOCK_STREAM, 6, "", (ip, port or 0))]
+    return _orig_getaddrinfo(host, port, *args, **kwargs)
+
+
+socket.getaddrinfo = _getaddrinfo_with_pins
+
+
+@contextmanager
+def pin_dns(hostname: str, ip: str):
+    """Pin *hostname* → *ip* in the current thread for the duration of this context.
+
+    Use for synchronous ``requests.get()`` callers to prevent DNS rebinding
+    between SSRF validation and the actual TCP connection.
+    """
+    pins = _tl.__dict__.setdefault("dns_pins", {})
+    pins[hostname] = ip
+    try:
+        yield
+    finally:
+        pins.pop(hostname, None)
+
+
+@contextmanager
+def pin_dns_global(hostname: str, ip: str):
+    """Pin *hostname* → *ip* across all threads for the duration of this context.
+
+    Use for async callers (e.g. asyncio-based crawlers) where DNS resolution
+    may happen in thread-pool executor threads rather than the calling thread.
+    """
+    with _global_pin_lock:
+        _global_dns_pins[hostname] = ip
+    try:
+        yield
+    finally:
+        with _global_pin_lock:
+            _global_dns_pins.pop(hostname, None)
+
 
 _DEFAULT_ALLOWED_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 
@@ -73,10 +138,7 @@ def assert_url_is_safe(
             scheme,
             url,
         )
-        raise ValueError(
-            f"Disallowed URL scheme: {scheme!r}. "
-            f"Only {sorted(allowed_schemes)} are allowed."
-        )
+        raise ValueError(f"Disallowed URL scheme: {scheme!r}. Only {sorted(allowed_schemes)} are allowed.")
 
     hostname = parsed.hostname
     if not hostname:
@@ -86,12 +148,8 @@ def assert_url_is_safe(
     try:
         addr_infos = socket.getaddrinfo(hostname, None)
     except socket.gaierror as exc:
-        logger.warning(
-            "SSRF guard could not resolve hostname=%r reason=%s", hostname, exc
-        )
-        raise ValueError(
-            f"Could not resolve hostname {hostname!r}: {exc}"
-        ) from exc
+        logger.warning("SSRF guard could not resolve hostname=%r reason=%s", hostname, exc)
+        raise ValueError(f"Could not resolve hostname {hostname!r}: {exc}") from exc
 
     resolved_ip: str | None = None
     for _family, _type, _proto, _canonname, sockaddr in addr_infos:
@@ -103,16 +161,12 @@ def assert_url_is_safe(
                 hostname,
                 raw_ip,
             )
-            raise ValueError(
-                f"URL resolves to a non-public address ({raw_ip}), which is not allowed."
-            )
+            raise ValueError(f"URL resolves to a non-public address ({raw_ip}), which is not allowed.")
         if resolved_ip is None:
             resolved_ip = str(raw_ip)
 
     if resolved_ip is None:
-        logger.warning(
-            "SSRF guard blocked URL: hostname=%r resolved to no addresses", hostname
-        )
+        logger.warning("SSRF guard blocked URL: hostname=%r resolved to no addresses", hostname)
         raise ValueError(f"Hostname {hostname!r} resolved to no addresses.")
 
     return hostname, resolved_ip

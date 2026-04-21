@@ -23,6 +23,7 @@ from abc import ABC
 import requests
 
 from agent.component.base import ComponentBase, ComponentParamBase
+from common.ssrf_guard import assert_url_is_safe, pin_dns
 from common.connection_utils import timeout
 from deepdoc.parser import HtmlParser
 
@@ -105,6 +106,12 @@ class Invoke(ComponentBase, ABC):
         if url.find("http") != 0:
             url = "http://" + url
 
+        try:
+            _ssrf_hostname, _ssrf_ip = assert_url_is_safe(url)
+        except ValueError as e:
+            self.set_output("_ERROR", str(e))
+            return f"SSRF guard blocked request: {e}"
+
         method = self._param.method.lower()
         headers = {}
         if self._param.headers:
@@ -137,35 +144,36 @@ class Invoke(ComponentBase, ABC):
                 return
 
             try:
-                if method == "get":
-                    response = requests.get(url=url, params=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
-                    if self._param.clean_html:
-                        sections = HtmlParser()(None, response.content)
-                        self.set_output("result", "\n".join(sections))
-                    else:
-                        self.set_output("result", response.text)
+                with pin_dns(_ssrf_hostname, _ssrf_ip):
+                    if method == "get":
+                        response = requests.get(url=url, params=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
+                        if self._param.clean_html:
+                            sections = HtmlParser()(None, response.content)
+                            self.set_output("result", "\n".join(sections))
+                        else:
+                            self.set_output("result", response.text)
 
-                if method == "put":
-                    if self._param.datatype.lower() == "json":
-                        response = requests.put(url=url, json=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
-                    else:
-                        response = requests.put(url=url, data=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
-                    if self._param.clean_html:
-                        sections = HtmlParser()(None, response.content)
-                        self.set_output("result", "\n".join(sections))
-                    else:
-                        self.set_output("result", response.text)
+                    if method == "put":
+                        if self._param.datatype.lower() == "json":
+                            response = requests.put(url=url, json=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
+                        else:
+                            response = requests.put(url=url, data=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
+                        if self._param.clean_html:
+                            sections = HtmlParser()(None, response.content)
+                            self.set_output("result", "\n".join(sections))
+                        else:
+                            self.set_output("result", response.text)
 
-                if method == "post":
-                    if self._param.datatype.lower() == "json":
-                        response = requests.post(url=url, json=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
-                    else:
-                        response = requests.post(url=url, data=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
-                    if self._param.clean_html:
-                        sections = HtmlParser()(None, response.content)
-                        self.set_output("result", "\n".join(sections))
-                    else:
-                        self.set_output("result", response.text)
+                    if method == "post":
+                        if self._param.datatype.lower() == "json":
+                            response = requests.post(url=url, json=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
+                        else:
+                            response = requests.post(url=url, data=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
+                        if self._param.clean_html:
+                            sections = HtmlParser()(None, response.content)
+                            self.set_output("result", "\n".join(sections))
+                        else:
+                            self.set_output("result", response.text)
 
                 return self.output("result")
             except Exception as e:

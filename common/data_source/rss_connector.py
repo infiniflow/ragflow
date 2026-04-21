@@ -1,7 +1,4 @@
 import hashlib
-import socket as _socket_module
-import threading
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from time import struct_time
@@ -15,55 +12,13 @@ import requests
 from common.data_source.config import INDEX_BATCH_SIZE, REQUEST_TIMEOUT_SECONDS, DocumentSource
 from common.data_source.interfaces import LoadConnector, PollConnector
 from common.data_source.models import Document, GenerateDocumentsOutput, SecondsSinceUnixEpoch
-
-# ---------------------------------------------------------------------------
-# Thread-local DNS pinning
-#
-# We install a lightweight wrapper around socket.getaddrinfo once at module
-# load.  The wrapper is a no-op for threads that have no active pins, so it
-# cannot affect unrelated code running in the same process.  Within a
-# `_pin_dns` context the resolved IP that passed the SSRF guard is returned
-# for every getaddrinfo call for that hostname, eliminating the DNS-rebinding
-# window between the SSRF check and the actual TCP connection.
-# ---------------------------------------------------------------------------
-
-_tl = threading.local()
-_orig_getaddrinfo = _socket_module.getaddrinfo
-
-
-def _getaddrinfo_with_pins(host, port, *args, **kwargs):
-    pins: dict = getattr(_tl, "dns_pins", {})
-    if host in pins:
-        ip = pins[host]
-        family = _socket_module.AF_INET6 if ":" in ip else _socket_module.AF_INET
-        return [(family, _socket_module.SOCK_STREAM, 6, "", (ip, port or 0))]
-    return _orig_getaddrinfo(host, port, *args, **kwargs)
-
-
-_socket_module.getaddrinfo = _getaddrinfo_with_pins
-
-
-@contextmanager
-def _pin_dns(hostname: str, ip: str):
-    """Pin *hostname* → *ip* for the duration of this context, current thread only."""
-    pins = _tl.__dict__.setdefault("dns_pins", {})
-    pins[hostname] = ip
-    try:
-        yield
-    finally:
-        pins.pop(hostname, None)
-
-
-# ---------------------------------------------------------------------------
-# SSRF guard
-# ---------------------------------------------------------------------------
+from common.ssrf_guard import assert_url_is_safe, pin_dns as _pin_dns
 
 _MAX_REDIRECTS = 10
 
 
 def _validate_url_no_ssrf(url: str) -> tuple[str, str]:
     """Validate *url* against SSRF rules; return ``(hostname, resolved_ip)``."""
-    from common.ssrf_guard import assert_url_is_safe
     return assert_url_is_safe(url)
 
 
@@ -161,9 +116,7 @@ class RSSConnector(LoadConnector, PollConnector):
             current_hostname, current_ip = _validate_url_no_ssrf(redirect_url)
             current_url = redirect_url
         else:
-            raise ValueError(
-                f"Exceeded {_MAX_REDIRECTS} redirects fetching {self.feed_url!r}"
-            )
+            raise ValueError(f"Exceeded {_MAX_REDIRECTS} redirects fetching {self.feed_url!r}")
 
         response.raise_for_status()
 
