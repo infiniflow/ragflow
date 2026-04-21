@@ -652,7 +652,8 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": response,
+		"code":              0,
+		"reasoning_content": response.ReasonContent,
+		"answer":            response.Answer,
 	})
 }

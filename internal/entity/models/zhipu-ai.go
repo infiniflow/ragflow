@@ -53,12 +53,17 @@ func NewZhipuAIModel(baseURL map[string]string, urlSuffix URLSuffix) *ZhipuAIMod
 }
 
 // Chat sends a message and returns response
-func (z *ZhipuAIModel) Chat(modelName, apiKey, message *string, chatModelConfig *ChatConfig) (string, error) {
+func (z *ZhipuAIModel) Chat(modelName, apiKey, message *string, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if message == nil {
-		return "", fmt.Errorf("message is nil")
+		return nil, fmt.Errorf("message is nil")
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL, z.URLSuffix.Chat)
+	var region = "default"
+	if chatModelConfig.Region != nil {
+		region = *chatModelConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := map[string]interface{}{
@@ -70,28 +75,30 @@ func (z *ZhipuAIModel) Chat(modelName, apiKey, message *string, chatModelConfig 
 		"temperature": 1,
 	}
 
-	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
+	if chatModelConfig.Stream != nil {
+		reqBody["stream"] = *chatModelConfig.Stream
+	}
 
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
+	if chatModelConfig.MaxTokens != nil {
+		reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+	}
 
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
+	if chatModelConfig.Temperature != nil {
+		reqBody["temperature"] = *chatModelConfig.Temperature
+	}
+
+	if chatModelConfig.TopP != nil {
+		reqBody["top_p"] = *chatModelConfig.TopP
 	}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -99,46 +106,63 @@ func (z *ZhipuAIModel) Chat(modelName, apiKey, message *string, chatModelConfig 
 
 	resp, err := z.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
+		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	// Parse response
 	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
+	if err = json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
 	choices, ok := result["choices"].([]interface{})
 	if !ok || len(choices) == 0 {
-		return "", fmt.Errorf("no choices in response")
+		return nil, fmt.Errorf("no choices in response")
 	}
 
 	firstChoice, ok := choices[0].(map[string]interface{})
 	if !ok {
-		return "", fmt.Errorf("invalid choice format")
+		return nil, fmt.Errorf("invalid choice format")
 	}
 
 	messageMap, ok := firstChoice["message"].(map[string]interface{})
 	if !ok {
-		return "", fmt.Errorf("invalid message format")
+		return nil, fmt.Errorf("invalid message format")
 	}
 
 	content, ok := messageMap["content"].(string)
 	if !ok {
-		return "", fmt.Errorf("invalid content format")
+		return nil, fmt.Errorf("invalid content format")
 	}
 
-	return content, nil
+	var reasonContent string
+	if chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+		reasonContent, ok = messageMap["reasoning_content"].(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid content format")
+		}
+		// if first char of reasonContent is \n remove the '\n'
+		if reasonContent != "" && reasonContent[0] == '\n' {
+			reasonContent = reasonContent[1:]
+		}
+	}
+
+	chatResponse := &ChatResponse{
+		Answer:        &content,
+		ReasonContent: &reasonContent,
+	}
+
+	return chatResponse, nil
 }
 
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
@@ -160,40 +184,38 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, apiKey, message *string
 		"temperature": 1,
 	}
 
-	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
+	if chatModelConfig.Stream != nil {
+		reqBody["stream"] = *chatModelConfig.Stream
+	}
 
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
+	if chatModelConfig.MaxTokens != nil {
+		reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+	}
 
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
+	if chatModelConfig.Temperature != nil {
+		reqBody["temperature"] = *chatModelConfig.Temperature
+	}
 
-		if chatModelConfig.DoSample != nil {
-			reqBody["do_sample"] = *chatModelConfig.DoSample
-		}
+	if chatModelConfig.DoSample != nil {
+		reqBody["do_sample"] = *chatModelConfig.DoSample
+	}
 
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
+	if chatModelConfig.TopP != nil {
+		reqBody["top_p"] = *chatModelConfig.TopP
+	}
 
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
+	if chatModelConfig.Stop != nil {
+		reqBody["stop"] = *chatModelConfig.Stop
+	}
 
-		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "enabled",
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
+	if chatModelConfig.Thinking != nil {
+		if *chatModelConfig.Thinking {
+			reqBody["thinking"] = map[string]interface{}{
+				"type": "enabled",
+			}
+		} else {
+			reqBody["thinking"] = map[string]interface{}{
+				"type": "disabled",
 			}
 		}
 	}

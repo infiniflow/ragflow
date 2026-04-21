@@ -2195,18 +2195,46 @@ func (p *Parser) parseChatCommand() (*Command, error) {
 	}
 	cmd.Params["message"] = message
 	cmd.Params["thinking"] = false
+	cmd.Params["stream"] = false
 	return cmd, nil
 }
 
 func (p *Parser) parseThinkCommand() (*Command, error) {
 
 	p.nextToken() // consume THINK
+
+	if p.curToken.Type != TokenChat {
+		return nil, fmt.Errorf("expected CHAT after THINK")
+	}
+
 	command, err := p.parseChatCommand()
 	if err != nil {
 		return nil, err
 	}
-	command.Type = "think_chat_to_model"
 	command.Params["thinking"] = true
+	return command, nil
+}
+
+func (p *Parser) parseStreamCommand() (*Command, error) {
+
+	p.nextToken() // consume STREAM
+
+	var command *Command
+	var err error
+
+	if p.curToken.Type == TokenChat {
+		command, err = p.parseChatCommand()
+		if err != nil {
+			return nil, err
+		}
+	} else if p.curToken.Type == TokenThink {
+		command, err = p.parseThinkCommand()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	command.Params["stream"] = true
 	return command, nil
 }
 

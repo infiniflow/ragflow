@@ -80,6 +80,7 @@ const (
 	TokenDefault
 	TokenChats
 	TokenChat
+	TokenStream
 	TokenFiles
 	TokenAs
 	TokenParse

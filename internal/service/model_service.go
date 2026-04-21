@@ -531,7 +531,7 @@ func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, mod
 	return common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName, userID, message string, modelConfig *modelModule.ChatConfig) (*string, common.ErrorCode, error) {
+func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName, userID, message string, modelConfig *modelModule.ChatConfig) (*modelModule.ChatResponse, common.ErrorCode, error) {
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -577,13 +577,13 @@ func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName
 		region := extra["region"]
 		modelConfig.Region = &region
 
-		var response string
+		var response *modelModule.ChatResponse
 		response, err = providerInfo.ModelDriver.Chat(&modelName, &instance.APIKey, &message, modelConfig)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
 
-		return &response, common.CodeSuccess, nil
+		return response, common.CodeSuccess, nil
 	}
 
 	return nil, common.CodeServerError, errors.New("model is disabled")

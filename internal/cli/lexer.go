@@ -303,6 +303,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenChat, Value: ident}
 	case "THINK":
 		return Token{Type: TokenThink, Value: ident}
+	case "STREAM":
+		return Token{Type: TokenStream, Value: ident}
 	case "LS":
 		return Token{Type: TokenLS, Value: ident}
 	case "CAT":
