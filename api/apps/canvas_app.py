@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import copy
 import inspect
 import json
 import logging
@@ -24,7 +23,7 @@ from api.db.services.canvas_service import UserCanvasService, API4ConversationSe
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from api.db.services.task_service import queue_dataflow, CANVAS_DEBUG_DOC_ID, TaskService
+from api.db.services.task_service import queue_dataflow, TaskService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from common.constants import RetCode
 from common.misc_utils import get_uuid
@@ -39,7 +38,6 @@ from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import Task
 
-from rag.flow.pipeline import Pipeline
 from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
 from common import settings
