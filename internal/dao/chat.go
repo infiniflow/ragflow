@@ -74,12 +74,13 @@ func (dao *ChatDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pag
 		query = query.Where("LOWER(dialog.name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
 	}
 
-	// Apply ordering
+	// Apply ordering (allowlist only; qualify columns for user JOIN)
 	orderDirection := "ASC"
 	if desc {
 		orderDirection = "DESC"
 	}
-	query = query.Order(orderby + " " + orderDirection)
+	orderCol := sanitizeDialogListOrderBy(orderby)
+	query = query.Order(orderCol + " " + orderDirection)
 
 	// Count total
 	if err := query.Count(&total).Error; err != nil {
@@ -123,12 +124,13 @@ func (dao *ChatDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby str
 	// Filter by owner IDs (additional filter to ensure tenant_id is in ownerIDs)
 	query = query.Where("dialog.tenant_id IN ?", ownerIDs)
 
-	// Apply ordering
+	// Apply ordering (allowlist only; qualify columns for user JOIN)
 	orderDirection := "ASC"
 	if desc {
 		orderDirection = "DESC"
 	}
-	query = query.Order(orderby + " " + orderDirection)
+	orderCol := sanitizeDialogListOrderBy(orderby)
+	query = query.Order(orderCol + " " + orderDirection)
 
 	// Get all matching records
 	if err := query.Find(&chats).Error; err != nil {

@@ -80,11 +80,12 @@ func (dao *UserCanvasDAO) GetList(
 		query = query.Where("canvas_category = ?", "agent_canvas")
 	}
 
-	// Order by
+	// Order by (allowlist only)
+	orderCol := sanitizeUserCanvasOrderBy(orderby)
 	if desc {
-		query = query.Order(orderby + " DESC")
+		query = query.Order(orderCol + " DESC")
 	} else {
-		query = query.Order(orderby + " ASC")
+		query = query.Order(orderCol + " ASC")
 	}
 
 	// Pagination
