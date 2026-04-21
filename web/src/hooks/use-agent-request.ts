@@ -284,7 +284,7 @@ export const useFetchAgent = (): {
     refetchOnWindowFocus: false,
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await agentService.fetchCanvas(sharedId || id);
+      const { data } = await agentService.getAgent(sharedId || id);
 
       const messageList = buildMessageListWithUuid(
         get(data, 'data.dsl.messages', []),
@@ -809,7 +809,7 @@ export const useFetchSharedAgent = (): {
     gcTime: 0,
     queryFn: async () => {
       if (!sharedId) return {};
-      const { data } = await agentService.fetchCanvas(sharedId);
+      const { data } = await agentService.getAgent(sharedId);
 
       const messageList = buildMessageListWithUuid(
         get(data, 'data.dsl.messages', []),

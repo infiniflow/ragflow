@@ -82,7 +82,7 @@ class TestAgentCompletions:
         res = agent_completions(
             HttpApiAuth,
             agent_id,
-            {"question": "hello", "stream": False, "session_id": session_id},
+            {"query": "hello", "stream": False, "session_id": session_id},
         )
         assert res["code"] == 0, res
         if isinstance(res["data"], dict):

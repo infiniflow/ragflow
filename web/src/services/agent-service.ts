@@ -12,8 +12,8 @@ const {
   updateAgent: updateAgentApi,
   listAgents,
   deleteAgent,
+  agentChatCompletion,
   resetCanvas,
-  runCanvas,
   listAgentTemplate,
   testDbConnect,
   getInputElements,
@@ -23,7 +23,7 @@ const {
   inputForm,
   fetchVersionList,
   fetchVersion,
-  fetchCanvas,
+  getAgent,
   fetchAgentLogs,
   fetchExternalAgentInputs,
   prompt,
@@ -32,8 +32,8 @@ const {
 } = api;
 
 const methods = {
-  fetchCanvas: {
-    url: fetchCanvas,
+  getAgent: {
+    url: getAgent,
     method: 'get',
   },
   createAgent: {
@@ -60,8 +60,8 @@ const methods = {
     url: deleteAgent,
     method: 'delete',
   },
-  runCanvas: {
-    url: runCanvas,
+  agentChatCompletion: {
+    url: agentChatCompletion,
     method: 'post',
   },
   listAgentTemplate: {

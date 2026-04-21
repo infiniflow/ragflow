@@ -1713,10 +1713,10 @@ session = agent.create_session()
 ### Converse with agent
 
 ```python
-Session.ask(question: str="", stream: bool = False) -> Optional[Message, iter[Message]]
+Session.ask(question: str = "", stream: bool = False, **kwargs) -> Optional[Message | iter[Message]]
 ```
 
-Asks a specified agent a question to start an AI-powered conversation.
+Asks a specified agent through the unified completion endpoint.
 
 :::tip NOTE
 In streaming mode, not all responses include a reference, as this depends on the system's judgement.
@@ -1726,14 +1726,24 @@ In streaming mode, not all responses include a reference, as this depends on the
 
 ##### question: `string`
 
-The question to start an AI-powered conversation. If the **Begin** component takes parameters, a question is not required.
+The user message sent to the agent. If the **Begin** component takes parameters, `question` can be an empty string.
 
 ##### stream: `bool`
 
 Indicates whether to output responses in a streaming way:
 
-- `True`: Enable streaming (default).
+- `True`: Enable streaming.
 - `False`: Disable streaming.
+
+##### kwargs: `dict`
+
+Additional request parameters forwarded to the completion API. Common options:
+
+- `inputs`: Variables defined in the **Begin** component.
+- `session_id`: Continue an existing session instead of creating a new one.
+- `release`: Use the latest published version of the agent.
+- `return_trace`: Include execution trace information in the response.
+- Other custom Begin component parameters supported by the current workflow.
 
 #### Returns
 
@@ -1785,7 +1795,7 @@ from ragflow_sdk import RAGFlow, Agent
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_id = "AGENT_ID"
 agent = rag_object.get_agent(AGENT_id)
-session = agent.create_session()    
+session = agent.create_session()
 
 print("\n===== Miss R ====\n")
 print("Hello. What can I do for you?")
@@ -1798,6 +1808,31 @@ while True:
     for ans in session.ask(question, stream=True):
         print(ans.content[len(cont):], end='', flush=True)
         cont = ans.content
+```
+
+Use Begin inputs and request trace output:
+
+```python
+from ragflow_sdk import RAGFlow, Agent
+
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+agent = rag_object.get_agent("AGENT_ID")
+session = agent.create_session()
+
+message = session.ask(
+    "",
+    stream=False,
+    inputs={
+        "line_var": {
+            "type": "line",
+            "value": "I am line_var",
+        }
+    },
+    return_trace=True,
+)
+
+print(message.content)
+print(message.reference)
 ```
 
 ---

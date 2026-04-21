@@ -18,9 +18,8 @@ import inspect
 import json
 import logging
 from functools import partial
-from quart import request, Response, make_response
+from quart import request, make_response
 from agent.component import LLM
-from api.db import CanvasCategory
 from api.db.services.canvas_service import UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
@@ -28,7 +27,7 @@ from api.db.services.pipeline_operation_log_service import PipelineOperationLogS
 from api.db.services.task_service import queue_dataflow, CANVAS_DEBUG_DOC_ID, TaskService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from common.constants import RetCode
-from common.misc_utils import get_uuid, thread_pool_exec
+from common.misc_utils import get_uuid
 from api.utils.api_utils import (
     get_json_result,
     server_error_response,
@@ -45,132 +44,6 @@ from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
 from common import settings
 from api.apps import login_required, current_user
-from api.apps.services.canvas_replica_service import CanvasReplicaService
-from api.db.services.canvas_service import completion as agent_completion
-
-
-@manager.route('/completion', methods=['POST'])  # noqa: F821
-@validate_request("id")
-@login_required
-async def run():
-    req = await get_request_json()
-    query = req.get("query", "")
-    files = req.get("files", [])
-    inputs = req.get("inputs", {})
-    tenant_id = str(current_user.id)
-    runtime_user_id = req.get("user_id") or tenant_id
-    user_id = str(runtime_user_id)
-    if not await thread_pool_exec(UserCanvasService.accessible, req["id"], tenant_id):
-        return get_json_result(
-            data=False, message='Only owner of canvas authorized for this operation.',
-            code=RetCode.OPERATING_ERROR)
-
-    replica_payload = CanvasReplicaService.load_for_run(
-        canvas_id=req["id"],
-        tenant_id=tenant_id,
-        runtime_user_id=user_id,
-    )
-
-    if not replica_payload:
-        return get_data_error_result(message="canvas replica not found, please call /get/<canvas_id> first.")
-
-    replica_dsl = replica_payload.get("dsl", {})
-    canvas_title = replica_payload.get("title", "")
-    canvas_category = replica_payload.get("canvas_category", CanvasCategory.Agent)
-    dsl_str = json.dumps(replica_dsl, ensure_ascii=False)
-
-    _, cvs = await thread_pool_exec(UserCanvasService.get_by_id, req["id"])
-    if cvs.canvas_category == CanvasCategory.DataFlow:
-        task_id = get_uuid()
-        Pipeline(dsl_str, tenant_id=tenant_id, doc_id=CANVAS_DEBUG_DOC_ID, task_id=task_id, flow_id=req["id"])
-        ok, error_message = await thread_pool_exec(queue_dataflow, user_id, req["id"], task_id, CANVAS_DEBUG_DOC_ID, files[0], 0)
-        if not ok:
-            return get_data_error_result(message=error_message)
-        return get_json_result(data={"message_id": task_id})
-
-    try:
-        canvas = Canvas(dsl_str, tenant_id, canvas_id=req["id"])
-    except Exception as e:
-        return server_error_response(e)
-
-    async def sse():
-        nonlocal canvas, user_id
-        try:
-            async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
-                yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
-
-            commit_ok = CanvasReplicaService.commit_after_run(
-                canvas_id=req["id"],
-                tenant_id=tenant_id,
-                runtime_user_id=user_id,
-                dsl=json.loads(str(canvas)),
-                canvas_category=canvas_category,
-                title=canvas_title,
-            )
-            if not commit_ok:
-                logging.error(
-                    "Canvas runtime replica commit failed: canvas_id=%s tenant_id=%s runtime_user_id=%s",
-                    req["id"],
-                    tenant_id,
-                    user_id,
-                )
-
-        except Exception as e:
-            logging.exception(e)
-            canvas.cancel_task()
-            yield "data:" + json.dumps({"code": 500, "message": str(e), "data": False}, ensure_ascii=False) + "\n\n"
-
-    resp = Response(sse(), mimetype="text/event-stream")
-    resp.headers.add_header("Cache-control", "no-cache")
-    resp.headers.add_header("Connection", "keep-alive")
-    resp.headers.add_header("X-Accel-Buffering", "no")
-    resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
-    #resp.call_on_close(lambda: canvas.cancel_task())
-    return resp
-
-
-@manager.route("/<canvas_id>/completion", methods=["POST"])  # noqa: F821
-@login_required
-async def exp_agent_completion(canvas_id):
-    tenant_id = current_user.id
-    req = await get_request_json()
-    return_trace = bool(req.get("return_trace", False))
-    async def generate():
-        trace_items = []
-        async for answer in agent_completion(tenant_id=tenant_id, agent_id=canvas_id, **req):
-            if isinstance(answer, str):
-                try:
-                    ans = json.loads(answer[5:])  # remove "data:"
-                except Exception:
-                    continue
-
-            event = ans.get("event")
-            if event == "node_finished":
-                if return_trace:
-                    data = ans.get("data", {})
-                    trace_items.append(
-                        {
-                            "component_id": data.get("component_id"),
-                            "trace": [copy.deepcopy(data)],
-                        }
-                    )
-                    ans.setdefault("data", {})["trace"] = trace_items
-                    answer = "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
-                yield answer
-
-            if event not in ["message", "message_end"]:
-                continue
-
-            yield answer
-
-        yield "data:[DONE]\n\n"
-
-    resp = Response(generate(), mimetype="text/event-stream")
-    resp.headers.add_header("Cache-control", "no-cache")
-    resp.headers.add_header("Connection", "keep-alive")
-    resp.headers.add_header("X-Accel-Buffering", "no")
-    resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
-    return resp
     
 
 @manager.route('/rerun', methods=['POST'])  # noqa: F821

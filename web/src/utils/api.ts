@@ -180,10 +180,10 @@ export default {
   createAgent: `${restAPIv1}/agents`,
   updateAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
+  agentChatCompletion: `${restAPIv1}/agents/chat/completion`,
   getListVersion: `${webAPI}/canvas/getlistversion`,
   getVersion: `${webAPI}/canvas/getversion`,
   resetCanvas: (agentId: string) => `${restAPIv1}/agents/${agentId}/reset`,
-  runCanvas: `${webAPI}/canvas/completion`,
   testDbConnect: `${webAPI}/canvas/test_db_connect`,
   getInputElements: `${webAPI}/canvas/input_elements`,
   debug: `${webAPI}/canvas/debug`,
@@ -194,7 +194,7 @@ export default {
   inputForm: `${webAPI}/canvas/input_form`,
   fetchVersionList: (id: string) => `${webAPI}/canvas/getlistversion/${id}`,
   fetchVersion: (id: string) => `${webAPI}/canvas/getversion/${id}`,
-  fetchCanvas: (id: string) => `${restAPIv1}/agents/${id}`,
+  getAgent: (id: string) => `${restAPIv1}/agents/${id}`,
   uploadAgentFile: (id?: string) => `${webAPI}/canvas/upload/${id}`,
   fetchAgentLogs: (canvasId: string) => `${webAPI}/canvas/${canvasId}/sessions`,
   fetchAgentLogsById: (canvasId: string, sessionId: string) =>
@@ -208,9 +208,6 @@ export default {
   fetchWebhookTrace: (id: string) => `${restAPIv1}/webhook_trace/${id}`,
 
   // explore
-
-  runCanvasExplore: (canvasId: string) =>
-    `${webAPI}/canvas/${canvasId}/completion`,
 
   // mcp server
   listMcpServer: `${webAPI}/mcp_server/list`,
