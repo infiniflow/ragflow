@@ -17,6 +17,7 @@ import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
 import kbService, {
   deleteDocument,
+  documentFilter,
   listDocument,
   renameDocument,
   uploadDocument,
@@ -215,10 +216,7 @@ export const useGetDocumentFilter = (): {
       knowledgeId,
     ],
     queryFn: async () => {
-      const { data } = await kbService.documentFilter({
-        kb_id: knowledgeId || id,
-        keywords: debouncedSearchString,
-      });
+      const { data } = await documentFilter(knowledgeId || id);
       if (data.code === 0) {
         return data.data;
       }
