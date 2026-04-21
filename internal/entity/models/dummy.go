@@ -34,6 +34,10 @@ func NewDummyModel(baseURL map[string]string, urlSuffix URLSuffix) *DummyModel {
 	}
 }
 
+func (z *DummyModel) Name() string {
+	return "dummy"
+}
+
 // Chat sends a message and returns response
 func (z *DummyModel) Chat(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig) (*ChatResponse, error) {
 	return nil, fmt.Errorf("not implemented")
@@ -51,4 +55,8 @@ func (z *DummyModel) EncodeToEmbedding(modelName *string, texts []string, apiCon
 
 func (z *DummyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return nil, fmt.Errorf("not implemented")
+}
+
+func (z *DummyModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("no such method")
 }
