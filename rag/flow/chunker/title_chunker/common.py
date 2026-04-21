@@ -72,32 +72,50 @@ class BaseTitleChunker(ABC):
 
 
     def extract_line_records(self):
-        # Normalize all upstream payloads into an ordered record stream.
-        # Level resolution and chunk construction operate on this stream only,
-        # so strategy code does not depend on source-specific output layouts.
-        if self.from_upstream.output_format == "markdown":
-            payload = self.from_upstream.markdown_result or ""
-            return [{"text": line, "doc_type_kwd": "text", "img_id": None, "layout": "", PDF_POSITIONS_KEY: []} for line in payload.split("\n") if line]
+    # Normalize all upstream payloads into an ordered record stream.
+    # Level resolution and chunk construction operate on this stream only,
+    # so strategy code does not depend on source-specific output layouts.
+    import logging
+    logger = logging.getLogger(__name__)
 
+    payload = ""
+    if self.from_upstream.output_format == "markdown":
+        payload = self.from_upstream.markdown_result or ""
+    elif self.from_upstream.output_format == "text":
+        payload = self.from_upstream.text_result or ""
+    elif self.from_upstream.output_format == "html":
+        payload = self.from_upstream.html_result or ""
+    
+    if payload:
+        lines = payload.split("\n")
+        input_line_count = len(lines)
+        # 核心修复：分支区分格式，保住Markdown/HTML排版语义
         if self.from_upstream.output_format == "text":
-            payload = self.from_upstream.text_result or ""
-            return [{"text": line, "doc_type_kwd": "text", "img_id": None, "layout": "", PDF_POSITIONS_KEY: []} for line in payload.split("\n") if line]
+            # 纯文本：执行清洗+去空行，优化脏数据
+            clean_lines = [line.strip() for line in lines if line.strip()]
+        else:
+            # Markdown/HTML：**保留原始空格换行，只过滤纯空行，不strip**，不破坏排版
+            clean_lines = [line for line in lines if line.strip()]
+        
+        output_line_count = len(clean_lines)
+        # 官方要求：添加过滤日志，线上可观测效果
+        logger.info(f"payload filter: before={input_line_count} after={output_line_count}")
 
-        if self.from_upstream.output_format == "html":
-            payload = self.from_upstream.html_result or ""
-            return [{"text": line, "doc_type_kwd": "text", "img_id": None, "layout": "", PDF_POSITIONS_KEY: []} for line in payload.split("\n") if line]
+        return [{"text": line, "doc_type_kwd": "text", "img_id": None, "layout": "", PDF_POSITIONS_KEY: []} 
+                for line in clean_lines]
 
-        items = self.from_upstream.chunks if self.from_upstream.output_format == "chunks" else self.from_upstream.json_result
-        return [
-            {
-                "text": str(item.get("text") or ""),
-                "doc_type_kwd": str(item.get("doc_type_kwd") or "text"),
-                "img_id": item.get("img_id"),
-                "layout": "{} {}".format(item.get("layout_type", ""), item.get("layoutno", "")).strip(),
-                PDF_POSITIONS_KEY: extract_pdf_positions(item),
-            }
-            for item in items or []
-        ]
+    items = self.from_upstream.chunks if self.from_upstream.output_format == "chunks" else self.from_upstream.json_result
+    return [
+        {
+            # 核心修复：解决None序列化为"None"字符串问题
+            "text": item.get("text") or "",
+            "doc_type_kwd": str(item.get("doc_type_kwd") or "text"),
+            "img_id": item.get("img_id"),
+            "layout": "{} {}".format(item.get("layout_type", ""), item.get("layoutno", "")).strip(),
+            PDF_POSITIONS_KEY: extract_pdf_positions(item),
+        }
+        for item in items or []
+    ]
 
 
     def extract_outlines(self):
