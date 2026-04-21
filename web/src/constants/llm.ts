@@ -64,6 +64,8 @@ export enum LLMFactory {
   PaddleOCR = 'PaddleOCR',
   N1n = 'n1n',
   Avian = 'Avian',
+  Astraflow = 'Astraflow',
+  AstraflowCN = 'Astraflow-CN',
   RAGcon = 'RAGcon',
   Perplexity = 'Perplexity',
 }
@@ -135,6 +137,8 @@ export const IconMap = {
   [LLMFactory.PaddleOCR]: 'paddleocr',
   [LLMFactory.N1n]: 'n1n',
   [LLMFactory.Avian]: 'avian',
+  [LLMFactory.Astraflow]: 'astraflow',
+  [LLMFactory.AstraflowCN]: 'astraflow',
   [LLMFactory.RAGcon]: 'ragcon',
   [LLMFactory.Perplexity]: 'perplexity',
 };
@@ -190,6 +194,8 @@ export const APIMapUrl = {
   [LLMFactory.PaddleOCR]: 'https://www.paddleocr.ai/latest/',
   [LLMFactory.N1n]: 'https://docs.n1n.ai',
   [LLMFactory.Avian]: 'https://avian.io',
+  [LLMFactory.Astraflow]: 'https://astraflow.ucloud.cn/',
+  [LLMFactory.AstraflowCN]: 'https://astraflow.ucloud.cn/',
   [LLMFactory.Perplexity]:
     'https://docs.perplexity.ai/docs/embeddings/quickstart',
 };
