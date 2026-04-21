@@ -381,7 +381,8 @@ class QWenRerank(Base):
         import dashscope
         self.api_key = key
         self.model_name = dashscope.TextReRank.Models.gte_rerank if model_name is None else model_name
-        dashscope.timeout = 30.0
+        # FIX: 删除无效模块全局timeout，改用官方SDK入参超时
+        self.request_timeout = 30.0
 
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         if not query or not texts:
@@ -389,16 +390,19 @@ class QWenRerank(Base):
             
         import dashscope
 
+        # FIX: 两个调用分支全部传入官方要求的 request_timeout 参数
         if self.model_name.startswith("qwen3-rerank"):  
             resp = dashscope.TextReRank.call(  
                 api_key=self.api_key, model=self.model_name,  
-                query=query, documents=texts, top_n=len(texts)  
+                query=query, documents=texts, top_n=len(texts),
+                request_timeout=self.request_timeout
             )  
         else:  
             resp = dashscope.TextReRank.call(  
                 api_key=self.api_key, model=self.model_name,  
                 query=query, documents=texts,  
-                top_n=len(texts), return_documents=False  
+                top_n=len(texts), return_documents=False,
+                request_timeout=self.request_timeout
             )  
 
         rank = np.zeros(len(texts), dtype=float)
@@ -542,7 +546,8 @@ class Ai302Rerank(Base):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, res)
-        return rank, sum(num_tokens_from_string(t) for t in texts)
+        # FIX: 统一全模块规范，使用解析后res做token统计，删除手动sum写法
+        return rank, total_token_count_from_response(res)
 
 
 class JiekouAIRerank(JinaRerank):
