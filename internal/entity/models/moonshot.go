@@ -116,18 +116,67 @@ func (z *MoonshotModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	// convert result["data"] to []map[string]interface{}
 	models := make([]string, 0)
 	for _, model := range result["data"].([]interface{}) {
-		modelName := model.(string)
+		modelMap := model.(map[string]interface{})
+		modelName := modelMap["id"].(string)
 		models = append(models, modelName)
-	}
-
-	models, ok := result["data"].([]string)
-	if !ok || len(models) == 0 {
-		return nil, fmt.Errorf("no models in response")
 	}
 
 	return models, nil
 }
 
 func (z *MoonshotModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+
+	var region = "default"
+	if apiConfig.Region != nil {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Balance)
+
+	// Build request body
+	reqBody := map[string]interface{}{}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var result map[string]interface{}
+	if err = json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	data := result["data"].(map[string]interface{})
+	balance := data["available_balance"].(float64)
+
+	var response = map[string]interface{}{
+		"balance":  balance,
+		"currency": "CNY",
+	}
+
+	return response, nil
 }
