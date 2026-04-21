@@ -632,8 +632,12 @@ class CreateDatasetReq(Base):
     @field_validator("pipeline_id", mode="after")
     @classmethod
     def validate_pipeline_id(cls, v: str | None) -> str | None:
-        """
-        Validate pipeline_id as 32-char lowercase hex string if provided.
+        """Validate pipeline_id as 32-char lowercase hex string if provided.
+
+        Rules:
+            - None or empty string: treat as None (not set)
+            - Must be exactly length 32
+            - Must contain only hex digits (0-9a-fA-F); normalized to lowercase
         """
         if v is None:
             return None
