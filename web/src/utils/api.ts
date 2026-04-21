@@ -187,7 +187,6 @@ export default {
   testDbConnect: `${webAPI}/canvas/test_db_connect`,
   getInputElements: `${webAPI}/canvas/input_elements`,
   debug: `${webAPI}/canvas/debug`,
-  uploadCanvasFile: `${webAPI}/canvas/upload`,
   trace: `${webAPI}/canvas/trace`,
   cancelCanvas: (taskId: string) => `${webAPI}/canvas/cancel/${taskId}`, // cancel conversation
   // agent
@@ -195,7 +194,7 @@ export default {
   fetchVersionList: (id: string) => `${webAPI}/canvas/getlistversion/${id}`,
   fetchVersion: (id: string) => `${webAPI}/canvas/getversion/${id}`,
   getAgent: (id: string) => `${restAPIv1}/agents/${id}`,
-  uploadAgentFile: (id?: string) => `${webAPI}/canvas/upload/${id}`,
+  uploadAgentFile: (id?: string) => `${restAPIv1}/agents/${id}/upload`,
   fetchAgentLogs: (canvasId: string) => `${webAPI}/canvas/${canvasId}/sessions`,
   fetchAgentLogsById: (canvasId: string, sessionId: string) =>
     `${webAPI}/canvas/${canvasId}/sessions/${sessionId}`,

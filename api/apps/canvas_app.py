@@ -81,24 +81,6 @@ def cancel(task_id):
         logging.exception(e)
     return get_json_result(data=True)
 
-@manager.route("/upload/<canvas_id>", methods=["POST"])  # noqa: F821
-async def upload(canvas_id):
-    e, cvs = UserCanvasService.get_by_canvas_id(canvas_id)
-    if not e:
-        return get_data_error_result(message="canvas not found.")
-
-    user_id = cvs["user_id"]
-    files = await request.files
-    file_objs = files.getlist("file") if files and files.get("file") else []
-    try:
-        if len(file_objs) == 1:
-            return get_json_result(data=FileService.upload_info(user_id, file_objs[0], request.args.get("url")))
-        results = [FileService.upload_info(user_id, f) for f in file_objs]
-        return get_json_result(data=results)
-    except Exception as e:
-        return server_error_response(e)
-
-
 @manager.route('/input_form', methods=['GET'])  # noqa: F821
 @login_required
 def input_form():

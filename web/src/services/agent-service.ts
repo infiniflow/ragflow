@@ -18,7 +18,6 @@ const {
   testDbConnect,
   getInputElements,
   debug,
-  uploadCanvasFile,
   trace,
   inputForm,
   fetchVersionList,
@@ -80,8 +79,8 @@ const methods = {
     url: debug,
     method: 'post',
   },
-  uploadCanvasFile: {
-    url: uploadCanvasFile,
+  uploadAgentFile: {
+    url: (config: { agentId: string }) => api.uploadAgentFile(config.agentId),
     method: 'post',
   },
   trace: {
@@ -165,6 +164,13 @@ export function createAgentSession({ id, name }: { id: string; name: string }) {
 
 export const deleteAgentSession = (canvasId: string, sessionId: string) => {
   return request.delete(api.fetchAgentLogsById(canvasId, sessionId));
+};
+
+export const uploadAgentFile = (agentId: string, data: FormData) => {
+  return request(api.uploadAgentFile(agentId), {
+    method: 'post',
+    data,
+  });
 };
 
 export default agentService;

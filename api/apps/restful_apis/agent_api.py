@@ -32,6 +32,7 @@ from api.db.services.canvas_service import (
     completion as agent_completion,
     completion_openai,
 )
+from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import CANVAS_DEBUG_DOC_ID, queue_dataflow
 from api.db.services.user_service import TenantService, UserService
@@ -210,6 +211,26 @@ async def create_agent(tenant_id):
     if not exists:
         return get_data_error_result(message="Fail to create agent.")
     return get_json_result(data=created_agent)
+
+
+@manager.route("/agents/<agent_id>/upload", methods=["POST"])  # noqa: F821
+async def upload_agent_file(agent_id):
+    exists, canvas = UserCanvasService.get_by_canvas_id(agent_id)
+    if not exists:
+        return get_data_error_result(message="canvas not found.")
+
+    user_id = canvas["user_id"]
+    files = await request.files
+    file_objs = files.getlist("file") if files and files.get("file") else []
+    try:
+        if len(file_objs) == 1:
+            return get_json_result(
+                data=FileService.upload_info(user_id, file_objs[0], request.args.get("url"))
+            )
+        results = [FileService.upload_info(user_id, file_obj) for file_obj in file_objs]
+        return get_json_result(data=results)
+    except Exception as exc:
+        return server_error_response(exc)
 
 
 @manager.route("/agents/<agent_id>", methods=["GET"])  # noqa: F821
