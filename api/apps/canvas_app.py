@@ -81,26 +81,6 @@ def cancel(task_id):
         logging.exception(e)
     return get_json_result(data=True)
 
-@manager.route('/input_form', methods=['GET'])  # noqa: F821
-@login_required
-def input_form():
-    cvs_id = request.args.get("id")
-    cpn_id = request.args.get("component_id")
-    try:
-        e, user_canvas = UserCanvasService.get_by_id(cvs_id)
-        if not e:
-            return get_data_error_result(message="canvas not found.")
-        if not UserCanvasService.query(user_id=current_user.id, id=cvs_id):
-            return get_json_result(
-                data=False, message='Only owner of canvas authorized for this operation.',
-                code=RetCode.OPERATING_ERROR)
-
-        canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id, canvas_id=user_canvas.id)
-        return get_json_result(data=canvas.get_component_input_form(cpn_id))
-    except Exception as e:
-        return server_error_response(e)
-
-
 @manager.route('/debug', methods=['POST'])  # noqa: F821
 @validate_request("id", "component_id", "params")
 @login_required

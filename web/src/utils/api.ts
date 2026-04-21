@@ -190,7 +190,8 @@ export default {
   trace: `${webAPI}/canvas/trace`,
   cancelCanvas: (taskId: string) => `${webAPI}/canvas/cancel/${taskId}`, // cancel conversation
   // agent
-  inputForm: `${webAPI}/canvas/input_form`,
+  inputForm: (agentId: string, componentId: string) =>
+    `${restAPIv1}/agents/${agentId}/components/${componentId}/input-form`,
   fetchVersionList: (id: string) => `${webAPI}/canvas/getlistversion/${id}`,
   fetchVersion: (id: string) => `${webAPI}/canvas/getversion/${id}`,
   getAgent: (id: string) => `${restAPIv1}/agents/${id}`,

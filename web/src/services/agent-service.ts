@@ -19,7 +19,6 @@ const {
   getInputElements,
   debug,
   trace,
-  inputForm,
   fetchVersionList,
   fetchVersion,
   getAgent,
@@ -88,7 +87,8 @@ const methods = {
     method: 'get',
   },
   inputForm: {
-    url: inputForm,
+    url: (config: { agentId: string; componentId: string }) =>
+      api.inputForm(config.agentId, config.componentId),
     method: 'get',
   },
   fetchAgentLogs: {

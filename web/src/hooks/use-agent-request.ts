@@ -559,12 +559,7 @@ export const useFetchInputForm = (componentId?: string) => {
     enabled: !!id && !!componentId,
     queryFn: async () => {
       const { data } = await agentService.inputForm(
-        {
-          params: {
-            id,
-            component_id: componentId,
-          },
-        },
+        { agentId: id as string, componentId: componentId as string },
         true,
       );
 

@@ -233,6 +233,27 @@ async def upload_agent_file(agent_id):
         return server_error_response(exc)
 
 
+@manager.route("/agents/<agent_id>/components/<component_id>/input-form", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def get_agent_component_input_form(agent_id, component_id, tenant_id):
+    try:
+        exists, user_canvas = UserCanvasService.get_by_id(agent_id)
+        if not exists:
+            return get_data_error_result(message="canvas not found.")
+        if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
+            return get_json_result(
+                data=False,
+                message="Only owner of canvas authorized for this operation.",
+                code=RetCode.OPERATING_ERROR,
+            )
+
+        canvas = Canvas(json.dumps(user_canvas.dsl), tenant_id, canvas_id=user_canvas.id)
+        return get_json_result(data=canvas.get_component_input_form(component_id))
+    except Exception as exc:
+        return server_error_response(exc)
+
+
 @manager.route("/agents/<agent_id>", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
