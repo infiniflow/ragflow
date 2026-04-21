@@ -318,7 +318,8 @@ class SILICONFLOWRerank(Base):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, response)
-        return rank, total_token_count_from_response(response)
+        # FIX: Pass parsed JSON response instead of raw HTTP response for token counting
+        return rank, total_token_count_from_response(res)
 
 
 class BaiduYiyanRerank(Base):
@@ -381,7 +382,7 @@ class QWenRerank(Base):
         import dashscope
         self.api_key = key
         self.model_name = dashscope.TextReRank.Models.gte_rerank if model_name is None else model_name
-        # FIX: 删除无效模块全局timeout，改用官方SDK入参超时
+        # FIX: Remove invalid global timeout, use official SDK request timeout parameter
         self.request_timeout = 30.0
 
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
@@ -390,7 +391,7 @@ class QWenRerank(Base):
             
         import dashscope
 
-        # FIX: 两个调用分支全部传入官方要求的 request_timeout 参数
+        # FIX: Pass official request_timeout parameter to both API call branches
         if self.model_name.startswith("qwen3-rerank"):  
             resp = dashscope.TextReRank.call(  
                 api_key=self.api_key, model=self.model_name,  
@@ -546,7 +547,6 @@ class Ai302Rerank(Base):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, res)
-        # FIX: 统一全模块规范，使用解析后res做token统计，删除手动sum写法
         return rank, total_token_count_from_response(res)
 
 
