@@ -50,7 +50,7 @@ def test_list_agents_success_and_error(monkeypatch):
         return _DummyResponse({"code": 0, "data": {"canvas": [{"id": "agent-1", "title": "Agent One"}], "total": 1}})
 
     monkeypatch.setattr(client, "get", _ok_get)
-    agents = client.list_agents(title="Agent One")
+    agents = client.list_agents()
     assert captured["path"] == "/agents"
     assert captured["params"] == {"page": 1, "page_size": 30, "orderby": "update_time", "desc": True}
     assert isinstance(agents[0], Agent), str(agents)
@@ -91,11 +91,11 @@ def test_update_agent_payload_matrix_and_error(monkeypatch):
     client = RAGFlow("token", "http://localhost:9380")
     calls = []
 
-    def _ok_patch(path, json):
+    def _ok_put(path, json):
         calls.append((path, json))
         return _DummyResponse({"code": 0, "message": "ok"})
 
-    monkeypatch.setattr(client, "patch", _ok_patch)
+    monkeypatch.setattr(client, "put", _ok_put)
     cases = [
         ({"title": "new-title"}, {"title": "new-title"}),
         ({"description": "new-description"}, {"description": "new-description"}),
@@ -110,7 +110,7 @@ def test_update_agent_payload_matrix_and_error(monkeypatch):
         assert calls[-1][0] == "/agents/agent-1"
         assert calls[-1][1] == expected_payload
 
-    monkeypatch.setattr(client, "patch", lambda *_args, **_kwargs: _DummyResponse({"code": 1, "message": "update boom"}))
+    monkeypatch.setattr(client, "put", lambda *_args, **_kwargs: _DummyResponse({"code": 1, "message": "update boom"}))
     with pytest.raises(Exception) as exception_info:
         client.update_agent("agent-1", title="bad")
     assert "update boom" in str(exception_info.value), str(exception_info.value)
