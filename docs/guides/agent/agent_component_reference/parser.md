@@ -37,7 +37,7 @@ Optimizes the parser to detect and reorder multi-column pages into a logical seq
 
 ### Remove original table of contents
 
-Strip the original table of contents (TOC) from PDF files. Once enabled, the TOC is not chunked or parsed for retrieval.
+Strips the original table of contents (TOC) from PDF files. Once enabled, the TOC is not chunked or parsed for retrieval.
 
 ### PDF parser
 
