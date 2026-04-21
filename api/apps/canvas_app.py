@@ -182,18 +182,6 @@ async def test_db_connect():
     except Exception as e:
         return server_error_response(e)
 
-
-#api get list version dsl of canvas
-@manager.route('/getlistversion/<canvas_id>', methods=['GET'])  # noqa: F821
-@login_required
-def getlistversion(canvas_id):
-    try:
-        versions =sorted([c.to_dict() for c in UserCanvasVersionService.list_by_canvas_id(canvas_id)], key=lambda x: x["update_time"]*-1)
-        return get_json_result(data=versions)
-    except Exception as e:
-        return get_data_error_result(message=f"Error getting history files: {e}")
-
-
 #api get version dsl of canvas
 @manager.route('/getversion/<version_id>', methods=['GET'])  # noqa: F821
 @login_required
