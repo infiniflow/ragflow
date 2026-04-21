@@ -13,7 +13,7 @@ const {
   listAgents,
   deleteAgent,
   agentChatCompletion,
-  resetCanvas,
+  resetAgent,
   listAgentTemplate,
   testDbConnect,
   getInputElements,
@@ -52,8 +52,8 @@ const methods = {
     url: listAgents,
     method: 'get',
   },
-  resetCanvas: {
-    url: resetCanvas,
+  resetAgent: {
+    url: resetAgent,
     method: 'post',
   },
   deleteAgent: {

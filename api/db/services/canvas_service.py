@@ -208,7 +208,11 @@ class UserCanvasService(CommonService):
             return False
 
         tids = [t.tenant_id for t in UserTenantService.query(user_id=tenant_id)]
-        if c["user_id"] != canvas_id and c["user_id"]  not in tids:
+        if c["user_id"] == tenant_id:
+            return True
+        if c["user_id"] not in tids:
+            return False
+        if c["permission"] != TenantPermission.TEAM.value:
             return False
         return True
 

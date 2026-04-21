@@ -318,7 +318,7 @@ export const useResetAgent = () => {
   } = useMutation({
     mutationKey: [AgentApiAction.ResetAgent],
     mutationFn: async () => {
-      const { data } = await agentService.resetCanvas(id);
+      const { data } = await agentService.resetAgent(id);
       return data;
     },
   });

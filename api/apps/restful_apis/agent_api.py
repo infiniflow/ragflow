@@ -25,6 +25,7 @@ from agent.dsl_migration import normalize_chunker_dsl
 from api.apps import login_required
 from api.apps.services.canvas_replica_service import CanvasReplicaService
 from api.db import CanvasCategory
+from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import (
     CanvasTemplateService,
     UserCanvasService,
@@ -62,10 +63,6 @@ def _build_sse_response(body):
     resp.headers.add_header("X-Accel-Buffering", "no")
     resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
     return resp
-
-
-def _dump_sse_event(ans: dict) -> str:
-    return "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
 
 async def _iter_session_completion_events(tenant_id, agent_id, req, return_trace):
@@ -116,32 +113,33 @@ def list_agents(tenant_id):
     items_per_page = int(request.args.get("page_size", 0))
     order_by = request.args.get("orderby", "create_time")
     desc = str(request.args.get("desc", "true")).lower() != "false"
+    tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+    authorized_owner_ids = {member["tenant_id"] for member in tenants}
+    authorized_owner_ids.add(tenant_id)
 
     if owner_ids:
-        canvas, total = UserCanvasService.get_by_tenant_ids(
-            owner_ids,
-            tenant_id,
-            0,
-            0,
-            order_by,
-            desc,
-            keywords,
-            canvas_category,
-        )
+        requested_owner_ids = set(owner_ids)
+        unauthorized_owner_ids = requested_owner_ids - authorized_owner_ids
+        if unauthorized_owner_ids:
+            return get_json_result(
+                data=False,
+                message="Only authorized owner_ids can be queried.",
+                code=RetCode.OPERATING_ERROR,
+            )
+        effective_owner_ids = list(requested_owner_ids)
     else:
-        tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
-        tenants = [member["tenant_id"] for member in tenants]
-        tenants.append(tenant_id)
-        canvas, total = UserCanvasService.get_by_tenant_ids(
-            tenants,
-            tenant_id,
-            page_number,
-            items_per_page,
-            order_by,
-            desc,
-            keywords,
-            canvas_category,
-        )
+        effective_owner_ids = list(authorized_owner_ids)
+
+    canvas, total = UserCanvasService.get_by_tenant_ids(
+        effective_owner_ids,
+        tenant_id,
+        page_number,
+        items_per_page,
+        order_by,
+        desc,
+        keywords,
+        canvas_category,
+    )
 
     return get_json_result(data={"canvas": canvas, "total": total})
 
@@ -365,6 +363,21 @@ async def reset_agent(agent_id, tenant_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def agent_chat_completion(tenant_id):
+    # This endpoint serves two execution modes:
+    # 1. Draft/runtime execution without session state. The request runs against the caller's
+    #    runtime replica, which is populated from the editable canvas state.
+    # 2. Session continuation with an existing session_id. The request resumes from the stored
+    #    API4Conversation state and must stay bound to the same agent and an accessible canvas.
+    #
+    # Security constraints:
+    # - agent_id is always supplied at the route layer and is not forwarded downstream as a free-form kwarg.
+    # - New runs without session_id must pass UserCanvasService.accessible(...) before the runtime replica is loaded.
+    # - Existing sessions are validated here at the route layer before handing control to the lower-level
+    #   completion functions, so canvas_service only executes a pre-authorized session payload.
+    #
+    # Response modes:
+    # - Regular mode emits internal agent events.
+    # - openai-compatible mode reshapes the same execution into an OpenAI-like wire format.
     req = await get_request_json()
     agent_id = req.get("agent_id")
     openai_compatible = bool(req.get("openai-compatible", False))
@@ -378,6 +391,23 @@ async def agent_chat_completion(tenant_id):
     req = dict(req)
     req.pop("agent_id", None)
     req.pop("openai-compatible", None)
+    session_id = req.get("session_id")
+    if session_id:
+        exists, conv = API4ConversationService.get_by_id(session_id)
+        if not exists:
+            return get_data_error_result(message="Session not found!")
+        if conv.dialog_id != agent_id:
+            return get_json_result(
+                data=False,
+                message="Session does not belong to the requested agent.",
+                code=RetCode.OPERATING_ERROR,
+            )
+        if not UserCanvasService.accessible(agent_id, tenant_id):
+            return get_json_result(
+                data=False,
+                message="Only authorized users can access this agent session.",
+                code=RetCode.OPERATING_ERROR,
+            )
 
     if openai_compatible:
         # OpenAI-compatible mode uses a different wire format, keep it separate from regular agent events.
@@ -410,7 +440,6 @@ async def agent_chat_completion(tenant_id):
             return jsonify(response)
         return None
 
-    session_id = req.get("session_id")
     if not session_id:
         # Without session state, run against the runtime replica that tracks draft edits.
         query = req.get("query", "")
@@ -503,7 +532,7 @@ async def agent_chat_completion(tenant_id):
 
         async def generate():
             async for ans in _iter_session_completion_events(tenant_id, agent_id, req, return_trace):
-                yield _dump_sse_event(ans)
+                yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
             yield "data:[DONE]\n\n"
 
         return _build_sse_response(generate())

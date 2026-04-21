@@ -183,7 +183,7 @@ export default {
   agentChatCompletion: `${restAPIv1}/agents/chat/completion`,
   getListVersion: `${webAPI}/canvas/getlistversion`,
   getVersion: `${webAPI}/canvas/getversion`,
-  resetCanvas: (agentId: string) => `${restAPIv1}/agents/${agentId}/reset`,
+  resetAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}/reset`,
   testDbConnect: `${webAPI}/canvas/test_db_connect`,
   getInputElements: `${webAPI}/canvas/input_elements`,
   debug: `${webAPI}/canvas/debug`,
