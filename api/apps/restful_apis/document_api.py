@@ -151,12 +151,12 @@ async def update_document(tenant_id, dataset_id, document_id):
     return get_result(data=renamed_doc)
 
 
-@manager.route("/datasets/<dataset_id>/metadata/summary", methods=["GET"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/metadata-settings", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def metadata_summary(dataset_id, tenant_id):
+async def metadata_settings_get(dataset_id, tenant_id):
     """
-    Get metadata summary for a dataset.
+    Get metadata settings for a dataset.
     ---
     tags:
       - Documents
@@ -175,7 +175,7 @@ async def metadata_summary(dataset_id, tenant_id):
         description: Comma-separated document IDs to filter metadata.
     responses:
       200:
-        description: Metadata summary retrieved successfully.
+        description: Metadata settings retrieved successfully.
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
@@ -187,6 +187,88 @@ async def metadata_summary(dataset_id, tenant_id):
         return get_result(data={"summary": summary})
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route("/datasets/<dataset_id>/metadata-settings", methods=["PUT"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def metadata_settings_put(dataset_id, tenant_id):
+    """
+    Update metadata settings for documents in a dataset.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              selector:
+                type: object
+              updates:
+                type: array
+              deletes:
+                type: array
+    responses:
+      200:
+        description: Metadata updated successfully.
+    """
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+
+    req = await get_request_json()
+    selector = req.get("selector", {}) or {}
+    updates = req.get("updates", []) or []
+    deletes = req.get("deletes", []) or []
+
+    if not isinstance(selector, dict):
+        return get_error_data_result(message="selector must be an object.")
+    if not isinstance(updates, list) or not isinstance(deletes, list):
+        return get_error_data_result(message="updates and deletes must be lists.")
+
+    metadata_condition = selector.get("metadata_condition", {}) or {}
+    if metadata_condition and not isinstance(metadata_condition, dict):
+        return get_error_data_result(message="metadata_condition must be an object.")
+
+    document_ids = selector.get("document_ids", []) or []
+    if document_ids and not isinstance(document_ids, list):
+        return get_error_data_result(message="document_ids must be a list.")
+
+    for upd in updates:
+        if not isinstance(upd, dict) or not upd.get("key") or "value" not in upd:
+            return get_error_data_result(message="Each update requires key and value.")
+    for d in deletes:
+        if not isinstance(d, dict) or not d.get("key"):
+            return get_error_data_result(message="Each delete requires key.")
+
+    target_doc_ids = set()
+    if document_ids:
+        kb_doc_ids = KnowledgebaseService.list_documents_by_ids([dataset_id])
+        invalid_ids = set(document_ids) - set(kb_doc_ids)
+        if invalid_ids:
+            return get_error_data_result(message=f"These documents do not belong to dataset {dataset_id}: {', '.join(invalid_ids)}")
+        target_doc_ids = set(document_ids)
+
+    if metadata_condition:
+        metas = DocMetadataService.get_flatted_meta_by_kbs([dataset_id])
+        filtered_ids = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
+        target_doc_ids = target_doc_ids & filtered_ids
+        if metadata_condition.get("conditions") and not target_doc_ids:
+            return get_result(data={"updated": 0, "matched_docs": 0})
+
+    target_doc_ids = list(target_doc_ids)
+    updated = DocMetadataService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
+    return get_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
 
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["POST"])  # noqa: F821

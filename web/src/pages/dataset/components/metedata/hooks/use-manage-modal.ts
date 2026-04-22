@@ -2,8 +2,9 @@ import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useSelectedIds } from '@/hooks/logic-hooks/use-row-selection';
 import { DocumentApiAction } from '@/hooks/use-document-request';
-import kbService, {
+import {
   getMetaDataService,
+  kbUpdateMetaData,
   updateMetaData,
 } from '@/services/knowledge-service';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -411,8 +412,7 @@ export const useManageMetaDataModal = (
   const handleSaveSettings = useCallback(
     async (callback: () => void, builtInMetadata?: IBuiltInMetadataItem[]) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
-      const { data: res } = await kbService.kbUpdateMetaData({
-        kb_id: id,
+      const { data: res } = await kbUpdateMetaData(id || '', {
         metadata: data,
         builtInMetadata: builtInMetadata || [],
       });
@@ -433,9 +433,10 @@ export const useManageMetaDataModal = (
     async (callback: () => void) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
       if (otherData?.documentId) {
-        const { data: res } = await kbService.documentUpdateMetaData({
-          doc_id: otherData.documentId,
-          metadata: data,
+        const { data: res } = await updateMetaData({
+          kb_id: id || '',
+          doc_ids: [otherData.documentId],
+          data: { metadata: data },
         });
         if (res.code === 0) {
           message.success(t('message.operated'));

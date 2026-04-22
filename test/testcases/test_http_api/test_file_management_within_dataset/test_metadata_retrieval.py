@@ -83,12 +83,11 @@ def add_dataset_with_metadata(HttpApiAuth):
         }
     }
 
-    res = requests.post(
-        url=f"{HOST_ADDRESS}/{VERSION}/kb/update_metadata_setting",
+    res = requests.put(
+        url=f"{HOST_ADDRESS}/api/{VERSION}/datasets/{dataset_id}/metadata/config",
         headers={"Content-Type": "application/json"},
         auth=HttpApiAuth,
         json={
-            "kb_id": dataset_id,
             "metadata": metadata_config,
             "enable_metadata": False
         }

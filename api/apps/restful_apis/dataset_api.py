@@ -624,45 +624,6 @@ def get_ingestion_log(tenant_id, dataset_id, log_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/auto_metadata", methods=["GET"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-def get_auto_metadata_legacy(tenant_id, dataset_id):
-    try:
-        success, result = dataset_api_service.get_auto_metadata(dataset_id, tenant_id)
-        if success:
-            return get_result(data=result)
-        else:
-            return get_error_data_result(message=result)
-    except ValueError as e:
-        return get_error_argument_result(str(e))
-    except Exception as e:
-        logging.exception(e)
-        return get_error_data_result(message="Internal server error")
-
-
-@manager.route("/datasets/<dataset_id>/auto_metadata", methods=["PUT"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-async def update_auto_metadata_legacy(tenant_id, dataset_id):
-    from api.utils.validation_utils import AutoMetadataConfig
-    cfg, err = await validate_and_parse_json_request(request, AutoMetadataConfig)
-    if err is not None:
-        return get_error_argument_result(err)
-
-    try:
-        success, result = await dataset_api_service.update_auto_metadata(dataset_id, tenant_id, cfg)
-        if success:
-            return get_result(data=result)
-        else:
-            return get_error_data_result(message=result)
-    except ValueError as e:
-        return get_error_argument_result(str(e))
-    except Exception as e:
-        logging.exception(e)
-        return get_error_data_result(message="Internal server error")
-
-
 @manager.route("/datasets/<dataset_id>/metadata/config", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
