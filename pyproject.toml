@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.24.0"
+version = "0.25.0"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -24,6 +24,7 @@ dependencies = [
     "Crawl4AI>=0.4.0,<1.0.0",
     "dashscope==1.25.11",
     "deepl==1.18.0",
+    "debugpy>=1.8.13",
     "demjson3==3.0.6",
     "discord-py==2.3.2",
     "dropbox==12.0.2",
@@ -82,7 +83,7 @@ dependencies = [
     "pyobvector==0.2.22",
     "pyodbc>=5.2.0,<6.0.0",
     "pypandoc>=1.16",
-    "pypdf>=6.8.0",
+    "pypdf>=6.10.2",
     "python-calamine>=0.4.0",
     "python-docx>=1.1.2,<2.0.0",
     "python-pptx>=1.0.2,<2.0.0",
@@ -144,7 +145,6 @@ dependencies = [
     #    "werkzeug==3.0.6",
     #    "xxhash>=3.5.0,<4.0.0",
     #    "trio>=0.17.0,<0.29.0",
-    #    "debugpy>=1.8.13",
     #    "click>=8.1.8",
     "litellm~=1.82.0,!=1.82.7,!=1.82.8",
     #    "pip>=25.2",

@@ -115,8 +115,8 @@ class Session(Base):
         return res
 
     def update(self, update_message):
-        res = self.put(f"/chats/{self.chat_id}/sessions/{self.id}",
-                       update_message)
+        res = self.patch(f"/chats/{self.chat_id}/sessions/{self.id}",
+                         update_message)
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))

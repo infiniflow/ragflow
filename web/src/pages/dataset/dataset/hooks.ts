@@ -26,7 +26,7 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
         uploadDate: formatDate(findRecord.create_date),
         fileSize: formatBytes(findRecord.size || 0),
         processBeginAt: formatDate(findRecord.process_begin_at),
-        chunkNumber: findRecord.chunk_num,
+        chunkNumber: findRecord.chunk_count,
         duration: formatSecondsToHumanReadable(
           findRecord.process_duration || 0,
         ),
