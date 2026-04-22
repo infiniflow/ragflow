@@ -87,7 +87,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
   updateMetaData: `${webAPI}/document/metadata/update`,
   kbUpdateMetaData: `${webAPI}/kb/update_metadata_setting`,
-  documentUpdateMetaData: `${webAPI}/document/update_metadata_setting`,
+  documentUpdateMetaDataConfig: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/metadata/config`,
 
   // tags
   listTag: (knowledgeId: string) => `${webAPI}/kb/${knowledgeId}/tags`,
