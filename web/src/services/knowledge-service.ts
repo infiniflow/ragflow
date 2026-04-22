@@ -33,6 +33,9 @@ const {
   setMeta,
   getMeta,
   retrievalTestShare,
+  getKnowledgeBasicInfo,
+  checkEmbedding,
+  kbUpdateMetaData,
   documentUpdateMetaData,
 } = api;
 
@@ -129,6 +132,14 @@ const methods = {
   },
   pipelineRerun: {
     url: api.pipelineRerun,
+    method: 'post',
+  },
+  checkEmbedding: {
+    url: checkEmbedding,
+    method: 'post',
+  },
+  kbUpdateMetaData: {
+    url: kbUpdateMetaData,
     method: 'post',
   },
   documentUpdateMetaData: {
@@ -235,6 +246,19 @@ export const updateMetaData = ({
   doc_ids?: string[];
   data: any;
 }) => request.post(api.updateMetaData(kb_id), { data: { doc_ids, ...data } });
+
+export const updateDocumentMetaDataConfig = ({
+  kb_id,
+  doc_id,
+  data,
+}: {
+  kb_id: string;
+  doc_id: string;
+  data: any;
+}) =>
+  request.put(api.documentUpdateMetaDataConfig(kb_id, doc_id), {
+    data: { ...data },
+  });
 
 export const listDataPipelineLogDocument = (
   datasetId: string,

@@ -4,7 +4,6 @@ import { useSelectedIds } from '@/hooks/logic-hooks/use-row-selection';
 import { DocumentApiAction } from '@/hooks/use-document-request';
 import {
   getMetaDataService,
-  kbUpdateMetaData,
   updateMetaData,
 } from '@/services/knowledge-service';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -433,10 +432,9 @@ export const useManageMetaDataModal = (
     async (callback: () => void) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
       if (otherData?.documentId) {
-        const { data: res } = await updateMetaData({
-          kb_id: id || '',
-          doc_ids: [otherData.documentId],
-          data: { metadata: data },
+        const { data: res } = await kbService.documentUpdateMetaData({
+          doc_id: otherData.documentId,
+          metadata: data,
         });
         if (res.code === 0) {
           message.success(t('message.operated'));

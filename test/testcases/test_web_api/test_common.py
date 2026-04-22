@@ -372,8 +372,8 @@ def document_metadata_update(auth, payload=None, *, headers=HEADERS, data=None):
     return res.json()
 
 
-def document_update_metadata_setting(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/update_metadata_setting", headers=headers, auth=auth, json=payload, data=data)
+def document_update_metadata_setting(auth, dataset_id, doc_id, payload=None, *, headers=HEADERS, data=None):
+    res = requests.put(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents/{doc_id}/metadata/config", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 

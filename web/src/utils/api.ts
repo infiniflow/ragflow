@@ -16,13 +16,13 @@ export default {
   loginChannel: (channel: string) => `${webAPI}/user/login/${channel}`,
 
   // team
-  addTenantUser: (tenantId: string) => `${webAPI}/tenant/${tenantId}/user`,
+  addTenantUser: (tenantId: string) => `${restAPIv1}/tenants/${tenantId}/users`,
   listTenantUser: (tenantId: string) =>
-    `${webAPI}/tenant/${tenantId}/user/list`,
-  deleteTenantUser: (tenantId: string, userId: string) =>
-    `${webAPI}/tenant/${tenantId}/user/${userId}`,
-  listTenant: `${webAPI}/tenant/list`,
-  agreeTenant: (tenantId: string) => `${webAPI}/tenant/agree/${tenantId}`,
+    `${restAPIv1}/tenants/${tenantId}/users`,
+  deleteTenantUser: (tenantId: string) =>
+    `${restAPIv1}/tenants/${tenantId}/users`,
+  listTenant: `${restAPIv1}/tenants`,
+  agreeTenant: (tenantId: string) => `${restAPIv1}/tenants/${tenantId}`,
 
   // llm model
   factoriesList: `${webAPI}/llm/factories`,
@@ -90,7 +90,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/metadata/update`,
   kbUpdateMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/config`,
-  documentUpdateMetaData: `${webAPI}/document/update_metadata_setting`,
+  documentUpdateMetaDataConfig: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/metadata/config`,
 
   // tags
   listTag: (knowledgeId: string) => `${restAPIv1}/datasets/${knowledgeId}/tags`,
