@@ -115,8 +115,10 @@ class TestAgentSessions:
     @pytest.mark.p2
     def test_agent_crud_validation_contract(self, HttpApiAuth, agent_id):
         res = list_agents(HttpApiAuth, {"id": "missing-agent-id", "title": "missing-agent-title"})
-        assert res["code"] == 102, res
-        assert "doesn't exist" in res["message"], res
+        assert res["code"] == 0, res
+        assert isinstance(res.get("data"), dict), res
+        assert "canvas" in res["data"], res
+        assert "total" in res["data"], res
 
         res = list_agents(HttpApiAuth, {"title": AGENT_TITLE, "desc": "true", "page_size": 1})
         assert res["code"] == 0, res

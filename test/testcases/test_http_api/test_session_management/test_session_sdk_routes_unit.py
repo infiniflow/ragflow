@@ -581,14 +581,34 @@ def _load_agent_api_module(monkeypatch):
     file_service_mod.FileService = SimpleNamespace(upload_info=lambda *_args, **_kwargs: {})
     monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
 
+    document_service_mod = ModuleType("api.db.services.document_service")
+    document_service_mod.DocumentService = SimpleNamespace(
+        clear_chunk_num_when_rerun=lambda *_args, **_kwargs: True,
+        update_by_id=lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.document_service", document_service_mod)
+
     knowledgebase_service_mod = ModuleType("api.db.services.knowledgebase_service")
     knowledgebase_service_mod.KnowledgebaseService = SimpleNamespace(query=lambda **_kwargs: [])
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", knowledgebase_service_mod)
 
     task_service_mod = ModuleType("api.db.services.task_service")
     task_service_mod.CANVAS_DEBUG_DOC_ID = "debug-doc"
+    task_service_mod.GRAPH_RAPTOR_FAKE_DOC_ID = "graph-raptor-fake-doc"
+    task_service_mod.TaskService = SimpleNamespace(filter_delete=lambda *_args, **_kwargs: True)
     task_service_mod.queue_dataflow = lambda *_args, **_kwargs: (True, "")
     monkeypatch.setitem(sys.modules, "api.db.services.task_service", task_service_mod)
+
+    pipeline_operation_log_service_mod = ModuleType("api.db.services.pipeline_operation_log_service")
+    pipeline_operation_log_service_mod.PipelineOperationLogService = SimpleNamespace(
+        get_documents_info=lambda *_args, **_kwargs: [],
+        update_by_id=lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "api.db.services.pipeline_operation_log_service",
+        pipeline_operation_log_service_mod,
+    )
 
     user_service_mod = ModuleType("api.db.services.user_service")
     user_service_mod.TenantService = SimpleNamespace(get_joined_tenants_by_user_id=lambda *_args, **_kwargs: [])
