@@ -234,7 +234,7 @@ export const updateMetaData = ({
   kb_id: string;
   doc_ids?: string[];
   data: any;
-}) => request.put(api.updateMetaData(kb_id), { data: { doc_ids, ...data } });
+}) => request.post(api.updateMetaData(kb_id), { data: { doc_ids, ...data } });
 
 export const listDataPipelineLogDocument = (
   datasetId: string,

@@ -306,14 +306,14 @@ def delete_knowledge_graph(auth, dataset_id, payload=None):
 
 
 def metadata_summary(auth, dataset_id, params=None):
-    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/metadata-settings"
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/metadata/summary"
     res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
     return res.json()
 
 
 def metadata_batch_update(auth, dataset_id, payload=None, *, headers=HEADERS):
-    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/metadata-settings"
-    res = requests.put(url=url, headers=headers, auth=auth, json=payload)
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/metadata/update"
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 

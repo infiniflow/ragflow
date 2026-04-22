@@ -37,7 +37,7 @@ class TestMetadataSummary:
         """
         res = metadata_summary(HttpApiAuth, "")
         assert res["code"] == 404, res
-        assert res["message"] == "Not Found: /api/v1/datasets//metadata-settings", res
+        assert res["message"] == "Not Found: /api/v1/datasets//metadata/summary", res
 
     @pytest.mark.p2
     def test_metadata_summary_invalid_kb_id(self, HttpApiAuth, add_document_func):

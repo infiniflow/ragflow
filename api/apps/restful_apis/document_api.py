@@ -154,12 +154,12 @@ async def update_document(tenant_id, dataset_id, document_id):
     return get_result(data=renamed_doc)
 
 
-@manager.route("/datasets/<dataset_id>/metadata-settings", methods=["GET"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/metadata/summary", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def metadata_settings_get(dataset_id, tenant_id):
+async def metadata_summary(dataset_id, tenant_id):
     """
-    Get metadata settings for a dataset.
+    Get metadata summary for a dataset.
     ---
     tags:
       - Documents
@@ -178,7 +178,7 @@ async def metadata_settings_get(dataset_id, tenant_id):
         description: Comma-separated document IDs to filter metadata.
     responses:
       200:
-        description: Metadata settings retrieved successfully.
+        description: Metadata summary retrieved successfully.
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
@@ -192,12 +192,12 @@ async def metadata_settings_get(dataset_id, tenant_id):
         return server_error_response(e)
 
 
-@manager.route("/datasets/<dataset_id>/metadata-settings", methods=["PUT"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/metadata/update", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def metadata_settings_put(dataset_id, tenant_id):
+async def metadata_batch_update(dataset_id, tenant_id):
     """
-    Update metadata settings for documents in a dataset.
+    Batch update metadata for documents in a dataset.
     ---
     tags:
       - Documents
