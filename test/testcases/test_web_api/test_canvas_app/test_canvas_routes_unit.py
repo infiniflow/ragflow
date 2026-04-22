@@ -490,6 +490,7 @@ def _load_canvas_module(monkeypatch):
     quart_mod = ModuleType("quart")
     quart_mod.request = _DummyRequest()
     quart_mod.Response = _StubResponse
+    quart_mod.jsonify = lambda payload: payload
 
     async def _make_response(blob):
         return {"blob": blob}
@@ -508,7 +509,11 @@ def _load_canvas_module(monkeypatch):
 
 @pytest.mark.p2
 def test_templates_rm_save_get_matrix_unit(monkeypatch):
-    module = _load_canvas_module(monkeypatch)
+    from test.testcases.test_http_api.test_session_management.test_session_sdk_routes_unit import (
+        _load_agent_api_module,
+    )
+
+    module = _load_agent_api_module(monkeypatch)
 
     class _Template:
         def __init__(self, template_id):
@@ -518,27 +523,25 @@ def test_templates_rm_save_get_matrix_unit(monkeypatch):
             return {"id": self.template_id, "canvas_type": "Recommended", "canvas_types": ["Recommended", "Agent"]}
 
     monkeypatch.setattr(module.CanvasTemplateService, "get_all", lambda: [_Template("tpl-1")])
-    res = module.templates()
+    res = module.list_agent_template()
     assert res["code"] == module.RetCode.SUCCESS
     assert res["data"] == [{"id": "tpl-1", "canvas_type": "Recommended", "canvas_types": ["Recommended", "Agent"]}]
 
-    _set_request_json(monkeypatch, module, {"canvas_ids": ["c1", "c2"]})
-    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: False)
-    res = _run(inspect.unwrap(module.rm)())
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: False)
+    res = inspect.unwrap(module.delete_agent)("c1", "user-1")
     assert res["code"] == module.RetCode.OPERATING_ERROR
     assert "Only owner of canvas authorized" in res["message"]
 
     deleted = []
-    _set_request_json(monkeypatch, module, {"canvas_ids": ["c1", "c2"]})
-    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: True)
     monkeypatch.setattr(module.UserCanvasService, "delete_by_id", lambda canvas_id: deleted.append(canvas_id))
-    res = _run(inspect.unwrap(module.rm)())
+    res = inspect.unwrap(module.delete_agent)("c1", "user-1")
     assert res["data"] is True
-    assert deleted == ["c1", "c2"]
+    assert deleted == ["c1"]
 
     _set_request_json(monkeypatch, module, {"title": "  Demo  ", "dsl": {"n": 1}})
     monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [object()])
-    res = _run(inspect.unwrap(module.save)())
+    res = _run(inspect.unwrap(module.create_agent)("user-1"))
     assert res["code"] == module.RetCode.DATA_ERROR
     assert "already exists" in res["message"]
 
@@ -546,9 +549,9 @@ def test_templates_rm_save_get_matrix_unit(monkeypatch):
     monkeypatch.setattr(module, "get_uuid", lambda: "canvas-new")
     monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [])
     monkeypatch.setattr(module.UserCanvasService, "save", lambda **_kwargs: False)
-    res = _run(inspect.unwrap(module.save)())
+    res = _run(inspect.unwrap(module.create_agent)("user-1"))
     assert res["code"] == module.RetCode.DATA_ERROR
-    assert "Fail to save canvas." in res["message"]
+    assert "Fail to create agent." in res["message"]
 
     created = {"save": [], "versions": []}
     _set_request_json(monkeypatch, module, {"title": "Demo", "dsl": {"n": 1}})
@@ -556,52 +559,60 @@ def test_templates_rm_save_get_matrix_unit(monkeypatch):
     monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [])
     monkeypatch.setattr(module.UserCanvasService, "save", lambda **kwargs: created["save"].append(kwargs) or True)
     monkeypatch.setattr(module.UserCanvasVersionService, "save_or_replace_latest", lambda *_args, **kwargs: created["versions"].append(("save_or_replace_latest", kwargs)))
-    res = _run(inspect.unwrap(module.save)())
+    monkeypatch.setattr(module.UserCanvasService, "get_by_canvas_id", lambda _agent_id: (True, {"id": "canvas-new"}))
+    res = _run(inspect.unwrap(module.create_agent)("user-1"))
     assert res["code"] == module.RetCode.SUCCESS
     assert res["data"]["id"] == "canvas-new"
     assert created["save"]
     assert any(item[0] == "save_or_replace_latest" for item in created["versions"])
 
-    _set_request_json(monkeypatch, module, {"id": "canvas-1", "title": "Renamed", "dsl": "{\"m\": 1}"})
-    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: False)
-    res = _run(inspect.unwrap(module.save)())
+    _set_request_json(monkeypatch, module, {"title": "Renamed", "dsl": {"m": 1}})
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: False)
+    res = _run(inspect.unwrap(module.update_agent)("canvas-1", "user-1"))
     assert res["code"] == module.RetCode.OPERATING_ERROR
 
     updates = []
     versions = []
-    _set_request_json(monkeypatch, module, {"id": "canvas-1", "title": "Renamed", "dsl": "{\"m\": 1}"})
-    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
+    _set_request_json(monkeypatch, module, {"title": "Renamed", "dsl": {"m": 1}})
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: True)
+    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _canvas_id: (True, SimpleNamespace(title="Old", canvas_category=module.CanvasCategory.Agent)))
     monkeypatch.setattr(module.UserCanvasService, "update_by_id", lambda canvas_id, payload: updates.append((canvas_id, payload)))
     monkeypatch.setattr(module.UserCanvasVersionService, "save_or_replace_latest", lambda *_args, **kwargs: versions.append(("save_or_replace_latest", kwargs)))
-    res = _run(inspect.unwrap(module.save)())
+    res = _run(inspect.unwrap(module.update_agent)("canvas-1", "user-1"))
     assert res["code"] == module.RetCode.SUCCESS
     assert updates and updates[0][0] == "canvas-1"
     assert any(item[0] == "save_or_replace_latest" for item in versions)
 
     monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: False)
-    res = module.get("canvas-1")
+    res = inspect.unwrap(module.get_agent)("canvas-1", "user-1")
     assert res["code"] == module.RetCode.DATA_ERROR
     assert res["message"] == "canvas not found."
 
     monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(module.UserCanvasService, "get_by_canvas_id", lambda _canvas_id: (True, {"id": "canvas-1"}))
-    res = module.get("canvas-1")
+    monkeypatch.setattr(module.UserCanvasVersionService, "list_by_canvas_id", lambda _canvas_id: [])
+    res = inspect.unwrap(module.get_agent)("canvas-1", "user-1")
     assert res["code"] == module.RetCode.SUCCESS
     assert res["data"]["id"] == "canvas-1"
 
 
 @pytest.mark.p2
 def test_rerun_and_cancel_matrix_unit(monkeypatch):
-    module = _load_canvas_module(monkeypatch)
-    _set_request_json(monkeypatch, module, {"id": "flow-1", "dsl": {"n": 1}, "component_id": "cmp-1"})
+    from test.testcases.test_http_api.test_session_management.test_session_sdk_routes_unit import (
+        _load_agent_api_module,
+    )
 
-    monkeypatch.setattr(module.PipelineOperationLogService, "get_documents_info", lambda _id: [])
-    res = _run(inspect.unwrap(module.rerun)())
+    module = _load_canvas_module(monkeypatch)
+    agent_module = _load_agent_api_module(monkeypatch)
+    _set_request_json(monkeypatch, agent_module, {"id": "flow-1", "dsl": {"n": 1}, "component_id": "cmp-1"})
+
+    monkeypatch.setattr(agent_module.PipelineOperationLogService, "get_documents_info", lambda _id: [])
+    res = _run(inspect.unwrap(agent_module.rerun_agent)("tenant-1"))
     assert res["message"] == "Document not found."
 
     processing_doc = {"id": "doc-1", "name": "Doc-1", "kb_id": "kb-1", "progress": 0.5}
-    monkeypatch.setattr(module.PipelineOperationLogService, "get_documents_info", lambda _id: [dict(processing_doc)])
-    res = _run(inspect.unwrap(module.rerun)())
+    monkeypatch.setattr(agent_module.PipelineOperationLogService, "get_documents_info", lambda _id: [dict(processing_doc)])
+    res = _run(inspect.unwrap(agent_module.rerun_agent)("tenant-1"))
     assert "is processing" in res["message"]
 
     class _DocStore:
@@ -616,7 +627,7 @@ def test_rerun_and_cancel_matrix_unit(monkeypatch):
             return True
 
     doc_store = _DocStore()
-    monkeypatch.setattr(module.settings, "docStoreConn", doc_store)
+    monkeypatch.setattr(agent_module.settings, "docStoreConn", doc_store)
 
     doc = {
         "id": "doc-1",
@@ -628,19 +639,19 @@ def test_rerun_and_cancel_matrix_unit(monkeypatch):
         "token_num": 12,
     }
     updates = {"doc": [], "pipeline": [], "tasks": [], "queue": []}
-    monkeypatch.setattr(module.PipelineOperationLogService, "get_documents_info", lambda _id: [dict(doc)])
-    monkeypatch.setattr(module.DocumentService, "clear_chunk_num_when_rerun", lambda doc_id: updates["doc"].append(("clear", doc_id)))
-    monkeypatch.setattr(module.DocumentService, "update_by_id", lambda doc_id, payload: updates["doc"].append(("update", doc_id, payload)))
-    monkeypatch.setattr(module.TaskService, "filter_delete", lambda expr: updates["tasks"].append(expr))
-    monkeypatch.setattr(module.PipelineOperationLogService, "update_by_id", lambda flow_id, payload: updates["pipeline"].append((flow_id, payload)))
+    monkeypatch.setattr(agent_module.PipelineOperationLogService, "get_documents_info", lambda _id: [dict(doc)])
+    monkeypatch.setattr(agent_module.DocumentService, "clear_chunk_num_when_rerun", lambda doc_id: updates["doc"].append(("clear", doc_id)))
+    monkeypatch.setattr(agent_module.DocumentService, "update_by_id", lambda doc_id, payload: updates["doc"].append(("update", doc_id, payload)))
+    monkeypatch.setattr(agent_module.TaskService, "filter_delete", lambda expr: updates["tasks"].append(expr))
+    monkeypatch.setattr(agent_module.PipelineOperationLogService, "update_by_id", lambda flow_id, payload: updates["pipeline"].append((flow_id, payload)))
     monkeypatch.setattr(
-        module,
+        agent_module,
         "queue_dataflow",
         lambda **kwargs: updates["queue"].append(kwargs) or (True, ""),
     )
-    monkeypatch.setattr(module, "get_uuid", lambda: "task-rerun")
-    _set_request_json(monkeypatch, module, {"id": "flow-1", "dsl": {"n": 1}, "component_id": "cmp-1"})
-    res = _run(inspect.unwrap(module.rerun)())
+    monkeypatch.setattr(agent_module, "get_uuid", lambda: "task-rerun")
+    _set_request_json(monkeypatch, agent_module, {"id": "flow-1", "dsl": {"n": 1}, "component_id": "cmp-1"})
+    res = _run(inspect.unwrap(agent_module.rerun_agent)("tenant-1"))
     assert res["code"] == module.RetCode.SUCCESS
     assert doc_store.deleted
     assert any(item[0] == "clear" and item[1] == "doc-1" for item in updates["doc"])
@@ -660,17 +671,19 @@ def test_rerun_and_cancel_matrix_unit(monkeypatch):
 
 @pytest.mark.p2
 def test_reset_upload_input_form_debug_matrix_unit(monkeypatch):
-    module = _load_canvas_module(monkeypatch)
+    from test.testcases.test_http_api.test_session_management.test_session_sdk_routes_unit import (
+        _load_agent_api_module,
+    )
 
-    _set_request_json(monkeypatch, module, {"id": "canvas-1"})
+    module = _load_agent_api_module(monkeypatch)
+
     monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: False)
-    res = _run(inspect.unwrap(module.reset)())
+    res = _run(inspect.unwrap(module.reset_agent)("canvas-1", "tenant-1"))
     assert res["code"] == module.RetCode.OPERATING_ERROR
 
-    _set_request_json(monkeypatch, module, {"id": "canvas-1"})
     monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _canvas_id: (False, None))
-    res = _run(inspect.unwrap(module.reset)())
+    res = _run(inspect.unwrap(module.reset_agent)("canvas-1", "tenant-1"))
     assert res["message"] == "canvas not found."
 
     class _ResetCanvas:
@@ -684,24 +697,23 @@ def test_reset_upload_input_form_debug_matrix_unit(monkeypatch):
             return '{"v": 2}'
 
     updates = []
-    _set_request_json(monkeypatch, module, {"id": "canvas-1"})
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _canvas_id: (True, SimpleNamespace(id="canvas-1", dsl={"v": 1})))
     monkeypatch.setattr(module.UserCanvasService, "update_by_id", lambda canvas_id, payload: updates.append((canvas_id, payload)))
     monkeypatch.setattr(module, "Canvas", _ResetCanvas)
-    res = _run(inspect.unwrap(module.reset)())
+    monkeypatch.setattr(module.CanvasReplicaService, "replace_for_set", lambda **_kwargs: True)
+    res = _run(inspect.unwrap(module.reset_agent)("canvas-1", "tenant-1"))
     assert res["code"] == module.RetCode.SUCCESS
     assert res["data"] == {"v": 2}
     assert updates == [("canvas-1", {"dsl": {"v": 2}})]
 
-    _set_request_json(monkeypatch, module, {"id": "canvas-1"})
     monkeypatch.setattr(module, "Canvas", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("reset boom")))
-    res = _run(inspect.unwrap(module.reset)())
+    res = _run(inspect.unwrap(module.reset_agent)("canvas-1", "tenant-1"))
     assert res["code"] == module.RetCode.EXCEPTION_ERROR
     assert "reset boom" in res["message"]
 
     monkeypatch.setattr(module.UserCanvasService, "get_by_canvas_id", lambda _canvas_id: (False, None))
     monkeypatch.setattr(module, "request", _DummyRequest(args=_Args({"url": "http://example.com"}), files=_FileMap()))
-    res = _run(module.upload("canvas-1"))
+    res = _run(module.upload_agent_file("canvas-1"))
     assert res["message"] == "canvas not found."
 
     monkeypatch.setattr(module.UserCanvasService, "get_by_canvas_id", lambda _canvas_id: (True, {"user_id": "tenant-1"}))
@@ -714,7 +726,7 @@ def test_reset_upload_input_form_debug_matrix_unit(monkeypatch):
         ),
     )
     monkeypatch.setattr(module.FileService, "upload_info", lambda user_id, file_obj, url=None: {"uid": user_id, "file": file_obj, "url": url})
-    res = _run(module.upload("canvas-1"))
+    res = _run(module.upload_agent_file("canvas-1"))
     assert res["data"]["url"] == "http://example.com"
 
     monkeypatch.setattr(
@@ -726,22 +738,21 @@ def test_reset_upload_input_form_debug_matrix_unit(monkeypatch):
         ),
     )
     monkeypatch.setattr(module.FileService, "upload_info", lambda user_id, file_obj, url=None: {"uid": user_id, "file": file_obj, "url": url})
-    res = _run(module.upload("canvas-1"))
+    res = _run(module.upload_agent_file("canvas-1"))
     assert len(res["data"]) == 2
 
     monkeypatch.setattr(module.FileService, "upload_info", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("upload boom")))
-    res = _run(module.upload("canvas-1"))
+    res = _run(module.upload_agent_file("canvas-1"))
     assert res["code"] == module.RetCode.EXCEPTION_ERROR
     assert "upload boom" in res["message"]
 
-    monkeypatch.setattr(module, "request", _DummyRequest(args=_Args({"id": "canvas-1", "component_id": "begin"})))
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _canvas_id: (False, None))
-    res = module.input_form()
+    res = module.get_agent_component_input_form("canvas-1", "begin", "tenant-1")
     assert res["message"] == "canvas not found."
 
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _canvas_id: (True, SimpleNamespace(id="canvas-1", dsl={"n": 1})))
     monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [])
-    res = module.input_form()
+    res = module.get_agent_component_input_form("canvas-1", "begin", "tenant-1")
     assert res["code"] == module.RetCode.OPERATING_ERROR
 
     class _InputCanvas:
@@ -753,22 +764,22 @@ def test_reset_upload_input_form_debug_matrix_unit(monkeypatch):
 
     monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [object()])
     monkeypatch.setattr(module, "Canvas", _InputCanvas)
-    res = module.input_form()
+    res = module.get_agent_component_input_form("canvas-1", "begin", "tenant-1")
     assert res["code"] == module.RetCode.SUCCESS
     assert res["data"]["component_id"] == "begin"
 
     monkeypatch.setattr(module, "Canvas", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("input boom")))
-    res = module.input_form()
+    res = module.get_agent_component_input_form("canvas-1", "begin", "tenant-1")
     assert res["code"] == module.RetCode.EXCEPTION_ERROR
     assert "input boom" in res["message"]
 
     _set_request_json(
         monkeypatch,
         module,
-        {"id": "canvas-1", "component_id": "llm-node", "params": {"p": {"value": "v"}}},
+        {"params": {"p": {"value": "v"}}},
     )
     monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: False)
-    res = _run(inspect.unwrap(module.debug)())
+    res = _run(inspect.unwrap(module.debug_agent_component)("canvas-1", "llm-node", "tenant-1"))
     assert res["code"] == module.RetCode.OPERATING_ERROR
 
     class _DebugComponent(module.LLM):
@@ -810,13 +821,13 @@ def test_reset_upload_input_form_debug_matrix_unit(monkeypatch):
     _set_request_json(
         monkeypatch,
         module,
-        {"id": "canvas-1", "component_id": "llm-node", "params": {"p": {"value": "v"}}},
+        {"params": {"p": {"value": "v"}}},
     )
     monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _canvas_id: (True, SimpleNamespace(id="canvas-1", dsl={"n": 1})))
     monkeypatch.setattr(module, "get_uuid", lambda: "msg-1")
     monkeypatch.setattr(module, "Canvas", _DebugCanvas)
-    res = _run(inspect.unwrap(module.debug)())
+    res = _run(inspect.unwrap(module.debug_agent_component)("canvas-1", "llm-node", "tenant-1"))
     assert res["code"] == module.RetCode.SUCCESS
     assert res["data"]["stream"] == "AB"
     assert _DebugCanvas.last_component.reset_called is True
@@ -826,7 +837,11 @@ def test_reset_upload_input_form_debug_matrix_unit(monkeypatch):
 
 @pytest.mark.p2
 def test_debug_sync_iter_and_exception_matrix_unit(monkeypatch):
-    module = _load_canvas_module(monkeypatch)
+    from test.testcases.test_http_api.test_session_management.test_session_sdk_routes_unit import (
+        _load_agent_api_module,
+    )
+
+    module = _load_agent_api_module(monkeypatch)
 
     class _SyncDebugComponent(module.LLM):
         def __init__(self):
@@ -864,24 +879,28 @@ def test_debug_sync_iter_and_exception_matrix_unit(monkeypatch):
     _set_request_json(
         monkeypatch,
         module,
-        {"id": "canvas-1", "component_id": "sync-node", "params": {"p": {"value": "v"}}},
+        {"params": {"p": {"value": "v"}}},
     )
     monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _canvas_id: (True, SimpleNamespace(id="canvas-1", dsl={"n": 1})))
     monkeypatch.setattr(module, "Canvas", _SyncDebugCanvas)
-    res = _run(inspect.unwrap(module.debug)())
+    res = _run(inspect.unwrap(module.debug_agent_component)("canvas-1", "sync-node", "tenant-1"))
     assert res["code"] == module.RetCode.SUCCESS
     assert res["data"]["stream"] == "SYNC"
 
     monkeypatch.setattr(module, "Canvas", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("debug boom")))
-    res = _run(inspect.unwrap(module.debug)())
+    res = _run(inspect.unwrap(module.debug_agent_component)("canvas-1", "sync-node", "tenant-1"))
     assert res["code"] == module.RetCode.EXCEPTION_ERROR
     assert "debug boom" in res["message"]
 
 
 @pytest.mark.p2
 def test_test_db_connect_dialect_matrix_unit(monkeypatch):
-    module = _load_canvas_module(monkeypatch)
+    from test.testcases.test_http_api.test_session_management.test_session_sdk_routes_unit import (
+        _load_agent_api_module,
+    )
+
+    module = _load_agent_api_module(monkeypatch)
 
     class _FakeDB:
         def __init__(self, *args, **kwargs):
@@ -914,7 +933,7 @@ def test_test_db_connect_dialect_matrix_unit(monkeypatch):
 
     def _run_case(payload):
         _set_request_json(monkeypatch, module, payload)
-        return _run(inspect.unwrap(module.test_db_connect)())
+        return _run(inspect.unwrap(module.test_db_connection)())
 
     req_base = {
         "database": "db",
@@ -1058,7 +1077,11 @@ def test_test_db_connect_dialect_matrix_unit(monkeypatch):
 
 @pytest.mark.p2
 def test_canvas_history_list_and_setting_matrix_unit(monkeypatch):
-    module = _load_canvas_module(monkeypatch)
+    from test.testcases.test_http_api.test_session_management.test_session_sdk_routes_unit import (
+        _load_agent_api_module,
+    )
+
+    module = _load_agent_api_module(monkeypatch)
 
     class _Version:
         def __init__(self, version_id, update_time):
@@ -1073,7 +1096,8 @@ def test_canvas_history_list_and_setting_matrix_unit(monkeypatch):
         "list_by_canvas_id",
         lambda _canvas_id: [_Version("v1", 1), _Version("v2", 5)],
     )
-    res = module.getlistversion("canvas-1")
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
+    res = inspect.unwrap(module.list_agent_versions)("canvas-1", "user-1")
     assert [item["id"] for item in res["data"]] == ["v2", "v1"]
 
     monkeypatch.setattr(
@@ -1081,15 +1105,15 @@ def test_canvas_history_list_and_setting_matrix_unit(monkeypatch):
         "list_by_canvas_id",
         lambda _canvas_id: (_ for _ in ()).throw(RuntimeError("history boom")),
     )
-    res = module.getlistversion("canvas-1")
+    res = inspect.unwrap(module.list_agent_versions)("canvas-1", "user-1")
     assert "Error getting history files: history boom" in res["message"]
 
     monkeypatch.setattr(
         module.UserCanvasVersionService,
         "get_by_id",
-        lambda _version_id: (True, _Version("v3", 3)),
+        lambda _version_id: (True, SimpleNamespace(user_canvas_id="canvas-1", to_dict=lambda: {"id": "v3"})),
     )
-    res = module.getversion("v3")
+    res = inspect.unwrap(module.get_agent_version)("canvas-1", "v3", "user-1")
     assert res["code"] == module.RetCode.SUCCESS
     assert res["data"]["id"] == "v3"
 
@@ -1098,8 +1122,8 @@ def test_canvas_history_list_and_setting_matrix_unit(monkeypatch):
         "get_by_id",
         lambda _version_id: (_ for _ in ()).throw(RuntimeError("version boom")),
     )
-    res = module.getversion("v3")
-    assert "Error getting history file: version boom" in res["data"]
+    res = inspect.unwrap(module.get_agent_version)("canvas-1", "v3", "user-1")
+    assert "Error getting history file: version boom" in res["message"]
 
     list_calls = []
 
@@ -1130,35 +1154,25 @@ def test_canvas_history_list_and_setting_matrix_unit(monkeypatch):
             )
         ),
     )
-    res = module.list_canvas()
+    res = inspect.unwrap(module.list_agents)("user-1")
     assert res["code"] == module.RetCode.SUCCESS
     assert list_calls[-1][0] == ["t1", "t2", "user-1"]
     assert list_calls[-1][2:6] == (2, 3, "update_time", False)
 
     monkeypatch.setattr(module, "request", _DummyRequest(args=_Args({"owner_ids": "u1,u2", "desc": "true"})))
-    res = module.list_canvas()
-    assert res["code"] == module.RetCode.SUCCESS
-    assert list_calls[-1][0] == ["u1", "u2"]
-    assert list_calls[-1][2:4] == (0, 0)
-    assert list_calls[-1][5] is True
-
-    _set_request_json(monkeypatch, module, {"id": "canvas-1", "title": "T", "permission": "private"})
-    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: False)
-    res = _run(inspect.unwrap(module.setting)())
+    res = inspect.unwrap(module.list_agents)("user-1")
     assert res["code"] == module.RetCode.OPERATING_ERROR
 
-    _set_request_json(monkeypatch, module, {"id": "canvas-1", "title": "T", "permission": "private"})
-    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _canvas_id: (False, None))
-    res = _run(inspect.unwrap(module.setting)())
-    assert res["message"] == "canvas not found."
+    _set_request_json(monkeypatch, module, {"title": "T", "permission": "private"})
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: False)
+    res = _run(inspect.unwrap(module.update_agent)("canvas-1", "user-1"))
+    assert res["code"] == module.RetCode.OPERATING_ERROR
 
     updates = []
     _set_request_json(
         monkeypatch,
         module,
         {
-            "id": "canvas-1",
             "title": "New title",
             "permission": "private",
             "description": "new desc",
@@ -1168,12 +1182,13 @@ def test_canvas_history_list_and_setting_matrix_unit(monkeypatch):
     monkeypatch.setattr(
         module.UserCanvasService,
         "get_by_id",
-        lambda _canvas_id: (True, SimpleNamespace(to_dict=lambda: {"id": "canvas-1", "title": "Old"})),
+        lambda _canvas_id: (True, SimpleNamespace(title="Old", canvas_category=module.CanvasCategory.Agent)),
     )
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: True)
     monkeypatch.setattr(module.UserCanvasService, "update_by_id", lambda canvas_id, payload: updates.append((canvas_id, payload)) or 2)
-    res = _run(inspect.unwrap(module.setting)())
+    res = _run(inspect.unwrap(module.update_agent)("canvas-1", "user-1"))
     assert res["code"] == module.RetCode.SUCCESS
-    assert res["data"] == 2
+    assert res["data"] is True
     assert updates[-1][0] == "canvas-1"
     assert updates[-1][1]["title"] == "New title"
     assert updates[-1][1]["description"] == "new desc"
@@ -1183,22 +1198,28 @@ def test_canvas_history_list_and_setting_matrix_unit(monkeypatch):
 
 @pytest.mark.p2
 def test_trace_and_sessions_matrix_unit(monkeypatch):
-    module = _load_canvas_module(monkeypatch)
+    from test.testcases.test_http_api.test_session_management.test_session_sdk_routes_unit import (
+        _load_agent_api_module,
+    )
 
-    monkeypatch.setattr(module, "request", _DummyRequest(args=_Args({"canvas_id": "c1", "message_id": "m1"})))
-    monkeypatch.setattr(module.REDIS_CONN, "get", lambda _key: None)
-    res = module.trace()
+    module = _load_canvas_module(monkeypatch)
+    agent_module = _load_agent_api_module(monkeypatch)
+
+    monkeypatch.setattr(agent_module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(agent_module.REDIS_CONN, "get", lambda _key: None)
+    res = inspect.unwrap(agent_module.get_agent_logs)("c1", "m1", "tenant-1")
     assert res["code"] == module.RetCode.SUCCESS
     assert res["data"] == {}
 
-    monkeypatch.setattr(module.REDIS_CONN, "get", lambda _key: '{"event":"ok"}')
-    res = module.trace()
+    monkeypatch.setattr(agent_module.REDIS_CONN, "get", lambda _key: '{"event":"ok"}')
+    res = inspect.unwrap(agent_module.get_agent_logs)("c1", "m1", "tenant-1")
     assert res["code"] == module.RetCode.SUCCESS
     assert res["data"] == {"event": "ok"}
 
-    monkeypatch.setattr(module.REDIS_CONN, "get", lambda _key: (_ for _ in ()).throw(RuntimeError("trace boom")))
-    res = module.trace()
-    assert res is None
+    monkeypatch.setattr(agent_module.REDIS_CONN, "get", lambda _key: (_ for _ in ()).throw(RuntimeError("trace boom")))
+    res = inspect.unwrap(agent_module.get_agent_logs)("c1", "m1", "tenant-1")
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR
+    assert "trace boom" in res["message"]
 
     monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(module, "request", _DummyRequest(args=_Args({})))

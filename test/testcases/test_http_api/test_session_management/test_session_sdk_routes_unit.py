@@ -498,6 +498,12 @@ def _load_session_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "agent.canvas", agent_canvas_mod)
     monkeypatch.setitem(sys.modules, "agent.dsl_migration", agent_dsl_migration_mod)
 
+    quart_mod = ModuleType("quart")
+    quart_mod.request = SimpleNamespace(args=_Args(), headers={}, files=_AwaitableValue({}), method="POST")
+    quart_mod.Response = _StubResponse
+    quart_mod.jsonify = lambda payload: payload
+    monkeypatch.setitem(sys.modules, "quart", quart_mod)
+
     module_path = repo_root / "api" / "apps" / "sdk" / "session.py"
     spec = importlib.util.spec_from_file_location("test_session_sdk_routes_unit_module", module_path)
     module = importlib.util.module_from_spec(spec)
