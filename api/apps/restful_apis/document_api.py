@@ -27,14 +27,17 @@ from api.constants import IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService
+from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.common.check_team_permission import check_kb_team_permission
 from api.utils.api_utils import get_data_error_result, get_error_data_result, get_result, get_json_result, \
-    server_error_response, add_tenant_id_to_kwargs, get_request_json
+    server_error_response, add_tenant_id_to_kwargs, get_request_json, get_error_argument_result, check_duplicate_ids
 from api.utils.validation_utils import (
-    UpdateDocumentReq, format_validation_error_message,
+    UpdateDocumentReq, format_validation_error_message, validate_and_parse_json_request, DeleteDocumentReq,
 )
 from common.constants import RetCode
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
+from common.misc_utils import thread_pool_exec
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PATCH"]) # noqa: F821
 @login_required
@@ -342,9 +345,7 @@ async def upload_document(dataset_id, tenant_id):
                     description: Processing status.
     """
     from api.constants import FILE_NAME_LEN_LIMIT
-    from api.common.check_team_permission import check_kb_team_permission
     from api.db.services.file_service import FileService
-    from common.misc_utils import thread_pool_exec
     
     form = await request.form
     files = await request.files
@@ -518,16 +519,19 @@ def list_docs(dataset_id, tenant_id):
     if err_code != RetCode.SUCCESS:
         return get_data_error_result(code=err_code, message=err_msg)
 
-    renamed_doc_list = [map_doc_keys(doc) for doc in docs]
-    for doc_item in renamed_doc_list:
-        if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-            doc_item["thumbnail"] = f"/v1/document/image/{dataset_id}-{doc_item['thumbnail']}"
-        if doc_item.get("source_type"):
-            doc_item["source_type"] = doc_item["source_type"].split("/")[0]
-        if doc_item["parser_config"].get("metadata"):
-            doc_item["parser_config"]["metadata"] = turn2jsonschema(doc_item["parser_config"]["metadata"])
-
-    return get_json_result(data={"total": total, "docs": renamed_doc_list})
+    if request.args.get("type") == "filter":
+        docs_filter = _aggregate_filters(docs)
+        return get_json_result(data={"total": total, "filter": docs_filter})
+    else:
+        renamed_doc_list = [map_doc_keys(doc) for doc in docs]
+        for doc_item in renamed_doc_list:
+            if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
+                doc_item["thumbnail"] = f"/v1/document/image/{dataset_id}-{doc_item['thumbnail']}"
+            if doc_item.get("source_type"):
+                doc_item["source_type"] = doc_item["source_type"].split("/")[0]
+            if doc_item["parser_config"].get("metadata"):
+                doc_item["parser_config"]["metadata"] = turn2jsonschema(doc_item["parser_config"]["metadata"])
+        return get_json_result(data={"total": total, "docs": renamed_doc_list})
 
 
 def _get_docs_with_request(req, dataset_id:str):
@@ -599,13 +603,21 @@ def _get_docs_with_request(req, dataset_id:str):
 
     doc_name = q.get("name")
     doc_id = q.get("id")
-    if doc_id and not DocumentService.query(id=doc_id, kb_id=dataset_id):
-        return RetCode.DATA_ERROR, f"You don't own the document {doc_id}.", [], 0
+    if doc_id:
+        if not DocumentService.query(id=doc_id, kb_id=dataset_id):
+            return RetCode.DATA_ERROR, f"You don't own the document {doc_id}.", [], 0
+        doc_ids_filter = [doc_id] # id provided, ignore other filters
     if doc_name and not DocumentService.query(name=doc_name, kb_id=dataset_id):
         return RetCode.DATA_ERROR, f"You don't own the document {doc_name}.", [], 0
 
+    doc_ids = q.getlist("ids")
+    if doc_id and len(doc_ids) > 0:
+        return RetCode.DATA_ERROR, f"Should not provide both 'id':{doc_id} and 'ids'{doc_ids}"
+    if len(doc_ids) > 0:
+        doc_ids_filter = doc_ids
+
     docs, total = DocumentService.get_by_kb_id(dataset_id, page, page_size, orderby, desc, keywords, run_status_converted, types, suffix,
-                                               doc_id=doc_id, name=doc_name, doc_ids_filter=doc_ids_filter, return_empty_metadata=return_empty_metadata)
+                                               name=doc_name, doc_ids=doc_ids_filter, return_empty_metadata=return_empty_metadata)
 
     # time range filter (0 means no bound)
     create_time_from = int(q.get("create_time_from", 0))
@@ -704,11 +716,11 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
         if metadata and not isinstance(metadata, dict):
             return RetCode.DATA_ERROR, "metadata must be an object.", [], return_empty_metadata
 
-    doc_ids_filter = None
-    metas = None
+    metas = dict()
     if metadata_condition or metadata:
         metas = DocMetadataService.get_flatted_meta_by_kbs([kb_id])
 
+    doc_ids_filter = None
     if metadata_condition:
         doc_ids_filter = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
         if metadata_condition.get("conditions") and not doc_ids_filter:
@@ -733,6 +745,7 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
                 metadata_doc_ids &= key_doc_ids
             if not metadata_doc_ids:
                 return RetCode.SUCCESS, "", [], return_empty_metadata
+
         if metadata_doc_ids is not None:
             if doc_ids_filter is None:
                 doc_ids_filter = metadata_doc_ids
@@ -742,3 +755,145 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
                 return RetCode.SUCCESS, "", [], return_empty_metadata
 
     return RetCode.SUCCESS, "", list(doc_ids_filter) if doc_ids_filter is not None else [], return_empty_metadata
+
+
+@manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def delete_documents(tenant_id, dataset_id):
+    """
+    Delete documents from a dataset.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset containing the documents.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: body
+        name: body
+        description: Document deletion parameters.
+        required: true
+        schema:
+          type: object
+          properties:
+            ids:
+              type: array or null
+              items:
+                type: string
+              description: |
+                Specifies the documents to delete:
+                - An array of IDs, only the specified documents will be deleted.
+            delete_all:
+              type: boolean
+              default: false
+              description: Whether to delete all documents in the dataset.
+    responses:
+      200:
+        description: Successful operation.
+        schema:
+          type: object
+    """
+    req, err = await validate_and_parse_json_request(request, DeleteDocumentReq)
+    if err is not None or req is None:
+        return get_error_argument_result(err)
+
+    try:
+        # Validate dataset exists and user has permission
+        if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+            return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+
+        # Get documents to delete
+        doc_ids = req.get("ids") or []
+        delete_all = req.get("delete_all", False)
+        if not delete_all and len(doc_ids) == 0:
+            return get_error_data_result(message=f"should either provide doc ids or set delete_all(true), dataset: {dataset_id}. ")
+
+        if len(doc_ids) > 0 and delete_all:
+            return get_error_data_result(message=f"should not provide both doc ids and delete_all(true), dataset: {dataset_id}. ")
+        if delete_all:
+            doc_ids = [doc.id for doc in DocumentService.query(kb_id=dataset_id)]
+
+        # make sure each id is unique
+        unique_doc_ids, duplicate_messages = check_duplicate_ids(doc_ids, "document")
+        if duplicate_messages:
+            logging.warning(f"duplicate_messages:{duplicate_messages}")
+        else:
+            doc_ids = unique_doc_ids
+
+        # Delete documents using existing FileService.delete_docs
+        errors = await thread_pool_exec(FileService.delete_docs, doc_ids, tenant_id)
+
+        if errors:
+            return get_error_data_result(message=str(errors))
+
+        return get_result(data={"deleted": len(doc_ids)})
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+def _aggregate_filters(docs):
+    """Aggregate filter options from a list of documents.
+
+    This function processes a list of document dictionaries and aggregates
+    available filter values for building filter UI on the client side.
+
+    Args:
+        docs (list): List of document dictionaries, each containing:
+            - id (str): Document ID
+            - suffix (str): File extension (e.g., "pdf", "docx")
+            - run (int): Parsing status code (0=UNSTART, 1=RUNNING, 2=CANCEL, 3=DONE, 4=FAIL)
+
+    Returns:
+        tuple: A tuple containing:
+            - dict: Aggregated filter options with keys:
+                - suffix: Dict mapping file extensions to document counts
+                - run_status: Dict mapping status codes to document counts
+                - metadata: Dict mapping metadata field names to value counts
+            - int: Total number of documents processed
+    """
+    suffix_counter = {}
+    run_status_counter = {}
+    metadata_counter = {}
+    empty_metadata_count = 0
+
+    for doc in docs:
+        suffix_counter[doc.get("suffix")] = suffix_counter.get(doc.get("suffix"), 0) + 1
+        key_of_run = str(doc.get("run"))
+        run_status_counter[key_of_run] = run_status_counter.get(key_of_run, 0) + 1
+        meta_fields = doc.get("meta_fields", {})
+
+        if not meta_fields:
+            empty_metadata_count += 1
+            continue
+        has_valid_meta = False
+
+        for key, value in meta_fields.items():
+            values = value if isinstance(value, list) else [value]
+            for vv in values:
+                if vv is None:
+                    continue
+                if isinstance(vv, str) and not vv.strip():
+                    continue
+                sv = str(vv)
+                if key not in metadata_counter:
+                    metadata_counter[key] = {}
+                metadata_counter[key][sv] = metadata_counter[key].get(sv, 0) + 1
+                has_valid_meta = True
+        if not has_valid_meta:
+            empty_metadata_count += 1
+
+    metadata_counter["empty_metadata"] = {"true": empty_metadata_count}
+    return {
+        "suffix": suffix_counter,
+        "run_status": run_status_counter,
+        "metadata": metadata_counter,
+    }

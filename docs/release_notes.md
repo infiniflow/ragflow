@@ -9,6 +9,46 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.25.0
+
+Released on April 21, 2026.
+
+### Ingestion pipeline
+- Added 7 built-in pipeline templates aligned with RAGFlow’s native document parsers.
+- Several new templates bring significant parsing improvements.
+### Data source
+  - New data sources: Seafile, RSS, DingTalk AI Sheet.
+  - Added synchronization for file deletions from data sources.
+### Agent
+  - Introduced agent publishing capability
+  - Sandboxed code execution and chart generation
+  - New template: Data Analysis Agent
+### Memory
+  - User-level memory storage and retrieval.
+### Language
+  - New language support: Arabic, Bulgarian, Turkish
+
+### Model provider
+
+  - [avian.io](https://avian.io/)
+  - [ragcon.ai](https://ragcon.ai/)
+
+### Model support
+
+  - MiniMax-M2.7 series models
+  - Perplexity embedding model: pplx-embed
+  - Tongyi rerank model
+
+### Improvements
+- Improved DOCX parsing strategy with lazy-load support for images, reducing memory consumption.
+- DocEngine: supports upgrade to Elasticsearch 9.x.
+- Embedded chat pages in Chat / Agent / Search are now compatible with mobile devices.
+- Due to MinIO’s official image no longer being maintained, the default object storage container has been changed to pgsty/minio.
+- Database Upgrade: added database upgrade scripts. See documentation: https://github.com/infiniflow/ragflow/blob/main/tools/scripts/README.md.
+
+### Ecosystem
+- RAGFlow can now be accessed via OpenClaw: https://clawhub.ai/yingfeng/ragflow-skill
+
 ## v0.24.0
 
 Released on February 10, 2026.

@@ -16,8 +16,6 @@ const {
   rmKb,
   kbList,
   documentChangeStatus,
-  documentRm,
-  documentDelete,
   documentCreate,
   documentChangeParser,
   documentThumbnails,
@@ -31,7 +29,6 @@ const {
   documentRun,
   webCrawl,
   knowledgeGraph,
-  documentInfos,
   listTagByKnowledgeIds,
   setMeta,
   getMeta,
@@ -57,10 +54,6 @@ const methods = {
     url: documentChangeStatus,
     method: 'post',
   },
-  documentRm: {
-    url: documentRm,
-    method: 'post',
-  },
   documentCreate: {
     url: documentCreate,
     method: 'post',
@@ -79,10 +72,6 @@ const methods = {
   },
   webCrawl: {
     url: webCrawl,
-    method: 'post',
-  },
-  documentInfos: {
-    url: documentInfos,
     method: 'post',
   },
   setMeta: {
@@ -122,17 +111,13 @@ const methods = {
     url: knowledgeGraph,
     method: 'get',
   },
-  documentDelete: {
-    url: documentDelete,
-    method: 'delete',
-  },
   listTagByKnowledgeIds: {
     url: listTagByKnowledgeIds,
     method: 'get',
   },
   documentFilter: {
     url: api.getDatasetFilter,
-    method: 'post',
+    method: 'get',
   },
   getMeta: {
     url: getMeta,
@@ -209,7 +194,7 @@ export const listDocument = (
 };
 
 export const documentFilter = (kb_id: string) =>
-  request.post(api.getDatasetFilter, { kb_id });
+  request.get(api.getDatasetFilter(kb_id), { params: {} });
 
 // Custom upload function that handles dynamic URL using axios directly
 export const uploadDocument = async (datasetId: string, formData: FormData) => {
@@ -227,6 +212,9 @@ export const renameDocument = (
   documentId: string,
   data: { name?: string },
 ) => request.patch(api.documentRename(datasetId, documentId), { data });
+
+export const deleteDocument = (datasetId: string, documentIds: string[]) =>
+  request.delete(api.documentDelete(datasetId), { data: { ids: documentIds } });
 
 export const getMetaDataService = ({
   kb_id,
