@@ -364,7 +364,7 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
         lambda: _AwaitableValue({"id": "conn-1", "refresh_freq": 7, "config": {"x": 1}}),
     )
     res = _run(module.update_connector("conn-1"))
-    assert update_calls == [("conn-1", {"refresh_freq": 7, "config": {"x": 1}})]
+    assert update_calls == [("conn-1", {'id': 'conn-1', "refresh_freq": 7, "config": {"x": 1}})]
     assert res["data"]["id"] == "conn-1"
 
     monkeypatch.setattr(
