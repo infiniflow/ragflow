@@ -239,47 +239,11 @@ async def collect():
 
 
 async def get_storage_binary(bucket, name):
-    """Fetch document binary content from object storage asynchronously."""
     return await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, name)
-
-
-def _resolve_built_in_metadata(task: dict) -> dict:
-    """Resolve built-in metadata values from task parser settings."""
-    built_in_metadata = {}
-    built_in_metadata_setting = task["parser_config"].get("built_in_metadata") or []
-    if not isinstance(built_in_metadata_setting, list):
-        return built_in_metadata
-
-    built_in_metadata_keys = set()
-    for item in built_in_metadata_setting:
-        if isinstance(item, str):
-            built_in_metadata_keys.add(item)
-        elif isinstance(item, dict):
-            key = item.get("key")
-            if isinstance(key, str) and key:
-                built_in_metadata_keys.add(key)
-
-    if "file_name" in built_in_metadata_keys and task.get("name"):
-        built_in_metadata["file_name"] = str(task["name"])
-
-    if "update_time" in built_in_metadata_keys:
-        update_time = task.get("update_time")
-        if isinstance(update_time, datetime):
-            built_in_metadata["update_time"] = update_time.isoformat()
-        elif update_time:
-            built_in_metadata["update_time"] = str(update_time)
-
-    return built_in_metadata
 
 
 @timeout(60 * 80, 1)
 async def build_chunks(task, progress_callback):
-    """Parse a document task and build enriched chunks for indexing.
-
-    This routine loads source content, applies parser-specific chunking, runs
-    optional enrichment (keywords/questions/metadata), and persists document
-    metadata generated during parsing.
-    """
     if task["size"] > settings.DOC_MAXIMUM_SIZE:
         set_progress(task["id"], prog=-1, msg="File size exceeds( <= %dMb )" %
                                               (int(settings.DOC_MAXIMUM_SIZE / 1024 / 1024)))
@@ -443,63 +407,50 @@ async def build_chunks(task, progress_callback):
             raise
         progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
-    built_in_metadata = _resolve_built_in_metadata(task)
-
-    metadata_setting = task["parser_config"].get("metadata")
-    metadata_schema = turn2jsonschema(metadata_setting) if metadata_setting else {}
-    if task["parser_config"].get("enable_metadata", False) and (metadata_setting or built_in_metadata):
+    if task["parser_config"].get("enable_metadata", False) and (task["parser_config"].get("metadata") or task["parser_config"].get("built_in_metadata")):
         st = timer()
         progress_callback(msg="Start to generate meta-data for every chunk ...")
+        chat_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.CHAT, task["llm_id"])
+        chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
 
         async def gen_metadata_task(chat_mdl, d):
-            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "metadata", metadata_setting)
+            metadata_conf = list(task["parser_config"].get("metadata", [])) + list(task["parser_config"].get("built_in_metadata") or [])
+            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "metadata",
+                                   metadata_conf)
             if not cached:
                 if has_canceled(task["id"]):
                     progress_callback(-1, msg="Task has been canceled.")
                     return
                 async with chat_limiter:
-                    cached = await gen_metadata(chat_mdl, metadata_schema, d["content_with_weight"])
-                set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "metadata", metadata_setting)
+                    cached = await gen_metadata(chat_mdl,
+                                                turn2jsonschema(metadata_conf),
+                                                d["content_with_weight"])
+                set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "metadata",
+                              metadata_conf)
             if cached:
                 d["metadata_obj"] = cached
 
-        if metadata_setting and metadata_schema.get("properties"):
-            chat_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.CHAT, task["llm_id"])
-            chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
-            tasks = []
-            for d in docs:
-                tasks.append(asyncio.create_task(gen_metadata_task(chat_mdl, d)))
-            try:
-                await asyncio.gather(*tasks, return_exceptions=False)
-            except Exception as e:
-                logging.error("Error in metadata generation", exc_info=e)
-                for t in tasks:
-                    t.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
-                raise
-        elif metadata_setting:
-            logging.warning("Skip metadata generation for doc %s due to invalid metadata schema", task["doc_id"])
+        tasks = []
+        for d in docs:
+            tasks.append(asyncio.create_task(gen_metadata_task(chat_mdl, d)))
+        try:
+            await asyncio.gather(*tasks, return_exceptions=False)
+        except Exception as e:
+            logging.error("Error in doc_question_proposal", exc_info=e)
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
         metadata = {}
         for doc in docs:
-            if doc.get("metadata_obj"):
-                metadata = update_metadata_to(
-                    existing_metadata=metadata,
-                    incoming_metadata=doc["metadata_obj"],
-                )
-                del doc["metadata_obj"]
-        if metadata or built_in_metadata:
+            metadata = update_metadata_to(metadata, doc["metadata_obj"])
+            del doc["metadata_obj"]
+        if metadata:
             existing_meta = DocMetadataService.get_document_metadata(task["doc_id"])
             existing_meta = existing_meta if isinstance(existing_meta, dict) else {}
-            merged_meta = update_metadata_to(
-                existing_metadata=existing_meta,
-                incoming_metadata=metadata,
-            )
-            merged_meta = update_metadata_to(
-                existing_metadata=merged_meta,
-                incoming_metadata=built_in_metadata,
-            )
-            DocMetadataService.update_document_metadata(task["doc_id"], merged_meta)
-        progress_callback(msg="Metadata generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+            metadata = update_metadata_to(metadata, existing_meta)
+            DocMetadataService.update_document_metadata(task["doc_id"], metadata)
+        progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["kb_parser_config"].get("tag_kb_ids", []):
         progress_callback(msg="Start to tag for every chunk ...")
@@ -706,16 +657,25 @@ async def run_dataflow(task: dict):
         return
 
     embedding_token_consumption = chunks.get("embedding_token_consumption", 0)
-    if chunks.get("chunks"):
+    # The output key may exist with an empty payload; check presence, not truthiness.
+    if "chunks" in chunks:
         chunks = copy.deepcopy(chunks["chunks"])
-    elif chunks.get("json"):
+    elif "json" in chunks:
         chunks = copy.deepcopy(chunks["json"])
-    elif chunks.get("markdown"):
-        chunks = [{"text": [chunks["markdown"]]}]
-    elif chunks.get("text"):
-        chunks = [{"text": [chunks["text"]]}]
-    elif chunks.get("html"):
-        chunks = [{"text": [chunks["html"]]}]
+    elif "markdown" in chunks:
+        chunks = [{"text": [chunks["markdown"]]}] if chunks["markdown"] else []
+    elif "text" in chunks:
+        chunks = [{"text": [chunks["text"]]}] if chunks["text"] else []
+    elif "html" in chunks:
+        chunks = [{"text": [chunks["html"]]}] if chunks["html"] else []
+    else:
+        chunks = []
+
+    # An empty normalized payload means "nothing parsed", so stop before embedding/indexing.
+    if not chunks:
+        PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id,
+                                           task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
+        return
 
     keys = [k for o in chunks for k in list(o.keys())]
     if not any([re.match(r"q_[0-9]+_vec", k) for k in keys]):
@@ -784,10 +744,7 @@ async def run_dataflow(task: dict):
                 ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
             del ck["summary"]
         if "metadata" in ck:
-            metadata = update_metadata_to(
-                existing_metadata=metadata,
-                incoming_metadata=ck["metadata"],
-            )
+            metadata = update_metadata_to(metadata, ck["metadata"])
             del ck["metadata"]
         if "content_with_weight" not in ck:
             ck["content_with_weight"] = ck["text"]
@@ -799,10 +756,7 @@ async def run_dataflow(task: dict):
     if metadata:
         existing_meta = DocMetadataService.get_document_metadata(doc_id)
         existing_meta = existing_meta if isinstance(existing_meta, dict) else {}
-        metadata = update_metadata_to(
-            existing_metadata=metadata,
-            incoming_metadata=existing_meta,
-        )
+        metadata = update_metadata_to(metadata, existing_meta)
         DocMetadataService.update_document_metadata(doc_id, metadata)
 
     start_ts = timer()
@@ -822,6 +776,40 @@ async def run_dataflow(task: dict):
                                                                         task_time_cost))
     PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE,
                                        dsl=str(pipeline))
+
+
+async def has_raptor_chunks(doc_id: str, tenant_id: str, kb_id: str) -> bool:
+    """Return True if RAPTOR chunks already exist for doc_id in the doc store.
+
+    Queries directly for raptor_kwd="raptor" rows so a non-RAPTOR leading
+    chunk cannot produce a false-negative result.  Uses thread_pool_exec so
+    the blocking doc-store call does not stall the event loop.
+    """
+    from common.doc_store.doc_store_base import OrderByExpr
+    from rag.nlp import search as nlp_search
+    try:
+        condition = {"doc_id": doc_id, "raptor_kwd": ["raptor"]}
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["raptor_kwd"], [], condition, [], OrderByExpr(),
+            0, 1, nlp_search.index_name(tenant_id), [kb_id]
+        )
+        field_map = settings.docStoreConn.get_fields(res, ["raptor_kwd"])
+        found = bool(field_map)
+        if found:
+            logging.info(
+                "Checkpoint hit: RAPTOR chunks for doc %s (tenant=%s kb=%s) already exist",
+                doc_id, tenant_id, kb_id,
+            )
+        else:
+            logging.info(
+                "Checkpoint miss: no RAPTOR chunks for doc %s (tenant=%s kb=%s)",
+                doc_id, tenant_id, kb_id,
+            )
+        return found
+    except Exception:
+        logging.exception("Failed to check RAPTOR chunks for doc %s", doc_id)
+        return False
 
 
 @timeout(3600)
@@ -881,6 +869,12 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
 
     if raptor_config.get("scope", "file") == "file":
         for x, doc_id in enumerate(doc_ids):
+            # CHECKPOINT: skip docs that already have RAPTOR chunks in the doc store
+            if await has_raptor_chunks(doc_id, row["tenant_id"], row["kb_id"]):
+                callback(msg=f"[RAPTOR] doc:{doc_id} already has RAPTOR chunks, skipping.")
+                callback(prog=(x + 1.) / len(doc_ids))
+                continue
+
             chunks = []
             skipped_chunks = 0
             for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
@@ -892,15 +886,15 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
                     logging.warning(f"RAPTOR: Chunk missing vector field '{vctr_nm}' in doc {doc_id}, skipping")
                     continue
                 chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
-            
+
             if skipped_chunks > 0:
                 callback(msg=f"[WARN] Skipped {skipped_chunks} chunks without vector field '{vctr_nm}' for doc {doc_id}. Consider re-parsing the document with the current embedding model.")
-            
+
             if not chunks:
                 logging.warning(f"RAPTOR: No valid chunks with vectors found for doc {doc_id}")
                 callback(msg=f"[WARN] No valid chunks with vectors found for doc {doc_id}, skipping")
                 continue
-                
+
             await generate(chunks, doc_id)
             callback(prog=(x + 1.) / len(doc_ids))
     else:
@@ -1312,13 +1306,13 @@ async def handle_task():
             pass
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
     finally:
-        task_document_ids = []
-        if task_type in ["graphrag", "raptor", "mindmap"]:
-            task_document_ids = task["doc_ids"]
         if not task.get("dataflow_id", ""):
+            referred_document_id = None
+            if task_type in ["graphrag", "raptor", "mindmap"]:
+                referred_document_id = task["doc_ids"][0]
             PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id="",
                                                                   task_type=pipeline_task_type,
-                                                                  fake_document_ids=task_document_ids)
+                                                                  task_id=task_id, referred_document_id=referred_document_id)
 
     redis_msg.ack()
 

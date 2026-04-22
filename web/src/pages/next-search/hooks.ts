@@ -46,8 +46,7 @@ export const useGetSharedSearchParams = () => {
   const [searchParams] = useSearchParams();
   const data_prefix = 'data_';
   const data = Object.fromEntries(
-    searchParams
-      .entries()
+    Array.from(searchParams.entries())
       .filter(([key]) => key.startsWith(data_prefix))
       .map(([key, value]) => [key.replace(data_prefix, ''), value]),
   );
@@ -139,7 +138,7 @@ export const useTestChunkRetrieval = (
   const shared_id = searchParams.get('shared_id');
   const retrievalTestFunc = shared_id
     ? kbService.retrievalTestShare
-    : kbService.retrieval_test;
+    : kbService.retrievalTest;
   const {
     data,
     isPending: loading,
@@ -190,7 +189,7 @@ export const useTestChunkAllRetrieval = (
   const shared_id = searchParams.get('shared_id');
   const retrievalTestFunc = shared_id
     ? kbService.retrievalTestShare
-    : kbService.retrieval_test;
+    : kbService.retrievalTest;
   const {
     data,
     isPending: loading,
@@ -309,7 +308,11 @@ export const useSendQuestion = (
   related_search: boolean = false,
 ) => {
   const { sharedId } = useGetSharedSearchParams();
-  const askUrl = sharedId ? api.askShare : api.ask;
+  const askUrl = sharedId
+    ? api.askShare
+    : searchId
+      ? api.searchCompletion(searchId)
+      : '';
   const { send, answer, done, stopOutputMessage } = useSendMessageWithSse();
 
   const { testChunk, loading } = useTestChunkRetrieval(tenantId);
@@ -332,12 +335,15 @@ export const useSendQuestion = (
       setIsFirstRender(false);
       setCurrentAnswer({} as IAnswer);
       if (enableAI) {
+        if (!sharedId && !searchId) {
+          message.error('Search ID is required.');
+          return;
+        }
         setSendingLoading(true);
         send(askUrl, {
           kb_ids: kbIds,
           question: q,
           tenantId,
-          search_id: searchId,
         });
       }
       testChunk({
@@ -356,12 +362,14 @@ export const useSendQuestion = (
     [
       send,
       testChunk,
+      askUrl,
       kbIds,
       fetchRelatedQuestions,
       setPagination,
       pagination.pageSize,
       tenantId,
       searchId,
+      sharedId,
       related_search,
     ],
   );

@@ -166,7 +166,7 @@ class TestAddChunk:
         payload = {
             "doc_id": doc_id,
             "content_with_weight": "chunk with tags",
-            "tag_feas": [0.1, 0.2],
+            "tag_feas": {"tag1": 0.1, "tag2": 0.2},
             "important_kwd": ["tag"],
             "question_kwd": ["question"],
         }
@@ -218,8 +218,8 @@ class TestAddChunk:
 
     @pytest.mark.p2
     def test_add_chunk_to_deleted_document(self, WebApiAuth, add_document):
-        _, doc_id = add_document
-        delete_document(WebApiAuth, {"doc_id": doc_id})
+        kb_id, doc_id = add_document
+        delete_document(WebApiAuth, kb_id, {"ids": [doc_id]})
         res = add_chunk(WebApiAuth, {"doc_id": doc_id, "content_with_weight": "chunk test"})
         assert res["code"] == 102, res
         assert res["message"] == "Document not found!", res

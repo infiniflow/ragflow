@@ -17,10 +17,9 @@ const {
   deleteMessage,
   thumbup,
   chatsTts,
-  ask,
   chatsMindmap,
   chatsRelatedQuestions,
-  upload_and_parse,
+  uploadAndParse,
   fetchExternalChatInfo,
 } = api;
 
@@ -67,7 +66,7 @@ const methods = {
   },
   updateSession: {
     url: updateSession,
-    method: 'put',
+    method: 'patch',
   },
   removeSessions: {
     url: removeSessions,
@@ -79,14 +78,10 @@ const methods = {
   },
   thumbup: {
     url: thumbup,
-    method: 'put',
+    method: 'patch',
   },
   chatsTts: {
     url: chatsTts,
-    method: 'post',
-  },
-  ask: {
-    url: ask,
     method: 'post',
   },
   chatsMindmap: {
@@ -99,7 +94,7 @@ const methods = {
   },
   uploadAndParse: {
     method: 'post',
-    url: upload_and_parse,
+    url: uploadAndParse,
   },
   fetchExternalChatInfo: {
     url: fetchExternalChatInfo,

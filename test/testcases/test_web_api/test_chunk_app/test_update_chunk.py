@@ -46,10 +46,10 @@ class TestUpdateChunk:
         "payload, expected_code, expected_message",
         [
             ({"content_with_weight": None}, 100, "TypeError('expected string or bytes-like object')"),
-            ({"content_with_weight": ""}, 100, """Exception('Error: 413 - {"error":"Input validation error: `inputs` cannot be empty","error_type":"Validation"}')"""),
+            ({"content_with_weight": ""}, 102, "`content_with_weight` is required"),
             ({"content_with_weight": 1}, 100, "TypeError('expected string or bytes-like object')"),
             ({"content_with_weight": "update chunk"}, 0, ""),
-            ({"content_with_weight": " "}, 0, ""),
+            ({"content_with_weight": " "}, 102, "`content_with_weight` is required"),
             ({"content_with_weight": "\n!?。；！？\"'"}, 0, ""),
         ],
     )
@@ -251,8 +251,8 @@ class TestUpdateChunk:
 
     @pytest.mark.p3
     def test_update_chunk_to_deleted_document(self, WebApiAuth, add_chunks):
-        _, doc_id, chunk_ids = add_chunks
-        delete_document(WebApiAuth, {"doc_id": doc_id})
+        kb_id, doc_id, chunk_ids = add_chunks
+        delete_document(WebApiAuth, kb_id, {"ids": [doc_id]})
         payload = {"doc_id": doc_id, "chunk_id": chunk_ids[0], "content_with_weight": "test content"}
         res = update_chunk(WebApiAuth, payload)
         assert res["code"] == 102, res

@@ -1,4 +1,13 @@
-# MySQL Data Migration Script
+# Database Scripts
+
+This directory contains database-related utility scripts for RAGFlow.
+
+- **mysql_migration.py**: Data migration between tables with stage-based execution
+- **db_schema_sync.py**: Database schema synchronization using peewee-migrate
+
+---
+
+# mysql_migration.py
 
 A flexible MySQL data migration tool for migrating data between tables with stage-based execution.
 
@@ -72,13 +81,20 @@ tenant_model (depends on tenant_model_provider and tenant_model_instance)
 python mysql_migration.py [OPTIONS]
 ```
 
-| Option | Short | Description |
-|--------|-------|-------------|
-| `--config` | `-c` | Path to YAML config file (required) |
-| `--stages` | `-s` | Comma-separated list of stages to run |
-| `--list-stages` | `-l` | List available stages and exit |
-| `--execute` | `-e` | Execute full migration (create tables and migrate data) |
-| `--create-table-only` | - | Only create target tables, skip data migration |
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--host` | - | MySQL host | `localhost` |
+| `--port` | - | MySQL port | `3306` |
+| `--user` | - | MySQL user | `root` |
+| `--password` | - | MySQL password | (empty) |
+| `--database` | - | MySQL database name | `rag_flow` |
+| `--config` | `-c` | Path to YAML config file | - |
+| `--stages` | `-s` | Comma-separated list of stages to run | - |
+| `--list-stages` | `-l` | List available stages and exit | - |
+| `--execute` | `-e` | Execute full migration (create tables and migrate data) | `False` |
+| `--create-table-only` | - | Only create target tables, skip data migration | `False` |
+
+> **Note**: MySQL connection can be configured via command line arguments (`--host`, `--port`, `--user`, `--password`, `--database`) or via a YAML config file (`--config`). Command line arguments take precedence over config file values.
 
 ### Execution Modes
 
@@ -86,7 +102,11 @@ The script has three mutually exclusive modes:
 
 1. **Dry-Run Mode** (default): Check only, no database writes
    ```bash
+   # Using config file
    python mysql_migration.py --stages tenant_model_provider --config config.yaml
+   
+   # Using command line MySQL connection
+   python mysql_migration.py --stages tenant_model_provider --host localhost --port 3306 --user root
    ```
 
 2. **Create Table Only Mode**: Create target tables without migrating data
@@ -129,7 +149,10 @@ mysql:
 # List all available stages
 python mysql_migration.py --list-stages
 
-# Dry run single stage
+# Dry run single stage using command line MySQL connection
+python mysql_migration.py --stages tenant_model_provider --host localhost --port 3306 --user root --password secret
+
+# Dry run single stage using config file
 python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml
 
 # Create tables only for multiple stages
@@ -137,6 +160,9 @@ python mysql_migration.py --stages tenant_model_provider,tenant_model_instance -
 
 # Execute full migration for all stages (in dependency order)
 python mysql_migration.py --stages tenant_model_provider,tenant_model_instance,tenant_model --config /path/to/config.yaml --execute
+
+# Use config file with command line password override
+python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --password mypassword --execute
 ```
 
 ## Output Interpretation
@@ -191,3 +217,130 @@ Stage Details:
 | `[DRY RUN] Target table does not exist` | Target table missing, use `--execute` or `--create-table-only`to create |
 | `Dependency table does not exist` | Required table from previous stage missing                              |
 | `Inserted batch X: Y records` | Successfully inserted batch of records                                  |
+
+---
+
+# db_schema_sync.py
+
+A database schema synchronization tool that uses peewee-migrate to detect and manage schema changes.
+
+## Overview
+
+This script:
+1. Reads model definitions from `api/db/db_models.py`
+2. Compares with existing database tables specified via command line
+3. Generates migration files in `tools/migrate/{version}/`
+
+### Detected Change Types
+
+| Change Type | Description | Auto-included? |
+|-------------|-------------|----------------|
+| New table | Model class with no corresponding DB table | Yes |
+| New field | Model field not present in DB table | Yes |
+| Field type change | Model field type differs from DB column type | Yes |
+| Removed field | DB column not present in model definition | No (requires `--drop`) |
+
+> **Warning**: Removed fields are **not** included in migrations by default. You must explicitly use `--drop` to generate `DROP COLUMN` statements, as this operation permanently deletes data.
+
+## Prerequisites
+
+Install peewee-migrate:
+```bash
+pip install peewee-migrate
+```
+
+## Usage
+
+### Command Line Arguments
+
+```
+python db_schema_sync.py [OPTIONS]
+```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--host` | - | MySQL host (required) |
+| `--port` | - | MySQL port (default: 3306) |
+| `--user` | - | MySQL user (required) |
+| `--password` | - | MySQL password (required) |
+| `--database` | - | MySQL database name (required) |
+| `--version` | `-v` | Version number in format `vxx.xx.xx` (required) |
+| `--list` | `-l` | List all migrations |
+| `--create` | - | Create a new migration (auto-detect changes) |
+| `--migrate` | `-m` | Run pending migrations |
+| `--diff` | `-d` | Show schema differences |
+| `--name` | `-n` | Migration name (default: auto) |
+| `--drop` | - | Include `DROP COLUMN` for fields removed from models (destructive - permanently deletes data!) |
+
+### Version Format
+
+Version must be in format `vxx.xx.xx` where `xx` are digits:
+- Valid: `v0.25.0`, `v1.0.0`, `v10.20.30`
+- Invalid: `0.25.0`, `v0.25`, `v0.25.0.1`
+
+### Migration File Location
+
+Migration files are stored in:
+```
+tools/migrate/{version_dir}/
+```
+
+Where `{version_dir}` is the version with `.` replaced by `_`.
+
+Example: Version `v0.25.0` → Directory `tools/migrate/v0_24_0/`
+
+### Examples
+
+```bash
+# List all migrations
+python db_schema_sync.py --list \
+    --host localhost --port 3306 --user root --password xxx --database rag_flow \
+    --version v0.25.0
+
+# Create a new auto-detected migration (new tables, new fields, type changes only)
+python db_schema_sync.py --create \
+    --host localhost --port 3306 --user root --password xxx --database rag_flow \
+    --version v0.25.0
+
+# Create a migration including dropped fields (destructive!)
+python db_schema_sync.py --create --drop \
+    --host localhost --port 3306 --user root --password xxx --database rag_flow \
+    --version v0.25.0
+
+# Create a named migration
+python db_schema_sync.py --create --name add_user_table \
+    --host localhost --port 3306 --user root --password xxx --database rag_flow \
+    --version v0.25.0
+
+# Run all pending migrations
+python db_schema_sync.py --migrate \
+    --host localhost --port 3306 --user root --password xxx --database rag_flow \
+    --version v0.25.0
+
+# Show schema differences (including removed fields)
+python db_schema_sync.py --diff \
+    --host localhost --port 3306 --user root --password xxx --database rag_flow \
+    --version v0.25.0
+```
+
+## How It Works
+
+1. **Load Models**: Imports all model classes from `api/db/db_models.py`
+2. **Connect Database**: Creates MySQL connection from command line arguments
+3. **Detect Changes**: Compares model definitions with actual database schema:
+   - New tables → `create_model`
+   - New fields → `ALTER TABLE ADD COLUMN`
+   - Field type changes → `ALTER TABLE MODIFY COLUMN`
+   - Removed fields → `ALTER TABLE DROP COLUMN` (only with `--drop`)
+4. **Generate Migration**: Creates Python migration file with `migrate()` and `rollback()` functions
+
+### Rollback Behavior
+
+| Forward Operation | Rollback Operation |
+|-------------------|--------------------|
+| `CREATE TABLE` | `remove_model` |
+| `ADD COLUMN` | `DROP COLUMN` |
+| `MODIFY COLUMN` | `MODIFY COLUMN` (restore original type) |
+| `DROP COLUMN` | `ADD COLUMN` (restore column definition; **data is lost**) |
+
+> **Note**: Rolling back a `DROP COLUMN` will re-add the column structure, but the data that was in it cannot be recovered.

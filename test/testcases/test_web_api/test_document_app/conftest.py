@@ -34,9 +34,9 @@ class _DummyManager:
 @pytest.fixture(scope="function")
 def add_document_func(request, WebApiAuth, add_dataset, ragflow_tmp_dir):
     def cleanup():
-        res = list_documents(WebApiAuth, {"id": dataset_id})
+        res = list_documents(WebApiAuth, {"kb_id": dataset_id})
         for doc in res["data"]["docs"]:
-            delete_document(WebApiAuth, {"doc_id": doc["id"]})
+            delete_document(WebApiAuth, dataset_id, {"ids": [doc["id"]]})
 
     request.addfinalizer(cleanup)
 
@@ -47,9 +47,9 @@ def add_document_func(request, WebApiAuth, add_dataset, ragflow_tmp_dir):
 @pytest.fixture(scope="class")
 def add_documents(request, WebApiAuth, add_dataset, ragflow_tmp_dir):
     def cleanup():
-        res = list_documents(WebApiAuth, {"id": dataset_id})
+        res = list_documents(WebApiAuth, {"kb_id": dataset_id})
         for doc in res["data"]["docs"]:
-            delete_document(WebApiAuth, {"doc_id": doc["id"]})
+            delete_document(WebApiAuth, dataset_id, {"ids": [doc["id"]]})
 
     request.addfinalizer(cleanup)
 
@@ -60,9 +60,9 @@ def add_documents(request, WebApiAuth, add_dataset, ragflow_tmp_dir):
 @pytest.fixture(scope="function")
 def add_documents_func(request, WebApiAuth, add_dataset_func, ragflow_tmp_dir):
     def cleanup():
-        res = list_documents(WebApiAuth, {"id": dataset_id})
+        res = list_documents(WebApiAuth, {"kb_id": dataset_id})
         for doc in res["data"]["docs"]:
-            delete_document(WebApiAuth, {"doc_id": doc["id"]})
+            delete_document(WebApiAuth, dataset_id, {"ids": [doc["id"]]})
 
     request.addfinalizer(cleanup)
 

@@ -858,6 +858,9 @@ class DeleteReq(Base):
 class DeleteDatasetReq(DeleteReq): ...
 
 
+class DeleteDocumentReq(DeleteReq): ...
+
+
 class BaseListReq(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
