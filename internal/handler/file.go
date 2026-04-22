@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"ragflow/internal/common"
@@ -171,7 +172,7 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 	// Get parent folder
 	parentFolder, err := h.fileService.GetParentFolder(user.ID, fileID)
 	if err != nil {
-		if err.Error() == "No authorization." {
+		if errors.Is(err, service.ErrNoAuthorization) {
 			jsonError(c, common.CodeUnauthorized, err.Error())
 			return
 		}
@@ -212,7 +213,7 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 	// Get all parent folders
 	parentFolders, err := h.fileService.GetAllParentFolders(user.ID, fileID)
 	if err != nil {
-		if err.Error() == "No authorization." {
+		if errors.Is(err, service.ErrNoAuthorization) {
 			jsonError(c, common.CodeUnauthorized, err.Error())
 			return
 		}
@@ -251,7 +252,7 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 
 	parentFolders, err := h.fileService.GetAllParentFolders(user.ID, fileID)
 	if err != nil {
-		if err.Error() == "No authorization." {
+		if errors.Is(err, service.ErrNoAuthorization) {
 			jsonError(c, common.CodeUnauthorized, err.Error())
 			return
 		}

@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"os"
@@ -39,6 +40,9 @@ type FileService struct {
 	fileDAO          *dao.FileDAO
 	file2DocumentDAO *dao.File2DocumentDAO
 }
+
+// ErrNoAuthorization indicates the current user cannot access the target file.
+var ErrNoAuthorization = errors.New("No authorization.")
 
 // NewFileService create file service
 func NewFileService() *FileService {
@@ -220,7 +224,7 @@ func (s *FileService) GetParentFolder(uid, fileID string) (map[string]interface{
 		return nil, err
 	}
 	if !s.checkFileTeamPermission(file, uid) {
-		return nil, fmt.Errorf("No authorization.")
+		return nil, ErrNoAuthorization
 	}
 
 	// Get parent folder
@@ -240,7 +244,7 @@ func (s *FileService) GetAllParentFolders(uid, fileID string) ([]map[string]inte
 		return nil, err
 	}
 	if !s.checkFileTeamPermission(file, uid) {
-		return nil, fmt.Errorf("No authorization.")
+		return nil, ErrNoAuthorization
 	}
 
 	// Get all parent folders
@@ -926,7 +930,7 @@ func (s *FileService) GetFileContent(uid, fileID string) (*entity.File, error) {
 		return nil, fmt.Errorf("Document not found!")
 	}
 	if !s.checkFileTeamPermission(file, uid) {
-		return nil, fmt.Errorf("No authorization.")
+		return nil, ErrNoAuthorization
 	}
 	return file, nil
 }
