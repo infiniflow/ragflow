@@ -25,7 +25,6 @@ from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import FileType
 from api.db.db_models import Task
 from api.db.services import duplicate_name
-from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
