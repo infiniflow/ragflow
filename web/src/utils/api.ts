@@ -52,7 +52,7 @@ export default {
   // plugin
   llmTools: `${webAPI}/plugin/llm_tools`,
 
-  chatsTranscriptions: `${restAPIv1}/chats/transcriptions`,
+  chatsTranscriptions: `${restAPIv1}/chat/audio/transcription`,
 
   // knowledge base
 
@@ -124,7 +124,6 @@ export default {
   documentUpload: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents`,
   webCrawl: `${webAPI}/document/web_crawl`,
-  documentInfos: `${webAPI}/document/infos`,
   uploadAndParse: `${webAPI}/document/upload_info`,
   setMeta: `${webAPI}/document/set_meta`,
   getDatasetFilter: (datasetId: string) =>
@@ -149,12 +148,12 @@ export default {
     `${restAPIv1}/chats/${chatId}/sessions/${sessionId}/messages/${msgId}`,
   thumbup: (chatId: string, sessionId: string, msgId: string) =>
     `${restAPIv1}/chats/${chatId}/sessions/${sessionId}/messages/${msgId}/feedback`,
-  completionUrl: (chatId: string, sessionId: string) =>
-    `${restAPIv1}/chats/${chatId}/sessions/${sessionId}/completions`,
-  chatsTts: `${restAPIv1}/chats/tts`,
-  ask: `${restAPIv1}/chats/ask`,
-  chatsMindmap: `${restAPIv1}/chats/mindmap`,
-  chatsRelatedQuestions: `${restAPIv1}/chats/related_questions`,
+  completionUrl: `${restAPIv1}/chat/completions`,
+  chatsTts: `${restAPIv1}/chat/audio/speech`,
+  searchCompletion: (searchId: string) =>
+    `${restAPIv1}/searches/${searchId}/completion`,
+  chatsMindmap: `${restAPIv1}/chat/mindmap`,
+  chatsRelatedQuestions: `${restAPIv1}/chat/recommandation`,
 
   // next chat
   fetchExternalChatInfo: (id: string) => `${restAPIv1}/chatbots/${id}/info`,

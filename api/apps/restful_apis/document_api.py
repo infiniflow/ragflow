@@ -528,6 +528,12 @@ def _get_docs_with_request(req, dataset_id:str):
     if doc_name and not DocumentService.query(name=doc_name, kb_id=dataset_id):
         return RetCode.DATA_ERROR, f"You don't own the document {doc_name}.", [], 0
 
+    doc_ids = q.getlist("ids")
+    if doc_id and len(doc_ids) > 0:
+        return RetCode.DATA_ERROR, f"Should not provide both 'id':{doc_id} and 'ids'{doc_ids}"
+    if len(doc_ids) > 0:
+        doc_ids_filter = doc_ids
+
     docs, total = DocumentService.get_by_kb_id(dataset_id, page, page_size, orderby, desc, keywords, run_status_converted, types, suffix,
                                                name=doc_name, doc_ids=doc_ids_filter, return_empty_metadata=return_empty_metadata)
 
@@ -752,6 +758,7 @@ async def delete_documents(tenant_id, dataset_id):
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
+
 
 def _aggregate_filters(docs):
     """Aggregate filter options from a list of documents.

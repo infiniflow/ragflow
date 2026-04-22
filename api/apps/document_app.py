@@ -183,22 +183,6 @@ async def create():
         return server_error_response(e)
 
 
-@manager.route("/infos", methods=["POST"])  # noqa: F821
-@login_required
-async def doc_infos():
-    req = await get_request_json()
-    doc_ids = req["doc_ids"]
-    for doc_id in doc_ids:
-        if not DocumentService.accessible(doc_id, current_user.id):
-            return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-    docs = DocumentService.get_by_ids(doc_ids)
-    docs_list = list(docs.dicts())
-    # Add meta_fields for each document
-    for doc in docs_list:
-        doc["meta_fields"] = DocMetadataService.get_document_metadata(doc["id"])
-    return get_json_result(data=docs_list)
-
-
 @manager.route("/metadata/update", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_ids")

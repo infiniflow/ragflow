@@ -394,8 +394,8 @@ def document_filter(auth, dataset_id, payload=None, *, headers=HEADERS, data=Non
     return res.json()
 
 
-def document_infos(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/infos", headers=headers, auth=auth, json=payload, data=data)
+def document_infos(auth, dataset_id, params=None, payload=None, *, headers=HEADERS, data=None):
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents", params=params, json=payload, headers=headers, auth=auth, data=data)
     return res.json()
 
 

@@ -52,6 +52,10 @@ func NewZhipuAIModel(baseURL map[string]string, urlSuffix URLSuffix) *ZhipuAIMod
 	}
 }
 
+func (z *ZhipuAIModel) Name() string {
+	return "zhipu"
+}
+
 // Chat sends a message and returns response
 func (z *ZhipuAIModel) Chat(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if message == nil {
@@ -281,7 +285,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, message *string, apiCon
 
 		// Parse the JSON event
 		var event map[string]interface{}
-		if err := json.Unmarshal([]byte(data), &event); err != nil {
+		if err = json.Unmarshal([]byte(data), &event); err != nil {
 			continue
 		}
 
@@ -322,7 +326,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, message *string, apiCon
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
-	if err := sender(&endOfStream, nil); err != nil {
+	if err = sender(&endOfStream, nil); err != nil {
 		return err
 	}
 
@@ -377,7 +381,7 @@ func (z *ZhipuAIModel) EncodeToEmbedding(modelName *string, texts []string, apiC
 
 		// Parse response
 		var result map[string]interface{}
-		if err := json.Unmarshal(body, &result); err != nil {
+		if err = json.Unmarshal(body, &result); err != nil {
 			return nil, fmt.Errorf("failed to parse response: %w", err)
 		}
 
@@ -415,5 +419,9 @@ func (z *ZhipuAIModel) EncodeToEmbedding(modelName *string, texts []string, apiC
 }
 
 func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *ZhipuAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
