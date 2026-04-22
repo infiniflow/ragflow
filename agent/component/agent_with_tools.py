@@ -223,7 +223,30 @@ class Agent(LLM, ToolBase):
 
         msg = self._fit_messages(prompt, msg)
         self._append_system_prompt(msg, schema_prompt)
+        # We forcefully instruct the LLM on how to behave if tool execution fails or is empty.
+        safety_prompt = (
+            "SYSTEM WARNING: You are bound to strict tool validation. "
+            "If no tools return valid context, or if a tool execution fails, "
+            "you MUST NOT invent an answer or apologize. "
+            "You must reply exactly and only with 'ACTION_NOT_PERFORMED'."
+        )
+        self._append_system_prompt(msg, safety_prompt)
         ans = await self._generate_async(msg)
+        # --- LAYER 2: THE NATIVE TRAPDOOR ---
+        # We assume tools failed until proven otherwise
+        tools_succeeded = False 
+        
+        # We loop through the tools using RAGFlow's exact native structure
+        for tool_obj in self.tools.values():
+            if hasattr(tool_obj, "_param") and hasattr(tool_obj._param, "outputs"):
+                # If a tool recorded any outputs (like data or error logs), it ran
+                if tool_obj._param.outputs: 
+                    tools_succeeded = True
+                    break
+
+        # If the tools never produced any outputs, but the AI tried to answer anyway, intercept it.
+        if not tools_succeeded and "ACTION_NOT_PERFORMED" not in ans:
+            ans = "ACTION_NOT_PERFORMED"
 
         if ans.find("**ERROR**") >= 0:
             logging.error(f"Agent._chat got error. response: {ans}")
