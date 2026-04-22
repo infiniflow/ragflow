@@ -450,24 +450,6 @@ class DeerAPITTS(OpenAITTS):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class AstraflowTTS(OpenAITTS):
-    _FACTORY_NAME = "Astraflow"
-
-    def __init__(self, key, model_name, base_url="https://api-us-ca.umodelverse.ai/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api-us-ca.umodelverse.ai/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
-class AstraflowCNTTS(OpenAITTS):
-    _FACTORY_NAME = "Astraflow-CN"
-
-    def __init__(self, key, model_name, base_url="https://api.modelverse.cn/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.modelverse.cn/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class StepFunTTS(OpenAITTS):
     _FACTORY_NAME = "StepFun"
     _SUPPORTED_RESPONSE_FORMATS = {"wav", "mp3", "flac", "opus", "pcm"}
