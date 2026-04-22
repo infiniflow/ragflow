@@ -287,43 +287,45 @@ class MinerUParser(RAGFlowPdfParser):
         self.logger.info(f"[MinerU] request {options=}")
 
         headers = {"Accept": "application/json"}
-        try:
-            self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/pdf_parse backend={options.backend} server_url={data.get('server_url')}")
+        request_profiles = [("file_parse", "files"), ("pdf_parse", "pdf_file")]
+        last_error = None
+        for endpoint, file_key in request_profiles:
+            self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/{endpoint} backend={options.backend} server_url={data.get('server_url')}")
             if callback:
-                callback(0.20, f"[MinerU] invoke api: {self.mineru_api}/pdf_parse")
-            with open(pdf_file_path, "rb") as pdf_file:
-                files = {"files": (pdf_file_name + ".pdf", pdf_file, "application/pdf")}
-                with requests.post(
-                    url=f"{self.mineru_api}/pdf_parse",
-                    files=files,
-                    data=data,
-                    headers=headers,
-                    timeout=1800,
-                    stream=True,
-                ) as response:
-                    response.raise_for_status()
-                    content_type = response.headers.get("Content-Type", "")
-                    if content_type.startswith("application/zip"):
+                callback(0.20, f"[MinerU] invoke api: {self.mineru_api}/{endpoint}")
+            try:
+                with open(pdf_file_path, "rb") as pdf_file:
+                    files = {file_key: (pdf_file_name + ".pdf", pdf_file, "application/pdf")}
+                    with requests.post(
+                        url=f"{self.mineru_api}/{endpoint}",
+                        files=files,
+                        data=data,
+                        headers=headers,
+                        timeout=1800,
+                        stream=True,
+                    ) as response:
+                        response.raise_for_status()
+                        content_type = response.headers.get("Content-Type", "")
+                        if not content_type.startswith("application/zip"):
+                            last_error = RuntimeError(f"[MinerU] not zip returned from api: {content_type}")
+                            self.logger.warning(str(last_error))
+                            continue
                         self.logger.info(f"[MinerU] zip file returned, saving to {output_zip_path}...")
-
                         if callback:
                             callback(0.30, f"[MinerU] zip file returned, saving to {output_zip_path}...")
-
                         with open(output_zip_path, "wb") as f:
                             response.raw.decode_content = True
                             shutil.copyfileobj(response.raw, f)
-
                         self.logger.info(f"[MinerU] Unzip to {output_path}...")
                         self._extract_zip_no_root(output_zip_path, output_path, pdf_file_name + "/")
-
                         if callback:
                             callback(0.40, f"[MinerU] Unzip to {output_path}...")
-                    else:
-                        self.logger.warning(f"[MinerU] not zip returned from api: {content_type}")
-        except Exception as e:
-            raise RuntimeError(f"[MinerU] api failed with exception {e}")
-        self.logger.info("[MinerU] Api completed successfully.")
-        return Path(output_path)
+                        self.logger.info("[MinerU] Api completed successfully.")
+                        return Path(output_path)
+            except Exception as e:
+                last_error = e
+                self.logger.warning(f"[MinerU] api attempt failed endpoint=/{endpoint} file_key={file_key}: {e}")
+        raise RuntimeError(f"[MinerU] api failed with exception {last_error}")
 
     def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=600, callback=None):
         self.page_from = page_from
@@ -541,6 +543,20 @@ class MinerUParser(RAGFlowPdfParser):
                 if nested_alt.exists():
                     subdir = nested_alt.parent
                     json_file = nested_alt
+                else:
+                    vlm_original = output_dir / "vlm" / f"{file_stem}_content_list.json"
+                    self.logger.info(f"[MinerU] Trying vlm path: {vlm_original}")
+                    attempted.append(vlm_original)
+                    if vlm_original.exists():
+                        subdir = vlm_original.parent
+                        json_file = vlm_original
+                    else:
+                        vlm_sanitized = output_dir / "vlm" / f"{safe_stem}_content_list.json"
+                        self.logger.info(f"[MinerU] Trying vlm sanitized path: {vlm_sanitized}")
+                        attempted.append(vlm_sanitized)
+                        if vlm_sanitized.exists():
+                            subdir = vlm_sanitized.parent
+                            json_file = vlm_sanitized
 
         if not json_file:
             raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(p) for p in attempted)}")
