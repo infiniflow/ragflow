@@ -75,8 +75,9 @@ class TestAuthorization:
 
     @pytest.mark.p2
     @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
-    def test_change_status_auth_invalid(self, invalid_auth, expected_code, expected_fragment):
-        res = document_change_status(invalid_auth, {"doc_ids": ["doc_id"], "status": "1"})
+    def test_change_status_auth_invalid(self, invalid_auth, expected_code, expected_fragment, add_dataset_func):
+        dataset_id = add_dataset_func
+        res = document_change_status(invalid_auth, dataset_id, {"doc_ids": ["doc_id"], "status": "1"})
         assert res["code"] == expected_code, res
         assert expected_fragment in res["message"], res
 
@@ -140,7 +141,7 @@ class TestDocumentMetadata:
     @pytest.mark.p2
     def test_change_status(self, WebApiAuth, add_document_func):
         dataset_id, doc_id = add_document_func
-        res = document_change_status(WebApiAuth, {"doc_ids": [doc_id], "status": "1"})
+        res = document_change_status(WebApiAuth, dataset_id, {"doc_ids": [doc_id], "status": "1"})
 
         assert res["code"] == 0, res
         assert res["data"][doc_id]["status"] == "1", res
@@ -190,8 +191,8 @@ class TestDocumentMetadataNegative:
 
     @pytest.mark.p3
     def test_change_status_invalid_status(self, WebApiAuth, add_document_func):
-        _, doc_id = add_document_func
-        res = document_change_status(WebApiAuth, {"doc_ids": [doc_id], "status": "2"})
+        dataset_id, doc_id = add_document_func
+        res = document_change_status(WebApiAuth, dataset_id, {"doc_ids": [doc_id], "status": "2"})
         assert res["code"] == 101, res
         assert "Status" in res["message"], res
 

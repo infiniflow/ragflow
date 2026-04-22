@@ -108,7 +108,8 @@ export default {
   // document
   getDocumentList: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents`,
-  documentChangeStatus: `${webAPI}/document/change_status`,
+  documentChangeStatus: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/batch-update-status`,
   documentDelete: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents`,
   documentRename: (datasetId: string, documentId: string) =>

@@ -17,7 +17,6 @@ const {
   getKbDetail,
   kbList,
   getDocumentList,
-  documentChangeStatus,
   documentCreate,
   documentChangeParser,
   documentThumbnails,
@@ -65,10 +64,6 @@ const methods = {
   getDocumentList: {
     url: getDocumentList,
     method: 'get',
-  },
-  documentChangeStatus: {
-    url: documentChangeStatus,
-    method: 'post',
   },
   documentCreate: {
     url: documentCreate,
@@ -289,10 +284,22 @@ export const updateMetaData = ({
   data: any;
 }) => request.post(api.updateMetaData, { data: { kb_id, doc_ids, ...data } });
 
+export const changeDocumentsStatus = ({
+  kb_id,
+  doc_ids,
+  status,
+}: {
+  kb_id: string;
+  doc_ids?: string[];
+  status: number;
+}) =>
+  request.post(api.documentChangeStatus(kb_id), { data: { doc_ids, status } });
+
 export const listDataPipelineLogDocument = (
   params?: IFetchKnowledgeListRequestParams,
   body?: IFetchDocumentListRequestBody,
 ) => request.post(api.fetchDataPipelineLog, { data: body || {}, params });
+
 export const listPipelineDatasetLogs = (
   params?: IFetchKnowledgeListRequestParams & {
     kb_id?: string;
