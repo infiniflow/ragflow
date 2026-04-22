@@ -321,7 +321,6 @@ class Agent(LLM, ToolBase):
 
         msg = self._fit_messages(prompt, msg)
 
-        # INJECT TIGHTENED SAFETY PROMPT FOR STREAMING
         safety_prompt = (
             "SYSTEM WARNING: You are bound to strict tool validation. "
             "ONLY if you attempt to use a tool and it fails or returns no context, "
@@ -343,12 +342,13 @@ class Agent(LLM, ToolBase):
             if self.check_if_canceled("Agent streaming"):
                 return
                 
-            # THE STREAMING TRAPDOOR: Cut off the generator instantly if tools failed
+            # THE STREAMING TRAPDOOR (In-Loop)
             if _tool_call_tracker.get() and not self._check_tools_succeeded():
                 if not trapdoor_fired:
                     logging.info("Trapdoor triggered during stream: Empty tool outputs.")
                     yield "ACTION_NOT_PERFORMED"
                     answer = "ACTION_NOT_PERFORMED"
+                    self.set_output("content", answer) # CodeRabbit Fix 1: Set output before returning
                     trapdoor_fired = True
                 return 
 
@@ -364,6 +364,15 @@ class Agent(LLM, ToolBase):
                 yield delta
             answer += delta
 
+        # THE STREAMING TRAPDOOR (Zero-Delta Catch)
+        # CodeRabbit Fix 2: If the LLM yielded nothing, the loop bypassed the trapdoor. Catch it here.
+        if not trapdoor_fired and _tool_call_tracker.get() and not self._check_tools_succeeded():
+            logging.info("Trapdoor triggered after stream (zero-delta): Empty tool outputs.")
+            yield "ACTION_NOT_PERFORMED"
+            answer = "ACTION_NOT_PERFORMED"
+            self.set_output("content", answer)
+            return
+
         if not need2cite or cited:
             artifact_md = self._collect_tool_artifact_markdown(existing_text=answer)
             if artifact_md:
@@ -374,11 +383,29 @@ class Agent(LLM, ToolBase):
 
         st = timer()
         cited_answer = ""
+        
         async for delta in self._gen_citations_async(answer):
             if self.check_if_canceled("Agent streaming"):
                 return
+                
+            # CodeRabbit noted the citation loop needs the same protection
+            if _tool_call_tracker.get() and not self._check_tools_succeeded():
+                if not trapdoor_fired:
+                    yield "ACTION_NOT_PERFORMED"
+                    cited_answer = "ACTION_NOT_PERFORMED"
+                    self.set_output("content", cited_answer)
+                    trapdoor_fired = True
+                return
+
             yield delta
             cited_answer += delta
+
+        # Zero-Delta Catch for citations
+        if not trapdoor_fired and _tool_call_tracker.get() and not self._check_tools_succeeded():
+            yield "ACTION_NOT_PERFORMED"
+            cited_answer = "ACTION_NOT_PERFORMED"
+            self.set_output("content", cited_answer)
+            return
             
         artifact_md = self._collect_tool_artifact_markdown(existing_text=cited_answer)
         if artifact_md:
