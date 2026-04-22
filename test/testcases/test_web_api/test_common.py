@@ -424,8 +424,16 @@ def document_update_metadata_setting(auth, dataset_id, doc_id, payload=None, *, 
     return res.json()
 
 
-def document_change_status(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/change_status", headers=headers, auth=auth, json=payload, data=data)
+def document_change_status(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
+    """
+    Batch update document status within a dataset.
+    
+    Args:
+        auth: Authentication credentials
+        dataset_id: ID of the dataset
+        payload: Request body containing doc_ids and status
+    """
+    res = requests.post(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents/batch-update-status", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 

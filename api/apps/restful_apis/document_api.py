@@ -264,15 +264,15 @@ async def upload_document(dataset_id, tenant_id):
     """
     from api.constants import FILE_NAME_LEN_LIMIT
     from api.db.services.file_service import FileService
-
+    
     form = await request.form
     files = await request.files
-
+    
     # Validation
     if "file" not in files:
         logging.error("No file part!")
         return get_error_data_result(message="No file part!", code=RetCode.ARGUMENT_ERROR)
-
+    
     file_objs = files.getlist("file")
     for file_obj in file_objs:
         if file_obj is None or file_obj.filename is None or file_obj.filename == "":
@@ -288,7 +288,7 @@ async def upload_document(dataset_id, tenant_id):
     if not e:
         logging.error(f"Can't find the dataset with ID {dataset_id}!")
         return get_error_data_result(message=f"Can't find the dataset with ID {dataset_id}!", code=RetCode.DATA_ERROR)
-
+    
     # Permission Check
     if not check_kb_team_permission(kb, tenant_id):
         logging.error("No authorization.")
@@ -308,7 +308,7 @@ async def upload_document(dataset_id, tenant_id):
         msg = "There seems to be an issue with your file format. please verify it is correct and not corrupted."
         logging.error(msg)
         return get_error_data_result(message=msg, code=RetCode.DATA_ERROR)
-
+    
     files = [f[0] for f in files]  # remove the blob
 
     # Check if we should return raw files without document key mapping
@@ -580,7 +580,7 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
         - The metadata_condition uses operators like: =, !=, >, <, >=, <=, contains, not contains,
           in, not in, start with, end with, empty, not empty.
         - The metadata parameter performs exact matching where values are OR'd within the same key
-          & AND'd across different keys.
+          and AND'd across different keys.
 
     Examples:
         Simple metadata filter (exact match):
@@ -758,8 +758,6 @@ async def delete_documents(tenant_id, dataset_id):
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
-
-
 def _aggregate_filters(docs):
     """Aggregate filter options from a list of documents.
 
@@ -1019,3 +1017,116 @@ async def update_metadata(tenant_id, dataset_id):
     target_doc_ids = list(target_doc_ids)
     updated = DocMetadataService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
     return get_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
+
+
+@manager.route("/datasets/<dataset_id>/documents/batch-update-status", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def batch_update_document_status(tenant_id, dataset_id):
+    """
+    Batch update status of documents within a dataset.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: body
+        name: body
+        description: Document status update parameters.
+        required: true
+        schema:
+          type: object
+          required:
+            - doc_ids
+            - status
+          properties:
+            doc_ids:
+              type: array
+              items:
+                type: string
+              description: List of document IDs to update.
+            status:
+              type: string
+              enum: ["0", "1"]
+              description: New status (0 = disabled, 1 = enabled).
+    responses:
+      200:
+        description: Document statuses updated successfully.
+    """
+    from common import settings
+    from rag.nlp import search
+
+    req = await get_request_json()
+    doc_ids = req.get("doc_ids", [])
+    status = str(req.get("status", -1))
+
+    if status not in ["0", "1"]:
+        return get_error_argument_result(message=f'"Status" must be either 0 or 1:{status}!')
+
+    # Verify dataset ownership
+    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+        return get_error_data_result(message="You don't own the dataset.")
+
+    e, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not e:
+        return get_error_data_result(message="Can't find this dataset!")
+
+    result = {}
+    has_error = False
+    for doc_id in doc_ids:
+        try:
+            e, doc = DocumentService.get_by_id(doc_id)
+            if not e:
+                result[doc_id] = {"error": "Document not found"}
+                has_error = True
+                continue
+
+            current_status = str(doc.status)
+            if current_status == status:
+                result[doc_id] = {"status": status}
+                continue
+            if not DocumentService.update_by_id(doc_id, {"status": str(status)}):
+                result[doc_id] = {"error": "Database error (Document update)!"}
+                has_error = True
+                continue
+
+            status_int = int(status)
+            if getattr(doc, "chunk_num", 0) > 0:
+                try:
+                    ok = settings.docStoreConn.update(
+                        {"doc_id": doc_id},
+                        {"available_int": status_int},
+                        search.index_name(kb.tenant_id),
+                        doc.kb_id,
+                    )
+                except Exception as exc:
+                    msg = str(exc)
+                    if "3022" in msg:
+                        result[doc_id] = {"error": "Document store table missing."}
+                    else:
+                        result[doc_id] = {"error": f"Document store update failed: {msg}"}
+                    has_error = True
+                    continue
+                if not ok:
+                    result[doc_id] = {"error": "Database error (docStore update)!"}
+                    has_error = True
+                    continue
+            result[doc_id] = {"status": status}
+        except Exception as e:
+            result[doc_id] = {"error": f"Internal server error: {str(e)}"}
+            has_error = True
+
+    if has_error:
+        return get_json_result(data=result, message="Partial failure", code=RetCode.SERVER_ERROR)
+    return get_json_result(data=result)
