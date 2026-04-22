@@ -16,11 +16,10 @@
 import json
 import logging
 
+from common.model_provider_manager import get_model_provider_manager
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
-from api.db.services.llm_service import LLMService
-from api.utils.api_utils import get_allowed_llm_factories
 
 
 def list_providers(tenant_id: str, available: bool = False):
@@ -33,24 +32,22 @@ def list_providers(tenant_id: str, available: bool = False):
     :return: (success, result)
     """
     try:
+        pm = get_model_provider_manager()
         if available:
-            factories = get_allowed_llm_factories()
-            result = []
-            for f in factories:
-                d = f.to_dict()
-                d.pop("url_suffix", None)
-                d.pop("tags", None)
-                result.append(d)
-            return True, result
+            providers = pm.list_providers()
+            # Remove url_suffix and tags as Go handler does
+            for p in providers:
+                p.pop("url_suffix", None)
+                p.pop("tags", None)
+            return True, providers
 
+        # List tenant's own providers
         provider_names = TenantModelProviderService.list_provider_names_by_tenant_id(tenant_id)
-        factories = get_allowed_llm_factories()
-        factory_map = {f.name: f.to_dict() for f in factories}
-
         result = []
         for name in provider_names:
-            if name in factory_map:
-                result.append(factory_map[name])
+            provider_info = pm.get_provider_by_name(name)
+            if provider_info is not None:
+                result.append(provider_info)
         return True, result
     except Exception as e:
         logging.exception("Failed to list providers")
@@ -66,9 +63,10 @@ def add_provider(tenant_id: str, provider_name: str):
     :return: (success, message)
     """
     try:
-        allowed = [f.name for f in get_allowed_llm_factories()]
-        if provider_name not in allowed:
-            return False, f"LLM factory {provider_name} is not allowed"
+        pm = get_model_provider_manager()
+        provider = pm.find_provider(provider_name)
+        if provider is None:
+            return False, f"Provider {provider_name} not found"
 
         existing = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
         if existing:
@@ -109,11 +107,11 @@ def show_provider(provider_name: str):
     :param provider_name: provider name
     :return: (success, result)
     """
-    factories = get_allowed_llm_factories()
-    for f in factories:
-        if f.name == provider_name:
-            return True, f.to_dict()
-    return False, f"Provider {provider_name} not found"
+    pm = get_model_provider_manager()
+    provider_info = pm.get_provider_by_name(provider_name)
+    if provider_info is None:
+        return False, f"Provider {provider_name} not found"
+    return True, provider_info
 
 
 def list_models(provider_name: str):
@@ -124,9 +122,11 @@ def list_models(provider_name: str):
     :return: (success, result)
     """
     try:
-        llms = LLMService.query(fid=provider_name)
-        result = [llm.to_dict() for llm in llms]
-        return True, result
+        pm = get_model_provider_manager()
+        models = pm.list_models(provider_name)
+        if models is None:
+            return False, f"Provider {provider_name} not found"
+        return True, models
     except Exception as e:
         logging.exception("Failed to list models")
         return False, str(e)
@@ -141,10 +141,11 @@ def show_model(provider_name: str, model_name: str):
     :return: (success, result)
     """
     try:
-        llms = LLMService.query(fid=provider_name, llm_name=model_name)
-        if not llms:
+        pm = get_model_provider_manager()
+        model = pm.get_model_by_name(provider_name, model_name)
+        if model is None:
             return False, f"Model {model_name} not found for provider {provider_name}"
-        return True, llms[0].to_dict()
+        return True, model
     except Exception as e:
         logging.exception("Failed to show model")
         return False, str(e)
@@ -304,13 +305,17 @@ def list_instance_models(tenant_id: str, provider_name: str, instance_name: str)
         disabled_models = TenantModelService.get_models_by_instance_id(instance.id)
         disabled_names = {m.model_name for m in disabled_models}
 
-        # Get all available models for this provider
-        all_models = LLMService.query(fid=provider_name)
+        # Get all available models for this provider from ProviderManager
+        pm = get_model_provider_manager()
+        all_models = pm.list_models(provider_name)
+        if all_models is None:
+            return False, f"Provider {provider_name} not found"
+
         result = []
-        for llm in all_models:
-            model_dict = llm.to_dict()
-            model_dict["status"] = "disabled" if model_dict.get("llm_name") in disabled_names else "enabled"
-            result.append(model_dict)
+        for model in all_models:
+            model_data = dict(model)
+            model_data["status"] = "disabled" if model.get("name") in disabled_names else "enabled"
+            result.append(model_data)
         return True, result
     except Exception as e:
         logging.exception("Failed to list instance models")
@@ -348,8 +353,12 @@ def update_model_status(tenant_id: str, provider_name: str, instance_name: str, 
             TenantModelService.delete_by_id(existing.id)
         else:
             # No record -> create to disable
-            llms = LLMService.query(fid=provider_name, llm_name=model_name)
-            model_type = llms[0].model_type if llms else ""
+            # Get model type from ProviderManager
+            pm = get_model_provider_manager()
+            model_schema = pm.get_model_by_name(provider_name, model_name)
+            model_types = model_schema.get("model_types", []) if model_schema else []
+            model_type = model_types[0] if model_types else ""
+
             TenantModelService.insert(
                 model_name=model_name,
                 provider_id=provider.id,
