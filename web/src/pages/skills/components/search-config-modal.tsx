@@ -127,13 +127,17 @@ export const SearchConfigModal: React.FC<SearchConfigModalProps> = ({
     updates: Partial<FieldWeight>,
   ) => {
     const currentFieldConfig = form.getValues('field_config');
-    setValue('field_config', {
-      ...currentFieldConfig,
-      [field]: {
-        ...currentFieldConfig[field],
-        ...updates,
+    setValue(
+      'field_config',
+      {
+        ...currentFieldConfig,
+        [field]: {
+          ...currentFieldConfig[field],
+          ...updates,
+        },
       },
-    }, { shouldDirty: true });
+      { shouldDirty: true },
+    );
   };
 
   const getSearchTypeLabel = (weight: number) => {
@@ -157,7 +161,9 @@ export const SearchConfigModal: React.FC<SearchConfigModalProps> = ({
               <Label htmlFor="embd_id">{t('skillSearch.embeddingModel')}</Label>
               <SelectWithSearch
                 value={formData.embd_id}
-                onChange={(value) => setValue('embd_id', value, { shouldDirty: true })}
+                onChange={(value) =>
+                  setValue('embd_id', value, { shouldDirty: true })
+                }
                 options={embeddingModelOptions}
                 placeholder={t('skillSearch.embeddingModelPlaceholder')}
               />
@@ -174,7 +180,9 @@ export const SearchConfigModal: React.FC<SearchConfigModalProps> = ({
               <Slider
                 value={[formData.vector_similarity_weight]}
                 onValueChange={([value]) =>
-                  setValue('vector_similarity_weight', value, { shouldDirty: true })
+                  setValue('vector_similarity_weight', value, {
+                    shouldDirty: true,
+                  })
                 }
                 min={0}
                 max={1}
@@ -216,7 +224,9 @@ export const SearchConfigModal: React.FC<SearchConfigModalProps> = ({
                 max={100}
                 value={formData.top_k}
                 onChange={(e) =>
-                  setValue('top_k', parseInt(e.target.value) || 10, { shouldDirty: true })
+                  setValue('top_k', parseInt(e.target.value) || 10, {
+                    shouldDirty: true,
+                  })
                 }
               />
             </div>
@@ -353,7 +363,9 @@ export const SearchConfigModal: React.FC<SearchConfigModalProps> = ({
                     }
                   />
                   <div>
-                    <p className="font-medium">{t('skillSearch.fieldContent')}</p>
+                    <p className="font-medium">
+                      {t('skillSearch.fieldContent')}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {t('skillSearch.fieldContentDesc')}
                     </p>
@@ -400,6 +412,7 @@ export const SearchConfigModal: React.FC<SearchConfigModalProps> = ({
                 {saving ? t('common.saving') : t('common.save')}
               </Button>
             </DialogFooter>
+          </div>
         </Form>
       </DialogContent>
     </Dialog>

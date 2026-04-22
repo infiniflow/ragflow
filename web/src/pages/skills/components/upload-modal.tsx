@@ -7,12 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Modal } from '@/components/ui/modal/modal';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  CheckCircle,
-  Globe,
-  Loader2,
-  XCircle,
-} from 'lucide-react';
+import { CheckCircle, FolderOpen, Globe, Loader2, XCircle } from 'lucide-react';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -179,19 +174,22 @@ const UploadModal: React.FC<UploadModalProps> = ({
   }, [uploading, gitImporting, onCancel, reset]);
 
   // Handle files change from FileUploader
-  const handleFilesChange = useCallback((newFiles: File[]) => {
-    setFiles(newFiles);
+  const handleFilesChange = useCallback(
+    (newFiles: File[]) => {
+      setFiles(newFiles);
 
-    // Auto-fill name from folder name if empty
-    if (newFiles.length > 0 && !nameValue) {
-      const firstFile = newFiles[0];
-      const path = (firstFile as any).webkitRelativePath || firstFile.name;
-      const folderName = path.split('/')[0];
-      if (folderName) {
-        setValue('name', folderName, { shouldValidate: true });
+      // Auto-fill name from folder name if empty
+      if (newFiles.length > 0 && !nameValue) {
+        const firstFile = newFiles[0];
+        const path = (firstFile as any).webkitRelativePath || firstFile.name;
+        const folderName = path.split('/')[0];
+        if (folderName) {
+          setValue('name', folderName, { shouldValidate: true });
+        }
       }
-    }
-  }, [nameValue, setValue]);
+    },
+    [nameValue, setValue],
+  );
 
   // Validate files when files change
   useEffect(() => {
@@ -268,8 +266,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
     validateFilesAsync();
   }, [files, t, nameValue, setValue]);
 
-  const isUploadDisabled =
-    validationStatus === 'invalid' || files.length === 0;
+  const isUploadDisabled = validationStatus === 'invalid' || files.length === 0;
 
   // ===== Git Import Functions =====
 
@@ -744,7 +741,9 @@ const UploadModal: React.FC<UploadModalProps> = ({
             >
               <Input
                 id="skill-version"
-                placeholder={t('skills.skillVersionPlaceholder') || 'e.g., 1.0.0'}
+                placeholder={
+                  t('skills.skillVersionPlaceholder') || 'e.g., 1.0.0'
+                }
                 disabled={uploading}
                 {...register('version', { validate: validateVersion })}
               />
@@ -770,6 +769,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
             onValueChange={handleFilesChange}
             disabled={uploading}
             multiple
+            accept={{ '*/*': [] }}
             title={t('skills.dragFilesTitle')}
             description={t('skills.dragFilesDescription')}
           />

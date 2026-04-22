@@ -107,7 +107,7 @@ export default defineConfig(({ mode }) => {
     },
   };
 
-  const proxyScheme = import.meta.env.API_PROXY_SCHEME || env.API_PROXY_SCHEME || 'python';
+  const proxyScheme = env.API_PROXY_SCHEME || 'python';
   const proxy = proxySchemes[proxyScheme] || proxySchemes.python;
 
   return {
