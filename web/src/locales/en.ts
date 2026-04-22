@@ -1520,7 +1520,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       enableMultiColumn: 'Detect multi-column layout',
       enableMultiColumnTip:
         'Detect and parse multi-column page layouts to preserve the correct reading order. Turn this on for PDFs or documents with two-column or newspaper-style layouts.',
-      removeToc: 'Remove original PageIndex',
+      removeToc: 'Remove original table of contents',
       removeTocTip:
         'Remove the table of contents included in the original PDF, so it is not parsed as regular content or chunked for retrieval.',
       autoPlay: 'Auto play audio',
