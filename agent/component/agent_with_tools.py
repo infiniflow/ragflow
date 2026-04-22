@@ -117,7 +117,11 @@ class Agent(LLM, ToolBase):
         # We wrap the callback to safely track tool usage per-invocation 
         # without mutating the shared toolcall_session later.
         def tracking_callback(*args, **kwargs):
-            _tool_call_tracker.set(True)
+            # GUARD: Only track actual tool invocations. 
+            # Ignore internal system logs like multi-turn optimization and citations.
+            if args and args[0] not in ("Multi-turn conversation optimization", "gen_citations"):
+                _tool_call_tracker.set(True)
+                
             return original_callback(*args, **kwargs)
             
         self.callback = tracking_callback
