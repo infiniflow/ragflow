@@ -322,7 +322,7 @@ class MinerUParser(RAGFlowPdfParser):
                             callback(0.40, f"[MinerU] Unzip to {output_path}...")
                         self.logger.info("[MinerU] Api completed successfully.")
                         return Path(output_path)
-            except Exception as e:
+            except requests.RequestException as e:
                 last_error = e
                 self.logger.warning(f"[MinerU] api attempt failed endpoint=/{endpoint} file_key={file_key}: {e}")
         raise RuntimeError(f"[MinerU] api failed with exception {last_error}")
