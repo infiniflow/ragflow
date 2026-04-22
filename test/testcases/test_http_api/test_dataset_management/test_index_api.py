@@ -17,7 +17,6 @@ import pytest
 from common import (
     bulk_upload_documents,
     list_documents,
-    parse_documents,
     run_index,
     trace_index,
     delete_index,
