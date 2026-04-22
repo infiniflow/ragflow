@@ -307,6 +307,13 @@ class CometAPISeq2txt(Base):
 class DeerAPISeq2txt(Base):
     _FACTORY_NAME = "DeerAPI"
 
+    def __init__(self, key, model_name="whisper-1", base_url="https://api.deerapi.com/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.deerapi.com/v1"
+        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.model_name = model_name
+
+
 class AstraflowSeq2txt(GPTSeq2txt):
     _FACTORY_NAME = "Astraflow"
 
@@ -323,12 +330,6 @@ class AstraflowCNSeq2txt(GPTSeq2txt):
         if not base_url:
             base_url = "https://api.modelverse.cn/v1"
         super().__init__(key, model_name=model_name, base_url=base_url, **kwargs)
-
-    def __init__(self, key, model_name="whisper-1", base_url="https://api.deerapi.com/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.deerapi.com/v1"
-        self.client = OpenAI(api_key=key, base_url=base_url)
-        self.model_name = model_name
 
 
 class ZhipuSeq2txt(Base):

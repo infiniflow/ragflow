@@ -30,32 +30,12 @@ import openai
 from openai import AsyncOpenAI, OpenAI
 from strenum import StrEnum
 
+from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.nlp import is_chinese, is_english
 
 
-
-class AstraflowChat(Base):
-    """Astraflow (global endpoint) – OpenAI-compatible chat provider."""
-    _FACTORY_NAME = "Astraflow"
-
-    def __init__(self, key, model_name, base_url="https://api-us-ca.umodelverse.ai/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api-us-ca.umodelverse.ai/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
-class AstraflowCNChat(Base):
-    """Astraflow (China endpoint) – OpenAI-compatible chat provider."""
-    _FACTORY_NAME = "Astraflow-CN"
-
-    def __init__(self, key, model_name, base_url="https://api.modelverse.cn/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.modelverse.cn/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-from common.misc_utils import thread_pool_exec
 class LLMErrorCode(StrEnum):
     ERROR_RATE_LIMIT = "RATE_LIMIT_EXCEEDED"
     ERROR_AUTHENTICATION = "AUTH_ERROR"
@@ -1226,6 +1206,24 @@ class AvianChat(Base):
     def __init__(self, key, model_name, base_url="https://api.avian.io/v1", **kwargs):
         if not base_url:
             base_url = "https://api.avian.io/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class AstraflowChat(Base):
+    _FACTORY_NAME = "Astraflow"
+
+    def __init__(self, key, model_name, base_url="https://api-us-ca.umodelverse.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api-us-ca.umodelverse.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class AstraflowCNChat(Base):
+    _FACTORY_NAME = "Astraflow-CN"
+
+    def __init__(self, key, model_name, base_url="https://api.modelverse.cn/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.modelverse.cn/v1"
         super().__init__(key, model_name, base_url, **kwargs)
 
 
