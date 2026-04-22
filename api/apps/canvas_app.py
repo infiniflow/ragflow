@@ -329,8 +329,8 @@ async def rerun():
     doc["chunk_num"] = 0
     doc["token_num"] = 0
     DocumentService.clear_chunk_num_when_rerun(doc["id"])
-    DocumentService.update_by_id(id, doc)
-    TaskService.filter_delete([Task.doc_id == id])
+    DocumentService.update_by_id(doc["id"], doc)
+    TaskService.filter_delete([Task.doc_id == doc["id"]])
 
     dsl = req["dsl"]
     dsl["path"] = [req["component_id"]]
