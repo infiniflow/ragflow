@@ -152,7 +152,7 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         bytes_io = None
         try:
             if not isinstance(fnm, (str, PathLike)):
-                bytes_io = BytesIO(fnm)
+                bytes_io = fnm if isinstance(fnm, BytesIO) else BytesIO(fnm)
             opener = pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(bytes_io)
             with opener as pdf:
                 pages = pdf.pages[page_from:page_to]
