@@ -18,8 +18,6 @@ const {
   kbList,
   getDocumentList,
   documentChangeStatus,
-  documentRm,
-  documentDelete,
   documentCreate,
   documentChangeParser,
   documentThumbnails,
@@ -43,7 +41,6 @@ const {
   fetchPipelineDatasetLogs,
   checkEmbedding,
   kbUpdateMetaData,
-  documentUpdateMetaData,
 } = api;
 
 const methods = {
@@ -70,10 +67,6 @@ const methods = {
   },
   documentChangeStatus: {
     url: documentChangeStatus,
-    method: 'post',
-  },
-  documentRm: {
-    url: documentRm,
     method: 'post',
   },
   documentCreate: {
@@ -137,10 +130,6 @@ const methods = {
     url: knowledgeGraph,
     method: 'get',
   },
-  documentDelete: {
-    url: documentDelete,
-    method: 'delete',
-  },
   listTagByKnowledgeIds: {
     url: listTagByKnowledgeIds,
     method: 'get',
@@ -187,14 +176,6 @@ const methods = {
     url: kbUpdateMetaData,
     method: 'post',
   },
-  documentUpdateMetaData: {
-    url: documentUpdateMetaData,
-    method: 'post',
-  },
-  // getMetaData: {
-  //   url: getMetaData,
-  //   method: 'get',
-  // },
 };
 
 const kbService = registerServer<keyof typeof methods>(methods, request);
@@ -276,6 +257,9 @@ export const renameDocument = (
   data: { name?: string },
 ) => request.patch(api.documentRename(datasetId, documentId), { data });
 
+export const deleteDocument = (datasetId: string, documentIds: string[]) =>
+  request.delete(api.documentDelete(datasetId), { data: { ids: documentIds } });
+
 export const getMetaDataService = ({
   kb_id,
   doc_ids,
@@ -295,6 +279,19 @@ export const updateMetaData = ({
   doc_ids?: string[];
   data: any;
 }) => request.post(api.updateMetaData, { data: { kb_id, doc_ids, ...data } });
+
+export const updateDocumentMetaDataConfig = ({
+  kb_id,
+  doc_id,
+  data,
+}: {
+  kb_id: string;
+  doc_id: string;
+  data: any;
+}) =>
+  request.put(api.documentUpdateMetaDataConfig(kb_id, doc_id), {
+    data: { ...data },
+  });
 
 export const listDataPipelineLogDocument = (
   params?: IFetchKnowledgeListRequestParams,

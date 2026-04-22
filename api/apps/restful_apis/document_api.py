@@ -27,14 +27,17 @@ from api.constants import IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService
+from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.common.check_team_permission import check_kb_team_permission
 from api.utils.api_utils import get_data_error_result, get_error_data_result, get_result, get_json_result, \
-    server_error_response, add_tenant_id_to_kwargs, get_request_json
+    server_error_response, add_tenant_id_to_kwargs, get_request_json, get_error_argument_result, check_duplicate_ids
 from api.utils.validation_utils import (
-    UpdateDocumentReq, format_validation_error_message,
+    UpdateDocumentReq, format_validation_error_message, validate_and_parse_json_request, DeleteDocumentReq,
 )
 from common.constants import RetCode
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
+from common.misc_utils import thread_pool_exec
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PATCH"]) # noqa: F821
 @login_required
@@ -260,18 +263,16 @@ async def upload_document(dataset_id, tenant_id):
                     description: Processing status.
     """
     from api.constants import FILE_NAME_LEN_LIMIT
-    from api.common.check_team_permission import check_kb_team_permission
     from api.db.services.file_service import FileService
-    from common.misc_utils import thread_pool_exec
-    
+
     form = await request.form
     files = await request.files
-    
+
     # Validation
     if "file" not in files:
         logging.error("No file part!")
         return get_error_data_result(message="No file part!", code=RetCode.ARGUMENT_ERROR)
-    
+
     file_objs = files.getlist("file")
     for file_obj in file_objs:
         if file_obj is None or file_obj.filename is None or file_obj.filename == "":
@@ -287,7 +288,7 @@ async def upload_document(dataset_id, tenant_id):
     if not e:
         logging.error(f"Can't find the dataset with ID {dataset_id}!")
         return get_error_data_result(message=f"Can't find the dataset with ID {dataset_id}!", code=RetCode.DATA_ERROR)
-    
+
     # Permission Check
     if not check_kb_team_permission(kb, tenant_id):
         logging.error("No authorization.")
@@ -307,7 +308,7 @@ async def upload_document(dataset_id, tenant_id):
         msg = "There seems to be an issue with your file format. please verify it is correct and not corrupted."
         logging.error(msg)
         return get_error_data_result(message=msg, code=RetCode.DATA_ERROR)
-    
+
     files = [f[0] for f in files]  # remove the blob
 
     # Check if we should return raw files without document key mapping
@@ -579,7 +580,7 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
         - The metadata_condition uses operators like: =, !=, >, <, >=, <=, contains, not contains,
           in, not in, start with, end with, empty, not empty.
         - The metadata parameter performs exact matching where values are OR'd within the same key
-          and AND'd across different keys.
+          & AND'd across different keys.
 
     Examples:
         Simple metadata filter (exact match):
@@ -674,6 +675,91 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
     return RetCode.SUCCESS, "", list(doc_ids_filter) if doc_ids_filter is not None else [], return_empty_metadata
 
 
+@manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def delete_documents(tenant_id, dataset_id):
+    """
+    Delete documents from a dataset.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset containing the documents.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: body
+        name: body
+        description: Document deletion parameters.
+        required: true
+        schema:
+          type: object
+          properties:
+            ids:
+              type: array or null
+              items:
+                type: string
+              description: |
+                Specifies the documents to delete:
+                - An array of IDs, only the specified documents will be deleted.
+            delete_all:
+              type: boolean
+              default: false
+              description: Whether to delete all documents in the dataset.
+    responses:
+      200:
+        description: Successful operation.
+        schema:
+          type: object
+    """
+    req, err = await validate_and_parse_json_request(request, DeleteDocumentReq)
+    if err is not None or req is None:
+        return get_error_argument_result(err)
+
+    try:
+        # Validate dataset exists and user has permission
+        if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+            return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+
+        # Get documents to delete
+        doc_ids = req.get("ids") or []
+        delete_all = req.get("delete_all", False)
+        if not delete_all and len(doc_ids) == 0:
+            return get_error_data_result(message=f"should either provide doc ids or set delete_all(true), dataset: {dataset_id}. ")
+
+        if len(doc_ids) > 0 and delete_all:
+            return get_error_data_result(message=f"should not provide both doc ids and delete_all(true), dataset: {dataset_id}. ")
+        if delete_all:
+            doc_ids = [doc.id for doc in DocumentService.query(kb_id=dataset_id)]
+
+        # make sure each id is unique
+        unique_doc_ids, duplicate_messages = check_duplicate_ids(doc_ids, "document")
+        if duplicate_messages:
+            logging.warning(f"duplicate_messages:{duplicate_messages}")
+        else:
+            doc_ids = unique_doc_ids
+
+        # Delete documents using existing FileService.delete_docs
+        errors = await thread_pool_exec(FileService.delete_docs, doc_ids, tenant_id)
+
+        if errors:
+            return get_error_data_result(message=str(errors))
+
+        return get_result(data={"deleted": len(doc_ids)})
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 def _aggregate_filters(docs):
     """Aggregate filter options from a list of documents.
 
@@ -731,3 +817,77 @@ def _aggregate_filters(docs):
         "run_status": run_status_counter,
         "metadata": metadata_counter,
     }
+
+@manager.route("/datasets/<dataset_id>/documents/<document_id>/metadata/config", methods=["PUT"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def update_metadata_config(tenant_id, dataset_id, document_id):
+    """
+    Update document metadata configuration.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: path
+        name: document_id
+        type: string
+        required: true
+        description: ID of the document.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: body
+        name: body
+        description: Metadata configuration.
+        required: true
+        schema:
+          type: object
+          properties:
+            metadata:
+              type: object
+              description: Metadata configuration JSON.
+    responses:
+      200:
+        description: Document updated successfully.
+    """
+    # Verify ownership and existence of dataset
+    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+        return get_error_data_result(message="You don't own the dataset.")
+
+    # Verify document exists in the dataset
+    doc = DocumentService.query(id=document_id, kb_id=dataset_id)
+    if not doc:
+        msg = f"Document {document_id} not found in dataset {dataset_id}"
+        return get_error_data_result(message=msg)
+    doc = doc[0]
+
+    # Get request body
+    req = await get_request_json()
+    if "metadata" not in req:
+        return get_error_argument_result(message="metadata is required")
+
+    # Update parser config with metadata
+    try:
+        DocumentService.update_parser_config(doc.id, {"metadata": req["metadata"]})
+    except Exception as e:
+        logging.error("error when update_parser_config", exc_info=e)
+        return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
+
+    # Get updated document
+    try:
+        e, doc = DocumentService.get_by_id(doc.id)
+        if not e:
+            return get_data_error_result(message="Document not found!")
+    except Exception as e:
+        return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
+
+    return get_result(data=doc.to_dict())
