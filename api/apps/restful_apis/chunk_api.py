@@ -125,9 +125,9 @@ async def list_chunks(tenant_id, dataset_id, document_id):
         chunk = settings.docStoreConn.get(req.get("id"), search.index_name(tenant_id), [dataset_id])
         if not chunk:
             return get_result(message=f"Chunk not found: {dataset_id}/{req.get('id')}", code=RetCode.NOT_FOUND)
+        if str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
+            return get_result(message=f"Chunk not found: {dataset_id}/{req.get('id')}", code=RetCode.NOT_FOUND)
         _strip_chunk_runtime_fields(chunk)
-        if not chunk:
-            return get_error_data_result(f"Chunk `{req.get('id')}` not found.")
         res["total"] = 1
         final_chunk = {
             "id": chunk.get("id", chunk.get("chunk_id")),
@@ -289,9 +289,9 @@ async def add_chunk(tenant_id, dataset_id, document_id):
 async def rm_chunk(tenant_id, dataset_id, document_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
-    docs = DocumentService.get_by_ids([document_id])
+    docs = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not docs:
-        raise LookupError(f"Can't find the document with ID {document_id}!")
+        return get_error_data_result(message=f"You don't own the document {document_id}.")
     req = await get_request_json()
     if not req:
         return get_result()
@@ -331,15 +331,15 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
-    chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), [dataset_id])
-    if chunk is None:
-        return get_error_data_result(f"Can't find this chunk {chunk_id}")
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
         return get_error_data_result(message=f"You don't own the document {document_id}.")
     doc = doc[0]
+    chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), [dataset_id])
+    if chunk is None or str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
+        return get_error_data_result(f"Can't find this chunk {chunk_id}")
     req = await get_request_json()
     content = req.get("content")
     if content is not None:

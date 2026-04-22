@@ -15,6 +15,7 @@
 #
 
 import asyncio
+import inspect
 import importlib.util
 import json
 import sys
@@ -138,6 +139,9 @@ class _DummyDocStore:
     def insert(self, docs, *_args, **_kwargs):
         self.inserted.extend(docs)
 
+    def index_exist(self, *_args, **_kwargs):
+        return True
+
 
 class _DummyStorage:
     def __init__(self):
@@ -177,6 +181,10 @@ class _DummyXXHash:
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+def _route_core(func):
+    return inspect.unwrap(func)
 
 
 def _load_chunk_module(monkeypatch):
@@ -520,13 +528,13 @@ def test_restful_chunk_list_get_and_delete_unit(monkeypatch):
     module = _load_chunk_api_module(monkeypatch)
     module.request = SimpleNamespace(args={"keywords": "chunk", "available": "true"}, headers={})
 
-    res = _run(module.list_chunks("tenant-1", "kb-1", "doc-1"))
+    res = _run(_route_core(module.list_chunks)("tenant-1", "kb-1", "doc-1"))
     assert res["code"] == 0, res
     assert res["data"]["total"] == 1, res
     assert res["data"]["chunks"][0]["id"] == "chunk-1", res
     assert res["data"]["chunks"][0]["available"] is True, res
 
-    res = _run(module.get_chunk("tenant-1", "kb-1", "doc-1", "chunk-1"))
+    res = _run(_route_core(module.get_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
     assert res["code"] == 0, res
     assert "q_2_vec" not in res["data"], res
     assert "content_tks" not in res["data"], res
@@ -534,7 +542,7 @@ def test_restful_chunk_list_get_and_delete_unit(monkeypatch):
     assert "content_sm_ltks" not in res["data"], res
 
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"chunk_ids": ["chunk-1"]}))
-    res = _run(module.rm_chunk("tenant-1", "kb-1", "doc-1"))
+    res = _run(_route_core(module.rm_chunk)("tenant-1", "kb-1", "doc-1"))
     assert res["code"] == 0, res
     assert module.settings.docStoreConn.deleted_inputs[-1]["doc_id"] == "doc-1"
 
@@ -557,7 +565,7 @@ def test_restful_chunk_add_update_and_switch_unit(monkeypatch):
             }
         ),
     )
-    res = _run(module.add_chunk("tenant-1", "kb-1", "doc-1"))
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
     assert res["code"] == 0, res
     assert res["data"]["chunk"]["content"] == "chunk", res
     assert module.settings.docStoreConn.inserted, "insert should be called"
@@ -577,7 +585,7 @@ def test_restful_chunk_add_update_and_switch_unit(monkeypatch):
             }
         ),
     )
-    res = _run(module.update_chunk("tenant-1", "kb-1", "doc-1", "chunk-1"))
+    res = _run(_route_core(module.update_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
     assert res["code"] == 0, res
     updated = module.settings.docStoreConn.updated[-1][1]
     assert updated["content_with_weight"] == "updated chunk"
@@ -585,7 +593,7 @@ def test_restful_chunk_add_update_and_switch_unit(monkeypatch):
     assert updated["position_int"] == [[1, 2, 3, 4, 5]]
 
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"chunk_ids": ["chunk-1"], "available": True}))
-    res = _run(module.switch_chunks("tenant-1", "kb-1", "doc-1"))
+    res = _run(_route_core(module.switch_chunks)("tenant-1", "kb-1", "doc-1"))
     assert res["code"] == 0, res
     assert res["data"] is True, res
 
@@ -596,35 +604,50 @@ def test_restful_chunk_guard_branches_unit(monkeypatch):
     module.request = SimpleNamespace(args={}, headers={})
 
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
-    res = _run(module.list_chunks("tenant-1", "kb-1", "doc-1"))
+    res = _run(_route_core(module.list_chunks)("tenant-1", "kb-1", "doc-1"))
     assert res["message"] == "You don't own the dataset kb-1.", res
 
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
     monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
-    res = _run(module.list_chunks("tenant-1", "kb-1", "doc-1"))
+    res = _run(_route_core(module.list_chunks)("tenant-1", "kb-1", "doc-1"))
     assert res["message"] == "You don't own the document doc-1.", res
 
-    module.settings.docStoreConn.chunk = None
     monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc()])
-    res = _run(module.get_chunk("tenant-1", "kb-1", "doc-1", "chunk-1"))
+    module.request = SimpleNamespace(args={"id": "chunk-1"}, headers={})
+    module.settings.docStoreConn.chunk = None
+    res = _run(_route_core(module.list_chunks)("tenant-1", "kb-1", "doc-1"))
+    assert "Chunk not found" in res["message"], res
+
+    module.settings.docStoreConn.chunk = {
+        "id": "chunk-1",
+        "doc_id": "other-doc",
+        "content_with_weight": "chunk",
+        "docnm_kwd": "Doc",
+    }
+    res = _run(_route_core(module.list_chunks)("tenant-1", "kb-1", "doc-1"))
+    assert "Chunk not found" in res["message"], res
+
+    module.settings.docStoreConn.chunk = None
+    module.request = SimpleNamespace(args={}, headers={})
+    res = _run(_route_core(module.get_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
     assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
     assert "Chunk not found" in res["message"], res
 
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"content": ""}))
-    res = _run(module.add_chunk("tenant-1", "kb-1", "doc-1"))
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
     assert res["message"] == "`content` is required", res
 
     module.settings.docStoreConn.chunk = {"id": "chunk-1", "doc_id": "doc-1", "content_with_weight": "chunk"}
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"important_keywords": "bad"}))
-    res = _run(module.update_chunk("tenant-1", "kb-1", "doc-1", "chunk-1"))
+    res = _run(_route_core(module.update_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
     assert res["message"] == "`important_keywords` should be a list", res
 
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"chunk_ids": []}))
-    res = _run(module.switch_chunks("tenant-1", "kb-1", "doc-1"))
+    res = _run(_route_core(module.switch_chunks)("tenant-1", "kb-1", "doc-1"))
     assert res["message"] == "`chunk_ids` is required.", res
 
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"chunk_ids": ["chunk-1"]}))
-    res = _run(module.switch_chunks("tenant-1", "kb-1", "doc-1"))
+    res = _run(_route_core(module.switch_chunks)("tenant-1", "kb-1", "doc-1"))
     assert res["message"] == "`available_int` or `available` is required.", res
 
 

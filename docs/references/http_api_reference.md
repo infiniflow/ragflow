@@ -569,7 +569,7 @@ curl --request POST \
     - `"parent_child"`: `object` Parent-child chunking settings. When enabled, each chunk is further split into smaller child chunks using `children_delimiter`. At retrieval time, matched child chunks are replaced by their parent's full text before being passed to the LLM, giving precise vector matching with broader context.
       - `"use_parent_child"`: `bool` Whether to enable parent-child chunking. Defaults to `false`.
       - `"children_delimiter"`: `string` The delimiter used to split a parent chunk into child chunks. Only takes effect when `"use_parent_child"` is `true`. Defaults to `"\n"`.
-  - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
+  - If `"chunk_method"` is `"qa"`, `"manual"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
     - `"raptor"`: `object` RAPTOR-specific settings.
       - Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
@@ -826,7 +826,7 @@ curl --request PUT \
     - `"parent_child"`: `object` Parent-child chunking settings. When enabled, each chunk is further split into smaller child chunks using `children_delimiter`. At retrieval time, matched child chunks are replaced by their parent's full text before being passed to the LLM, giving precise vector matching with broader context.
       - `"use_parent_child"`: `bool` Whether to enable parent-child chunking. Defaults to `false`.
       - `"children_delimiter"`: `string` The delimiter used to split a parent chunk into child chunks. Only takes effect when `"use_parent_child"` is `true`. Defaults to `"\n"`.
-  - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
+  - If `"chunk_method"` is `"qa"`, `"manual"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
     - `"raptor"`: `object` RAPTOR-specific settings.
       - Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
@@ -1510,7 +1510,7 @@ curl --request PUT \
     - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
     - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
-  - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
+  - If `"chunk_method"` is `"qa"`, `"manual"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
     - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
 - `"enabled"`: (*Body parameter*), `integer`
@@ -2595,7 +2595,7 @@ Batch update or delete document-level metadata within a specified dataset. If bo
   - `"key"`: `string` The name of the key to update.
   - `"match"`: `string` *optional* The current value of the key to update. When omitted, the corresponding keys are updated to `"value"` regardless of their current values.
   - `"value"`: `string` The new value to set for the specified keys.
-- `"deletes`: (*Body parameter*), `list[ojbect]`, *optional*
+- `"deletes"`: (*Body parameter*), `list[object]`, *optional*
   Deletes metadata of the retrieved documents. Each object: `{ "key": string, "value": string }`.
   - `"key"`: `string` The name of the key to delete.
   - `"value"`: `string` *Optional* The value of the key to delete.
