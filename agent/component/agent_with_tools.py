@@ -233,20 +233,29 @@ class Agent(LLM, ToolBase):
         self._append_system_prompt(msg, safety_prompt)
         ans = await self._generate_async(msg)
         # --- LAYER 2: THE NATIVE TRAPDOOR ---
-        # We assume tools failed until proven otherwise
         tools_succeeded = False 
         
-        # We loop through the tools using RAGFlow's exact native structure
         for tool_obj in self.tools.values():
             if hasattr(tool_obj, "_param") and hasattr(tool_obj._param, "outputs"):
-                # If a tool recorded any outputs (like data or error logs), it ran
-                if tool_obj._param.outputs: 
+                outputs = tool_obj._param.outputs
+                # Check if outputs exist AND it's not just a failed execution log
+                if isinstance(outputs, dict):
+                    if outputs and "_ERROR" not in outputs:
+                        tools_succeeded = True
+                        break
+                elif isinstance(outputs, list):
+                    if len(outputs) > 0:
+                        tools_succeeded = True
+                        break
+                elif outputs: # Fallback for truthy non-dict/list outputs
                     tools_succeeded = True
                     break
 
-        # If the tools never produced any outputs, but the AI tried to answer anyway, intercept it.
-        if not tools_succeeded and "ACTION_NOT_PERFORMED" not in ans:
+        if not tools_succeeded:
+            logging.info("Trapdoor triggered: Overriding LLM hallucination due to empty/failed tool outputs.")
             ans = "ACTION_NOT_PERFORMED"
+            self.set_output("content", ans)
+            return ans # Short-circuit here to prevent JSON schema parsing errors below
 
         if ans.find("**ERROR**") >= 0:
             logging.error(f"Agent._chat got error. response: {ans}")
