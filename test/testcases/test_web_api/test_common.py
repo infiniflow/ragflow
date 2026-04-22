@@ -382,8 +382,10 @@ def list_documents(auth, params=None, payload=None, *, headers=HEADERS, data=Non
     return res.json()
 
 
-def delete_document(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/rm", headers=headers, auth=auth, json=payload, data=data)
+def delete_document(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
+    # New API: DELETE /api/v1/datasets/<dataset_id>/documents
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents"
+    res = requests.delete(url=url, headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
