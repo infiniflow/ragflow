@@ -116,22 +116,21 @@ class Agent(LLM, ToolBase):
         
         # We wrap the callback to safely track tool usage per-invocation
         def tracking_callback(*args, **kwargs):
-            # GUARD: Only track actual tool invocations.
-            # Ignore internal system logs like multi-turn optimization and citations.
             if args and args[0] not in ("Multi-turn conversation optimization", "gen_citations"):
                 _tool_call_tracker.set(True)
                 
-                # --- NEW CODE: The MCP Fix ---
-                # Track MCP and standard tool success directly from the callback payload
                 output = args[2] if len(args) > 2 else kwargs.get("output", None)
                 if output is not None:
-                    if isinstance(output, dict) and output and "_ERROR" not in output:
+                    if isinstance(output, dict) and "_ERROR" not in output:
                         _tool_success_tracker.set(True)
                     elif isinstance(output, list) and len(output) > 0:
                         _tool_success_tracker.set(True)
-                    elif output and not isinstance(output, (dict, list)) and "**ERROR**" not in str(output):
-                        _tool_success_tracker.set(True)
-                        
+                    elif output and not isinstance(output, (dict, list)):
+                        out_str = str(output)
+                        # CodeRabbit Fix: Do not mark plain exception text as success
+                        if "**ERROR**" not in out_str and "Unmatched input parameters" not in out_str:
+                            _tool_success_tracker.set(True)
+                            
             return original_callback(*args, **kwargs)
             
         self.callback = tracking_callback
@@ -416,6 +415,7 @@ class Agent(LLM, ToolBase):
             # CodeRabbit noted the citation loop needs the same protection
             if _tool_call_tracker.get() and not self._check_tools_succeeded():
                 if not trapdoor_fired:
+                    logging.info("Trapdoor triggered during citations stream: Empty tool outputs.")
                     yield "ACTION_NOT_PERFORMED"
                     cited_answer = "ACTION_NOT_PERFORMED"
                     self.set_output("content", cited_answer)
@@ -427,6 +427,7 @@ class Agent(LLM, ToolBase):
 
         # Zero-Delta Catch for citations
         if not trapdoor_fired and _tool_call_tracker.get() and not self._check_tools_succeeded():
+            logging.info("Trapdoor triggered after citations stream (zero-delta): Empty tool outputs.")
             yield "ACTION_NOT_PERFORMED"
             cited_answer = "ACTION_NOT_PERFORMED"
             self.set_output("content", cited_answer)
