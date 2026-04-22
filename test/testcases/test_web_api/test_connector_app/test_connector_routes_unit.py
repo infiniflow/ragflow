@@ -363,7 +363,7 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
         "get_request_json",
         lambda: _AwaitableValue({"id": "conn-1", "refresh_freq": 7, "config": {"x": 1}}),
     )
-    res = _run(module.set_connector())
+    res = _run(module.update_connector("conn-1"))
     assert update_calls == [("conn-1", {"refresh_freq": 7, "config": {"x": 1}})]
     assert res["data"]["id"] == "conn-1"
 
@@ -372,7 +372,7 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
         "get_request_json",
         lambda: _AwaitableValue({"name": "new", "source": "gmail", "config": {"y": 2}}),
     )
-    res = _run(module.set_connector())
+    res = _run(module.create_connector())
     assert save_calls[-1]["id"] == "generated-id"
     assert save_calls[-1]["tenant_id"] == "tenant-1"
     assert save_calls[-1]["input_type"] == module.InputType.POLL
