@@ -18,6 +18,7 @@ import base64
 import hashlib
 import hmac
 import importlib.util
+import inspect
 import json
 import sys
 from pathlib import Path
