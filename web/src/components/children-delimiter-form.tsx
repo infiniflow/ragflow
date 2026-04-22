@@ -18,7 +18,10 @@ interface IProps {
 }
 
 export const DelimiterInput = forwardRef<HTMLInputElement, InputProps & IProps>(
-  ({ value, onChange, maxLength, defaultValue, ...props }, ref) => {
+  function DelimiterInput(
+    { value, onChange, maxLength, defaultValue, ...props },
+    ref,
+  ) {
     const nextValue = value
       ?.replaceAll('\n', '\\n')
       .replaceAll('\t', '\\t')

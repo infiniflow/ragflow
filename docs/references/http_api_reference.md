@@ -3470,13 +3470,13 @@ Failure:
 
 ### Update chat assistant's session
 
-**PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}`
+**PATCH** `/api/v1/chats/{chat_id}/sessions/{session_id}`
 
 Updates a session of a specified chat assistant.
 
 #### Request
 
-- Method: PUT
+- Method: PATCH
 - URL: `/api/v1/chats/{chat_id}/sessions/{session_id}`
 - Headers:
   - `'content-Type: application/json'`
@@ -3487,7 +3487,7 @@ Updates a session of a specified chat assistant.
 ##### Request example
 
 ```bash
-curl --request PUT \
+curl --request PATCH \
      --url http://{address}/api/v1/chats/{chat_id}/sessions/{session_id} \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
@@ -3895,9 +3895,13 @@ Failure:
 
 ### Converse with chat assistant
 
-**POST** `/api/v1/chats/{chat_id}/completions`
+**POST** `/api/v1/chat/completions`
 
-Asks a specified chat assistant a question to start an AI-powered conversation.
+Starts a chat completion request. The same endpoint supports three modes:
+
+- No `chat_id`: talk directly with the tenant's default chat model.
+- With `chat_id` but no `session_id`: use that chat's configuration and automatically create a new session.
+- With both `chat_id` and `session_id`: continue an existing chat session.
 
 :::tip NOTE
 
@@ -3917,88 +3921,87 @@ Asks a specified chat assistant a question to start an AI-powered conversation.
 #### Request
 
 - Method: POST
-- URL: `/api/v1/chats/{chat_id}/completions`
+- URL: `/api/v1/chat/completions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"question"`: `string`
+  - `"messages"`: `list[object]`
   - `"stream"`: `boolean`
+  - `"chat_id"`: `string` (optional)
   - `"session_id"`: `string` (optional)
-  - `"user_id`: `string` (optional)
-  - `"metadata_condition"`: `object` (optional)
+  - `"llm_id"`: `string` (optional)
 
 ##### Request example
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/chats/{chat_id}/completions \
+     --url http://{address}/api/v1/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
      {
+          "messages": [
+              {
+                  "role": "user",
+                  "content": "Who are you?"
+              }
+          ]
      }'
 ```
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/chats/{chat_id}/completions \
+     --url http://{address}/api/v1/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
      {
-          "question": "Who are you",
+          "chat_id": "{chat_id}",
           "stream": true,
           "session_id":"9fa7691cb85c11ef9c5f0242ac120005",
-          "metadata_condition": {
-            "logic": "and",
-            "conditions": [
+          "messages": [
               {
-                "name": "author",
-                "comparison_operator": "is",
-                "value": "bob"
+                  "role": "assistant",
+                  "content": "Hi! I'\''m your assistant. What can I do for you?"
+              },
+              {
+                  "role": "user",
+                  "content": "Who are you?"
               }
-            ]
-          }
+          ]
      }'
 ```
 
 ##### Request Parameters
 
-- `chat_id`: (*Path parameter*)  
-  The ID of the associated chat assistant.
-- `"question"`: (*Body Parameter*), `string`, *Required*  
-  The question to start an AI-powered conversation.
+- `"messages"`: (*Body Parameter*), `list[object]`, *Required*  
+  The conversation messages sent to the model.
 - `"stream"`: (*Body Parameter*), `boolean`  
   Indicates whether to output responses in a streaming way:
   - `true`: Enable streaming (default).
   - `false`: Disable streaming.
+- `"chat_id"`: (*Body Parameter*)  
+  Optional chat assistant ID. If omitted, the tenant's default chat model is used directly.
 - `"session_id"`: (*Body Parameter*)  
-  The ID of session. If it is not provided, a new session will be generated.
-- `"user_id"`: (*Body parameter*), `string`  
-  The optional user-defined ID. Valid *only* when no `session_id` is provided.
-- `"metadata_condition"`: (*Body parameter*), `object`  
-  Optional metadata filter conditions applied to retrieval results.  
-  - `logic`: `string`, one of `and` / `or`
-  - `conditions`: `list[object]` where each condition contains:
-    - `name`: `string` metadata key
-    - `comparison_operator`: `string` (e.g. `is`, `not is`, `contains`, `not contains`, `start with`, `end with`, `empty`, `not empty`, `>`, `<`, `≥`, `≤`)
-    - `value`: `string|number|boolean` (optional for `empty`/`not empty`)
+  Optional session ID. If `chat_id` is provided but `session_id` is omitted, a new session will be generated automatically.
+- `"llm_id"`: (*Body Parameter*), `string`  
+  Optional model override when a specific chat model should be used for this request.
 
 #### Response
 
-Success without `session_id`:
+Success without `chat_id` or `session_id`:
 
 ```json
 data:{
     "code": 0,
     "message": "",
     "data": {
-        "answer": "Hi! I'm your assistant. What can I do for you?",
+        "answer": "I am an assistant powered by the tenant's default chat model.",
         "reference": {},
         "audio_binary": null,
-        "id": null,
-        "session_id": "b01eed84b85611efa0e90242ac120005"
+        "id": "b01eed84b85611efa0e90242ac120005",
+        "session_id": ""
     }
 }
 data:{
@@ -4008,7 +4011,7 @@ data:{
 }
 ```
 
-Success with `session_id`:
+Success with `chat_id` and `session_id`:
 
 ```json
 data:{
@@ -5276,14 +5279,14 @@ Failure:
 
 ### Text-to-speech
 
-**POST** `/api/v1/chats/tts`
+**POST** `/api/v1/chat/audio/speech`
 
 Converts text to speech audio using the tenant's default TTS model, returning a streaming audio response.
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/chats/tts`
+- URL: `/api/v1/chat/audio/speech`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
@@ -5294,7 +5297,7 @@ Converts text to speech audio using the tenant's default TTS model, returning a 
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/chats/tts \
+     --url http://{address}/api/v1/chat/audio/speech \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --output audio.mp3 \
@@ -5318,14 +5321,14 @@ Failure:
 
 ### Speech-to-text
 
-**POST** `/api/v1/chats/transcriptions`
+**POST** `/api/v1/chat/audio/transcription`
 
 Transcribes an audio file using the tenant's default ASR (automatic speech recognition) model.
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/chats/transcriptions`
+- URL: `/api/v1/chat/audio/transcription`
 - Headers:
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
 - Body (multipart/form-data):
@@ -5336,7 +5339,7 @@ Transcribes an audio file using the tenant's default ASR (automatic speech recog
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/chats/transcriptions \
+     --url http://{address}/api/v1/chat/audio/transcription \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --form file=@recording.wav \
      --form stream=false
@@ -5370,14 +5373,14 @@ Failure:
 
 ### Generate mind map
 
-**POST** `/api/v1/chats/mindmap`
+**POST** `/api/v1/chat/mindmap`
 
 Generates a mind map from a question and a set of knowledge base IDs.
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/chats/mindmap`
+- URL: `/api/v1/chat/mindmap`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
@@ -5390,7 +5393,7 @@ Generates a mind map from a question and a set of knowledge base IDs.
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/chats/mindmap \
+     --url http://{address}/api/v1/chat/mindmap \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --data '{
@@ -5426,7 +5429,7 @@ Failure:
 
 ### Generate related questions
 
-**POST** `/api/v1/chats/related_questions`
+**POST** `/api/v1/chat/recommandation`
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
@@ -5441,7 +5444,7 @@ The chat model autonomously determines the number of questions to generate based
 #### Request
 
 - Method: POST
-- URL: `/api/v1/chats/related_questions`
+- URL: `/api/v1/chat/recommandation`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
@@ -5453,7 +5456,7 @@ The chat model autonomously determines the number of questions to generate based
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/chats/related_questions \
+     --url http://{address}/api/v1/chat/recommandation \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --data '{
@@ -6625,6 +6628,10 @@ curl --location 'http://{address}/api/v1/messages/search?query=%22who%20are%20yo
 - `session_id`: (*Filter parameter*), `string`, *Optional*
 
   The ID of the message's session. Defaults to `None`.
+
+- `user_id`: (*Filter parameter*), `string`, *Optional*
+
+  The user participating in the conversation with the agent. Defaults to `None`.
 
 - `similarity_threshold`: (*Filter parameter*), `float`, *Optional*
 
@@ -7937,6 +7944,65 @@ Success:
     "code": 0,
     "data": true
 }
+```
+
+Failure:
+
+```json
+{
+    "code": 109,
+    "message": "No authorization."
+}
+```
+
+---
+
+### Search completion
+
+**POST** `/api/v1/searches/{search_id}/completion`
+
+Generates an answer using the saved search app configuration and returns the result as a Server-Sent Events stream.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/searches/{search_id}/completion`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
+- Body:
+  - `"question"`: `string` *(Required)* The user question.
+  - `"kb_ids"`: `list[string]` *(Optional)* Fallback dataset IDs. Used only when the search app config does not already define `kb_ids`.
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/searches/{search_id}/completion \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
+     --data '{
+         "question": "What is retrieval-augmented generation?"
+     }'
+```
+
+##### Request parameters
+
+- `search_id`: (*Path parameter*), `string`, *Required*  
+  The ID of the search app.
+- `"question"`: (*Body parameter*), `string`, *Required*  
+  The user question.
+- `"kb_ids"`: (*Body parameter*), `list[string]`  
+  Optional fallback dataset IDs when the search app config does not define them.
+
+#### Response
+
+Success (streaming):
+
+```text
+data: {"code": 0, "message": "", "data": {"answer": "...", "reference": {...}}}
+
+data: {"code": 0, "message": "", "data": true}
 ```
 
 Failure:

@@ -146,35 +146,32 @@ class DocGenerator(Message, ABC):
                 os.remove(file_path)
 
     def _resolve_content(self, kwargs: dict) -> str:
-        content = self._param.content or ""
+        content = self._param.content or kwargs.get("content", "") or ""
         logging.info("Starting document generation, content length: %s chars", len(content))
 
-        if content and self._canvas.is_reff(content.strip()):
-            matches = re.findall(self.variable_ref_patt, content, flags=re.DOTALL)
-            for match in matches:
+        if content:
+            def _replace_variable(match_obj: re.Match[str]) -> str:
+                match = match_obj.group(1)
                 try:
                     var_value = self._canvas.get_variable_value(match)
                     if var_value is None:
-                        continue
+                        return ""
                     if isinstance(var_value, partial):
                         resolved_content = ""
                         for chunk in var_value():
                             resolved_content += chunk
-                        content = content.replace("{" + match + "}", resolved_content)
-                    else:
-                        content = content.replace("{" + match + "}", str(var_value))
+                        return resolved_content
+                    return self._stringify_message_value(var_value, fallback_to_str=True)
                 except Exception as e:
                     logging.warning("Error resolving variable %s: %s", match, str(e))
-                    content = content.replace("{" + match + "}", f"[ERROR: {str(e)}]")
+                    return f"[ERROR: {str(e)}]"
 
-        if content:
-            try:
-                content, _ = self.get_kwargs(content, kwargs)
-            except Exception as e:
-                logging.warning("Error processing content with get_kwargs: %s", str(e))
-
-        if not content:
-            content = kwargs.get("content", "")
+            content = re.sub(
+                self.variable_ref_patt,
+                _replace_variable,
+                content,
+                flags=re.DOTALL,
+            )
 
         return content
 

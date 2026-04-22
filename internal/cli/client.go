@@ -164,6 +164,8 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowProvider(cmd)
 	case "list_provider_models":
 		return c.ListModels(cmd)
+	case "list_supported_models":
+		return c.ListSupportedModels(cmd)
 	case "list_instance_models":
 		return c.ListInstanceModels(cmd)
 	case "show_model":
@@ -214,6 +216,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowProvider(cmd)
 	case "list_provider_models":
 		return c.ListModels(cmd)
+	case "list_supported_models":
+		return c.ListSupportedModels(cmd)
 	case "list_instance_models":
 		return c.ListInstanceModels(cmd)
 	case "show_model":
@@ -232,6 +236,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListProviderInstances(cmd)
 	case "show_provider_instance":
 		return c.ShowProviderInstance(cmd)
+	case "show_instance_balance":
+		return c.ShowInstanceBalance(cmd)
 	case "alter_provider_instance":
 		return c.AlterProviderInstance(cmd)
 	case "drop_provider_instance":
@@ -250,6 +256,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowCurrentModel(cmd)
 	case "set_default_model":
 		return c.SetDefaultModel(cmd)
+	case "reset_default_model":
+		return c.ResetDefaultModel(cmd)
 	case "list_user_default_models":
 		return c.ListDefaultModels(cmd)
 	// Dataset, metadata commands

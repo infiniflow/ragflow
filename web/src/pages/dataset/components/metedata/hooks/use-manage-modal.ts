@@ -4,6 +4,7 @@ import { useSelectedIds } from '@/hooks/logic-hooks/use-row-selection';
 import { DocumentApiAction } from '@/hooks/use-document-request';
 import kbService, {
   getMetaDataService,
+  updateDocumentMetaDataConfig,
   updateMetaData,
 } from '@/services/knowledge-service';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -432,10 +433,14 @@ export const useManageMetaDataModal = (
   const handleSaveSingleFileSettings = useCallback(
     async (callback: () => void) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
-      if (otherData?.documentId) {
-        const { data: res } = await kbService.documentUpdateMetaData({
+      // otherData contains: documentId
+      if (otherData?.documentId && id) {
+        const { data: res } = await updateDocumentMetaDataConfig({
+          kb_id: id,
           doc_id: otherData.documentId,
-          metadata: data,
+          data: {
+            metadata: data,
+          },
         });
         if (res.code === 0) {
           message.success(t('message.operated'));

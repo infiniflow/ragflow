@@ -1,17 +1,17 @@
 import { RunningStatus } from '@/constants/knowledge';
 
 export interface IDocumentInfo {
-  chunk_num: number;
+  // chunk_num: number;
   create_date: string;
   create_time: number;
   created_by: string;
   nickname: string;
   id: string;
-  kb_id: string;
+  dataset_id: string;
   location: string;
   name: string;
   parser_config: IParserConfig;
-  parser_id: string;
+  // parser_id: string;
   pipeline_id: string;
   pipeline_name: string;
   process_begin_at?: string;
@@ -29,6 +29,8 @@ export interface IDocumentInfo {
   update_date: string;
   update_time: number;
   meta_fields?: Record<string, any>;
+  chunk_method: string;
+  chunk_count: number;
 }
 
 export interface IParserConfig {
