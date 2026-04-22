@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import metadata_batch_update, list_documents, delete_documents, upload_documents
+from common import update_documents_metadata, list_documents, delete_documents, upload_documents
 
 
 def _create_and_upload_in_batches(auth, dataset_id, num_docs, tmp_path, batch_size=100):
@@ -47,7 +47,7 @@ class TestMetadataBatchUpdate:
 
         # Update metadata via batch update API
         updates = [{"key": "author", "value": "new_author"}, {"key": "status", "value": "processed"}]
-        res = metadata_batch_update(HttpApiAuth, dataset_id, {"selector": {"document_ids": document_ids}, "updates": updates})
+        res = update_documents_metadata(HttpApiAuth, dataset_id, {"selector": {"document_ids": document_ids}, "updates": updates})
 
         # Verify the API call succeeded
         assert res["code"] == 0, f"Expected code 0, got {res.get('code')}: {res.get('message')}"

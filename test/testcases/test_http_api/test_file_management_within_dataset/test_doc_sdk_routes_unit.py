@@ -389,32 +389,35 @@ class TestDocRoutesUnit:
         assert res["filename"] == "doc.txt"
 
     def test_metadata_batch_update(self, monkeypatch):
-        module = _load_doc_module(monkeypatch)
-        monkeypatch.setattr(module, "convert_conditions", lambda cond: cond)
-        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"selector": {}}))
-        res = _run(module.metadata_batch_update.__wrapped__("ds-1", "tenant-1"))
+        """Test the new unified update_metadata API (was metadata_batch_update in SDK)."""
+        from api.apps.restful_apis import document_api as document_api_module
+        from api.db.services import knowledgebase_service as kb_service_module
+
+        monkeypatch.setattr(document_api_module, "convert_conditions", lambda cond: cond)
+        monkeypatch.setattr(kb_service_module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
+        monkeypatch.setattr(document_api_module, "get_request_json", lambda: _AwaitableValue({"selector": {}}))
+        res = _run(document_api_module.update_metadata.__wrapped__("ds-1"))
         assert "don't own the dataset" in res["message"]
 
-        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"selector": [1]}))
-        res = _run(module.metadata_batch_update.__wrapped__("ds-1", "tenant-1"))
+        monkeypatch.setattr(kb_service_module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
+        monkeypatch.setattr(document_api_module, "get_request_json", lambda: _AwaitableValue({"selector": [1]}))
+        res = _run(document_api_module.update_metadata.__wrapped__("ds-1"))
         assert res["message"] == "selector must be an object."
 
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"selector": {}, "updates": {"k": "v"}, "deletes": []}))
-        res = _run(module.metadata_batch_update.__wrapped__("ds-1", "tenant-1"))
+        monkeypatch.setattr(document_api_module, "get_request_json", lambda: _AwaitableValue({"selector": {}, "updates": {"k": "v"}, "deletes": []}))
+        res = _run(document_api_module.update_metadata.__wrapped__("ds-1"))
         assert res["message"] == "updates and deletes must be lists."
 
         monkeypatch.setattr(
-            module,
+            document_api_module,
             "get_request_json",
             lambda: _AwaitableValue({"selector": {"metadata_condition": [1]}, "updates": [], "deletes": []}),
         )
-        res = _run(module.metadata_batch_update.__wrapped__("ds-1", "tenant-1"))
+        res = _run(document_api_module.update_metadata.__wrapped__("ds-1"))
         assert res["message"] == "metadata_condition must be an object."
 
         monkeypatch.setattr(
-            module,
+            document_api_module,
             "get_request_json",
             lambda: _AwaitableValue({"selector": {"document_ids": "doc-1"}, "updates": [], "deletes": []}),
         )

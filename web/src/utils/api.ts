@@ -85,7 +85,8 @@ export default {
   pipelineRerun: `${webAPI}/canvas/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
-  updateMetaData: `${webAPI}/document/metadata/update`,
+  updateDocumentsMetadata: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/metadatas`,
   kbUpdateMetaData: `${webAPI}/kb/update_metadata_setting`,
   documentUpdateMetaDataConfig: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/metadata/config`,
