@@ -18,8 +18,6 @@ const {
   kbList,
   getDocumentList,
   documentChangeStatus,
-  documentRm,
-  documentDelete,
   documentCreate,
   documentChangeParser,
   documentThumbnails,
@@ -70,10 +68,6 @@ const methods = {
   },
   documentChangeStatus: {
     url: documentChangeStatus,
-    method: 'post',
-  },
-  documentRm: {
-    url: documentRm,
     method: 'post',
   },
   documentCreate: {
@@ -136,10 +130,6 @@ const methods = {
   knowledgeGraph: {
     url: knowledgeGraph,
     method: 'get',
-  },
-  documentDelete: {
-    url: documentDelete,
-    method: 'delete',
   },
   listTagByKnowledgeIds: {
     url: listTagByKnowledgeIds,
@@ -275,6 +265,9 @@ export const renameDocument = (
   documentId: string,
   data: { name?: string },
 ) => request.patch(api.documentRename(datasetId, documentId), { data });
+
+export const deleteDocument = (datasetId: string, documentIds: string[]) =>
+  request.delete(api.documentDelete(datasetId), { data: { ids: documentIds } });
 
 export const getMetaDataService = ({
   kb_id,
