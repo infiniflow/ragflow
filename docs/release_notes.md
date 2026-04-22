@@ -15,8 +15,8 @@ Released on April 21, 2026.
 
 ### New features
 
-- Ingestion pipelines: Introduces 7 built-in templates aligned with RAGFlow's document parsers.
 - Agent
+  - Introduces seven prebuilt ingestion pipeline templates.
   - Agent apps can be published.
   - Supports sandbox code execution and chart generation.
   - Adds a beginner's data analytics Agent template.
@@ -49,8 +49,7 @@ Released on April 21, 2026.
 - Seafile
 - RSS
 - DingTalk AI Table
-- GitHub: Enables synchronization for deleted files
-
+- GitHub: Enables synchronization for deleted files.
 
 ## v0.24.0
 
