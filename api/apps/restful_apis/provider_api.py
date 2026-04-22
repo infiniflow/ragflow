@@ -18,7 +18,6 @@ from quart import request
 from api.apps import login_required
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
-    get_error_argument_result,
     get_error_data_result,
     get_request_json,
     get_result,

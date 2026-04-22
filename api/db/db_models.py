@@ -749,6 +749,8 @@ class Tenant(DataBaseModel):
     tenant_rerank_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
     tts_id = CharField(max_length=256, null=True, help_text="default tts model ID", index=True)
     tenant_tts_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    ocr_id = CharField(max_length=256, null=True, help_text="default OCR model ID", index=True)
+    tenant_ocr_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
     parser_ids = CharField(max_length=256, null=False, help_text="document processors", index=True)
     credit = IntegerField(default=512, index=True)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
