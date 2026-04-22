@@ -85,17 +85,17 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `model` (*Body parameter*) `string`, *Required*  
+- `model` (*Body parameter*) `string`, *Required*
   The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
 
-- `messages` (*Body parameter*) `list[object]`, *Required*  
+- `messages` (*Body parameter*) `list[object]`, *Required*
   A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
 
-- `stream` (*Body parameter*) `boolean`  
+- `stream` (*Body parameter*) `boolean`
   Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
 
-- `extra_body` (*Body parameter*) `object`  
-  Extra request parameters:  
+- `extra_body` (*Body parameter*) `object`
+  Extra request parameters:
   - `reference`: `boolean` - include reference in the final chunk (stream) or in the final message (non-stream).
   - `reference_metadata`: `object` - include document metadata in each reference chunk.
     - `include`: `boolean` - enable document metadata in reference chunks.
@@ -218,16 +218,16 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `model` (*Body parameter*) `string`, *Required*  
+- `model` (*Body parameter*) `string`, *Required*
   The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
 
-- `messages` (*Body parameter*) `list[object]`, *Required*  
+- `messages` (*Body parameter*) `list[object]`, *Required*
   A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
 
-- `stream` (*Body parameter*) `boolean`  
+- `stream` (*Body parameter*) `boolean`
   Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
 
-- `session_id` (*Body parameter*) `string`  
+- `session_id` (*Body parameter*) `string`
   Agent session id.
 
 #### Response
@@ -493,33 +493,33 @@ curl --request POST \
 
 ##### Request parameters
 
-- `"name"`: (*Body parameter*), `string`, *Required*  
-  The unique name of the dataset to create. It must adhere to the following requirements:  
+- `"name"`: (*Body parameter*), `string`, *Required*
+  The unique name of the dataset to create. It must adhere to the following requirements:
   - Basic Multilingual Plane (BMP) only
   - Maximum 128 characters
   - Case-insensitive
 
-- `"avatar"`: (*Body parameter*), `string`  
+- `"avatar"`: (*Body parameter*), `string`
   Base64 encoding of the avatar.
   - Maximum 65535 characters
 
-- `"description"`: (*Body parameter*), `string`  
+- `"description"`: (*Body parameter*), `string`
   A brief description of the dataset to create.
   - Maximum 65535 characters
 
-- `"embedding_model"`: (*Body parameter*), `string`  
+- `"embedding_model"`: (*Body parameter*), `string`
   The name of the embedding model to use. For example: `"BAAI/bge-large-zh-v1.5@BAAI"`
   - Maximum 255 characters
   - Must follow `model_name@model_factory` format
 
-- `"permission"`: (*Body parameter*), `string`  
-  Specifies who can access the dataset to create. Available options:  
+- `"permission"`: (*Body parameter*), `string`
+  Specifies who can access the dataset to create. Available options:
   - `"me"`: (Default) Only you can manage the dataset.
   - `"team"`: All team members can manage the dataset.
 
-- `"chunk_method"`: (*Body parameter*), `enum<string>`  
-  The default chunk method of the dataset to create. Mutually exclusive with `"parse_type"` and `"pipeline_id"`. If you set `"chunk_method"`, do not include `"parse_type"` or `"pipeline_id"`.  
-  Available options:  
+- `"chunk_method"`: (*Body parameter*), `enum<string>`
+  The default chunk method of the dataset to create. Mutually exclusive with `"parse_type"` and `"pipeline_id"`. If you set `"chunk_method"`, do not include `"parse_type"` or `"pipeline_id"`.
+  Available options:
   - `"naive"`: General (default)
   - `"book"`: Book
   - `"email"`: Email
@@ -533,8 +533,8 @@ curl --request POST \
   - `"table"`: Table
   - `"tag"`: Tag
 
-- `"parser_config"`: (*Body parameter*), `object`  
-  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
+- `"parser_config"`: (*Body parameter*), `object`
+  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
     - `"auto_keywords"`: `int`
       - Defaults to `0`
@@ -569,17 +569,17 @@ curl --request POST \
     - `"parent_child"`: `object` Parent-child chunking settings. When enabled, each chunk is further split into smaller child chunks using `children_delimiter`. At retrieval time, matched child chunks are replaced by their parent's full text before being passed to the LLM, giving precise vector matching with broader context.
       - `"use_parent_child"`: `bool` Whether to enable parent-child chunking. Defaults to `false`.
       - `"children_delimiter"`: `string` The delimiter used to split a parent chunk into child chunks. Only takes effect when `"use_parent_child"` is `true`. Defaults to `"\n"`.
-  - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:  
+  - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
     - `"raptor"`: `object` RAPTOR-specific settings.
       - Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
 
-- `"parse_type"`: (*Body parameter*), `int`  
-  The ingestion pipeline parse type identifier, i.e., the number of parsers in your **Parser** component.  
+- `"parse_type"`: (*Body parameter*), `int`
+  The ingestion pipeline parse type identifier, i.e., the number of parsers in your **Parser** component.
   - Required (along with `"pipeline_id"`) if specifying an ingestion pipeline.
   - Must not be included when `"chunk_method"` is specified.
 
-- `"pipeline_id"`: (*Body parameter*), `string`  
+- `"pipeline_id"`: (*Body parameter*), `string`
   The ingestion pipeline ID. Can be found in the corresponding URL in the RAGFlow UI.
   - Required (along with `"parse_type"`) if specifying an ingestion pipeline.
   - Must be a 32-character lowercase hexadecimal string, e.g., `"d0bebe30ae2211f0970942010a8e0005"`.
@@ -616,10 +616,10 @@ Success:
         "name": "RAGFlow example",
         "pagerank": 0,
         "parser_config": {
-            "chunk_token_num": 128, 
-            "delimiter": "\\n!?;。；！？", 
-            "html4excel": false, 
-            "layout_recognize": "DeepDOC", 
+            "chunk_token_num": 128,
+            "delimiter": "\\n!?;。；！？",
+            "html4excel": false,
+            "layout_recognize": "DeepDOC",
             "raptor": {
                 "use_raptor": false
                 }
@@ -692,7 +692,7 @@ curl --request DELETE \
   Specifies the datasets to delete:
   - If omitted, or set to `null` or an empty array, no datasets are deleted.
   - If an array of IDs is provided, only the datasets matching those IDs are deleted.
-- `"delete_all"`: (*Body parameter*), `boolean`  
+- `"delete_all"`: (*Body parameter*), `boolean`
   Whether to delete all datasets owned by the current user when`"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
@@ -701,7 +701,7 @@ Success:
 
 ```json
 {
-    "code": 0 
+    "code": 0
 }
 ```
 
@@ -755,32 +755,32 @@ curl --request PUT \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the dataset to update.
-- `"name"`: (*Body parameter*), `string`  
+- `"name"`: (*Body parameter*), `string`
   The revised name of the dataset.
   - Basic Multilingual Plane (BMP) only
   - Maximum 128 characters
   - Case-insensitive
-- `"avatar"`: (*Body parameter*), `string`  
+- `"avatar"`: (*Body parameter*), `string`
   The updated base64 encoding of the avatar.
   - Maximum 65535 characters
-- `"embedding_model"`: (*Body parameter*), `string`  
-  The updated embedding model name.  
+- `"embedding_model"`: (*Body parameter*), `string`
+  The updated embedding model name.
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
   - Maximum 255 characters
   - Must follow `model_name@model_factory` format
-- `"permission"`: (*Body parameter*), `string`  
-  The updated dataset permission. Available options:  
+- `"permission"`: (*Body parameter*), `string`
+  The updated dataset permission. Available options:
   - `"me"`: (Default) Only you can manage the dataset.
   - `"team"`: All team members can manage the dataset.
-- `"pagerank"`: (*Body parameter*), `int`  
+- `"pagerank"`: (*Body parameter*), `int`
   refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank)
   - Default: `0`
   - Minimum: `0`
   - Maximum: `100`
-- `"chunk_method"`: (*Body parameter*), `enum<string>`  
-  The chunking method for the dataset. Available options:  
+- `"chunk_method"`: (*Body parameter*), `enum<string>`
+  The chunking method for the dataset. Available options:
   - `"naive"`: General (default)
   - `"book"`: Book
   - `"email"`: Email
@@ -793,8 +793,8 @@ curl --request PUT \
   - `"qa"`: Q&A
   - `"table"`: Table
   - `"tag"`: Tag
-- `"parser_config"`: (*Body parameter*), `object`  
-  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
+- `"parser_config"`: (*Body parameter*), `object`
+  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
     - `"auto_keywords"`: `int`
       - Defaults to `0`
@@ -826,7 +826,7 @@ curl --request PUT \
     - `"parent_child"`: `object` Parent-child chunking settings. When enabled, each chunk is further split into smaller child chunks using `children_delimiter`. At retrieval time, matched child chunks are replaced by their parent's full text before being passed to the LLM, giving precise vector matching with broader context.
       - `"use_parent_child"`: `bool` Whether to enable parent-child chunking. Defaults to `false`.
       - `"children_delimiter"`: `string` The delimiter used to split a parent chunk into child chunks. Only takes effect when `"use_parent_child"` is `true`. Defaults to `"\n"`.
-  - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:  
+  - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
     - `"raptor"`: `object` RAPTOR-specific settings.
       - Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
@@ -837,7 +837,7 @@ Success:
 
 ```json
 {
-    "code": 0 
+    "code": 0
 }
 ```
 
@@ -882,21 +882,21 @@ curl --request GET \
 
 ##### Request parameters
 
-- `page`: (*Filter parameter*)  
+- `page`: (*Filter parameter*)
   Specifies the page on which the datasets will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*)  
+- `page_size`: (*Filter parameter*)
   The number of datasets on each page. Defaults to `30`.
-- `orderby`: (*Filter parameter*)  
+- `orderby`: (*Filter parameter*)
   The field by which datasets should be sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `desc`: (*Filter parameter*)  
+- `desc`: (*Filter parameter*)
   Indicates whether the retrieved datasets should be sorted in descending order. Defaults to `true`.
-- `name`: (*Filter parameter*)  
+- `name`: (*Filter parameter*)
   The name of the dataset to retrieve.
-- `id`: (*Filter parameter*)  
+- `id`: (*Filter parameter*)
   The ID of the dataset to retrieve.
-- `include_parsing_status`: (*Filter parameter*)  
+- `include_parsing_status`: (*Filter parameter*)
   Whether to include document parsing status counts in the response. Defaults to `false`. When set to `true`, each dataset object in the response will include the following additional fields:
   - `unstart_count`: Number of documents not yet started parsing.
   - `running_count`: Number of documents currently being parsed.
@@ -1027,7 +1027,7 @@ curl --request GET \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the target dataset.
 
 #### Response
@@ -1107,7 +1107,7 @@ curl --request DELETE \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the target dataset.
 
 #### Response
@@ -1155,7 +1155,7 @@ curl --request POST \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the target dataset.
 
 #### Response
@@ -1205,7 +1205,7 @@ curl --request GET \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the target dataset.
 
 #### Response
@@ -1270,7 +1270,7 @@ curl --request POST \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the target dataset.
 
 #### Response
@@ -1320,7 +1320,7 @@ curl --request GET \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the target dataset.
 
 #### Response
@@ -1396,9 +1396,9 @@ curl --request POST \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the dataset to which the documents will be uploaded.
-- `'file'`: (*Body parameter*)  
+- `'file'`: (*Body parameter*)
   A document to upload.
 
 #### Response
@@ -1473,8 +1473,8 @@ curl --request PUT \
      --header 'Content-Type: application/json' \
      --data '
      {
-          "name": "manual.txt", 
-          "chunk_method": "manual", 
+          "name": "manual.txt",
+          "chunk_method": "manual",
           "parser_config": {"chunk_token_num": 128}
      }'
 
@@ -1482,14 +1482,14 @@ curl --request PUT \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the associated dataset.
-- `document_id`: (*Path parameter*)  
+- `document_id`: (*Path parameter*)
   The ID of the document to update.
 - `"name"`: (*Body parameter*), `string`
 - `"meta_fields"`: (*Body parameter*), `dict[str, Any]` The meta fields of the document.
-- `"chunk_method"`: (*Body parameter*), `string`  
-  The parsing method to apply to the document:  
+- `"chunk_method"`: (*Body parameter*), `string`
+  The parsing method to apply to the document:
   - `"naive"`: General
   - `"manual`: Manual
   - `"qa"`: Q&A
@@ -1501,8 +1501,8 @@ curl --request PUT \
   - `"picture"`: Picture
   - `"one"`: One
   - `"email"`: Email
-- `"parser_config"`: (*Body parameter*), `object`  
-  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
+- `"parser_config"`: (*Body parameter*), `object`
+  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
     - `"chunk_token_num"`: Defaults to `256`.
     - `"layout_recognize"`: Defaults to `true`.
@@ -1513,10 +1513,10 @@ curl --request PUT \
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
     - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
-- `"enabled"`: (*Body parameter*), `integer`  
-  Whether the document should be **available** in the knowledge base.  
-  - `1` → （available）  
-  - `0` → （unavailable）  
+- `"enabled"`: (*Body parameter*), `integer`
+  Whether the document should be **available** in the knowledge base.
+  - `1` → （available）
+  - `0` → （unavailable）
 
 #### Response
 
@@ -1640,9 +1640,9 @@ curl --request GET \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `documents_id`: (*Path parameter*)  
+- `documents_id`: (*Path parameter*)
   The ID of the document to download.
 
 #### Response
@@ -1690,30 +1690,30 @@ curl --request GET \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `keywords`: (*Filter parameter*), `string`  
+- `keywords`: (*Filter parameter*), `string`
   The keywords used to match document titles.
 - `page`: (*Filter parameter*), `integer`
   Specifies the page on which the documents will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*), `integer`  
+- `page_size`: (*Filter parameter*), `integer`
   The maximum number of documents on each page. Defaults to `30`.
-- `orderby`: (*Filter parameter*), `string`  
+- `orderby`: (*Filter parameter*), `string`
   The field by which documents should be sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `desc`: (*Filter parameter*), `boolean`  
+- `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved documents should be sorted in descending order. Defaults to `true`.
-- `id`: (*Filter parameter*), `string`  
+- `id`: (*Filter parameter*), `string`
   The ID of the document to retrieve.
-- `create_time_from`: (*Filter parameter*), `integer`  
+- `create_time_from`: (*Filter parameter*), `integer`
   Unix timestamp for filtering documents created after this time. 0 means no filter. Defaults to `0`.
-- `create_time_to`: (*Filter parameter*), `integer`  
+- `create_time_to`: (*Filter parameter*), `integer`
   Unix timestamp for filtering documents created before this time. 0 means no filter. Defaults to `0`.
-- `suffix`: (*Filter parameter*), `array[string]`  
+- `suffix`: (*Filter parameter*), `array[string]`
   Filter by file suffix. Supports multiple values, e.g., `pdf`, `txt`, and `docx`. Defaults to all suffixes.
-- `run`: (*Filter parameter*), `array[string]`  
-  Filter by document processing status. Supports numeric, text, and mixed formats:  
+- `run`: (*Filter parameter*), `array[string]`
+  Filter by document processing status. Supports numeric, text, and mixed formats:
   - Numeric format: `["0", "1", "2", "3", "4"]`
   - Text format: `[UNSTART, RUNNING, CANCEL, DONE, FAIL]`
   - Mixed format: `[UNSTART, 1, DONE]` (mixing numeric and text formats)
@@ -1722,7 +1722,7 @@ curl --request GET \
     - `1` / `RUNNING`: Document is currently being processed
     - `2` / `CANCEL`: Document processing was cancelled
     - `3` / `DONE`: Document processing completed successfully
-    - `4` / `FAIL`: Document processing failed  
+    - `4` / `FAIL`: Document processing failed
   Defaults to all statuses.
 - `metadata_condition`: (*Filter parameter*), `object` (JSON in query)
   Optional metadata filter applied to documents when `document_ids` is not provided. Uses the same structure as retrieval:
@@ -1847,13 +1847,13 @@ curl --request DELETE \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `"ids"`: (*Body parameter*), `list[string]`  
+- `"ids"`: (*Body parameter*), `list[string]`
   The IDs of the documents to delete.
   - If omitted, or set to `null` or an empty array, no documents are deleted.
   - If an array of IDs is provided, only the documents matching those IDs are deleted.
-- `"delete_all"`: (*Body parameter*), `boolean`  
+- `"delete_all"`: (*Body parameter*), `boolean`
   Whether to delete all documents in the specified dataset when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
@@ -1908,9 +1908,9 @@ curl --request POST \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The dataset ID.
-- `"document_ids"`: (*Body parameter*), `list[string]`, *Required*  
+- `"document_ids"`: (*Body parameter*), `list[string]`, *Required*
   The IDs of the documents to parse.
 
 #### Response
@@ -1965,9 +1965,9 @@ curl --request DELETE \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `"document_ids"`: (*Body parameter*), `list[string]`, *Required*  
+- `"document_ids"`: (*Body parameter*), `list[string]`, *Required*
   The IDs of the documents for which the parsing should be stopped.
 
 #### Response
@@ -2006,12 +2006,13 @@ Adds a chunk to a specified document in a specified dataset.
 - Method: POST
 - URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"content"`: `string`
   - `"important_keywords"`: `list[string]`
   - `"tag_kwd"`: `list[string]`
+  - `"questions"`: `list[string]`
   - `"image_base64"`: `string`
 
 ##### Request example
@@ -2032,18 +2033,18 @@ curl --request POST \
 
 - `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `document_ids`: (*Path parameter*)
+- `document_id`: (*Path parameter*)
   The associated document ID.
 - `"content"`: (*Body parameter*), `string`, *Required*
   The text content of the chunk.
-- `"important_keywords`(*Body parameter*), `list[string]`
+- `"important_keywords"`: (*Body parameter*), `list[string]`
   The key terms or phrases to tag with the chunk.
 - `"tag_kwd"`: (*Body parameter*), `list[string]`
   Tag keywords to associate with the chunk.
-- `"questions"`(*Body parameter*), `list[string]`
-  If there is a given question, the embedded chunks will be based on them
+- `"questions"`: (*Body parameter*), `list[string]`
+  Optional questions to use when embedding the chunk.
 - `"image_base64"`: (*Body parameter*), `string`
-  A base64-encoded image to associate with the chunk. If the chunk already has an image, the new image will be vertically concatenated below the existing one.
+  A base64-encoded image to associate with the chunk.
 
 #### Response
 
@@ -2098,23 +2099,23 @@ Lists chunks in a specified document.
 ```bash
 curl --request GET \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks?keywords={keywords}&page={page}&page_size={page_size}&id={chunk_id} \
-     --header 'Authorization: Bearer <YOUR_API_KEY>' 
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `document_id`: (*Path parameter*)  
+- `document_id`: (*Path parameter*)
   The associated document ID.
-- `keywords`(*Filter parameter*), `string`  
+- `keywords`(*Filter parameter*), `string`
   The keywords used to match chunk content.
-- `page`(*Filter parameter*), `integer`  
+- `page`(*Filter parameter*), `integer`
   Specifies the page on which the chunks will be displayed. Defaults to `1`.
-- `page_size`(*Filter parameter*), `integer`  
-  The maximum number of chunks on each page. Defaults to `1024`.
-- `id`(*Filter parameter*), `string`  
-  The ID of the chunk to retrieve.
+- `page_size`(*Filter parameter*), `integer`
+  The maximum number of chunks on each page. Defaults to `30`.
+- `id`(*Filter parameter*), `string`
+  The ID of the chunk to retrieve. You can also use `GET /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` to retrieve one chunk.
 
 #### Response
 
@@ -2132,11 +2133,9 @@ Success:
                 "document_id": "b330ec2e91ec11efbc510242ac120004",
                 "id": "b48c170e90f70af998485c1065490726",
                 "image_id": "",
-                "important_keywords": "",
+                "important_keywords": [],
                 "tag_kwd": [],
-                "positions": [
-                    ""
-                ]
+                "positions": []
             }
         ],
         "doc": {
@@ -2188,6 +2187,68 @@ Failure:
 
 ---
 
+### Get chunk
+
+**GET** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}`
+
+Retrieves a specified chunk in a specified document. Runtime fields such as vector and token fields are not returned.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)
+  The associated dataset ID.
+- `document_id`: (*Path parameter*)
+  The associated document ID.
+- `chunk_id`: (*Path parameter*)
+  The ID of the chunk to retrieve.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "available_int": 1,
+        "content_with_weight": "This is a test content.",
+        "doc_id": "b330ec2e91ec11efbc510242ac120004",
+        "docnm_kwd": "1.txt",
+        "id": "b48c170e90f70af998485c1065490726",
+        "img_id": "",
+        "important_kwd": [],
+        "question_kwd": [],
+        "tag_kwd": []
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 100,
+    "message": "Chunk not found"
+}
+```
+
+---
+
 ### Delete chunks
 
 **DELETE** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
@@ -2199,7 +2260,7 @@ Deletes chunks by ID.
 - Method: DELETE
 - URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"chunk_ids"`: `list[string]`
@@ -2230,16 +2291,16 @@ curl --request DELETE \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `document_ids`: (*Path parameter*)  
+- `document_id`: (*Path parameter*)
   The associated document ID.
-- `"chunk_ids"`: (*Body parameter*), `list[string]`  
+- `"chunk_ids"`: (*Body parameter*), `list[string]`
   The IDs of the chunks to delete.
   - If omitted, or set to `null` or an empty array, no chunks are deleted.
   - If an array of IDs is provided, only the chunks matching those IDs are deleted.
-- `"delete_all"`: (*Body parameter*), `boolean`  
-  Whether to delete all chunks of the specified documen when `"chunk_ids"` is omitted, or set to`null` or an empty array. Defaults to `false`.
+- `"delete_all"`: (*Body parameter*), `boolean`
+  Whether to delete all chunks of the specified document when `"chunk_ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -2256,7 +2317,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "`chunk_ids` is required"
+    "message": "rm_chunk deleted chunks 0, expect 1"
 }
 ```
 
@@ -2264,55 +2325,64 @@ Failure:
 
 ### Update chunk
 
-**PUT** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}`
+**PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}`
 
 Updates content or configurations for a specified chunk.
 
 #### Request
 
-- Method: PUT
+- Method: PATCH
 - URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"content"`: `string`
   - `"important_keywords"`: `list[string]`
+  - `"questions"`: `list[string]`
+  - `"positions"`: `list`
   - `"tag_kwd"`: `list[string]`
   - `"available"`: `boolean`
+  - `"image_base64"`: `string`
 
 ##### Request example
 
 ```bash
-curl --request PUT \
+curl --request PATCH \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id} \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
-     {   
-          "content": "ragflow123",  
-          "important_keywords": []  
+     {
+          "content": "ragflow123",
+          "important_keywords": []
      }'
 ```
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `document_ids`: (*Path parameter*)  
+- `document_id`: (*Path parameter*)
   The associated document ID.
-- `chunk_id`: (*Path parameter*)  
+- `chunk_id`: (*Path parameter*)
   The ID of the chunk to update.
-- `"content"`: (*Body parameter*), `string`  
+- `"content"`: (*Body parameter*), `string`
   The text content of the chunk.
-- `"important_keywords"`: (*Body parameter*), `list[string]`  
+- `"important_keywords"`: (*Body parameter*), `list[string]`
   A list of key terms or phrases to tag with the chunk.
-- `"tag_kwd"`: (*Body parameter*), `list[string]`  
+- `"questions"`: (*Body parameter*), `list[string]`
+  Optional questions to use when embedding the chunk.
+- `"positions"`: (*Body parameter*), `list`
+  Updated source positions for the chunk.
+- `"tag_kwd"`: (*Body parameter*), `list[string]`
   Updated tag keywords.
-- `"available"`: (*Body parameter*) `boolean`  
-  The chunk's availability status in the dataset. Value options:  
+- `"available"`: (*Body parameter*) `boolean`
+  The chunk's availability status in the dataset. Value options:
   - `true`: Available (default)
   - `false`: Unavailable
+- `"image_base64"`: (*Body parameter*), `string`
+  Base64-encoded image content to associate with the chunk.
 
 #### Response
 
@@ -2337,14 +2407,14 @@ Failure:
 
 ### Update chunk availability
 
-**POST** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/switch`
+**PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
 
 Updates or switches the availability status of specified chunks, controlling whether they are available for retrieval.
 
 #### Request
 
-- Method: POST
-- URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/switch`
+- Method: PATCH
+- URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -2356,8 +2426,8 @@ Updates or switches the availability status of specified chunks, controlling whe
 ##### Request example
 
 ```bash
-curl --request POST \
-     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/switch \
+curl --request PATCH \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
@@ -2369,18 +2439,18 @@ curl --request POST \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the dataset.
-- `document_id`: (*Path parameter*)  
+- `document_id`: (*Path parameter*)
   The ID of the document.
-- `"chunk_ids"`: (*Body parameter*), `list[string]` (*Required*)  
+- `"chunk_ids"`: (*Body parameter*), `list[string]` (*Required*)
   IDs of the chunks whose availability status is to be updated.
-- `"available_int"`: (*Body parameter*), `integer` (*Optional*)  
-  Availability status for the specified chunks. Mutually exclusive with `"available"`. You must provide either `available_int` or `available`, *not* both.
+- `"available_int"`: (*Body parameter*), `integer` (*Optional*)
+  Availability status for the specified chunks. You must provide either `"available_int"` or `"available"`. If both are provided, `"available_int"` is used.
   - `1`: Available,
   - `0`: Unavailable.
-- `"available"`: (*Body parameter*), `boolean` (*Optional*)  
-  Availability status of the specified chunks. Mutually exclusive with `"available_int"`. You must provide either `available` or `available_int`, *not* both.  
+- `"available"`: (*Body parameter*), `boolean` (*Optional*)
+  Availability status of the specified chunks. Used when `"available_int"` is not provided.
   - `true`: Available,
   - `false`: Unavailable.
 
@@ -2399,35 +2469,35 @@ Failure:
 
 ```json
 {
-    "code": 101,
+    "code": 102,
     "message": "You don't own the dataset {dataset_id}."
 }
 ```
 
 ```json
 {
-    "code": 101,
+    "code": 102,
     "message": "`chunk_ids` is required."
 }
 ```
 
 ```json
 {
-    "code": 101,
+    "code": 102,
     "message": "`available_int` or `available` is required."
 }
 ```
 
 ```json
 {
-    "code": 101,
+    "code": 102,
     "message": "Document not found!"
 }
 ```
 
 ```json
 {
-    "code": 101,
+    "code": 102,
     "message": "Index updating failure"
 }
 ```
@@ -2491,18 +2561,18 @@ Batch update or delete document-level metadata within a specified dataset. If bo
 
 #### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `"selector"`: (*Body parameter*), `object`, *optional*  
-  A document selector:  
-  - `"document_ids"`: `list[string]` *optional*  
-    The associated document ID.  
-  - `"metadata_condition"`: `object`, *optional*  
+- `"selector"`: (*Body parameter*), `object`, *optional*
+  A document selector:
+  - `"document_ids"`: `list[string]` *optional*
+    The associated document ID.
+  - `"metadata_condition"`: `object`, *optional*
     - `"logic"`: Defines the logic relation between conditions if multiple conditions are provided. Options:
       - `"and"` (default)
       - `"or"`
-    - `"conditions"`: `list[object]` *optional*  
-      Each object: `{ "name": string, "comparison_operator": string, "value": string }`  
+    - `"conditions"`: `list[object]` *optional*
+      Each object: `{ "name": string, "comparison_operator": string, "value": string }`
       - `"name"`: `string` The key name to search by.
       - `"comparison_operator"`: `string` Available options:
         - `"is"`
@@ -2519,14 +2589,14 @@ Batch update or delete document-level metadata within a specified dataset. If bo
         - `"≤"`
         - `"empty"`
         - `"not empty"`
-      - `"value"`: `string` The key value to search by.  
-- `"updates"`: (*Body parameter*), `list[object]`, *optional*  
-  Replaces metadata of the retrieved documents. Each object: `{ "key": string, "match": string, "value": string }`.  
+      - `"value"`: `string` The key value to search by.
+- `"updates"`: (*Body parameter*), `list[object]`, *optional*
+  Replaces metadata of the retrieved documents. Each object: `{ "key": string, "match": string, "value": string }`.
   - `"key"`: `string` The name of the key to update.
   - `"match"`: `string` *optional* The current value of the key to update. When omitted, the corresponding keys are updated to `"value"` regardless of their current values.
   - `"value"`: `string` The new value to set for the specified keys.
-- `"deletes`: (*Body parameter*), `list[ojbect]`, *optional*  
-  Deletes metadata of the retrieved documents. Each object: `{ "key": string, "value": string }`.  
+- `"deletes`: (*Body parameter*), `list[ojbect]`, *optional*
+  Deletes metadata of the retrieved documents. Each object: `{ "key": string, "value": string }`.
   - `"key"`: `string` The name of the key to delete.
   - `"value"`: `string` *Optional* The value of the key to delete.
     - When provided, only keys with a matching value are deleted.
@@ -2588,16 +2658,16 @@ Retrieves chunks from specified datasets.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"question"`: `string`  
-  - `"dataset_ids"`: `list[string]`  
+  - `"question"`: `string`
+  - `"dataset_ids"`: `list[string]`
   - `"document_ids"`: `list[string]`
-  - `"page"`: `integer`  
-  - `"page_size"`: `integer`  
-  - `"similarity_threshold"`: `float`  
-  - `"vector_similarity_weight"`: `float`  
-  - `"top_k"`: `integer`  
-  - `"rerank_id"`: `string`  
-  - `"keyword"`: `boolean`  
+  - `"page"`: `integer`
+  - `"page_size"`: `integer`
+  - `"similarity_threshold"`: `float`
+  - `"vector_similarity_weight"`: `float`
+  - `"top_k"`: `integer`
+  - `"rerank_id"`: `string`
+  - `"keyword"`: `boolean`
   - `"highlight"`: `boolean`
   - `"cross_languages"`: `list[string]`
   - `"metadata_condition"`: `object`
@@ -2636,45 +2706,45 @@ curl --request POST \
 
 ##### Request parameter
 
-- `"question"`: (*Body parameter*), `string`, *Required*  
+- `"question"`: (*Body parameter*), `string`, *Required*
   The user query or query keywords.
-- `"dataset_ids"`: (*Body parameter*) `list[string]`  
+- `"dataset_ids"`: (*Body parameter*) `list[string]`
   The IDs of the datasets to search. If you do not set this argument, ensure that you set `"document_ids"`.
-- `"document_ids"`: (*Body parameter*), `list[string]`  
+- `"document_ids"`: (*Body parameter*), `list[string]`
   The IDs of the documents to search. Ensure that all selected documents use the same embedding model. Otherwise, an error will occur. If you do not set this argument, ensure that you set `"dataset_ids"`.
-- `"page"`: (*Body parameter*), `integer`  
+- `"page"`: (*Body parameter*), `integer`
   Specifies the page on which the chunks will be displayed. Defaults to `1`.
-- `"page_size"`: (*Body parameter*)  
+- `"page_size"`: (*Body parameter*)
   The maximum number of chunks on each page. Defaults to `30`.
-- `"similarity_threshold"`: (*Body parameter*)  
+- `"similarity_threshold"`: (*Body parameter*)
   The minimum similarity score. Defaults to `0.2`.
-- `"vector_similarity_weight"`: (*Body parameter*), `float`  
+- `"vector_similarity_weight"`: (*Body parameter*), `float`
   The weight of vector cosine similarity. Defaults to `0.3`. If x represents the weight of vector cosine similarity, then (1 - x) is the term similarity weight.
-- `"top_k"`: (*Body parameter*), `integer`  
+- `"top_k"`: (*Body parameter*), `integer`
   The number of chunks engaged in vector cosine computation. Defaults to `1024`.
-- `"use_kg"`: (*Body parameter*), `boolean`  
+- `"use_kg"`: (*Body parameter*), `boolean`
   Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/dataset/advanced/construct_knowledge_graph.md) for details.
-- `"toc_enhance"`: (*Body parameter*), `boolean`  
+- `"toc_enhance"`: (*Body parameter*), `boolean`
   Whether to search chunks with extracted table of content. Defaults to `False`. Before enabling this, ensure you have enabled `TOC_Enhance` and successfully extracted table of contents for the specified datasets. See [here](https://ragflow.io/docs/dev/enable_table_of_contents) for details.
-- `"rerank_id"`: (*Body parameter*), `integer`  
+- `"rerank_id"`: (*Body parameter*), `integer`
   The ID of the rerank model.
-- `"keyword"`: (*Body parameter*), `boolean`  
-  Indicates whether to enable keyword-based matching:  
+- `"keyword"`: (*Body parameter*), `boolean`
+  Indicates whether to enable keyword-based matching:
   - `true`: Enable keyword-based matching.
   - `false`: Disable keyword-based matching (default).
-- `"highlight"`: (*Body parameter*), `boolean`  
-  Specifies whether to enable highlighting of matched terms in the results:  
+- `"highlight"`: (*Body parameter*), `boolean`
+  Specifies whether to enable highlighting of matched terms in the results:
   - `true`: Enable highlighting of matched terms.
   - `false`: Disable highlighting of matched terms (default).
-- `"cross_languages"`: (*Body parameter*) `list[string]`  
+- `"cross_languages"`: (*Body parameter*) `list[string]`
   The languages that should be translated into, in order to achieve keywords retrievals in different languages.
-- `"metadata_condition"`: (*Body parameter*), `object`  
-  The metadata condition used for filtering chunks:  
+- `"metadata_condition"`: (*Body parameter*), `object`
+  The metadata condition used for filtering chunks:
   - `"logic"`: (*Body parameter*), `string`
     - `"and"`: Return only results that satisfy *every* condition (default).
     - `"or"`: Return results that satisfy *any* condition.
-  - `"conditions"`: (*Body parameter*), `array`  
-    A list of metadata filter conditions.  
+  - `"conditions"`: (*Body parameter*), `array`
+    A list of metadata filter conditions.
     - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/set_metadata.md) for details.
     - `comparison_operator`: `string` - The comparison operator. Can be one of:
       - `"contains"`
@@ -2783,9 +2853,9 @@ curl --request POST \
 
 ##### Request parameters
 
-- `"name"`: (*Body parameter*), `string`, *Required*  
+- `"name"`: (*Body parameter*), `string`, *Required*
   The name of the chat assistant.
-- `"icon"`: (*Body parameter*), `string`  
+- `"icon"`: (*Body parameter*), `string`
   Base64 encoding of the avatar.
 - `"dataset_ids"`: (*Body parameter*), `list[string]`
   The unique identifiers for the associated datasets. If omitted or set to `[]`, an empty chat assistant is created; datasets can be attached at a later time.
@@ -2793,21 +2863,21 @@ curl --request POST \
   The identifier of the chat model. If not specified, the system defaults to the user's pre-configured chat model.
 - `"llm_setting"`: (*Body parameter*), `object`
   A configuration object defining the LLM parameters for the assistant. The `llm_setting` object may contain the following attributes:
-  - `"model_type"`: `string`  
+  - `"model_type"`: `string`
     A model type specifier. Only `"chat"` and `"image2text"` are recognized; any other inputs, or when omitted, are treated as `"chat"`.
-  - `"temperature"`: `float`  
-    Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
-  - `"top_p"`: `float`  
-    Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
-  - `"presence_penalty"`: `float`  
+  - `"temperature"`: `float`
+    Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.
+  - `"top_p"`: `float`
+    Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`
+  - `"presence_penalty"`: `float`
     This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.4`.
-  - `"frequency penalty"`: `float`  
+  - `"frequency penalty"`: `float`
     Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
-- `"prompt_config"`: (*Body parameter*), `object`  
-  Instructions for the LLM to follow. A `prompt_config` object may contain the following attributes:  
+- `"prompt_config"`: (*Body parameter*), `object`
+  Instructions for the LLM to follow. A `prompt_config` object may contain the following attributes:
   - `"system"`: `string` The prompt content.
   - `"prologue"`: `string` The opening greeting for the user.
-  - `"parameters"`: `object[]` This argument lists the variables to use in the system prompt. Note that:  
+  - `"parameters"`: `object[]` This argument lists the variables to use in the system prompt. Note that:
     - `"knowledge"` is a reserved variable, which represents the retrieved chunks.
     - All the variables in `"system"` should be curly bracketed.
   - `"empty_response"`: `string` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank.
@@ -2944,27 +3014,27 @@ curl --request PUT \
 
 #### Parameters
 
-- `chat_id`: (*Path parameter*)  
+- `chat_id`: (*Path parameter*)
   The ID of the chat assistant to update.
-- `"name"`: (*Body parameter*), `string`, *Required*  
+- `"name"`: (*Body parameter*), `string`, *Required*
   The revised name of the chat assistant.
-- `"icon"`: (*Body parameter*), `string`  
+- `"icon"`: (*Body parameter*), `string`
   Base64 encoding of the avatar.
 - `"dataset_ids"`: (*Body parameter*), `list[string]`
   The IDs of the associated datasets.
-- `"llm_id"`: (*Body parameter*), `string`  
-  The chat model name. If not set, the user's default chat model is used.  
-- `"llm_setting"`: (*Body parameter*), `object`  
-  The LLM settings for the chat assistant. An `llm_setting` object contains the following attributes:  
+- `"llm_id"`: (*Body parameter*), `string`
+  The chat model name. If not set, the user's default chat model is used.
+- `"llm_setting"`: (*Body parameter*), `object`
+  The LLM settings for the chat assistant. An `llm_setting` object contains the following attributes:
   - `"model_type"`: `string`
     A model type specifier. Supported values are `"chat"` and `"image2text"`. If the field is omitted or an unrecognized value is provided, it defaults to `"chat"`.
-  - `"temperature"`: `float`  
-    Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
-  - `"top_p"`: `float`  
-    Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
-  - `"presence_penalty"`: `float`  
+  - `"temperature"`: `float`
+    Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.
+  - `"top_p"`: `float`
+    Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`
+  - `"presence_penalty"`: `float`
     This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.4`.
-  - `"frequency penalty"`: `float`  
+  - `"frequency penalty"`: `float`
     Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
 - `"prompt_config"`: (*Body parameter*), `object`
 - `"similarity_threshold"`: (*Body parameter*), `float`
@@ -3252,11 +3322,11 @@ curl --request DELETE \
 
 ##### Request parameters
 
-- `"ids"`: (*Body parameter*), `list[string]`  
+- `"ids"`: (*Body parameter*), `list[string]`
   The IDs of the chat assistants to delete.
   - If omitted, or set to `null` or an empty array, no chat assistants are deleted.
   - If an array of IDs is provided, only the chat assistants matching those IDs are deleted.
-- `"delete_all"`: (*Body parameter*), `boolean`  
+- `"delete_all"`: (*Body parameter*), `boolean`
   Whether to delete all chat assistants owned by the current user when `"ids"` is omitted, or set to`null` or an empty array. Defaults to `false`.
 
 #### Response
@@ -3425,11 +3495,11 @@ curl --request POST \
 
 ##### Request parameters
 
-- `chat_id`: (*Path parameter*)  
+- `chat_id`: (*Path parameter*)
   The ID of the associated chat assistant.
-- `"name"`: (*Body parameter*), `string`  
+- `"name"`: (*Body parameter*), `string`
   The name of the chat session to create.
-- `"user_id"`: (*Body parameter*), `string`  
+- `"user_id"`: (*Body parameter*), `string`
   Optional user-defined ID.
 
 #### Response
@@ -3566,23 +3636,23 @@ curl --request GET \
 
 ##### Request Parameters
 
-- `chat_id`: (*Path parameter*)  
+- `chat_id`: (*Path parameter*)
   The ID of the associated chat assistant.
-- `page`: (*Filter parameter*), `integer`  
+- `page`: (*Filter parameter*), `integer`
   Specifies the page on which the sessions will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*), `integer`  
+- `page_size`: (*Filter parameter*), `integer`
   The number of sessions on each page. Defaults to `30`. If set to `0`, an empty list is returned.
-- `orderby`: (*Filter parameter*), `string`  
-  The field by which sessions should be sorted. Available options:  
+- `orderby`: (*Filter parameter*), `string`
+  The field by which sessions should be sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `desc`: (*Filter parameter*), `boolean`  
+- `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `true`.
-- `name`: (*Filter parameter*) `string`  
+- `name`: (*Filter parameter*) `string`
   The name of the chat session to retrieve.
-- `id`: (*Filter parameter*), `string`  
+- `id`: (*Filter parameter*), `string`
   The ID of the chat session to retrieve.
-- `user_id`: (*Filter parameter*), `string`  
+- `user_id`: (*Filter parameter*), `string`
   The optional user-defined ID passed in when creating session.
 
 #### Response
@@ -3648,9 +3718,9 @@ curl --request GET \
 
 ##### Request Parameters
 
-- `chat_id`: (*Path parameter*)  
+- `chat_id`: (*Path parameter*)
   The ID of the associated chat assistant.
-- `session_id`: (*Path parameter*)  
+- `session_id`: (*Path parameter*)
   The ID of the session to retrieve.
 
 #### Response
@@ -3710,11 +3780,11 @@ curl --request DELETE \
 
 ##### Request Parameters
 
-- `chat_id`: (*Path parameter*)  
+- `chat_id`: (*Path parameter*)
   The ID of the associated chat assistant.
-- `session_id`: (*Path parameter*)  
+- `session_id`: (*Path parameter*)
   The ID of the session that owns the message.
-- `msg_id`: (*Path parameter*)  
+- `msg_id`: (*Path parameter*)
   The ID of the message to delete.
 
 #### Response
@@ -3776,15 +3846,15 @@ curl --request PUT \
 
 ##### Request Parameters
 
-- `chat_id`: (*Path parameter*)  
+- `chat_id`: (*Path parameter*)
   The ID of the associated chat assistant.
-- `session_id`: (*Path parameter*)  
+- `session_id`: (*Path parameter*)
   The ID of the session that owns the message.
-- `msg_id`: (*Path parameter*)  
+- `msg_id`: (*Path parameter*)
   The ID of the assistant message to update.
-- `"thumbup"`: (*Body parameter*), `boolean`  
+- `"thumbup"`: (*Body parameter*), `boolean`
   Whether the assistant message is marked as positive feedback.
-- `"feedback"`: (*Body parameter*), `string`  
+- `"feedback"`: (*Body parameter*), `string`
   Optional feedback text, typically used when `"thumbup"` is `false`.
 
 #### Response
@@ -3863,13 +3933,13 @@ curl --request DELETE \
 
 ##### Request Parameters
 
-- `chat_id`: (*Path parameter*)  
+- `chat_id`: (*Path parameter*)
   The ID of the associated chat assistant.
-- `"ids"`: (*Body Parameter*), `list[string]`  
+- `"ids"`: (*Body Parameter*), `list[string]`
   The IDs of the sessions to delete.
   - If omitted, or set to `null` or an empty array, no sessions are deleted.
   - If an array of IDs is provided, only the sessions matching those IDs are deleted.
-- `"delete_all"`: (*Body Parameter*), `boolean`  
+- `"delete_all"`: (*Body Parameter*), `boolean`
   Whether to delete all sessions of the specified chat assistant when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
@@ -3975,17 +4045,17 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `"messages"`: (*Body Parameter*), `list[object]`, *Required*  
+- `"messages"`: (*Body Parameter*), `list[object]`, *Required*
   The conversation messages sent to the model.
-- `"stream"`: (*Body Parameter*), `boolean`  
+- `"stream"`: (*Body Parameter*), `boolean`
   Indicates whether to output responses in a streaming way:
   - `true`: Enable streaming (default).
   - `false`: Disable streaming.
-- `"chat_id"`: (*Body Parameter*)  
+- `"chat_id"`: (*Body Parameter*)
   Optional chat assistant ID. If omitted, the tenant's default chat model is used directly.
-- `"session_id"`: (*Body Parameter*)  
+- `"session_id"`: (*Body Parameter*)
   Optional session ID. If `chat_id` is provided but `session_id` is omitted, a new session will be generated automatically.
-- `"llm_id"`: (*Body Parameter*), `string`  
+- `"llm_id"`: (*Body Parameter*), `string`
   Optional model override when a specific chat model should be used for this request.
 
 #### Response
@@ -4136,9 +4206,9 @@ curl --request POST \
 
 ##### Request parameters
 
-- `agent_id`: (*Path parameter*)  
+- `agent_id`: (*Path parameter*)
   The ID of the associated agent.
-- `user_id`: (*Filter parameter*)  
+- `user_id`: (*Filter parameter*)
   The optional user-defined ID for parsing docs (especially images) when creating a session while uploading files.
 
 #### Response
@@ -4350,7 +4420,7 @@ Failure:
 
 ### Converse with agent
 
-**POST** `/api/v1/agents/{agent_id}/completions`  
+**POST** `/api/v1/agents/{agent_id}/completions`
 
 Asks a specified agent a question to start an AI-powered conversation.
 
@@ -4413,7 +4483,7 @@ curl --request POST \
      }'
 ```
 
-- If the **Begin** component takes parameters, include their values in the body of `"inputs"` as follows:  
+- If the **Begin** component takes parameters, include their values in the body of `"inputs"` as follows:
 
 ```bash
 curl --request POST \
@@ -4466,24 +4536,24 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `agent_id`: (*Path parameter*), `string`  
+- `agent_id`: (*Path parameter*), `string`
   The ID of the associated agent.
-- `"question"`: (*Body Parameter*), `string`, *Required*  
+- `"question"`: (*Body Parameter*), `string`, *Required*
   The question to start an AI-powered conversation.
-- `"stream"`: (*Body Parameter*), `boolean`  
-  Indicates whether to output responses in a streaming way:  
+- `"stream"`: (*Body Parameter*), `boolean`
+  Indicates whether to output responses in a streaming way:
   - `true`: Enable streaming (default).
   - `false`: Disable streaming.
-- `"session_id"`: (*Body Parameter*)  
+- `"session_id"`: (*Body Parameter*)
   The ID of the session. If it is not provided, a new session will be generated.
-- `"inputs"`: (*Body Parameter*)  
-  Variables specified in the **Begin** component.  
-- `"user_id"`: (*Body parameter*), `string`  
+- `"inputs"`: (*Body Parameter*)
+  Variables specified in the **Begin** component.
+- `"user_id"`: (*Body parameter*), `string`
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
 
 :::tip NOTE
-For now, this method does *not* support a file type input/variable. As a workaround, use the following to upload a file to an agent:  
-`http://{address}/v1/canvas/upload/{agent_id}`  
+For now, this method does *not* support a file type input/variable. As a workaround, use the following to upload a file to an agent:
+`http://{address}/v1/canvas/upload/{agent_id}`
 *You will get a corresponding file ID from its response body.*
 :::
 
@@ -5034,23 +5104,23 @@ curl --request GET \
 
 ##### Request Parameters
 
-- `agent_id`: (*Path parameter*)  
+- `agent_id`: (*Path parameter*)
   The ID of the associated agent.
-- `page`: (*Filter parameter*), `integer`  
+- `page`: (*Filter parameter*), `integer`
   Specifies the page on which the sessions will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*), `integer`  
+- `page_size`: (*Filter parameter*), `integer`
   The number of sessions on each page. Defaults to `30`.
-- `orderby`: (*Filter parameter*), `string`  
-  The field by which sessions should be sorted. Available options:  
+- `orderby`: (*Filter parameter*), `string`
+  The field by which sessions should be sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `desc`: (*Filter parameter*), `boolean`  
+- `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `true`.
-- `id`: (*Filter parameter*), `string`  
+- `id`: (*Filter parameter*), `string`
   The ID of the agent session to retrieve.
-- `user_id`: (*Filter parameter*), `string`  
+- `user_id`: (*Filter parameter*), `string`
   The optional user-defined ID passed in when creating session.
-- `dsl`: (*Filter parameter*), `boolean`  
+- `dsl`: (*Filter parameter*), `boolean`
   Indicates whether to include the dsl field of the sessions in the response. Defaults to `true`.
 
 #### Response
@@ -5247,13 +5317,13 @@ curl --request DELETE \
 
 ##### Request Parameters
 
-- `agent_id`: (*Path parameter*)  
+- `agent_id`: (*Path parameter*)
   The ID of the associated agent.
-- `"ids"`: (*Body Parameter*), `list[string]`  
+- `"ids"`: (*Body Parameter*), `list[string]`
   The IDs of the sessions to delete.
   - If omitted, or set to `null` or an empty array, no sessions are deleted.
   - If an array of IDs is provided, only the sessions matching those IDs are deleted.
-- `"delete_all"`: (*Body Parameter*), `boolean`  
+- `"delete_all"`: (*Body Parameter*), `boolean`
   Whether to delete all sessions of the specified agent when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
@@ -5532,19 +5602,19 @@ curl --request GET \
 
 ##### Request parameters
 
-- `page`: (*Filter parameter*), `integer`  
+- `page`: (*Filter parameter*), `integer`
   Specifies the page on which the agents will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*), `integer`  
+- `page_size`: (*Filter parameter*), `integer`
   The number of agents on each page. Defaults to `30`.
-- `orderby`: (*Filter parameter*), `string`  
+- `orderby`: (*Filter parameter*), `string`
   The attribute by which the results are sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `desc`: (*Filter parameter*), `boolean`  
+- `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved agents should be sorted in descending order. Defaults to `true`.
-- `id`: (*Filter parameter*), `string`  
+- `id`: (*Filter parameter*), `string`
   The ID of the agent to retrieve.
-- `title`: (*Filter parameter*), `string`  
+- `title`: (*Filter parameter*), `string`
   The name of the agent to retrieve.
 
 #### Response
@@ -5656,11 +5726,11 @@ curl --request POST \
 
 ##### Request parameters
 
-- `title`: (*Body parameter*), `string`, *Required*  
+- `title`: (*Body parameter*), `string`, *Required*
   The title of the agent.
-- `description`: (*Body parameter*), `string`  
+- `description`: (*Body parameter*), `string`
   The description of the agent. Defaults to `None`.
-- `dsl`: (*Body parameter*), `object`, *Required*  
+- `dsl`: (*Body parameter*), `object`, *Required*
   The canvas DSL object of the agent.
 
 #### Response
@@ -5722,13 +5792,13 @@ curl --request PUT \
 
 ##### Request parameters
 
-- `agent_id`: (*Path parameter*), `string`  
+- `agent_id`: (*Path parameter*), `string`
   The id of the agent to be updated.
-- `title`: (*Body parameter*), `string`  
+- `title`: (*Body parameter*), `string`
   The title of the agent.
-- `description`: (*Body parameter*), `string`  
+- `description`: (*Body parameter*), `string`
   The description of the agent.
-- `dsl`: (*Body parameter*), `object`  
+- `dsl`: (*Body parameter*), `object`
   The canvas DSL object of the agent.
 
 Only specify the parameter you want to change in the request body. If a parameter does not exist or is `None`, it won't be updated.
@@ -5782,7 +5852,7 @@ curl --request DELETE \
 
 ##### Request parameters
 
-- `agent_id`: (*Path parameter*), `string`  
+- `agent_id`: (*Path parameter*), `string`
   The id of the agent to be deleted.
 
 #### Response
@@ -5828,7 +5898,7 @@ Create a new memory.
 - Body:
   - `"name"`: `string`
   - `"memory_type"`: `list[string]`
-  - `"embd_id"`: `string`. 
+  - `"embd_id"`: `string`.
   - `"llm_id"`: `string`
 
 ##### Request example
@@ -6130,13 +6200,13 @@ Failure:
 
 **GET** `/api/v1/memories/{memory_id}/config`
 
-Get the configuration of a specified memory. 
+Get the configuration of a specified memory.
 
 #### Request
 
 - Method: GET
 - URL: `/api/v1/memories/{memory_id}/config`
-- Headers: 
+- Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -6214,7 +6284,7 @@ Delete a specified memory.
 - Method: DELETE
 - URL: `/api/v1/memories/{memory_id}`
 - Headers:
-- Headers: 
+- Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -6533,7 +6603,7 @@ Failure
 
 Update message status, enable or disable a message. Once a message is disabled, it will not be retrieved by agents.
 
-#### Request 
+#### Request
 
 - Method: PUT
 - URL: `/api/v1/messages/{memory_id}:{message_id}`
@@ -6613,11 +6683,11 @@ curl --location 'http://{address}/api/v1/messages/search?query=%22who%20are%20yo
 
 ##### Request parameters
 
-- `question`: (*Filter parameter*), `string`, *Required* 
+- `question`: (*Filter parameter*), `string`, *Required*
 
   The search term or natural language question used to find relevant messages.
 
-- `memory_id`: (*Filter parameter*), `string` or `list[string]`, *Required* 
+- `memory_id`: (*Filter parameter*), `string` or `list[string]`, *Required*
 
   The IDs of the memories to search.  Supports multiple values.
 
@@ -6707,7 +6777,7 @@ curl --location 'http://{address}/api/v1/messages?memory_id=6c8983badede11f083f1
 
 ##### Request parameters
 
-- `memory_id`: (*Filter parameter*), `string` or `list[string]`, *Required* 
+- `memory_id`: (*Filter parameter*), `string` or `list[string]`, *Required*
 
   The IDs of the memories to search.  Supports multiple values.
 
@@ -6866,7 +6936,7 @@ curl --request GET
 
 ##### Request parameters
 
-- `address`: (*Path parameter*), string  
+- `address`: (*Path parameter*), string
   The host and port of the backend service (e.g., `localhost:7897`).
 
 ---
@@ -6909,11 +6979,11 @@ Content-Type: application/json
 }
 ```
 
-Explanation:  
+Explanation:
 
-- Each service is reported as "ok" or "nok".  
-- The top-level `status` reflects overall health.  
-- If any service is "nok", detailed error info appears in `_meta`.  
+- Each service is reported as "ok" or "nok".
+- The top-level `status` reflects overall health.
+- If any service is "nok", detailed error info appears in `_meta`.
 
 ---
 
@@ -6952,9 +7022,9 @@ curl --request POST \
 
 ##### Request parameters
 
-- `'file'`: (*Form parameter*), `file`, *Required*  
+- `'file'`: (*Form parameter*), `file`, *Required*
   The file(s) to upload. Multiple files can be uploaded in a single request.
-- `'parent_id'`: (*Form parameter*), `string`  
+- `'parent_id'`: (*Form parameter*), `string`
   The parent folder ID where the file will be uploaded. If not specified, files will be uploaded to the root folder.
 
 #### Response
@@ -7029,9 +7099,9 @@ curl --request POST \
 
 ##### Request parameters
 
-- `'file'`: (*Form parameter*), `file`, *Optional*  
+- `'file'`: (*Form parameter*), `file`, *Optional*
   The file to upload. Mutually exclusive with `url`; either `file` or `url` must be provided.
-- `url`: (*Query parameter*), `string`, *Optional*  
+- `url`: (*Query parameter*), `string`, *Optional*
   A URL to crawl and store as an attachment. Mutually exclusive with `file`; either `url` or `file` must be provided.
 
 #### Response
@@ -7092,10 +7162,10 @@ curl --request GET \
 
 ##### Request parameters
 
-- `attachment_id`: (*Path parameter*), `string`, *Required*  
+- `attachment_id`: (*Path parameter*), `string`, *Required*
   The `id` value returned by the [Upload document](#upload-document) method.
-- `ext`: (*Query parameter*), `string`, *Optional*  
-  A file extension hint specifying the response's Content-Type. Defaults to `"markdown"`. Available values:  
+- `ext`: (*Query parameter*), `string`, *Optional*
+  A file extension hint specifying the response's Content-Type. Defaults to `"markdown"`. Available values:
   - `"markdown"`
   - `"html"`
   - `"pdf"`
@@ -7154,11 +7224,11 @@ curl --request POST \
 
 ##### Request parameters
 
-- `"name"`: (*Body parameter*), `string`, *Required*  
+- `"name"`: (*Body parameter*), `string`, *Required*
   The name of the file or folder to create.
-- `"parent_id"`: (*Body parameter*), `string`  
+- `"parent_id"`: (*Body parameter*), `string`
   The parent folder ID. If not specified, the file/folder will be created in the root folder.
-- `"type"`: (*Body parameter*), `string`  
+- `"type"`: (*Body parameter*), `string`
   The type of the file to create. Available options:
   - `"folder"`: Create a folder
   - `"virtual"`: Create a virtual file
@@ -7215,18 +7285,18 @@ curl --request GET \
 
 ##### Request parameters
 
-- `parent_id`: (*Filter parameter*), `string`  
+- `parent_id`: (*Filter parameter*), `string`
   The folder ID to list files from. If not specified, the root folder is used by default.
-- `keywords`: (*Filter parameter*), `string`  
+- `keywords`: (*Filter parameter*), `string`
   Search keyword to filter files by name.
-- `page`: (*Filter parameter*), `integer`  
+- `page`: (*Filter parameter*), `integer`
   Specifies the page on which the files will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*), `integer`  
+- `page_size`: (*Filter parameter*), `integer`
   The number of files on each page. Defaults to `15`.
-- `orderby`: (*Filter parameter*), `string`  
+- `orderby`: (*Filter parameter*), `string`
   The field by which files should be sorted. Available options:
   - `create_time` (default)
-- `desc`: (*Filter parameter*), `boolean`  
+- `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved files should be sorted in descending order. Defaults to `true`.
 
 #### Response
@@ -7290,7 +7360,7 @@ curl --request GET \
 
 ##### Request parameters
 
-- `file_id`: (*Path parameter*), `string`, *Required*  
+- `file_id`: (*Path parameter*), `string`, *Required*
   The ID of the file whose immediate parent folder to retrieve.
 
 #### Response
@@ -7343,7 +7413,7 @@ curl --request GET \
 
 ##### Request parameters
 
-- `file_id`: (*Path parameter*), `string`, *Required*  
+- `file_id`: (*Path parameter*), `string`, *Required*
   The ID of the file whose parent folders to retrieve.
 
 #### Response
@@ -7409,7 +7479,7 @@ curl --request DELETE \
 
 ##### Request parameters
 
-- `"ids"`: (*Body parameter*), `list[string]`, *Required*  
+- `"ids"`: (*Body parameter*), `list[string]`, *Required*
   The IDs of the files or folders to delete.
 
 #### Response
@@ -7458,7 +7528,7 @@ curl --request GET \
 
 ##### Request parameters
 
-- `file_id`: (*Path parameter*), `string`, *Required*  
+- `file_id`: (*Path parameter*), `string`, *Required*
   The ID of the file to download.
 
 #### Response
@@ -7609,9 +7679,9 @@ curl --request POST \
 
 ##### Request parameters
 
-- `"file_ids"`: (*Body parameter*), `list[string]`, *Required*  
+- `"file_ids"`: (*Body parameter*), `list[string]`, *Required*
   The IDs of the files to convert. If a folder ID is provided, all files within that folder will be converted.
-- `"kb_ids"`: (*Body parameter*), `list[string]`, *Required*  
+- `"kb_ids"`: (*Body parameter*), `list[string]`, *Required*
   The IDs of the target datasets.
 
 #### Response
@@ -7984,11 +8054,11 @@ curl --request POST \
 
 ##### Request parameters
 
-- `search_id`: (*Path parameter*), `string`, *Required*  
+- `search_id`: (*Path parameter*), `string`, *Required*
   The ID of the search app.
-- `"question"`: (*Body parameter*), `string`, *Required*  
+- `"question"`: (*Body parameter*), `string`, *Required*
   The user question.
-- `"kb_ids"`: (*Body parameter*), `list[string]`  
+- `"kb_ids"`: (*Body parameter*), `list[string]`
   Optional fallback dataset IDs when the search app config does not define them.
 
 #### Response

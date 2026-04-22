@@ -309,6 +309,15 @@ def _load_doc_module(monkeypatch):
     return module
 
 
+def _load_restful_chunk_module(monkeypatch):
+    repo_root = Path(__file__).resolve().parents[4]
+    helper_path = repo_root / "test" / "testcases" / "test_web_api" / "test_chunk_app" / "test_chunk_routes_unit.py"
+    spec = importlib.util.spec_from_file_location("test_restful_chunk_route_helpers", helper_path)
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    return helper._load_chunk_api_module(monkeypatch)
+
+
 def _patch_send_file(monkeypatch, module):
     async def _fake_send_file(file_obj, **kwargs):
         return {"file": file_obj, "filename": kwargs.get("attachment_filename")}
@@ -336,7 +345,7 @@ def _patch_docstore(monkeypatch, module, **kwargs):
 @pytest.mark.p2
 class TestDocRoutesUnit:
     def test_chunk_positions_validation_error(self, monkeypatch):
-        module = _load_doc_module(monkeypatch)
+        module = _load_restful_chunk_module(monkeypatch)
         with pytest.raises(ValueError) as exc_info:
             module.Chunk(positions=[[1, 2, 3, 4]])
         assert "length of 5" in str(exc_info.value)
@@ -573,24 +582,24 @@ class TestDocRoutesUnit:
         assert res["code"] == 0
 
     def test_list_chunks_branches(self, monkeypatch):
-        module = _load_doc_module(monkeypatch)
+        module = _load_restful_chunk_module(monkeypatch)
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
-        res = _run(module.list_chunks.__wrapped__("tenant-1", "ds-1", "doc-1"))
+        res = _run(module.list_chunks("tenant-1", "ds-1", "doc-1"))
         assert "don't own the dataset" in res["message"]
 
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
-        res = _run(module.list_chunks.__wrapped__("tenant-1", "ds-1", "doc-1"))
+        res = _run(module.list_chunks("tenant-1", "ds-1", "doc-1"))
         assert "don't own the document" in res["message"]
 
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc()])
         monkeypatch.setattr(module, "request", SimpleNamespace(args=_DummyArgs({"id": "chunk-1"})))
         _patch_docstore(monkeypatch, module, get=lambda *_args, **_kwargs: None)
-        res = _run(module.list_chunks.__wrapped__("tenant-1", "ds-1", "doc-1"))
+        res = _run(module.list_chunks("tenant-1", "ds-1", "doc-1"))
         assert "Chunk not found" in res["message"]
 
         _patch_docstore(monkeypatch, module, get=lambda *_args, **_kwargs: {"id_vec": [1], "content_with_weight_vec": [2]})
-        res = _run(module.list_chunks.__wrapped__("tenant-1", "ds-1", "doc-1"))
+        res = _run(module.list_chunks("tenant-1", "ds-1", "doc-1"))
         assert "Chunk `chunk-1` not found." in res["message"]
 
         _patch_docstore(
@@ -604,27 +613,27 @@ class TestDocRoutesUnit:
                 "position_int": [[1, 2, 3, 4, 5]],
             },
         )
-        res = _run(module.list_chunks.__wrapped__("tenant-1", "ds-1", "doc-1"))
+        res = _run(module.list_chunks("tenant-1", "ds-1", "doc-1"))
         assert res["code"] == 0
         assert res["data"]["total"] == 1
         assert res["data"]["chunks"][0]["id"] == "chunk-1"
 
     def test_add_chunk_access_guard(self, monkeypatch):
-        module = _load_doc_module(monkeypatch)
+        module = _load_restful_chunk_module(monkeypatch)
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
-        res = _run(module.add_chunk.__wrapped__("tenant-1", "ds-1", "doc-1"))
+        res = _run(module.add_chunk("tenant-1", "ds-1", "doc-1"))
         assert "don't own the dataset" in res["message"]
 
     def test_rm_chunk_branches(self, monkeypatch):
-        module = _load_doc_module(monkeypatch)
+        module = _load_restful_chunk_module(monkeypatch)
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
-        res = _run(module.rm_chunk.__wrapped__("tenant-1", "ds-1", "doc-1"))
+        res = _run(module.rm_chunk("tenant-1", "ds-1", "doc-1"))
         assert "don't own the dataset" in res["message"]
 
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
         monkeypatch.setattr(module.DocumentService, "get_by_ids", lambda _ids: [])
         with pytest.raises(LookupError):
-            _run(module.rm_chunk.__wrapped__("tenant-1", "ds-1", "doc-1"))
+            _run(module.rm_chunk("tenant-1", "ds-1", "doc-1"))
 
         monkeypatch.setattr(module.DocumentService, "get_by_ids", lambda _ids: [_DummyDoc()])
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({}))
@@ -634,30 +643,30 @@ class TestDocRoutesUnit:
             delete=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("delete must not run for empty chunk ids")),
         )
         monkeypatch.setattr(module.DocumentService, "decrement_chunk_num", lambda *_args, **_kwargs: None)
-        res = _run(module.rm_chunk.__wrapped__("tenant-1", "ds-1", "doc-1"))
+        res = _run(module.rm_chunk("tenant-1", "ds-1", "doc-1"))
         assert res["code"] == 0
 
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"chunk_ids": ["c1", "c1"]}))
         monkeypatch.setattr(module, "check_duplicate_ids", lambda _ids, _kind: (["c1"], ["Duplicate chunk ids: c1"]))
         _patch_docstore(monkeypatch, module, delete=lambda *_args, **_kwargs: 1)
-        res = _run(module.rm_chunk.__wrapped__("tenant-1", "ds-1", "doc-1"))
+        res = _run(module.rm_chunk("tenant-1", "ds-1", "doc-1"))
         assert res["code"] == 0
         assert res["data"]["errors"] == ["Duplicate chunk ids: c1"]
 
     def test_update_chunk_branches(self, monkeypatch):
-        module = _load_doc_module(monkeypatch)
+        module = _load_restful_chunk_module(monkeypatch)
         _patch_docstore(monkeypatch, module, get=lambda *_args, **_kwargs: None)
-        res = _run(module.update_chunk.__wrapped__("tenant-1", "ds-1", "doc-1", "chunk-1"))
+        res = _run(module.update_chunk("tenant-1", "ds-1", "doc-1", "chunk-1"))
         assert "Can't find this chunk" in res["message"]
 
         _patch_docstore(monkeypatch, module, get=lambda *_args, **_kwargs: {"content_with_weight": "q\na"})
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
-        res = _run(module.update_chunk.__wrapped__("tenant-1", "ds-1", "doc-1", "chunk-1"))
+        res = _run(module.update_chunk("tenant-1", "ds-1", "doc-1", "chunk-1"))
         assert "don't own the dataset" in res["message"]
 
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
-        res = _run(module.update_chunk.__wrapped__("tenant-1", "ds-1", "doc-1", "chunk-1"))
+        res = _run(module.update_chunk("tenant-1", "ds-1", "doc-1", "chunk-1"))
         assert "don't own the document" in res["message"]
 
         doc = _DummyDoc(parser_id="naive")
@@ -674,24 +683,24 @@ class TestDocRoutesUnit:
 
         monkeypatch.setattr(module.TenantLLMService, "model_instance", lambda *_args, **_kwargs: _EmbedModel())
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"positions": "bad"}))
-        res = _run(module.update_chunk.__wrapped__("tenant-1", "ds-1", "doc-1", "chunk-1"))
+        res = _run(module.update_chunk("tenant-1", "ds-1", "doc-1", "chunk-1"))
         assert "`positions` should be a list" in res["message"]
 
         _patch_docstore(monkeypatch, module, get=lambda *_args, **_kwargs: {"content_with_weight": "x"}, update=lambda *_args, **_kwargs: None)
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"positions": [[1, 2, 3, 4, 5]]}))
-        res = _run(module.update_chunk.__wrapped__("tenant-1", "ds-1", "doc-1", "chunk-1"))
+        res = _run(module.update_chunk("tenant-1", "ds-1", "doc-1", "chunk-1"))
         assert res["code"] == 0
 
         qa_doc = _DummyDoc(parser_id=module.ParserType.QA)
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [qa_doc])
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"content": "no-separator"}))
-        res = _run(module.update_chunk.__wrapped__("tenant-1", "ds-1", "doc-1", "chunk-1"))
+        res = _run(module.update_chunk("tenant-1", "ds-1", "doc-1", "chunk-1"))
         assert "Q&A must be separated" in res["message"]
 
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"content": "Q?\nA!"}))
         _patch_docstore(monkeypatch, module, get=lambda *_args, **_kwargs: {"content_with_weight": "Q?\nA!"}, update=lambda *_args, **_kwargs: None)
         monkeypatch.setattr(module, "beAdoc", lambda d, *_args, **_kwargs: d)
-        res = _run(module.update_chunk.__wrapped__("tenant-1", "ds-1", "doc-1", "chunk-1"))
+        res = _run(module.update_chunk("tenant-1", "ds-1", "doc-1", "chunk-1"))
         assert res["code"] == 0
 
     def test_retrieval_validation_matrix(self, monkeypatch):
