@@ -5,6 +5,7 @@ import { EmptyAppCard } from '@/components/empty/empty';
 import ListFilterBar from '@/components/list-filter-bar';
 import SvgIcon from '@/components/svg-icon';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SearchInput } from '@/components/ui/input';
 import { Segmented } from '@/components/ui/segmented';
@@ -644,54 +645,56 @@ const SkillsPage: React.FC = () => {
               spaceViewMode === 'grid' ? (
                 <CardContainer className="flex-1 overflow-auto">
                   {filteredSpaces.map((space) => (
-                    <div
+                    <Card
                       key={space.id}
-                      className="group flex flex-col rounded-xl border border-border p-4 hover:border-accent-primary hover:shadow-md transition-all cursor-pointer bg-bg-card relative"
+                      className="group flex flex-col cursor-pointer bg-bg-card hover:border-accent-primary hover:shadow-md transition-all"
                       onClick={() => {
                         setSelectedSpaceId(space.id);
                         setSelectedSpaceName(space.name);
                       }}
                     >
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1 min-w-0 flex items-center gap-2">
-                          <SvgIcon
-                            name="home-icon/skill-space"
-                            width={20}
-                            height={20}
-                          />
-                          <h3 className="font-semibold text-lg truncate">
-                            {space.name}
-                          </h3>
+                      <CardContent className="flex-1 flex flex-col p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex-1 min-w-0 flex items-center gap-2">
+                            <SvgIcon
+                              name="home-icon/skill-space"
+                              width={20}
+                              height={20}
+                            />
+                            <h3 className="font-semibold text-lg truncate">
+                              {space.name}
+                            </h3>
+                          </div>
+                          <div className="flex opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-text-secondary hover:text-accent-primary"
+                              onClick={(e: React.MouseEvent) =>
+                                openRenameSpaceModal(space, e)
+                              }
+                            >
+                              <Pencil className="size-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-text-secondary hover:text-red-500"
+                              onClick={(e: React.MouseEvent) =>
+                                openDeleteSpaceModal(space, e)
+                              }
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-text-secondary hover:text-accent-primary"
-                            onClick={(e: React.MouseEvent) =>
-                              openRenameSpaceModal(space, e)
-                            }
-                          >
-                            <Pencil className="size-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-text-secondary hover:text-red-500"
-                            onClick={(e: React.MouseEvent) =>
-                              openDeleteSpaceModal(space, e)
-                            }
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="mt-auto pt-2">
+                      </CardContent>
+                      <CardFooter className="pt-0 pb-4 px-4">
                         <span className="text-accent-primary text-sm">
                           {t('skills.enterSpace') || 'Enter'} →
                         </span>
-                      </div>
-                    </div>
+                      </CardFooter>
+                    </Card>
                   ))}
                 </CardContainer>
               ) : (
