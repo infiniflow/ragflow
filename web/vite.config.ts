@@ -39,7 +39,22 @@ function resolveMinify(value: string | undefined): MinifyValue {
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
+  // Load env from .env file (also loads .env.local, .env.[mode], .env.[mode].local)
   const env = loadEnv(mode, process.cwd(), '');
+
+  // Try to load from .env file explicitly if API_PROXY_SCHEME not found
+  let proxyScheme = env.API_PROXY_SCHEME;
+  if (!proxyScheme) {
+    try {
+      const envLocal = loadEnv('', process.cwd(), '');
+      proxyScheme = envLocal.API_PROXY_SCHEME;
+    } catch {
+      // ignore
+    }
+  }
+  proxyScheme = proxyScheme || 'python';
+
+  console.log(`[vite.config] mode: ${mode}, API_PROXY_SCHEME: ${proxyScheme}`);
 
   const proxySchemes = {
     python: {
@@ -107,11 +122,13 @@ export default defineConfig(({ mode }) => {
     },
   };
 
-  const proxyScheme = env.API_PROXY_SCHEME || 'python';
   const proxy = proxySchemes[proxyScheme] || proxySchemes.python;
 
   return {
     define: {
+      // Expose to client code via import.meta.env
+      'import.meta.env.API_PROXY_SCHEME': JSON.stringify(proxyScheme),
+      // Keep backward compatibility
       __API_PROXY_SCHEME__: JSON.stringify(proxyScheme),
     },
     plugins: [
