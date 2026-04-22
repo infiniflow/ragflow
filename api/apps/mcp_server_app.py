@@ -399,6 +399,7 @@ async def cache_tool() -> Response:
 
 
 @manager.route("/test_mcp", methods=["POST"])  # noqa: F821
+@login_required
 @validate_request("url", "server_type")
 async def test_mcp() -> Response:
     req = await get_request_json()
