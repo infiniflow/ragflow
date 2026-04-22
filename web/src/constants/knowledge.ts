@@ -8,6 +8,15 @@ export enum KnowledgeRouteKey {
 export const DatasetBaseKey = 'dataset';
 
 export enum RunningStatus {
+  UNSTART = 'UNSTART', // need to run
+  RUNNING = 'RUNNING', // need to cancel
+  CANCEL = 'CANCEL', // need to refresh
+  DONE = 'DONE', // need to refresh
+  FAIL = 'FAIL', // need to refresh
+  SCHEDULE = 'SCHEDULE',
+}
+
+export enum RunningStatusOld {
   UNSTART = '0', // need to run
   RUNNING = '1', // need to cancel
   CANCEL = '2', // need to refresh
@@ -23,6 +32,13 @@ export const RunningStatusMap = {
   [RunningStatus.DONE]: 'Success',
   [RunningStatus.FAIL]: 'Failed',
   [RunningStatus.SCHEDULE]: 'Schedule',
+
+  [RunningStatusOld.UNSTART]: 'Pending',
+  [RunningStatusOld.RUNNING]: 'Running',
+  [RunningStatusOld.CANCEL]: 'Cancel',
+  [RunningStatusOld.DONE]: 'Success',
+  [RunningStatusOld.FAIL]: 'Failed',
+  [RunningStatusOld.SCHEDULE]: 'Schedule',
 };
 
 export enum ModelVariableType {

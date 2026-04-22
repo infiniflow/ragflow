@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 import datetime
-import json
 import re
 from io import BytesIO
 
@@ -22,12 +21,11 @@ import xxhash
 from pydantic import BaseModel, Field, validator
 from quart import request, send_file
 
-from api.db.db_models import APIToken, Document, File, Task
+from api.db.db_models import APIToken, Document, Task
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
-from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
@@ -35,7 +33,7 @@ from api.db.services.tenant_llm_service import TenantLLMService
 from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_request_json, get_result, server_error_response, token_required
 from api.utils.image_utils import store_chunk_image
 from common import settings
-from common.constants import FileSource, LLMType, ParserType, RetCode, TaskStatus
+from common.constants import LLMType, ParserType, RetCode, TaskStatus
 from common.metadata_utils import convert_conditions, meta_filter
 from common.misc_utils import thread_pool_exec
 from common.string_utils import is_content_empty, remove_redundant_spaces
@@ -159,187 +157,6 @@ async def download_doc(document_id):
     )
 
 
-@manager.route("/datasets/<dataset_id>/documents", methods=["GET"])  # noqa: F821
-@token_required
-def list_docs(dataset_id, tenant_id):
-    """
-    List documents in a dataset.
-    ---
-    tags:
-      - Documents
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: query
-        name: id
-        type: string
-        required: false
-        description: Filter by document ID.
-      - in: query
-        name: page
-        type: integer
-        required: false
-        default: 1
-        description: Page number.
-      - in: query
-        name: page_size
-        type: integer
-        required: false
-        default: 30
-        description: Number of items per page.
-      - in: query
-        name: orderby
-        type: string
-        required: false
-        default: "create_time"
-        description: Field to order by.
-      - in: query
-        name: desc
-        type: boolean
-        required: false
-        default: true
-        description: Order in descending.
-      - in: query
-        name: create_time_from
-        type: integer
-        required: false
-        default: 0
-        description: Unix timestamp for filtering documents created after this time. 0 means no filter.
-      - in: query
-        name: create_time_to
-        type: integer
-        required: false
-        default: 0
-        description: Unix timestamp for filtering documents created before this time. 0 means no filter.
-      - in: query
-        name: suffix
-        type: array
-        items:
-          type: string
-        required: false
-        description: Filter by file suffix (e.g., ["pdf", "txt", "docx"]).
-      - in: query
-        name: run
-        type: array
-        items:
-          type: string
-        required: false
-        description: Filter by document run status. Supports both numeric ("0", "1", "2", "3", "4") and text formats ("UNSTART", "RUNNING", "CANCEL", "DONE", "FAIL").
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: List of documents.
-        schema:
-          type: object
-          properties:
-            total:
-              type: integer
-              description: Total number of documents.
-            docs:
-              type: array
-              items:
-                type: object
-                properties:
-                  id:
-                    type: string
-                    description: Document ID.
-                  name:
-                    type: string
-                    description: Document name.
-                  chunk_count:
-                    type: integer
-                    description: Number of chunks.
-                  token_count:
-                    type: integer
-                    description: Number of tokens.
-                  dataset_id:
-                    type: string
-                    description: ID of the dataset.
-                  chunk_method:
-                    type: string
-                    description: Chunking method used.
-                  run:
-                    type: string
-                    description: Processing status.
-    """
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
-
-    q = request.args
-    document_id = q.get("id")
-    name = q.get("name")
-
-    if document_id and not DocumentService.query(id=document_id, kb_id=dataset_id):
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
-    if name and not DocumentService.query(name=name, kb_id=dataset_id):
-        return get_error_data_result(message=f"You don't own the document {name}.")
-
-    page = int(q.get("page", 1))
-    page_size = int(q.get("page_size", 30))
-    orderby = q.get("orderby", "create_time")
-    desc = str(q.get("desc", "true")).strip().lower() != "false"
-    keywords = q.get("keywords", "")
-
-    # filters - align with OpenAPI parameter names
-    suffix = q.getlist("suffix")
-    run_status = q.getlist("run")
-    create_time_from = int(q.get("create_time_from", 0))
-    create_time_to = int(q.get("create_time_to", 0))
-    metadata_condition_raw = q.get("metadata_condition")
-    metadata_condition = {}
-    if metadata_condition_raw:
-        try:
-            metadata_condition = json.loads(metadata_condition_raw)
-        except Exception:
-            return get_error_data_result(message="metadata_condition must be valid JSON.")
-    if metadata_condition and not isinstance(metadata_condition, dict):
-        return get_error_data_result(message="metadata_condition must be an object.")
-
-    # map run status (text or numeric) - align with API parameter
-    run_status_text_to_numeric = {"UNSTART": "0", "RUNNING": "1", "CANCEL": "2", "DONE": "3", "FAIL": "4"}
-    run_status_converted = [run_status_text_to_numeric.get(v, v) for v in run_status]
-
-    doc_ids_filter = None
-    if metadata_condition:
-        metas = DocMetadataService.get_flatted_meta_by_kbs([dataset_id])
-        doc_ids_filter = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
-        if metadata_condition.get("conditions") and not doc_ids_filter:
-            return get_result(data={"total": 0, "docs": []})
-
-    docs, total = DocumentService.get_list(dataset_id, page, page_size, orderby, desc, keywords, document_id, name, suffix, run_status_converted, doc_ids_filter)
-
-    # time range filter (0 means no bound)
-    if create_time_from or create_time_to:
-        docs = [d for d in docs if (create_time_from == 0 or d.get("create_time", 0) >= create_time_from) and (create_time_to == 0 or d.get("create_time", 0) <= create_time_to)]
-
-    # rename keys + map run status back to text for output
-    key_mapping = {
-        "chunk_num": "chunk_count",
-        "kb_id": "dataset_id",
-        "token_num": "token_count",
-        "parser_id": "chunk_method",
-    }
-    run_status_numeric_to_text = {"0": "UNSTART", "1": "RUNNING", "2": "CANCEL", "3": "DONE", "4": "FAIL"}
-
-    output_docs = []
-    for d in docs:
-        renamed_doc = {key_mapping.get(k, k): v for k, v in d.items()}
-        if "run" in d:
-            renamed_doc["run"] = run_status_numeric_to_text.get(str(d["run"]), d["run"])
-        output_docs.append(renamed_doc)
-
-    return get_result(data={"total": total, "docs": output_docs})
-
-
 @manager.route("/datasets/<dataset_id>/metadata/update", methods=["POST"])  # noqa: F821
 @token_required
 async def metadata_batch_update(dataset_id, tenant_id):
@@ -389,120 +206,6 @@ async def metadata_batch_update(dataset_id, tenant_id):
     target_doc_ids = list(target_doc_ids)
     updated = DocMetadataService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
     return get_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
-
-
-@manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
-@token_required
-async def delete(tenant_id, dataset_id):
-    """
-    Delete documents from a dataset.
-    ---
-    tags:
-      - Documents
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: dataset_id
-        type: string
-        required: true
-        description: ID of the dataset.
-      - in: body
-        name: body
-        description: Document deletion parameters.
-        required: true
-        schema:
-          type: object
-          properties:
-            ids:
-              type: array
-              items:
-                type: string
-              description: |
-                List of document IDs to delete.
-                If omitted, `null`, or an empty array is provided, no documents will be deleted.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: Documents deleted successfully.
-        schema:
-          type: object
-    """
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
-    req = await get_request_json()
-    if not req:
-        return get_result()
-
-    doc_ids = req.get("ids")
-    if not doc_ids:
-        if req.get("delete_all") is True:
-            doc_ids = [doc.id for doc in DocumentService.query(kb_id=dataset_id)]
-            if not doc_ids:
-                return get_result()
-        else:
-            return get_result()
-
-    doc_list = doc_ids
-
-    unique_doc_ids, duplicate_messages = check_duplicate_ids(doc_list, "document")
-    doc_list = unique_doc_ids
-
-    root_folder = FileService.get_root_folder(tenant_id)
-    pf_id = root_folder["id"]
-    FileService.init_knowledgebase_docs(pf_id, tenant_id)
-    errors = ""
-    not_found = []
-    success_count = 0
-    for doc_id in doc_list:
-        try:
-            e, doc = DocumentService.get_by_id(doc_id)
-            if not e:
-                not_found.append(doc_id)
-                continue
-            tenant_id = DocumentService.get_tenant_id(doc_id)
-            if not tenant_id:
-                return get_error_data_result(message="Tenant not found!")
-
-            b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
-
-            if not DocumentService.remove_document(doc, tenant_id):
-                return get_error_data_result(message="Database error (Document removal)!")
-
-            f2d = File2DocumentService.get_by_document_id(doc_id)
-            FileService.filter_delete(
-                [
-                    File.source_type == FileSource.KNOWLEDGEBASE,
-                    File.id == f2d[0].file_id,
-                ]
-            )
-            File2DocumentService.delete_by_document_id(doc_id)
-
-            settings.STORAGE_IMPL.rm(b, n)
-            success_count += 1
-        except Exception as e:
-            errors += str(e)
-
-    if not_found:
-        return get_result(message=f"Documents not found: {not_found}", code=RetCode.DATA_ERROR)
-
-    if errors:
-        return get_result(message=errors, code=RetCode.SERVER_ERROR)
-
-    if duplicate_messages:
-        if success_count > 0:
-            return get_result(
-                message=f"Partially deleted {success_count} datasets with {len(duplicate_messages)} errors",
-                data={"success_count": success_count, "errors": duplicate_messages},
-            )
-        else:
-            return get_error_data_result(message=";".join(duplicate_messages))
-
-    return get_result()
 
 
 DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
