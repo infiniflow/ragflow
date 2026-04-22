@@ -341,12 +341,13 @@ class RAGFlow:
             raise Exception(res["message"])
         return res["message"]
 
-    def search_message(self, query: str, memory_id: list[str], agent_id: str=None, session_id: str=None, similarity_threshold: float=0.2, keywords_similarity_weight: float=0.7, top_n: int=10) -> list[dict]:
+    def search_message(self, query: str, memory_id: list[str], agent_id: str=None, session_id: str=None, user_id: str=None, similarity_threshold: float=0.2, keywords_similarity_weight: float=0.7, top_n: int=10) -> list[dict]:
         params = {
             "query": query,
             "memory_id": memory_id,
             "agent_id": agent_id,
             "session_id": session_id,
+            "user_id": user_id,
             "similarity_threshold": similarity_threshold,
             "keywords_similarity_weight": keywords_similarity_weight,
             "top_n": top_n

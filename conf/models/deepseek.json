@@ -1,0 +1,36 @@
+{
+  "name": "DeepSeek",
+  "url": {
+    "default": "https://api.deepseek.com"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "models": [
+    {
+      "name": "deepseek-chat",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "features": {}
+    },
+    {
+      "name": "deepseek-reasoner",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "features": {}
+    }
+  ],
+  "features": {
+    "thinking": {
+      "default_value": true,
+      "supported_models": [
+        "deepseek-chat"
+      ]
+    }
+  }
+}

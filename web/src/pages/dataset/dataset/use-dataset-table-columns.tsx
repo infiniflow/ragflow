@@ -176,10 +176,10 @@ export function useDatasetTableColumns({
       },
     },
     {
-      accessorKey: 'chunk_num',
+      accessorKey: 'chunk_count',
       header: t('chunkNumber'),
       cell: ({ row }) => (
-        <div className="capitalize">{row.getValue('chunk_num')}</div>
+        <div className="capitalize">{row.getValue('chunk_count')}</div>
       ),
     },
     {
