@@ -268,6 +268,7 @@ class TestDocumentMetadataUnit:
         )
         assert res["code"] == 0, res
 
+
     @pytest.mark.p3
     def test_update_metadata_invalid_delete_item(self, WebApiAuth, add_document_func):
         """Test the new unified update_metadata API - invalid delete item."""
@@ -282,6 +283,7 @@ class TestDocumentMetadataUnit:
         )
         assert res["code"] == 102
         assert "Each delete requires key" in res["message"], res
+
 
     def test_thumbnails_missing_ids_rewrite_and_exception_unit(self, document_app_module, monkeypatch):
         module = document_app_module

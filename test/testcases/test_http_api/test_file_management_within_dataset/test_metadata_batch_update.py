@@ -137,7 +137,7 @@ class TestMetadataBatchUpdateValidation:
             dataset_id,
             {"selector": [1], "updates": [], "deletes": []},
         )
-        assert res["code"] == 100
+        assert res["code"] == 102
         assert "selector must be an object" in res["message"]
 
     def test_updates_and_deletes_must_be_lists(self, HttpApiAuth, dataset_with_docs):
@@ -150,7 +150,7 @@ class TestMetadataBatchUpdateValidation:
             dataset_id,
             {"selector": {}, "updates": {"key": "value"}, "deletes": []},
         )
-        assert res["code"] == 100
+        assert res["code"] == 102
         assert "updates and deletes must be lists" in res["message"]
 
     def test_metadata_condition_must_be_object(self, HttpApiAuth, dataset_with_docs):
@@ -163,7 +163,7 @@ class TestMetadataBatchUpdateValidation:
             dataset_id,
             {"selector": {"metadata_condition": [1]}, "updates": [], "deletes": []},
         )
-        assert res["code"] == 100
+        assert res["code"] == 102
         assert "metadata_condition must be an object" in res["message"]
 
     def test_document_ids_must_be_list(self, HttpApiAuth, dataset_with_docs):
@@ -176,7 +176,7 @@ class TestMetadataBatchUpdateValidation:
             dataset_id,
             {"selector": {"document_ids": "doc-1"}, "updates": [], "deletes": []},
         )
-        assert res["code"] == 100
+        assert res["code"] == 102
         assert "document_ids must be a list" in res["message"]
 
     def test_each_update_requires_key_and_value(self, HttpApiAuth, dataset_with_docs):
@@ -189,7 +189,7 @@ class TestMetadataBatchUpdateValidation:
             dataset_id,
             {"selector": {}, "updates": [{"key": ""}], "deletes": []},
         )
-        assert res["code"] == 100
+        assert res["code"] == 102
         assert "Each update requires key and value" in res["message"]
 
     def test_each_delete_requires_key(self, HttpApiAuth, dataset_with_docs):
@@ -202,7 +202,7 @@ class TestMetadataBatchUpdateValidation:
             dataset_id,
             {"selector": {}, "updates": [], "deletes": [{"x": "y"}]},
         )
-        assert res["code"] == 100
+        assert res["code"] == 102
         assert "Each delete requires key" in res["message"]
 
     def test_documents_not_belong_to_dataset(self, HttpApiAuth, dataset_with_docs):
@@ -219,7 +219,7 @@ class TestMetadataBatchUpdateValidation:
                 "deletes": [],
             },
         )
-        assert res["code"] == 100
+        assert res["code"] == 102
         assert "do not belong to dataset" in res["message"]
 
 
@@ -262,7 +262,10 @@ class TestMetadataBatchUpdateSuccess:
             dataset_id,
             {"selector": {"document_ids": document_ids}, "updates": updates, "deletes": []},
         )
+
         assert res["code"] == 0
+        assert res["data"]["updated"] == 5
+        assert res["data"]["matched_docs"] == 5
 
         # Now update only documents with category="test_category"
         updates = [{"key": "author", "value": "filtered_author"}]
@@ -272,7 +275,7 @@ class TestMetadataBatchUpdateSuccess:
             {
                 "selector": {
                     "document_ids": document_ids,
-                    "metadata_condition": {"conditions": [{"key": "category", "value": ["test_category"]}]},
+                    "metadata_condition": {"conditions": [{"comparison_operator": "is", "name": "category", "value": "test_category"}]},
                 },
                 "updates": updates,
                 "deletes": [],
@@ -373,7 +376,7 @@ class TestMetadataBatchUpdateSuccess:
             {
                 "selector": {
                     "document_ids": document_ids,
-                    "metadata_condition": {"conditions": [{"key": "nonexistent_key", "value": ["nonexistent_value"]}]},
+                    "metadata_condition": {"conditions": [{"comparison_operator":"is", "name": "nonexistent_key", "value": "nonexistent_value"}]},
                 },
                 "updates": [{"key": "author", "value": "test"}],
                 "deletes": [],
