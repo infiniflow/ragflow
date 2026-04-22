@@ -13,38 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import logging
-import random
-import re
-
-from common.metadata_utils import turn2jsonschema
-from quart import request
-import numpy as np
-
-from api.db.services.connector_service import Connector2KbService
-from api.db.services.llm_service import LLMBundle
-from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
-from api.db.services.doc_metadata_service import DocMetadataService
-from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from api.db.services.task_service import TaskService, GRAPH_RAPTOR_FAKE_DOC_ID
-from api.db.services.user_service import UserTenantService
-from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_model_config_by_id
-from api.utils.api_utils import (
-    get_error_data_result,
-    server_error_response,
-    get_data_error_result,
-    validate_request,
-    get_request_json,
-)
-from api.db import VALID_FILE_TYPES
-from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.utils.api_utils import get_json_result
-from rag.nlp import search
-from rag.utils.redis_conn import REDIS_CONN
-from common.constants import RetCode, PipelineTaskType, VALID_TASK_STATUS, LLMType
-from common import settings
-from common.doc_store.doc_store_base import OrderByExpr
-from api.apps import login_required, current_user
 
 """
 Deprecated, todo delete 
