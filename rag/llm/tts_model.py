@@ -115,7 +115,8 @@ class HTTPBasedTTS(Base):
             url,
             headers=self.headers,
             json=payload,
-            stream=stream
+            stream=stream,
+            timeout=60,
         )
         
         if response.status_code != 200:
@@ -521,7 +522,8 @@ class RAGconTTS(Base):
             f"{self.base_url}/audio/speech",
             headers=self.headers,
             json=payload,
-            stream=stream
+            stream=stream,
+            timeout=60,
         )
         
         if response.status_code != 200:

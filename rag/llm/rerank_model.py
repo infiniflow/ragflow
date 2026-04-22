@@ -64,7 +64,7 @@ class JinaRerank(Base):
     def similarity(self, query: str, texts: list):
         texts = [truncate(t, 8196) for t in texts]
         data = {"model": self.model_name, "query": query, "documents": texts, "top_n": len(texts)}
-        res = requests.post(self.base_url, headers=self.headers, json=data).json()
+        res = requests.post(self.base_url, headers=self.headers, json=data, timeout=30).json()
         rank = np.zeros(len(texts), dtype=float)
         try:
             for d in res["results"]:
@@ -96,7 +96,7 @@ class XInferenceRerank(Base):
         for _, t in pairs:
             token_count += num_tokens_from_string(t)
         data = {"model": self.model_name, "query": query, "return_documents": "true", "return_len": "true", "documents": texts}
-        res = requests.post(self.base_url, headers=self.headers, json=data).json()
+        res = requests.post(self.base_url, headers=self.headers, json=data, timeout=30).json()
         rank = np.zeros(len(texts), dtype=float)
         try:
             for d in res["results"]:
@@ -129,7 +129,7 @@ class LocalAIRerank(Base):
         token_count = 0
         for t in texts:
             token_count += num_tokens_from_string(t)
-        res = requests.post(self.base_url, headers=self.headers, json=data).json()
+        res = requests.post(self.base_url, headers=self.headers, json=data, timeout=30).json()
         rank = np.zeros(len(texts), dtype=float)
         try:
             for d in res["results"]:
@@ -172,7 +172,7 @@ class NvidiaRerank(Base):
             "truncate": "END",
             "top_n": len(texts),
         }
-        res = requests.post(self.base_url, headers=self.headers, json=data).json()
+        res = requests.post(self.base_url, headers=self.headers, json=data, timeout=30).json()
         rank = np.zeros(len(texts), dtype=float)
         try:
             for d in res["rankings"]:
@@ -216,7 +216,7 @@ class OpenAI_APIRerank(Base):
         token_count = 0
         for t in texts:
             token_count += num_tokens_from_string(t)
-        res = requests.post(self.base_url, headers=self.headers, json=data).json()
+        res = requests.post(self.base_url, headers=self.headers, json=data, timeout=30).json()
         rank = np.zeros(len(texts), dtype=float)
         try:
             for d in res["results"]:
@@ -297,7 +297,7 @@ class SILICONFLOWRerank(Base):
             "max_chunks_per_doc": 1024,
             "overlap_tokens": 80,
         }
-        response_raw = requests.post(self.base_url, json=payload, headers=self.headers)
+        response_raw = requests.post(self.base_url, json=payload, headers=self.headers, timeout=30)
         response = response_raw.json()
         rank = np.zeros(len(texts), dtype=float)
         try:
@@ -412,7 +412,7 @@ class HuggingfaceRerank(Base):
         for i in range(0, len(texts), batch_size):
             try:
                 res = requests.post(
-                    f"http://{url}/rerank", headers={"Content-Type": "application/json"}, json={"query": query, "texts": texts[i : i + batch_size], "raw_scores": False, "truncate": True}
+                    f"http://{url}/rerank", headers={"Content-Type": "application/json"}, json={"query": query, "texts": texts[i : i + batch_size], "raw_scores": False, "truncate": True}, timeout=30
                 )
 
                 for o in res.json():
@@ -461,7 +461,7 @@ class GPUStackRerank(Base):
         }
 
         try:
-            response = requests.post(self.base_url, json=payload, headers=self.headers)
+            response = requests.post(self.base_url, json=payload, headers=self.headers, timeout=30)
             response.raise_for_status()
             response_json = response.json()
 
@@ -552,7 +552,7 @@ class RAGconRerank(Base):
         token_count = 0
         for t in texts:
             token_count += num_tokens_from_string(t)
-        res = requests.post(self._base_url + "/rerank", headers=self.headers, json=data).json()
+        res = requests.post(self._base_url + "/rerank", headers=self.headers, json=data, timeout=30).json()
         rank = np.zeros(len(texts), dtype=float)
         try:
             for d in res["results"]:

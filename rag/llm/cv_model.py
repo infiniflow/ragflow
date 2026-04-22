@@ -445,6 +445,7 @@ class Zhipu4V(GptV4):
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             },
+            timeout=60,
         )
         return response.json()
 
@@ -1028,6 +1029,7 @@ class NvidiaCV(Base):
                 "Authorization": f"Bearer {self.key}",
             },
             json={"messages": self.prompt(b64)},
+            timeout=60,
         )
         response = response.json()
         return (
@@ -1044,6 +1046,7 @@ class NvidiaCV(Base):
                 "Authorization": f"Bearer {self.key}",
             },
             json={"messages": msg, **gen_conf},
+            timeout=60,
         )
         return response.json()
 
