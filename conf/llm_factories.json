@@ -6296,7 +6296,7 @@
         {
             "name": "Astraflow",
             "logo": "",
-            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT,TTS,SPEECH2TEXT",
+            "tags": "LLM,TEXT EMBEDDING,TTS,SPEECH2TEXT",
             "status": "1",
             "rank": "250",
             "url": "https://api-us-ca.umodelverse.ai/v1",
@@ -6467,7 +6467,7 @@
         {
             "name": "Astraflow-CN",
             "logo": "",
-            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT,TTS,SPEECH2TEXT",
+            "tags": "LLM,TEXT EMBEDDING,TTS,SPEECH2TEXT",
             "status": "1",
             "rank": "249",
             "url": "https://api.modelverse.cn/v1",

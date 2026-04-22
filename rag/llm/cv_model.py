@@ -405,24 +405,6 @@ class QWenCV(GptV4):
                     logging.warning("[QWenCV] Failed to cleanup temp video file: %s", tmp_path)
 
 
-class AstraflowCV(GptV4):
-    _FACTORY_NAME = "Astraflow"
-
-    def __init__(self, key, model_name, lang="Chinese", base_url=None, **kwargs):
-        if not base_url:
-            base_url = "https://api-us-ca.umodelverse.ai/v1"
-        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
-
-
-class AstraflowCNCV(GptV4):
-    _FACTORY_NAME = "Astraflow-CN"
-
-    def __init__(self, key, model_name, lang="Chinese", base_url=None, **kwargs):
-        if not base_url:
-            base_url = "https://api.modelverse.cn/v1"
-        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
-
-
 class HunyuanCV(GptV4):
     _FACTORY_NAME = "Tencent Hunyuan"
 
