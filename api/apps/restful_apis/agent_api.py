@@ -28,6 +28,7 @@ from agent.dsl_migration import normalize_chunker_dsl
 from api.apps import login_required
 from api.apps.services.canvas_replica_service import CanvasReplicaService
 from api.db import CanvasCategory
+from api.db.db_models import Task
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import (
     CanvasTemplateService,
@@ -35,9 +36,11 @@ from api.db.services.canvas_service import (
     completion as agent_completion,
     completion_openai,
 )
+from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.task_service import CANVAS_DEBUG_DOC_ID, queue_dataflow
+from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
+from api.db.services.task_service import CANVAS_DEBUG_DOC_ID, TaskService, queue_dataflow
 from api.db.services.user_service import TenantService, UserService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.utils.api_utils import (
@@ -51,7 +54,10 @@ from api.utils.api_utils import (
 )
 from common.constants import RetCode
 from common.misc_utils import get_uuid, thread_pool_exec
+from common import settings
+from peewee import MySQLDatabase, PostgresqlDatabase
 from rag.flow.pipeline import Pipeline
+from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
 
 
@@ -505,6 +511,153 @@ async def reset_agent(agent_id, tenant_id):
         if not replica_ok:
             return get_data_error_result(message="agent reset, but replica sync failed.")
         return get_json_result(data=dsl)
+    except Exception as exc:
+        return server_error_response(exc)
+
+
+@manager.route("/agents/rerun", methods=["POST"])  # noqa: F821
+@validate_request("id", "dsl", "component_id")
+@login_required
+@add_tenant_id_to_kwargs
+async def rerun_agent(tenant_id):
+    req = await get_request_json()
+    doc = PipelineOperationLogService.get_documents_info(req["id"])
+    if not doc:
+        return get_data_error_result(message="Document not found.")
+    doc = doc[0]
+    if 0 < doc["progress"] < 1:
+        return get_data_error_result(message=f"`{doc['name']}` is processing...")
+
+    if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc["kb_id"]):
+        settings.docStoreConn.delete({"doc_id": doc["id"]}, search.index_name(tenant_id), doc["kb_id"])
+    doc["progress_msg"] = ""
+    doc["chunk_num"] = 0
+    doc["token_num"] = 0
+    DocumentService.clear_chunk_num_when_rerun(doc["id"])
+    DocumentService.update_by_id(doc["id"], doc)
+    TaskService.filter_delete([Task.doc_id == doc["id"]])
+
+    dsl = req["dsl"]
+    dsl["path"] = [req["component_id"]]
+    PipelineOperationLogService.update_by_id(req["id"], {"dsl": dsl})
+    queue_dataflow(
+        tenant_id=tenant_id,
+        flow_id=req["id"],
+        task_id=get_uuid(),
+        doc_id=doc["id"],
+        priority=0,
+        rerun=True,
+    )
+    return get_json_result(data=True)
+
+
+@manager.route("/agents/test_db_connection", methods=["POST"])  # noqa: F821
+@validate_request("db_type", "database", "username", "host", "port", "password")
+@login_required
+async def test_db_connection():
+    req = await get_request_json()
+    try:
+        if req["db_type"] in ["mysql", "mariadb"]:
+            db = MySQLDatabase(
+                req["database"],
+                user=req["username"],
+                host=req["host"],
+                port=req["port"],
+                password=req["password"],
+            )
+        elif req["db_type"] == "oceanbase":
+            db = MySQLDatabase(
+                req["database"],
+                user=req["username"],
+                host=req["host"],
+                port=req["port"],
+                password=req["password"],
+                charset="utf8mb4",
+            )
+        elif req["db_type"] == "postgres":
+            db = PostgresqlDatabase(
+                req["database"],
+                user=req["username"],
+                host=req["host"],
+                port=req["port"],
+                password=req["password"],
+            )
+        elif req["db_type"] == "mssql":
+            import pyodbc
+
+            connection_string = (
+                f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+                f"SERVER={req['host']},{req['port']};"
+                f"DATABASE={req['database']};"
+                f"UID={req['username']};"
+                f"PWD={req['password']};"
+            )
+            db = pyodbc.connect(connection_string)
+            cursor = db.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
+        elif req["db_type"] == "IBM DB2":
+            import ibm_db
+
+            conn_str = (
+                f"DATABASE={req['database']};"
+                f"HOSTNAME={req['host']};"
+                f"PORT={req['port']};"
+                f"PROTOCOL=TCPIP;"
+                f"UID={req['username']};"
+                f"PWD={req['password']};"
+            )
+            logging.info(
+                "DATABASE=%s;HOSTNAME=%s;PORT=%s;PROTOCOL=TCPIP;UID=%s;PWD=****;",
+                req["database"],
+                req["host"],
+                req["port"],
+                req["username"],
+            )
+            conn = ibm_db.connect(conn_str, "", "")
+            stmt = ibm_db.exec_immediate(conn, "SELECT 1 FROM sysibm.sysdummy1")
+            ibm_db.fetch_assoc(stmt)
+            ibm_db.close(conn)
+            return get_json_result(data="Database Connection Successful!")
+        elif req["db_type"] == "trino":
+            import os
+            import trino
+
+            db_name = req["database"]
+            if "." in db_name:
+                catalog, schema = db_name.split(".", 1)
+            elif "/" in db_name:
+                catalog, schema = db_name.split("/", 1)
+            else:
+                catalog, schema = db_name, "default"
+
+            http_scheme = "https" if os.environ.get("TRINO_USE_TLS", "0") == "1" else "http"
+            auth = None
+            if http_scheme == "https" and req.get("password"):
+                auth = trino.BasicAuthentication(req.get("username") or "ragflow", req["password"])
+
+            conn = trino.dbapi.connect(
+                host=req["host"],
+                port=int(req["port"] or 8080),
+                user=req["username"] or "ragflow",
+                catalog=catalog,
+                schema=schema or "default",
+                http_scheme=http_scheme,
+                auth=auth,
+            )
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.fetchall()
+            cur.close()
+            conn.close()
+            return get_json_result(data="Database Connection Successful!")
+        else:
+            return server_error_response("Unsupported database type.")
+
+        if req["db_type"] != "mssql":
+            db.connect()
+        db.close()
+        return get_json_result(data="Database Connection Successful!")
     except Exception as exc:
         return server_error_response(exc)
 

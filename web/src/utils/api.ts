@@ -82,7 +82,7 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/trace_raptor`,
   unbindPipelineTask: ({ kb_id, type }: { kb_id: string; type: string }) =>
     `${webAPI}/kb/unbind_task?kb_id=${kb_id}&pipeline_task_type=${type}`,
-  pipelineRerun: `${webAPI}/canvas/rerun`,
+  pipelineRerun: `${restAPIv1}/agents/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
   updateMetaData: `${webAPI}/document/metadata/update`,
@@ -183,7 +183,7 @@ export default {
   deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   agentChatCompletion: `${restAPIv1}/agents/chat/completion`,
   resetAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}/reset`,
-  testDbConnect: `${webAPI}/canvas/test_db_connect`,
+  testDbConnect: `${restAPIv1}/agents/test_db_connection`,
   getInputElements: `${webAPI}/canvas/input_elements`,
   debug: (agentId: string, componentId: string) =>
     `${restAPIv1}/agents/${agentId}/components/${componentId}/debug`,
