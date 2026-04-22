@@ -803,6 +803,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         full_answer = last_state.full_text if last_state else ""
         if full_answer:
             final = decorate_answer(thought + full_answer)
+            final["answer"] = ""
             final["final"] = True
             final["audio_binary"] = None
             yield final
@@ -1473,6 +1474,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         yield {"answer": value, "reference": {}, "final": False}
     full_answer = last_state.full_text if last_state else ""
     final = decorate_answer(full_answer)
+    final["answer"] = ""
     final["final"] = True
     yield final
 
