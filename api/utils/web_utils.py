@@ -176,6 +176,9 @@ def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_opt
     try:
         WebDriverWait(driver, timeout).until(staleness_of(driver.find_element(by=By.TAG_NAME, value="html")))
     except TimeoutException:
+        pass
+
+    try:
         calculated_print_options = {
             "landscape": False,
             "displayHeaderFooter": False,
@@ -184,8 +187,9 @@ def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_opt
         }
         calculated_print_options.update(print_options)
         result = __send_devtools(driver, "Page.printToPDF", calculated_print_options)
-        driver.quit()
         return base64.b64decode(result["data"])
+    finally:
+        driver.quit()
 
 
 def is_private_ip(ip: str) -> bool:
