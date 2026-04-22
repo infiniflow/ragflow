@@ -39,8 +39,8 @@ DEFAULT_FUSION_WEIGHTS = "0.05,0.95"
 DEFAULT_RERANK_LIMIT = 64
 DEFAULT_CITATION_THRESHOLD = 0.63
 DEFAULT_SIMILARITY_THRESHOLD = 0.1
-RETRY_SIMILARITY_THRESHOLD = 0.17
-RETRY_MIN_MATCH = 0.1
+RETRY_SIMILARITY_FACTOR = 0.17
+RETRY_MIN_MATCH_FACTOR = 0.1
 
 
 def index_name(uid) -> str:
@@ -159,21 +159,25 @@ class Dealer:
                         res = await thread_pool_exec(
                             self.dataStore.search, src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids
                         )
-                    elif emb_mdl is None:
-                        matchText_retry, _ = self.qryr.question(qst, min_match=RETRY_MIN_MATCH)
-                        res = await thread_pool_exec(
-                            self.dataStore.search, src, highlight_fields, filters,
-                            [matchText_retry], orderBy, offset, limit,
-                            idx_names, kb_ids, rank_feature=rank_feature
-                        )
                     else:
-                        matchText_retry, _ = self.qryr.question(qst, min_match=RETRY_MIN_MATCH)
-                        matchDense.extra_options["similarity"] = RETRY_SIMILARITY_THRESHOLD
-                        res = await thread_pool_exec(
-                            self.dataStore.search, src, highlight_fields, filters,
-                            [matchText_retry, matchDense, fusionExpr], orderBy, offset, limit,
-                            idx_names, kb_ids, rank_feature=rank_feature
-                        )
+                        user_sim = req.get("similarity", DEFAULT_SIMILARITY_THRESHOLD)
+                        retry_sim = min(RETRY_SIMILARITY_FACTOR, user_sim)
+                        retry_min_match = min(RETRY_MIN_MATCH_FACTOR, 0.3)
+                        matchText_retry, _ = self.qryr.question(qst, min_match=retry_min_match)
+                        
+                        if emb_mdl is None:
+                            res = await thread_pool_exec(
+                                self.dataStore.search, src, highlight_fields, filters,
+                                [matchText_retry], orderBy, offset, limit,
+                                idx_names, kb_ids, rank_feature=rank_feature
+                            )
+                        else:
+                            matchDense.extra_options["similarity"] = retry_sim
+                            res = await thread_pool_exec(
+                                self.dataStore.search, src, highlight_fields, filters,
+                                [matchText_retry, matchDense, fusionExpr], orderBy, offset, limit,
+                                idx_names, kb_ids, rank_feature=rank_feature
+                            )
                     total = self.dataStore.get_total(res)
                     logger.debug("Dealer.search retry TOTAL: %d", total)
                 except Exception as e:
@@ -201,13 +205,11 @@ class Dealer:
 
     def insert_citations(self, answer: str, chunks: List[str], chunk_v: List[List[float]],
                          embd_mdl, tkweight: float = 0.1, vtweight: float = 0.9) -> tuple[str, set]:
-        """
-        Insert citation markers into LLM answer with hybrid similarity matching.
-        Fixed: per-sentence deduplication to avoid global citation suppression.
-        """
+        """Insert citation markers with hybrid matching, no in-place modification to input params."""
         if not chunks:
             return answer, set()
         
+        local_chunk_v = list(chunk_v)
         pieces = re.split(r"(```)", answer)
         processed_pieces = []
         i = 0
@@ -239,14 +241,14 @@ class Dealer:
             ans_v, _ = embd_mdl.encode(valid_pieces)
             target_dim = len(ans_v[0])
             mismatched = 0
-            for i in range(len(chunk_v)):
-                if len(chunk_v[i]) != target_dim:
-                    chunk_v[i] = [0.0] * target_dim
+            for idx in range(len(local_chunk_v)):
+                if len(local_chunk_v[idx]) != target_dim:
+                    local_chunk_v[idx] = [0.0] * target_dim
                     mismatched += 1
             if mismatched > 0:
                 logger.warning(
-                    "Insert citations: %d/%d chunk vectors had dimension mismatch (expected %d); replaced with zero vector",
-                    mismatched, len(chunk_v), target_dim
+                    "Insert citations: %d/%d chunk vectors dimension mismatch (expected %d), replaced with zero vector",
+                    mismatched, len(local_chunk_v), target_dim
                 )
         except Exception as e:
             logger.error("Citation embedding failed: %s", str(e))
@@ -256,20 +258,25 @@ class Dealer:
         citations = {}
         threshold = DEFAULT_CITATION_THRESHOLD
 
-        while threshold > 0.3 and not citations and valid_pieces and chunks_tks:
+        try:
+            sim_matrix = []
             for i, piece in enumerate(valid_pieces):
-                try:
-                    sim, _, _ = self.qryr.hybrid_similarity(
-                        ans_v[i], chunk_v,
-                        rag_tokenizer.tokenize(self.qryr.rmWWW(piece)).split(),
-                        chunks_tks, tkweight, vtweight
-                    )
-                    max_sim = np.max(sim) * 0.99
-                    if max_sim >= threshold:
-                        citations[valid_indices[i]] = [str(ii) for ii in np.argsort(sim)[::-1] if sim[ii] > max_sim][:4]
-                except Exception as e:
-                    logger.warning("Citation matching failed: %s", str(e))
-                    continue
+                sim, _, _ = self.qryr.hybrid_similarity(
+                    ans_v[i], local_chunk_v,
+                    rag_tokenizer.tokenize(self.qryr.rmWWW(piece)).split(),
+                    chunks_tks, tkweight, vtweight
+                )
+                sim_matrix.append(sim)
+        except Exception as e:
+            logger.warning("Citation matching failed: %s", str(e))
+            return answer, set()
+
+        while threshold > 0.3 and not citations:
+            for i, piece in enumerate(valid_pieces):
+                sim = sim_matrix[i]
+                max_sim = np.max(sim) * 0.99
+                if max_sim >= threshold:
+                    citations[valid_indices[i]] = [str(ii) for ii in np.argsort(sim)[::-1] if sim[ii] > max_sim][:4]
             threshold *= 0.8
 
         result = ""
@@ -280,7 +287,7 @@ class Dealer:
                 continue
             seen_here = set()
             for cid in citations[i]:
-                if int(cid) >= len(chunk_v) or cid in seen_here:
+                if int(cid) >= len(local_chunk_v) or cid in seen_here:
                     continue
                 result += f" [ID:{cid}]"
                 seen_here.add(cid)
@@ -399,10 +406,7 @@ class Dealer:
             rerank_mdl=None, highlight: bool = False,
             rank_feature: Optional[Dict] = None
     ):
-        """
-        End-to-end retrieval pipeline: query routing -> search -> rerank -> pagination.
-        Fixed: variable consistency, type safety, boundary logic.
-        """
+        """End-to-end retrieval pipeline with dynamic vector dimension support."""
         rank_feature = rank_feature or {PAGERANK_FLD: 10}
         ranks = {"total": 0, "chunks": [], "doc_aggs": []}
         
@@ -472,7 +476,9 @@ class Dealer:
 
         begin = global_offset % rerank_limit
         page_idx = valid_idx[begin:begin+page_size]
-        vec_col = f"q_{len(sres.query_vector)}_vec" if sres.query_vector else ""
+        qv_size = len(sres.query_vector) if sres.query_vector else 0
+        vec_col = f"q_{qv_size}_vec" if qv_size > 0 else ""
+        zero_vec = [0.0] * qv_size if qv_size > 0 else []
 
         for i in page_idx:
             if i >= len(sres.ids):
@@ -495,7 +501,7 @@ class Dealer:
                 "similarity": float(sim_np[i]),
                 "vector_similarity": float(vsim[i] if i < len(vsim) else 0),
                 "term_similarity": float(tsim[i] if i < len(tsim) else 0),
-                "vector": chunk.get(vec_col, [0.0]*1024),
+                "vector": chunk.get(vec_col, zero_vec),
                 "positions": chunk.get("position_int", []),
                 "doc_type_kwd": chunk.get("doc_type_kwd", ""),
                 "mom_id": chunk.get("mom_id", ""),
@@ -527,10 +533,10 @@ class Dealer:
         """Execute raw SQL query on document store."""
         return self.dataStore.sql(sql, fetch_size, format)
 
-    def chunk_list(self, doc_id: str, tenant_id: str, kb_ids: List[str], 
+    async def chunk_list(self, doc_id: str, tenant_id: str, kb_ids: List[str], 
                    max_count: int = 1024, offset: int = 0, 
                    fields: List[str] = None, sort_by_position: bool = False):
-        """Fetch all chunks from single document by doc_id."""
+        """Async fetch chunks with thread pool, no event loop blocking."""
         fields = fields or ["docnm_kwd", "content_with_weight", "img_id"]
         condition = {"doc_id": doc_id}
         fields_set = set(fields)
@@ -548,8 +554,8 @@ class Dealer:
             limit = min(batch_size, max_count - p)
             if limit <= 0:
                 break
-            es_res = self.dataStore.search(
-                list(fields_set), [], condition, [], orderBy, p, limit,
+            es_res = await thread_pool_exec(
+                self.dataStore.search, list(fields_set), [], condition, [], orderBy, p, limit,
                 index_name(tenant_id), kb_ids
             )
             chunks = self.dataStore.get_fields(es_res, list(fields_set))
@@ -610,12 +616,13 @@ class Dealer:
 
     async def retrieval_by_toc(self, query_txt: str, chunks: List[Dict], 
                                tenant_ids: List[str], chat_mdl, topn: int = 6) -> List[Dict]:
-        """Retrieve supplement chunks via document table of contents structure."""
+        """TOC retrieval with unified return format for all branches."""
         from rag.prompts.generator import relevant_chunks_with_toc
-        if not chunks:
-            return []
+        cloned_chunks = [chunk.copy() for chunk in chunks] if chunks else []
+        
+        if not cloned_chunks:
+            return sorted(cloned_chunks, key=lambda x: x.get("similarity", 0) * -1)[:topn]
 
-        cloned_chunks = [chunk.copy() for chunk in chunks]
         doc_scores = defaultdict(int)
         doc2kb = {}
         for ck in cloned_chunks:
@@ -623,7 +630,8 @@ class Dealer:
             doc2kb[ck["doc_id"]] = ck["kb_id"]
         
         if not doc_scores:
-            return cloned_chunks
+            return sorted(cloned_chunks, key=lambda x: x.get("similarity", 0) * -1)[:topn]
+        
         top_doc_id = max(doc_scores.items(), key=lambda x: x[1])[0]
         kb_ids = [doc2kb[top_doc_id]]
 
@@ -639,19 +647,21 @@ class Dealer:
                 continue
 
         if not toc:
-            return cloned_chunks
+            return sorted(cloned_chunks, key=lambda x: x.get("similarity", 0) * -1)[:topn]
 
         try:
             ids = await relevant_chunks_with_toc(query_txt, toc, chat_mdl, topn*2)
         except Exception as e:
             logger.warning("TOC retrieval failed: %s", str(e))
-            return cloned_chunks
+            return sorted(cloned_chunks, key=lambda x: x.get("similarity", 0) * -1)[:topn]
 
         if not ids:
-            return cloned_chunks
+            return sorted(cloned_chunks, key=lambda x: x.get("similarity", 0) * -1)[:topn]
 
         chunk_map = {ck["chunk_id"]: i for i, ck in enumerate(cloned_chunks)}
-        vec_size = 1024
+        qv_size = len(chunks[0].get("vector", [])) if chunks else 0
+        zero_vec = [0.0] * qv_size
+        
         for cid, sim in ids:
             if cid in chunk_map:
                 cloned_chunks[chunk_map[cid]]["similarity"] += sim
@@ -659,12 +669,7 @@ class Dealer:
             chunk = self.dataStore.get(cid, index_name(tenant_ids[0]), kb_ids)
             if not chunk:
                 continue
-            vec = [0.0]*vec_size
-            for k, v in chunk.items():
-                if k.endswith("_vec"):
-                    vec = v
-                    vec_size = len(v)
-                    break
+            vec = chunk.get(next((k for k in chunk if k.endswith("_vec")), ""), zero_vec)
             cloned_chunks.append({
                 "chunk_id": cid,
                 "content_ltks": chunk.get("content_ltks", ""),
@@ -685,7 +690,7 @@ class Dealer:
         return sorted(cloned_chunks, key=lambda x: x["similarity"] * -1)[:topn]
 
     def retrieval_by_children(self, chunks: List[Dict], tenant_ids: List[str]) -> List[Dict]:
-        """Merge parent chunk info from child chunk retrieval results."""
+        """Merge parent chunk info from child chunks."""
         if not chunks:
             return []
 
@@ -699,9 +704,11 @@ class Dealer:
                 filtered_chunks.append(ck)
 
         if not mom_chunks:
-            return filtered_chunks
+            return sorted(filtered_chunks, key=lambda x: x.get("similarity", 0) * -1)
 
-        vec_size = 1024
+        qv_size = len(chunks[0].get("vector", [])) if chunks else 0
+        zero_vec = [0.0] * qv_size
+        
         for mom_id, child_chunks in mom_chunks.items():
             try:
                 chunk = self.dataStore.get(mom_id, index_name(tenant_ids[0]), [child_chunks[0]["kb_id"]])
@@ -709,13 +716,7 @@ class Dealer:
                     filtered_chunks.extend(child_chunks)
                     continue
 
-                vec = [0.0]*vec_size
-                for k, v in child_chunks[0].items():
-                    if k.endswith("_vec"):
-                        vec = v
-                        vec_size = len(v)
-                        break
-
+                vec = child_chunks[0].get(next((k for k in child_chunks[0] if k.endswith("_vec")), ""), zero_vec)
                 filtered_chunks.append({
                     "chunk_id": mom_id,
                     "content_ltks": " ".join([ck["content_ltks"] for ck in child_chunks]),
