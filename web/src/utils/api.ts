@@ -203,7 +203,7 @@ export default {
     `${webAPI}/canvas/${canvasId}/sessions/${sessionId}`,
   fetchExternalAgentInputs: (canvasId: string) =>
     `${restAPIv1}/agentbots/${canvasId}/inputs`,
-  prompt: `${webAPI}/canvas/prompts`,
+  prompt: `${restAPIv1}/agents/prompts`,
   cancelDataflow: (id: string) => `${webAPI}/canvas/cancel/${id}`,
   downloadFile: `${webAPI}/canvas/download`,
   testWebhook: (id: string) => `${restAPIv1}/webhook_test/${id}`,

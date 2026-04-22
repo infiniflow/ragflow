@@ -130,21 +130,6 @@ def del_session(canvas_id, session_id):
     return get_json_result(data=API4ConversationService.delete_by_id(session_id))
 
 
-@manager.route('/prompts', methods=['GET'])  # noqa: F821
-@login_required
-def prompts():
-    from rag.prompts.generator import ANALYZE_TASK_SYSTEM, ANALYZE_TASK_USER, NEXT_STEP, REFLECT, CITATION_PROMPT_TEMPLATE
-
-    return get_json_result(data={
-        "task_analysis": ANALYZE_TASK_SYSTEM +"\n\n"+ ANALYZE_TASK_USER,
-        "plan_generation": NEXT_STEP,
-        "reflection": REFLECT,
-        #"context_summary": SUMMARY4MEMORY,
-        #"context_ranking": RANK_MEMORY,
-        "citation_guidelines": CITATION_PROMPT_TEMPLATE
-    })
-
-
 @manager.route('/download', methods=['GET'])  # noqa: F821
 async def download():
     id = request.args.get("id")

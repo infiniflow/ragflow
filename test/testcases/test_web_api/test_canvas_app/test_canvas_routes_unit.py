@@ -1280,6 +1280,11 @@ def test_session_crud_prompts_and_download_matrix_unit(monkeypatch):
     assert res["code"] == module.RetCode.SUCCESS
     assert res["data"] is True
 
+    from test.testcases.test_http_api.test_session_management.test_session_sdk_routes_unit import (
+        _load_agent_api_module,
+    )
+
+    agent_module = _load_agent_api_module(monkeypatch)
     rag_prompts_pkg = ModuleType("rag.prompts")
     rag_prompts_pkg.__path__ = []
     monkeypatch.setitem(sys.modules, "rag.prompts", rag_prompts_pkg)
@@ -1291,7 +1296,7 @@ def test_session_crud_prompts_and_download_matrix_unit(monkeypatch):
     rag_generator_mod.CITATION_PROMPT_TEMPLATE = "CITE"
     monkeypatch.setitem(sys.modules, "rag.prompts.generator", rag_generator_mod)
 
-    res = module.prompts()
+    res = agent_module.prompts()
     assert res["code"] == module.RetCode.SUCCESS
     assert res["data"]["task_analysis"] == "SYS\n\nUSER"
     assert res["data"]["plan_generation"] == "NEXT"

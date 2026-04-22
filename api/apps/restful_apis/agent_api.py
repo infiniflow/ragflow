@@ -113,6 +113,27 @@ def list_agent_template():
     return get_json_result(data=[item.to_dict() for item in CanvasTemplateService.get_all()])
 
 
+@manager.route("/agents/prompts", methods=["GET"])  # noqa: F821
+@login_required
+def prompts():
+    from rag.prompts.generator import (
+        ANALYZE_TASK_SYSTEM,
+        ANALYZE_TASK_USER,
+        CITATION_PROMPT_TEMPLATE,
+        NEXT_STEP,
+        REFLECT,
+    )
+
+    return get_json_result(
+        data={
+            "task_analysis": f"{ANALYZE_TASK_SYSTEM}\n\n{ANALYZE_TASK_USER}",
+            "plan_generation": NEXT_STEP,
+            "reflection": REFLECT,
+            "citation_guidelines": CITATION_PROMPT_TEMPLATE,
+        }
+    )
+
+
 @manager.route("/agents", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
