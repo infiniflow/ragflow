@@ -2,8 +2,8 @@ import sys
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 
-# --- THE ANTI-DEPENDENCY HELL SHIELD (GLOBAL) ---
-# We run this ONCE at the top of the file to prevent circular import crashes
+# --- 1. THE ANTI-DEPENDENCY HELL SHIELD (GLOBAL) ---
+# We run this FIRST to prevent circular import crashes and missing packages
 sys.modules['infinity'] = MagicMock()
 sys.modules['infinity.rag_tokenizer'] = MagicMock()
 sys.modules['infinity.common'] = MagicMock()
@@ -18,8 +18,9 @@ sys.modules['langfuse'] = MagicMock()
 sys.modules['google.api_core'] = MagicMock()
 sys.modules['google.api_core.exceptions'] = MagicMock()
 
-# Import the Agent ONCE after the shield is up
-from agent.component.agent_with_tools import Agent
+# --- 2. RAGFLOW IMPORTS ---
+# Import the Agent and tracker ONCE after the shield is completely up
+from agent.component.agent_with_tools import Agent, _tool_call_tracker
 
 def setup_agent(prompt):
     """Helper to initialize the mocked Agent for our tests"""
@@ -49,15 +50,14 @@ async def test_agent_hallucination_on_failed_retrieval():
     prompt = "Find my password."
     agent = setup_agent(prompt)
     
-    # Tool outputs are empty
     mock_tool_empty = MagicMock()
     mock_tool_empty._param.outputs = {} 
     agent.tools = {"empty_tool": mock_tool_empty}
     
     with patch('agent.component.agent_with_tools.Agent._generate_async', new_callable=AsyncMock) as mock_generate:
-        # Simulate the LLM physically triggering the tool callback
         async def side_effect(*args, **kwargs):
-            agent.toolcall_session.callback()
+            # Manually flip the tracker switch since we mocked the real function
+            _tool_call_tracker.set(True)
             return "I found your password, it is 1234."
         mock_generate.side_effect = side_effect
         
@@ -72,16 +72,15 @@ async def test_agent_allows_small_talk():
     prompt = "Hello there!"
     agent = setup_agent(prompt)
     
-    # Tools exist, but outputs are empty because they were never called
     mock_tool = MagicMock()
     mock_tool._param.outputs = {} 
     agent.tools = {"some_tool": mock_tool}
     
     with patch('agent.component.agent_with_tools.Agent._generate_async', new_callable=AsyncMock) as mock_generate:
-        # LLM generates a response WITHOUT triggering the tool callback
         expected_response = "Hi! How can I help you today?"
         mock_generate.return_value = expected_response
         
+        # We do NOT set the tracker here because no tool was called
         response = await agent._invoke_async(user_prompt=prompt)
         
     assert response == expected_response, "Failed: Trapdoor destroyed a valid small-talk response."
@@ -93,16 +92,15 @@ async def test_agent_allows_successful_retrieval():
     prompt = "What is the weather?"
     agent = setup_agent(prompt)
     
-    # Tool successfully retrieved data
     mock_tool = MagicMock()
     mock_tool._param.outputs = {"temperature": "72F"} 
     agent.tools = {"weather_tool": mock_tool}
     
     with patch('agent.component.agent_with_tools.Agent._generate_async', new_callable=AsyncMock) as mock_generate:
-        # Simulate the LLM triggering the tool callback
         expected_response = "The weather is 72 degrees."
         async def side_effect(*args, **kwargs):
-            agent.toolcall_session.callback()
+            # Manually flip the tracker switch 
+            _tool_call_tracker.set(True)
             return expected_response
         mock_generate.side_effect = side_effect
         
