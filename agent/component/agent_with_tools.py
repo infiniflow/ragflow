@@ -38,7 +38,7 @@ from contextvars import ContextVar
 
 # Global tracker for async-safe tool call detection
 _tool_call_tracker = ContextVar("tool_call_tracker", default=False)
-
+_tool_success_tracker = ContextVar("tool_success_tracker", default=False)
 
 class AgentParam(LLMParam, ToolParamBase):
     """
@@ -114,14 +114,24 @@ class Agent(LLM, ToolBase):
         # --- THE CONCURRENCY FIX ---
         original_callback = partial(self._canvas.tool_use_callback, id)
         
-        # We wrap the callback to safely track tool usage per-invocation 
-        # without mutating the shared toolcall_session later.
+        # We wrap the callback to safely track tool usage per-invocation
         def tracking_callback(*args, **kwargs):
-            # GUARD: Only track actual tool invocations. 
+            # GUARD: Only track actual tool invocations.
             # Ignore internal system logs like multi-turn optimization and citations.
             if args and args[0] not in ("Multi-turn conversation optimization", "gen_citations"):
                 _tool_call_tracker.set(True)
                 
+                # --- NEW CODE: The MCP Fix ---
+                # Track MCP and standard tool success directly from the callback payload
+                output = args[2] if len(args) > 2 else kwargs.get("output", None)
+                if output is not None:
+                    if isinstance(output, dict) and output and "_ERROR" not in output:
+                        _tool_success_tracker.set(True)
+                    elif isinstance(output, list) and len(output) > 0:
+                        _tool_success_tracker.set(True)
+                    elif output and not isinstance(output, (dict, list)) and "**ERROR**" not in str(output):
+                        _tool_success_tracker.set(True)
+                        
             return original_callback(*args, **kwargs)
             
         self.callback = tracking_callback
@@ -208,6 +218,11 @@ class Agent(LLM, ToolBase):
     
     def _check_tools_succeeded(self) -> bool:
         """Helper to safely evaluate if any tool returned valid data."""
+        # 1. Check the new callback tracker (Covers MCP Tools)
+        if _tool_success_tracker.get():
+            return True
+            
+        # 2. Fallback to standard parameter inspection (Covers standard tools and tests)
         for tool_obj in self.tools.values():
             if hasattr(tool_obj, "_param") and hasattr(tool_obj._param, "outputs"):
                 outputs = tool_obj._param.outputs
@@ -220,11 +235,13 @@ class Agent(LLM, ToolBase):
         return False
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 20 * 60)))
     async def _invoke_async(self, **kwargs):
+        
         if self.check_if_canceled("Agent processing"):
             return
 
         # Reset tracker safely for this specific concurrent invocation
         _tool_call_tracker.set(False)
+        _tool_success_tracker.set(False)
 
         if kwargs.get("user_prompt"):
             usr_pmt = ""
@@ -279,6 +296,13 @@ class Agent(LLM, ToolBase):
             logging.info("Trapdoor triggered: Overriding LLM hallucination.")
             ans = "ACTION_NOT_PERFORMED"
             self.set_output("content", ans)
+            
+            # CodeRabbit Schema Fix: Return structured object if downstream expects it
+            if output_schema:
+                err_obj = {"error": ans}
+                self.set_output("structured", err_obj)
+                return err_obj
+                
             return ans
 
         if ans.find("**ERROR**") >= 0:
@@ -312,6 +336,7 @@ class Agent(LLM, ToolBase):
 
     async def stream_output_with_tools_async(self, prompt, msg, user_defined_prompt={}):
         _tool_call_tracker.set(False)
+        _tool_success_tracker.set(False)
         
         if len(msg) > 3:
             st = timer()
