@@ -242,6 +242,35 @@ async def get_storage_binary(bucket, name):
     return await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, name)
 
 
+def _resolve_built_in_metadata(task: dict) -> dict:
+    """Resolve built-in metadata values from task parser settings."""
+    built_in_metadata = {}
+    built_in_metadata_setting = task["parser_config"].get("built_in_metadata") or []
+    if not isinstance(built_in_metadata_setting, list):
+        return built_in_metadata
+
+    built_in_metadata_keys = set()
+    for item in built_in_metadata_setting:
+        if isinstance(item, str):
+            built_in_metadata_keys.add(item)
+        elif isinstance(item, dict):
+            key = item.get("key")
+            if isinstance(key, str) and key:
+                built_in_metadata_keys.add(key)
+
+    if "file_name" in built_in_metadata_keys and task.get("name"):
+        built_in_metadata["file_name"] = str(task["name"])
+
+    if "update_time" in built_in_metadata_keys:
+        update_time = task.get("update_time")
+        if isinstance(update_time, datetime):
+            built_in_metadata["update_time"] = update_time.isoformat()
+        elif update_time:
+            built_in_metadata["update_time"] = str(update_time)
+
+    return built_in_metadata
+
+
 @timeout(60 * 80, 1)
 async def build_chunks(task, progress_callback):
     if task["size"] > settings.DOC_MAXIMUM_SIZE:
@@ -407,6 +436,8 @@ async def build_chunks(task, progress_callback):
             raise
         progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
+    built_in_metadata = _resolve_built_in_metadata(task)
+
     if task["parser_config"].get("enable_metadata", False) and (task["parser_config"].get("metadata") or task["parser_config"].get("built_in_metadata")):
         st = timer()
         progress_callback(msg="Start to generate meta-data for every chunk ...")
@@ -443,13 +474,15 @@ async def build_chunks(task, progress_callback):
             raise
         metadata = {}
         for doc in docs:
-            metadata = update_metadata_to(metadata, doc["metadata_obj"])
-            del doc["metadata_obj"]
-        if metadata:
+            if doc.get("metadata_obj"):
+                metadata = update_metadata_to(metadata, doc["metadata_obj"])
+                del doc["metadata_obj"]
+        if metadata or built_in_metadata:
             existing_meta = DocMetadataService.get_document_metadata(task["doc_id"])
             existing_meta = existing_meta if isinstance(existing_meta, dict) else {}
-            metadata = update_metadata_to(metadata, existing_meta)
-            DocMetadataService.update_document_metadata(task["doc_id"], metadata)
+            merged_meta = update_metadata_to(existing_meta, metadata)
+            merged_meta = update_metadata_to(merged_meta, built_in_metadata)
+            DocMetadataService.update_document_metadata(task["doc_id"], merged_meta)
         progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["kb_parser_config"].get("tag_kb_ids", []):
