@@ -125,6 +125,7 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         self.page_to = 10_000
         self.outlines = []
         self.api_url = os.environ.get("OPENDATALOADER_APISERVER", "").rstrip("/")
+        self.api_key = os.environ.get("OPENDATALOADER_API_KEY", "").strip()
 
     def check_installation(self) -> bool:
         """Return True when the OpenDataLoader service is reachable."""
@@ -135,7 +136,8 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
             )
             return False
         try:
-            resp = requests.get(f"{self.api_url}/health", timeout=5)
+            headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+            resp = requests.get(f"{self.api_url}/health", timeout=5, headers=headers)
             if resp.status_code == 200:
                 return True
             self.logger.warning(
@@ -374,11 +376,13 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
             form_data["sanitize"] = "true" if sanitize else "false"
 
         try:
+            headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
             self.logger.info(f"[OpenDataLoader] POST {self.api_url}/file_parse for '{filename}'")
             resp = requests.post(
                 url=f"{self.api_url}/file_parse",
                 files={"file": (filename, pdf_bytes, "application/pdf")},
                 data=form_data,
+                headers=headers,
                 timeout=600,
             )
             resp.raise_for_status()
