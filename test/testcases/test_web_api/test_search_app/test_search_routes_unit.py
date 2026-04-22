@@ -40,6 +40,13 @@ class _DummyAtomic:
         return False
 
 
+class _StubResponse:
+    def __init__(self, data=None, mimetype=None):
+        self.data = data
+        self.mimetype = mimetype
+        self.headers = {}
+
+
 class _Args(dict):
     def get(self, key, default=None):
         return super().get(key, default)
@@ -111,6 +118,7 @@ def _load_search_api(monkeypatch):
 
     quart_mod = ModuleType("quart")
     quart_mod.request = SimpleNamespace(args=_Args())
+    quart_mod.Response = _StubResponse
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
     common_pkg = ModuleType("common")
@@ -200,6 +208,15 @@ def _load_search_api(monkeypatch):
 
     search_service_mod.SearchService = _SearchService
     monkeypatch.setitem(sys.modules, "api.db.services.search_service", search_service_mod)
+
+    dialog_service_mod = ModuleType("api.db.services.dialog_service")
+
+    async def _async_ask(*_args, **_kwargs):
+        if False:
+            yield None
+
+    dialog_service_mod.async_ask = _async_ask
+    monkeypatch.setitem(sys.modules, "api.db.services.dialog_service", dialog_service_mod)
 
     user_service_mod = ModuleType("api.db.services.user_service")
 

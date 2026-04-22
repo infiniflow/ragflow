@@ -1685,7 +1685,7 @@ The parameters in `begin` component.
 
 Also supports:
 
-- `release` (`bool | str`, optional): Set to `True` (or `"true"`) to create the session in release mode (published version only).
+- `release` (`bool | str`, optional): When set to `True` (or `"true"`), creates a session with the published agent app only.
 
 #### Returns
 
@@ -2589,7 +2589,8 @@ Ragflow.search_message(
     query: str, 
     memory_id: list[str], 
     agent_id: str=None, 
-    session_id: str=None, 
+    session_id: str=None,
+    user_id: str=None,
     similarity_threshold: float=0.2, 
     keywords_similarity_weight: float=0.7, 
     top_n: int=10
@@ -2615,6 +2616,10 @@ The ID of the message's source agent. Defaults to `None`.
 ##### session_id: `string`, *Optional*
 
 The ID of the message's session. Defaults to `None`.
+
+##### user_id: `string`, *Optional*
+
+The user participating in the conversation with the agent. Defaults to `None`.
 
 ##### similarity_threshold: `float`, *Optional*
 
