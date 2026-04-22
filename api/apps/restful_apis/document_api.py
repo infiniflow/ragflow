@@ -818,7 +818,7 @@ def _aggregate_filters(docs):
         "metadata": metadata_counter,
     }
 
-@manager.route("/datasets/<dataset_id>/documents/<document_id>/metadata/config",methods=["PUT"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/documents/<document_id>/metadata/config", methods=["PUT"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def update_metadata_config(tenant_id, dataset_id, document_id):
@@ -866,9 +866,8 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
     # Verify document exists in the dataset
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        return get_error_data_result(
-            message=f"Document {document_id} not found in dataset {dataset_id}"
-        )
+        msg = f"Document {document_id} not found in dataset {dataset_id}"
+        return get_error_data_result(message=msg)
     doc = doc[0]
 
     # Get request body
@@ -877,11 +876,18 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
         return get_error_argument_result(message="metadata is required")
 
     # Update parser config with metadata
-    DocumentService.update_parser_config(doc.id, {"metadata": req["metadata"]})
+    try:
+        DocumentService.update_parser_config(doc.id, {"metadata": req["metadata"]})
+    except Exception as e:
+        logging.error("error when update_parser_config", exc_info=e)
+        return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
 
     # Get updated document
-    e, doc = DocumentService.get_by_id(doc.id)
-    if not e:
-        return get_data_error_result(message="Document not found!")
+    try:
+        e, doc = DocumentService.get_by_id(doc.id)
+        if not e:
+            return get_data_error_result(message="Document not found!")
+    except Exception as e:
+        return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
 
     return get_result(data=doc.to_dict())
