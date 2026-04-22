@@ -198,7 +198,7 @@ class SyncLogsService(CommonService):
 
     @classmethod
     def start(cls, id, connector_id):
-        cls.update_by_id(id, {"status": TaskStatus.RUNNING, "time_started": datetime.now().strftime('%Y-%m-%d %H:%M:%S') })
+        cls.update_by_id(id, {"status": TaskStatus.RUNNING, "time_started": datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S') })
         ConnectorService.update_by_id(connector_id, {"status": TaskStatus.RUNNING})
 
     @classmethod

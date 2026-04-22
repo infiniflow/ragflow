@@ -103,7 +103,7 @@ class DialogService(CommonService):
         with DB.atomic():
             for data in data_list:
                 data["update_time"] = current_timestamp()
-                data["update_date"] = datetime_format(datetime.now())
+                data["update_date"] = datetime_format(datetime.utcnow())
                 cls.model.update(data).where(cls.model.id == data["id"]).execute()
 
     @classmethod

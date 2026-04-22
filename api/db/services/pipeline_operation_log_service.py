@@ -189,7 +189,7 @@ class PipelineOperationLogService(CommonService):
             avatar=avatar,
         )
         timestamp = current_timestamp()
-        datetime_now = datetime_format(datetime.now())
+        datetime_now = datetime_format(datetime.utcnow())
         log["create_time"] = timestamp
         log["create_date"] = datetime_now
         log["update_time"] = timestamp

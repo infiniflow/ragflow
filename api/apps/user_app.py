@@ -127,7 +127,7 @@ async def login():
         user.access_token = get_uuid()
         login_user(user)
         user.update_time = current_timestamp()
-        user.update_date = datetime_format(datetime.now())
+        user.update_date = datetime_format(datetime.utcnow())
         user.save()
         msg = "Welcome back!"
 

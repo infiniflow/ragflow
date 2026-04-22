@@ -74,8 +74,8 @@ class File2DocumentService(CommonService):
     @DB.connection_context()
     def update_by_file_id(cls, file_id, obj):
         obj["update_time"] = current_timestamp()
-        obj["update_date"] = datetime_format(datetime.now())
-        cls.model.update(obj).where(cls.model.id == file_id).execute()
+        obj["update_date"] = datetime_format(datetime.utcnow())
+        cls.model.update(obj).where(cls.model.file_id == file_id).execute()
         return File2Document(**obj)
 
     @classmethod

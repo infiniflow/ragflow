@@ -655,8 +655,9 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     d["important_tks"] = rag_tokenizer.tokenize(" ".join(req.get("important_keywords", [])))
     d["question_kwd"] = [str(q).strip() for q in req.get("questions", []) if str(q).strip()]
     d["question_tks"] = rag_tokenizer.tokenize("\n".join(req.get("questions", [])))
-    d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
-    d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    d["create_time"] = now_utc.strftime("%Y-%m-%d %H:%M:%S")
+    d["create_timestamp_flt"] = now_utc.timestamp()
     d["kb_id"] = dataset_id
     d["docnm_kwd"] = doc.name
     d["doc_id"] = document_id

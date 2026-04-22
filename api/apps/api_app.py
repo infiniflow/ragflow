@@ -31,12 +31,12 @@ def stats():
             tenants[0].tenant_id,
             request.args.get(
                 "from_date",
-                (datetime.now() -
+                (datetime.utcnow() -
                  timedelta(
                      days=7)).strftime("%Y-%m-%d 00:00:00")),
             request.args.get(
                 "to_date",
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+                datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")),
             "agent" if "canvas_id" in request.args else None)
 
         res = {"pv": [], "uv": [], "speed": [], "tokens": [], "round": [], "thumb_up": []}

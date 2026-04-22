@@ -14,7 +14,7 @@
 #  limitations under the License
 #
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 
 from api.apps import login_required
@@ -127,7 +127,7 @@ def status():
     task_executor_heartbeats = {}
     try:
         task_executors = REDIS_CONN.smembers("TASKEXE")
-        now = datetime.now().timestamp()
+        now = datetime.now(timezone.utc).timestamp()
         for task_executor_id in task_executors:
             heartbeats = REDIS_CONN.zrangebyscore(task_executor_id, now - 60 * 30, now)
             heartbeats = [json.loads(heartbeat) for heartbeat in heartbeats]
