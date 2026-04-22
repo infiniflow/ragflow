@@ -41,6 +41,7 @@ DEFAULT_CITATION_THRESHOLD = 0.63
 DEFAULT_SIMILARITY_THRESHOLD = 0.1
 RETRY_SIMILARITY_FACTOR = 0.17
 RETRY_MIN_MATCH_FACTOR = 0.1
+INTERNAL_SMOOTH_S = 1000
 
 
 def index_name(uid) -> str:
@@ -161,7 +162,8 @@ class Dealer:
                         )
                     else:
                         user_sim = req.get("similarity", DEFAULT_SIMILARITY_THRESHOLD)
-                        retry_sim = min(RETRY_SIMILARITY_FACTOR, user_sim)
+                        # Fixed: truly loosen similarity threshold, no longer dead code min() logic
+                        retry_sim = max(0.01, user_sim * 0.5)
                         retry_min_match = min(RETRY_MIN_MATCH_FACTOR, 0.3)
                         matchText_retry, _ = self.qryr.question(qst, min_match=retry_min_match)
                         
@@ -566,22 +568,22 @@ class Dealer:
                 break
         return res
 
-    def all_tags(self, tenant_id: str, kb_ids: List[str], S: int = 1000) -> List:
-        """Aggregate all tag keywords in target knowledge base."""
+    def all_tags(self, tenant_id: str, kb_ids: List[str]) -> List:
+        """Aggregate all tag keywords in target knowledge base, removed unused S param."""
         if not self.dataStore.index_exist(index_name(tenant_id), kb_ids[0]):
             return []
         res = self.dataStore.search([], [], {}, [], OrderByExpr(), 0, 0, 
                                    index_name(tenant_id), kb_ids, ["tag_kwd"])
         return self.dataStore.get_aggregation(res, "tag_kwd")
 
-    def all_tags_in_portion(self, tenant_id: str, kb_ids: List[str], S: int = 1000) -> Dict:
+    def all_tags_in_portion(self, tenant_id: str, kb_ids: List[str]) -> Dict:
         """Calculate normalized tag occurrence ratio."""
-        res = self.all_tags(tenant_id, kb_ids, S)
+        res = self.all_tags(tenant_id, kb_ids)
         total = sum(c for _, c in res)
-        return {t: (c+1)/(total+S) for t, c in res}
+        return {t: (c+1)/(total+INTERNAL_SMOOTH_S) for t, c in res}
 
     def tag_content(self, tenant_id: str, kb_ids: List[str], doc: Dict, 
-                    all_tags: Dict, topn_tags: int = 3, keywords_topn: int = 30, S: int = 1000) -> bool:
+                    all_tags: Dict, topn_tags: int = 3, keywords_topn: int = 30) -> bool:
         """Extract tag features for document chunk."""
         match_txt = self.qryr.paragraph(
             doc.get("title_tks", "") + " " + doc.get("content_ltks", ""),
@@ -594,13 +596,13 @@ class Dealer:
             return False
         
         total = sum(c for _, c in aggs)
-        tag_scores = [(a, round(0.1*(c+1)/(total+S)/max(1e-6, all_tags.get(a, 0.0001)))) 
+        tag_scores = [(a, round(0.1*(c+1)/(total+INTERNAL_SMOOTH_S)/max(1e-6, all_tags.get(a, 0.0001)))) 
                      for a, c in aggs]
         doc[TAG_FLD] = {a.replace(".", "_"): s for a, s in sorted(tag_scores, key=lambda x:x[1], reverse=True)[:topn_tags] if s>0}
         return True
 
     def tag_query(self, question: str, tenant_ids: Union[str, List[str]], kb_ids: List[str],
-                  all_tags: Dict, topn_tags: int = 3, S: int = 1000) -> Dict:
+                  all_tags: Dict, topn_tags: int = 3) -> Dict:
         """Extract query-side tag features for ranking."""
         idx_nms = index_name(tenant_ids) if isinstance(tenant_ids, str) else [index_name(tid) for tid in tenant_ids]
         match_txt, _ = self.qryr.question(question, min_match=0.0)
@@ -610,7 +612,7 @@ class Dealer:
             return {}
         
         total = sum(c for _, c in aggs)
-        tag_scores = [(a, round(0.1*(c+1)/(total+S)/max(1e-6, all_tags.get(a, 0.0001)))) 
+        tag_scores = [(a, round(0.1*(c+1)/(total+INTERNAL_SMOOTH_S)/max(1e-6, all_tags.get(a, 0.0001)))) 
                      for a, c in aggs]
         return {a.replace(".", "_"): max(1, s) for a, s in sorted(tag_scores, key=lambda x:x[1], reverse=True)[:topn_tags]}
 
@@ -635,8 +637,8 @@ class Dealer:
         top_doc_id = max(doc_scores.items(), key=lambda x: x[1])[0]
         kb_ids = [doc2kb[top_doc_id]]
 
-        es_res = self.dataStore.search(
-            ["content_with_weight"], [], {"doc_id": top_doc_id, "toc_kwd": "toc"}, [],
+        es_res = await thread_pool_exec(
+            self.dataStore.search, ["content_with_weight"], [], {"doc_id": top_doc_id, "toc_kwd": "toc"}, [],
             OrderByExpr(), 0, 128, [index_name(tid) for tid in tenant_ids], kb_ids
         )
         toc = []
@@ -666,7 +668,7 @@ class Dealer:
             if cid in chunk_map:
                 cloned_chunks[chunk_map[cid]]["similarity"] += sim
                 continue
-            chunk = self.dataStore.get(cid, index_name(tenant_ids[0]), kb_ids)
+            chunk = await thread_pool_exec(self.dataStore.get, cid, index_name(tenant_ids[0]), kb_ids)
             if not chunk:
                 continue
             vec = chunk.get(next((k for k in chunk if k.endswith("_vec")), ""), zero_vec)
@@ -690,7 +692,7 @@ class Dealer:
         return sorted(cloned_chunks, key=lambda x: x["similarity"] * -1)[:topn]
 
     def retrieval_by_children(self, chunks: List[Dict], tenant_ids: List[str]) -> List[Dict]:
-        """Merge parent chunk info from child chunks."""
+        """Merge parent chunk info from child chunks, full type safety & KeyError guard."""
         if not chunks:
             return []
 
@@ -716,15 +718,25 @@ class Dealer:
                     filtered_chunks.extend(child_chunks)
                     continue
 
+                # Fixed: safe content_ltks access + important_kwd string iteration bug defense
+                content_ltks_merged = " ".join(ck.get("content_ltks", "") for ck in child_chunks)
+                merged_important = []
+                for ck in child_chunks:
+                    kwd_val = ck.get("important_kwd", [])
+                    # Normalize to list, prevent string char-wise split
+                    if isinstance(kwd_val, str):
+                        kwd_val = [kwd_val]
+                    merged_important.extend(kwd_val)
+
                 vec = child_chunks[0].get(next((k for k in child_chunks[0] if k.endswith("_vec")), ""), zero_vec)
                 filtered_chunks.append({
                     "chunk_id": mom_id,
-                    "content_ltks": " ".join([ck["content_ltks"] for ck in child_chunks]),
+                    "content_ltks": content_ltks_merged,
                     "content_with_weight": chunk.get("content_with_weight", ""),
                     "doc_id": chunk.get("doc_id", ""),
                     "docnm_kwd": chunk.get("docnm_kwd", ""),
                     "kb_id": chunk.get("kb_id", ""),
-                    "important_kwd": [kwd for ck in child_chunks for kwd in ck.get("important_kwd", [])],
+                    "important_kwd": merged_important,
                     "image_id": chunk.get("img_id", ""),
                     "similarity": np.mean([ck.get("similarity", 0) for ck in child_chunks]),
                     "vector_similarity": np.mean([ck.get("similarity", 0) for ck in child_chunks]),
