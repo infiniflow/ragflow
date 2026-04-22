@@ -136,16 +136,8 @@ export interface FieldConfig {
   content: FieldWeight;
 }
 
-export interface SkillSearchConfig {
-  id?: string;
-  tenant_id?: string;
-  embd_id: string;
-  vector_similarity_weight: number;
-  similarity_threshold: number;
-  field_config: FieldConfig;
-  rerank_id?: string;
-  top_k: number;
-}
+// Re-export SkillSearchConfig from service to ensure consistency
+export { SkillSearchConfig } from '@/services/skill-space-service';
 
 export interface SkillSearchResult {
   skill_id: string;

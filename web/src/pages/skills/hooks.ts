@@ -1,17 +1,13 @@
 import fileManagerService from '@/services/file-manager-service';
-import skillSpaceService from '@/services/skill-space-service';
+import skillSpaceService, {
+  SkillSearchConfig,
+} from '@/services/skill-space-service';
 import { getAuthorization } from '@/utils/authorization-util';
 import { useQuery } from '@tanstack/react-query';
 import { message } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type {
-  Skill,
-  SkillFileEntry,
-  SkillMetadata,
-  SkillSearchConfig,
-  SkillSpace,
-} from './types';
+import type { Skill, SkillFileEntry, SkillMetadata, SkillSpace } from './types';
 import {
   filterUploadFiles,
   isTextFile,
@@ -205,6 +201,7 @@ export const useSkills = () => {
 
       if (versionFolders.length === 0) {
         // No version folders found - fallback to legacy structure
+        // eslint-disable-next-line @typescript-eslint/no-use-before-define
         return fetchSkillDetailsLegacy(folderId, folderName, skillItems);
       }
 
@@ -601,6 +598,7 @@ export const useSkills = () => {
         return { skills: [], total: 0 };
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [ensureSkillSpaceFolder],
   );
 
@@ -699,6 +697,7 @@ export const useSkills = () => {
         }
 
         // Search returned empty, fall back to file system
+        // eslint-disable-next-line no-console
         console.log(
           '[Skills] Search returned empty, falling back to file system',
         );
@@ -715,6 +714,7 @@ export const useSkills = () => {
         setLoading(false);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [t, fetchSkillsFromFileSystem],
   );
 
@@ -1045,15 +1045,18 @@ export const useSkills = () => {
         // Delete search index for all versions
         // Backend uses skillName_version as doc_id (replacing '/' with '_')
         // We need to delete each version's index separately
+        // eslint-disable-next-line no-console
         console.log(
           `[deleteSkill] Starting index deletion for skillId: ${skillId}, spaceId: ${normalizedSpaceId}`,
         );
+        // eslint-disable-next-line no-console
         console.log(`[deleteSkill] versionsToDelete:`, versionsToDelete);
 
         for (const version of versionsToDelete) {
           const indexId =
             version === 'latest' ? skillId : `${skillId}/${version}`;
           try {
+            // eslint-disable-next-line no-console
             console.log(
               `[deleteSkill] Deleting index: ${indexId} for space: ${normalizedSpaceId}`,
             );
@@ -1061,8 +1064,10 @@ export const useSkills = () => {
               indexId,
               normalizedSpaceId,
             );
+            // eslint-disable-next-line no-console
             console.log(`[deleteSkill] Successfully deleted index: ${indexId}`);
           } catch (indexError: any) {
+            // eslint-disable-next-line no-console
             console.warn(
               `[deleteSkill] Error deleting skill index for ${indexId}:`,
               indexError?.message || indexError,
@@ -1077,6 +1082,7 @@ export const useSkills = () => {
           for (const version of commonVersions) {
             const indexId = `${skillId}/${version}`;
             try {
+              // eslint-disable-next-line no-console
               console.log(
                 `[deleteSkill] Trying to delete index with version: ${indexId}`,
               );
@@ -1084,6 +1090,7 @@ export const useSkills = () => {
                 indexId,
                 normalizedSpaceId,
               );
+              // eslint-disable-next-line no-console
               console.log(
                 `[deleteSkill] Successfully deleted index: ${indexId}`,
               );
@@ -1109,7 +1116,8 @@ export const useSkills = () => {
         return false;
       }
     },
-    [t, fetchSkills, ensureSkillSpaceFolder, ensureSkillsFolder, skills],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [t, fetchSkills, ensureSkillSpaceFolder, skills],
   );
 
   // Recursively find file by path in folder structure
@@ -1353,6 +1361,7 @@ export const useSkills = () => {
     async (folderId: string, folderName: string): Promise<Skill | null> => {
       return await fetchSkillDetails(folderId, folderName);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
@@ -1375,42 +1384,54 @@ export const useSkills = () => {
   };
 };
 
+// Query key for skill search config
+const skillSearchConfigQueryKey = (spaceId: string, embdId?: string) =>
+  ['skillSearchConfig', spaceId, embdId].filter(Boolean);
+
 // Skill Search Config Hook
 export const useSkillSearchConfig = (spaceId?: string) => {
   const { t } = useTranslation();
-  const [config, setConfig] = useState<SkillSearchConfig | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  // Fetch config
-  const fetchConfig = useCallback(
-    async (embdId?: string, currentSpaceId?: string) => {
-      try {
-        const targetSpaceId = currentSpaceId || spaceId;
-        if (!targetSpaceId) return null;
-        const data = await skillSpaceService.getConfig(targetSpaceId, embdId);
-        // Cast to local SkillSearchConfig type (structures are compatible)
-        setConfig(data as any);
-        return data as any;
-      } catch (error) {
-        console.error('Error fetching skill search config:', error);
-        return null;
-      }
+  // Use TanStack Query to fetch and cache config
+  const {
+    data: config,
+    refetch: refetchConfig,
+    isLoading: configLoading,
+  } = useQuery({
+    queryKey: skillSearchConfigQueryKey(spaceId || '', undefined),
+    queryFn: async () => {
+      if (!spaceId) return null;
+      const data = await skillSpaceService.getConfig(spaceId);
+      return data as SkillSearchConfig | null;
     },
-    [spaceId],
+    enabled: !!spaceId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  // Fetch config with optional embdId (refreshes the query)
+  const fetchConfig = useCallback(
+    async (_embdId?: string, currentSpaceId?: string) => {
+      const targetSpaceId = currentSpaceId || spaceId;
+      if (!targetSpaceId) return null;
+      const { data } = await refetchConfig();
+      return data as SkillSearchConfig | null;
+    },
+    [spaceId, refetchConfig],
   );
 
   // Save config
   const saveConfig = useCallback(
     async (configData: SkillSearchConfig): Promise<boolean> => {
       try {
-        setLoading(true);
+        setSaving(true);
         if (!spaceId) throw new Error('Space ID is required');
-        const data = await skillSpaceService.updateConfig({
+        await skillSpaceService.updateConfig({
           ...configData,
           space_id: spaceId,
         });
-        // Cast to local SkillSearchConfig type (structures are compatible)
-        setConfig(data as any);
+        // Refetch config after save
+        await refetchConfig();
         message.success(t('skillSearch.saveSuccess'));
         return true;
       } catch (error: any) {
@@ -1418,17 +1439,17 @@ export const useSkillSearchConfig = (spaceId?: string) => {
         message.error(error.message || t('skillSearch.saveError'));
         return false;
       } finally {
-        setLoading(false);
+        setSaving(false);
       }
     },
-    [t, spaceId],
+    [t, spaceId, refetchConfig],
   );
 
   // Reindex all skills
   const reindex = useCallback(
     async (embdId?: string): Promise<boolean> => {
       try {
-        setLoading(true);
+        setSaving(true);
         if (!spaceId) throw new Error('Space ID is required');
         await skillSpaceService.reindex({
           skills: [],
@@ -1442,7 +1463,7 @@ export const useSkillSearchConfig = (spaceId?: string) => {
         message.error(error.message || t('skillSearch.reindexError'));
         return false;
       } finally {
-        setLoading(false);
+        setSaving(false);
       }
     },
     [t, spaceId],
@@ -1534,7 +1555,8 @@ export const useSkillSearchConfig = (spaceId?: string) => {
 
   return {
     config,
-    configLoading: loading,
+    configLoading,
+    saving,
     fetchConfig,
     saveConfig,
     reindex,

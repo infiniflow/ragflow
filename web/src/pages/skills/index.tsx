@@ -6,15 +6,7 @@ import ListFilterBar from '@/components/list-filter-bar';
 import SvgIcon from '@/components/svg-icon';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Input, SearchInput } from '@/components/ui/input';
+import { SearchInput } from '@/components/ui/input';
 import { Segmented } from '@/components/ui/segmented';
 import { Spin } from '@/components/ui/spin';
 import {
@@ -43,7 +35,6 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  Search,
   Settings,
   Trash2,
 } from 'lucide-react';
@@ -51,6 +42,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router';
 import { CreateSpaceDialog } from './components/create-space-dialog';
+import DeleteSelectedSpacesDialog from './components/delete-selected-spaces-dialog';
+import DeleteSpaceDialog from './components/delete-space-dialog';
+import RenameSpaceDialog from './components/rename-space-dialog';
 import SearchConfigModal from './components/search-config-modal';
 import SkillCard from './components/skill-card';
 import SkillDetail from './components/skill-detail';
@@ -155,7 +149,7 @@ const SkillsPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
   const [totalSkills, setTotalSkills] = useState(0);
-  const [sortBy, setSortBy] = useState<'name' | 'update_time' | 'create_time'>(
+  const [sortBy] = useState<'name' | 'update_time' | 'create_time'>(
     'update_time',
   );
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -529,10 +523,6 @@ const SkillsPage: React.FC = () => {
     [handleSearch, searchQuery],
   );
 
-  const handleSearchClick = useCallback(() => {
-    handleSearch(searchQuery);
-  }, [handleSearch, searchQuery]);
-
   const handleHubSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       setSpaceSearchString(e.target.value);
@@ -860,136 +850,39 @@ const SkillsPage: React.FC = () => {
         />
 
         {/* Delete Space Modal */}
-        <Dialog
+        <DeleteSpaceDialog
           open={deleteSpaceModalOpen}
-          onOpenChange={setDeleteSpaceModalOpen}
-        >
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>
-                {t('skills.deleteSpaceTitle') || 'Delete Skill Space'}
-              </DialogTitle>
-              <DialogDescription>
-                {t('skills.deleteSpaceDescription') ||
-                  'Are you sure you want to delete this skill space? This action cannot be undone and all skills in this space will be permanently deleted.'}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-4">
-              <p className="text-sm text-text-secondary">
-                {t('skills.deleteSpaceName') || 'Space name'}:{' '}
-                <strong>{spaceToDelete?.name}</strong>
-              </p>
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setDeleteSpaceModalOpen(false);
-                  setSpaceToDelete(null);
-                }}
-              >
-                {t('common.cancel')}
-              </Button>
-              <Button variant="destructive" onClick={handleDeleteHub}>
-                {t('common.delete')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          onOpenChange={(open) => {
+            setDeleteSpaceModalOpen(open);
+            if (!open) setSpaceToDelete(null);
+          }}
+          spaceToDelete={spaceToDelete}
+          onDelete={handleDeleteHub}
+        />
 
         {/* Rename Space Modal */}
-        <Dialog
+        <RenameSpaceDialog
           open={renameSpaceModalOpen}
-          onOpenChange={setRenameSpaceModalOpen}
-        >
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>
-                {t('skills.renameSpaceTitle') || 'Rename Skill Space'}
-              </DialogTitle>
-              <DialogDescription>
-                {t('skills.renameSpaceDescription') ||
-                  'Enter a new name for this skill space.'}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-4">
-              <label className="text-sm font-medium mb-2 block">
-                {t('skills.spaceName') || 'Space Name'}
-              </label>
-              <Input
-                placeholder={
-                  t('skills.spaceNamePlaceholder') || 'e.g., my-space'
-                }
-                value={renameSpaceInput}
-                onChange={(e) => setRenameSpaceInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && renameSpaceInput.trim()) {
-                    handleRenameHub();
-                  }
-                }}
-              />
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setRenameSpaceModalOpen(false);
-                  setSpaceToRename(null);
-                  setRenameSpaceInput('');
-                }}
-              >
-                {t('common.cancel')}
-              </Button>
-              <Button
-                onClick={handleRenameHub}
-                disabled={
-                  !renameSpaceInput.trim() ||
-                  renameSpaceInput.trim() === spaceToRename?.name
-                }
-              >
-                {t('common.save') || 'Save'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          onOpenChange={(open) => {
+            setRenameSpaceModalOpen(open);
+            if (!open) {
+              setSpaceToRename(null);
+              setRenameSpaceInput('');
+            }
+          }}
+          spaceToRename={spaceToRename}
+          renameSpaceInput={renameSpaceInput}
+          onRenameInputChange={setRenameSpaceInput}
+          onRename={handleRenameHub}
+        />
 
-        {/* Delete Selected Hubs Modal */}
-        <Dialog
+        {/* Delete Selected Spaces Modal */}
+        <DeleteSelectedSpacesDialog
           open={deleteSpacesModalOpen}
           onOpenChange={setDeleteSpacesModalOpen}
-        >
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>
-                {t('skills.deleteSelectedHubsTitle') ||
-                  'Delete Selected Skills Hubs'}
-              </DialogTitle>
-              <DialogDescription>
-                {t('skills.deleteSelectedHubsDescription') ||
-                  'Are you sure you want to delete the selected skills spaces? This action cannot be undone and all skills in these spaces will be permanently deleted.'}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-4">
-              <p className="text-sm text-text-secondary">
-                {t('skills.selectedHubsCount') || 'Selected spaces'}:{' '}
-                <strong>{selectedSpaceCount}</strong>
-              </p>
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setDeleteSpacesModalOpen(false);
-                }}
-              >
-                {t('common.cancel')}
-              </Button>
-              <Button variant="destructive" onClick={handleDeleteSelectedHubs}>
-                {t('common.delete')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          selectedCount={selectedSpaceCount}
+          onDelete={handleDeleteSelectedHubs}
+        />
       </>
     );
   }
@@ -1007,9 +900,7 @@ const SkillsPage: React.FC = () => {
           <div className="flex items-center gap-2">
             {/* Search skills */}
             <SearchInput
-              placeholder={
-                t('skills.searchPlaceholder') || 'Search skills...'
-              }
+              placeholder={t('skills.searchPlaceholder') || 'Search skills...'}
               value={searchQuery}
               onChange={handleSearchInputChange}
               onKeyDown={handleSearchKeyDown}
@@ -1106,13 +997,13 @@ const SkillsPage: React.FC = () => {
             <FolderOpen className="size-16 mb-4 opacity-50" />
             {hasSearched ? (
               <p>
-                {t('skills.noSearchResults') || 'No search results'}: "
-                {searchQuery}"
+                {t('skills.noSearchResults') || 'No search results'}
+                :&nbsp;&quot;{searchQuery}&quot;
               </p>
             ) : searchQuery ? (
               <p>
-                {t('skills.noSearchResults') || 'No search results'}: "
-                {searchQuery}"
+                {t('skills.noSearchResults') || 'No search results'}
+                :&nbsp;&quot;{searchQuery}&quot;
               </p>
             ) : (
               <div className="text-center">

@@ -37,7 +37,6 @@ const SkillCard: React.FC<SkillCardProps> = ({
   formatRelative,
 }) => {
   const fileCount = skill.files.filter((f) => !f.is_dir).length;
-  const dirCount = skill.files.filter((f) => f.is_dir).length;
   const filesLoading = skill.files.length === 0 && (skill as any)._folderId;
 
   return (

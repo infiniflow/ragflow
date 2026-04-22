@@ -18,6 +18,7 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { LlmModelType } from '@/constants/knowledge';
 import { useSelectLlmOptionsByModelType } from '@/hooks/use-llm-request';
+import { SkillSearchConfig } from '@/services/skill-space-service';
 import { message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -26,7 +27,6 @@ import type {
   FieldConfig,
   FieldWeight,
   SearchConfigModalProps,
-  SkillSearchConfig,
 } from '../types';
 
 // Use SearchConfig as alias for SkillSearchConfig for backward compatibility
@@ -40,11 +40,18 @@ const defaultFieldConfig: FieldConfig = {
 };
 
 const defaultConfig: SearchConfig = {
+  id: '',
+  tenant_id: '',
+  space_id: '',
   embd_id: '',
   vector_similarity_weight: 0.3,
   similarity_threshold: 0.2,
-  field_config: defaultFieldConfig,
+  field_config: defaultFieldConfig as Record<string, any>,
+  rerank_id: undefined,
+  tenant_rerank_id: undefined,
   top_k: 10,
+  index_version: '',
+  status: '',
 };
 
 export const SearchConfigModal: React.FC<SearchConfigModalProps> = ({
