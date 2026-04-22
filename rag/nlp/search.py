@@ -162,7 +162,7 @@ class Dealer:
                         )
                     else:
                         user_sim = req.get("similarity", DEFAULT_SIMILARITY_THRESHOLD)
-                        # Fixed: truly loosen similarity threshold, no longer dead code min() logic
+                        # Fixed: Truly loosen vector similarity threshold, dead min() logic removed
                         retry_sim = max(0.01, user_sim * 0.5)
                         retry_min_match = min(RETRY_MIN_MATCH_FACTOR, 0.3)
                         matchText_retry, _ = self.qryr.question(qst, min_match=retry_min_match)
@@ -569,7 +569,7 @@ class Dealer:
         return res
 
     def all_tags(self, tenant_id: str, kb_ids: List[str]) -> List:
-        """Aggregate all tag keywords in target knowledge base, removed unused S param."""
+        """Aggregate all tag keywords, unused S parameter fully removed."""
         if not self.dataStore.index_exist(index_name(tenant_id), kb_ids[0]):
             return []
         res = self.dataStore.search([], [], {}, [], OrderByExpr(), 0, 0, 
@@ -577,7 +577,7 @@ class Dealer:
         return self.dataStore.get_aggregation(res, "tag_kwd")
 
     def all_tags_in_portion(self, tenant_id: str, kb_ids: List[str]) -> Dict:
-        """Calculate normalized tag occurrence ratio."""
+        """Calculate normalized tag occurrence ratio with internal smoothing constant."""
         res = self.all_tags(tenant_id, kb_ids)
         total = sum(c for _, c in res)
         return {t: (c+1)/(total+INTERNAL_SMOOTH_S) for t, c in res}
@@ -692,7 +692,7 @@ class Dealer:
         return sorted(cloned_chunks, key=lambda x: x["similarity"] * -1)[:topn]
 
     def retrieval_by_children(self, chunks: List[Dict], tenant_ids: List[str]) -> List[Dict]:
-        """Merge parent chunk info from child chunks, full type safety & KeyError guard."""
+        """Merge parent chunks: full KeyError guard + important_kwd type pollution defense."""
         if not chunks:
             return []
 
@@ -718,12 +718,11 @@ class Dealer:
                     filtered_chunks.extend(child_chunks)
                     continue
 
-                # Fixed: safe content_ltks access + important_kwd string iteration bug defense
+                # Fixed: safe .get() for content_ltks + defensive normalize important_kwd
                 content_ltks_merged = " ".join(ck.get("content_ltks", "") for ck in child_chunks)
                 merged_important = []
                 for ck in child_chunks:
                     kwd_val = ck.get("important_kwd", [])
-                    # Normalize to list, prevent string char-wise split
                     if isinstance(kwd_val, str):
                         kwd_val = [kwd_val]
                     merged_important.extend(kwd_val)
