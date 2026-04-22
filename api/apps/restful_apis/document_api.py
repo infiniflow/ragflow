@@ -574,7 +574,7 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
         - The metadata_condition uses operators like: =, !=, >, <, >=, <=, contains, not contains,
           in, not in, start with, end with, empty, not empty.
         - The metadata parameter performs exact matching where values are OR'd within the same key
-          and AND'd across different keys.
+          & AND'd across different keys.
 
     Examples:
         Simple metadata filter (exact match):
@@ -811,7 +811,7 @@ def _aggregate_filters(docs):
         "metadata": metadata_counter,
     }
 
-@manager.route("/api/v1/datasets/<dataset_id>/documents/<document_id>/metadata/config",methods=["PUT"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/documents/<document_id>/metadata/config",methods=["PUT"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def update_metadata_config(tenant_id, dataset_id, document_id):

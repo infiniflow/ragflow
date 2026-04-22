@@ -374,7 +374,6 @@ export const useManageMetaDataModal = (
 
   const handleSaveManage = useCallback(
     async (callback: () => void) => {
-      console.log('handleSaveManage', tableData);
       const { data: res } = await updateMetaData({
         kb_id: id as string,
         data: operations,
@@ -433,17 +432,11 @@ export const useManageMetaDataModal = (
   const handleSaveSingleFileSettings = useCallback(
     async (callback: () => void) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
-
-      console.log('otherData:' + JSON.stringify(otherData));
-
       // otherData contains: id (document_id), kb_id (dataset_id)
-      if (otherData?.id && otherData?.kb_id) {
-        console.log(
-          'dataset id:' + otherData.kb_id + ',doc_id:' + otherData.id,
-        );
+      if (otherData?.documentId && id) {
         const { data: res } = await updateDocumentMetaDataConfig({
-          kb_id: otherData.kb_id,
-          doc_id: otherData.id,
+          kb_id: id,
+          doc_id: otherData.documentId,
           data: {
             metadata: data,
           },
