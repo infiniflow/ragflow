@@ -72,13 +72,19 @@ See [Converse with chat assistant](../../references/http_api_reference.md#conver
 
 ```json {9}
 curl --request POST \
-     --url http://{address}/api/v1/chats/{chat_id}/completions \
+     --url http://{address}/api/v1/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
      {
-          "question": "xxxxxxxxx",
+          "chat_id": "{chat_id}",
           "stream": true,
+          "messages": [
+              {
+                  "role": "user",
+                  "content": "xxxxxxxxx"
+              }
+          ],
           "style":"hilarious"
      }'
 ```
@@ -109,4 +115,3 @@ while True:
         print(ans.content[len(cont):], end='', flush=True)
         cont = ans.content
 ```
-

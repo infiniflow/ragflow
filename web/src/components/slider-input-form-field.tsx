@@ -2,6 +2,7 @@ import { FormLayout } from '@/constants/form';
 import { cn } from '@/lib/utils';
 import { forwardRef, ReactNode, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
+import NumberInput from './originui/number-input';
 import { SingleFormSlider } from './ui/dual-range-slider';
 import {
   FormControl,
@@ -10,7 +11,6 @@ import {
   FormLabel,
   FormMessage,
 } from './ui/form';
-import { NumberInput } from './ui/input';
 
 export type FormLayoutType = {
   layout?: FormLayout;
@@ -105,13 +105,14 @@ export const SliderInputFormField = forwardRef<
               <FormControl>
                 <NumberInput
                   className={cn(
-                    'h-6 w-10 p-0 text-center bg-bg-input border border-border-button text-text-secondary',
+                    'h-6 w-16 p-0 text-center bg-bg-input border border-border-button text-text-secondary',
                     '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
                     numberInputClassName,
                   )}
                   max={displayMax}
                   min={displayMin}
                   step={displayStep}
+                  hideIcons
                   value={
                     percentage ? (field.value * 100).toFixed(0) : field.value
                   }
