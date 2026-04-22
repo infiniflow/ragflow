@@ -75,9 +75,7 @@ async def list_chunk():
         for id in sres.ids:
             d = {
                 "chunk_id": id,
-                "content_with_weight": remove_redundant_spaces(sres.highlight[id]) if question and id in sres.highlight else sres.field[
-                    id].get(
-                    "content_with_weight", ""),
+                "content_with_weight": sres.field[id].get("content_with_weight", ""),
                 "doc_id": sres.field[id]["doc_id"],
                 "docnm_kwd": sres.field[id]["docnm_kwd"],
                 "important_kwd": sres.field[id].get("important_kwd", []),
@@ -87,6 +85,8 @@ async def list_chunk():
                 "positions": sres.field[id].get("position_int", []),
                 "doc_type_kwd": sres.field[id].get("doc_type_kwd")
             }
+            if question and id in sres.highlight:
+                d["highlight"] = remove_redundant_spaces(sres.highlight[id]).strip()
             assert isinstance(d["positions"], list)
             assert len(d["positions"]) == 0 or (isinstance(d["positions"][0], list) and len(d["positions"][0]) == 5)
             res["chunks"].append(d)
