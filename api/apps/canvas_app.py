@@ -24,8 +24,6 @@ from common.misc_utils import get_uuid
 from api.utils.api_utils import (
     get_json_result,
     server_error_response,
-    validate_request,
-    get_data_error_result,
     get_request_json,
 )
 from agent.canvas import Canvas
