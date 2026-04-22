@@ -121,13 +121,13 @@ class Agent(LLM, ToolBase):
                 
                 output = args[2] if len(args) > 2 else kwargs.get("output", None)
                 if output is not None:
-                    if isinstance(output, dict) and "_ERROR" not in output:
+                    # THE FIX: Added 'and output' to ensure the dictionary isn't empty {}
+                    if isinstance(output, dict) and output and "_ERROR" not in output:
                         _tool_success_tracker.set(True)
                     elif isinstance(output, list) and len(output) > 0:
                         _tool_success_tracker.set(True)
                     elif output and not isinstance(output, (dict, list)):
                         out_str = str(output)
-                        # CodeRabbit Fix: Do not mark plain exception text as success
                         if "**ERROR**" not in out_str and "Unmatched input parameters" not in out_str:
                             _tool_success_tracker.set(True)
                             
