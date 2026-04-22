@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import re
 from io import BytesIO
 
 from quart import request, send_file
@@ -32,7 +31,7 @@ from common import settings
 from common.constants import LLMType, RetCode, TaskStatus
 from common.metadata_utils import convert_conditions, meta_filter
 from rag.app.tag import label_question
-from rag.nlp import rag_tokenizer, search
+from rag.nlp import search
 from rag.prompts.generator import cross_languages, keyword_extraction
 
 MAXIMUM_OF_UPLOADING_FILES = 256
