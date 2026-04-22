@@ -167,7 +167,10 @@ def get(canvas_id):
 
 @manager.route('/getsse/<canvas_id>', methods=['GET'])  # type: ignore # noqa: F821
 def getsse(canvas_id):
-    token = request.headers.get('Authorization').split()
+    auth_header = request.headers.get('Authorization')
+    if not auth_header:
+        return get_data_error_result(message='Authorization is not valid!')
+    token = auth_header.split()
     if len(token) != 2:
         return get_data_error_result(message='Authorization is not valid!')
     token = token[1]
