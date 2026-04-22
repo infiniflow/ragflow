@@ -288,13 +288,13 @@ class MinerUParser(RAGFlowPdfParser):
 
         headers = {"Accept": "application/json"}
         try:
-            self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/file_parse backend={options.backend} server_url={data.get('server_url')}")
+            self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/pdf_parse backend={options.backend} server_url={data.get('server_url')}")
             if callback:
-                callback(0.20, f"[MinerU] invoke api: {self.mineru_api}/file_parse")
+                callback(0.20, f"[MinerU] invoke api: {self.mineru_api}/pdf_parse")
             with open(pdf_file_path, "rb") as pdf_file:
                 files = {"files": (pdf_file_name + ".pdf", pdf_file, "application/pdf")}
                 with requests.post(
-                    url=f"{self.mineru_api}/file_parse",
+                    url=f"{self.mineru_api}/pdf_parse",
                     files=files,
                     data=data,
                     headers=headers,
