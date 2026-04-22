@@ -35,19 +35,20 @@ export default {
   deleteFactory: `${webAPI}/llm/delete_factory`,
 
   // data source
-  dataSourceSet: `${webAPI}/connector/set`,
-  dataSourceList: `${webAPI}/connector/list`,
-  dataSourceDel: (id: string) => `${webAPI}/connector/${id}/rm`,
-  dataSourceResume: (id: string) => `${webAPI}/connector/${id}/resume`,
-  dataSourceRebuild: (id: string) => `${webAPI}/connector/${id}/rebuild`,
-  dataSourceLogs: (id: string) => `${webAPI}/connector/${id}/logs`,
-  dataSourceDetail: (id: string) => `${webAPI}/connector/${id}`,
+  dataSourceUpdate: (id:string) => `${restAPIv1}/connectors/${id}`,
+  dataSourceSet: `${restAPIv1}/connectors`,
+  dataSourceList: `${restAPIv1}/connectors`,
+  dataSourceDel: (id: string) => `${restAPIv1}/connectors/${id}`,
+  dataSourceResume: (id: string) => `${restAPIv1}/connectors/${id}/resume`,
+  dataSourceRebuild: (id: string) => `${restAPIv1}/connectors/${id}/rebuild`,
+  dataSourceLogs: (id: string) => `${restAPIv1}/connectors/${id}/logs`,
+  dataSourceDetail: (id: string) => `${restAPIv1}/connectors/${id}`,
   googleWebAuthStart: (type: 'google-drive' | 'gmail') =>
-    `${webAPI}/connector/google/oauth/web/start?type=${type}`,
+    `${restAPIv1}/connectors/google/oauth/web/start?type=${type}`,
   googleWebAuthResult: (type: 'google-drive' | 'gmail') =>
-    `${webAPI}/connector/google/oauth/web/result?type=${type}`,
-  boxWebAuthStart: () => `${webAPI}/connector/box/oauth/web/start`,
-  boxWebAuthResult: () => `${webAPI}/connector/box/oauth/web/result`,
+    `${restAPIv1}/connectors/google/oauth/web/result?type=${type}`,
+  boxWebAuthStart: () => `${restAPIv1}/connectors/box/oauth/web/start`,
+  boxWebAuthResult: () => `${restAPIv1}/connectors/box/oauth/web/result`,
 
   // plugin
   llmTools: `${webAPI}/plugin/llm_tools`,
