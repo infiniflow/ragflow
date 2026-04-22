@@ -138,7 +138,7 @@ class TestAddChunk:
     def test_get_chunk_not_found(self, WebApiAuth, add_document):
         dataset_id, document_id = add_document
         res = get_chunk(WebApiAuth, dataset_id, document_id, "missing_chunk_id")
-        assert res["code"] != 0, res
+        assert res["code"] == 102, res
         assert "Chunk not found" in res["message"], res
 
     @pytest.mark.p3

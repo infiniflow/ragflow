@@ -73,7 +73,7 @@ class _DummyRetCode:
     DATA_ERROR = 102
     EXCEPTION_ERROR = 100
     OPERATING_ERROR = 103
-    NOT_FOUND = 102
+    NOT_FOUND = 404
 
 
 class _DummyParserType:
@@ -616,6 +616,7 @@ def test_restful_chunk_guard_branches_unit(monkeypatch):
     module.request = SimpleNamespace(args={"id": "chunk-1"}, headers={})
     module.settings.docStoreConn.chunk = None
     res = _run(_route_core(module.list_chunks)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == module.RetCode.DATA_ERROR, res
     assert "Chunk not found" in res["message"], res
 
     module.settings.docStoreConn.chunk = {
@@ -625,12 +626,13 @@ def test_restful_chunk_guard_branches_unit(monkeypatch):
         "docnm_kwd": "Doc",
     }
     res = _run(_route_core(module.list_chunks)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == module.RetCode.DATA_ERROR, res
     assert "Chunk not found" in res["message"], res
 
     module.settings.docStoreConn.chunk = None
     module.request = SimpleNamespace(args={}, headers={})
     res = _run(_route_core(module.get_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
-    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+    assert res["code"] == module.RetCode.DATA_ERROR, res
     assert "Chunk not found" in res["message"], res
 
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"content": ""}))

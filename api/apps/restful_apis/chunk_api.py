@@ -124,9 +124,9 @@ async def list_chunks(tenant_id, dataset_id, document_id):
     if req.get("id"):
         chunk = settings.docStoreConn.get(req.get("id"), search.index_name(tenant_id), [dataset_id])
         if not chunk:
-            return get_result(message=f"Chunk not found: {dataset_id}/{req.get('id')}", code=RetCode.NOT_FOUND)
+            return get_result(message=f"Chunk not found: {dataset_id}/{req.get('id')}", code=RetCode.DATA_ERROR)
         if str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
-            return get_result(message=f"Chunk not found: {dataset_id}/{req.get('id')}", code=RetCode.NOT_FOUND)
+            return get_result(message=f"Chunk not found: {dataset_id}/{req.get('id')}", code=RetCode.DATA_ERROR)
         _strip_chunk_runtime_fields(chunk)
         res["total"] = 1
         final_chunk = {
@@ -189,7 +189,7 @@ async def get_chunk(tenant_id, dataset_id, document_id, chunk_id):
     try:
         chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), [dataset_id])
         if chunk is None or str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
-            return server_error_response(Exception("Chunk not found"))
+            return get_result(data=False, message="Chunk not found!", code=RetCode.DATA_ERROR)
         return get_result(data=_strip_chunk_runtime_fields(chunk))
     except Exception as e:
         if str(e).find("NotFoundError") >= 0:

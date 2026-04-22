@@ -608,6 +608,7 @@ class TestDocRoutesUnit:
         monkeypatch.setattr(module, "request", SimpleNamespace(args=_DummyArgs({"id": "chunk-1"})))
         _patch_docstore(monkeypatch, module, get=lambda *_args, **_kwargs: None)
         res = _run(_route_core(module.list_chunks)("tenant-1", "ds-1", "doc-1"))
+        assert res["code"] == module.RetCode.DATA_ERROR
         assert "Chunk not found" in res["message"]
 
         _patch_docstore(
@@ -622,6 +623,7 @@ class TestDocRoutesUnit:
             },
         )
         res = _run(_route_core(module.list_chunks)("tenant-1", "ds-1", "doc-1"))
+        assert res["code"] == module.RetCode.DATA_ERROR
         assert "Chunk not found" in res["message"]
 
         _patch_docstore(
