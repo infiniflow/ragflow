@@ -62,34 +62,17 @@ def add_dataset_with_metadata(HttpApiAuth):
     import requests
     from configs import HOST_ADDRESS, VERSION
 
-    metadata_config = {
-        "type": "object",
-        "properties": {
-            "character": {
-                "description": "Historical figure name",
-                "type": "string"
-            },
-            "era": {
-                "description": "Historical era",
-                "type": "string"
-            },
-            "achievements": {
-                "description": "Major achievements",
-                "type": "array",
-                "items": {
-                    "type": "string"
-                }
-            }
-        }
-    }
-
     res = requests.put(
         url=f"{HOST_ADDRESS}/api/{VERSION}/datasets/{dataset_id}/metadata/config",
         headers={"Content-Type": "application/json"},
         auth=HttpApiAuth,
         json={
-            "metadata": metadata_config,
-            "enable_metadata": False
+            "enabled": True,
+            "fields": [
+                {"name": "character", "type": "string", "description": "Historical figure name"},
+                {"name": "era", "type": "string", "description": "Historical era"},
+                {"name": "achievements", "type": "array", "description": "Major achievements"},
+            ]
         }
     ).json()
 

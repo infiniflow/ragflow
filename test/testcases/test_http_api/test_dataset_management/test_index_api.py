@@ -46,6 +46,14 @@ def _parse_done(auth, dataset_id, document_ids=None):
     return seen_ids == target_ids
 
 
+@wait_for(60, 1, "Index task creation timeout")
+def _index_task_created(auth, dataset_id, index_type):
+    res = trace_index(auth, dataset_id, index_type)
+    if res.get("code") != 0:
+        return False
+    return bool(res.get("data", {}).get("id"))
+
+
 @pytest.mark.usefixtures("clear_datasets")
 class TestRunIndex:
     @pytest.mark.p2
@@ -119,10 +127,9 @@ class TestTraceIndex:
     def test_trace_index_graph(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
         bulk_upload_documents(HttpApiAuth, dataset_id, 1, tmp_path)
-        parse_documents(HttpApiAuth, dataset_id)
-        _parse_done(HttpApiAuth, dataset_id)
         res = run_index(HttpApiAuth, dataset_id, "graph")
         assert res["code"] == 0, res
+        _index_task_created(HttpApiAuth, dataset_id, "graph")
         res = trace_index(HttpApiAuth, dataset_id, "graph")
         assert res["code"] == 0, res
 
@@ -130,10 +137,9 @@ class TestTraceIndex:
     def test_trace_index_raptor(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
         bulk_upload_documents(HttpApiAuth, dataset_id, 1, tmp_path)
-        parse_documents(HttpApiAuth, dataset_id)
-        _parse_done(HttpApiAuth, dataset_id)
         res = run_index(HttpApiAuth, dataset_id, "raptor")
         assert res["code"] == 0, res
+        _index_task_created(HttpApiAuth, dataset_id, "raptor")
         res = trace_index(HttpApiAuth, dataset_id, "raptor")
         assert res["code"] == 0, res
 
@@ -141,10 +147,9 @@ class TestTraceIndex:
     def test_trace_index_mindmap(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
         bulk_upload_documents(HttpApiAuth, dataset_id, 1, tmp_path)
-        parse_documents(HttpApiAuth, dataset_id)
-        _parse_done(HttpApiAuth, dataset_id)
         res = run_index(HttpApiAuth, dataset_id, "mindmap")
         assert res["code"] == 0, res
+        _index_task_created(HttpApiAuth, dataset_id, "mindmap")
         res = trace_index(HttpApiAuth, dataset_id, "mindmap")
         assert res["code"] == 0, res
 

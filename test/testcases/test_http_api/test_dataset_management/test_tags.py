@@ -73,10 +73,10 @@ class TestDeleteTags:
 @pytest.mark.usefixtures("clear_datasets")
 class TestRenameTag:
     @pytest.mark.p2
-    def test_rename_tag_missing_body(self, HttpApiAuth, add_dataset_func):
+    def test_rename_tag_empty_names(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         res = rename_tag(HttpApiAuth, dataset_id, "", "")
-        assert res["code"] == 0, res
+        assert res["code"] != 0, res
 
     @pytest.mark.p2
     def test_rename_tag_invalid_id(self, HttpApiAuth):

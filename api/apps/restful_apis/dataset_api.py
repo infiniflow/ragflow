@@ -473,7 +473,7 @@ async def rename_tag(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route('/datasets/<dataset_id>/knowledge_graph', methods=['GET'])  # noqa: F821
+@manager.route('/datasets/<dataset_id>/graph/search', methods=['GET'])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def knowledge_graph(tenant_id, dataset_id):
@@ -492,7 +492,7 @@ async def knowledge_graph(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route('/datasets/<dataset_id>/knowledge_graph', methods=['DELETE'])  # noqa: F821
+@manager.route('/datasets/<dataset_id>/graph', methods=['DELETE'])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 def delete_knowledge_graph(tenant_id, dataset_id):
