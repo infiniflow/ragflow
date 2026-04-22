@@ -15,6 +15,7 @@
 #
 import ast
 import logging
+import re
 from typing import Any, Callable, Dict
 
 import json_repair
@@ -253,11 +254,31 @@ def update_metadata_to(existing_metadata, incoming_metadata):
     if not isinstance(incoming_metadata, dict):
         return existing_metadata
 
+    unicode_escape_pattern = re.compile(r"(\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})")
+
+    def _decode_unicode_escapes(value: str) -> str:
+        if not isinstance(value, str):
+            return value
+        if not unicode_escape_pattern.search(value):
+            return value
+        try:
+            return bytes(value, "utf-8").decode("unicode_escape")
+        except Exception:
+            return value
+
+    def _normalize_metadata_value(value):
+        if isinstance(value, str):
+            return _decode_unicode_escapes(value)
+        if isinstance(value, list):
+            return [_normalize_metadata_value(vv) for vv in value]
+        return value
+
     def _is_supported_scalar(value):
         # bool is a subclass of int in Python, exclude it explicitly.
         return isinstance(value, (str, int, float)) and not isinstance(value, bool)
 
     for k, v in incoming_metadata.items():
+        v = _normalize_metadata_value(v)
         if isinstance(v, list):
             v = [vv for vv in v if _is_supported_scalar(vv)]
             if not v:
