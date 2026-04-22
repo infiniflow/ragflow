@@ -46,7 +46,7 @@ export const useFetchPipelineFileLogDetail = ({
     enabled: !isAgent,
     queryFn: async () => {
       if (isEdit) {
-        const { data } = await kbService.get_pipeline_detail({
+        const { data } = await kbService.getPipelineDetail({
           log_id: logId,
         });
         return data?.data ?? {};

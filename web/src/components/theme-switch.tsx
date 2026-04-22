@@ -8,7 +8,7 @@ import { forwardRef } from 'react';
 const ThemeSwitch = forwardRef<
   React.ElementRef<typeof Root>,
   React.ComponentPropsWithoutRef<typeof Root>
->(({ className, ...props }, ref) => {
+>(function ThemeSwitch({ className, ...props }, ref) {
   const { setTheme } = useTheme();
   const isDark = useIsDarkTheme();
 

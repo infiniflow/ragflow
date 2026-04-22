@@ -48,14 +48,14 @@ def test_parse_txt_document(get_auth):
     for doc in res['data']['docs']:
         doc_id_list.append(doc['id'])
 
-    res = get_docs_info(get_auth, doc_id_list)
+    res = get_docs_info(get_auth, dataset_id, doc_ids=doc_id_list)
     print(doc_id_list)
     doc_count = len(doc_id_list)
     res = parse_docs(get_auth, doc_id_list)
 
     start_ts = timer()
     while True:
-        res = get_docs_info(get_auth, doc_id_list)
+        res = get_docs_info(get_auth, dataset_id, doc_ids=doc_id_list)
         finished_count = 0
         for doc_info in res['data']:
             if doc_info['progress'] == 1:

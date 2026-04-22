@@ -222,10 +222,20 @@
         "glm-4.6v",
         "glm-4.5",
         "glm-4.5v"
-      ],
-      "clear": {
-        "default_value": true
-      }
+      ]
+    },
+    "clear_thinking": {
+      "default_value": true,
+      "supported_models": [
+        "glm-5.1",
+        "glm-5",
+        "glm-5v-turbo",
+        "glm-4.7",
+        "glm-4.6",
+        "glm-4.6v",
+        "glm-4.5",
+        "glm-4.5v"
+      ]
     }
   }
 }

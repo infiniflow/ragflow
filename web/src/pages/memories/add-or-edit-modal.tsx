@@ -14,7 +14,7 @@ type IProps = {
   loading?: boolean;
   isCreate?: boolean;
 };
-export const AddOrEditModal = memo((props: IProps) => {
+export const AddOrEditModal = memo(function AddOrEditModal(props: IProps) {
   const { open, onClose, onSubmit, initialMemory, isCreate } = props;
   const { t } = useTranslation();
   // const { modelOptions } = useModelOptions();

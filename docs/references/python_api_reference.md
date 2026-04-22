@@ -1685,7 +1685,7 @@ The parameters in `begin` component.
 
 Also supports:
 
-- `release` (`bool | str`, optional): Set to `True` (or `"true"`) to create the session in release mode (published version only).
+- `release` (`bool | str`, optional): When set to `True` (or `"true"`), creates a session with the published agent app only.
 
 #### Returns
 

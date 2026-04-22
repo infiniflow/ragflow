@@ -1,12 +1,15 @@
 // src/pages/dataset/file-logs/file-status-badge.tsx
-import { RunningStatus } from '@/pages/dataset/dataset/constant';
+import {
+  RunningStatus,
+  RunningStatusOld,
+} from '@/pages/dataset/dataset/constant';
 import { FC } from 'react';
 /**
  * params: status: 0 not run yet 1 running, 2 cancel, 3 success, 4 fail
  */
 interface StatusBadgeProps {
   // status: 'Success' | 'Failed' | 'Running' | 'Pending';
-  status: RunningStatus;
+  status: RunningStatus | RunningStatusOld;
   name?: string;
   className?: string;
 }
@@ -19,12 +22,16 @@ const FileStatusBadge: FC<StatusBadgeProps> = ({ status, name, className }) => {
     // #faad14  → rgb(250, 173, 20)  // state-warning
     switch (status) {
       case RunningStatus.DONE:
+      case RunningStatusOld.DONE:
         return `bg-[rgba(59,160,92,0.1)] text-state-success`;
       case RunningStatus.FAIL:
+      case RunningStatusOld.FAIL:
         return `bg-[rgba(216,73,75,0.1)] text-state-error`;
       case RunningStatus.RUNNING:
+      case RunningStatusOld.RUNNING:
         return `bg-[rgba(0,190,180,0.1)] text-accent-primary`;
       case RunningStatus.UNSTART:
+      case RunningStatusOld.UNSTART:
         return `bg-[rgba(250,173,20,0.1)] text-state-warning`;
       default:
         return 'bg-gray-500/10 text-text-secondary';
@@ -38,12 +45,16 @@ const FileStatusBadge: FC<StatusBadgeProps> = ({ status, name, className }) => {
     // #faad14  → rgb(250, 173, 20)  // state-warning
     switch (status) {
       case RunningStatus.DONE:
+      case RunningStatusOld.DONE:
         return `bg-[rgba(59,160,92,1)] text-state-success`;
       case RunningStatus.FAIL:
+      case RunningStatusOld.FAIL:
         return `bg-[rgba(216,73,75,1)] text-state-error`;
       case RunningStatus.RUNNING:
+      case RunningStatusOld.RUNNING:
         return `bg-[rgba(0,190,180,1)] text-accent-primary`;
       case RunningStatus.UNSTART:
+      case RunningStatusOld.UNSTART:
         return `bg-[rgba(250,173,20,1)] text-state-warning`;
       default:
         return `bg-[rgba(117,120,122,1)] text-text-secondary`;

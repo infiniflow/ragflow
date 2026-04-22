@@ -66,6 +66,7 @@ class DataSet(Base):
     def list_documents(
         self,
         id: str | None = None,
+        ids: list[str] | None = None,
         name: str | None = None,
         keywords: str | None = None,
         page: int = 1,
@@ -75,6 +76,10 @@ class DataSet(Base):
         create_time_from: int = 0,
         create_time_to: int = 0,
     ):
+        # Validate that id and ids are not used together
+        if id and ids:
+            raise ValueError("Cannot use both 'id' and 'ids' parameters at the same time.")
+        
         params = {
             "id": id,
             "name": name,
@@ -86,6 +91,10 @@ class DataSet(Base):
             "create_time_from": create_time_from,
             "create_time_to": create_time_to,
         }
+        # Handle ids parameter - convert to multiple query params
+        if ids:
+            for doc_id in ids:
+                params.append(("ids", doc_id))
         res = self.get(f"/datasets/{self.id}/documents", params=params)
         res = res.json()
         documents = []
