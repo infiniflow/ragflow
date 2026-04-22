@@ -1,6 +1,5 @@
+import api from '@/utils/api';
 import request from '@/utils/request';
-
-const API_PREFIX = '/api/v1';
 
 export interface SkillSpace {
   id: string;
@@ -128,7 +127,7 @@ class SkillSpaceService {
   async listSpaces(): Promise<{ spaces: SkillSpace[]; total: number }> {
     return await this.request<{ spaces: SkillSpace[]; total: number }>(
       'GET',
-      `${API_PREFIX}/skills/spaces`,
+      api.skillSpaces,
     );
   }
 
@@ -136,7 +135,7 @@ class SkillSpaceService {
   async createSpace(request: CreateSpaceRequest): Promise<SkillSpace> {
     return await this.request<SkillSpace>(
       'POST',
-      `${API_PREFIX}/skills/spaces`,
+      api.skillSpaces,
       request,
     );
   }
@@ -145,7 +144,7 @@ class SkillSpaceService {
   async getSpace(spaceId: string): Promise<SkillSpace> {
     return await this.request<SkillSpace>(
       'GET',
-      `${API_PREFIX}/skills/spaces/${spaceId}`,
+      api.skillSpace(spaceId),
     );
   }
 
@@ -156,7 +155,7 @@ class SkillSpaceService {
   ): Promise<SkillSpace> {
     return await this.request<SkillSpace>(
       'PUT',
-      `${API_PREFIX}/skills/spaces/${spaceId}`,
+      api.skillSpace(spaceId),
       request,
     );
   }
@@ -165,7 +164,7 @@ class SkillSpaceService {
   async deleteSpace(spaceId: string): Promise<void> {
     await this.request<void>(
       'DELETE',
-      `${API_PREFIX}/skills/spaces/${spaceId}`,
+      api.skillSpace(spaceId),
     );
   }
 
@@ -173,7 +172,7 @@ class SkillSpaceService {
   async getSpaceByFolder(folderId: string): Promise<SkillSpace> {
     return await this.request<SkillSpace>(
       'GET',
-      `${API_PREFIX}/skills/space/by-folder`,
+      api.skillSpaceByFolder,
       null,
       { folder_id: folderId },
     );
@@ -192,7 +191,7 @@ class SkillSpaceService {
 
     return await this.request<SkillSearchConfig>(
       'GET',
-      `${API_PREFIX}/skills/config`,
+      api.skillConfig,
       null,
       params,
     );
@@ -202,7 +201,7 @@ class SkillSpaceService {
   async updateConfig(request: UpdateConfigRequest): Promise<SkillSearchConfig> {
     return await this.request<SkillSearchConfig>(
       'POST',
-      `${API_PREFIX}/skills/config`,
+      api.skillConfig,
       request,
     );
   }
@@ -213,7 +212,7 @@ class SkillSpaceService {
   async search(request: SearchRequest): Promise<SearchResult> {
     return await this.request<SearchResult>(
       'POST',
-      `${API_PREFIX}/skills/search`,
+      api.skillSearch,
       request,
     );
   }
@@ -226,7 +225,7 @@ class SkillSpaceService {
   ): Promise<{ indexed_count: number }> {
     return await this.request<{ indexed_count: number }>(
       'POST',
-      `${API_PREFIX}/skills/index`,
+      api.skillIndex,
       request,
     );
   }
@@ -238,7 +237,7 @@ class SkillSpaceService {
 
     await this.request<void>(
       'DELETE',
-      `${API_PREFIX}/skills/index`,
+      api.skillIndex,
       null,
       params,
     );
@@ -248,7 +247,7 @@ class SkillSpaceService {
   async reindex(request: IndexSkillsRequest): Promise<any> {
     return await this.request<any>(
       'POST',
-      `${API_PREFIX}/skills/reindex`,
+      api.skillReindex,
       request,
     );
   }

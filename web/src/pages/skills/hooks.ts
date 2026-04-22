@@ -1,6 +1,7 @@
 import fileManagerService from '@/services/file-manager-service';
 import skillSpaceService from '@/services/skill-space-service';
 import { getAuthorization } from '@/utils/authorization-util';
+import { useQuery } from '@tanstack/react-query';
 import { message } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -135,6 +136,29 @@ export {
   sanitizeRelPath,
 } from './validation';
 
+// Query key for file content
+const fileContentQueryKey = (fileId: string) => ['skillFileContent', fileId];
+
+// Hook to fetch file content using TanStack Query
+export const useFileContent = (fileId: string | null) => {
+  return useQuery({
+    queryKey: fileContentQueryKey(fileId || ''),
+    queryFn: async (): Promise<string | null> => {
+      if (!fileId) return null;
+      const response = await fileManagerService.getFile({}, fileId);
+      const blob = response.data as Blob;
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(blob);
+      });
+    },
+    enabled: !!fileId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+};
+
 // Hook to manage skills
 export const useSkills = () => {
   const { t } = useTranslation();
@@ -142,14 +166,11 @@ export const useSkills = () => {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Fetch file content
+  // Fetch file content (kept for backward compatibility)
   const fetchFileContent = async (fileId: string): Promise<string | null> => {
     try {
       const response = await fileManagerService.getFile({}, fileId);
-      // Response is blob, need to convert to text
       const blob = response.data as Blob;
-
-      // Use FileReader for better browser compatibility
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);

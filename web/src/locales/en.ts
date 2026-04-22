@@ -127,7 +127,7 @@ export default {
       selectSpace: 'Select a Skill Space to get started',
       spacePlaceholder: 'Enter space name',
       createSpace: 'Create Skill Space',
-      createSpaceTitle: 'Create New Skill Space',
+      createSpaceTitle: 'Create new skill space',
       createSpaceDescription:
         'Create a new space to organize and manage your skills.',
       spaceName: 'Space Name',
@@ -266,7 +266,6 @@ export default {
       fieldContent: 'Content',
       fieldContentDesc: 'Skill content (e.g., README)',
       weight: 'Weight',
-      pureKeyword: 'Keyword Only',
       pureVector: 'Vector Only',
       hybrid: 'Hybrid',
       keyword: 'Keyword',

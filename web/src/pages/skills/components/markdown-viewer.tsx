@@ -61,20 +61,20 @@ const MarkdownViewer: React.FC<MarkdownViewerProps> = ({ content }) => {
             const language = match ? match[1] : '';
 
             if (language) {
-              return (
-                <SyntaxHighlighter
-                  style={isDarkTheme ? oneDark : oneLight}
-                  language={language}
-                  PreTag="div"
-                  customStyle={{
-                    backgroundColor: isDarkTheme ? '#282c34' : '#fafafa',
-                    borderRadius: '8px',
-                    marginBottom: '1em',
-                  }}
-                >
-                  {String(children).replace(/\n$/, '')}
-                </SyntaxHighlighter>
-              );
+            return (
+              <SyntaxHighlighter
+                style={isDarkTheme ? oneDark : oneLight}
+                language={language}
+                PreTag="div"
+                customStyle={{
+                  backgroundColor: 'var(--bg-component)',
+                  borderRadius: '8px',
+                  marginBottom: '1em',
+                }}
+              >
+                {String(children).replace(/\n$/, '')}
+              </SyntaxHighlighter>
+            );
             }
 
             return (

@@ -322,4 +322,13 @@ export default {
   adminGetSandboxConfig: `${restAPIv1}/admin/sandbox/config`,
   adminSetSandboxConfig: `${restAPIv1}/admin/sandbox/config`,
   adminTestSandboxConnection: `${restAPIv1}/admin/sandbox/test`,
+
+  // Skill spaces
+  skillSpaces: `${restAPIv1}/skills/spaces`,
+  skillSpace: (spaceId: string) => `${restAPIv1}/skills/spaces/${spaceId}`,
+  skillSpaceByFolder: `${restAPIv1}/skills/space/by-folder`,
+  skillConfig: `${restAPIv1}/skills/config`,
+  skillSearch: `${restAPIv1}/skills/search`,
+  skillIndex: `${restAPIv1}/skills/index`,
+  skillReindex: `${restAPIv1}/skills/reindex`,
 };

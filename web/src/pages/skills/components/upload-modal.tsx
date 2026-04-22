@@ -1,4 +1,7 @@
+import { FileUploader } from '@/components/file-uploader';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
+import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Modal } from '@/components/ui/modal/modal';
@@ -6,27 +9,16 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   CheckCircle,
-  File as FileIcon,
-  FolderOpen,
   Globe,
-  Inbox,
   Loader2,
   XCircle,
 } from 'lucide-react';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { validateSkillFormat } from '../hooks';
 import type { ValidationError } from '../types';
 import { findJunkFiles } from '../validation';
-
-interface UploadFile {
-  uid: string;
-  name: string;
-  size?: number;
-  type?: string;
-  originFileObj?: File;
-  status?: 'done' | 'error' | 'uploading';
-}
 
 interface UploadModalProps {
   open: boolean;
@@ -34,10 +26,6 @@ interface UploadModalProps {
   onUpload: (name: string, version: string, files: File[]) => Promise<boolean>;
   loading?: boolean;
 }
-
-type FileWithPath = File & {
-  webkitRelativePath?: string;
-};
 
 type GitPlatform = 'github' | 'gitee';
 
@@ -66,6 +54,11 @@ const PLATFORM_CONFIG: Record<
   },
 };
 
+interface UploadFormData {
+  name: string;
+  version: string;
+}
+
 const UploadModal: React.FC<UploadModalProps> = ({
   open,
   onCancel,
@@ -74,15 +67,19 @@ const UploadModal: React.FC<UploadModalProps> = ({
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('upload');
 
-  // Upload tab state
-  const [name, setName] = useState('');
-  const [nameError, setNameError] = useState('');
-  const [version, setVersion] = useState('');
-  const [versionError, setVersionError] = useState('');
-  const [fileList, setFileList] = useState<UploadFile[]>([]);
+  // Upload form with react-hook-form
+  const form = useForm<UploadFormData>({
+    defaultValues: {
+      name: '',
+      version: '',
+    },
+  });
+  const { register, handleSubmit, setValue, watch, reset } = form;
+  const nameValue = watch('name');
+
+  const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [inputKey, setInputKey] = useState(0);
   const [validationStatus, setValidationStatus] = useState<
     'valid' | 'invalid' | 'pending' | null
   >(null);
@@ -92,7 +89,6 @@ const UploadModal: React.FC<UploadModalProps> = ({
     name?: string;
     description?: string;
   } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Git import tab state
   const [gitPlatform, setGitPlatform] = useState<GitPlatform>('github');
@@ -106,33 +102,27 @@ const UploadModal: React.FC<UploadModalProps> = ({
   >(null);
   const [gitValidationMessage, setGitValidationMessage] = useState<string>('');
 
-  const validateName = (value: string): boolean => {
+  const validateName = (value: string): boolean | string => {
     if (!value) {
-      setNameError(t('skills.skillNameHelp'));
-      return false;
+      return t('skills.skillNameHelp');
     }
     if (!/^[a-zA-Z0-9_-]+$/.test(value)) {
-      setNameError(t('skills.skillNameHelp'));
-      return false;
+      return t('skills.skillNameHelp');
     }
-    setNameError('');
     return true;
   };
 
-  const validateVersion = (value: string): boolean => {
+  const validateVersion = (value: string): boolean | string => {
     if (!value) {
-      setVersionError(t('skills.versionRequired') || 'Version is required');
-      return false;
+      return t('skills.versionRequired') || 'Version is required';
     }
     // Semantic versioning format: x.y.z
     if (!/^\d+\.\d+\.\d+/.test(value)) {
-      setVersionError(
+      return (
         t('skills.versionFormatHelp') ||
-          'Version must be in semver format (e.g., 1.0.0)',
+        'Version must be in semver format (e.g., 1.0.0)'
       );
-      return false;
     }
-    setVersionError('');
     return true;
   };
 
@@ -143,34 +133,20 @@ const UploadModal: React.FC<UploadModalProps> = ({
     return /^\d+\.\d+\.\d+/.test(value);
   };
 
-  const handleOk = useCallback(async () => {
-    if (!validateName(name)) {
-      return;
-    }
-
-    if (!validateVersion(version)) {
-      return;
-    }
-
-    if (fileList.length === 0) {
+  const handleOk = handleSubmit(async (data) => {
+    if (files.length === 0) {
       return;
     }
 
     setUploading(true);
     setProgress(0);
 
-    // Get actual File objects
-    const files: File[] = fileList
-      .map((f) => f.originFileObj)
-      .filter(Boolean) as File[];
-
     try {
-      const success = await onUpload(name, version, files);
+      const success = await onUpload(data.name, data.version, files);
 
       if (success) {
-        setName('');
-        setVersion('');
-        setFileList([]);
+        reset({ name: '', version: '' });
+        setFiles([]);
         onCancel();
       }
     } catch (error) {
@@ -179,16 +155,13 @@ const UploadModal: React.FC<UploadModalProps> = ({
       setUploading(false);
       setProgress(0);
     }
-  }, [name, version, fileList, onUpload, onCancel, t]);
+  });
 
   const handleCancel = useCallback(() => {
     if (!uploading && !gitImporting) {
       // Reset upload tab state
-      setName('');
-      setNameError('');
-      setVersion('');
-      setVersionError('');
-      setFileList([]);
+      reset({ name: '', version: '' });
+      setFiles([]);
       setValidationStatus(null);
       setValidationMessage('');
       setValidationErrors([]);
@@ -203,141 +176,27 @@ const UploadModal: React.FC<UploadModalProps> = ({
       setGitProgress('');
       onCancel();
     }
-  }, [uploading, gitImporting, onCancel]);
+  }, [uploading, gitImporting, onCancel, reset]);
 
-  // Handle folder drop from drag and drop
-  const handleFolderDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
+  // Handle files change from FileUploader
+  const handleFilesChange = useCallback((newFiles: File[]) => {
+    setFiles(newFiles);
 
-      const items = e.dataTransfer.items;
-      if (!items || items.length === 0) return;
-
-      const files: File[] = [];
-      const promises: Promise<void>[] = [];
-
-      // Process each dropped item
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.kind === 'file') {
-          const entry =
-            item.webkitGetAsEntry?.() || (item as any).getAsEntry?.();
-          if (entry && entry.isDirectory) {
-            // Recursively read directory
-            promises.push(readDirectory(entry, files, ''));
-          } else if (entry && entry.isFile) {
-            promises.push(
-              new Promise((resolve) => {
-                (entry as FileSystemFileEntry).file((file) => {
-                  // Add webkitRelativePath
-                  Object.defineProperty(file, 'webkitRelativePath', {
-                    value: file.name,
-                    writable: false,
-                  });
-                  files.push(file);
-                  resolve();
-                });
-              }),
-            );
-          }
-        }
+    // Auto-fill name from folder name if empty
+    if (newFiles.length > 0 && !nameValue) {
+      const firstFile = newFiles[0];
+      const path = (firstFile as any).webkitRelativePath || firstFile.name;
+      const folderName = path.split('/')[0];
+      if (folderName) {
+        setValue('name', folderName, { shouldValidate: true });
       }
+    }
+  }, [nameValue, setValue]);
 
-      Promise.all(promises)
-        .then(() => {
-          if (files.length > 0) {
-            const uploadFiles: UploadFile[] = files.map((file, index) => ({
-              uid: `${Date.now()}-${index}`,
-              name: (file as any).webkitRelativePath || file.name,
-              size: file.size,
-              type: file.type,
-              originFileObj: file as any,
-              status: 'done',
-            }));
-
-            setFileList(uploadFiles);
-
-            // Auto-fill name from folder name
-            const folderName =
-              (files[0] as any).webkitRelativePath?.split('/')[0] ||
-              files[0].name;
-            if (folderName && !name) {
-              setName(folderName);
-            }
-          }
-        })
-        .catch((err) => {
-          console.error('Error processing dropped folder:', err);
-        });
-    },
-    [name],
-  );
-
-  // Recursively read directory contents
-  const readDirectory = (
-    dirEntry: FileSystemDirectoryEntry,
-    files: File[],
-    path: string,
-  ): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      const reader = dirEntry.createReader();
-      const entries: FileSystemEntry[] = [];
-
-      const readEntries = () => {
-        reader.readEntries((results) => {
-          if (results.length === 0) {
-            // Process all entries
-            const promises: Promise<void>[] = [];
-            for (const entry of entries) {
-              const newPath = path ? `${path}/${entry.name}` : entry.name;
-              if (entry.isDirectory) {
-                promises.push(
-                  readDirectory(
-                    entry as FileSystemDirectoryEntry,
-                    files,
-                    newPath,
-                  ),
-                );
-              } else if (entry.isFile) {
-                promises.push(
-                  new Promise((resolveFile) => {
-                    (entry as FileSystemFileEntry).file((file) => {
-                      Object.defineProperty(file, 'webkitRelativePath', {
-                        value: newPath,
-                        writable: false,
-                      });
-                      files.push(file);
-                      resolveFile();
-                    });
-                  }),
-                );
-              }
-            }
-            Promise.all(promises)
-              .then(() => resolve())
-              .catch(reject);
-          } else {
-            entries.push(...results);
-            readEntries();
-          }
-        }, reject);
-      };
-
-      readEntries();
-    });
-  };
-
-  // Prevent default drag behavior
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, []);
-
-  // Validate files when fileList changes
+  // Validate files when files change
   useEffect(() => {
-    const validateFiles = async () => {
-      if (fileList.length === 0) {
+    const validateFilesAsync = async () => {
+      if (files.length === 0) {
         setValidationStatus(null);
         setValidationMessage('');
         setValidationErrors([]);
@@ -348,20 +207,6 @@ const UploadModal: React.FC<UploadModalProps> = ({
       setValidationStatus('pending');
 
       try {
-        const files: File[] = fileList
-          .map((f) => f.originFileObj)
-          .filter(Boolean) as File[];
-
-        if (files.length === 0) {
-          setValidationStatus('invalid');
-          setValidationMessage(
-            t('skills.validation.noValidFiles') || 'No valid files found',
-          );
-          setValidationErrors([]);
-          setParsedMetadata(null);
-          return;
-        }
-
         // Check for junk files first
         const junkFiles = findJunkFiles(files);
         if (junkFiles.length > 0) {
@@ -390,8 +235,8 @@ const UploadModal: React.FC<UploadModalProps> = ({
             description: result.description,
           });
           // Auto-fill name if extracted from SKILL.md
-          if (result.name && !name) {
-            setName(result.name);
+          if (result.name && !nameValue) {
+            setValue('name', result.name, { shouldValidate: true });
           }
         } else {
           setValidationStatus('invalid');
@@ -420,54 +265,11 @@ const UploadModal: React.FC<UploadModalProps> = ({
       }
     };
 
-    validateFiles();
-  }, [fileList, t, name]);
-
-  // Handle folder selection via webkitdirectory
-  const handleFolderSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files;
-      if (!files || files.length === 0) {
-        // Force re-render input to allow selecting the same folder again
-        setInputKey((prev) => prev + 1);
-        return;
-      }
-
-      const fileArray = Array.from(files).map((file, index): UploadFile => {
-        const fileWithPath = file as FileWithPath;
-        return {
-          uid: `${Date.now()}-${index}`,
-          name: fileWithPath.webkitRelativePath || file.name,
-          size: file.size,
-          type: file.type,
-          originFileObj: fileWithPath as any,
-          status: 'done',
-        };
-      });
-
-      setFileList((prev) => [...prev, ...fileArray]);
-
-      // Auto-fill name from folder name if empty
-      const folderName = fileArray[0]?.name?.split('/')[0];
-      if (folderName && !name) {
-        setName(folderName);
-      }
-
-      // Force re-render input to allow selecting the same folder again
-      setInputKey((prev) => prev + 1);
-    },
-    [name],
-  );
-
-  const handleRemoveFile = (uid: string) => {
-    setFileList((prev) => prev.filter((f) => f.uid !== uid));
-  };
-
-  const fileCount = fileList.length;
-  const folderCount = new Set(fileList.map((f) => f.name.split('/')[0])).size;
+    validateFilesAsync();
+  }, [files, t, nameValue, setValue]);
 
   const isUploadDisabled =
-    validationStatus === 'invalid' || fileList.length === 0;
+    validationStatus === 'invalid' || files.length === 0;
 
   // ===== Git Import Functions =====
 
@@ -911,49 +713,47 @@ const UploadModal: React.FC<UploadModalProps> = ({
 
         {/* Upload Tab */}
         <TabsContent value="upload" className="space-y-4 mt-4">
-          <div className="space-y-2">
-            <Label htmlFor="skill-name">
-              {t('skills.skillName')}
-              <span className="text-state-error ml-1">*</span>
-            </Label>
-            <Input
-              id="skill-name"
-              placeholder={t('skills.skillNamePlaceholder')}
-              disabled={uploading}
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                if (nameError) validateName(e.target.value);
-              }}
-            />
-            {nameError && (
-              <p className="text-sm text-state-error">{nameError}</p>
-            )}
-          </div>
+          <Form {...form}>
+            <RAGFlowFormItem
+              name="name"
+              label={
+                <>
+                  {t('skills.skillName')}
+                  <span className="text-state-error ml-1">*</span>
+                </>
+              }
+              rules={{ validate: validateName }}
+            >
+              <Input
+                id="skill-name"
+                placeholder={t('skills.skillNamePlaceholder')}
+                disabled={uploading}
+                {...register('name', { validate: validateName })}
+              />
+            </RAGFlowFormItem>
 
-          <div className="space-y-2">
-            <Label htmlFor="skill-version">
-              {t('skills.skillVersion') || 'Version'}
-              <span className="text-state-error ml-1">*</span>
-            </Label>
-            <Input
-              id="skill-version"
-              placeholder={t('skills.skillVersionPlaceholder') || 'e.g., 1.0.0'}
-              disabled={uploading}
-              value={version}
-              onChange={(e) => {
-                setVersion(e.target.value);
-                if (versionError) validateVersion(e.target.value);
-              }}
-            />
-            {versionError && (
-              <p className="text-sm text-state-error">{versionError}</p>
-            )}
+            <RAGFlowFormItem
+              name="version"
+              label={
+                <>
+                  {t('skills.skillVersion') || 'Version'}
+                  <span className="text-state-error ml-1">*</span>
+                </>
+              }
+              rules={{ validate: validateVersion }}
+            >
+              <Input
+                id="skill-version"
+                placeholder={t('skills.skillVersionPlaceholder') || 'e.g., 1.0.0'}
+                disabled={uploading}
+                {...register('version', { validate: validateVersion })}
+              />
+            </RAGFlowFormItem>
             <p className="text-xs text-text-secondary">
               {t('skills.versionFormatHelp') ||
                 'Version must be in semver format (e.g., 1.0.0)'}
             </p>
-          </div>
+          </Form>
 
           <div className="bg-bg-card border border-border-button rounded-lg p-4">
             <p className="font-medium text-sm">
@@ -964,78 +764,15 @@ const UploadModal: React.FC<UploadModalProps> = ({
             </p>
           </div>
 
-          {/* Folder Upload Button */}
-          <div className="flex items-center gap-2">
-            <input
-              key={inputKey}
-              type="file"
-              ref={fileInputRef}
-              className="hidden"
-              // @ts-ignore - webkitdirectory is not standard but widely supported
-              webkitdirectory="true"
-              directory="true"
-              onChange={handleFolderSelect}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-            >
-              <FolderOpen className="mr-2 size-4" />
-              {t('skills.selectFolder')}
-            </Button>
-            <span className="text-text-secondary text-sm">
-              {t('skills.dragFilesHint')}
-            </span>
-          </div>
-
-          {/* Drag and Drop Zone */}
-          <div
-            className="border-2 border-dashed border-border-button rounded-lg p-8 text-center hover:border-accent-primary transition-colors"
-            onDrop={handleFolderDrop}
-            onDragOver={handleDragOver}
-            onDragEnter={handleDragOver}
-          >
-            <Inbox className="mx-auto size-10 text-text-secondary mb-3" />
-            <p className="text-text-primary font-medium">
-              {t('skills.dragFilesTitle')}
-            </p>
-            <p className="text-text-secondary text-sm mt-1">
-              {t('skills.dragFilesDescription')}
-            </p>
-          </div>
-
-          {/* File List */}
-          {fileList.length > 0 && (
-            <div className="border border-border-button rounded-lg p-3 max-h-40 overflow-y-auto">
-              <div className="flex items-center gap-2 text-text-secondary text-sm mb-2">
-                <FileIcon className="size-4" />
-                <span>
-                  {t('skills.filesSelected', { count: fileCount })}
-                  {folderCount > 1 && ` (${folderCount} folders)`}
-                </span>
-              </div>
-              <div className="space-y-1">
-                {fileList.map((file) => (
-                  <div
-                    key={file.uid}
-                    className="flex items-center justify-between text-sm py-1 px-2 hover:bg-bg-card rounded"
-                  >
-                    <span className="truncate flex-1">{file.name}</span>
-                    {!uploading && (
-                      <button
-                        onClick={() => handleRemoveFile(file.uid)}
-                        className="text-text-secondary hover:text-state-error ml-2"
-                      >
-                        <XCircle className="size-4" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* File Uploader */}
+          <FileUploader
+            value={files}
+            onValueChange={handleFilesChange}
+            disabled={uploading}
+            multiple
+            title={t('skills.dragFilesTitle')}
+            description={t('skills.dragFilesDescription')}
+          />
 
           {/* Validation Status */}
           {validationStatus && (

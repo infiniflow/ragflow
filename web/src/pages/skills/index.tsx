@@ -14,9 +14,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { Input, SearchInput } from '@/components/ui/input';
 import { Segmented } from '@/components/ui/segmented';
 import { Spin } from '@/components/ui/spin';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import {
   Tooltip,
   TooltipContent,
@@ -42,6 +50,7 @@ import {
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router';
+import { CreateSpaceDialog } from './components/create-space-dialog';
 import SearchConfigModal from './components/search-config-modal';
 import SkillCard from './components/skill-card';
 import SkillDetail from './components/skill-detail';
@@ -697,17 +706,10 @@ const SkillsPage: React.FC = () => {
                 </CardContainer>
               ) : (
                 <div className="flex-1 overflow-auto border border-border rounded-lg">
-                  <table className="w-full" style={{ tableLayout: 'fixed' }}>
-                    <colgroup>
-                      <col style={{ width: '50px' }} />
-                      <col style={{ width: '20vw' }} />
-                      <col style={{ width: '160px' }} />
-                      <col style={{ width: '96px' }} />
-                      <col style={{ width: '96px' }} />
-                    </colgroup>
-                    <thead className="bg-bg-title sticky top-0">
-                      <tr>
-                        <th className="px-3 py-3 text-center">
+                  <Table>
+                    <TableHeader className="bg-bg-title sticky top-0">
+                      <TableRow>
+                        <TableHead className="w-[50px] text-center">
                           <Checkbox
                             checked={
                               filteredSpaces.length > 0 &&
@@ -727,24 +729,24 @@ const SkillsPage: React.FC = () => {
                               setRowSelection(newSelection);
                             }}
                           />
-                        </th>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-text-title">
+                        </TableHead>
+                        <TableHead className="w-[20vw]">
                           {t('skills.spaceName') || 'Name'}
-                        </th>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-text-title">
+                        </TableHead>
+                        <TableHead className="w-[160px]">
                           {t('fileManager.uploadDate') || 'Upload Date'}
-                        </th>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-text-title">
+                        </TableHead>
+                        <TableHead className="w-[96px]">
                           {t('fileManager.size') || 'Size'}
-                        </th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-text-title">
+                        </TableHead>
+                        <TableHead className="w-[96px] text-right">
                           {t('common.action') || 'Action'}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {filteredSpaces.map((space) => (
-                        <tr
+                        <TableRow
                           key={space.id}
                           className="hover:bg-bg-secondary/50 cursor-pointer transition-colors"
                           onClick={() => {
@@ -752,8 +754,8 @@ const SkillsPage: React.FC = () => {
                             setSelectedSpaceName(space.name);
                           }}
                         >
-                          <td
-                            className="px-3 py-3 text-center"
+                          <TableCell
+                            className="text-center"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <Checkbox
@@ -770,8 +772,8 @@ const SkillsPage: React.FC = () => {
                                 });
                               }}
                             />
-                          </td>
-                          <td className="px-4 py-3">
+                          </TableCell>
+                          <TableCell>
                             <div className="flex items-center gap-2 overflow-hidden">
                               <SvgIcon
                                 name="home-icon/skill-space"
@@ -782,19 +784,19 @@ const SkillsPage: React.FC = () => {
                                 {space.name}
                               </span>
                             </div>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-text-secondary">
+                          </TableCell>
+                          <TableCell className="text-sm text-text-secondary">
                             {spaceDetails[space.id]?.createTime
                               ? formatDate(spaceDetails[space.id].createTime)
                               : '-'}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-text-secondary">
+                          </TableCell>
+                          <TableCell className="text-sm text-text-secondary">
                             {spaceDetails[space.id]?.size !== undefined
                               ? formatFileSize(spaceDetails[space.id].size)
                               : '-'}
-                          </td>
-                          <td
-                            className="px-4 py-3 text-right"
+                          </TableCell>
+                          <TableCell
+                            className="text-right"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <Button
@@ -817,11 +819,11 @@ const SkillsPage: React.FC = () => {
                             >
                               <Trash2 className="size-4" />
                             </Button>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               )
             ) : (
@@ -849,53 +851,13 @@ const SkillsPage: React.FC = () => {
         </article>
 
         {/* Create Space Modal */}
-        <Dialog
+        <CreateSpaceDialog
           open={createSpaceModalOpen}
           onOpenChange={setCreateSpaceModalOpen}
-        >
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>
-                {t('skills.createSpaceTitle') || 'Create New Skill Space'}
-              </DialogTitle>
-              <DialogDescription>
-                {t('skills.createSpaceDescription') ||
-                  'Create a new space to organize and manage your skills.'}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-4">
-              <label className="text-sm font-medium mb-2 block">
-                {t('skills.spaceName') || 'Space Name'}
-              </label>
-              <Input
-                placeholder={
-                  t('skills.spaceNamePlaceholder') || 'e.g., my-space'
-                }
-                value={spaceInput}
-                onChange={(e) => setSpaceInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && spaceInput.trim()) {
-                    handleCreateHub();
-                  }
-                }}
-              />
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setCreateSpaceModalOpen(false);
-                  setSpaceInput('');
-                }}
-              >
-                {t('common.cancel')}
-              </Button>
-              <Button onClick={handleCreateHub} disabled={!spaceInput.trim()}>
-                {t('common.create')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          spaceInput={spaceInput}
+          onSpaceInputChange={setSpaceInput}
+          onCreate={handleCreateHub}
+        />
 
         {/* Delete Space Modal */}
         <Dialog
@@ -1044,24 +1006,16 @@ const SkillsPage: React.FC = () => {
         >
           <div className="flex items-center gap-2">
             {/* Search skills */}
-            <div className="relative">
-              <Input
-                placeholder={
-                  t('skills.searchPlaceholder') || 'Search skills...'
-                }
-                value={searchQuery}
-                onChange={handleSearchInputChange}
-                onKeyDown={handleSearchKeyDown}
-                className="w-[200px] pr-10"
-              />
-              <button
-                onClick={handleSearchClick}
-                disabled={isSearching}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Search className="size-4" />
-              </button>
-            </div>
+            <SearchInput
+              placeholder={
+                t('skills.searchPlaceholder') || 'Search skills...'
+              }
+              value={searchQuery}
+              onChange={handleSearchInputChange}
+              onKeyDown={handleSearchKeyDown}
+              className="w-[200px]"
+              rootClassName="relative"
+            />
             {/* Sort order toggle */}
             <Button
               variant="outline"

@@ -309,7 +309,7 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-bg-base">
-      {/* Page Header with Back Button - 与下方容器对齐 */}
+      {/* Page Header with Back Button - aligned with container below */}
       <header className="flex items-center justify-between px-6 py-4 bg-bg-base">
         <Button variant="outline" onClick={onClose}>
           <ArrowBigLeft />

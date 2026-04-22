@@ -36,10 +36,6 @@ const SkillCard: React.FC<SkillCardProps> = ({
   onDelete,
   formatRelative,
 }) => {
-  const getIcon = () => {
-    return <SvgIcon name="home-icon/skill-folder" width={24} height={24} />;
-  };
-
   const fileCount = skill.files.filter((f) => !f.is_dir).length;
   const dirCount = skill.files.filter((f) => f.is_dir).length;
   const filesLoading = skill.files.length === 0 && (skill as any)._folderId;
@@ -51,7 +47,9 @@ const SkillCard: React.FC<SkillCardProps> = ({
         onClick={() => onView(skill)}
       >
         <div className="flex gap-4">
-          <div className="flex-shrink-0 mt-1">{getIcon()}</div>
+          <div className="flex-shrink-0 mt-1">
+            <SvgIcon name="home-icon/skill-folder" width={24} height={24} />
+          </div>
 
           <div className="flex-1 min-w-0">
             <div className="flex justify-between items-start">

@@ -107,12 +107,12 @@ export default defineConfig(({ mode }) => {
     },
   };
 
-  const proxy =
-    proxySchemes[env.API_PROXY_SCHEME || 'python'] || proxySchemes.python;
+  const proxyScheme = import.meta.env.API_PROXY_SCHEME || env.API_PROXY_SCHEME || 'python';
+  const proxy = proxySchemes[proxyScheme] || proxySchemes.python;
 
   return {
     define: {
-      __API_PROXY_SCHEME__: JSON.stringify(env.API_PROXY_SCHEME || 'python'),
+      __API_PROXY_SCHEME__: JSON.stringify(proxyScheme),
     },
     plugins: [
       inspectorBabelPlugin(),

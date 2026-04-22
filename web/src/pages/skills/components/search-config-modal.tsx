@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
@@ -19,6 +20,7 @@ import { LlmModelType } from '@/constants/knowledge';
 import { useSelectLlmOptionsByModelType } from '@/hooks/use-llm-request';
 import { message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import type {
   FieldConfig,
@@ -54,7 +56,13 @@ export const SearchConfigModal: React.FC<SearchConfigModalProps> = ({
   loading = false,
 }) => {
   const { t } = useTranslation();
-  const [formData, setFormData] = useState<SearchConfig>(defaultConfig);
+
+  const form = useForm<SearchConfig>({
+    defaultValues: defaultConfig,
+  });
+  const { setValue, watch, handleSubmit, reset } = form;
+
+  const formData = watch();
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
 
@@ -69,7 +77,7 @@ export const SearchConfigModal: React.FC<SearchConfigModalProps> = ({
   useEffect(() => {
     if (open) {
       if (config) {
-        setFormData({
+        reset({
           ...defaultConfig,
           ...config,
           field_config: {
@@ -78,36 +86,37 @@ export const SearchConfigModal: React.FC<SearchConfigModalProps> = ({
           },
         });
       } else {
-        setFormData(defaultConfig);
+        reset(defaultConfig);
       }
     }
-  }, [open, config]);
+  }, [open, config, reset]);
 
-  const handleSave = async () => {
-    if (!formData.embd_id) {
+  const handleSave = handleSubmit(async (data) => {
+    if (!data.embd_id) {
       message.error(t('skillSearch.pleaseSelectEmbeddingModel'));
       return;
     }
     setSaving(true);
     try {
-      const success = await onSave(formData);
+      const success = await onSave(data);
       if (success) {
         onOpenChange(false);
       }
     } finally {
       setSaving(false);
     }
-  };
+  });
 
   const handleReindex = async () => {
     if (!onReindex) return;
-    if (!formData.embd_id) {
+    const currentEmbdId = form.getValues('embd_id');
+    if (!currentEmbdId) {
       message.error(t('skillSearch.pleaseSelectEmbeddingModel'));
       return;
     }
     setReindexing(true);
     try {
-      await onReindex(formData.embd_id);
+      await onReindex(currentEmbdId);
     } finally {
       setReindexing(false);
     }
@@ -117,16 +126,14 @@ export const SearchConfigModal: React.FC<SearchConfigModalProps> = ({
     field: keyof FieldConfig,
     updates: Partial<FieldWeight>,
   ) => {
-    setFormData((prev) => ({
-      ...prev,
-      field_config: {
-        ...prev.field_config,
-        [field]: {
-          ...prev.field_config[field],
-          ...updates,
-        },
+    const currentFieldConfig = form.getValues('field_config');
+    setValue('field_config', {
+      ...currentFieldConfig,
+      [field]: {
+        ...currentFieldConfig[field],
+        ...updates,
       },
-    }));
+    }, { shouldDirty: true });
   };
 
   const getSearchTypeLabel = (weight: number) => {
@@ -143,267 +150,257 @@ export const SearchConfigModal: React.FC<SearchConfigModalProps> = ({
           <DialogDescription>{t('skillSearch.configDesc')}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          {/* Embedding Model */}
-          <div className="space-y-2">
-            <Label htmlFor="embd_id">{t('skillSearch.embeddingModel')}</Label>
-            <SelectWithSearch
-              value={formData.embd_id}
-              onChange={(value) =>
-                setFormData((prev) => ({ ...prev, embd_id: value }))
-              }
-              options={embeddingModelOptions}
-              placeholder={t('skillSearch.embeddingModelPlaceholder')}
-            />
-          </div>
-
-          {/* Hybrid Search Weight */}
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <Label>{t('skillSearch.vectorSimilarityWeight')}</Label>
-              <span className="text-sm text-muted-foreground">
-                {getSearchTypeLabel(formData.vector_similarity_weight)}
-              </span>
+        <Form {...form}>
+          <div className="space-y-6 py-4">
+            {/* Embedding Model */}
+            <div className="space-y-2">
+              <Label htmlFor="embd_id">{t('skillSearch.embeddingModel')}</Label>
+              <SelectWithSearch
+                value={formData.embd_id}
+                onChange={(value) => setValue('embd_id', value, { shouldDirty: true })}
+                options={embeddingModelOptions}
+                placeholder={t('skillSearch.embeddingModelPlaceholder')}
+              />
             </div>
-            <Slider
-              value={[formData.vector_similarity_weight]}
-              onValueChange={([value]) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  vector_similarity_weight: value,
-                }))
-              }
-              min={0}
-              max={1}
-              step={0.1}
-            />
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{t('skillSearch.keywordOnly')}</span>
-              <span>{t('skillSearch.balanced')}</span>
-              <span>{t('skillSearch.vectorOnly')}</span>
+
+            {/* Hybrid Search Weight */}
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <Label>{t('skillSearch.vectorSimilarityWeight')}</Label>
+                <span className="text-sm text-muted-foreground">
+                  {getSearchTypeLabel(formData.vector_similarity_weight)}
+                </span>
+              </div>
+              <Slider
+                value={[formData.vector_similarity_weight]}
+                onValueChange={([value]) =>
+                  setValue('vector_similarity_weight', value, { shouldDirty: true })
+                }
+                min={0}
+                max={1}
+                step={0.1}
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>{t('skillSearch.keywordOnly')}</span>
+                <span>{t('skillSearch.balanced')}</span>
+                <span>{t('skillSearch.vectorOnly')}</span>
+              </div>
             </div>
-          </div>
 
-          {/* Similarity Threshold */}
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <Label>{t('skillSearch.similarityThreshold')}</Label>
-              <span className="text-sm text-muted-foreground">
-                {formData.similarity_threshold.toFixed(1)}
-              </span>
+            {/* Similarity Threshold */}
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <Label>{t('skillSearch.similarityThreshold')}</Label>
+                <span className="text-sm text-muted-foreground">
+                  {formData.similarity_threshold.toFixed(1)}
+                </span>
+              </div>
+              <Slider
+                value={[formData.similarity_threshold]}
+                onValueChange={([value]) =>
+                  setValue('similarity_threshold', value, { shouldDirty: true })
+                }
+                min={0}
+                max={1}
+                step={0.05}
+              />
             </div>
-            <Slider
-              value={[formData.similarity_threshold]}
-              onValueChange={([value]) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  similarity_threshold: value,
-                }))
-              }
-              min={0}
-              max={1}
-              step={0.05}
-            />
-          </div>
 
-          {/* Top K */}
-          <div className="space-y-2">
-            <Label htmlFor="top_k">{t('skillSearch.topK')}</Label>
-            <Input
-              id="top_k"
-              type="number"
-              min={1}
-              max={100}
-              value={formData.top_k}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  top_k: parseInt(e.target.value) || 10,
-                }))
-              }
-            />
-          </div>
+            {/* Top K */}
+            <div className="space-y-2">
+              <Label htmlFor="top_k">{t('skillSearch.topK')}</Label>
+              <Input
+                id="top_k"
+                type="number"
+                min={1}
+                max={100}
+                value={formData.top_k}
+                onChange={(e) =>
+                  setValue('top_k', parseInt(e.target.value) || 10, { shouldDirty: true })
+                }
+              />
+            </div>
 
-          {/* Field Configuration */}
-          <div className="space-y-4">
-            <Label className="text-base font-medium">
-              {t('skillSearch.indexFields')}
-            </Label>
-            <p className="text-sm text-muted-foreground">
-              {t('skillSearch.indexFieldsDesc')}
-            </p>
+            {/* Field Configuration */}
+            <div className="space-y-4">
+              <Label className="text-base font-medium">
+                {t('skillSearch.indexFields')}
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                {t('skillSearch.indexFieldsDesc')}
+              </p>
 
-            {/* Name Field */}
-            <div className="flex items-center justify-between p-3 border rounded-lg">
-              <div className="flex items-center gap-3">
-                <Switch
-                  checked={formData.field_config.name.enabled}
-                  onCheckedChange={(checked) =>
-                    updateFieldWeight('name', { enabled: checked })
-                  }
-                />
-                <div>
-                  <p className="font-medium">{t('skillSearch.fieldName')}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {t('skillSearch.fieldNameDesc')}
-                  </p>
+              {/* Name Field */}
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div className="flex items-center gap-3">
+                  <Switch
+                    checked={formData.field_config.name.enabled}
+                    onCheckedChange={(checked) =>
+                      updateFieldWeight('name', { enabled: checked })
+                    }
+                  />
+                  <div>
+                    <p className="font-medium">{t('skillSearch.fieldName')}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('skillSearch.fieldNameDesc')}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    {t('skillSearch.weight')}:
+                  </span>
+                  <Input
+                    type="number"
+                    step={0.1}
+                    min={0}
+                    max={10}
+                    value={formData.field_config.name.weight}
+                    onChange={(e) =>
+                      updateFieldWeight('name', {
+                        weight: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="w-20"
+                    disabled={!formData.field_config.name.enabled}
+                  />
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">
-                  {t('skillSearch.weight')}:
-                </span>
-                <Input
-                  type="number"
-                  step={0.1}
-                  min={0}
-                  max={10}
-                  value={formData.field_config.name.weight}
-                  onChange={(e) =>
-                    updateFieldWeight('name', {
-                      weight: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-20"
-                  disabled={!formData.field_config.name.enabled}
-                />
-              </div>
-            </div>
 
-            {/* Tags Field */}
-            <div className="flex items-center justify-between p-3 border rounded-lg">
-              <div className="flex items-center gap-3">
-                <Switch
-                  checked={formData.field_config.tags.enabled}
-                  onCheckedChange={(checked) =>
-                    updateFieldWeight('tags', { enabled: checked })
-                  }
-                />
-                <div>
-                  <p className="font-medium">{t('skillSearch.fieldTags')}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {t('skillSearch.fieldTagsDesc')}
-                  </p>
+              {/* Tags Field */}
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div className="flex items-center gap-3">
+                  <Switch
+                    checked={formData.field_config.tags.enabled}
+                    onCheckedChange={(checked) =>
+                      updateFieldWeight('tags', { enabled: checked })
+                    }
+                  />
+                  <div>
+                    <p className="font-medium">{t('skillSearch.fieldTags')}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('skillSearch.fieldTagsDesc')}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    {t('skillSearch.weight')}:
+                  </span>
+                  <Input
+                    type="number"
+                    step={0.1}
+                    min={0}
+                    max={10}
+                    value={formData.field_config.tags.weight}
+                    onChange={(e) =>
+                      updateFieldWeight('tags', {
+                        weight: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="w-20"
+                    disabled={!formData.field_config.tags.enabled}
+                  />
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">
-                  {t('skillSearch.weight')}:
-                </span>
-                <Input
-                  type="number"
-                  step={0.1}
-                  min={0}
-                  max={10}
-                  value={formData.field_config.tags.weight}
-                  onChange={(e) =>
-                    updateFieldWeight('tags', {
-                      weight: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-20"
-                  disabled={!formData.field_config.tags.enabled}
-                />
-              </div>
-            </div>
 
-            {/* Description Field */}
-            <div className="flex items-center justify-between p-3 border rounded-lg">
-              <div className="flex items-center gap-3">
-                <Switch
-                  checked={formData.field_config.description.enabled}
-                  onCheckedChange={(checked) =>
-                    updateFieldWeight('description', { enabled: checked })
-                  }
-                />
-                <div>
-                  <p className="font-medium">
-                    {t('skillSearch.fieldDescription')}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {t('skillSearch.fieldDescriptionDesc')}
-                  </p>
+              {/* Description Field */}
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div className="flex items-center gap-3">
+                  <Switch
+                    checked={formData.field_config.description.enabled}
+                    onCheckedChange={(checked) =>
+                      updateFieldWeight('description', { enabled: checked })
+                    }
+                  />
+                  <div>
+                    <p className="font-medium">
+                      {t('skillSearch.fieldDescription')}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('skillSearch.fieldDescriptionDesc')}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    {t('skillSearch.weight')}:
+                  </span>
+                  <Input
+                    type="number"
+                    step={0.1}
+                    min={0}
+                    max={10}
+                    value={formData.field_config.description.weight}
+                    onChange={(e) =>
+                      updateFieldWeight('description', {
+                        weight: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="w-20"
+                    disabled={!formData.field_config.description.enabled}
+                  />
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">
-                  {t('skillSearch.weight')}:
-                </span>
-                <Input
-                  type="number"
-                  step={0.1}
-                  min={0}
-                  max={10}
-                  value={formData.field_config.description.weight}
-                  onChange={(e) =>
-                    updateFieldWeight('description', {
-                      weight: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-20"
-                  disabled={!formData.field_config.description.enabled}
-                />
-              </div>
-            </div>
 
-            {/* Content Field */}
-            <div className="flex items-center justify-between p-3 border rounded-lg">
-              <div className="flex items-center gap-3">
-                <Switch
-                  checked={formData.field_config.content.enabled}
-                  onCheckedChange={(checked) =>
-                    updateFieldWeight('content', { enabled: checked })
-                  }
-                />
-                <div>
-                  <p className="font-medium">{t('skillSearch.fieldContent')}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {t('skillSearch.fieldContentDesc')}
-                  </p>
+              {/* Content Field */}
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div className="flex items-center gap-3">
+                  <Switch
+                    checked={formData.field_config.content.enabled}
+                    onCheckedChange={(checked) =>
+                      updateFieldWeight('content', { enabled: checked })
+                    }
+                  />
+                  <div>
+                    <p className="font-medium">{t('skillSearch.fieldContent')}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('skillSearch.fieldContentDesc')}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    {t('skillSearch.weight')}:
+                  </span>
+                  <Input
+                    type="number"
+                    step={0.1}
+                    min={0}
+                    max={10}
+                    value={formData.field_config.content.weight}
+                    onChange={(e) =>
+                      updateFieldWeight('content', {
+                        weight: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="w-20"
+                    disabled={!formData.field_config.content.enabled}
+                  />
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">
-                  {t('skillSearch.weight')}:
-                </span>
-                <Input
-                  type="number"
-                  step={0.1}
-                  min={0}
-                  max={10}
-                  value={formData.field_config.content.weight}
-                  onChange={(e) =>
-                    updateFieldWeight('content', {
-                      weight: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-20"
-                  disabled={!formData.field_config.content.enabled}
-                />
-              </div>
             </div>
-          </div>
-        </div>
 
-        <DialogFooter className="gap-2">
-          {onReindex && (
-            <Button
-              variant="outline"
-              onClick={handleReindex}
-              disabled={reindexing || loading}
-            >
-              {reindexing
-                ? t('skillSearch.reindexing')
-                : t('skillSearch.reindex')}
-            </Button>
-          )}
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t('common.cancel')}
-          </Button>
-          <Button onClick={handleSave} disabled={saving || loading}>
-            {saving ? t('common.saving') : t('common.save')}
-          </Button>
-        </DialogFooter>
+            <DialogFooter className="gap-2">
+              {onReindex && (
+                <Button
+                  variant="outline"
+                  onClick={handleReindex}
+                  disabled={reindexing || loading}
+                >
+                  {reindexing
+                    ? t('skillSearch.reindexing')
+                    : t('skillSearch.reindex')}
+                </Button>
+              )}
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button onClick={handleSave} disabled={saving || loading}>
+                {saving ? t('common.saving') : t('common.save')}
+              </Button>
+            </DialogFooter>
+        </Form>
       </DialogContent>
     </Dialog>
   );

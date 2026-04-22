@@ -107,7 +107,7 @@ const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename }) => {
       </div>
 
       {/* Code Content */}
-      <div style={{ backgroundColor: token.colorBgContainer }}>
+      <div className="bg-bg-component">
         <SyntaxHighlighter
           language={language}
           style={isDarkTheme ? oneDark : oneLight}
@@ -118,7 +118,7 @@ const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename }) => {
             padding: '16px',
             fontSize: 13,
             lineHeight: 1.6,
-            backgroundColor: isDarkTheme ? '#282c34' : '#fafafa',
+            backgroundColor: 'transparent',
           }}
         >
           {content || '// Empty file'}
