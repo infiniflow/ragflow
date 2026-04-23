@@ -35,7 +35,7 @@ export default {
   deleteFactory: `${webAPI}/llm/delete_factory`,
 
   // data source
-  dataSourceUpdate: (id:string) => `${restAPIv1}/connectors/${id}`,
+  dataSourceUpdate: (id: string) => `${restAPIv1}/connectors/${id}`,
   dataSourceSet: `${restAPIv1}/connectors`,
   dataSourceList: `${restAPIv1}/connectors`,
   dataSourceDel: (id: string) => `${restAPIv1}/connectors/${id}`,
@@ -165,7 +165,7 @@ export default {
   removeFile: `${restAPIv1}/files`,
   getAllParentFolder: `${restAPIv1}/files`,
   createFolder: `${restAPIv1}/files`,
-  connectFileToKnowledge: `${webAPI}/file2document/convert`,
+  connectFileToKnowledge: `${restAPIv1}/files/link-to-datasets`,
   getFile: `${restAPIv1}/files`,
   moveFile: `${restAPIv1}/files/move`,
 
