@@ -312,91 +312,6 @@ class TestDocumentMetadataUnit:
         assert res["code"] == 500
         assert "thumb boom" in res["message"]
 
-    @pytest.mark.p2
-    def test_change_status_partial_failure_matrix(self, WebApiAuth, add_dataset, ragflow_tmp_dir):
-        """
-        E2E test for partial failure matrix in batch document status change.
-        
-        This test creates multiple documents and verifies that the batch status change
-        operation handles various failure scenarios correctly.
-        """
-        
-        dataset_id = add_dataset
-        
-        # Create multiple documents for testing
-        doc_ids = bulk_upload_documents(WebApiAuth, dataset_id, 3, ragflow_tmp_dir)
-        assert len(doc_ids) == 3, f"Expected 3 documents, got {len(doc_ids)}"
-        
-        try:
-            # Test batch status change with all valid documents
-            # This should succeed since all documents are valid
-            res = document_change_status(WebApiAuth, dataset_id, {"doc_ids": doc_ids, "status": "1"})
-            
-            # Verify the response structure
-            assert res["code"] == 0, f"Expected success code 0, got {res}"
-            assert res["data"] is not None, "Response data should not be None"
-            
-            # Verify each document status was updated
-            for doc_id in doc_ids:
-                assert doc_id in res["data"], f"Document {doc_id} should be in response"
-                assert res["data"][doc_id]["status"] == "1", f"Document {doc_id} status should be 1"
-            
-            # Verify the status was actually updated in the database
-            info_res = document_infos(WebApiAuth, dataset_id, {"ids": doc_ids})
-            assert info_res["code"] == 0, info_res
-            
-            for doc in info_res["data"]["docs"]:
-                assert doc["status"] == "1", f"Document {doc['id']} status should be 1 in database"
-                
-        finally:
-            # Cleanup: delete all documents
-            delete_document(WebApiAuth, dataset_id, {"ids": doc_ids})
-
-    @pytest.mark.p2
-    def test_change_status_invalid_status(self, WebApiAuth, add_document_func):
-        """
-        E2E test for invalid status value in batch document status change.
-        
-        This test verifies that the API returns an error when an invalid status
-        value (not 0 or 1) is provided.
-        """
-        
-        dataset_id, doc_id = add_document_func
-        
-        # Try to update with invalid status "2" (only 0 and 1 are valid)
-        res = document_change_status(WebApiAuth, dataset_id, {"doc_ids": [doc_id], "status": "2"})
-        
-        # Verify the error response
-        assert res["code"] == 101, f"Expected error code 101, got {res}"
-        assert "Status" in res["message"], f"Error message should mention Status: {res}"
-
-    @pytest.mark.p2
-    def test_change_status_all_success(self, WebApiAuth, add_document_func):
-        """
-        E2E test for successful batch document status change.
-        
-        This test verifies that all documents are successfully updated
-        when valid status values are provided.
-        """
-        
-        dataset_id, doc_id = add_document_func
-        
-        # Verify initial status is "0" (unprocessed)
-        info_res = document_infos(WebApiAuth, dataset_id, {"ids": [doc_id]})
-        assert info_res["code"] == 0, info_res
-        assert info_res["data"]["docs"][0]["status"] == "1", "Initial status should be 1"
-        
-        # Update status to "1" (processed)
-        res = document_change_status(WebApiAuth, dataset_id, {"doc_ids": [doc_id], "status": "1"})
-        
-        # Verify success
-        assert res["code"] == 0, f"Expected success code 0, got {res}"
-        assert res["data"][doc_id]["status"] == "1", "Document status should be 1"
-        
-        # Verify the status was actually updated in the database
-        info_res = document_infos(WebApiAuth, dataset_id, {"ids": [doc_id]})
-        assert info_res["code"] == 0, info_res
-        assert info_res["data"]["docs"][0]["status"] == "1", "Document status should be 1 in database"
 
     def test_get_route_not_found_success_and_exception_unit(self, document_app_module, monkeypatch):
         module = document_app_module
@@ -659,3 +574,90 @@ class TestDocumentMetadataUnit:
         res = _run(module.get_image("bucket-name"))
         assert res["code"] == 500
         assert "image boom" in res["message"]
+
+class TestDocumentBatchChangeStatus:
+    @pytest.mark.p2
+    def test_change_status_partial_failure_matrix(self, WebApiAuth, add_dataset, ragflow_tmp_dir):
+        """
+        E2E test for partial failure matrix in batch document status change.
+
+        This test creates multiple documents and verifies that the batch status change
+        operation handles various failure scenarios correctly.
+        """
+
+        dataset_id = add_dataset
+
+        # Create multiple documents for testing
+        doc_ids = bulk_upload_documents(WebApiAuth, dataset_id, 3, ragflow_tmp_dir)
+        assert len(doc_ids) == 3, f"Expected 3 documents, got {len(doc_ids)}"
+
+        try:
+            # Test batch status change with all valid documents
+            # This should succeed since all documents are valid
+            res = document_change_status(WebApiAuth, dataset_id, {"doc_ids": doc_ids, "status": "1"})
+
+            # Verify the response structure
+            assert res["code"] == 0, f"Expected success code 0, got {res}"
+            assert res["data"] is not None, "Response data should not be None"
+
+            # Verify each document status was updated
+            for doc_id in doc_ids:
+                assert doc_id in res["data"], f"Document {doc_id} should be in response"
+                assert res["data"][doc_id]["status"] == "1", f"Document {doc_id} status should be 1"
+
+            # Verify the status was actually updated in the database
+            info_res = document_infos(WebApiAuth, dataset_id, {"ids": doc_ids})
+            assert info_res["code"] == 0, info_res
+
+            for doc in info_res["data"]["docs"]:
+                assert doc["status"] == "1", f"Document {doc['id']} status should be 1 in database"
+
+        finally:
+            # Cleanup: delete all documents
+            delete_document(WebApiAuth, dataset_id, {"ids": doc_ids})
+
+    @pytest.mark.p2
+    def test_change_status_invalid_status(self, WebApiAuth, add_document_func):
+        """
+        E2E test for invalid status value in batch document status change.
+
+        This test verifies that the API returns an error when an invalid status
+        value (not 0 or 1) is provided.
+        """
+
+        dataset_id, doc_id = add_document_func
+
+        # Try to update with invalid status "2" (only 0 and 1 are valid)
+        res = document_change_status(WebApiAuth, dataset_id, {"doc_ids": [doc_id], "status": "2"})
+
+        # Verify the error response
+        assert res["code"] == 101, f"Expected error code 101, got {res}"
+        assert "Status" in res["message"], f"Error message should mention Status: {res}"
+
+    @pytest.mark.p2
+    def test_change_status_all_success(self, WebApiAuth, add_document_func):
+        """
+        E2E test for successful batch document status change.
+
+        This test verifies that all documents are successfully updated
+        when valid status values are provided.
+        """
+
+        dataset_id, doc_id = add_document_func
+
+        # Verify initial status is "0" (unprocessed)
+        info_res = document_infos(WebApiAuth, dataset_id, {"ids": [doc_id]})
+        assert info_res["code"] == 0, info_res
+        assert info_res["data"]["docs"][0]["status"] == "1", "Initial status should be 1"
+
+        # Update status to "1" (processed)
+        res = document_change_status(WebApiAuth, dataset_id, {"doc_ids": [doc_id], "status": "1"})
+
+        # Verify success
+        assert res["code"] == 0, f"Expected success code 0, got {res}"
+        assert res["data"][doc_id]["status"] == "1", "Document status should be 1"
+
+        # Verify the status was actually updated in the database
+        info_res = document_infos(WebApiAuth, dataset_id, {"ids": [doc_id]})
+        assert info_res["code"] == 0, info_res
+        assert info_res["data"]["docs"][0]["status"] == "1", "Document status should be 1 in database"
