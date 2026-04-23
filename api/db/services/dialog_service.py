@@ -231,11 +231,21 @@ class DialogService(CommonService):
 
 
 def _get_dialog_chat_model_config(dialog):
-    llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
-    target_model_type = LLMType.IMAGE2TEXT if llm_type == "image2text" else LLMType.CHAT
-
     if dialog.llm_id:
-        return get_model_config_by_type_and_name(dialog.tenant_id, target_model_type, dialog.llm_id)
+        llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
+        candidate_model_types = [LLMType.CHAT, LLMType.IMAGE2TEXT]
+        if llm_type == "image2text":
+            candidate_model_types = [LLMType.IMAGE2TEXT, LLMType.CHAT]
+
+        for candidate_model_type in candidate_model_types:
+            try:
+                return get_model_config_by_type_and_name(dialog.tenant_id, candidate_model_type, dialog.llm_id)
+            except LookupError:
+                continue
+
+        raise LookupError(
+            f"Tenant Model with name {dialog.llm_id} not found for supported types: chat,image2text"
+        )
     if dialog.tenant_llm_id:
         return get_model_config_by_id(dialog.tenant_llm_id)
     return get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
