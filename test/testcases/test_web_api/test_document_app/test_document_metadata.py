@@ -18,7 +18,6 @@ from types import SimpleNamespace
 
 import pytest
 from test_common import (
-    delete_document,
     document_change_status,
     document_filter,
     document_infos,
