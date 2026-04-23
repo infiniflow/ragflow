@@ -239,29 +239,65 @@ def _get_dialog_chat_model_config(dialog):
 
         for candidate_model_type in candidate_model_types:
             try:
-                return get_model_config_by_type_and_name(dialog.tenant_id, candidate_model_type, dialog.llm_id)
-            except LookupError:
+                model_config = get_model_config_by_type_and_name(
+                    dialog.tenant_id, candidate_model_type, dialog.llm_id
+                )
+                resolved_type = (
+                    candidate_model_type.value
+                    if hasattr(candidate_model_type, "value")
+                    else candidate_model_type
+                )
+                logging.info(
+                    "Resolved dialog llm_id=%s using model_type=%s",
+                    dialog.llm_id,
+                    resolved_type,
+                )
+                return model_config, resolved_type
+            except LookupError as exc:
+                candidate_type = (
+                    candidate_model_type.value
+                    if hasattr(candidate_model_type, "value")
+                    else candidate_model_type
+                )
+                logging.debug(
+                    "Dialog llm_id=%s not found as model_type=%s: %s",
+                    dialog.llm_id,
+                    candidate_type,
+                    exc,
+                )
                 continue
 
         raise LookupError(
             f"Tenant Model with name {dialog.llm_id} not found for supported types: chat,image2text"
         )
     if dialog.tenant_llm_id:
-        return get_model_config_by_id(dialog.tenant_llm_id)
-    return get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
+        model_config = get_model_config_by_id(dialog.tenant_llm_id)
+        model_type = model_config.get("model_type")
+        if hasattr(model_type, "value"):
+            model_type = model_type.value
+        resolved_type = model_type or LLMType.CHAT.value
+        logging.info(
+            "Resolved dialog tenant_llm_id=%s using model_type=%s",
+            dialog.tenant_llm_id,
+            resolved_type,
+        )
+        return model_config, resolved_type
 
-
-def _resolve_dialog_chat_model(dialog):
-    model_config = _get_dialog_chat_model_config(dialog)
+    model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
     model_type = model_config.get("model_type")
     if hasattr(model_type, "value"):
         model_type = model_type.value
-    llm_type = "image2text" if model_type == LLMType.IMAGE2TEXT.value else "chat"
-    return model_config, llm_type
+    resolved_type = model_type or LLMType.CHAT.value
+    logging.info(
+        "Resolved default tenant chat model for tenant_id=%s using model_type=%s",
+        dialog.tenant_id,
+        resolved_type,
+    )
+    return model_config, resolved_type
 
 
 async def async_chat_solo(dialog, messages, stream=True):
-    model_config, llm_type = _resolve_dialog_chat_model(dialog)
+    model_config, llm_type = _get_dialog_chat_model_config(dialog)
     attachments = ""
     image_attachments = []
     image_files = []
@@ -320,7 +356,7 @@ def get_models(dialog):
         if not embd_mdl:
             raise LookupError("Embedding model(%s) not found" % embedding_list[0])
 
-    chat_model_config = _get_dialog_chat_model_config(dialog)
+    chat_model_config, _ = _get_dialog_chat_model_config(dialog)
 
     chat_mdl = LLMBundle(dialog.tenant_id, chat_model_config)
 
@@ -515,7 +551,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         return
 
     chat_start_ts = timer()
-    llm_model_config, llm_type = _resolve_dialog_chat_model(dialog)
+    llm_model_config, llm_type = _get_dialog_chat_model_config(dialog)
 
     factory = llm_model_config.get("llm_factory", "") if llm_model_config else ""
     max_tokens = llm_model_config.get("max_tokens", 8192)
