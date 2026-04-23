@@ -619,6 +619,7 @@ def _load_agent_api_module(monkeypatch):
     user_service_mod = ModuleType("api.db.services.user_service")
     user_service_mod.TenantService = SimpleNamespace(get_joined_tenants_by_user_id=lambda *_args, **_kwargs: [])
     user_service_mod.UserService = SimpleNamespace(get_by_id=lambda *_args, **_kwargs: (False, None))
+    user_service_mod.UserTenantService = SimpleNamespace(query=lambda **_kwargs: [])
     monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_service_mod)
 
     user_canvas_version_mod = ModuleType("api.db.services.user_canvas_version")

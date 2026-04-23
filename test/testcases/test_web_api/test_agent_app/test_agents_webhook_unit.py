@@ -201,6 +201,17 @@ def _load_agents_app(monkeypatch):
     common_pkg.__path__ = [str(repo_root / "common")]
     monkeypatch.setitem(sys.modules, "common", common_pkg)
 
+    quart_mod = ModuleType("quart")
+    quart_mod.request = _DummyRequest()
+    quart_mod.Response = lambda body=None, mimetype=None, content_type=None: SimpleNamespace(
+        body=body,
+        mimetype=mimetype,
+        content_type=content_type,
+        headers=SimpleNamespace(add_header=lambda *_args, **_kwargs: None),
+    )
+    quart_mod.current_app = SimpleNamespace()
+    monkeypatch.setitem(sys.modules, "quart", quart_mod)
+
     agent_pkg = ModuleType("agent")
     agent_pkg.__path__ = []
     canvas_mod = ModuleType("agent.canvas")
