@@ -149,14 +149,15 @@ class BlobStorageConnector(LoadConnector, PollConnector):
                 key = obj["Key"]
                 if key.endswith("/"):
                     continue
+                last_modified = obj["LastModified"].replace(tzinfo=timezone.utc)
+                if not (start < last_modified <= end):
+                    continue
                 file_name = os.path.basename(key)
                 if not self._is_supported_file(file_name):
                     skipped_unsupported += 1
                     logging.debug(f"Skipping '{key}' due to unsupported file extension.")
                     continue
-                last_modified = obj["LastModified"].replace(tzinfo=timezone.utc)
-                if start < last_modified <= end:
-                    all_objects.append(obj)
+                all_objects.append(obj)
 
         if skipped_unsupported:
             logging.info(
