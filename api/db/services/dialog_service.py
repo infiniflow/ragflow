@@ -342,7 +342,7 @@ async def async_chat_solo(dialog, messages, stream=True):
         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
 
 
-def get_models(dialog):
+def get_models(dialog, llm_model_config=None, llm_type=None):
     embd_mdl, chat_mdl, rerank_mdl, tts_mdl = None, None, None, None
     kbs = KnowledgebaseService.get_by_ids(dialog.kb_ids)
     embedding_list = list(set([kb.embd_id for kb in kbs]))
@@ -356,9 +356,10 @@ def get_models(dialog):
         if not embd_mdl:
             raise LookupError("Embedding model(%s) not found" % embedding_list[0])
 
-    chat_model_config, _ = _get_dialog_chat_model_config(dialog)
+    if llm_model_config is None or llm_type is None:
+        llm_model_config, llm_type = _get_dialog_chat_model_config(dialog)
 
-    chat_mdl = LLMBundle(dialog.tenant_id, chat_model_config)
+    chat_mdl = LLMBundle(dialog.tenant_id, llm_model_config)
 
     if dialog.rerank_id:
         rerank_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
@@ -440,12 +441,16 @@ def convert_last_user_msg_to_multimodal(msg: list[dict], image_data_uris: list[s
         text = _normalize_text_from_content(original_content)
 
         if factory_norm == "gemini":
+            # LiteLLM validates OpenAI-compatible content blocks before provider-specific mapping.
+            # Keep Gemini inputs in OpenAI shape to avoid "invalid content type=None".
             parts = []
             if text:
-                parts.append({"text": text})
+                parts.append({"type": "text", "text": text})
             for image in image_data_uris:
-                mime, b64 = _parse_data_uri_or_b64(str(image), default_mime="image/png")
-                parts.append({"inline_data": {"mime_type": mime, "data": b64}})
+                image_url = image if isinstance(image, str) else str(image)
+                if not image_url.startswith("data:"):
+                    image_url = f"data:image/png;base64,{image_url}"
+                parts.append({"type": "image_url", "image_url": {"url": image_url}})
             msg[idx]["content"] = parts
             return
 
@@ -573,7 +578,9 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             pass
 
     check_langfuse_tracer_ts = timer()
-    kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
+    kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(
+        dialog, llm_model_config=llm_model_config, llm_type=llm_type
+    )
     toolcall_session, tools = kwargs.get("toolcall_session"), kwargs.get("tools")
     if toolcall_session and tools:
         chat_mdl.bind_tools(toolcall_session, tools)
