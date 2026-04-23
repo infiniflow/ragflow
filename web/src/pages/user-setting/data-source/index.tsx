@@ -79,7 +79,7 @@ const DataSource = () => {
     handleAddOk,
     hideAddingModal,
     showAddingModal,
-  } = useAddDataSource();
+  } = useAddDataSource({});
 
   return (
     <ProfileSettingWrapperCard
