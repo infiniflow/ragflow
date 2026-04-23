@@ -33,6 +33,14 @@ class _DummyManager:
         return decorator
 
 
+class _Args(dict):
+    def getlist(self, key):
+        value = self.get(key, [])
+        if isinstance(value, list):
+            return value
+        return [value]
+
+
 class _Field:
     def __init__(self, name):
         self.name = name
@@ -142,12 +150,22 @@ def set_tenant_info():
     return None
 
 
-def _load_mcp_server_app(monkeypatch):
+def _load_mcp_api(monkeypatch):
     repo_root = Path(__file__).resolve().parents[4]
+
+    quart_mod = ModuleType("quart")
+    quart_mod.Response = object
+    quart_mod.request = SimpleNamespace(args=_Args({}))
+    monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
     common_pkg = ModuleType("common")
     common_pkg.__path__ = [str(repo_root / "common")]
     monkeypatch.setitem(sys.modules, "common", common_pkg)
+
+    constants_mod = ModuleType("common.constants")
+    constants_mod.RetCode = SimpleNamespace(NOT_FOUND=404)
+    constants_mod.VALID_MCP_SERVER_TYPES = {"sse", "streamable-http"}
+    monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
     apps_mod = ModuleType("api.apps")
     apps_mod.current_user = SimpleNamespace(id="tenant_1")
@@ -230,8 +248,8 @@ def _load_mcp_server_app(monkeypatch):
     web_utils_mod.safe_json_parse = _safe_json_parse
     monkeypatch.setitem(sys.modules, "api.utils.web_utils", web_utils_mod)
 
-    module_name = "test_mcp_server_app_unit_module"
-    module_path = repo_root / "api" / "apps" / "mcp_server_app.py"
+    module_name = "test_mcp_api_unit_module"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "mcp_api.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
@@ -242,12 +260,12 @@ def _load_mcp_server_app(monkeypatch):
 
 @pytest.mark.p2
 def test_list_mcp_desc_pagination_and_exception(monkeypatch):
-    module = _load_mcp_server_app(monkeypatch)
+    module = _load_mcp_api(monkeypatch)
 
     monkeypatch.setattr(
         module,
         "request",
-        SimpleNamespace(args={"keywords": "k", "page": "2", "page_size": "1", "orderby": "create_time", "desc": "false"}),
+        SimpleNamespace(args=_Args({"keywords": "k", "page": "2", "page_size": "1", "orderby": "create_time", "desc": "false"})),
     )
     _set_request_json(monkeypatch, module, {"mcp_ids": []})
     monkeypatch.setattr(module.MCPServerService, "get_servers", lambda *_args, **_kwargs: [{"id": "a"}, {"id": "b"}])
@@ -257,7 +275,7 @@ def test_list_mcp_desc_pagination_and_exception(monkeypatch):
     assert res["data"]["total"] == 2
     assert res["data"]["mcp_servers"] == [{"id": "b"}]
 
-    monkeypatch.setattr(module, "request", SimpleNamespace(args={}))
+    monkeypatch.setattr(module, "request", SimpleNamespace(args=_Args({})))
     _set_request_json(monkeypatch, module, {"mcp_ids": []})
 
     def _raise_list(*_args, **_kwargs):
@@ -271,11 +289,11 @@ def test_list_mcp_desc_pagination_and_exception(monkeypatch):
 
 @pytest.mark.p2
 def test_detail_not_found_success_and_exception(monkeypatch):
-    module = _load_mcp_server_app(monkeypatch)
-    monkeypatch.setattr(module, "request", SimpleNamespace(args={"mcp_id": "mcp-1"}))
+    module = _load_mcp_api(monkeypatch)
+    monkeypatch.setattr(module, "request", SimpleNamespace(args=_Args({})))
 
     monkeypatch.setattr(module.MCPServerService, "get_or_none", lambda **_kwargs: None)
-    res = module.detail()
+    res = module.detail("mcp-1")
     assert res["code"] == module.RetCode.NOT_FOUND
 
     monkeypatch.setattr(
@@ -283,7 +301,7 @@ def test_detail_not_found_success_and_exception(monkeypatch):
         "get_or_none",
         lambda **_kwargs: _DummyMCPServer(id="mcp-1", name="srv", url="http://a", server_type="sse", tenant_id="tenant_1"),
     )
-    res = module.detail()
+    res = module.detail("mcp-1")
     assert res["code"] == 0
     assert res["data"]["id"] == "mcp-1"
 
@@ -291,14 +309,14 @@ def test_detail_not_found_success_and_exception(monkeypatch):
         raise RuntimeError("detail explode")
 
     monkeypatch.setattr(module.MCPServerService, "get_or_none", _raise_detail)
-    res = module.detail()
+    res = module.detail("mcp-1")
     assert res["code"] == 100
     assert "detail explode" in res["message"]
 
 
 @pytest.mark.p2
 def test_create_validation_guards(monkeypatch):
-    module = _load_mcp_server_app(monkeypatch)
+    module = _load_mcp_api(monkeypatch)
 
     monkeypatch.setattr(module.MCPServerService, "get_by_name_and_tenant", lambda **_kwargs: (False, None))
 
@@ -323,7 +341,7 @@ def test_create_validation_guards(monkeypatch):
 
 @pytest.mark.p2
 def test_create_service_paths(monkeypatch):
-    module = _load_mcp_server_app(monkeypatch)
+    module = _load_mcp_api(monkeypatch)
 
     base_payload = {
         "name": "srv",
@@ -385,13 +403,13 @@ def test_create_service_paths(monkeypatch):
 
 @pytest.mark.p2
 def test_update_validation_guards(monkeypatch):
-    module = _load_mcp_server_app(monkeypatch)
+    module = _load_mcp_api(monkeypatch)
 
     existing = _DummyMCPServer(id="mcp-1", name="srv", url="http://server", server_type="sse", tenant_id="tenant_1", variables={}, headers={})
 
     _set_request_json(monkeypatch, module, {"mcp_id": "mcp-1"})
     monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (False, None))
-    res = _run(module.update.__wrapped__())
+    res = _run(module.update("mcp-1"))
     assert "Cannot find MCP server" in res["message"]
 
     _set_request_json(monkeypatch, module, {"mcp_id": "mcp-1"})
@@ -400,26 +418,26 @@ def test_update_validation_guards(monkeypatch):
         "get_by_id",
         lambda _mcp_id: (True, _DummyMCPServer(id="mcp-1", name="srv", url="http://server", server_type="sse", tenant_id="other", variables={}, headers={})),
     )
-    res = _run(module.update.__wrapped__())
+    res = _run(module.update("mcp-1"))
     assert "Cannot find MCP server" in res["message"]
 
     _set_request_json(monkeypatch, module, {"mcp_id": "mcp-1", "server_type": "invalid"})
     monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (True, existing))
-    res = _run(module.update.__wrapped__())
+    res = _run(module.update("mcp-1"))
     assert "Unsupported MCP server type" in res["message"]
 
     _set_request_json(monkeypatch, module, {"mcp_id": "mcp-1", "name": "a" * 256})
-    res = _run(module.update.__wrapped__())
+    res = _run(module.update("mcp-1"))
     assert "Invalid MCP name" in res["message"]
 
     _set_request_json(monkeypatch, module, {"mcp_id": "mcp-1", "url": ""})
-    res = _run(module.update.__wrapped__())
+    res = _run(module.update("mcp-1"))
     assert "Invalid url" in res["message"]
 
 
 @pytest.mark.p2
 def test_update_service_paths(monkeypatch):
-    module = _load_mcp_server_app(monkeypatch)
+    module = _load_mcp_api(monkeypatch)
 
     existing = _DummyMCPServer(
         id="mcp-1",
@@ -457,7 +475,7 @@ def test_update_service_paths(monkeypatch):
         return None, "update tools error"
 
     monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_tools_error)
-    res = _run(module.update.__wrapped__())
+    res = _run(module.update("mcp-1"))
     assert res["code"] == "update tools error"
     assert "Sorry! Data missing!" in res["message"]
 
@@ -468,7 +486,7 @@ def test_update_service_paths(monkeypatch):
 
     monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_ok)
     monkeypatch.setattr(module.MCPServerService, "filter_update", lambda *_args, **_kwargs: False)
-    res = _run(module.update.__wrapped__())
+    res = _run(module.update("mcp-1"))
     assert "Failed to updated MCP server" in res["message"]
 
     _set_request_json(monkeypatch, module, dict(base_payload))
@@ -482,7 +500,7 @@ def test_update_service_paths(monkeypatch):
 
     _get_by_id_fetch_fail.calls = 0
     monkeypatch.setattr(module.MCPServerService, "get_by_id", _get_by_id_fetch_fail)
-    res = _run(module.update.__wrapped__())
+    res = _run(module.update("mcp-1"))
     assert "Failed to fetch updated MCP server" in res["message"]
 
     _set_request_json(monkeypatch, module, dict(base_payload))
@@ -495,7 +513,7 @@ def test_update_service_paths(monkeypatch):
 
     _get_by_id_success.calls = 0
     monkeypatch.setattr(module.MCPServerService, "get_by_id", _get_by_id_success)
-    res = _run(module.update.__wrapped__())
+    res = _run(module.update("mcp-1"))
     assert res["code"] == 0
     assert res["data"]["id"] == "mcp-1"
 
@@ -506,23 +524,23 @@ def test_update_service_paths(monkeypatch):
         raise RuntimeError("update explode")
 
     monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_raises)
-    res = _run(module.update.__wrapped__())
+    res = _run(module.update("mcp-1"))
     assert res["code"] == 100
     assert "update explode" in res["message"]
 
 
 @pytest.mark.p2
 def test_rm_failure_success_and_exception(monkeypatch):
-    module = _load_mcp_server_app(monkeypatch)
+    module = _load_mcp_api(monkeypatch)
 
     _set_request_json(monkeypatch, module, {"mcp_ids": ["a", "b"]})
     monkeypatch.setattr(module.MCPServerService, "delete_by_ids", lambda _ids: False)
-    res = _run(module.rm.__wrapped__())
+    res = _run(module.rm("id1"))
     assert "Failed to delete MCP servers" in res["message"]
 
     _set_request_json(monkeypatch, module, {"mcp_ids": ["a", "b"]})
     monkeypatch.setattr(module.MCPServerService, "delete_by_ids", lambda _ids: True)
-    res = _run(module.rm.__wrapped__())
+    res = _run(module.rm("id1"))
     assert res["code"] == 0
     assert res["data"] is True
 
@@ -532,14 +550,14 @@ def test_rm_failure_success_and_exception(monkeypatch):
         raise RuntimeError("rm explode")
 
     monkeypatch.setattr(module.MCPServerService, "delete_by_ids", _raise_rm)
-    res = _run(module.rm.__wrapped__())
+    res = _run(module.rm("id1"))
     assert res["code"] == 100
     assert "rm explode" in res["message"]
 
 
 @pytest.mark.p2
 def test_import_multiple_missing_servers_and_exception(monkeypatch):
-    module = _load_mcp_server_app(monkeypatch)
+    module = _load_mcp_api(monkeypatch)
 
     _set_request_json(monkeypatch, module, {"mcpServers": {}})
     res = _run(module.import_multiple.__wrapped__())
@@ -558,7 +576,7 @@ def test_import_multiple_missing_servers_and_exception(monkeypatch):
 
 @pytest.mark.p2
 def test_import_multiple_mixed_results(monkeypatch):
-    module = _load_mcp_server_app(monkeypatch)
+    module = _load_mcp_api(monkeypatch)
 
     payload = {
         "mcpServers": {
@@ -614,244 +632,48 @@ def test_import_multiple_mixed_results(monkeypatch):
 
 
 @pytest.mark.p2
-def test_export_multiple_missing_ids_success_and_exception(monkeypatch):
-    module = _load_mcp_server_app(monkeypatch)
+def test_detail_download_success_and_exception(monkeypatch):
+    module = _load_mcp_api(monkeypatch)
+    monkeypatch.setattr(module, "request", SimpleNamespace(args=_Args({"mode": "download"})))
 
-    _set_request_json(monkeypatch, module, {"mcp_ids": []})
-    res = _run(module.export_multiple.__wrapped__())
-    assert "No MCP server IDs provided" in res["message"]
-
-    _set_request_json(monkeypatch, module, {"mcp_ids": ["id1", "id2", "id3"]})
-
-    def _get_by_id(mcp_id):
-        if mcp_id == "id1":
-            return True, _DummyMCPServer(
+    monkeypatch.setattr(
+        module.MCPServerService,
+        "get_by_id",
+        lambda _mcp_id: (
+            True,
+            _DummyMCPServer(
                 id="id1",
                 name="srv-one",
                 url="http://one",
                 server_type="sse",
                 tenant_id="tenant_1",
                 variables={"authorization_token": "tok", "tools": {"tool_a": {"enabled": True}}},
-            )
-        if mcp_id == "id2":
-            return True, _DummyMCPServer(
-                id="id2",
-                name="srv-two",
-                url="http://two",
-                server_type="sse",
-                tenant_id="other",
-                variables={},
-            )
-        return False, None
-
-    monkeypatch.setattr(module.MCPServerService, "get_by_id", _get_by_id)
-    res = _run(module.export_multiple.__wrapped__())
+            ),
+        ),
+    )
+    res = module.detail("id1")
     assert res["code"] == 0
     assert list(res["data"]["mcpServers"].keys()) == ["srv-one"]
-
-    _set_request_json(monkeypatch, module, {"mcp_ids": ["id1"]})
 
     def _raise_export(_mcp_id):
         raise RuntimeError("export explode")
 
     monkeypatch.setattr(module.MCPServerService, "get_by_id", _raise_export)
-    res = _run(module.export_multiple.__wrapped__())
+    res = module.detail("id1")
     assert res["code"] == 100
     assert "export explode" in res["message"]
 
 
 @pytest.mark.p2
-def test_list_tools_missing_ids_success_inner_error_outer_error_and_finally_cleanup(monkeypatch):
-    module = _load_mcp_server_app(monkeypatch)
-
-    _set_request_json(monkeypatch, module, {"mcp_ids": []})
-    res = _run(module.list_tools.__wrapped__())
-    assert "No MCP server IDs provided" in res["message"]
-
-    server = _DummyMCPServer(
-        id="id1",
-        name="srv-tools",
-        url="http://tools",
-        server_type="sse",
-        tenant_id="tenant_1",
-        variables={"tools": {"tool_a": {"enabled": False}}},
-    )
-
-    _set_request_json(monkeypatch, module, {"mcp_ids": ["id1"], "timeout": "2.0"})
-    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (True, server))
-
-    close_calls = []
-
-    async def _thread_pool_exec_success(func, *args):
-        if func is module.close_multiple_mcp_toolcall_sessions:
-            close_calls.append(args[0])
-            return None
-        return func(*args)
-
-    monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_exec_success)
-    res = _run(module.list_tools.__wrapped__())
-    assert res["code"] == 0
-    assert res["data"]["id1"][0]["name"] == "tool_a"
-    assert res["data"]["id1"][0]["enabled"] is False
-    assert res["data"]["id1"][1]["enabled"] is True
-    assert close_calls and len(close_calls[-1]) == 1
-
-    _set_request_json(monkeypatch, module, {"mcp_ids": ["id1"], "timeout": "2.0"})
-    close_calls_inner = []
-
-    async def _thread_pool_exec_inner_error(func, *args):
-        if func is module.close_multiple_mcp_toolcall_sessions:
-            close_calls_inner.append(args[0])
-            return None
-        raise RuntimeError("inner tools explode")
-
-    monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_exec_inner_error)
-    res = _run(module.list_tools.__wrapped__())
-    assert res["code"] == 102
-    assert "MCP list tools error" in res["message"]
-    assert close_calls_inner and len(close_calls_inner[-1]) == 1
-
-    _set_request_json(monkeypatch, module, {"mcp_ids": ["id1"], "timeout": "2.0"})
-    close_calls_outer = []
-
-    def _raise_get_by_id(_mcp_id):
-        raise RuntimeError("outer explode")
-
-    monkeypatch.setattr(module.MCPServerService, "get_by_id", _raise_get_by_id)
-
-    async def _thread_pool_exec_outer(func, *args):
-        if func is module.close_multiple_mcp_toolcall_sessions:
-            close_calls_outer.append(args[0])
-            return None
-        return func(*args)
-
-    monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_exec_outer)
-    res = _run(module.list_tools.__wrapped__())
-    assert res["code"] == 100
-    assert "outer explode" in res["message"]
-    assert close_calls_outer
-
-
-@pytest.mark.p2
-def test_test_tool_missing_mcp_id(monkeypatch):
-    module = _load_mcp_server_app(monkeypatch)
-
-    _set_request_json(monkeypatch, module, {"mcp_id": "", "tool_name": "tool_a", "arguments": {"x": 1}})
-    res = _run(module.test_tool.__wrapped__())
-    assert "No MCP server ID provided" in res["message"]
-
-
-@pytest.mark.p2
-def test_test_tool_route_matrix_unit(monkeypatch):
-    module = _load_mcp_server_app(monkeypatch)
-
-    _set_request_json(monkeypatch, module, {"mcp_id": "", "tool_name": "tool_a", "arguments": {"x": 1}})
-    res = _run(module.test_tool.__wrapped__())
-    assert "No MCP server ID provided" in res["message"]
-
-    _set_request_json(monkeypatch, module, {"mcp_id": "id1", "tool_name": "", "arguments": {"x": 1}})
-    res = _run(module.test_tool.__wrapped__())
-    assert "Require provide tool name and arguments" in res["message"]
-
-    _set_request_json(monkeypatch, module, {"mcp_id": "id1", "tool_name": "tool_a", "arguments": {}})
-    res = _run(module.test_tool.__wrapped__())
-    assert "Require provide tool name and arguments" in res["message"]
-
-    _set_request_json(monkeypatch, module, {"mcp_id": "id1", "tool_name": "tool_a", "arguments": {"x": 1}})
-    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (False, None))
-    res = _run(module.test_tool.__wrapped__())
-    assert "Cannot find MCP server id1 for user tenant_1" in res["message"]
-
-    server_other = _DummyMCPServer(id="id1", name="srv", url="http://a", server_type="sse", tenant_id="other", variables={})
-    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (True, server_other))
-    res = _run(module.test_tool.__wrapped__())
-    assert "Cannot find MCP server id1 for user tenant_1" in res["message"]
-
-    server_ok = _DummyMCPServer(id="id1", name="srv", url="http://a", server_type="sse", tenant_id="tenant_1", variables={})
-    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (True, server_ok))
-    close_calls = []
-
-    async def _thread_pool_exec_success(func, *args):
-        if func is module.close_multiple_mcp_toolcall_sessions:
-            close_calls.append(args[0])
-            return None
-        return func(*args)
-
-    monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_exec_success)
-    res = _run(module.test_tool.__wrapped__())
-    assert res["code"] == 0
-    assert res["data"] == "ok"
-    assert close_calls and len(close_calls[-1]) == 1
-
-    async def _thread_pool_exec_raise(func, *args):
-        if func is module.close_multiple_mcp_toolcall_sessions:
-            return None
-        raise RuntimeError("tool call explode")
-
-    monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_exec_raise)
-    res = _run(module.test_tool.__wrapped__())
-    assert res["code"] == 100
-    assert "tool call explode" in res["message"]
-
-
-@pytest.mark.p2
-def test_cache_tool_route_matrix_unit(monkeypatch):
-    module = _load_mcp_server_app(monkeypatch)
-
-    _set_request_json(monkeypatch, module, {"mcp_id": "", "tools": [{"name": "tool_a"}]})
-    res = _run(module.cache_tool.__wrapped__())
-    assert "No MCP server ID provided" in res["message"]
-
-    _set_request_json(monkeypatch, module, {"mcp_id": "id1", "tools": [{"name": "tool_a"}]})
-    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (False, None))
-    res = _run(module.cache_tool.__wrapped__())
-    assert "Cannot find MCP server id1 for user tenant_1" in res["message"]
-
-    server_other = _DummyMCPServer(id="id1", name="srv", url="http://a", server_type="sse", tenant_id="other", variables={})
-    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (True, server_other))
-    res = _run(module.cache_tool.__wrapped__())
-    assert "Cannot find MCP server id1 for user tenant_1" in res["message"]
-
-    server_fail = _DummyMCPServer(id="id1", name="srv", url="http://a", server_type="sse", tenant_id="tenant_1", variables={})
-    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (True, server_fail))
-    monkeypatch.setattr(module.MCPServerService, "filter_update", lambda *_args, **_kwargs: False)
-    res = _run(module.cache_tool.__wrapped__())
-    assert "Failed to updated MCP server" in res["message"]
-
-    server_ok = _DummyMCPServer(
-        id="id1",
-        name="srv",
-        url="http://a",
-        server_type="sse",
-        tenant_id="tenant_1",
-        variables={"tools": {"old_tool": {"name": "old_tool"}}},
-    )
-    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (True, server_ok))
-    monkeypatch.setattr(module.MCPServerService, "filter_update", lambda *_args, **_kwargs: True)
-    _set_request_json(
-        monkeypatch,
-        module,
-        {
-            "mcp_id": "id1",
-            "tools": [{"name": "tool_a", "enabled": True}, {"bad": 1}, "x", {"name": "tool_b", "enabled": False}],
-        },
-    )
-    res = _run(module.cache_tool.__wrapped__())
-    assert res["code"] == 0
-    assert sorted(res["data"].keys()) == ["tool_a", "tool_b"]
-    assert server_ok.variables["tools"]["tool_b"]["enabled"] is False
-
-
-@pytest.mark.p2
 def test_test_mcp_route_matrix_unit(monkeypatch):
-    module = _load_mcp_server_app(monkeypatch)
+    module = _load_mcp_api(monkeypatch)
 
     _set_request_json(monkeypatch, module, {"url": "", "server_type": "sse"})
-    res = _run(module.test_mcp.__wrapped__())
+    res = _run(module.test_mcp("mcp-1"))
     assert "Invalid MCP url" in res["message"]
 
     _set_request_json(monkeypatch, module, {"url": "http://a", "server_type": "invalid"})
-    res = _run(module.test_mcp.__wrapped__())
+    res = _run(module.test_mcp("mcp-1"))
     assert "Unsupported MCP server type" in res["message"]
 
     close_calls = []
@@ -866,7 +688,7 @@ def test_test_mcp_route_matrix_unit(monkeypatch):
 
     monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_exec_inner_error)
     _set_request_json(monkeypatch, module, {"url": "http://a", "server_type": "sse"})
-    res = _run(module.test_mcp.__wrapped__())
+    res = _run(module.test_mcp("mcp-1"))
     assert res["code"] == 102
     assert "Test MCP error: get tools explode" in res["message"]
     assert close_calls and len(close_calls[-1]) == 1
@@ -881,7 +703,7 @@ def test_test_mcp_route_matrix_unit(monkeypatch):
 
     monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_exec_success)
     _set_request_json(monkeypatch, module, {"url": "http://a", "server_type": "sse"})
-    res = _run(module.test_mcp.__wrapped__())
+    res = _run(module.test_mcp("mcp-1"))
     assert res["code"] == 0
     assert res["data"][0]["name"] == "tool_a"
     assert all(tool["enabled"] is True for tool in res["data"])
@@ -892,6 +714,6 @@ def test_test_mcp_route_matrix_unit(monkeypatch):
 
     monkeypatch.setattr(module, "MCPToolCallSession", _raise_session)
     _set_request_json(monkeypatch, module, {"url": "http://a", "server_type": "sse"})
-    res = _run(module.test_mcp.__wrapped__())
+    res = _run(module.test_mcp("mcp-1"))
     assert res["code"] == 100
     assert "session explode" in res["message"]

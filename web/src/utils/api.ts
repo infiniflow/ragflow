@@ -35,7 +35,7 @@ export default {
   deleteFactory: `${webAPI}/llm/delete_factory`,
 
   // data source
-  dataSourceUpdate: (id:string) => `${restAPIv1}/connectors/${id}`,
+  dataSourceUpdate: (id: string) => `${restAPIv1}/connectors/${id}`,
   dataSourceSet: `${restAPIv1}/connectors`,
   dataSourceList: `${restAPIv1}/connectors`,
   dataSourceDel: (id: string) => `${restAPIv1}/connectors/${id}`,
@@ -219,14 +219,15 @@ export default {
     `${webAPI}/canvas/${canvasId}/completion`,
 
   // mcp server
-  listMcpServer: `${webAPI}/mcp_server/list`,
-  getMcpServer: `${webAPI}/mcp_server/detail`,
-  createMcpServer: `${webAPI}/mcp_server/create`,
-  updateMcpServer: `${webAPI}/mcp_server/update`,
-  deleteMcpServer: `${webAPI}/mcp_server/rm`,
-  importMcpServer: `${webAPI}/mcp_server/import`,
-  exportMcpServer: `${webAPI}/mcp_server/export`,
-  testMcpServer: `${webAPI}/mcp_server/test_mcp`,
+  listMcpServer: `${restAPIv1}/mcp/servers`,
+  getMcpServer: (id: string) => `${restAPIv1}/mcp/servers/${id}`,
+  createMcpServer: `${restAPIv1}/mcp/servers`,
+  updateMcpServer: (id: string) => `${restAPIv1}/mcp/servers/${id}`,
+  deleteMcpServer: (id: string) => `${restAPIv1}/mcp/servers/${id}`,
+  importMcpServer: `${restAPIv1}/mcp/servers/import`,
+  exportMcpServer: (id: string) =>
+    `${restAPIv1}/mcp/servers/${id}?mode=download`,
+  testMcpServer: (id: string) => `${restAPIv1}/mcp/servers/${id}/test`,
 
   // next-search
   createSearch: `${restAPIv1}/searches`,
