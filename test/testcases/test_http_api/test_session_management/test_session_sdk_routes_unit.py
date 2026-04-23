@@ -502,6 +502,8 @@ def _load_session_module(monkeypatch):
     quart_mod.request = SimpleNamespace(args=_Args(), headers={}, files=_AwaitableValue({}), method="POST")
     quart_mod.Response = _StubResponse
     quart_mod.jsonify = lambda payload: payload
+    quart_mod.current_app = SimpleNamespace()
+    quart_mod.has_app_context = lambda: False
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
     module_path = repo_root / "api" / "apps" / "sdk" / "session.py"
@@ -586,6 +588,16 @@ def _load_agent_api_module(monkeypatch):
     file_service_mod = ModuleType("api.db.services.file_service")
     file_service_mod.FileService = SimpleNamespace(upload_info=lambda *_args, **_kwargs: {})
     monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
+
+    api_service_mod = ModuleType("api.db.services.api_service")
+    api_service_mod.API4ConversationService = SimpleNamespace(
+        get_names=lambda *_args, **_kwargs: [],
+        get_list=lambda *_args, **_kwargs: (0, []),
+        save=lambda **_kwargs: True,
+        get_by_id=lambda _session_id: (True, SimpleNamespace(to_dict=lambda: {"id": _session_id})),
+        delete_by_id=lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.api_service", api_service_mod)
 
     document_service_mod = ModuleType("api.db.services.document_service")
     document_service_mod.DocumentService = SimpleNamespace(

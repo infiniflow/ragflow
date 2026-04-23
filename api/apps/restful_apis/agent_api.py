@@ -105,6 +105,10 @@ def _normalize_agent_session(conv):
     return conv
 
 
+def _agent_session_list_result(data, total):
+    return jsonify({"code": RetCode.SUCCESS, "message": "success", "data": data, "total": total})
+
+
 @manager.route("/agents/<agent_id>/sessions", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -129,9 +133,7 @@ def list_agent_sessions(agent_id, tenant_id):
 
     if exp_user_id:
         sessions = API4ConversationService.get_names(agent_id, exp_user_id)
-        result = get_json_result(data=sessions)
-        result["total"] = len(sessions)
-        return result
+        return _agent_session_list_result(sessions, len(sessions))
 
     include_dsl = request.args.get("dsl") not in {"False", "false"}
     total, sessions = API4ConversationService.get_list(
@@ -150,9 +152,7 @@ def list_agent_sessions(agent_id, tenant_id):
         exp_user_id=exp_user_id,
     )
     sessions = [_normalize_agent_session(session) for session in sessions]
-    result = get_json_result(data=sessions)
-    result["total"] = total
-    return result
+    return _agent_session_list_result(sessions, total)
 
 
 @manager.route("/agents/<agent_id>/sessions", methods=["POST"])  # noqa: F821
