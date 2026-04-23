@@ -440,20 +440,9 @@ async def chat_completion_openai_like(tenant_id, chat_id):
 @token_required
 async def agents_completion_openai_compatibility(tenant_id, agent_id):
     req = await get_request_json()
-    extra_body = req.get("extra_body", {})
-    if extra_body is None:
-        extra_body = {}
-    elif not isinstance(extra_body, dict):
-        return get_error_data_result("extra_body must be an object.")
-    reference_metadata = extra_body.get("reference_metadata", {})
-    if reference_metadata is None:
-        reference_metadata = {}
-    elif not isinstance(reference_metadata, dict):
-        return get_error_data_result("reference_metadata must be an object.")
-    include_reference_metadata = bool(reference_metadata.get("include", False))
-    metadata_fields = reference_metadata.get("fields")
-    if metadata_fields is not None and not isinstance(metadata_fields, list):
-        return get_error_data_result("reference_metadata.fields must be an array.")
+    err, include_reference_metadata, metadata_fields = _parse_reference_metadata(req)
+    if err:
+        return err
     messages = req.get("messages", [])
     if not messages:
         return get_error_data_result("You must provide at least one message.")
@@ -475,26 +464,27 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
         )
 
     question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+    session_id = req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", "")
 
     stream = req.pop("stream", False)
     if stream:
-        async def generate():
-            async for answer in completion_openai(
-                tenant_id,
-                agent_id,
-                question,
-                session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
-                stream=True,
-                **req,
-            ):
-                yield _build_agent_openai_response(
-                    answer,
-                    include_metadata=include_reference_metadata,
-                    metadata_fields=metadata_fields,
-                )
+        body = completion_openai(
+            tenant_id,
+            agent_id,
+            question,
+            session_id=session_id,
+            stream=True,
+            **req,
+        )
+        if include_reference_metadata:
+            async def generate():
+                async for answer in body:
+                    yield _build_agent_openai_response(answer, metadata_fields=metadata_fields)
+
+            body = generate()
 
         resp = Response(
-            generate(),
+            body,
             mimetype="text/event-stream",
         )
         resp.headers.add_header("Cache-control", "no-cache")
@@ -508,15 +498,12 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
                 tenant_id,
                 agent_id,
                 question,
-                session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
+                session_id=session_id,
                 stream=False,
                 **req,
             ):
-            response = _build_agent_openai_response(
-                response,
-                include_metadata=include_reference_metadata,
-                metadata_fields=metadata_fields,
-            )
+            if include_reference_metadata:
+                response = _build_agent_openai_response(response, metadata_fields=metadata_fields)
             return jsonify(response)
 
         return None
@@ -526,20 +513,9 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
 @token_required
 async def agent_completions(tenant_id, agent_id):
     req = await get_request_json()
-    extra_body = req.get("extra_body", {})
-    if extra_body is None:
-        extra_body = {}
-    elif not isinstance(extra_body, dict):
-        return get_error_data_result("extra_body must be an object.")
-    reference_metadata = extra_body.get("reference_metadata", {})
-    if reference_metadata is None:
-        reference_metadata = {}
-    elif not isinstance(reference_metadata, dict):
-        return get_error_data_result("reference_metadata must be an object.")
-    include_reference_metadata = bool(reference_metadata.get("include", False))
-    metadata_fields = reference_metadata.get("fields")
-    if metadata_fields is not None and not isinstance(metadata_fields, list):
-        return get_error_data_result("reference_metadata.fields must be an array.")
+    err, include_reference_metadata, metadata_fields = _parse_reference_metadata(req)
+    if err:
+        return err
     return_trace = bool(req.get("return_trace", False))
 
     if req.get("stream", True):
@@ -556,13 +532,12 @@ async def agent_completions(tenant_id, agent_id):
                     ans = answer
 
                 data = ans.get("data", {})
-                if data.get("reference") is not None:
+                if include_reference_metadata and data.get("reference") is not None:
                     data["reference"] = _build_agent_reference(
                         data["reference"],
-                        include_metadata=include_reference_metadata,
                         metadata_fields=metadata_fields,
                     )
-                    answer = _to_sse(ans)
+                    answer = "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
                 event = ans.get("event")
                 if event == "node_finished":
@@ -574,7 +549,7 @@ async def agent_completions(tenant_id, agent_id):
                             }
                         )
                         ans.setdefault("data", {})["trace"] = trace_items
-                        answer = _to_sse(ans)
+                        answer = "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
                     yield answer
 
                 if event not in ["message", "message_end"]:
@@ -604,13 +579,10 @@ async def agent_completions(tenant_id, agent_id):
                 full_content += ans["data"]["content"]
 
             if ans.get("data", {}).get("reference", None):
-                reference.update(
-                    _build_agent_reference(
-                        ans["data"]["reference"],
-                        include_metadata=include_reference_metadata,
-                        metadata_fields=metadata_fields,
-                    )
-                )
+                ref = ans["data"]["reference"]
+                if include_reference_metadata:
+                    ref = _build_agent_reference(ref, metadata_fields=metadata_fields)
+                reference.update(ref)
 
             if ans.get("event") == "node_finished":
                 data = ans.get("data", {})
@@ -1324,22 +1296,6 @@ def _build_reference_chunks(reference, include_metadata=False, metadata_fields=N
     if not include_metadata:
         return chunks
 
-    meta_by_doc = _get_reference_metadata_by_doc(chunks, metadata_fields)
-    if not meta_by_doc:
-        return chunks
-
-    for chunk in chunks:
-        doc_id = chunk.get("document_id")
-        if not doc_id:
-            continue
-        meta = meta_by_doc.get(doc_id)
-        if meta:
-            chunk["document_metadata"] = meta
-
-    return chunks
-
-
-def _get_reference_metadata_by_doc(chunks, metadata_fields=None):
     doc_ids_by_kb = {}
     for chunk in chunks:
         kb_id = chunk.get("dataset_id")
@@ -1349,7 +1305,7 @@ def _get_reference_metadata_by_doc(chunks, metadata_fields=None):
         doc_ids_by_kb.setdefault(kb_id, set()).add(doc_id)
 
     if not doc_ids_by_kb:
-        return {}
+        return chunks
 
     meta_by_doc = {}
     for kb_id, doc_ids in doc_ids_by_kb.items():
@@ -1360,59 +1316,105 @@ def _get_reference_metadata_by_doc(chunks, metadata_fields=None):
     if metadata_fields is not None:
         metadata_fields = {f for f in metadata_fields if isinstance(f, str)}
         if not metadata_fields:
-            return {}
+            return chunks
 
-    filtered = {}
-    for doc_id, meta in meta_by_doc.items():
+    for chunk in chunks:
+        doc_id = chunk.get("document_id")
+        if not doc_id:
+            continue
+        meta = meta_by_doc.get(doc_id)
+        if not meta:
+            continue
         if metadata_fields is not None:
             meta = {k: v for k, v in meta.items() if k in metadata_fields}
         if meta:
-            filtered[doc_id] = meta
-    return filtered
+            chunk["document_metadata"] = meta
+
+    return chunks
 
 
-def _build_agent_reference(reference, include_metadata=False, metadata_fields=None):
-    if not include_metadata or not isinstance(reference, dict):
+def _parse_reference_metadata(req):
+    extra_body = req.get("extra_body", {})
+    if extra_body is None:
+        extra_body = {}
+    elif not isinstance(extra_body, dict):
+        return get_error_data_result("extra_body must be an object."), False, None
+
+    reference_metadata = extra_body.get("reference_metadata", {})
+    if reference_metadata is None:
+        reference_metadata = {}
+    elif not isinstance(reference_metadata, dict):
+        return get_error_data_result("reference_metadata must be an object."), False, None
+
+    metadata_fields = reference_metadata.get("fields")
+    if metadata_fields is not None and not isinstance(metadata_fields, list):
+        return get_error_data_result("reference_metadata.fields must be an array."), False, None
+
+    return None, bool(reference_metadata.get("include", False)), metadata_fields
+
+
+def _build_agent_reference(reference, metadata_fields=None):
+    if not isinstance(reference, dict):
         return reference
 
-    meta_by_doc = _get_reference_metadata_by_doc(chunks_format(reference), metadata_fields)
+    raw_chunks = reference.get("chunks")
+    if isinstance(raw_chunks, dict):
+        chunks = [chunk for chunk in raw_chunks.values() if isinstance(chunk, dict)]
+    elif isinstance(raw_chunks, list):
+        chunks = [chunk for chunk in raw_chunks if isinstance(chunk, dict)]
+    else:
+        return reference
+
+    if metadata_fields is not None:
+        metadata_fields = {f for f in metadata_fields if isinstance(f, str)}
+        if not metadata_fields:
+            return reference
+
+    doc_ids_by_kb = {}
+    for chunk in chunks:
+        kb_id = chunk.get("kb_id", chunk.get("dataset_id"))
+        doc_id = chunk.get("doc_id", chunk.get("document_id"))
+        if not kb_id or not doc_id:
+            continue
+        doc_ids_by_kb.setdefault(kb_id, set()).add(doc_id)
+
+    if not doc_ids_by_kb:
+        return reference
+
+    meta_by_doc = {}
+    for kb_id, doc_ids in doc_ids_by_kb.items():
+        meta_map = DocMetadataService.get_metadata_for_documents(list(doc_ids), kb_id)
+        if meta_map:
+            meta_by_doc.update(meta_map)
+
     if not meta_by_doc:
         return reference
 
-    enriched_reference = copy.deepcopy(reference)
-    raw_chunks = enriched_reference.get("chunks")
-    if isinstance(raw_chunks, dict):
-        raw_chunks = raw_chunks.values()
-    elif not isinstance(raw_chunks, list):
-        return enriched_reference
-
-    for chunk in raw_chunks:
-        if not isinstance(chunk, dict):
-            continue
+    for chunk in chunks:
         doc_id = chunk.get("doc_id", chunk.get("document_id"))
         meta = meta_by_doc.get(doc_id)
+        if not meta:
+            continue
+        if metadata_fields is not None:
+            meta = {k: v for k, v in meta.items() if k in metadata_fields}
         if meta:
             chunk["document_metadata"] = meta
-    return enriched_reference
+    return reference
 
 
-def _build_agent_openai_response(answer, include_metadata=False, metadata_fields=None):
-    if not include_metadata:
-        return answer
+def _build_agent_openai_response(answer, metadata_fields=None):
 
     if isinstance(answer, str):
-        if answer.strip() == "data: [DONE]" or answer.strip() == "data:[DONE]":
+        if answer.strip() in {"data:[DONE]", "data: [DONE]"}:
+            return answer
+        if not answer.startswith("data:"):
             return answer
         try:
-            payload = json.loads(answer[5:])
+            payload = json.loads(answer[5:].strip())
         except Exception:
             return answer
-        payload = _build_agent_openai_response(
-            payload,
-            include_metadata=include_metadata,
-            metadata_fields=metadata_fields,
-        )
-        return _to_sse(payload)
+        payload = _build_agent_openai_response(payload, metadata_fields=metadata_fields)
+        return "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
 
     if not isinstance(answer, dict):
         return answer
@@ -1422,20 +1424,8 @@ def _build_agent_openai_response(answer, include_metadata=False, metadata_fields
             continue
         delta = choice.get("delta")
         if isinstance(delta, dict) and delta.get("reference") is not None:
-            delta["reference"] = _build_agent_reference(
-                delta["reference"],
-                include_metadata=include_metadata,
-                metadata_fields=metadata_fields,
-            )
+            delta["reference"] = _build_agent_reference(delta["reference"], metadata_fields=metadata_fields)
         message = choice.get("message")
         if isinstance(message, dict) and message.get("reference") is not None:
-            message["reference"] = _build_agent_reference(
-                message["reference"],
-                include_metadata=include_metadata,
-                metadata_fields=metadata_fields,
-            )
+            message["reference"] = _build_agent_reference(message["reference"], metadata_fields=metadata_fields)
     return answer
-
-
-def _to_sse(payload):
-    return "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
