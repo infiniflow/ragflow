@@ -14,31 +14,17 @@
 #  limitations under the License.
 #
 
-import asyncio
-import base64
-import hashlib
-import hmac
-import ipaddress
-import json
-import logging
-import time
 from typing import Any, cast
 
-import jwt
-
-from agent.canvas import Canvas
 from api.apps.services.canvas_replica_service import CanvasReplicaService
-from api.db import CanvasCategory
 from api.db.services.canvas_service import UserCanvasService
-from api.db.services.file_service import FileService
 from api.db.services.user_service import UserService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from common.constants import RetCode
 from common.misc_utils import get_uuid
 from api.utils.api_utils import get_data_error_result, get_error_data_result, get_json_result, get_request_json, token_required
 from api.utils.api_utils import get_result
-from quart import request, Response
-from rag.utils.redis_conn import REDIS_CONN
+from quart import request
 
 
 def _get_user_nickname(user_id: str) -> str:
@@ -152,4 +138,3 @@ def delete_agent(tenant_id: str, agent_id: str):
 
     UserCanvasService.delete_by_id(agent_id)
     return get_json_result(data=True)
-
