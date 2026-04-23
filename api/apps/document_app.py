@@ -45,6 +45,7 @@ from common import settings
 from common.constants import SANDBOX_ARTIFACT_BUCKET, VALID_TASK_STATUS, ParserType, RetCode, TaskStatus
 from common.file_utils import get_project_base_directory
 from common.misc_utils import get_uuid, thread_pool_exec
+from common.ssrf_guard import assert_url_is_safe
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search
 
@@ -457,6 +458,7 @@ async def run():
     except Exception as e:
         return server_error_response(e)
 
+
 @manager.route("/get/<doc_id>", methods=["GET"])  # noqa: F821
 @login_required
 async def get(doc_id):
@@ -688,6 +690,8 @@ async def upload_info():
     files = await request.files
     file_objs = files.getlist("file") if files and files.get("file") else []
     url = request.args.get("url")
+    if url:
+        assert_url_is_safe(url)
 
     if file_objs and url:
         return get_json_result(
