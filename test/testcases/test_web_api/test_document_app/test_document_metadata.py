@@ -25,7 +25,6 @@ from test_common import (
     document_update_metadata_setting,
     bulk_upload_documents,
     delete_document,
-    list_documents,
 )
 
 from configs import INVALID_API_TOKEN
@@ -407,7 +406,7 @@ class TestDocumentMetadataUnit:
         
         # Verify success
         assert res["code"] == 0, f"Expected success code 0, got {res}"
-        assert res["data"][doc_id]["status"] == "1", f"Document status should be 1"
+        assert res["data"][doc_id]["status"] == "1", "Document status should be 1"
         
         # Verify the status was actually updated in the database
         info_res = document_infos(WebApiAuth, dataset_id, {"ids": [doc_id]})
