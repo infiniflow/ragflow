@@ -440,11 +440,15 @@ async def chat_completion_openai_like(tenant_id, chat_id):
 @token_required
 async def agents_completion_openai_compatibility(tenant_id, agent_id):
     req = await get_request_json()
-    extra_body = req.get("extra_body") or {}
-    if extra_body and not isinstance(extra_body, dict):
+    extra_body = req.get("extra_body", {})
+    if extra_body is None:
+        extra_body = {}
+    elif not isinstance(extra_body, dict):
         return get_error_data_result("extra_body must be an object.")
-    reference_metadata = extra_body.get("reference_metadata") or {}
-    if reference_metadata and not isinstance(reference_metadata, dict):
+    reference_metadata = extra_body.get("reference_metadata", {})
+    if reference_metadata is None:
+        reference_metadata = {}
+    elif not isinstance(reference_metadata, dict):
         return get_error_data_result("reference_metadata must be an object.")
     include_reference_metadata = bool(reference_metadata.get("include", False))
     metadata_fields = reference_metadata.get("fields")
@@ -522,11 +526,15 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
 @token_required
 async def agent_completions(tenant_id, agent_id):
     req = await get_request_json()
-    extra_body = req.get("extra_body") or {}
-    if extra_body and not isinstance(extra_body, dict):
+    extra_body = req.get("extra_body", {})
+    if extra_body is None:
+        extra_body = {}
+    elif not isinstance(extra_body, dict):
         return get_error_data_result("extra_body must be an object.")
-    reference_metadata = extra_body.get("reference_metadata") or {}
-    if reference_metadata and not isinstance(reference_metadata, dict):
+    reference_metadata = extra_body.get("reference_metadata", {})
+    if reference_metadata is None:
+        reference_metadata = {}
+    elif not isinstance(reference_metadata, dict):
         return get_error_data_result("reference_metadata must be an object.")
     include_reference_metadata = bool(reference_metadata.get("include", False))
     metadata_fields = reference_metadata.get("fields")
