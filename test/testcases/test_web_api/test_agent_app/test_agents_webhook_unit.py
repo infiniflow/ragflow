@@ -193,7 +193,7 @@ def _patch_background_task(monkeypatch, module):
     monkeypatch.setattr(module.asyncio, "create_task", _fake_create_task)
 
 
-def _load_agents_app(monkeypatch):
+def _load_agents_app(monkeypatch, *, target="rest"):
     repo_root = Path(__file__).resolve().parents[4]
 
     common_pkg = ModuleType("common")
@@ -360,7 +360,10 @@ def _load_agents_app(monkeypatch):
     redis_mod.REDIS_CONN = redis_obj
     monkeypatch.setitem(sys.modules, "rag.utils.redis_conn", redis_mod)
 
-    module_path = repo_root / "api" / "apps" / "restful_apis" / "agent_api.py"
+    if target == "sdk":
+        module_path = repo_root / "api" / "apps" / "sdk" / "agents.py"
+    else:
+        module_path = repo_root / "api" / "apps" / "restful_apis" / "agent_api.py"
     spec = importlib.util.spec_from_file_location("test_agents_webhook_unit", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
@@ -378,7 +381,7 @@ def _assert_bad_request(res, expected_substring):
 
 @pytest.mark.p2
 def test_agents_crud_unit_branches(monkeypatch):
-    module = _load_agents_app(monkeypatch)
+    module = _load_agents_app(monkeypatch, target="sdk")
 
     monkeypatch.setattr(
         module,
