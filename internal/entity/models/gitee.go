@@ -340,17 +340,6 @@ func (z *GiteeModel) EncodeToEmbedding(modelName *string, texts []string, apiCon
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
-type GiteeModelItem struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created string `json:"created"`
-}
-
-type GiteeModelList struct {
-	Object string           `json:"object"`
-	Models []GiteeModelItem `json:"data"`
-}
-
 func (z *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
 	if apiConfig.Region != nil {
