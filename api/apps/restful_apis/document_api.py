@@ -264,15 +264,15 @@ async def upload_document(dataset_id, tenant_id):
     """
     from api.constants import FILE_NAME_LEN_LIMIT
     from api.db.services.file_service import FileService
-    
+
     form = await request.form
     files = await request.files
-    
+
     # Validation
     if "file" not in files:
         logging.error("No file part!")
         return get_error_data_result(message="No file part!", code=RetCode.ARGUMENT_ERROR)
-    
+
     file_objs = files.getlist("file")
     for file_obj in file_objs:
         if file_obj is None or file_obj.filename is None or file_obj.filename == "":
@@ -288,7 +288,7 @@ async def upload_document(dataset_id, tenant_id):
     if not e:
         logging.error(f"Can't find the dataset with ID {dataset_id}!")
         return get_error_data_result(message=f"Can't find the dataset with ID {dataset_id}!", code=RetCode.DATA_ERROR)
-    
+
     # Permission Check
     if not check_kb_team_permission(kb, tenant_id):
         logging.error("No authorization.")
@@ -308,7 +308,7 @@ async def upload_document(dataset_id, tenant_id):
         msg = "There seems to be an issue with your file format. please verify it is correct and not corrupted."
         logging.error(msg)
         return get_error_data_result(message=msg, code=RetCode.DATA_ERROR)
-    
+
     files = [f[0] for f in files]  # remove the blob
 
     # Check if we should return raw files without document key mapping
@@ -580,7 +580,7 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
         - The metadata_condition uses operators like: =, !=, >, <, >=, <=, contains, not contains,
           in, not in, start with, end with, empty, not empty.
         - The metadata parameter performs exact matching where values are OR'd within the same key
-          and AND'd across different keys.
+          & AND'd across different keys.
 
     Examples:
         Simple metadata filter (exact match):
@@ -758,6 +758,8 @@ async def delete_documents(tenant_id, dataset_id):
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
+
+
 def _aggregate_filters(docs):
     """Aggregate filter options from a list of documents.
 
@@ -815,3 +817,205 @@ def _aggregate_filters(docs):
         "run_status": run_status_counter,
         "metadata": metadata_counter,
     }
+
+@manager.route("/datasets/<dataset_id>/documents/<document_id>/metadata/config", methods=["PUT"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def update_metadata_config(tenant_id, dataset_id, document_id):
+    """
+    Update document metadata configuration.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: path
+        name: document_id
+        type: string
+        required: true
+        description: ID of the document.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: body
+        name: body
+        description: Metadata configuration.
+        required: true
+        schema:
+          type: object
+          properties:
+            metadata:
+              type: object
+              description: Metadata configuration JSON.
+    responses:
+      200:
+        description: Document updated successfully.
+    """
+    # Verify ownership and existence of dataset
+    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+        return get_error_data_result(message="You don't own the dataset.")
+
+    # Verify document exists in the dataset
+    doc = DocumentService.query(id=document_id, kb_id=dataset_id)
+    if not doc:
+        msg = f"Document {document_id} not found in dataset {dataset_id}"
+        return get_error_data_result(message=msg)
+    doc = doc[0]
+
+    # Get request body
+    req = await get_request_json()
+    if "metadata" not in req:
+        return get_error_argument_result(message="metadata is required")
+
+    # Update parser config with metadata
+    try:
+        DocumentService.update_parser_config(doc.id, {"metadata": req["metadata"]})
+    except Exception as e:
+        logging.error("error when update_parser_config", exc_info=e)
+        return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
+
+    # Get updated document
+    try:
+        e, doc = DocumentService.get_by_id(doc.id)
+        if not e:
+            return get_data_error_result(message="Document not found!")
+    except Exception as e:
+        return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
+
+    return get_result(data=doc.to_dict())
+
+
+@manager.route("/datasets/<dataset_id>/documents/metadatas", methods=["PATCH"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def update_metadata(tenant_id, dataset_id):
+    """
+    Update document metadata in batch.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: body
+        name: body
+        description: Metadata update request.
+        required: true
+        schema:
+          type: object
+          properties:
+            selector:
+              type: object
+              description: Document selector.
+              properties:
+                document_ids:
+                  type: array
+                  items:
+                    type: string
+                  description: List of document IDs to update.
+                metadata_condition:
+                  type: object
+                  description: Filter documents by existing metadata.
+            updates:
+              type: array
+              items:
+                type: object
+                properties:
+                  key:
+                    type: string
+                  value:
+                    type: any
+              description: List of metadata key-value pairs to update.
+            deletes:
+              type: array
+              items:
+                type: object
+                properties:
+                  key:
+                    type: string
+              description: List of metadata keys to delete.
+    responses:
+      200:
+        description: Metadata updated successfully.
+    """
+    # Verify ownership of dataset
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+
+    # Get request body
+    req = await get_request_json()
+    selector = req.get("selector", {}) or {}
+    updates = req.get("updates", []) or []
+    deletes = req.get("deletes", []) or []
+
+    # Validate selector
+    if not isinstance(selector, dict):
+        return get_error_data_result(message="selector must be an object.")
+    if not isinstance(updates, list) or not isinstance(deletes, list):
+        return get_error_data_result(message="updates and deletes must be lists.")
+
+    # Validate metadata_condition
+    metadata_condition = selector.get("metadata_condition", {}) or {}
+    if metadata_condition and not isinstance(metadata_condition, dict):
+        return get_error_data_result(message="metadata_condition must be an object.")
+
+    # Validate document_ids
+    document_ids = selector.get("document_ids", []) or []
+    if document_ids and not isinstance(document_ids, list):
+        return get_error_data_result(message="document_ids must be a list.")
+
+    # Validate updates
+    for upd in updates:
+        if not isinstance(upd, dict) or not upd.get("key") or "value" not in upd:
+            return get_error_data_result(message="Each update requires key and value.")
+
+    # Validate deletes
+    for d in deletes:
+        if not isinstance(d, dict) or not d.get("key"):
+            return get_error_data_result(message="Each delete requires key.")
+
+    # Initialize target document IDs
+    target_doc_ids = set()
+
+    # If document_ids provided, validate they belong to the dataset
+    if document_ids:
+        kb_doc_ids = KnowledgebaseService.list_documents_by_ids([dataset_id])
+        invalid_ids = set(document_ids) - set(kb_doc_ids)
+        if invalid_ids:
+            return get_error_data_result(
+                message=f"These documents do not belong to dataset {dataset_id}: {', '.join(invalid_ids)}"
+            )
+        target_doc_ids = set(document_ids)
+
+    # Apply metadata_condition filtering if provided
+    if metadata_condition:
+        metas = DocMetadataService.get_flatted_meta_by_kbs([dataset_id])
+        filtered_ids = set(
+            meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
+        )
+        target_doc_ids = target_doc_ids & filtered_ids
+        if metadata_condition.get("conditions") and not target_doc_ids:
+            return get_result(data={"updated": 0, "matched_docs": 0})
+
+    # Convert to list and perform update
+    target_doc_ids = list(target_doc_ids)
+    updated = DocMetadataService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
+    return get_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
