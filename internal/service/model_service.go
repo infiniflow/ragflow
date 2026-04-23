@@ -716,10 +716,13 @@ func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName
 			return nil, common.CodeNotFound, errors.New("provider not found")
 		}
 
-		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		var model *entity.Model = nil
+		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
 		}
+
+		modelConfig.ModelSeries = model.Series
 
 		var extra map[string]string
 		err = json.Unmarshal([]byte(instance.Extra), &extra)

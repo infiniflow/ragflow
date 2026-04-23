@@ -68,15 +68,15 @@ func (z *DeepSeekModel) EncodeToEmbedding(modelName *string, texts []string, api
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
-type Model struct {
+type DSModel struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
 	OwnedBy string `json:"owned_by"`
 }
 
-type ModelList struct {
-	Object string  `json:"object"`
-	Models []Model `json:"data"`
+type DSModelList struct {
+	Object string    `json:"object"`
+	Models []DSModel `json:"data"`
 }
 
 func (z *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -119,7 +119,7 @@ func (z *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// Parse response
-	var modelList ModelList
+	var modelList DSModelList
 	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}

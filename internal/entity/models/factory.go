@@ -41,6 +41,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewMoonshotModel(baseURL, urlSuffix), nil
 	case "minimax":
 		return NewMinimaxModel(baseURL, urlSuffix), nil
+	case "gitee":
+		return NewGiteeModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
