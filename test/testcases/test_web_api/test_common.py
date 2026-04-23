@@ -118,7 +118,7 @@ def llm_list(auth, params=None, *, headers=HEADERS):
 
 # PLUGIN APP
 def plugin_llm_tools(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{PLUGIN_APP_URL}/llm-tools", headers=headers, auth=auth, params=params)
+    res = requests.get(url=f"{HOST_ADDRESS}{PLUGIN_APP_URL}/tools", headers=headers, auth=auth, params=params)
     return res.json()
 
 

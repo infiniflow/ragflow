@@ -51,7 +51,7 @@ export default {
   boxWebAuthResult: () => `${restAPIv1}/connectors/box/oauth/web/result`,
 
   // plugin
-  llmTools: `${restAPIv1}/plugin/llm-tools`,
+  llmTools: `${restAPIv1}/plugin/tools`,
 
   chatsTranscriptions: `${restAPIv1}/chat/audio/transcription`,
 
