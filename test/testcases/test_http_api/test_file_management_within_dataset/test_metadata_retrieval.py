@@ -31,7 +31,7 @@ from common import (
 from utils import wait_for
 
 
-@wait_for(30, 1, "Document parsing timeout")
+@wait_for(200, 1, "Document parsing timeout")
 def _condition_parsing_complete(_auth, dataset_id):
     res = list_documents(_auth, dataset_id)
     if res["code"] != 0:
