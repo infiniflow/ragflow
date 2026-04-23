@@ -19,7 +19,7 @@ import re
 import math
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional, Union
+from typing import Any, Union
 
 import numpy as np
 
@@ -59,15 +59,14 @@ class Dealer:
     class SearchResult:
         """Dataclass for search result return structure."""
         total: int
-        ids: List[str]
-        query_vector: Optional[List[float]] = None
-        field: Optional[Dict[str, Any]] = None
-        highlight: Optional[Dict[str, Any]] = None
-        aggregation: Optional[Union[List, Dict]] = None
-        keywords: Optional[List[str]] = None
-        group_docs: Optional[List[List]] = None
+        ids: list[str]
+        query_vector: list[float] | None = None
+        field: dict[str, Any] | None = None
+        highlight: dict[str, Any] | None = None
+        aggregation: Union[list, dict] | None = None
+        keywords: list[str] | None = None
+        group_docs: list[list] | None = None
 
-    # ✅ 修复1：完全还原项目原生 Python 3.10+ 现代函数签名，删除多余注解
     async def get_vector(self, txt, emb_mdl, topk=10, similarity=0.1):
         """Encode text to dense vector expression for vector search."""
         qv, _ = await thread_pool_exec(emb_mdl.encode_queries, txt)
@@ -94,18 +93,16 @@ class Dealer:
                 condition[key] = req[key]
         return condition
 
-    # ✅ 修复2：现代Python typing + 一行一个参数规范排版
     async def search(
         self,
         req: dict[str, Any],
         idx_names: str | list[str],
         kb_ids: list[str],
         emb_mdl=None,
-        highlight: Optional[bool | list] = None,
-        rank_feature: Optional[dict[str, Any]] = None
+        highlight: bool | list | None = None,
+        rank_feature: dict[str, Any] | None = None
     ):
         """Execute hybrid search with fulltext & vector retrieval."""
-        # ✅ 修复4：1:1 完整还原项目原生highlight全分支逻辑，删除错误简写三元
         if highlight is None:
             highlight = False
         filters = self.get_filters(req)
@@ -136,10 +133,8 @@ class Dealer:
                 self.dataStore.search, src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids
             )
             total = self.dataStore.get_total(res)
-            # ✅ 修复3：日志文案 no query -> 原生 no question
             logger.debug("Dealer.search TOTAL (no question): %d", total)
         else:
-            # ✅ 原生完整highlight分支逻辑，完全还原原始代码行为
             if highlight:
                 highlight_fields = ["content_ltks", "title_tks"]
             elif isinstance(highlight, list):
@@ -179,7 +174,6 @@ class Dealer:
                         )
                     else:
                         user_sim = req.get("similarity", DEFAULT_SIMILARITY_THRESHOLD)
-                        # 历史留存：重试阈值死代码修复，真正放宽向量下限
                         retry_sim = max(0.01, user_sim * 0.5)
                         retry_min_match = min(RETRY_MIN_MATCH_FACTOR, 0.3)
                         matchText_retry, _ = self.qryr.question(qst, min_match=retry_min_match)
@@ -218,11 +212,11 @@ class Dealer:
         )
 
     @staticmethod
-    def trans2floats(txt: str) -> List[float]:
+    def trans2floats(txt: str) -> list[float]:
         """Convert tab-separated string to float list."""
         return [get_float(t) for t in txt.split("\t")]
 
-    def insert_citations(self, answer: str, chunks: List[str], chunk_v: List[List[float]],
+    def insert_citations(self, answer: str, chunks: list[str], chunk_v: list[list[float]],
                          embd_mdl, tkweight: float = 0.1, vtweight: float = 0.9) -> tuple[str, set]:
         """Insert citation markers with hybrid matching, no in-place modification to input params."""
         if not chunks:
@@ -314,7 +308,7 @@ class Dealer:
 
         return result, global_cited
 
-    def _rank_feature_scores(self, query_rfea: Optional[dict[str, Any]], search_res: "Dealer.SearchResult") -> np.ndarray:
+    def _rank_feature_scores(self, query_rfea: dict[str, Any] | None, search_res: "Dealer.SearchResult") -> np.ndarray:
         """Calculate tag feature & pagerank composite ranking score."""
         if not search_res.ids or not search_res.field:
             return np.array([])
@@ -346,7 +340,7 @@ class Dealer:
 
     def rerank(self, sres: "Dealer.SearchResult", query_txt: str, tkweight: float = 0.3,
                vtweight: float = 0.7, cfield: str = "content_ltks",
-               rank_feature: Optional[dict[str, Any]] = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+               rank_feature: dict[str, Any] | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Internal hybrid rerank with token & vector similarity."""
         if not sres.ids or not sres.field or not sres.query_vector:
             return np.array([]), np.array([]), np.array([])
@@ -386,7 +380,7 @@ class Dealer:
 
     def rerank_by_model(self, rerank_mdl, sres: "Dealer.SearchResult", query_txt: str,
                         tkweight: float = 0.3, vtweight: float = 0.7,
-                        cfield: str = "content_ltks", rank_feature: Optional[dict[str, Any]] = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+                        cfield: str = "content_ltks", rank_feature: dict[str, Any] | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """External rerank model integration."""
         if not sres.ids or not sres.field:
             return np.array([]), np.array([]), np.array([])
@@ -408,7 +402,7 @@ class Dealer:
 
         return tkweight * np.array(tksim) + vtweight * vtsim + rank_fea, tksim, vtsim
 
-    def hybrid_similarity(self, ans_embd: List[float], ins_embd: List[List[float]], 
+    def hybrid_similarity(self, ans_embd: list[float], ins_embd: list[list[float]], 
                           ans: str, inst: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Calculate hybrid token+vector similarity between two texts."""
         return self.qryr.hybrid_similarity(
@@ -417,7 +411,6 @@ class Dealer:
             rag_tokenizer.tokenize(inst).split()
         )
 
-    # ✅ 现代typing + 一行一个参数完整规范排版
     async def retrieval(
             self,
             question: str,
@@ -429,11 +422,11 @@ class Dealer:
             similarity_threshold: float = 0.2,
             vector_similarity_weight: float = 0.3,
             top: int = 1024,
-            doc_ids: Optional[str | list[str]] = None,
+            doc_ids: str | list[str] | None = None,
             aggs: bool = True,
             rerank_mdl=None,
             highlight: bool = False,
-            rank_feature: Optional[dict[str, Any]] = None
+            rank_feature: dict[str, Any] | None = None
     ):
         """End-to-end retrieval pipeline with dynamic vector dimension support."""
         rank_feature = rank_feature or {PAGERANK_FLD: 10}
@@ -553,7 +546,7 @@ class Dealer:
 
             ranks["doc_aggs"] = [
                 {"doc_name": k, "doc_id": v["doc_id"], "count": v["count"]}
-                for k, v in sorted(doc_aggs.items(), key=lambda x: x[1]["count"], reverse=True)
+                for k, v in sorted(doc_aggs.items(), key=lambda x:x[1]["count"], reverse=True)
             ]
 
         return ranks
@@ -562,9 +555,9 @@ class Dealer:
         """Execute raw SQL query on document store."""
         return self.dataStore.sql(sql, fetch_size, format)
 
-    async def chunk_list(self, doc_id: str, tenant_id: str, kb_ids: List[str], 
+    async def chunk_list(self, doc_id: str, tenant_id: str, kb_ids: list[str], 
                    max_count: int = 1024, offset: int = 0, 
-                   fields: List[str] = None, sort_by_position: bool = False):
+                   fields: list[str] = None, sort_by_position: bool = False):
         """Async fetch chunks with thread pool, no event loop blocking."""
         fields = fields or ["docnm_kwd", "content_with_weight", "img_id"]
         condition = {"doc_id": doc_id}
@@ -595,7 +588,7 @@ class Dealer:
                 break
         return res
 
-    def all_tags(self, tenant_id: str, kb_ids: List[str]) -> List:
+    def all_tags(self, tenant_id: str, kb_ids: list[str]) -> list:
         """Aggregate all tag keywords, unused S parameter fully removed."""
         if not self.dataStore.index_exist(index_name(tenant_id), kb_ids[0]):
             return []
@@ -603,14 +596,14 @@ class Dealer:
                                    index_name(tenant_id), kb_ids, ["tag_kwd"])
         return self.dataStore.get_aggregation(res, "tag_kwd")
 
-    def all_tags_in_portion(self, tenant_id: str, kb_ids: List[str]) -> Dict:
+    def all_tags_in_portion(self, tenant_id: str, kb_ids: list[str]) -> dict:
         """Calculate normalized tag occurrence ratio with internal smoothing constant."""
         res = self.all_tags(tenant_id, kb_ids)
         total = sum(c for _, c in res)
         return {t: (c+1)/(total+INTERNAL_SMOOTH_S) for t, c in res}
 
-    def tag_content(self, tenant_id: str, kb_ids: List[str], doc: Dict, 
-                    all_tags: Dict, topn_tags: int = 3, keywords_topn: int = 30) -> bool:
+    def tag_content(self, tenant_id: str, kb_ids: list[str], doc: dict, 
+                    all_tags: dict, topn_tags: int = 3, keywords_topn: int = 30) -> bool:
         """Extract tag features for document chunk."""
         match_txt = self.qryr.paragraph(
             doc.get("title_tks", "") + " " + doc.get("content_ltks", ""),
@@ -628,8 +621,8 @@ class Dealer:
         doc[TAG_FLD] = {a.replace(".", "_"): s for a, s in sorted(tag_scores, key=lambda x:x[1], reverse=True)[:topn_tags] if s>0}
         return True
 
-    def tag_query(self, question: str, tenant_ids: Union[str, List[str]], kb_ids: List[str],
-                  all_tags: Dict, topn_tags: int = 3) -> Dict:
+    def tag_query(self, question: str, tenant_ids: Union[str, list[str]], kb_ids: list[str],
+                  all_tags: dict, topn_tags: int = 3) -> dict:
         """Extract query-side tag features for ranking."""
         idx_nms = index_name(tenant_ids) if isinstance(tenant_ids, str) else [index_name(tid) for tid in tenant_ids]
         match_txt, _ = self.qryr.question(question, min_match=0.0)
@@ -643,8 +636,8 @@ class Dealer:
                      for a, c in aggs]
         return {a.replace(".", "_"): max(1, s) for a, s in sorted(tag_scores, key=lambda x:x[1], reverse=True)[:topn_tags]}
 
-    async def retrieval_by_toc(self, query_txt: str, chunks: List[Dict], 
-                               tenant_ids: List[str], chat_mdl, topn: int = 6) -> List[Dict]:
+    async def retrieval_by_toc(self, query_txt: str, chunks: list[dict], 
+                               tenant_ids: list[str], chat_mdl, topn: int = 6) -> list[dict]:
         """TOC retrieval with unified return format for all branches."""
         from rag.prompts.generator import relevant_chunks_with_toc
         cloned_chunks = [chunk.copy() for chunk in chunks] if chunks else []
@@ -698,7 +691,6 @@ class Dealer:
             chunk = await thread_pool_exec(self.dataStore.get, cid, index_name(tenant_ids[0]), kb_ids)
             if not chunk:
                 continue
-            # 历史留存：全链路向量字符串解码兼容修复
             raw_vec = chunk.get(next((k for k in chunk if k.endswith("_vec")), ""), zero_vec)
             if isinstance(raw_vec, str):
                 raw_vec = self.trans2floats(raw_vec)
@@ -723,7 +715,7 @@ class Dealer:
 
         return sorted(cloned_chunks, key=lambda x: x["similarity"] * -1)[:topn]
 
-    def retrieval_by_children(self, chunks: List[Dict], tenant_ids: List[str]) -> List[Dict]:
+    def retrieval_by_children(self, chunks: list[dict], tenant_ids: list[str]) -> list[dict]:
         """Merge parent chunks: full KeyError guard + important_kwd type pollution defense."""
         if not chunks:
             return []
@@ -750,7 +742,6 @@ class Dealer:
                     filtered_chunks.extend(child_chunks)
                     continue
 
-                # 历史留存：安全兜底 + 关键词类型污染防护
                 content_ltks_merged = " ".join(ck.get("content_ltks", "") for ck in child_chunks)
                 merged_important = []
                 for ck in child_chunks:
