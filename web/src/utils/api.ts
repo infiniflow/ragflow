@@ -209,8 +209,8 @@ export default {
   prompt: `${webAPI}/canvas/prompts`,
   cancelDataflow: (id: string) => `${webAPI}/canvas/cancel/${id}`,
   downloadFile: `${webAPI}/canvas/download`,
-  testWebhook: (id: string) => `${restAPIv1}/webhook_test/${id}`,
-  fetchWebhookTrace: (id: string) => `${restAPIv1}/webhook_trace/${id}`,
+  testWebhook: (id: string) => `${restAPIv1}/agents/${id}/webhook/test`,
+  fetchWebhookTrace: (id: string) => `${restAPIv1}/agents/${id}/webhook/logs`,
 
   // explore
 

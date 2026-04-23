@@ -60,7 +60,7 @@ class _DummyRequest:
     def __init__(
         self,
         *,
-        path="/api/v1/webhook/agent-1",
+        path="/api/v1/agents/agent-1/webhook",
         method="POST",
         headers=None,
         content_length=0,
@@ -308,6 +308,12 @@ def _load_agents_app(monkeypatch):
     # (it triggers heavy imports like quart, settings, DB connections).
     api_apps_pkg = ModuleType("api.apps")
     api_apps_pkg.__path__ = []
+    api_apps_pkg.current_user = SimpleNamespace(id="tenant-1")
+
+    def _identity_decorator(func):
+        return func
+
+    api_apps_pkg.login_required = _identity_decorator
     monkeypatch.setitem(sys.modules, "api.apps", api_apps_pkg)
 
     api_apps_services_pkg = ModuleType("api.apps.services")
@@ -354,7 +360,7 @@ def _load_agents_app(monkeypatch):
     redis_mod.REDIS_CONN = redis_obj
     monkeypatch.setitem(sys.modules, "rag.utils.redis_conn", redis_mod)
 
-    module_path = repo_root / "api" / "apps" / "sdk" / "agents.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "agent_api.py"
     spec = importlib.util.spec_from_file_location("test_agents_webhook_unit", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
@@ -803,6 +809,11 @@ def test_webhook_canvas_constructor_exception(monkeypatch):
 @pytest.mark.p2
 def test_webhook_trace_polling_branches(monkeypatch):
     module = _load_agents_app(monkeypatch)
+    monkeypatch.setattr(
+        module.UserCanvasService,
+        "get_by_id",
+        lambda _id: (True, _CanvasRecord(canvas_category=module.CanvasCategory.Agent, dsl={}, user_id="tenant-1")),
+    )
 
     # Missing since_ts.
     monkeypatch.setattr(module, "request", SimpleNamespace(args=_Args()))
@@ -1146,7 +1157,7 @@ def test_webhook_background_run_success_and_error_trace_paths(monkeypatch):
     monkeypatch.setattr(
         module,
         "request",
-        _DummyRequest(path="/api/v1/webhook_test/agent-1", headers={"Content-Type": "application/json"}, json_body={}),
+        _DummyRequest(path="/api/v1/agents/agent-1/webhook/test", headers={"Content-Type": "application/json"}, json_body={}),
     )
 
     res = _run(module.webhook("agent-1"))
@@ -1220,7 +1231,7 @@ def test_webhook_sse_success_and_exception_paths(monkeypatch):
     monkeypatch.setattr(
         module,
         "request",
-        _DummyRequest(path="/api/v1/webhook_test/agent-1", headers={"Content-Type": "application/json"}, json_body={}),
+        _DummyRequest(path="/api/v1/agents/agent-1/webhook/test", headers={"Content-Type": "application/json"}, json_body={}),
     )
     res = _run(module.webhook("agent-1"))
     assert res.status_code == 201
@@ -1236,7 +1247,7 @@ def test_webhook_sse_success_and_exception_paths(monkeypatch):
     monkeypatch.setattr(
         module,
         "request",
-        _DummyRequest(path="/api/v1/webhook_test/agent-1", headers={"Content-Type": "application/json"}, json_body={}),
+        _DummyRequest(path="/api/v1/agents/agent-1/webhook/test", headers={"Content-Type": "application/json"}, json_body={}),
     )
     res = _run(module.webhook("agent-1"))
     assert res.status_code == 400
@@ -1249,6 +1260,11 @@ def test_webhook_sse_success_and_exception_paths(monkeypatch):
 @pytest.mark.p2
 def test_webhook_trace_encoded_id_generation(monkeypatch):
     module = _load_agents_app(monkeypatch)
+    monkeypatch.setattr(
+        module.UserCanvasService,
+        "get_by_id",
+        lambda _id: (True, _CanvasRecord(canvas_category=module.CanvasCategory.Agent, dsl={}, user_id="tenant-1")),
+    )
 
     webhooks_obj = {
         "webhooks": {
