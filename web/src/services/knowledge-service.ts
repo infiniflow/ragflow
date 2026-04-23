@@ -301,19 +301,6 @@ export const updateDocumentMetaDataConfig = ({
     data: { ...data },
   });
 
-export const updateDocumentMetaDataConfig = ({
-  kb_id,
-  doc_id,
-  data,
-}: {
-  kb_id: string;
-  doc_id: string;
-  data: any;
-}) =>
-  request.put(api.documentUpdateMetaDataConfig(kb_id, doc_id), {
-    data: { ...data },
-  });
-
 export const listDataPipelineLogDocument = (
   params?: IFetchKnowledgeListRequestParams,
   body?: IFetchDocumentListRequestBody,
