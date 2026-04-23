@@ -83,24 +83,28 @@ def _normalize_agent_session(conv):
         if "prompt" in info:
             info.pop("prompt")
     conv["agent_id"] = conv.pop("dialog_id")
+    if isinstance(conv["reference"], dict):
+        if "chunks" in conv["reference"]:
+            conv["reference"] = [conv["reference"]]
+        else:
+            conv["reference"] = [value for _, value in sorted(conv["reference"].items(), key=lambda item: int(item[0]))]
+
     if conv["reference"]:
-        chunk_num = 0
-        for message_num, message in enumerate(conv["messages"]):
-            if message_num != 0 and message["role"] != "user":
-                chunks = conv["reference"][chunk_num]["chunks"]
-                message["reference"] = [
-                    {
-                        "id": chunk.get("chunk_id", chunk.get("id")),
-                        "content": chunk.get("content_with_weight", chunk.get("content")),
-                        "document_id": chunk.get("doc_id", chunk.get("document_id")),
-                        "document_name": chunk.get("docnm_kwd", chunk.get("document_name")),
-                        "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
-                        "image_id": chunk.get("image_id", chunk.get("img_id")),
-                        "positions": chunk.get("positions", chunk.get("position_int")),
-                    }
-                    for chunk in chunks
-                ]
-                chunk_num += 1
+        messages = [message for i, message in enumerate(conv["messages"]) if i != 0 and message["role"] != "user"]
+        for message, reference in zip(messages, conv["reference"]):
+            chunks = reference["chunks"]
+            message["reference"] = [
+                {
+                    "id": chunk.get("chunk_id", chunk.get("id")),
+                    "content": chunk.get("content_with_weight", chunk.get("content")),
+                    "document_id": chunk.get("doc_id", chunk.get("document_id")),
+                    "document_name": chunk.get("docnm_kwd", chunk.get("document_name")),
+                    "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
+                    "image_id": chunk.get("image_id", chunk.get("img_id")),
+                    "positions": chunk.get("positions", chunk.get("position_int")),
+                }
+                for chunk in chunks
+            ]
     del conv["reference"]
     return conv
 
