@@ -119,7 +119,11 @@ class Graph:
         for k in self.dsl.keys():
             if k in ["components"]:
                 continue
-            dsl[k] = deepcopy(self.dsl[k])
+            try:
+                dsl[k] = deepcopy(self.dsl[k])
+            except Exception as e:
+                logging.warning("Graph.__str__: deepcopy failed for dsl key '%s' (type=%s): %s. Using shallow reference.", k, type(self.dsl[k]).__name__, e)
+                dsl[k] = self.dsl[k]
 
         for k, cpn in self.components.items():
             if k not in dsl["components"]:
@@ -128,8 +132,17 @@ class Graph:
                 if c == "obj":
                     dsl["components"][k][c] = json.loads(str(cpn["obj"]))
                     continue
-                dsl["components"][k][c] = deepcopy(cpn[c])
-        return json.dumps(dsl, ensure_ascii=False)
+                try:
+                    dsl["components"][k][c] = deepcopy(cpn[c])
+                except Exception as e:
+                    logging.warning("Graph.__str__: deepcopy failed for component '%s' key '%s' (type=%s): %s. Using shallow reference.", k, c, type(cpn[c]).__name__, e)
+                    dsl["components"][k][c] = cpn[c]
+        def _serialize_default(obj):
+            if callable(obj):
+                return None
+            logging.warning("Graph.__str__: JSON fallback via str() for type=%s", type(obj).__name__)
+            return str(obj)
+        return json.dumps(dsl, ensure_ascii=False, default=_serialize_default)
 
     def reset(self):
         self.path = []

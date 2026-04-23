@@ -19,6 +19,20 @@ import json
 import logging
 from functools import partial
 from quart import request, Response, make_response
+
+
+def _canvas_json_default(obj):
+    """Fallback serializer for canvas SSE events.
+
+    Agent components store functools.partial objects as deferred streaming
+    handles (see llm.py, agent_with_tools.py, message.py). These leak into
+    SSE event dicts via component input/output propagation and are not
+    JSON-serializable. This handler converts them to None so that downstream
+    consumers never receive opaque ``str(partial(...))`` representations.
+    """
+    if callable(obj):
+        return None
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 from agent.component import LLM
 from api.db import CanvasCategory
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
@@ -235,7 +249,7 @@ async def run():
         nonlocal canvas, user_id
         try:
             async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
-                yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+                yield "data:" + json.dumps(ans, ensure_ascii=False, default=_canvas_json_default) + "\n\n"
 
             commit_ok = CanvasReplicaService.commit_after_run(
                 canvas_id=req["id"],
@@ -293,7 +307,7 @@ async def exp_agent_completion(canvas_id):
                         }
                     )
                     ans.setdefault("data", {})["trace"] = trace_items
-                    answer = "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+                    answer = "data:" + json.dumps(ans, ensure_ascii=False, default=_canvas_json_default) + "\n\n"
                 yield answer
 
             if event not in ["message", "message_end"]:
