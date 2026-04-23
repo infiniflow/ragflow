@@ -393,6 +393,43 @@ func (h *ProviderHandler) ShowInstanceBalance(c *gin.Context) {
 	})
 }
 
+func (h *ProviderHandler) CheckProviderConnection(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	// Get tenant ID from user
+	errorCode, err := h.modelProviderService.CheckProviderConnection(providerName, instanceName, userID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    errorCode,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+	})
+}
+
 type AlterProviderInstanceRequest struct {
 	LLMName string `json:"llm_name" binding:"required"`
 }
