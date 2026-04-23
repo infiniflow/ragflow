@@ -750,7 +750,6 @@ class Tenant(DataBaseModel):
     tts_id = CharField(max_length=256, null=True, help_text="default tts model ID", index=True)
     tenant_tts_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
     ocr_id = CharField(max_length=256, null=True, help_text="default OCR model ID", index=True)
-    tenant_ocr_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
     parser_ids = CharField(max_length=256, null=False, help_text="document processors", index=True)
     credit = IntegerField(default=512, index=True)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
@@ -1709,6 +1708,7 @@ def migrate_db():
     alter_db_add_column(migrator, "api_4_conversation", "version_title", CharField(max_length=255, null=True, help_text="canvas version title when session created", index=False))
     alter_db_column_type(migrator, "document", "size", BigIntegerField(default=0, index=True))
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
+    alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
     logging.disable(logging.NOTSET)
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)
