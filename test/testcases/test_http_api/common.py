@@ -173,9 +173,15 @@ def list_chunks(auth, dataset_id, document_id, params=None):
     return res.json()
 
 
+def get_chunk(auth, dataset_id, document_id, chunk_id):
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}/{chunk_id}".format(dataset_id=dataset_id, document_id=document_id)
+    res = requests.get(url=url, headers=HEADERS, auth=auth)
+    return res.json()
+
+
 def update_chunk(auth, dataset_id, document_id, chunk_id, payload=None):
     url = f"{HOST_ADDRESS}{CHUNK_API_URL}/{chunk_id}".format(dataset_id=dataset_id, document_id=document_id)
-    res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
+    res = requests.patch(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
