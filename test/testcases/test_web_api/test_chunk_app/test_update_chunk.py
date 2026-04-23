@@ -251,8 +251,8 @@ class TestUpdateChunk:
 
     @pytest.mark.p3
     def test_update_chunk_to_deleted_document(self, WebApiAuth, add_chunks):
-        _, doc_id, chunk_ids = add_chunks
-        delete_document(WebApiAuth, {"doc_id": doc_id})
+        kb_id, doc_id, chunk_ids = add_chunks
+        delete_document(WebApiAuth, kb_id, {"ids": [doc_id]})
         payload = {"doc_id": doc_id, "chunk_id": chunk_ids[0], "content_with_weight": "test content"}
         res = update_chunk(WebApiAuth, payload)
         assert res["code"] == 102, res

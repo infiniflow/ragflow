@@ -321,7 +321,7 @@ def _load_connector_app(monkeypatch):
     box_mod.GetAuthorizeUrlOptions = _GetAuthorizeUrlOptions
     monkeypatch.setitem(sys.modules, "box_sdk_gen", box_mod)
 
-    module_path = repo_root / "api" / "apps" / "connector_app.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "connector_api.py"
     spec = importlib.util.spec_from_file_location("test_connector_routes_unit", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
@@ -363,8 +363,8 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
         "get_request_json",
         lambda: _AwaitableValue({"id": "conn-1", "refresh_freq": 7, "config": {"x": 1}}),
     )
-    res = _run(module.set_connector())
-    assert update_calls == [("conn-1", {"refresh_freq": 7, "config": {"x": 1}})]
+    res = _run(module.update_connector("conn-1"))
+    assert update_calls == [("conn-1", {'id': 'conn-1', "refresh_freq": 7, "config": {"x": 1}})]
     assert res["data"]["id"] == "conn-1"
 
     monkeypatch.setattr(
@@ -372,7 +372,7 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
         "get_request_json",
         lambda: _AwaitableValue({"name": "new", "source": "gmail", "config": {"y": 2}}),
     )
-    res = _run(module.set_connector())
+    res = _run(module.create_connector())
     assert save_calls[-1]["id"] == "generated-id"
     assert save_calls[-1]["tenant_id"] == "tenant-1"
     assert save_calls[-1]["input_type"] == module.InputType.POLL

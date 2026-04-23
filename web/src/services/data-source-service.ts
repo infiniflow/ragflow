@@ -19,13 +19,17 @@ const dataSourceService = registerServer<keyof typeof methods>(
 );
 
 export const deleteDataSource = (id: string) =>
-  request.post(api.dataSourceDel(id));
+  request.delete(api.dataSourceDel(id));
 export const dataSourceResume = (id: string, data: { resume: boolean }) => {
-  return request.put(api.dataSourceResume(id), { data });
+  return request.post(api.dataSourceResume(id), { data });
 };
 
 export const dataSourceRebuild = (id: string, data: { kb_id: string }) => {
-  return request.put(api.dataSourceRebuild(id), { data });
+  return request.post(api.dataSourceRebuild(id), { data });
+};
+
+export const dataSourceUpdate = (id: string, data: { kb_id: string }) => {
+  return request.patch(api.dataSourceUpdate(id), { data });
 };
 
 export const getDataSourceLogs = (id: string, params?: any) =>

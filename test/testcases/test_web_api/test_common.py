@@ -382,8 +382,10 @@ def list_documents(auth, params=None, payload=None, *, headers=HEADERS, data=Non
     return res.json()
 
 
-def delete_document(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/rm", headers=headers, auth=auth, json=payload, data=data)
+def delete_document(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
+    # New API: DELETE /api/v1/datasets/<dataset_id>/documents
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents"
+    res = requests.delete(url=url, headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
@@ -412,8 +414,8 @@ def document_metadata_update(auth, payload=None, *, headers=HEADERS, data=None):
     return res.json()
 
 
-def document_update_metadata_setting(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/update_metadata_setting", headers=headers, auth=auth, json=payload, data=data)
+def document_update_metadata_setting(auth, dataset_id, doc_id, payload=None, *, headers=HEADERS, data=None):
+    res = requests.put(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents/{doc_id}/metadata/config", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 

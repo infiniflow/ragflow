@@ -16,13 +16,13 @@ export default {
   loginChannel: (channel: string) => `${webAPI}/user/login/${channel}`,
 
   // team
-  addTenantUser: (tenantId: string) => `${webAPI}/tenant/${tenantId}/user`,
+  addTenantUser: (tenantId: string) => `${restAPIv1}/tenants/${tenantId}/users`,
   listTenantUser: (tenantId: string) =>
-    `${webAPI}/tenant/${tenantId}/user/list`,
-  deleteTenantUser: (tenantId: string, userId: string) =>
-    `${webAPI}/tenant/${tenantId}/user/${userId}`,
-  listTenant: `${webAPI}/tenant/list`,
-  agreeTenant: (tenantId: string) => `${webAPI}/tenant/agree/${tenantId}`,
+    `${restAPIv1}/tenants/${tenantId}/users`,
+  deleteTenantUser: (tenantId: string) =>
+    `${restAPIv1}/tenants/${tenantId}/users`,
+  listTenant: `${restAPIv1}/tenants`,
+  agreeTenant: (tenantId: string) => `${restAPIv1}/tenants/${tenantId}`,
 
   // llm model
   factoriesList: `${webAPI}/llm/factories`,
@@ -35,24 +35,25 @@ export default {
   deleteFactory: `${webAPI}/llm/delete_factory`,
 
   // data source
-  dataSourceSet: `${webAPI}/connector/set`,
-  dataSourceList: `${webAPI}/connector/list`,
-  dataSourceDel: (id: string) => `${webAPI}/connector/${id}/rm`,
-  dataSourceResume: (id: string) => `${webAPI}/connector/${id}/resume`,
-  dataSourceRebuild: (id: string) => `${webAPI}/connector/${id}/rebuild`,
-  dataSourceLogs: (id: string) => `${webAPI}/connector/${id}/logs`,
-  dataSourceDetail: (id: string) => `${webAPI}/connector/${id}`,
+  dataSourceUpdate: (id:string) => `${restAPIv1}/connectors/${id}`,
+  dataSourceSet: `${restAPIv1}/connectors`,
+  dataSourceList: `${restAPIv1}/connectors`,
+  dataSourceDel: (id: string) => `${restAPIv1}/connectors/${id}`,
+  dataSourceResume: (id: string) => `${restAPIv1}/connectors/${id}/resume`,
+  dataSourceRebuild: (id: string) => `${restAPIv1}/connectors/${id}/rebuild`,
+  dataSourceLogs: (id: string) => `${restAPIv1}/connectors/${id}/logs`,
+  dataSourceDetail: (id: string) => `${restAPIv1}/connectors/${id}`,
   googleWebAuthStart: (type: 'google-drive' | 'gmail') =>
-    `${webAPI}/connector/google/oauth/web/start?type=${type}`,
+    `${restAPIv1}/connectors/google/oauth/web/start?type=${type}`,
   googleWebAuthResult: (type: 'google-drive' | 'gmail') =>
-    `${webAPI}/connector/google/oauth/web/result?type=${type}`,
-  boxWebAuthStart: () => `${webAPI}/connector/box/oauth/web/start`,
-  boxWebAuthResult: () => `${webAPI}/connector/box/oauth/web/result`,
+    `${restAPIv1}/connectors/google/oauth/web/result?type=${type}`,
+  boxWebAuthStart: () => `${restAPIv1}/connectors/box/oauth/web/start`,
+  boxWebAuthResult: () => `${restAPIv1}/connectors/box/oauth/web/result`,
 
   // plugin
   llmTools: `${webAPI}/plugin/llm_tools`,
 
-  chatsTranscriptions: `${restAPIv1}/chats/transcriptions`,
+  chatsTranscriptions: `${restAPIv1}/chat/audio/transcription`,
 
   // knowledge base
 
@@ -87,7 +88,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
   updateMetaData: `${webAPI}/document/metadata/update`,
   kbUpdateMetaData: `${webAPI}/kb/update_metadata_setting`,
-  documentUpdateMetaData: `${webAPI}/document/update_metadata_setting`,
+  documentUpdateMetaDataConfig: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/metadata/config`,
 
   // tags
   listTag: (knowledgeId: string) => `${webAPI}/kb/${knowledgeId}/tags`,
@@ -109,8 +111,8 @@ export default {
   getDocumentList: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents`,
   documentChangeStatus: `${webAPI}/document/change_status`,
-  documentRm: `${webAPI}/document/rm`,
-  documentDelete: `${webAPI}/api/document`,
+  documentDelete: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents`,
   documentRename: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
   documentCreate: `${webAPI}/document/create`,
@@ -147,12 +149,12 @@ export default {
     `${restAPIv1}/chats/${chatId}/sessions/${sessionId}/messages/${msgId}`,
   thumbup: (chatId: string, sessionId: string, msgId: string) =>
     `${restAPIv1}/chats/${chatId}/sessions/${sessionId}/messages/${msgId}/feedback`,
-  completionUrl: (chatId: string, sessionId: string) =>
-    `${restAPIv1}/chats/${chatId}/sessions/${sessionId}/completions`,
-  chatsTts: `${restAPIv1}/chats/tts`,
-  ask: `${restAPIv1}/chats/ask`,
-  chatsMindmap: `${restAPIv1}/chats/mindmap`,
-  chatsRelatedQuestions: `${restAPIv1}/chats/related_questions`,
+  completionUrl: `${restAPIv1}/chat/completions`,
+  chatsTts: `${restAPIv1}/chat/audio/speech`,
+  searchCompletion: (searchId: string) =>
+    `${restAPIv1}/searches/${searchId}/completion`,
+  chatsMindmap: `${restAPIv1}/chat/mindmap`,
+  chatsRelatedQuestions: `${restAPIv1}/chat/recommandation`,
 
   // next chat
   fetchExternalChatInfo: (id: string) => `${restAPIv1}/chatbots/${id}/info`,

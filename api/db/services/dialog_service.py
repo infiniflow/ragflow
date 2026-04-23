@@ -802,7 +802,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
         full_answer = last_state.full_text if last_state else ""
         if full_answer:
-            final = decorate_answer(thought + full_answer)
+            final = decorate_answer(_extract_visible_answer(thought + full_answer))
             final["final"] = True
             final["audio_binary"] = None
             yield final
@@ -1328,6 +1328,19 @@ class _ThinkStreamState:
         self.buffer = ""
 
 
+def _extract_visible_answer(text: str) -> str:
+    text = text or ""
+    if "</think>" not in text:
+        return re.sub(r"</?think>", "", text)
+
+    thought, answer = text.rsplit("</think>", 1)
+    thought = re.sub(r"</?think>", "", thought).strip()
+    answer = re.sub(r"</?think>", "", answer)
+    if not thought:
+        return answer
+    return f"<think>{thought}</think>{answer}"
+
+
 def _next_think_delta(state: _ThinkStreamState) -> str:
     full_text = state.full_text
     if full_text == state.last_full:
@@ -1472,7 +1485,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
             continue
         yield {"answer": value, "reference": {}, "final": False}
     full_answer = last_state.full_text if last_state else ""
-    final = decorate_answer(full_answer)
+    final = decorate_answer(_extract_visible_answer(full_answer))
     final["final"] = True
     yield final
 

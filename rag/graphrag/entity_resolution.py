@@ -159,15 +159,16 @@ class EntityResolution(Extractor):
         connect_graph = nx.Graph()
         connect_graph.add_edges_from(resolution_result)
 
+        merge_lock = asyncio.Lock()
+
         async def limited_merge_nodes(graph, nodes, change):
-            async with semaphore:
+            async with merge_lock:
                 await self._merge_graph_nodes(graph, nodes, change, task_id)
 
         tasks = []
         for sub_connect_graph in nx.connected_components(connect_graph):
             merging_nodes = list(sub_connect_graph)
-            tasks.append(asyncio.create_task(limited_merge_nodes(graph, merging_nodes, change))
-            )
+            tasks.append(asyncio.create_task(limited_merge_nodes(graph, merging_nodes, change)))
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:

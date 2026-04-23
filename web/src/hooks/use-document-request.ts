@@ -16,6 +16,7 @@ import {
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
 import kbService, {
+  deleteDocument,
   documentFilter,
   listDocument,
   renameDocument,
@@ -315,6 +316,7 @@ export const useRunDocument = () => {
 
 export const useRemoveDocument = () => {
   const queryClient = useQueryClient();
+  const { id: datasetId } = useParams();
   const {
     data,
     isPending: loading,
@@ -322,7 +324,8 @@ export const useRemoveDocument = () => {
   } = useMutation({
     mutationKey: [DocumentApiAction.RemoveDocument],
     mutationFn: async (documentIds: string | string[]) => {
-      const { data } = await kbService.documentRm({ doc_id: documentIds });
+      const ids = Array.isArray(documentIds) ? documentIds : [documentIds];
+      const { data } = await deleteDocument(datasetId!, ids);
       if (data.code === 0) {
         message.success(i18n.t('message.deleted'));
         queryClient.invalidateQueries({
@@ -435,7 +438,7 @@ export const useSetDocumentMeta = () => {
         }
         return data?.code;
       } catch (error) {
-        message.error('error');
+        message.error('error:' + error);
       }
     },
   });

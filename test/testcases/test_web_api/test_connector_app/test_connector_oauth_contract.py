@@ -20,7 +20,7 @@ import requests
 
 from configs import HOST_ADDRESS, VERSION
 
-CONNECTOR_BASE_URL = f"{HOST_ADDRESS}/{VERSION}/connector"
+CONNECTOR_BASE_URL = f"{HOST_ADDRESS}/api/{VERSION}/connectors"
 LLM_API_KEY_URL = f"{HOST_ADDRESS}/{VERSION}/llm/set_api_key"
 LANGFUSE_API_KEY_URL = f"{HOST_ADDRESS}/{VERSION}/langfuse/api_key"
 

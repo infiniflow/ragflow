@@ -14,7 +14,10 @@
 #  limitations under the License.
 #
 
-from quart import request
+import json
+
+from quart import Response, request
+from api.db.services.dialog_service import async_ask
 from api.apps import current_user, login_required
 
 from api.constants import DATASET_NAME_LIMIT
@@ -168,3 +171,45 @@ def delete_search(search_id):
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route("/searches/<search_id>/completion", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("question")
+async def completion(search_id):
+    if not SearchService.accessible4deletion(search_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message="No authorization.",
+            code=RetCode.AUTHENTICATION_ERROR,
+        )
+
+    req = await get_request_json()
+    uid = current_user.id
+    search_app = SearchService.get_detail(search_id)
+    if not search_app:
+        return get_data_error_result(message=f"Cannot find search {search_id}")
+
+    search_config = search_app.get("search_config", {})
+    kb_ids = search_config.get("kb_ids") or req.get("kb_ids") or []
+    if not kb_ids:
+        return get_data_error_result(message="`kb_ids` is required.")
+
+    async def stream():
+        nonlocal req, uid, kb_ids, search_config
+        try:
+            async for ans in async_ask(req["question"], kb_ids, uid, search_config=search_config):
+                yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
+        except Exception as ex:
+            yield "data:" + json.dumps(
+                {"code": 500, "message": str(ex), "data": {"answer": "**ERROR**: " + str(ex), "reference": []}},
+                ensure_ascii=False,
+            ) + "\n\n"
+        yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
+
+    resp = Response(stream(), mimetype="text/event-stream")
+    resp.headers.add_header("Cache-control", "no-cache")
+    resp.headers.add_header("Connection", "keep-alive")
+    resp.headers.add_header("X-Accel-Buffering", "no")
+    resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+    return resp

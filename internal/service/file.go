@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"os"
 	"path/filepath"
@@ -343,8 +344,8 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 		}
 		defer src.Close()
 
-		data := make([]byte, fileHeader.Size)
-		if _, err := src.Read(data); err != nil {
+		data, err := io.ReadAll(src)
+		if err != nil {
 			return nil, fmt.Errorf("failed to read file data: %w", err)
 		}
 

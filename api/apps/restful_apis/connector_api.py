@@ -35,15 +35,30 @@ from rag.utils.redis_conn import REDIS_CONN
 from api.apps import login_required, current_user
 from box_sdk_gen import BoxOAuth, OAuthConfig, GetAuthorizeUrlOptions
 
-
-@manager.route("/set", methods=["POST"])  # noqa: F821
+@manager.route("/connectors/<connector_id>", methods=["PATCH"])  # noqa: F821
 @login_required
-async def set_connector():
+async def update_connector(connector_id):
     req = await get_request_json()
-    if req.get("id"):
+    e, conn = ConnectorService.get_by_id(connector_id)
+    if not e:
+        return get_data_error_result(message="Can't find this Connector!")
+
+    if req:
         conn = {fld: req[fld] for fld in ["prune_freq", "refresh_freq", "config", "timeout_secs"] if fld in req}
-        ConnectorService.update_by_id(req["id"], conn)
-    else:
+        conn["id"] = connector_id
+        ConnectorService.update_by_id(connector_id, conn)
+
+    await asyncio.sleep(1)
+    e, conn = ConnectorService.get_by_id(connector_id)
+
+    return get_json_result(data=conn.to_dict())
+
+
+@manager.route("/connectors", methods=["POST"])  # noqa: F821
+@login_required
+async def create_connector():
+    req = await get_request_json()
+    if req:
         req["id"] = get_uuid()
         conn = {
             "id": req["id"],
@@ -65,13 +80,13 @@ async def set_connector():
     return get_json_result(data=conn.to_dict())
 
 
-@manager.route("/list", methods=["GET"])  # noqa: F821
+@manager.route("/connectors", methods=["GET"])  # noqa: F821
 @login_required
 def list_connector():
     return get_json_result(data=ConnectorService.list(current_user.id))
 
 
-@manager.route("/<connector_id>", methods=["GET"])  # noqa: F821
+@manager.route("/connectors/<connector_id>", methods=["GET"])  # noqa: F821
 @login_required
 def get_connector(connector_id):
     e, conn = ConnectorService.get_by_id(connector_id)
@@ -80,7 +95,7 @@ def get_connector(connector_id):
     return get_json_result(data=conn.to_dict())
 
 
-@manager.route("/<connector_id>/logs", methods=["GET"])  # noqa: F821
+@manager.route("/connectors/<connector_id>/logs", methods=["GET"])  # noqa: F821
 @login_required
 def list_logs(connector_id):
     req = request.args.to_dict(flat=True)
@@ -88,7 +103,7 @@ def list_logs(connector_id):
     return get_json_result(data={"total": total, "logs": arr})
 
 
-@manager.route("/<connector_id>/resume", methods=["PUT"])  # noqa: F821
+@manager.route("/connectors/<connector_id>/resume", methods=["POST"])  # noqa: F821
 @login_required
 async def resume(connector_id):
     req = await get_request_json()
@@ -99,7 +114,7 @@ async def resume(connector_id):
     return get_json_result(data=True)
 
 
-@manager.route("/<connector_id>/rebuild", methods=["PUT"])  # noqa: F821
+@manager.route("/connectors/<connector_id>/rebuild", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("kb_id")
 async def rebuild(connector_id):
@@ -110,7 +125,7 @@ async def rebuild(connector_id):
     return get_json_result(data=True)
 
 
-@manager.route("/<connector_id>/rm", methods=["POST"])  # noqa: F821
+@manager.route("/connectors/<connector_id>", methods=["DELETE"])  # noqa: F821
 @login_required
 def rm_connector(connector_id):
     ConnectorService.resume(connector_id, TaskStatus.CANCEL)
@@ -185,7 +200,7 @@ async def _render_web_oauth_popup(flow_id: str, success: bool, message: str, sou
     return response
 
 
-@manager.route("/google/oauth/web/start", methods=["POST"])  # noqa: F821
+@manager.route("/connectors/google/oauth/web/start", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("credentials")
 async def start_google_web_oauth():
@@ -265,7 +280,7 @@ async def start_google_web_oauth():
     )
 
 
-@manager.route("/gmail/oauth/web/callback", methods=["GET"])  # noqa: F821
+@manager.route("/connectors/gmail/oauth/web/callback", methods=["GET"])  # noqa: F821
 async def google_gmail_web_oauth_callback():
     state_id = request.args.get("state")
     error = request.args.get("error")
@@ -316,7 +331,7 @@ async def google_gmail_web_oauth_callback():
     return await _render_web_oauth_popup(state_id, True, "Authorization completed successfully.", source)
 
 
-@manager.route("/google-drive/oauth/web/callback", methods=["GET"])  # noqa: F821
+@manager.route("/connectors/google-drive/oauth/web/callback", methods=["GET"])  # noqa: F821
 async def google_drive_web_oauth_callback():
     state_id = request.args.get("state")
     error = request.args.get("error")
@@ -366,7 +381,7 @@ async def google_drive_web_oauth_callback():
 
     return await _render_web_oauth_popup(state_id, True, "Authorization completed successfully.", source)
 
-@manager.route("/google/oauth/web/result", methods=["POST"])  # noqa: F821
+@manager.route("/connectors/google/oauth/web/result", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("flow_id")
 async def poll_google_web_result():
@@ -386,7 +401,7 @@ async def poll_google_web_result():
     REDIS_CONN.delete(_web_result_cache_key(flow_id, source))
     return get_json_result(data={"credentials": result.get("credentials")})
 
-@manager.route("/box/oauth/web/start", methods=["POST"])  # noqa: F821
+@manager.route("/connectors/box/oauth/web/start", methods=["POST"])  # noqa: F821
 @login_required
 async def start_box_web_oauth():
     req = await get_request_json()
@@ -429,7 +444,7 @@ async def start_box_web_oauth():
             "expires_in": WEB_FLOW_TTL_SECS,}
     )
 
-@manager.route("/box/oauth/web/callback", methods=["GET"])  # noqa: F821
+@manager.route("/connectors/box/oauth/web/callback", methods=["GET"])  # noqa: F821
 async def box_web_oauth_callback():
     flow_id = request.args.get("state")
     if not flow_id:
@@ -471,7 +486,7 @@ async def box_web_oauth_callback():
 
     return await _render_web_oauth_popup(flow_id, True, "Authorization completed successfully.", "box")
 
-@manager.route("/box/oauth/web/result", methods=["POST"])  # noqa: F821
+@manager.route("/connectors/box/oauth/web/result", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("flow_id")
 async def poll_box_web_result():

@@ -210,26 +210,6 @@ async def metadata_update():
     return get_json_result(data={"updated": updated, "matched_docs": len(document_ids)})
 
 
-@manager.route("/update_metadata_setting", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("doc_id", "metadata")
-async def update_metadata_setting():
-    req = await get_request_json()
-    if not DocumentService.accessible(req["doc_id"], current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-
-    e, doc = DocumentService.get_by_id(req["doc_id"])
-    if not e:
-        return get_data_error_result(message="Document not found!")
-
-    DocumentService.update_parser_config(doc.id, {"metadata": req["metadata"]})
-    e, doc = DocumentService.get_by_id(doc.id)
-    if not e:
-        return get_data_error_result(message="Document not found!")
-
-    return get_json_result(data=doc.to_dict())
-
-
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
 # @login_required
 def thumbnails():
@@ -317,27 +297,6 @@ async def change_status():
     if has_error:
         return get_json_result(data=result, message="Partial failure", code=RetCode.SERVER_ERROR)
     return get_json_result(data=result)
-
-
-@manager.route("/rm", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("doc_id")
-async def rm():
-    req = await get_request_json()
-    doc_ids = req["doc_id"]
-    if isinstance(doc_ids, str):
-        doc_ids = [doc_ids]
-
-    for doc_id in doc_ids:
-        if not DocumentService.accessible4deletion(doc_id, current_user.id):
-            return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-
-    errors = await thread_pool_exec(FileService.delete_docs, doc_ids, current_user.id)
-
-    if errors:
-        return get_json_result(data=False, message=errors, code=RetCode.SERVER_ERROR)
-
-    return get_json_result(data=True)
 
 
 @manager.route("/run", methods=["POST"])  # noqa: F821
