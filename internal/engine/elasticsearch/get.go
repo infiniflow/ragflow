@@ -19,38 +19,31 @@ package elasticsearch
 import (
 	"context"
 	"fmt"
+
+	"ragflow/internal/engine/types"
 )
 
 // GetChunk gets a chunk by ID
 func (e *elasticsearchEngine) GetChunk(ctx context.Context, indexName, chunkID string, kbIDs []string) (interface{}, error) {
-	// Build query to get the chunk by ID
-	query := map[string]interface{}{
-		"term": map[string]interface{}{
+	// Build unified search request to get the chunk by ID
+	searchReq := &types.SearchRequest{
+		IndexNames: []string{indexName},
+		Limit:      1,
+		Offset:     0,
+		Filter: map[string]interface{}{
 			"id": chunkID,
 		},
 	}
 
-	searchReq := &SearchRequest{
-		IndexNames: []string{indexName},
-		Query:     query,
-		Size:      1,
-		From:      0,
-	}
-
 	// Execute search
-	result, err := e.Search(ctx, searchReq)
+	searchResp, err := e.Search(ctx, searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search: %w", err)
 	}
 
-	esResp, ok := result.(*SearchResponse)
-	if !ok {
-		return nil, fmt.Errorf("invalid search response type")
-	}
-
-	if len(esResp.Hits.Hits) == 0 {
+	if len(searchResp.Chunks) == 0 {
 		return nil, nil
 	}
 
-	return esResp.Hits.Hits[0].Source, nil
+	return searchResp.Chunks[0], nil
 }
