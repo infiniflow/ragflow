@@ -635,7 +635,7 @@ export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
         ...searchParams,
       });
 
-      return data?.data ?? [];
+      return { total: data?.total ?? 0, sessions: data?.data ?? [] };
     },
   });
 
@@ -662,7 +662,7 @@ export const useFetchSessionsByCanvasId = () => {
         exp_user_id: tenantInfo.tenant_id,
       });
 
-      return data?.data ?? { total: 0, sessions: [] };
+      return { total: data?.total ?? 0, sessions: data?.data ?? [] };
     },
   });
 

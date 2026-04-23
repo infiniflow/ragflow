@@ -77,6 +77,148 @@ def _build_sse_response(body):
     return resp
 
 
+def _normalize_agent_session(conv):
+    conv["messages"] = conv.pop("message")
+    for info in conv["messages"]:
+        if "prompt" in info:
+            info.pop("prompt")
+    conv["agent_id"] = conv.pop("dialog_id")
+    if conv["reference"]:
+        chunk_num = 0
+        for message_num, message in enumerate(conv["messages"]):
+            if message_num != 0 and message["role"] != "user":
+                chunks = conv["reference"][chunk_num]["chunks"]
+                message["reference"] = [
+                    {
+                        "id": chunk.get("chunk_id", chunk.get("id")),
+                        "content": chunk.get("content_with_weight", chunk.get("content")),
+                        "document_id": chunk.get("doc_id", chunk.get("document_id")),
+                        "document_name": chunk.get("docnm_kwd", chunk.get("document_name")),
+                        "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
+                        "image_id": chunk.get("image_id", chunk.get("img_id")),
+                        "positions": chunk.get("positions", chunk.get("position_int")),
+                    }
+                    for chunk in chunks
+                ]
+                chunk_num += 1
+    del conv["reference"]
+    return conv
+
+
+@manager.route("/agents/<agent_id>/sessions", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def list_agent_sessions(agent_id, tenant_id):
+    if not UserCanvasService.accessible(agent_id, tenant_id):
+        return get_json_result(
+            data=False,
+            message="Only owner of canvas authorized for this operation.",
+            code=RetCode.OPERATING_ERROR,
+        )
+
+    session_id = request.args.get("id")
+    user_id = request.args.get("user_id")
+    page_number = int(request.args.get("page", 1))
+    items_per_page = int(request.args.get("page_size", 30))
+    keywords = request.args.get("keywords")
+    from_date = request.args.get("from_date")
+    to_date = request.args.get("to_date")
+    orderby = request.args.get("orderby", "update_time")
+    exp_user_id = request.args.get("exp_user_id")
+    desc = request.args.get("desc") not in {"False", "false"}
+
+    if exp_user_id:
+        sessions = API4ConversationService.get_names(agent_id, exp_user_id)
+        result = get_json_result(data=sessions)
+        result["total"] = len(sessions)
+        return result
+
+    include_dsl = request.args.get("dsl") not in {"False", "false"}
+    total, sessions = API4ConversationService.get_list(
+        agent_id,
+        tenant_id,
+        page_number,
+        items_per_page,
+        orderby,
+        desc,
+        session_id,
+        user_id,
+        include_dsl,
+        keywords,
+        from_date,
+        to_date,
+        exp_user_id=exp_user_id,
+    )
+    sessions = [_normalize_agent_session(session) for session in sessions]
+    result = get_json_result(data=sessions)
+    result["total"] = total
+    return result
+
+
+@manager.route("/agents/<agent_id>/sessions", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def create_agent_session(agent_id, tenant_id):
+    req = await get_request_json()
+    user_id = req.get("user_id") or request.args.get("user_id", tenant_id)
+    release_mode = bool(req.get("release", request.args.get("release", False)))
+
+    try:
+        cvs, dsl = UserCanvasService.get_agent_dsl_with_release(agent_id, release_mode, tenant_id)
+    except LookupError:
+        return get_data_error_result(message="Agent not found.")
+    except PermissionError as e:
+        return get_data_error_result(message=str(e))
+
+    session_id = get_uuid()
+    canvas = Canvas(dsl, tenant_id, agent_id, canvas_id=cvs.id)
+    canvas.reset()
+
+    cvs.dsl = json.loads(str(canvas))
+    version_title = UserCanvasVersionService.get_latest_version_title(cvs.id, release_mode=release_mode)
+    conv = {
+        "id": session_id,
+        "name": req.get("name", ""),
+        "dialog_id": cvs.id,
+        "user_id": user_id,
+        "exp_user_id": user_id,
+        "message": [{"role": "assistant", "content": canvas.get_prologue()}],
+        "source": "agent",
+        "dsl": cvs.dsl,
+        "reference": [],
+        "version_title": version_title,
+    }
+    API4ConversationService.save(**conv)
+    return get_result(data=_normalize_agent_session(conv))
+
+
+@manager.route("/agents/<agent_id>/sessions/<session_id>", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def get_agent_session(agent_id, session_id, tenant_id):
+    if not UserCanvasService.accessible(agent_id, tenant_id):
+        return get_json_result(
+            data=False,
+            message="Only owner of canvas authorized for this operation.",
+            code=RetCode.OPERATING_ERROR,
+        )
+    _, conv = API4ConversationService.get_by_id(session_id)
+    return get_json_result(data=conv.to_dict())
+
+
+@manager.route("/agents/<agent_id>/sessions/<session_id>", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def delete_agent_session_item(agent_id, session_id, tenant_id):
+    if not UserCanvasService.accessible(agent_id, tenant_id):
+        return get_json_result(
+            data=False,
+            message="Only owner of canvas authorized for this operation.",
+            code=RetCode.OPERATING_ERROR,
+        )
+    return get_json_result(data=API4ConversationService.delete_by_id(session_id))
+
+
 async def _iter_session_completion_events(tenant_id, agent_id, req, return_trace):
     # Stream and non-stream session completions share the same event parsing and trace injection.
     trace_items = []

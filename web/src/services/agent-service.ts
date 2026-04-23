@@ -21,7 +21,7 @@ const {
   fetchVersionList,
   fetchVersion,
   getAgent,
-  fetchAgentLogs,
+  fetchAgentSessions,
   fetchExternalAgentInputs,
   prompt,
   cancelDataflow,
@@ -94,7 +94,7 @@ const methods = {
     method: 'get',
   },
   fetchAgentLogs: {
-    url: fetchAgentLogs,
+    url: fetchAgentSessions,
     method: 'get',
   },
   fetchExternalAgentInputs: {
@@ -114,8 +114,8 @@ const methods = {
     method: 'put',
   },
   createAgentSession: {
-    url: fetchAgentLogs,
-    method: 'put',
+    url: api.createAgentSession,
+    method: 'post',
   },
 } as const;
 
@@ -151,7 +151,7 @@ export const fetchAgentLogsByCanvasId = (
 };
 
 export const fetchAgentLogsById = (canvasId: string, sessionId: string) => {
-  return request.get(api.fetchAgentLogsById(canvasId, sessionId));
+  return request.get(api.fetchAgentSessionById(canvasId, sessionId));
 };
 
 export const fetchPipeLineList = (params: IPipeLineListRequest) => {
@@ -166,11 +166,11 @@ export const fetchWebhookTrace = (
 };
 
 export function createAgentSession({ id, name }: { id: string; name: string }) {
-  return request.put(api.fetchAgentLogs(id), { data: { name } });
+  return request.post(api.createAgentSession(id), { data: { name } });
 }
 
 export const deleteAgentSession = (canvasId: string, sessionId: string) => {
-  return request.delete(api.fetchAgentLogsById(canvasId, sessionId));
+  return request.delete(api.fetchAgentSessionById(canvasId, sessionId));
 };
 
 export const uploadAgentFile = (agentId: string, data: FormData) => {

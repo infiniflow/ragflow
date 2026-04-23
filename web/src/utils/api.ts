@@ -35,7 +35,7 @@ export default {
   deleteFactory: `${webAPI}/llm/delete_factory`,
 
   // data source
-  dataSourceUpdate: (id:string) => `${restAPIv1}/connectors/${id}`,
+  dataSourceUpdate: (id: string) => `${restAPIv1}/connectors/${id}`,
   dataSourceSet: `${restAPIv1}/connectors`,
   dataSourceList: `${restAPIv1}/connectors`,
   dataSourceDel: (id: string) => `${restAPIv1}/connectors/${id}`,
@@ -200,9 +200,13 @@ export default {
     `${restAPIv1}/agents/${agentId}/versions/${versionId}`,
   getAgent: (id: string) => `${restAPIv1}/agents/${id}`,
   uploadAgentFile: (id?: string) => `${restAPIv1}/agents/${id}/upload`,
+  createAgentSession: (agentId: string) =>
+    `${restAPIv1}/agents/${agentId}/sessions`,
   fetchAgentLogs: (canvasId: string) => `${webAPI}/canvas/${canvasId}/sessions`,
-  fetchAgentLogsById: (canvasId: string, sessionId: string) =>
-    `${webAPI}/canvas/${canvasId}/sessions/${sessionId}`,
+  fetchAgentSessions: (agentId: string) =>
+    `${restAPIv1}/agents/${agentId}/sessions`,
+  fetchAgentSessionById: (agentId: string, sessionId: string) =>
+    `${restAPIv1}/agents/${agentId}/sessions/${sessionId}`,
   fetchExternalAgentInputs: (canvasId: string) =>
     `${restAPIv1}/agentbots/${canvasId}/inputs`,
   prompt: `${restAPIv1}/agents/prompts`,
