@@ -1356,7 +1356,11 @@ def _parse_reference_metadata(req):
     if metadata_fields is not None and not isinstance(metadata_fields, list):
         return get_error_data_result("reference_metadata.fields must be an array."), False, None
 
-    return None, bool(reference_metadata.get("include", False)), metadata_fields
+    include_reference_metadata = reference_metadata.get("include", False)
+    if not isinstance(include_reference_metadata, bool):
+        return get_error_data_result("reference_metadata.include must be a boolean."), False, None
+
+    return None, include_reference_metadata, metadata_fields
 
 
 def _build_agent_reference(reference, metadata_fields=None):
