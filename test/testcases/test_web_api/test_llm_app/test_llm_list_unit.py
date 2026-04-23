@@ -151,6 +151,10 @@ def _load_llm_app(monkeypatch):
             return None
 
         @staticmethod
+        def ensure_opendataloader_from_env(_tenant_id):
+            return None
+
+        @staticmethod
         def query(**_kwargs):
             return []
 
