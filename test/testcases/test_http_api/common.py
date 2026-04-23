@@ -317,6 +317,16 @@ def metadata_batch_update(auth, dataset_id, payload=None, *, headers=HEADERS):
     return res.json()
 
 
+def update_documents_metadata(auth, dataset_id, payload=None):
+    """New unified API for updating document metadata.
+
+    Uses PATCH method at /api/v1/datasets/{dataset_id}/documents/metadatas
+    """
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/documents/metadatas"
+    res = requests.patch(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
 # CHAT COMPLETIONS AND RELATED QUESTIONS
 def related_questions(auth, payload=None, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}/api/{VERSION}/sessions/related_questions"
