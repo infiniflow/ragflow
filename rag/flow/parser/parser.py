@@ -1063,6 +1063,9 @@ class Parser(ProcessBase):
             except Exception as e:
                 logging.warning(f"CV model describe failed: {e}")
                 txt = ""
+            if isinstance(txt, str) and txt.startswith("**ERROR**"):
+                logging.warning(f"CV model describe returned error: {txt}")
+                txt = ""
 
         json_result = [
             {
