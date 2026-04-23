@@ -19,6 +19,7 @@ import os
 from typing import Any, Optional
 
 from deepdoc.parser.mineru_parser import MinerUParser
+from deepdoc.parser.opendataloader_parser import OpenDataLoaderParser
 from deepdoc.parser.paddleocr_parser import PaddleOCRParser
 
 
@@ -145,4 +146,60 @@ class PaddleOCROcrModel(Base, PaddleOCRParser):
             raise RuntimeError(f"PaddleOCR server not accessible: {reason}")
 
         sections, tables = PaddleOCRParser.parse_pdf(self, filepath=filepath, binary=binary, callback=callback, parse_method=parse_method, **kwargs)
+        return sections, tables
+
+
+class OpenDataLoaderOcrModel(Base, OpenDataLoaderParser):
+    _FACTORY_NAME = "OpenDataLoader"
+
+    def __init__(self, key: str | dict, model_name: str, **kwargs):
+        Base.__init__(self, key, model_name, **kwargs)
+        raw_config = {}
+        if key:
+            try:
+                raw_config = json.loads(key)
+            except Exception:
+                raw_config = {}
+
+        config = raw_config.get("api_key", raw_config)
+        if not isinstance(config, dict):
+            config = {}
+
+        def _resolve_config(key: str, env_key: str, default=""):
+            return config.get(key, config.get(env_key, os.environ.get(env_key, default)))
+
+        self.api_url = _resolve_config("opendataloader_apiserver", "OPENDATALOADER_APISERVER", "").rstrip("/")
+        self.api_key = _resolve_config("opendataloader_api_key", "OPENDATALOADER_API_KEY", "").strip()
+        self.timeout = int(_resolve_config("opendataloader_timeout", "OPENDATALOADER_TIMEOUT", "600"))
+
+        redacted_config = {}
+        for k, v in config.items():
+            if any(s in k.lower() for s in ("key", "password", "token", "secret")):
+                redacted_config[k] = "[REDACTED]"
+            else:
+                redacted_config[k] = v
+        logging.info(f"Parsed OpenDataLoader config (sensitive fields redacted): {redacted_config}")
+
+        OpenDataLoaderParser.__init__(self)
+        self.api_url = _resolve_config("opendataloader_apiserver", "OPENDATALOADER_APISERVER", "").rstrip("/")
+        self.api_key = _resolve_config("opendataloader_api_key", "OPENDATALOADER_API_KEY", "").strip()
+        self.timeout = int(_resolve_config("opendataloader_timeout", "OPENDATALOADER_TIMEOUT", "600"))
+
+    def check_available(self) -> tuple[bool, str]:
+        ok = self.check_installation()
+        return ok, "" if ok else "OpenDataLoader service not reachable"
+
+    def parse_pdf(self, filepath: str, binary=None, callback=None, parse_method: str = "raw", **kwargs):
+        ok, reason = self.check_available()
+        if not ok:
+            raise RuntimeError(f"OpenDataLoader service not accessible: {reason}")
+
+        sections, tables = OpenDataLoaderParser.parse_pdf(
+            self,
+            filepath=filepath,
+            binary=binary,
+            callback=callback,
+            parse_method=parse_method,
+            **kwargs,
+        )
         return sections, tables

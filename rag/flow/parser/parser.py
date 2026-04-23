@@ -33,7 +33,6 @@ from common.constants import LLMType
 from common.misc_utils import get_uuid, thread_pool_exec
 from deepdoc.parser import ExcelParser, HtmlParser, TxtParser
 from deepdoc.parser.docling_parser import DoclingParser
-from deepdoc.parser.opendataloader_parser import OpenDataLoaderParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
@@ -436,22 +435,34 @@ class Parser(ProcessBase):
 
         elif parse_method.lower() == "opendataloader":
 
-            pdf_parser = OpenDataLoaderParser()
-            odl_sanitize_raw = os.environ.get("OPENDATALOADER_SANITIZE", "").strip().lower()
-            odl_sanitize: bool | None = None
-            if odl_sanitize_raw in ("1", "true", "yes", "on"):
-                odl_sanitize = True
-            elif odl_sanitize_raw in ("0", "false", "no", "off"):
-                odl_sanitize = False
+            def resolve_opendataloader_llm_name():
+                configured = parser_model_name or conf.get("opendataloader_llm_name")
+                if configured:
+                    return configured
+                tenant_id = self._canvas._tenant_id
+                if not tenant_id:
+                    return None
+                from api.db.services.tenant_llm_service import TenantLLMService
+                env_name = TenantLLMService.ensure_opendataloader_from_env(tenant_id)
+                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="OpenDataLoader", model_type=LLMType.OCR.value)
+                if candidates:
+                    return candidates[0].llm_name
+                return env_name
+
+            parser_model_name = resolve_opendataloader_llm_name()
+            if not parser_model_name:
+                raise RuntimeError("OpenDataLoader model not configured. Please add OpenDataLoader in Model Providers.")
+
+            tenant_id = self._canvas._tenant_id
+            ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, parser_model_name)
+            ocr_model = LLMBundle(tenant_id, ocr_model_config)
+            pdf_parser = ocr_model.mdl
 
             lines, odl_tables = pdf_parser.parse_pdf(
                 filepath=name,
                 binary=blob,
                 callback=self.callback,
                 parse_method="pipeline",
-                hybrid=os.environ.get("OPENDATALOADER_HYBRID", "") or None,
-                image_output=os.environ.get("OPENDATALOADER_IMAGE_OUTPUT", "") or None,
-                sanitize=odl_sanitize,
             )
             bboxes = []
             for item in lines or []:

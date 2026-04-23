@@ -37,7 +37,6 @@ from deepdoc.parser import DocxParser, EpubParser, ExcelParser, HtmlParser, Json
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
-from deepdoc.parser.opendataloader_parser import OpenDataLoaderParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from common.float_utils import normalize_overlapped_percent
 from common.parser_config_utils import normalize_layout_recognizer
@@ -170,32 +169,52 @@ def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
     return sections, tables, pdf_parser
 
 
-def by_opendataloader(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
-    pdf_parser = OpenDataLoaderParser()
-    parse_method = kwargs.get("parse_method", "raw")
+def by_opendataloader(
+    filename,
+    binary=None,
+    from_page=0,
+    to_page=100000,
+    lang="Chinese",
+    callback=None,
+    pdf_cls=None,
+    parse_method: str = "raw",
+    opendataloader_llm_name: str | None = None,
+    tenant_id: str | None = None,
+    **kwargs,
+):
+    if tenant_id:
+        if not opendataloader_llm_name:
+            try:
+                from api.db.services.tenant_llm_service import TenantLLMService
 
-    if not pdf_parser.check_installation():
-        if callback:
-            callback(-1, "OpenDataLoader not found.")
-        return None, None, pdf_parser
+                env_name = TenantLLMService.ensure_opendataloader_from_env(tenant_id)
+                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="OpenDataLoader", model_type=LLMType.OCR)
+                if candidates:
+                    opendataloader_llm_name = candidates[0].llm_name
+                elif env_name:
+                    opendataloader_llm_name = env_name
+            except Exception as e:
+                logging.warning(f"fallback to env opendataloader: {e}")
 
-    hybrid = os.environ.get("OPENDATALOADER_HYBRID", "") or None
-    image_output = os.environ.get("OPENDATALOADER_IMAGE_OUTPUT", "") or None
-    sanitize_env = os.environ.get("OPENDATALOADER_SANITIZE", "")
-    sanitize = None
-    if sanitize_env:
-        sanitize = sanitize_env.strip().lower() in {"1", "true", "yes", "on"}
+        if opendataloader_llm_name:
+            try:
+                ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, opendataloader_llm_name)
+                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
+                pdf_parser = ocr_model.mdl
+                sections, tables = pdf_parser.parse_pdf(
+                    filepath=filename,
+                    binary=binary,
+                    callback=callback,
+                    parse_method=parse_method,
+                    **kwargs,
+                )
+                return sections, tables, pdf_parser
+            except Exception as e:
+                logging.error(f"Failed to parse pdf via LLMBundle OpenDataLoader ({opendataloader_llm_name}): {e}")
 
-    sections, tables = pdf_parser.parse_pdf(
-        filepath=filename,
-        binary=binary,
-        callback=callback,
-        parse_method=parse_method,
-        hybrid=hybrid,
-        image_output=image_output,
-        sanitize=sanitize,
-    )
-    return sections, tables, pdf_parser
+    if callback:
+        callback(-1, "OpenDataLoader not found.")
+    return None, None, None
 
 
 def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
