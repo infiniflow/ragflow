@@ -16,13 +16,13 @@ export default {
   loginChannel: (channel: string) => `${webAPI}/user/login/${channel}`,
 
   // team
-  addTenantUser: (tenantId: string) => `${webAPI}/tenant/${tenantId}/user`,
+  addTenantUser: (tenantId: string) => `${restAPIv1}/tenants/${tenantId}/users`,
   listTenantUser: (tenantId: string) =>
-    `${webAPI}/tenant/${tenantId}/user/list`,
-  deleteTenantUser: (tenantId: string, userId: string) =>
-    `${webAPI}/tenant/${tenantId}/user/${userId}`,
-  listTenant: `${webAPI}/tenant/list`,
-  agreeTenant: (tenantId: string) => `${webAPI}/tenant/agree/${tenantId}`,
+    `${restAPIv1}/tenants/${tenantId}/users`,
+  deleteTenantUser: (tenantId: string) =>
+    `${restAPIv1}/tenants/${tenantId}/users`,
+  listTenant: `${restAPIv1}/tenants`,
+  agreeTenant: (tenantId: string) => `${restAPIv1}/tenants/${tenantId}`,
 
   // llm model
   factoriesList: `${webAPI}/llm/factories`,
@@ -35,24 +35,25 @@ export default {
   deleteFactory: `${webAPI}/llm/delete_factory`,
 
   // data source
-  dataSourceSet: `${webAPI}/connector/set`,
-  dataSourceList: `${webAPI}/connector/list`,
-  dataSourceDel: (id: string) => `${webAPI}/connector/${id}/rm`,
-  dataSourceResume: (id: string) => `${webAPI}/connector/${id}/resume`,
-  dataSourceRebuild: (id: string) => `${webAPI}/connector/${id}/rebuild`,
-  dataSourceLogs: (id: string) => `${webAPI}/connector/${id}/logs`,
-  dataSourceDetail: (id: string) => `${webAPI}/connector/${id}`,
+  dataSourceUpdate: (id: string) => `${restAPIv1}/connectors/${id}`,
+  dataSourceSet: `${restAPIv1}/connectors`,
+  dataSourceList: `${restAPIv1}/connectors`,
+  dataSourceDel: (id: string) => `${restAPIv1}/connectors/${id}`,
+  dataSourceResume: (id: string) => `${restAPIv1}/connectors/${id}/resume`,
+  dataSourceRebuild: (id: string) => `${restAPIv1}/connectors/${id}/rebuild`,
+  dataSourceLogs: (id: string) => `${restAPIv1}/connectors/${id}/logs`,
+  dataSourceDetail: (id: string) => `${restAPIv1}/connectors/${id}`,
   googleWebAuthStart: (type: 'google-drive' | 'gmail') =>
-    `${webAPI}/connector/google/oauth/web/start?type=${type}`,
+    `${restAPIv1}/connectors/google/oauth/web/start?type=${type}`,
   googleWebAuthResult: (type: 'google-drive' | 'gmail') =>
-    `${webAPI}/connector/google/oauth/web/result?type=${type}`,
-  boxWebAuthStart: () => `${webAPI}/connector/box/oauth/web/start`,
-  boxWebAuthResult: () => `${webAPI}/connector/box/oauth/web/result`,
+    `${restAPIv1}/connectors/google/oauth/web/result?type=${type}`,
+  boxWebAuthStart: () => `${restAPIv1}/connectors/box/oauth/web/start`,
+  boxWebAuthResult: () => `${restAPIv1}/connectors/box/oauth/web/result`,
 
   // plugin
-  llmTools: `${webAPI}/plugin/llm_tools`,
+  llmTools: `${restAPIv1}/plugin/tools`,
 
-  chatsTranscriptions: `${restAPIv1}/chats/transcriptions`,
+  chatsTranscriptions: `${restAPIv1}/chat/audio/transcription`,
 
   // knowledge base
 
@@ -85,9 +86,11 @@ export default {
   pipelineRerun: `${webAPI}/canvas/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
-  updateMetaData: `${webAPI}/document/metadata/update`,
+  updateDocumentsMetadata: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/metadatas`,
   kbUpdateMetaData: `${webAPI}/kb/update_metadata_setting`,
-  documentUpdateMetaData: `${webAPI}/document/update_metadata_setting`,
+  documentUpdateMetaDataConfig: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/metadata/config`,
 
   // tags
   listTag: (knowledgeId: string) => `${webAPI}/kb/${knowledgeId}/tags`,
@@ -96,20 +99,19 @@ export default {
   renameTag: (knowledgeId: string) => `${webAPI}/kb/${knowledgeId}/rename_tag`,
 
   // chunk
-  chunkList: `${webAPI}/chunk/list`,
-  createChunk: `${webAPI}/chunk/create`,
-  setChunk: `${webAPI}/chunk/set`,
-  getChunk: `${webAPI}/chunk/get`,
-  switchChunk: `${webAPI}/chunk/switch`,
-  rmChunk: `${webAPI}/chunk/rm`,
+  chunkList: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks`,
+  chunkDetail: (datasetId: string, documentId: string, chunkId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks/${chunkId}`,
   retrievalTest: `${webAPI}/chunk/retrieval_test`,
   knowledgeGraph: `${webAPI}/chunk/knowledge_graph`,
 
   // document
-  getDocumentList: `${webAPI}/document/list`,
+  getDocumentList: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents`,
   documentChangeStatus: `${webAPI}/document/change_status`,
-  documentRm: `${webAPI}/document/rm`,
-  documentDelete: `${webAPI}/api/document`,
+  documentDelete: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents`,
   documentRename: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
   documentCreate: `${webAPI}/document/create`,
@@ -122,10 +124,10 @@ export default {
   documentUpload: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents`,
   webCrawl: `${webAPI}/document/web_crawl`,
-  documentInfos: `${webAPI}/document/infos`,
   uploadAndParse: `${webAPI}/document/upload_info`,
   setMeta: `${webAPI}/document/set_meta`,
-  getDatasetFilter: `${webAPI}/document/filter`,
+  getDatasetFilter: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents?type=filter`,
 
   // chat
   createChat: `${restAPIv1}/chats`,
@@ -146,12 +148,12 @@ export default {
     `${restAPIv1}/chats/${chatId}/sessions/${sessionId}/messages/${msgId}`,
   thumbup: (chatId: string, sessionId: string, msgId: string) =>
     `${restAPIv1}/chats/${chatId}/sessions/${sessionId}/messages/${msgId}/feedback`,
-  completionUrl: (chatId: string, sessionId: string) =>
-    `${restAPIv1}/chats/${chatId}/sessions/${sessionId}/completions`,
-  chatsTts: `${restAPIv1}/chats/tts`,
-  ask: `${restAPIv1}/chats/ask`,
-  chatsMindmap: `${restAPIv1}/chats/mindmap`,
-  chatsRelatedQuestions: `${restAPIv1}/chats/related_questions`,
+  completionUrl: `${restAPIv1}/chat/completions`,
+  chatsTts: `${restAPIv1}/chat/audio/speech`,
+  searchCompletion: (searchId: string) =>
+    `${restAPIv1}/searches/${searchId}/completion`,
+  chatsMindmap: `${restAPIv1}/chat/mindmap`,
+  chatsRelatedQuestions: `${restAPIv1}/chat/recommandation`,
 
   // next chat
   fetchExternalChatInfo: (id: string) => `${restAPIv1}/chatbots/${id}/info`,
@@ -162,7 +164,7 @@ export default {
   removeFile: `${restAPIv1}/files`,
   getAllParentFolder: `${restAPIv1}/files`,
   createFolder: `${restAPIv1}/files`,
-  connectFileToKnowledge: `${webAPI}/file2document/convert`,
+  connectFileToKnowledge: `${restAPIv1}/files/link-to-datasets`,
   getFile: `${restAPIv1}/files`,
   moveFile: `${restAPIv1}/files/move`,
 
@@ -171,8 +173,8 @@ export default {
   getSystemTokenList: `${restAPIv1}/system/tokens`,
   createSystemToken: `${restAPIv1}/system/tokens`,
   removeSystemToken: `${restAPIv1}/system/tokens`,
-  getSystemConfig: `${webAPI}/system/config`,
-  setLangfuseConfig: `${webAPI}/langfuse/api_key`,
+  getSystemConfig: `${restAPIv1}/system/config`,
+  setLangfuseConfig: `${restAPIv1}/langfuse/api-key`,
 
   // flow
   listTemplates: `${webAPI}/canvas/templates`,
@@ -216,14 +218,15 @@ export default {
     `${webAPI}/canvas/${canvasId}/completion`,
 
   // mcp server
-  listMcpServer: `${webAPI}/mcp_server/list`,
-  getMcpServer: `${webAPI}/mcp_server/detail`,
-  createMcpServer: `${webAPI}/mcp_server/create`,
-  updateMcpServer: `${webAPI}/mcp_server/update`,
-  deleteMcpServer: `${webAPI}/mcp_server/rm`,
-  importMcpServer: `${webAPI}/mcp_server/import`,
-  exportMcpServer: `${webAPI}/mcp_server/export`,
-  testMcpServer: `${webAPI}/mcp_server/test_mcp`,
+  listMcpServer: `${restAPIv1}/mcp/servers`,
+  getMcpServer: (id: string) => `${restAPIv1}/mcp/servers/${id}`,
+  createMcpServer: `${restAPIv1}/mcp/servers`,
+  updateMcpServer: (id: string) => `${restAPIv1}/mcp/servers/${id}`,
+  deleteMcpServer: (id: string) => `${restAPIv1}/mcp/servers/${id}`,
+  importMcpServer: `${restAPIv1}/mcp/servers/import`,
+  exportMcpServer: (id: string) =>
+    `${restAPIv1}/mcp/servers/${id}?mode=download`,
+  testMcpServer: (id: string) => `${restAPIv1}/mcp/servers/${id}/test`,
 
   // next-search
   createSearch: `${restAPIv1}/searches`,

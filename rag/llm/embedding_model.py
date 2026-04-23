@@ -165,6 +165,24 @@ class AzureEmbed(OpenAIEmbed):
         self.model_name = model_name
 
 
+class AstraflowEmbed(OpenAIEmbed):
+    _FACTORY_NAME = "Astraflow"
+
+    def __init__(self, key, model_name, base_url="https://api-us-ca.umodelverse.ai/v1"):
+        if not base_url:
+            base_url = "https://api-us-ca.umodelverse.ai/v1"
+        super().__init__(key, model_name, base_url)
+
+
+class AstraflowCNEmbed(OpenAIEmbed):
+    _FACTORY_NAME = "Astraflow-CN"
+
+    def __init__(self, key, model_name, base_url="https://api.modelverse.cn/v1"):
+        if not base_url:
+            base_url = "https://api.modelverse.cn/v1"
+        super().__init__(key, model_name, base_url)
+
+
 class BaiChuanEmbed(OpenAIEmbed):
     _FACTORY_NAME = "BaiChuan"
 

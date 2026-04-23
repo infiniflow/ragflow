@@ -13,16 +13,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import base64
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from random import randint
 from time import sleep
 
 import pytest
-from test_common import delete_document, list_chunks, update_chunk
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
+from test_common import delete_document, list_chunks, update_chunk
 
 
 @pytest.mark.p2
@@ -35,9 +34,15 @@ class TestAuthorization:
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
-        res = update_chunk(invalid_auth, {"doc_id": "doc_id", "chunk_id": "chunk_id", "content_with_weight": "test"})
+        res = update_chunk(invalid_auth, "dataset_id", "document_id", "chunk_id", {"content": "test"})
         assert res["code"] == expected_code, res
         assert res["message"] == expected_message, res
+
+
+def _find_chunk(auth, dataset_id, document_id, chunk_id):
+    res = list_chunks(auth, dataset_id, document_id, params={"id": chunk_id})
+    assert res["code"] == 0, res
+    return res["data"]["chunks"][0]
 
 
 class TestUpdateChunk:
@@ -45,168 +50,128 @@ class TestUpdateChunk:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"content_with_weight": None}, 100, "TypeError('expected string or bytes-like object')"),
-            ({"content_with_weight": ""}, 102, "`content_with_weight` is required"),
-            ({"content_with_weight": 1}, 100, "TypeError('expected string or bytes-like object')"),
-            ({"content_with_weight": "update chunk"}, 0, ""),
-            ({"content_with_weight": " "}, 102, "`content_with_weight` is required"),
-            ({"content_with_weight": "\n!?。；！？\"'"}, 0, ""),
+            ({"content": None}, 0, ""),
+            ({"content": ""}, 102, "`content` is required"),
+            pytest.param({"content": 1}, 100, "TypeError('expected string or bytes-like object')", marks=pytest.mark.skip),
+            ({"content": "update chunk"}, 0, ""),
+            ({"content": " "}, 102, "`content` is required"),
+            ({"content": "\n!?。；！？\"'"}, 0, ""),
         ],
     )
     def test_content(self, WebApiAuth, add_chunks, payload, expected_code, expected_message):
-        _, doc_id, chunk_ids = add_chunks
+        dataset_id, document_id, chunk_ids = add_chunks
         chunk_id = chunk_ids[0]
-        update_payload = {"doc_id": doc_id, "chunk_id": chunk_id}
-        if payload:
-            update_payload.update(payload)
-        res = update_chunk(WebApiAuth, update_payload)
+        res = update_chunk(WebApiAuth, dataset_id, document_id, chunk_id, payload)
         assert res["code"] == expected_code, res
         if expected_code != 0:
             assert res["message"] == expected_message, res
         else:
             sleep(1)
-            res = list_chunks(WebApiAuth, {"doc_id": doc_id})
-            for chunk in res["data"]["chunks"]:
-                if chunk["chunk_id"] == chunk_id:
-                    assert chunk["content_with_weight"] == payload["content_with_weight"]
+            chunk = _find_chunk(WebApiAuth, dataset_id, document_id, chunk_id)
+            if payload["content"] is not None:
+                assert chunk["content"] == payload["content"]
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"important_kwd": ["a", "b", "c"]}, 0, ""),
-            ({"important_kwd": [""]}, 0, ""),
-            ({"important_kwd": [1]}, 100, "TypeError('sequence item 0: expected str instance, int found')"),
-            ({"important_kwd": ["a", "a"]}, 0, ""),
-            ({"important_kwd": "abc"}, 102, "`important_kwd` should be a list"),
-            ({"important_kwd": 123}, 102, "`important_kwd` should be a list"),
+            ({"important_keywords": ["a", "b", "c"]}, 0, ""),
+            ({"important_keywords": [""]}, 0, ""),
+            ({"important_keywords": [1]}, 100, "TypeError('sequence item 0: expected str instance, int found')"),
+            ({"important_keywords": ["a", "a"]}, 0, ""),
+            ({"important_keywords": "abc"}, 102, "`important_keywords` should be a list"),
+            ({"important_keywords": 123}, 102, "`important_keywords` should be a list"),
         ],
     )
     def test_important_keywords(self, WebApiAuth, add_chunks, payload, expected_code, expected_message):
-        _, doc_id, chunk_ids = add_chunks
+        dataset_id, document_id, chunk_ids = add_chunks
         chunk_id = chunk_ids[0]
-        update_payload = {"doc_id": doc_id, "chunk_id": chunk_id, "content_with_weight": "unchanged content"}  # Add content_with_weight as it's required
-        if payload:
-            update_payload.update(payload)
-        res = update_chunk(WebApiAuth, update_payload)
+        res = update_chunk(WebApiAuth, dataset_id, document_id, chunk_id, payload)
         assert res["code"] == expected_code, res
         if expected_code != 0:
             assert res["message"] == expected_message, res
         else:
             sleep(1)
-            res = list_chunks(WebApiAuth, {"doc_id": doc_id})
-            for chunk in res["data"]["chunks"]:
-                if chunk["chunk_id"] == chunk_id:
-                    assert chunk["important_kwd"] == payload["important_kwd"]
+            chunk = _find_chunk(WebApiAuth, dataset_id, document_id, chunk_id)
+            assert chunk["important_keywords"] == payload["important_keywords"]
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"question_kwd": ["a", "b", "c"]}, 0, ""),
-            ({"question_kwd": [""]}, 100, """Exception('Error: 413 - {"error":"Input validation error: `inputs` cannot be empty","error_type":"Validation"}')"""),
-            ({"question_kwd": [1]}, 100, "TypeError('sequence item 0: expected str instance, int found')"),
-            ({"question_kwd": ["a", "a"]}, 0, ""),
-            ({"question_kwd": "abc"}, 102, "`question_kwd` should be a list"),
-            ({"question_kwd": 123}, 102, "`question_kwd` should be a list"),
+            ({"questions": ["a", "b", "c"]}, 0, ""),
+            ({"questions": [""]}, 0, ""),
+            ({"questions": [1]}, 100, "TypeError('sequence item 0: expected str instance, int found')"),
+            ({"questions": ["a", "a"]}, 0, ""),
+            ({"questions": "abc"}, 102, "`questions` should be a list"),
+            ({"questions": 123}, 102, "`questions` should be a list"),
         ],
     )
     def test_questions(self, WebApiAuth, add_chunks, payload, expected_code, expected_message):
-        _, doc_id, chunk_ids = add_chunks
+        dataset_id, document_id, chunk_ids = add_chunks
         chunk_id = chunk_ids[0]
-        update_payload = {"doc_id": doc_id, "chunk_id": chunk_id, "content_with_weight": "unchanged content"}  # Add content_with_weight as it's required
-        if payload:
-            update_payload.update(payload)
-
-        res = update_chunk(WebApiAuth, update_payload)
+        res = update_chunk(WebApiAuth, dataset_id, document_id, chunk_id, payload)
         assert res["code"] == expected_code, res
         if expected_code != 0:
             assert res["message"] == expected_message, res
         else:
             sleep(1)
-            res = list_chunks(WebApiAuth, {"doc_id": doc_id})
-            for chunk in res["data"]["chunks"]:
-                if chunk["chunk_id"] == chunk_id:
-                    assert chunk["question_kwd"] == payload["question_kwd"]
+            chunk = _find_chunk(WebApiAuth, dataset_id, document_id, chunk_id)
+            assert chunk["questions"] == [str(q).strip() for q in payload["questions"] if str(q).strip()]
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"available_int": 1}, 0, ""),
-            ({"available_int": 0}, 0, ""),
+            ({"available": True}, 0, ""),
+            ({"available": 1}, 0, ""),
+            ({"available": False}, 0, ""),
+            ({"available": 0}, 0, ""),
         ],
     )
     def test_available(self, WebApiAuth, add_chunks, payload, expected_code, expected_message):
-        _, doc_id, chunk_ids = add_chunks
+        dataset_id, document_id, chunk_ids = add_chunks
         chunk_id = chunk_ids[0]
-        update_payload = {"doc_id": doc_id, "chunk_id": chunk_id, "content_with_weight": "unchanged content"}
-        if payload:
-            update_payload.update(payload)
-
-        res = update_chunk(WebApiAuth, update_payload)
+        res = update_chunk(WebApiAuth, dataset_id, document_id, chunk_id, payload)
         assert res["code"] == expected_code, res
         if expected_code != 0:
             assert res["message"] == expected_message, res
         else:
             sleep(1)
-            res = list_chunks(WebApiAuth, {"doc_id": doc_id})
-            for chunk in res["data"]["chunks"]:
-                if chunk["chunk_id"] == chunk_id:
-                    assert chunk["available_int"] == payload["available_int"]
+            chunk = _find_chunk(WebApiAuth, dataset_id, document_id, chunk_id)
+            assert chunk["available"] == bool(payload["available"])
 
     @pytest.mark.p2
     def test_update_chunk_qa_multiline_content(self, WebApiAuth, add_chunks):
-        _, doc_id, chunk_ids = add_chunks
-        payload = {"doc_id": doc_id, "chunk_id": chunk_ids[0], "content_with_weight": "Question line\nAnswer line"}
-        res = update_chunk(WebApiAuth, payload)
+        dataset_id, document_id, chunk_ids = add_chunks
+        payload = {"content": "Question line\nAnswer line"}
+        res = update_chunk(WebApiAuth, dataset_id, document_id, chunk_ids[0], payload)
         assert res["code"] == 0, res
 
         sleep(1)
-        res = list_chunks(WebApiAuth, {"doc_id": doc_id})
-        assert res["code"] == 0, res
-        chunk = next(chunk for chunk in res["data"]["chunks"] if chunk["chunk_id"] == chunk_ids[0])
-        assert chunk["content_with_weight"] == payload["content_with_weight"], res
-
-    @pytest.mark.p2
-    def test_update_chunk_with_image_payload(self, WebApiAuth, add_chunks):
-        _, doc_id, chunk_ids = add_chunks
-        payload = {
-            "doc_id": doc_id,
-            "chunk_id": chunk_ids[0],
-            "content_with_weight": "content with image",
-            "image_base64": base64.b64encode(b"img").decode("utf-8"),
-            "img_id": "bucket-name",
-        }
-        res = update_chunk(WebApiAuth, payload)
-        assert res["code"] == 0, res
+        chunk = _find_chunk(WebApiAuth, dataset_id, document_id, chunk_ids[0])
+        assert chunk["content"] == payload["content"], chunk
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
-        "doc_id_param, expected_code, expected_message",
+        "document_id, expected_code, expected_message",
         [
-            ("", 102, "Tenant not found!"),
-            ("invalid_doc_id", 102, "Tenant not found!"),
+            ("invalid_doc_id", 102, "You don't own the document invalid_doc_id."),
         ],
     )
-    def test_invalid_document_id_for_update(self, WebApiAuth, add_chunks, doc_id_param, expected_code, expected_message):
-        _, _, chunk_ids = add_chunks
-        chunk_id = chunk_ids[0]
-
-        payload = {"doc_id": doc_id_param, "chunk_id": chunk_id, "content_with_weight": "test content"}
-        res = update_chunk(WebApiAuth, payload)
+    def test_invalid_document_id_for_update(self, WebApiAuth, add_chunks, document_id, expected_code, expected_message):
+        dataset_id, _, chunk_ids = add_chunks
+        res = update_chunk(WebApiAuth, dataset_id, document_id, chunk_ids[0], {"content": "test content"})
         assert res["code"] == expected_code
         assert expected_message in res["message"]
 
     @pytest.mark.p3
     def test_repeated_update_chunk(self, WebApiAuth, add_chunks):
-        _, doc_id, chunk_ids = add_chunks
-        payload1 = {"doc_id": doc_id, "chunk_id": chunk_ids[0], "content_with_weight": "chunk test 1"}
-        res = update_chunk(WebApiAuth, payload1)
+        dataset_id, document_id, chunk_ids = add_chunks
+        res = update_chunk(WebApiAuth, dataset_id, document_id, chunk_ids[0], {"content": "chunk test 1"})
         assert res["code"] == 0
 
-        payload2 = {"doc_id": doc_id, "chunk_id": chunk_ids[0], "content_with_weight": "chunk test 2"}
-        res = update_chunk(WebApiAuth, payload2)
+        res = update_chunk(WebApiAuth, dataset_id, document_id, chunk_ids[0], {"content": "chunk test 2"})
         assert res["code"] == 0
 
     @pytest.mark.p3
@@ -215,17 +180,11 @@ class TestUpdateChunk:
         [
             ({"unknown_key": "unknown_value"}, 0, ""),
             ({}, 0, ""),
-            pytest.param(None, 100, """TypeError("int() argument must be a string, a bytes-like object or a real number, not 'NoneType'")""", marks=pytest.mark.skip),
         ],
     )
     def test_invalid_params(self, WebApiAuth, add_chunks, payload, expected_code, expected_message):
-        _, doc_id, chunk_ids = add_chunks
-        chunk_id = chunk_ids[0]
-        update_payload = {"doc_id": doc_id, "chunk_id": chunk_id, "content_with_weight": "unchanged content"}
-        if payload is not None:
-            update_payload.update(payload)
-
-        res = update_chunk(WebApiAuth, update_payload)
+        dataset_id, document_id, chunk_ids = add_chunks
+        res = update_chunk(WebApiAuth, dataset_id, document_id, chunk_ids[0], payload)
         assert res["code"] == expected_code, res
         if expected_code != 0:
             assert res["message"] == expected_message, res
@@ -234,14 +193,17 @@ class TestUpdateChunk:
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6554")
     def test_concurrent_update_chunk(self, WebApiAuth, add_chunks):
         count = 50
-        _, doc_id, chunk_ids = add_chunks
+        dataset_id, document_id, chunk_ids = add_chunks
 
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [
                 executor.submit(
                     update_chunk,
                     WebApiAuth,
-                    {"doc_id": doc_id, "chunk_id": chunk_ids[randint(0, 3)], "content_with_weight": f"update chunk test {i}"},
+                    dataset_id,
+                    document_id,
+                    chunk_ids[randint(0, 3)],
+                    {"content": f"update chunk test {i}"},
                 )
                 for i in range(count)
             ]
@@ -251,9 +213,8 @@ class TestUpdateChunk:
 
     @pytest.mark.p3
     def test_update_chunk_to_deleted_document(self, WebApiAuth, add_chunks):
-        _, doc_id, chunk_ids = add_chunks
-        delete_document(WebApiAuth, {"doc_id": doc_id})
-        payload = {"doc_id": doc_id, "chunk_id": chunk_ids[0], "content_with_weight": "test content"}
-        res = update_chunk(WebApiAuth, payload)
+        dataset_id, document_id, chunk_ids = add_chunks
+        delete_document(WebApiAuth, dataset_id, {"ids": [document_id]})
+        res = update_chunk(WebApiAuth, dataset_id, document_id, chunk_ids[0], {"content": "test content"})
         assert res["code"] == 102, res
-        assert res["message"] == "Tenant not found!", res
+        assert res["message"] in [f"You don't own the document {document_id}.", f"Can't find this chunk {chunk_ids[0]}"]

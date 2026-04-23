@@ -64,7 +64,8 @@ class TestDocumentsUpdated:
                 assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             document.update({"name": name})
-            updated_doc = dataset.list_documents(id=document.id)[0]
+            docs = dataset.list_documents(id=document.id)
+            updated_doc = [doc for doc in docs if doc.id == document.id][0]
             assert updated_doc.name == name, str(updated_doc)
 
     @pytest.mark.p2
@@ -138,7 +139,8 @@ class TestDocumentsUpdated:
                 assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             document.update({"chunk_method": chunk_method})
-            updated_doc = dataset.list_documents(id=document.id)[0]
+            docs = dataset.list_documents()
+            updated_doc = [doc for doc in docs if doc.id == document.id][0]
             assert updated_doc.chunk_method == chunk_method, str(updated_doc)
 
     @pytest.mark.p3
@@ -479,7 +481,8 @@ class TestUpdateDocumentParserConfig:
             assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             document.update(update_data)
-            updated_doc = dataset.list_documents(id=document.id)[0]
+            docs = dataset.list_documents(id=document.id)
+            updated_doc = [doc for doc in docs if doc.id == document.id][0]
             if parser_config:
                 for k, v in parser_config.items():
                     if isinstance(v, dict):
