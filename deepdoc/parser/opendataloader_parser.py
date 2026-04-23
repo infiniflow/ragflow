@@ -126,6 +126,7 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         self.outlines = []
         self.api_url = os.environ.get("OPENDATALOADER_APISERVER", "").rstrip("/")
         self.api_key = os.environ.get("OPENDATALOADER_API_KEY", "").strip()
+        self.timeout = int(os.environ.get("OPENDATALOADER_TIMEOUT", "600"))
 
     def check_installation(self) -> bool:
         """Return True when the OpenDataLoader service is reachable."""
@@ -375,24 +376,35 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         if sanitize is not None:
             form_data["sanitize"] = "true" if sanitize else "false"
 
-        try:
-            headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
-            self.logger.info(f"[OpenDataLoader] POST {self.api_url}/file_parse for '{filename}'")
-            resp = requests.post(
-                url=f"{self.api_url}/file_parse",
-                files={"file": (filename, pdf_bytes, "application/pdf")},
-                data=form_data,
-                headers=headers,
-                timeout=600,
-            )
-            resp.raise_for_status()
-            result = resp.json()
-        except Exception as exc:
-            raise RuntimeError(f"[OpenDataLoader] service call failed: {exc}") from exc
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        last_exc: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                self.logger.info(f"[OpenDataLoader] POST {self.api_url}/file_parse for '{filename}' (attempt {attempt})")
+                resp = requests.post(
+                    url=f"{self.api_url}/file_parse",
+                    files={"file": (filename, pdf_bytes, "application/pdf")},
+                    data=form_data,
+                    headers=headers,
+                    timeout=self.timeout,
+                )
+                resp.raise_for_status()
+                result = resp.json()
+                break
+            except Exception as exc:
+                last_exc = exc
+                self.logger.warning(f"[OpenDataLoader] attempt {attempt} failed: {exc}")
+        else:
+            raise RuntimeError(f"[OpenDataLoader] service call failed after 3 attempts: {last_exc}") from last_exc
 
         if callback:
             callback(0.7, "[OpenDataLoader] Processing response")
 
+        # Service response structure:
+        # {
+        #   "json_doc": {...} | null,   # structured parse tree (preferred)
+        #   "md_text":  "..." | null    # markdown fallback when json_doc is absent
+        # }
         json_doc = result.get("json_doc")
         md_text = result.get("md_text")
 
