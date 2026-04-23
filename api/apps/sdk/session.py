@@ -464,7 +464,12 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
         )
 
     question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-    session_id = req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", "")
+    metadata = req.get("metadata")
+    if metadata is None:
+        metadata = {}
+    elif not isinstance(metadata, dict):
+        return get_error_data_result("metadata must be an object.")
+    session_id = req.pop("session_id", req.get("id", "")) or metadata.get("id", "")
 
     stream = req.pop("stream", False)
     if stream:
@@ -530,6 +535,7 @@ async def agent_completions(tenant_id, agent_id):
                         continue
                 else:
                     ans = answer
+                    answer = "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
                 data = ans.get("data", {})
                 if include_reference_metadata and data.get("reference") is not None:
