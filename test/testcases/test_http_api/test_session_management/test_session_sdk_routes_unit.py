@@ -624,6 +624,7 @@ def _load_agent_api_module(monkeypatch):
     user_canvas_version_mod = ModuleType("api.db.services.user_canvas_version")
     user_canvas_version_mod.UserCanvasVersionService = SimpleNamespace(
         list_by_canvas_id=lambda *_args, **_kwargs: [],
+        get_by_id=lambda *_args, **_kwargs: (False, None),
         get_latest_version_title=lambda *_args, **_kwargs: "",
         save_or_replace_latest=lambda **_kwargs: True,
         build_version_title=lambda *_args, **_kwargs: "v1",

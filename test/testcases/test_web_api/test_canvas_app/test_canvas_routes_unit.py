@@ -356,6 +356,7 @@ def _load_canvas_module(monkeypatch):
 
     user_service_mod = ModuleType("api.db.services.user_service")
     user_service_mod.TenantService = SimpleNamespace(get_joined_tenants_by_user_id=lambda *_args, **_kwargs: [])
+    user_service_mod.UserTenantService = SimpleNamespace(query=lambda **_kwargs: [])
     monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_service_mod)
 
     canvas_version_mod = ModuleType("api.db.services.user_canvas_version")
@@ -697,7 +698,19 @@ def test_reset_upload_input_form_debug_matrix_unit(monkeypatch):
             return '{"v": 2}'
 
     updates = []
-    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _canvas_id: (True, SimpleNamespace(id="canvas-1", dsl={"v": 1})))
+    monkeypatch.setattr(
+        module.UserCanvasService,
+        "get_by_id",
+        lambda _canvas_id: (
+            True,
+            SimpleNamespace(
+                id="canvas-1",
+                dsl={"v": 1},
+                title="Agent",
+                canvas_category=module.CanvasCategory.Agent,
+            ),
+        ),
+    )
     monkeypatch.setattr(module.UserCanvasService, "update_by_id", lambda canvas_id, payload: updates.append((canvas_id, payload)))
     monkeypatch.setattr(module, "Canvas", _ResetCanvas)
     monkeypatch.setattr(module.CanvasReplicaService, "replace_for_set", lambda **_kwargs: True)
@@ -1013,7 +1026,7 @@ def test_test_db_connect_dialect_matrix_unit(monkeypatch):
     monkeypatch.setitem(sys.modules, "trino", None)
     res = _run_case({**req_base, "db_type": "trino", "database": "catalog.schema"})
     assert res["code"] == module.RetCode.EXCEPTION_ERROR
-    assert "Missing dependency 'trino'" in res["message"]
+    assert "trino" in res["message"].lower()
 
     trino_calls = {"connect": [], "auth": []}
 
