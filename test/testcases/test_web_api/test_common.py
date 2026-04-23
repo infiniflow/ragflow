@@ -38,7 +38,7 @@ API_APP_URL = f"/{VERSION}/api"
 SYSTEM_APP_URL = f"/{VERSION}/system"
 SYSTEM_API_URL = f"/api/{VERSION}/system"
 LLM_APP_URL = f"/{VERSION}/llm"
-PLUGIN_APP_URL = f"/{VERSION}/plugin"
+PLUGIN_APP_URL = f"/api/{VERSION}/plugin"
 SEARCHES_URL = f"/api/{VERSION}/searches"
 CHATS_URL = f"/api/{VERSION}/chats"
 
@@ -118,7 +118,7 @@ def llm_list(auth, params=None, *, headers=HEADERS):
 
 # PLUGIN APP
 def plugin_llm_tools(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{PLUGIN_APP_URL}/llm_tools", headers=headers, auth=auth, params=params)
+    res = requests.get(url=f"{HOST_ADDRESS}{PLUGIN_APP_URL}/tools", headers=headers, auth=auth, params=params)
     return res.json()
 
 
