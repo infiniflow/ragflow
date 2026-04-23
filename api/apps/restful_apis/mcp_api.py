@@ -22,7 +22,7 @@ from api.db.services.mcp_server_service import MCPServerService
 from api.db.services.user_service import TenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_mcp_tools, get_request_json, server_error_response, validate_request
 from api.utils.web_utils import get_float, safe_json_parse
-from common.constants import RetCode, VALID_MCP_SERVER_TYPES
+from common.constants import VALID_MCP_SERVER_TYPES
 from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 from common.misc_utils import get_uuid, thread_pool_exec
 
@@ -35,7 +35,7 @@ def _get_mcp_ids_from_args() -> list[str]:
     return [mcp_id for mcp_id in mcp_ids.split(",") if mcp_id]
 
 
-def _export_mcp_servers(mcp_ids: list[str]) -> dict:
+def _export_mcp_servers(mcp_ids: list[str]) -> dict | None:
     exported_servers = {}
     for mcp_id in mcp_ids:
         e, mcp_server = MCPServerService.get_by_id(mcp_id)
@@ -48,6 +48,9 @@ def _export_mcp_servers(mcp_ids: list[str]) -> dict:
                 "authorization_token": mcp_server.variables.get("authorization_token", ""),
                 "tools": mcp_server.variables.get("tools", {}),
             }
+
+    if not exported_servers:
+        return None
 
     return {"mcpServers": exported_servers}
 
@@ -82,12 +85,15 @@ async def list_mcp() -> Response:
 def detail(mcp_id: str) -> Response:
     try:
         if request.args.get("mode") == "download":
-            return get_json_result(data=_export_mcp_servers([mcp_id]))
+            exported_servers = _export_mcp_servers([mcp_id])
+            if exported_servers is None:
+                return get_data_error_result(message=f"Cannot find MCP server {mcp_id} for user {current_user.id}")
+            return get_json_result(data=exported_servers)
 
         mcp_server = MCPServerService.get_or_none(id=mcp_id, tenant_id=current_user.id)
 
         if mcp_server is None:
-            return get_json_result(code=RetCode.NOT_FOUND, data=None)
+            return get_data_error_result(message=f"Cannot find MCP server {mcp_id} for user {current_user.id}")
 
         return get_json_result(data=mcp_server.to_dict())
     except Exception as e:

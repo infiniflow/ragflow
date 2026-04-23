@@ -163,7 +163,6 @@ def _load_mcp_api(monkeypatch):
     monkeypatch.setitem(sys.modules, "common", common_pkg)
 
     constants_mod = ModuleType("common.constants")
-    constants_mod.RetCode = SimpleNamespace(NOT_FOUND=404)
     constants_mod.VALID_MCP_SERVER_TYPES = {"sse", "streamable-http"}
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
@@ -294,7 +293,8 @@ def test_detail_not_found_success_and_exception(monkeypatch):
 
     monkeypatch.setattr(module.MCPServerService, "get_or_none", lambda **_kwargs: None)
     res = module.detail("mcp-1")
-    assert res["code"] == module.RetCode.NOT_FOUND
+    assert res["code"] == 102
+    assert "Cannot find MCP server mcp-1 for user tenant_1" in res["message"]
 
     monkeypatch.setattr(
         module.MCPServerService,
@@ -368,8 +368,8 @@ def test_create_service_paths(monkeypatch):
 
     monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_tools_error)
     res = _run(module.create.__wrapped__())
-    assert res["code"] == "tools error"
-    assert "Sorry! Data missing!" in res["message"]
+    assert res["code"] == 102
+    assert "tools error" in res["message"]
 
     _set_request_json(monkeypatch, module, dict(base_payload))
 
@@ -379,8 +379,8 @@ def test_create_service_paths(monkeypatch):
     monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_ok)
     monkeypatch.setattr(module.MCPServerService, "insert", lambda **_kwargs: False)
     res = _run(module.create.__wrapped__())
-    assert res["code"] == "Failed to create MCP server."
-    assert "Sorry! Data missing!" in res["message"]
+    assert res["code"] == 102
+    assert "Failed to create MCP server" in res["message"]
 
     _set_request_json(monkeypatch, module, dict(base_payload))
     monkeypatch.setattr(module.MCPServerService, "insert", lambda **_kwargs: True)
@@ -476,8 +476,8 @@ def test_update_service_paths(monkeypatch):
 
     monkeypatch.setattr(module, "thread_pool_exec", _thread_pool_tools_error)
     res = _run(module.update("mcp-1"))
-    assert res["code"] == "update tools error"
-    assert "Sorry! Data missing!" in res["message"]
+    assert res["code"] == 102
+    assert "update tools error" in res["message"]
 
     _set_request_json(monkeypatch, module, dict(base_payload))
 
@@ -532,6 +532,8 @@ def test_update_service_paths(monkeypatch):
 @pytest.mark.p2
 def test_rm_failure_success_and_exception(monkeypatch):
     module = _load_mcp_api(monkeypatch)
+    server = _DummyMCPServer(id="id1", name="srv", url="http://a", server_type="sse", tenant_id="tenant_1", variables={})
+    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (True, server))
 
     _set_request_json(monkeypatch, module, {"mcp_ids": ["a", "b"]})
     monkeypatch.setattr(module.MCPServerService, "delete_by_ids", lambda _ids: False)
@@ -654,6 +656,30 @@ def test_detail_download_success_and_exception(monkeypatch):
     res = module.detail("id1")
     assert res["code"] == 0
     assert list(res["data"]["mcpServers"].keys()) == ["srv-one"]
+
+    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _mcp_id: (False, None))
+    res = module.detail("missing")
+    assert res["code"] == 102
+    assert "Cannot find MCP server missing for user tenant_1" in res["message"]
+
+    monkeypatch.setattr(
+        module.MCPServerService,
+        "get_by_id",
+        lambda _mcp_id: (
+            True,
+            _DummyMCPServer(
+                id="id2",
+                name="srv-two",
+                url="http://two",
+                server_type="sse",
+                tenant_id="other",
+                variables={},
+            ),
+        ),
+    )
+    res = module.detail("id2")
+    assert res["code"] == 102
+    assert "Cannot find MCP server id2 for user tenant_1" in res["message"]
 
     def _raise_export(_mcp_id):
         raise RuntimeError("export explode")
