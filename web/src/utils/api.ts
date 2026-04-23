@@ -35,7 +35,7 @@ export default {
   deleteFactory: `${webAPI}/llm/delete_factory`,
 
   // data source
-  dataSourceUpdate: (id:string) => `${restAPIv1}/connectors/${id}`,
+  dataSourceUpdate: (id: string) => `${restAPIv1}/connectors/${id}`,
   dataSourceSet: `${restAPIv1}/connectors`,
   dataSourceList: `${restAPIv1}/connectors`,
   dataSourceDel: (id: string) => `${restAPIv1}/connectors/${id}`,
@@ -51,7 +51,7 @@ export default {
   boxWebAuthResult: () => `${restAPIv1}/connectors/box/oauth/web/result`,
 
   // plugin
-  llmTools: `${webAPI}/plugin/llm_tools`,
+  llmTools: `${restAPIv1}/plugin/tools`,
 
   chatsTranscriptions: `${restAPIv1}/chat/audio/transcription`,
 
@@ -86,7 +86,8 @@ export default {
   pipelineRerun: `${webAPI}/canvas/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
-  updateMetaData: `${webAPI}/document/metadata/update`,
+  updateDocumentsMetadata: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/metadatas`,
   kbUpdateMetaData: `${webAPI}/kb/update_metadata_setting`,
   documentUpdateMetaDataConfig: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/metadata/config`,
@@ -98,12 +99,10 @@ export default {
   renameTag: (knowledgeId: string) => `${webAPI}/kb/${knowledgeId}/rename_tag`,
 
   // chunk
-  chunkList: `${webAPI}/chunk/list`,
-  createChunk: `${webAPI}/chunk/create`,
-  setChunk: `${webAPI}/chunk/set`,
-  getChunk: `${webAPI}/chunk/get`,
-  switchChunk: `${webAPI}/chunk/switch`,
-  rmChunk: `${webAPI}/chunk/rm`,
+  chunkList: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks`,
+  chunkDetail: (datasetId: string, documentId: string, chunkId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks/${chunkId}`,
   retrievalTest: `${webAPI}/chunk/retrieval_test`,
   knowledgeGraph: `${webAPI}/chunk/knowledge_graph`,
 
@@ -165,7 +164,7 @@ export default {
   removeFile: `${restAPIv1}/files`,
   getAllParentFolder: `${restAPIv1}/files`,
   createFolder: `${restAPIv1}/files`,
-  connectFileToKnowledge: `${webAPI}/file2document/convert`,
+  connectFileToKnowledge: `${restAPIv1}/files/link-to-datasets`,
   getFile: `${restAPIv1}/files`,
   moveFile: `${restAPIv1}/files/move`,
 
@@ -174,8 +173,8 @@ export default {
   getSystemTokenList: `${restAPIv1}/system/tokens`,
   createSystemToken: `${restAPIv1}/system/tokens`,
   removeSystemToken: `${restAPIv1}/system/tokens`,
-  getSystemConfig: `${webAPI}/system/config`,
-  setLangfuseConfig: `${webAPI}/langfuse/api_key`,
+  getSystemConfig: `${restAPIv1}/system/config`,
+  setLangfuseConfig: `${restAPIv1}/langfuse/api-key`,
 
   // flow
   listTemplates: `${webAPI}/canvas/templates`,
@@ -219,14 +218,15 @@ export default {
     `${webAPI}/canvas/${canvasId}/completion`,
 
   // mcp server
-  listMcpServer: `${webAPI}/mcp_server/list`,
-  getMcpServer: `${webAPI}/mcp_server/detail`,
-  createMcpServer: `${webAPI}/mcp_server/create`,
-  updateMcpServer: `${webAPI}/mcp_server/update`,
-  deleteMcpServer: `${webAPI}/mcp_server/rm`,
-  importMcpServer: `${webAPI}/mcp_server/import`,
-  exportMcpServer: `${webAPI}/mcp_server/export`,
-  testMcpServer: `${webAPI}/mcp_server/test_mcp`,
+  listMcpServer: `${restAPIv1}/mcp/servers`,
+  getMcpServer: (id: string) => `${restAPIv1}/mcp/servers/${id}`,
+  createMcpServer: `${restAPIv1}/mcp/servers`,
+  updateMcpServer: (id: string) => `${restAPIv1}/mcp/servers/${id}`,
+  deleteMcpServer: (id: string) => `${restAPIv1}/mcp/servers/${id}`,
+  importMcpServer: `${restAPIv1}/mcp/servers/import`,
+  exportMcpServer: (id: string) =>
+    `${restAPIv1}/mcp/servers/${id}?mode=download`,
+  testMcpServer: (id: string) => `${restAPIv1}/mcp/servers/${id}/test`,
 
   // next-search
   createSearch: `${restAPIv1}/searches`,
