@@ -20,13 +20,13 @@ import (
 	"fmt"
 )
 
-// DummyModel implements ModelDriver for Zhipu AI
+// DummyModel implements ModelDriver for Dummy AI
 type DummyModel struct {
 	BaseURL   map[string]string
 	URLSuffix URLSuffix
 }
 
-// NewDummyModel creates a new Zhipu AI model instance
+// NewDummyModel creates a new Dummy AI model instance
 func NewDummyModel(baseURL map[string]string, urlSuffix URLSuffix) *DummyModel {
 	return &DummyModel{
 		BaseURL:   baseURL,
@@ -59,4 +59,8 @@ func (z *DummyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 func (z *DummyModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
+}
+
+func (z *DummyModel) CheckConnection(apiConfig *APIConfig) error {
+	return fmt.Errorf("no such method")
 }
