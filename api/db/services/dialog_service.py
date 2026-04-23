@@ -251,8 +251,17 @@ def _get_dialog_chat_model_config(dialog):
     return get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
 
+def _resolve_dialog_chat_model(dialog):
+    model_config = _get_dialog_chat_model_config(dialog)
+    model_type = model_config.get("model_type")
+    if hasattr(model_type, "value"):
+        model_type = model_type.value
+    llm_type = "image2text" if model_type == LLMType.IMAGE2TEXT.value else "chat"
+    return model_config, llm_type
+
+
 async def async_chat_solo(dialog, messages, stream=True):
-    llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
+    model_config, llm_type = _resolve_dialog_chat_model(dialog)
     attachments = ""
     image_attachments = []
     image_files = []
@@ -263,8 +272,6 @@ async def async_chat_solo(dialog, messages, stream=True):
             text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
         attachments = "\n\n".join(text_attachments)
     
-    model_config = _get_dialog_chat_model_config(dialog)
-
     chat_mdl = LLMBundle(dialog.tenant_id, model_config)
     factory = model_config.get("llm_factory", "") if model_config else ""
 
@@ -508,11 +515,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         return
 
     chat_start_ts = timer()
-    llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
-    if llm_type == "image2text":
-        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
-    else:
-        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+    llm_model_config, llm_type = _resolve_dialog_chat_model(dialog)
 
     factory = llm_model_config.get("llm_factory", "") if llm_model_config else ""
     max_tokens = llm_model_config.get("max_tokens", 8192)
