@@ -90,7 +90,7 @@ def system_delete_token(auth, token, *, headers=HEADERS):
 
 
 def system_status(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{SYSTEM_APP_URL}/status", headers=headers, auth=auth, params=params)
+    res = requests.get(url=f"{HOST_ADDRESS}{SYSTEM_API_URL}/status", headers=headers, auth=auth, params=params)
     return res.json()
 
 
@@ -100,7 +100,7 @@ def system_version(auth, params=None, *, headers=HEADERS):
 
 
 def system_config(auth=None, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{SYSTEM_APP_URL}/config", headers=headers, auth=auth, params=params)
+    res = requests.get(url=f"{HOST_ADDRESS}{SYSTEM_API_URL}/config", headers=headers, auth=auth, params=params)
     return res.json()
 
 
