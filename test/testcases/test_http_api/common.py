@@ -137,24 +137,14 @@ def delete_all_documents(auth, dataset_id, *, page_size=1000):
 
 
 def parse_documents(auth, dataset_id, payload=None, *, headers=HEADERS):
-    url = f"{HOST_ADDRESS}/v1/document/run"
-    body = {"kb_id": dataset_id, "run": 1}
-    if payload:
-        if "document_ids" in payload:
-            body["doc_ids"] = payload["document_ids"]
-        body.update({k: v for k, v in payload.items() if k != "document_ids"})
-    res = requests.post(url=url, headers=headers, auth=auth, json=body)
+    url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
 def stop_parse_documents(auth, dataset_id, payload=None):
-    url = f"{HOST_ADDRESS}/v1/document/run"
-    body = {"kb_id": dataset_id, "run": 2}
-    if payload:
-        if "document_ids" in payload:
-            body["doc_ids"] = payload["document_ids"]
-        body.update({k: v for k, v in payload.items() if k != "document_ids"})
-    res = requests.delete(url=url, headers=HEADERS, auth=auth, json=body)
+    url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
+    res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 

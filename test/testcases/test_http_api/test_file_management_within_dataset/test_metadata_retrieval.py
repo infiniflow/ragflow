@@ -22,6 +22,7 @@ Tests that chunks are only retrieved from documents matching the metadata condit
 
 import pytest
 import logging
+import requests
 from common import (
     create_dataset,
     delete_datasets,
@@ -94,7 +95,8 @@ class TestMetadataWithRetrieval:
 
         Verifies that chunks are only retrieved from documents matching the metadata condition.
         """
-        from common import upload_documents, parse_documents, retrieval_chunks
+        from common import upload_documents, retrieval_chunks
+        from configs import HOST_ADDRESS
 
         dataset_id = add_dataset_with_metadata
 
@@ -128,8 +130,13 @@ class TestMetadataWithRetrieval:
         })
         assert res["code"] == 0, f"Failed to update doc2 metadata: {res}"
 
-        # Parse both documents
-        res = parse_documents(HttpApiAuth, dataset_id, {"document_ids": [doc1_id, doc2_id]})
+        # Parse both documents via web API
+        res = requests.post(
+            url=f"{HOST_ADDRESS}/v1/document/run",
+            headers={"Content-Type": "application/json"},
+            auth=HttpApiAuth,
+            json={"kb_id": dataset_id, "doc_ids": [doc1_id, doc2_id], "run": 1},
+        ).json()
         assert res["code"] == 0, f"Failed to trigger parsing: {res}"
 
         # Wait for parsing to complete
