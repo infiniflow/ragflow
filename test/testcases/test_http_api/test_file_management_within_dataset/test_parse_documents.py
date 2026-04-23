@@ -22,7 +22,7 @@ from libs.auth import RAGFlowHttpApiAuth
 from utils import wait_for
 
 
-@wait_for(200, 1, "Document parsing timeout")
+@wait_for(30, 1, "Document parsing timeout")
 def condition(_auth, _dataset_id, _document_ids=None):
     res = list_documents(_auth, _dataset_id)
     target_docs = res["data"]["docs"]
