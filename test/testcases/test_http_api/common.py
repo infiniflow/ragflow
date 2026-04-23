@@ -297,13 +297,13 @@ def batch_add_sessions_with_chat_assistant(auth, chat_assistant_id, num):
 
 # DATASET GRAPH AND TASKS
 def knowledge_graph(auth, dataset_id, params=None):
-    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/knowledge_graph"
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/graph/search"
     res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
     return res.json()
 
 
 def delete_knowledge_graph(auth, dataset_id, payload=None):
-    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/knowledge_graph"
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/graph"
     if payload is None:
         res = requests.delete(url=url, headers=HEADERS, auth=auth)
     else:

@@ -71,7 +71,7 @@ def add_dataset_with_metadata(HttpApiAuth):
             "fields": [
                 {"name": "character", "type": "string", "description": "Historical figure name"},
                 {"name": "era", "type": "string", "description": "Historical era"},
-                {"name": "achievements", "type": "array", "description": "Major achievements"},
+                {"name": "achievements", "type": "list", "description": "Major achievements"},
             ]
         }
     ).json()
