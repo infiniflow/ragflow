@@ -846,6 +846,7 @@ def test_my_llms_include_details_and_exception_unit(monkeypatch):
     monkeypatch.setattr(module, "request", SimpleNamespace(args={"include_details": "true"}))
     ensure_calls = []
     monkeypatch.setattr(module.TenantLLMService, "ensure_mineru_from_env", lambda tenant_id: ensure_calls.append(tenant_id))
+    monkeypatch.setattr(module.TenantLLMService, "ensure_opendataloader_from_env", lambda _tenant_id: None)
     monkeypatch.setattr(
         module.TenantLLMService,
         "query",
