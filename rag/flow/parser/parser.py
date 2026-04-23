@@ -1089,7 +1089,8 @@ class Parser(ProcessBase):
             seq2txt_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), LLMType.SPEECH2TEXT, conf["llm_id"])
             seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), seq2txt_model_config)
             try:
-                txt = seq2txt_mdl.transcription(tmp_path)
+                transcription = seq2txt_mdl.transcription(tmp_path)
+                txt = transcription[0] if isinstance(transcription, tuple) else transcription
             except Exception as e:
                 logging.warning(f"Transcription failed: {e}")
                 txt = ""

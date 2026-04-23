@@ -88,6 +88,14 @@ _RETRYABLE_SERVER_SIGNALS: frozenset[str] = frozenset(
         "unavailable",
     }
 )
+_RETRYABLE_CONNECTION_SIGNALS: frozenset[str] = frozenset(
+    {
+        "connect",
+        "network",
+        "unreachable",
+        "dns",
+    }
+)
 
 _ERROR_CLASSIFICATION: tuple[tuple[frozenset[str], LLMErrorCode], ...] = (
     (frozenset({"quota", "capacity", "credit", "billing", "balance", "欠费"}), LLMErrorCode.ERROR_QUOTA),
@@ -106,7 +114,8 @@ _ERROR_CLASSIFICATION: tuple[tuple[frozenset[str], LLMErrorCode], ...] = (
 def is_retryable(error: Exception) -> bool:
     """Determine if an exception represents a transient error worth retrying.
 
-    Retries on rate-limit errors (429, TPM limits) and server errors (5xx).
+    Retries on rate-limit errors (429, TPM limits), server errors (5xx),
+    and transient connection errors (network/DNS/unreachable).
     All other errors are considered non-retryable.
 
     Args:
@@ -116,7 +125,11 @@ def is_retryable(error: Exception) -> bool:
         True if the error is transient and should be retried.
     """
     msg = str(error).lower()
-    return any(signal in msg for signal in _RETRYABLE_RATE_LIMIT_SIGNALS) or any(signal in msg for signal in _RETRYABLE_SERVER_SIGNALS)
+    return (
+        any(signal in msg for signal in _RETRYABLE_RATE_LIMIT_SIGNALS)
+        or any(signal in msg for signal in _RETRYABLE_SERVER_SIGNALS)
+        or any(signal in msg for signal in _RETRYABLE_CONNECTION_SIGNALS)
+    )
 
 
 def classify_error(error: Exception) -> LLMErrorCode:
@@ -246,8 +259,12 @@ async def async_handle_exception(
     """
     logging.exception(f"{log_prefix} async completion")
     error_code = classify_error(error)
+
     if attempt == max_retries:
         error_code = LLMErrorCode.ERROR_MAX_RETRIES
+        msg = f"{ERROR_PREFIX}: {error_code} - {str(error)}"
+        logging.error(f"{log_prefix} giving up after {max_retries} retries: {msg}")
+        return msg
 
     if is_retryable(error):
         delay = get_retry_delay(base_delay)

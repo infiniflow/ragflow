@@ -151,7 +151,11 @@ class LLMBundle(LLM4Tenant):
         if self.langfuse:
             generation = self.langfuse.start_generation(trace_context=self.trace_context, name="describe", metadata={"model": self.model_config["llm_name"]})
 
-        txt, used_tokens = self.mdl.describe(image)
+        try:
+            txt, used_tokens = self.mdl.describe(image)
+        except Exception as e:
+            logging.exception("LLMBundle.describe failed")
+            return "**ERROR**: " + str(e)
         if not TenantLLMService.increase_usage_by_id(self.model_config["id"], used_tokens):
             logging.error("LLMBundle.describe can't update token usage for {}/IMAGE2TEXT used_tokens: {}".format(self.tenant_id, used_tokens))
 
@@ -165,7 +169,11 @@ class LLMBundle(LLM4Tenant):
         if self.langfuse:
             generation = self.langfuse.start_generation(trace_context=self.trace_context, name="describe_with_prompt", metadata={"model": self.model_config["llm_name"], "prompt": prompt})
 
-        txt, used_tokens = self.mdl.describe_with_prompt(image, prompt)
+        try:
+            txt, used_tokens = self.mdl.describe_with_prompt(image, prompt)
+        except Exception as e:
+            logging.exception("LLMBundle.describe_with_prompt failed")
+            return "**ERROR**: " + str(e)
         if not TenantLLMService.increase_usage_by_id(self.model_config["id"], used_tokens):
             logging.error("LLMBundle.describe can't update token usage for {}/IMAGE2TEXT used_tokens: {}".format(self.tenant_id, used_tokens))
 

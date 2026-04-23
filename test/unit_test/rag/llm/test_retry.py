@@ -21,11 +21,15 @@ These tests verify the centralized retry mechanism for LLM API calls,
 including error classification, retryable error detection, and decorator behavior.
 """
 
+import asyncio
+from unittest.mock import patch
+
 import pytest
 
 from rag.llm.retry import (
     LLMErrorCode,
     ERROR_PREFIX,
+    async_handle_exception,
     classify_error,
     get_retry_delay,
     is_retryable,
@@ -54,6 +58,12 @@ class TestIsRetryable:
             ("500 Internal Server Error", True),
             ("server error occurred", True),
             ("service unavailable", True),
+            # Connection errors - should retry
+            ("connection refused", True),
+            ("network unreachable", True),
+            ("host unreachable", True),
+            ("dns failure", True),
+            ("failed to connect to host", True),
             # Non-retryable errors - should NOT retry
             ("invalid request", False),
             ("authentication failed", False),
@@ -397,14 +407,61 @@ class TestAsyncHandleException:
         assert "invalid request" in msg
         assert "INVALID_REQUEST" in msg
 
-    def test_max_retries_logic(self):
-        """Test that max retries sets ERROR_MAX_RETRIES code."""
-        # This mirrors the logic in async_handle_exception for max retries
-        error = Exception("rate limit")
-        error_code = classify_error(error)
-        # When attempt == max_retries, the code should be set to ERROR_MAX_RETRIES
-        # This is tested by verifying the classify_error function
-        assert error_code == LLMErrorCode.ERROR_RATE_LIMIT
+    def test_retryable_mid_attempt_returns_none_and_sleeps(self):
+        """Retryable error before final attempt should sleep and return None."""
+
+        async def run():
+            with patch("rag.llm.retry.asyncio.sleep") as mock_sleep:
+                mock_sleep.return_value = None
+                result = await async_handle_exception(
+                    error=Exception("rate limit"),
+                    attempt=0,
+                    max_retries=3,
+                    base_delay=0.001,
+                )
+                return result, mock_sleep.await_count
+
+        result, sleep_calls = asyncio.run(run())
+        assert result is None
+        assert sleep_calls == 1
+
+    def test_non_retryable_returns_error_string_no_sleep(self):
+        """Non-retryable error should return an error string without sleeping."""
+
+        async def run():
+            with patch("rag.llm.retry.asyncio.sleep") as mock_sleep:
+                result = await async_handle_exception(
+                    error=Exception("invalid request"),
+                    attempt=0,
+                    max_retries=3,
+                    base_delay=0.001,
+                )
+                return result, mock_sleep.await_count
+
+        result, sleep_calls = asyncio.run(run())
+        assert isinstance(result, str)
+        assert ERROR_PREFIX in result
+        assert "INVALID_REQUEST" in result
+        assert sleep_calls == 0
+
+    def test_final_attempt_returns_max_retries_error_no_sleep(self):
+        """On the final attempt, even a retryable error must surrender with ERROR_MAX_RETRIES and not sleep."""
+
+        async def run():
+            with patch("rag.llm.retry.asyncio.sleep") as mock_sleep:
+                result = await async_handle_exception(
+                    error=Exception("rate limit"),
+                    attempt=3,
+                    max_retries=3,
+                    base_delay=0.001,
+                )
+                return result, mock_sleep.await_count
+
+        result, sleep_calls = asyncio.run(run())
+        assert isinstance(result, str)
+        assert ERROR_PREFIX in result
+        assert LLMErrorCode.ERROR_MAX_RETRIES.value in result
+        assert sleep_calls == 0
 
 
 class TestLLMErrorCode:
