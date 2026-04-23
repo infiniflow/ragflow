@@ -15,6 +15,7 @@
 #
 import logging
 import json
+import re
 
 from quart import request
 from peewee import OperationalError
@@ -22,9 +23,10 @@ from pydantic import ValidationError
 
 from api.apps import login_required
 from api.apps.services.document_api_service import validate_document_update_fields, map_doc_keys, \
-    map_doc_keys_with_run_status, update_document_name_only, update_chunk_method_only, update_document_status_only
+    map_doc_keys_with_run_status, update_document_name_only, update_chunk_method, update_document_status_only, \
+    reset_document_for_reparse
 from api.constants import IMG_BASE64_PREFIX
-from api.db import VALID_FILE_TYPES
+from api.db import VALID_FILE_TYPES, FileType
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
@@ -128,16 +130,25 @@ async def update_document(tenant_id, dataset_id, document_id):
         if error := update_document_name_only(document_id, req["name"]):
             return error
 
+    # "parser_id" provided but does not match with existing doc's file type
+    if "parser_id" in req and ((doc.type == FileType.VISUAL and req["parser_id"] != "picture")
+            or (re.search(r"\.(ppt|pptx|pages)$", doc.name) and req["parser_id"] != "presentation")):
+        return get_data_error_result(message="Not supported yet!")
+
     # parser config provided (already validated in UpdateDocumentReq), update it
     if update_doc_req.parser_config:
         DocumentService.update_parser_config(doc.id, req["parser_config"])
 
+    # pipeline_id provided - reset document for reparse
+    if update_doc_req.pipeline_id:
+        if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=update_doc_req.pipeline_id):
+            return error
     # chunk method provided - the update method will check if it's different with existing one
-    if update_doc_req.chunk_method:
-        if error := update_chunk_method_only(req, doc, dataset_id, tenant_id):
+    elif update_doc_req.chunk_method:
+        if error := update_chunk_method(req, doc, tenant_id):
             return error
 
-    if "enabled" in req: # already checked in UpdateDocumentReq - it's int if it's present
+    if "enabled" in req: # already checked in UpdateDocumentReq - it's int if present
         # "enabled" flag provided, the update method will check if it's changed and then update if so
         if error := update_document_status_only(int(req["enabled"]), doc, kb):
             return error

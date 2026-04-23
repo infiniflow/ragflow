@@ -428,6 +428,12 @@ def document_change_status(auth, payload=None, *, headers=HEADERS, data=None):
     return res.json()
 
 
+def document_update(auth, dataset_id, doc_id, payload=None, *, headers=HEADERS, data=None):
+    """Update document via PATCH /api/v1/datasets/<dataset_id>/documents/<doc_id>"""
+    res = requests.patch(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents/{doc_id}", headers=headers, auth=auth, json=payload, data=data)
+    return res.json()
+
+
 def bulk_upload_documents(auth, kb_id, num, tmp_path):
     fps = []
     for i in range(num):

@@ -20,6 +20,7 @@ const {
   documentChangeStatus,
   documentCreate,
   documentChangeParser,
+  documentUpdate,
   documentThumbnails,
   chunkList,
   createChunk,
@@ -80,6 +81,10 @@ const methods = {
   documentChangeParser: {
     url: documentChangeParser,
     method: 'post',
+  },
+  documentUpdate: {
+    url: documentUpdate,
+    method: 'patch',
   },
   documentThumbnails: {
     url: documentThumbnails,
