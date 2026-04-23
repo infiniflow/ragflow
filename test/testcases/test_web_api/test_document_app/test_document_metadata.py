@@ -84,6 +84,7 @@ class TestAuthorization:
         assert expected_fragment in res["message"], res
 
 class TestDocumentMetadata:
+
     @pytest.mark.p2
     def test_filter(self, WebApiAuth, add_dataset_func):
         kb_id = add_dataset_func
@@ -153,6 +154,56 @@ class TestDocumentMetadata:
         assert info_res["data"]["docs"][0]["status"] == "1", info_res
 
 
+    @pytest.mark.p2
+    def test_update_document_change_parser(self, WebApiAuth, add_document_func):
+        """Test updating document chunk_method via PATCH /api/v1/datasets/<dataset_id>/documents/<doc_id>."""
+        dataset_id, doc_id = add_document_func
+
+        # Get initial document info
+        res = document_infos(WebApiAuth, dataset_id, {"doc_ids": [doc_id]})
+
+        assert res["code"] == 0, res
+        original_parser_id = res["data"]["docs"][0].get("parser_id")
+
+        res = document_update(WebApiAuth, dataset_id, doc_id, {"chunk_method": "invalid_chunk_method"})
+        assert res["code"] == 102, res
+        assert res["message"] == "Field: <chunk_method> - Message: <`chunk_method` invalid_chunk_method doesn't exist> - Value: <invalid_chunk_method>", res
+
+        # Change to a different parser (naive bayes)
+        # valid_chunk_method = {"naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one", "knowledge_graph", "email", "tag"}
+        new_parser_id = "naive"
+        if original_parser_id == new_parser_id:
+            new_parser_id = "paper"
+
+        # Verify the document was updated
+        res = document_infos(WebApiAuth, dataset_id, {"doc_ids": [doc_id]})
+
+        assert res["code"] == 0, res
+        assert res["data"]["docs"][0]["chunk_method"] == new_parser_id, res
+
+
+    @pytest.mark.p2
+    def test_update_document_change_pipeline(self, WebApiAuth, add_document_func):
+        """Test updating document pipeline via PATCH /api/v1/datasets/<dataset_id>/documents/<doc_id>."""
+        dataset_id, doc_id = add_document_func
+
+        # Get initial document info
+        res = document_infos(WebApiAuth, dataset_id, {"doc_ids": [doc_id]})
+        assert res["code"] == 0, res
+        original_pipeline_id = res["data"]["docs"][0].get("pipeline_id")
+
+        # Change to a different pipeline (if available)
+        # Note: This test assumes there's at least one other pipeline available
+        new_pipeline_id = "general" if original_pipeline_id != "general" else "resume"
+        res = document_update(WebApiAuth, dataset_id, doc_id, {"pipeline_id": new_pipeline_id})
+        assert res["code"] == 0, res
+
+        # Verify the document was updated
+        res = document_infos(WebApiAuth, dataset_id, {"doc_ids": [doc_id]})
+        assert res["code"] == 0, res
+        assert res["data"]["docs"][0]["pipeline_id"] == new_pipeline_id, res
+
+
 class TestDocumentMetadataNegative:
     @pytest.mark.p2
     def test_filter_missing_kb_id(self, WebApiAuth, add_document_func):
@@ -210,50 +261,6 @@ class TestDocumentMetadataNegative:
         res = document_change_status(WebApiAuth, {"doc_ids": [doc_id], "status": "2"})
         assert res["code"] == 101, res
         assert "Status" in res["message"], res
-
-    @pytest.mark.p2
-    def test_update_document_change_parser(self, WebApiAuth, add_document_func):
-        """Test updating document chunk_method via PATCH /api/v1/datasets/<dataset_id>/documents/<doc_id>."""
-        dataset_id, doc_id = add_document_func
-
-        # Get initial document info
-        res = document_infos(WebApiAuth, dataset_id, {"doc_ids": [doc_id]})
-        assert res["code"] == 0, res
-        original_parser_id = res["data"][0].get("parser_id")
-
-        # Change to a different parser (naive bayes)
-        new_parser_id = "naive-bayes"
-        if original_parser_id == new_parser_id:
-            new_parser_id = "paper"
-
-        res = document_update(WebApiAuth, dataset_id, doc_id, {"chunk_method": new_parser_id})
-        assert res["code"] == 0, res
-
-        # Verify the document was updated
-        res = document_infos(WebApiAuth, dataset_id, {"doc_ids": [doc_id]})
-        assert res["code"] == 0, res
-        assert res["data"][0]["parser_id"] == new_parser_id, res
-
-    @pytest.mark.p2
-    def test_update_document_change_pipeline(self, WebApiAuth, add_document_func):
-        """Test updating document pipeline via PATCH /api/v1/datasets/<dataset_id>/documents/<doc_id>."""
-        dataset_id, doc_id = add_document_func
-
-        # Get initial document info
-        res = document_infos(WebApiAuth, dataset_id, {"doc_ids": [doc_id]})
-        assert res["code"] == 0, res
-        original_pipeline_id = res["data"][0].get("pipeline_id")
-
-        # Change to a different pipeline (if available)
-        # Note: This test assumes there's at least one other pipeline available
-        new_pipeline_id = "general" if original_pipeline_id != "general" else "resume"
-        res = document_update(WebApiAuth, dataset_id, doc_id, {"pipeline_id": new_pipeline_id})
-        assert res["code"] == 0, res
-
-        # Verify the document was updated
-        res = document_infos(WebApiAuth, dataset_id, {"doc_ids": [doc_id]})
-        assert res["code"] == 0, res
-        assert res["data"][0]["pipeline_id"] == new_pipeline_id, res
 
 
 def _run(coro):
