@@ -175,7 +175,7 @@ export default {
   createSystemToken: `${restAPIv1}/system/tokens`,
   removeSystemToken: `${restAPIv1}/system/tokens`,
   getSystemConfig: `${webAPI}/system/config`,
-  setLangfuseConfig: `${webAPI}/langfuse/api_key`,
+  setLangfuseConfig: `${restAPIv1}/langfuse/api-key`,
 
   // flow
   listTemplates: `${webAPI}/canvas/templates`,
