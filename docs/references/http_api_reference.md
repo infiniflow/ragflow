@@ -6629,6 +6629,10 @@ curl --location 'http://{address}/api/v1/messages/search?query=%22who%20are%20yo
 
   The ID of the message's session. Defaults to `None`.
 
+- `user_id`: (*Filter parameter*), `string`, *Optional*
+
+  The user participating in the conversation with the agent. Defaults to `None`.
+
 - `similarity_threshold`: (*Filter parameter*), `float`, *Optional*
 
   The minimum cosine similarity score required for a message to be considered a match. A higher value  yields more precise but fewer results. Defaults to `0.2`.

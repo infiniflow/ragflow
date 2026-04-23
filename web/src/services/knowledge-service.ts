@@ -40,7 +40,6 @@ const {
   fetchPipelineDatasetLogs,
   checkEmbedding,
   kbUpdateMetaData,
-  documentUpdateMetaData,
 } = api;
 
 const methods = {
@@ -172,14 +171,6 @@ const methods = {
     url: kbUpdateMetaData,
     method: 'post',
   },
-  documentUpdateMetaData: {
-    url: documentUpdateMetaData,
-    method: 'post',
-  },
-  // getMetaData: {
-  //   url: getMetaData,
-  //   method: 'get',
-  // },
 };
 
 const kbService = registerServer<keyof typeof methods>(methods, request);
@@ -294,6 +285,19 @@ export const changeDocumentsStatus = ({
   status: number;
 }) =>
   request.post(api.documentChangeStatus(kb_id), { data: { doc_ids, status } });
+
+export const updateDocumentMetaDataConfig = ({
+  kb_id,
+  doc_id,
+  data,
+}: {
+  kb_id: string;
+  doc_id: string;
+  data: any;
+}) =>
+  request.put(api.documentUpdateMetaDataConfig(kb_id, doc_id), {
+    data: { ...data },
+  });
 
 export const listDataPipelineLogDocument = (
   params?: IFetchKnowledgeListRequestParams,
