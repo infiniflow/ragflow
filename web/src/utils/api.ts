@@ -103,12 +103,10 @@ export default {
     `${restAPIv1}/datasets/${knowledgeId}/tags`,
 
   // chunk
-  chunkList: `${webAPI}/chunk/list`,
-  createChunk: `${webAPI}/chunk/create`,
-  setChunk: `${webAPI}/chunk/set`,
-  getChunk: `${webAPI}/chunk/get`,
-  switchChunk: `${webAPI}/chunk/switch`,
-  rmChunk: `${webAPI}/chunk/rm`,
+  chunkList: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks`,
+  chunkDetail: (datasetId: string, documentId: string, chunkId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks/${chunkId}`,
   retrievalTest: `${webAPI}/chunk/retrieval_test`,
   knowledgeGraph: `${webAPI}/chunk/knowledge_graph`,
 
@@ -179,8 +177,8 @@ export default {
   getSystemTokenList: `${restAPIv1}/system/tokens`,
   createSystemToken: `${restAPIv1}/system/tokens`,
   removeSystemToken: `${restAPIv1}/system/tokens`,
-  getSystemConfig: `${webAPI}/system/config`,
-  setLangfuseConfig: `${restAPIv1}/langfuse/api-key`,
+  getSystemConfig: `${restAPIv1}/system/config`,
+  setLangfuseConfig: `${restAPIv1}/langfuse/api_key`,
 
   // flow
   listTemplates: `${webAPI}/canvas/templates`,
