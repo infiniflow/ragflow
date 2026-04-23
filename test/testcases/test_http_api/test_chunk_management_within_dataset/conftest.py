@@ -18,12 +18,17 @@
 from time import sleep
 
 import pytest
-from common import batch_add_chunks, delete_all_chunks
+from common import add_chunk, batch_add_chunks, delete_all_chunks
+
+
+def _add_baseline_chunk(auth, dataset_id, document_id):
+    add_chunk(auth, dataset_id, document_id, {"content": "ragflow test upload"})
 
 
 @pytest.fixture(scope="class")
 def add_chunks(HttpApiAuth, add_document):
     dataset_id, document_id = add_document
+    _add_baseline_chunk(HttpApiAuth, dataset_id, document_id)
     chunk_ids = batch_add_chunks(HttpApiAuth, dataset_id, document_id, 4)
     sleep(1)  # issues/6487
     return dataset_id, document_id, chunk_ids
@@ -37,6 +42,7 @@ def add_chunks_func(request, HttpApiAuth, add_document):
     request.addfinalizer(cleanup)
 
     dataset_id, document_id = add_document
+    _add_baseline_chunk(HttpApiAuth, dataset_id, document_id)
     chunk_ids = batch_add_chunks(HttpApiAuth, dataset_id, document_id, 4)
     # issues/6487
     sleep(1)
