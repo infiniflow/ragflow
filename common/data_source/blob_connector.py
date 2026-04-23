@@ -10,6 +10,7 @@ from common.data_source.utils import (
     download_object,
     extract_size_bytes,
     get_file_ext,
+    is_accepted_file_ext,
 )
 from common.data_source.config import BlobType, DocumentSource, BLOB_STORAGE_SIZE_THRESHOLD, INDEX_BATCH_SIZE
 from common.data_source.exceptions import (
@@ -18,7 +19,7 @@ from common.data_source.exceptions import (
     CredentialExpiredError,
     InsufficientPermissionsError
 )
-from common.data_source.interfaces import LoadConnector, PollConnector
+from common.data_source.interfaces import LoadConnector, OnyxExtensionType, PollConnector
 from common.data_source.models import Document, SecondsSinceUnixEpoch, GenerateDocumentsOutput
 
 
@@ -47,6 +48,16 @@ class BlobStorageConnector(LoadConnector, PollConnector):
         """Set whether to process images"""
         logging.info(f"Setting allow_images to {allow_images}.")
         self._allow_images = allow_images
+
+    def _build_extension_type(self) -> OnyxExtensionType:
+        extension_type = OnyxExtensionType.Plain | OnyxExtensionType.Document
+        if bool(self._allow_images):
+            extension_type |= OnyxExtensionType.Multimedia
+        return extension_type
+
+    def _is_supported_file(self, file_name: str) -> bool:
+        file_ext = get_file_ext(file_name)
+        return is_accepted_file_ext(file_ext, self._build_extension_type())
 
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         """Load credentials"""
@@ -130,15 +141,28 @@ class BlobStorageConnector(LoadConnector, PollConnector):
 
         # Collect all objects first to count filename occurrences
         all_objects = []
+        skipped_unsupported = 0
         for page in pages:
             if "Contents" not in page:
                 continue
             for obj in page["Contents"]:
-                if obj["Key"].endswith("/"):
+                key = obj["Key"]
+                if key.endswith("/"):
+                    continue
+                file_name = os.path.basename(key)
+                if not self._is_supported_file(file_name):
+                    skipped_unsupported += 1
+                    logging.debug(f"Skipping '{key}' due to unsupported file extension.")
                     continue
                 last_modified = obj["LastModified"].replace(tzinfo=timezone.utc)
                 if start < last_modified <= end:
                     all_objects.append(obj)
+
+        if skipped_unsupported:
+            logging.info(
+                f"Skipped {skipped_unsupported} object(s) in bucket "
+                f"'{self.bucket_name}' due to unsupported file extensions."
+            )
         
         # Count filename occurrences to determine which need full paths
         filename_counts: dict[str, int] = {}
@@ -151,6 +175,10 @@ class BlobStorageConnector(LoadConnector, PollConnector):
             last_modified = obj["LastModified"].replace(tzinfo=timezone.utc)
             file_name = os.path.basename(obj["Key"])
             key = obj["Key"]
+
+            if not self._is_supported_file(file_name):
+                logging.debug(f"Skipping '{key}' due to unsupported file extension.")
+                continue
 
             size_bytes = extract_size_bytes(obj)
             if (
