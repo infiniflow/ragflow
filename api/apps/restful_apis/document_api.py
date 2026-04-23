@@ -1093,7 +1093,10 @@ async def batch_update_document_status(tenant_id, dataset_id):
                 continue
 
             if doc.kb_id != dataset_id:
-                return get_error_data_result(message=f"Document {doc.kb_id} not in dataset {dataset_id}")
+                logging.warning(f"Document {doc.kb_id} not in dataset {dataset_id}")
+                result[doc_id] = {"error": "Document not found in this dataset."}
+                has_error = True
+                continue
 
             current_status = str(doc.status)
             if current_status == status:
