@@ -180,3 +180,11 @@ func (z *MoonshotModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 
 	return response, nil
 }
+
+func (z *MoonshotModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := z.ListModels(apiConfig)
+	if err != nil {
+		return err
+	}
+	return nil
+}
