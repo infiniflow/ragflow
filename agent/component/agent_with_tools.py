@@ -75,9 +75,17 @@ class AgentParam(LLMParam, ToolParamBase):
 
 
 class Agent(LLM, ToolBase):
+    """
+    Represents an LLM-driven Agent capable of executing tools, managing conversational context,
+    and handling strict validation trapdoors to prevent hallucinated actions.
+    """
     component_name = "Agent"
 
     def __init__(self, canvas, id, param: LLMParam):
+        """
+        Initialize the Agent component, bind available standard and MCP tools, 
+        and set up concurrency-safe tracking callbacks.
+        """
         LLM.__init__(self, canvas, id, param)
         self.tools = {}
         for idx, cpn in enumerate(self._param.tools):
@@ -140,6 +148,9 @@ class Agent(LLM, ToolBase):
             self.chat_mdl.bind_tools(self.toolcall_session, self.tool_meta)
 
     def _fit_messages(self, prompt: str, msg: list[dict]) -> list[dict]:
+        """
+        Truncate or fit messages into the model's maximum context length dynamically.
+        """
         _, fitted_messages = message_fit_in(
             [{"role": "system", "content": prompt}, *msg],
             int(self.chat_mdl.max_length * 0.97),
@@ -148,16 +159,25 @@ class Agent(LLM, ToolBase):
 
     @staticmethod
     def _append_system_prompt(msg: list[dict], extra_prompt: str) -> None:
+        """
+        Safely append additional instruction constraints to the active system prompt.
+        """
         if extra_prompt and msg and msg[0]["role"] == "system":
             msg[0]["content"] += "\n" + extra_prompt
 
     @staticmethod
     def _clean_formatted_answer(ans: str) -> str:
+        """
+        Clean up formatting artifacts, reasoning tags, and markdown code blocks from the raw LLM output.
+        """
         ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
         ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
         return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
 
     def _load_tool_obj(self, cpn: dict) -> object:
+        """
+        Dynamically load and instantiate a tool component object by its registered name and parameters.
+        """
         from agent.component import component_class
 
         tool_name = cpn["component_name"]
@@ -172,6 +192,9 @@ class Agent(LLM, ToolBase):
         return component_class(cpn["component_name"])(self._canvas, cpn_id, param)
 
     def get_meta(self) -> dict[str, Any]:
+        """
+        Retrieve the metadata schema for this Agent, including dynamic user prompts.
+        """
         self._param.function_name = self._id.split("-->")[-1]
         m = super().get_meta()
         if hasattr(self._param, "user_prompt") and self._param.user_prompt:
@@ -179,6 +202,9 @@ class Agent(LLM, ToolBase):
         return m
 
     def get_input_form(self) -> dict[str, dict]:
+        """
+        Generate the input form schema for the Agent component and its associated tools.
+        """
         res = {}
         for k, v in self.get_input_elements().items():
             res[k] = {"type": "line", "name": v["name"]}
@@ -189,6 +215,9 @@ class Agent(LLM, ToolBase):
         return res
 
     def _get_output_schema(self):
+        """
+        Extract the structured JSON output schema if one is explicitly defined in the component parameters.
+        """
         try:
             cand = self._param.outputs.get("structured")
         except Exception:
@@ -204,6 +233,9 @@ class Agent(LLM, ToolBase):
         return None
 
     async def _force_format_to_schema_async(self, text: str, schema_prompt: str) -> str:
+        """
+        Force the LLM to re-format its previous plain-text response strictly into the requested JSON schema.
+        """
         fmt_msgs = [
             {"role": "system", "content": schema_prompt + "\nIMPORTANT: Output ONLY valid JSON. No markdown, no extra text."},
             {"role": "user", "content": text},
@@ -212,11 +244,17 @@ class Agent(LLM, ToolBase):
         return await self._generate_async(fmt_msgs)
 
     def _invoke(self, **kwargs):
+        """
+        Synchronous wrapper for the asynchronous _invoke_async logic.
+        """
         return asyncio.run(self._invoke_async(**kwargs))
 
     
     def _check_tools_succeeded(self) -> bool:
-        """Helper to safely evaluate if any tool returned valid data."""
+        """
+        Helper to safely evaluate if any tool returned valid data.
+        Checks both the callback tracker (for MCP tools) and standard parameter outputs.
+        """
         # 1. Check the new callback tracker (Covers MCP Tools)
         if _tool_success_tracker.get():
             return True
@@ -232,9 +270,13 @@ class Agent(LLM, ToolBase):
                 elif outputs and not isinstance(outputs, (dict, list)):
                     return True
         return False
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 20 * 60)))
     async def _invoke_async(self, **kwargs):
-        
+        """
+        Execute the primary asynchronous agent logic, including prompt formatting, tool invocation,
+        and applying state-aware trapdoors to override hallucinated actions.
+        """
         if self.check_if_canceled("Agent processing"):
             return
 
@@ -334,6 +376,10 @@ class Agent(LLM, ToolBase):
         return ans
 
     async def stream_output_with_tools_async(self, prompt, msg, user_defined_prompt={}):
+        """
+        Stream the LLM response token-by-token back to the user, while actively monitoring 
+        for tool failures to dynamically cut off hallucinations via trapdoors.
+        """
         _tool_call_tracker.set(False)
         _tool_success_tracker.set(False)
         
@@ -442,6 +488,10 @@ class Agent(LLM, ToolBase):
         self.set_output("content", cited_answer)
 
     async def _gen_citations_async(self, text):
+        """
+        Generate knowledge base citations dynamically by correlating the generated text 
+        against the retrieved document chunks.
+        """
         retrievals = self._canvas.get_reference()
         retrievals = {"chunks": list(retrievals["chunks"].values()), "doc_aggs": list(retrievals["doc_aggs"].values())}
         formated_refer = kb_prompt(retrievals, self.chat_mdl.max_length, True)
@@ -449,6 +499,10 @@ class Agent(LLM, ToolBase):
             yield delta_ans
 
     def _collect_tool_artifact_markdown(self, existing_text: str = "") -> str:
+        """
+        Collect any visual or file artifacts (like images or downloadable documents) returned by tools
+        and format them cleanly into Markdown links.
+        """
         md_parts = []
         for tool_obj in self.tools.values():
             if not hasattr(tool_obj, "_param") or not hasattr(tool_obj._param, "outputs"):
