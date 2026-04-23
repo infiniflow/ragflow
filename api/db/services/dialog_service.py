@@ -230,6 +230,17 @@ class DialogService(CommonService):
         return list(objs)
 
 
+def _get_dialog_chat_model_config(dialog):
+    llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
+    target_model_type = LLMType.IMAGE2TEXT if llm_type == "image2text" else LLMType.CHAT
+
+    if dialog.llm_id:
+        return get_model_config_by_type_and_name(dialog.tenant_id, target_model_type, dialog.llm_id)
+    if dialog.tenant_llm_id:
+        return get_model_config_by_id(dialog.tenant_llm_id)
+    return get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
+
+
 async def async_chat_solo(dialog, messages, stream=True):
     llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
     attachments = ""
@@ -242,12 +253,7 @@ async def async_chat_solo(dialog, messages, stream=True):
             text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
         attachments = "\n\n".join(text_attachments)
     
-    if dialog.llm_id:
-        model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
-    elif dialog.tenant_llm_id:
-        model_config = get_model_config_by_id(dialog.tenant_llm_id)
-    else:
-        model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
+    model_config = _get_dialog_chat_model_config(dialog)
 
     chat_mdl = LLMBundle(dialog.tenant_id, model_config)
     factory = model_config.get("llm_factory", "") if model_config else ""
@@ -297,12 +303,7 @@ def get_models(dialog):
         if not embd_mdl:
             raise LookupError("Embedding model(%s) not found" % embedding_list[0])
 
-    if dialog.llm_id:
-        chat_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
-    elif dialog.tenant_llm_id:
-        chat_model_config = get_model_config_by_id(dialog.tenant_llm_id)
-    else:
-        chat_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
+    chat_model_config = _get_dialog_chat_model_config(dialog)
 
     chat_mdl = LLMBundle(dialog.tenant_id, chat_model_config)
 

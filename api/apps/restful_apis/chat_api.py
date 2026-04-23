@@ -173,17 +173,18 @@ def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
 
     llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(llm_id)
     model_type = (llm_setting or {}).get("model_type")
-    if model_type not in {"chat", "image2text"}:
-        model_type = "chat"
+    candidate_model_types = [model_type] if model_type in {"chat", "image2text"} else ["chat", "image2text"]
 
-    if not TenantLLMService.query(
-        tenant_id=tenant_id,
-        llm_name=llm_name,
-        llm_factory=llm_factory,
-        model_type=model_type,
-    ):
-        return f"`llm_id` {llm_id} doesn't exist"
-    return None
+    for current_model_type in candidate_model_types:
+        if TenantLLMService.query(
+            tenant_id=tenant_id,
+            llm_name=llm_name,
+            llm_factory=llm_factory,
+            model_type=current_model_type,
+        ):
+            return None
+
+    return f"`llm_id` {llm_id} doesn't exist"
 
 
 def _validate_rerank_id(rerank_id, tenant_id):
