@@ -137,6 +137,7 @@ async def update_document(tenant_id, dataset_id, document_id):
 
     # parser config provided (already validated in UpdateDocumentReq), update it
     if update_doc_req.parser_config:
+        req["parser_config"].update(update_doc_req.parser_config.ext)
         DocumentService.update_parser_config(doc.id, req["parser_config"])
 
     # pipeline_id provided - reset document for reparse

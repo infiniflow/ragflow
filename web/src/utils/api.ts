@@ -118,8 +118,7 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
   documentCreate: `${webAPI}/document/create`,
   documentRun: `${webAPI}/document/run`,
-  documentChangeParser: `${webAPI}/document/change_parser`,
-  documentUpdate: (datasetId: string, documentId: string) =>
+  documentChangeParser: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
   documentThumbnails: `${webAPI}/document/thumbnails`,
   getDocumentFile: `${webAPI}/document/get`,

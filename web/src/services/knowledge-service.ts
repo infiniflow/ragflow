@@ -20,7 +20,6 @@ const {
   documentChangeStatus,
   documentCreate,
   documentChangeParser,
-  documentUpdate,
   documentThumbnails,
   chunkList,
   createChunk,
@@ -81,10 +80,6 @@ const methods = {
   documentChangeParser: {
     url: documentChangeParser,
     method: 'post',
-  },
-  documentUpdate: {
-    url: documentUpdate,
-    method: 'patch',
   },
   documentThumbnails: {
     url: documentThumbnails,
@@ -261,6 +256,12 @@ export const renameDocument = (
   documentId: string,
   data: { name?: string },
 ) => request.patch(api.documentRename(datasetId, documentId), { data });
+
+export const changeDocumentParser = (
+  datasetId: string,
+  documentId: string,
+  data: { name?: string },
+) => request.patch(api.documentChangeParser(datasetId, documentId), { data });
 
 export const deleteDocument = (datasetId: string, documentIds: string[]) =>
   request.delete(api.documentDelete(datasetId), { data: { ids: documentIds } });

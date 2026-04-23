@@ -174,6 +174,7 @@ class TestDocumentMetadata:
         new_parser_id = "naive"
         if original_parser_id == new_parser_id:
             new_parser_id = "paper"
+        document_update(WebApiAuth, dataset_id, doc_id, {"chunk_method": new_parser_id})
 
         # Verify the document was updated
         res = document_infos(WebApiAuth, dataset_id, {"doc_ids": [doc_id]})

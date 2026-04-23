@@ -16,6 +16,7 @@ import {
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
 import kbService, {
+  changeDocumentParser,
   deleteDocument,
   documentFilter,
   listDocument,
@@ -35,6 +36,7 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
+import { extractParserConfigExt } from './parser-config-utils';
 import {
   useGetKnowledgeSearchParams,
   useSetPaginationParams,
@@ -403,11 +405,12 @@ export const useSetDocumentParser = () => {
       if (pipelineId) {
         updateData.pipeline_id = pipelineId;
       }
+
       if (parserConfig) {
-        updateData.parser_config = parserConfig;
+        updateData.parser_config = extractParserConfigExt(parserConfig);
       }
 
-      const { data } = await kbService.documentUpdate(
+      const { data } = await changeDocumentParser(
         datasetId,
         documentId,
         updateData,
