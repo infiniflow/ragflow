@@ -537,7 +537,10 @@ async def agent_completions(tenant_id, agent_id):
                     ans = answer
                     answer = "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
-                data = ans.get("data", {})
+                data = ans.get("data") or {}
+                if not isinstance(data, dict):
+                    data = {}
+                ans["data"] = data
                 if include_reference_metadata and data.get("reference") is not None:
                     data["reference"] = _build_agent_reference(
                         data["reference"],
@@ -580,19 +583,24 @@ async def agent_completions(tenant_id, agent_id):
     async for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
         try:
             ans = json.loads(answer[5:]) if isinstance(answer, str) else answer
+            data = ans.get("data") or {}
+            if not isinstance(data, dict):
+                data = {}
+            ans["data"] = data
 
             if ans["event"] == "message":
-                full_content += ans["data"]["content"]
+                full_content += data.get("content", "")
 
-            if ans.get("data", {}).get("reference", None):
-                ref = ans["data"]["reference"]
+            if data.get("reference", None):
+                ref = data["reference"]
                 if include_reference_metadata:
                     ref = _build_agent_reference(ref, metadata_fields=metadata_fields)
                 reference.update(ref)
 
             if ans.get("event") == "node_finished":
-                data = ans.get("data", {})
                 node_out = data.get("outputs", {})
+                if not isinstance(node_out, dict):
+                    node_out = {}
                 component_id = data.get("component_id")
                 if component_id is not None and "structured" in node_out:
                     structured_output[component_id] = copy.deepcopy(node_out["structured"])
@@ -1382,8 +1390,8 @@ def _build_agent_reference(reference, metadata_fields=None):
 
     doc_ids_by_kb = {}
     for chunk in chunks:
-        kb_id = chunk.get("kb_id", chunk.get("dataset_id"))
-        doc_id = chunk.get("doc_id", chunk.get("document_id"))
+        kb_id = chunk.get("kb_id") or chunk.get("dataset_id")
+        doc_id = chunk.get("doc_id") or chunk.get("document_id")
         if not kb_id or not doc_id:
             continue
         doc_ids_by_kb.setdefault(kb_id, set()).add(doc_id)
@@ -1401,7 +1409,7 @@ def _build_agent_reference(reference, metadata_fields=None):
         return reference
 
     for chunk in chunks:
-        doc_id = chunk.get("doc_id", chunk.get("document_id"))
+        doc_id = chunk.get("doc_id") or chunk.get("document_id")
         meta = meta_by_doc.get(doc_id)
         if not meta:
             continue
