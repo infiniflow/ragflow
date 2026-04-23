@@ -126,7 +126,11 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         self.outlines = []
         self.api_url = os.environ.get("OPENDATALOADER_APISERVER", "").rstrip("/")
         self.api_key = os.environ.get("OPENDATALOADER_API_KEY", "").strip()
-        self.timeout = int(os.environ.get("OPENDATALOADER_TIMEOUT", "600"))
+        try:
+            self.timeout = int(os.environ.get("OPENDATALOADER_TIMEOUT", "600") or "600")
+        except ValueError:
+            self.logger.warning("[OpenDataLoader] Invalid OPENDATALOADER_TIMEOUT, falling back to 600s")
+            self.timeout = 600
 
     def check_installation(self) -> bool:
         """Return True when the OpenDataLoader service is reachable."""
@@ -171,7 +175,7 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
         if bbox is None:
             return ""
         # Guard: only emit a crop tag when the page was actually rendered.
-        if not self.page_images or len(self.page_images) < bbox.page_no:
+        if not self.page_images or bbox.page_no <= 0 or len(self.page_images) < bbox.page_no:
             return ""
         x0, x1 = bbox.x0, bbox.x1
         # OpenDataLoader bbox uses PDF coordinate space (origin bottom-left).

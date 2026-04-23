@@ -1,4 +1,5 @@
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { Button, ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -11,25 +12,18 @@ import { Input } from '@/components/ui/input';
 import { LLMFactory } from '@/constants/llm';
 import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { t } from 'i18next';
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { LLMHeader } from '../../components/llm-header';
 import VerifyButton from '../verify-button';
 
-const FormSchema = z.object({
-  llm_name: z.string().min(1, {
-    message: t('setting.modelNameMessage'),
-  }),
-  opendataloader_apiserver: z.string().min(1, {
-    message: t('setting.apiServerMessage'),
-  }),
-  opendataloader_api_key: z.string().optional(),
-});
-
-export type OpenDataLoaderFormValues = z.infer<typeof FormSchema>;
+export type OpenDataLoaderFormValues = {
+  llm_name: string;
+  opendataloader_apiserver: string;
+  opendataloader_api_key?: string;
+};
 
 export interface IModalProps<T> {
   visible: boolean;
@@ -49,6 +43,20 @@ const OpenDataLoaderModal = ({
   loading,
 }: IModalProps<OpenDataLoaderFormValues>) => {
   const { t } = useTranslation();
+
+  const FormSchema = useMemo(
+    () =>
+      z.object({
+        llm_name: z.string().min(1, {
+          message: t('setting.modelNameMessage'),
+        }),
+        opendataloader_apiserver: z.string().min(1, {
+          message: t('setting.apiServerMessage'),
+        }),
+        opendataloader_api_key: z.string().optional(),
+      }),
+    [t],
+  );
 
   const form = useForm<OpenDataLoaderFormValues>({
     resolver: zodResolver(FormSchema),
@@ -97,33 +105,30 @@ const OpenDataLoaderModal = ({
               name="opendataloader_api_key"
               label={t('setting.apiKey')}
             >
-              <Input placeholder={t('setting.apiKeyPlaceholder')} />
+              <Input
+                type="password"
+                placeholder={t('setting.apiKeyPlaceholder')}
+              />
             </RAGFlowFormItem>
             {onVerify && (
               <VerifyButton
                 onVerify={onVerify as (postBody: any) => Promise<VerifyResult>}
               />
             )}
-            <DialogFooter>
-              <div className="flex justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={hideModal}
-                  className="btn btn-secondary"
-                >
-                  {t('common.cancel')}
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="btn btn-primary"
-                >
-                  {t('common.add')}
-                </button>
-              </div>
-            </DialogFooter>
           </form>
         </Form>
+        <DialogFooter className="flex justify-end space-x-2">
+          <Button type="button" variant="secondary" onClick={hideModal}>
+            {t('common.cancel')}
+          </Button>
+          <ButtonLoading
+            type="submit"
+            form="opendataloader-form"
+            loading={loading}
+          >
+            {t('common.add')}
+          </ButtonLoading>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

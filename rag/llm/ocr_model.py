@@ -168,10 +168,6 @@ class OpenDataLoaderOcrModel(Base, OpenDataLoaderParser):
         def _resolve_config(key: str, env_key: str, default=""):
             return config.get(key, config.get(env_key, os.environ.get(env_key, default)))
 
-        self.api_url = _resolve_config("opendataloader_apiserver", "OPENDATALOADER_APISERVER", "").rstrip("/")
-        self.api_key = _resolve_config("opendataloader_api_key", "OPENDATALOADER_API_KEY", "").strip()
-        self.timeout = int(_resolve_config("opendataloader_timeout", "OPENDATALOADER_TIMEOUT", "600"))
-
         redacted_config = {}
         for k, v in config.items():
             if any(s in k.lower() for s in ("key", "password", "token", "secret")):
@@ -183,7 +179,11 @@ class OpenDataLoaderOcrModel(Base, OpenDataLoaderParser):
         OpenDataLoaderParser.__init__(self)
         self.api_url = _resolve_config("opendataloader_apiserver", "OPENDATALOADER_APISERVER", "").rstrip("/")
         self.api_key = _resolve_config("opendataloader_api_key", "OPENDATALOADER_API_KEY", "").strip()
-        self.timeout = int(_resolve_config("opendataloader_timeout", "OPENDATALOADER_TIMEOUT", "600"))
+        timeout_val = _resolve_config("opendataloader_timeout", "OPENDATALOADER_TIMEOUT", "600") or "600"
+        try:
+            self.timeout = int(timeout_val)
+        except (TypeError, ValueError):
+            self.timeout = 600
 
     def check_available(self) -> tuple[bool, str]:
         ok = self.check_installation()
