@@ -134,7 +134,7 @@ async def create() -> Response:
         mcp_server = MCPServer(id=server_name, name=server_name, url=url, server_type=server_type, variables=variables, headers=headers)
         server_tools, err_message = await thread_pool_exec(get_mcp_tools, [mcp_server], timeout)
         if err_message:
-            return get_data_error_result(err_message)
+            return get_data_error_result(message=err_message)
 
         tools = server_tools[server_name]
         tools = {tool["name"]: tool for tool in tools if isinstance(tool, dict) and "name" in tool}
@@ -142,7 +142,7 @@ async def create() -> Response:
         req["variables"] = variables
 
         if not MCPServerService.insert(**req):
-            return get_data_error_result("Failed to create MCP server.")
+            return get_data_error_result(message="Failed to create MCP server.")
 
         return get_json_result(data=req)
     except Exception as e:
@@ -183,7 +183,7 @@ async def update(mcp_id: str) -> Response:
         mcp_server = MCPServer(id=server_name, name=server_name, url=url, server_type=server_type, variables=variables, headers=headers)
         server_tools, err_message = await thread_pool_exec(get_mcp_tools, [mcp_server], timeout)
         if err_message:
-            return get_data_error_result(err_message)
+            return get_data_error_result(message=err_message)
 
         tools = server_tools[server_name]
         tools = {tool["name"]: tool for tool in tools if isinstance(tool, dict) and "name" in tool}
@@ -206,6 +206,9 @@ async def update(mcp_id: str) -> Response:
 @login_required
 async def rm(mcp_id: str) -> Response:
     try:
+        e, mcp_server = MCPServerService.get_by_id(mcp_id)
+        if not e or mcp_server.tenant_id != current_user.id:
+            return get_data_error_result(message=f"Cannot find MCP server {mcp_id} for user {current_user.id}")
         if not MCPServerService.delete_by_ids([mcp_id]):
             return get_data_error_result(message=f"Failed to delete MCP servers {[mcp_id]}")
 
@@ -282,6 +285,7 @@ async def import_multiple() -> Response:
 
 
 @manager.route("/mcp/servers/<mcp_id>/test", methods=["POST"])  # noqa: F821
+@login_required
 @validate_request("url", "server_type")
 async def test_mcp(mcp_id: str) -> Response:
     req = await get_request_json()
