@@ -22,16 +22,14 @@ from quart import make_response, request
 from api.apps import current_user, login_required
 from api.common.check_team_permission import check_kb_team_permission
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
-from api.db import VALID_FILE_TYPES, FileType
+from api.db import FileType
 from api.db.db_models import Task
 from api.db.services import duplicate_name
-from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService, cancel_all_task_of
-from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
@@ -42,7 +40,7 @@ from api.utils.api_utils import (
 from api.utils.file_utils import filename_type, thumbnail
 from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers, html2pdf, is_valid_url
 from common import settings
-from common.constants import SANDBOX_ARTIFACT_BUCKET, VALID_TASK_STATUS, ParserType, RetCode, TaskStatus
+from common.constants import SANDBOX_ARTIFACT_BUCKET, ParserType, RetCode, TaskStatus
 from common.file_utils import get_project_base_directory
 from common.misc_utils import get_uuid, thread_pool_exec
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
@@ -184,107 +182,6 @@ async def create():
         return server_error_response(e)
 
 
-@manager.route("/filter", methods=["POST"])  # noqa: F821
-@login_required
-async def get_filter():
-    req = await get_request_json()
-
-    kb_id = req.get("kb_id")
-    if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-    tenants = UserTenantService.query(user_id=current_user.id)
-    for tenant in tenants:
-        if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
-            break
-    else:
-        return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
-
-    keywords = req.get("keywords", "")
-
-    suffix = req.get("suffix", [])
-
-    run_status = req.get("run_status", [])
-    if run_status:
-        invalid_status = {s for s in run_status if s not in VALID_TASK_STATUS}
-        if invalid_status:
-            return get_data_error_result(message=f"Invalid filter run status conditions: {', '.join(invalid_status)}")
-
-    types = req.get("types", [])
-    if types:
-        invalid_types = {t for t in types if t not in VALID_FILE_TYPES}
-        if invalid_types:
-            return get_data_error_result(message=f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}")
-
-    try:
-        filter, total = DocumentService.get_filter_by_kb_id(kb_id, keywords, run_status, types, suffix)
-        return get_json_result(data={"total": total, "filter": filter})
-    except Exception as e:
-        return server_error_response(e)
-
-
-@manager.route("/infos", methods=["POST"])  # noqa: F821
-@login_required
-async def doc_infos():
-    req = await get_request_json()
-    doc_ids = req["doc_ids"]
-    for doc_id in doc_ids:
-        if not DocumentService.accessible(doc_id, current_user.id):
-            return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-    docs = DocumentService.get_by_ids(doc_ids)
-    docs_list = list(docs.dicts())
-    # Add meta_fields for each document
-    for doc in docs_list:
-        doc["meta_fields"] = DocMetadataService.get_document_metadata(doc["id"])
-    return get_json_result(data=docs_list)
-
-
-@manager.route("/metadata/update", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("doc_ids")
-async def metadata_update():
-    req = await get_request_json()
-    kb_id = req.get("kb_id")
-    document_ids = req.get("doc_ids")
-    updates = req.get("updates", []) or []
-    deletes = req.get("deletes", []) or []
-
-    if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-
-    if not isinstance(updates, list) or not isinstance(deletes, list):
-        return get_json_result(data=False, message="updates and deletes must be lists.", code=RetCode.ARGUMENT_ERROR)
-
-    for upd in updates:
-        if not isinstance(upd, dict) or not upd.get("key") or "value" not in upd:
-            return get_json_result(data=False, message="Each update requires key and value.", code=RetCode.ARGUMENT_ERROR)
-    for d in deletes:
-        if not isinstance(d, dict) or not d.get("key"):
-            return get_json_result(data=False, message="Each delete requires key.", code=RetCode.ARGUMENT_ERROR)
-
-    updated = DocMetadataService.batch_update_metadata(kb_id, document_ids, updates, deletes)
-    return get_json_result(data={"updated": updated, "matched_docs": len(document_ids)})
-
-
-@manager.route("/update_metadata_setting", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("doc_id", "metadata")
-async def update_metadata_setting():
-    req = await get_request_json()
-    if not DocumentService.accessible(req["doc_id"], current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-
-    e, doc = DocumentService.get_by_id(req["doc_id"])
-    if not e:
-        return get_data_error_result(message="Document not found!")
-
-    DocumentService.update_parser_config(doc.id, {"metadata": req["metadata"]})
-    e, doc = DocumentService.get_by_id(doc.id)
-    if not e:
-        return get_data_error_result(message="Document not found!")
-
-    return get_json_result(data=doc.to_dict())
-
-
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
 # @login_required
 def thumbnails():
@@ -372,27 +269,6 @@ async def change_status():
     if has_error:
         return get_json_result(data=result, message="Partial failure", code=RetCode.SERVER_ERROR)
     return get_json_result(data=result)
-
-
-@manager.route("/rm", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("doc_id")
-async def rm():
-    req = await get_request_json()
-    doc_ids = req["doc_id"]
-    if isinstance(doc_ids, str):
-        doc_ids = [doc_ids]
-
-    for doc_id in doc_ids:
-        if not DocumentService.accessible4deletion(doc_id, current_user.id):
-            return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-
-    errors = await thread_pool_exec(FileService.delete_docs, doc_ids, current_user.id)
-
-    if errors:
-        return get_json_result(data=False, message=errors, code=RetCode.SERVER_ERROR)
-
-    return get_json_result(data=True)
 
 
 @manager.route("/run", methods=["POST"])  # noqa: F821

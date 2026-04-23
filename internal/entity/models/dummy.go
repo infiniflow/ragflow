@@ -20,18 +20,22 @@ import (
 	"fmt"
 )
 
-// DummyModel implements ModelDriver for Zhipu AI
+// DummyModel implements ModelDriver for Dummy AI
 type DummyModel struct {
 	BaseURL   map[string]string
 	URLSuffix URLSuffix
 }
 
-// NewDummyModel creates a new Zhipu AI model instance
+// NewDummyModel creates a new Dummy AI model instance
 func NewDummyModel(baseURL map[string]string, urlSuffix URLSuffix) *DummyModel {
 	return &DummyModel{
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 	}
+}
+
+func (z *DummyModel) Name() string {
+	return "dummy"
 }
 
 // Chat sends a message and returns response
@@ -51,4 +55,12 @@ func (z *DummyModel) EncodeToEmbedding(modelName *string, texts []string, apiCon
 
 func (z *DummyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return nil, fmt.Errorf("not implemented")
+}
+
+func (z *DummyModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("no such method")
+}
+
+func (z *DummyModel) CheckConnection(apiConfig *APIConfig) error {
+	return fmt.Errorf("no such method")
 }

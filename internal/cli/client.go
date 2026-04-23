@@ -236,6 +236,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListProviderInstances(cmd)
 	case "show_provider_instance":
 		return c.ShowProviderInstance(cmd)
+	case "show_instance_balance":
+		return c.ShowInstanceBalance(cmd)
 	case "alter_provider_instance":
 		return c.AlterProviderInstance(cmd)
 	case "drop_provider_instance":
@@ -248,6 +250,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ChatToModel(cmd)
 	case "think_chat_to_model":
 		return c.ChatToModel(cmd)
+	case "check_provider_connection":
+		return c.CheckProviderConnection(cmd)
 	case "use_model":
 		return c.UseModel(cmd)
 	case "show_current_model":

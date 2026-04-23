@@ -2,6 +2,8 @@ package models
 
 // EmbeddingModel interface for embedding models
 type ModelDriver interface {
+	Name() string
+
 	// Chat sends a message and returns response
 	Chat(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig) (*ChatResponse, error)
 	// ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
@@ -10,6 +12,10 @@ type ModelDriver interface {
 	EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error)
 	// List suppported models
 	ListModels(apiConfig *APIConfig) ([]string, error)
+
+	Balance(apiConfig *APIConfig) (map[string]interface{}, error)
+
+	CheckConnection(apiConfig *APIConfig) error
 }
 
 type ChatResponse struct {
@@ -26,6 +32,7 @@ type URLSuffix struct {
 	Rerank      string `json:"rerank"`
 	Models      string `json:"models"`
 	Balance     string `json:"balance"`
+	Files       string `json:"files"`
 }
 
 type ChatConfig struct {
