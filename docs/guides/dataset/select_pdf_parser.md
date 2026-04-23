@@ -72,27 +72,6 @@ To use an external Docling Serve instance (instead of local in-process Docling),
 
 When `DOCLING_SERVER_URL` is set, RAGFlow sends PDF content to Docling Serve (`/v1/convert/source`, with fallback to `/v1alpha/convert/source`) and ingests the returned markdown/text. If the variable is not set, RAGFlow keeps using local Docling (`USE_DOCLING=true` + installed package) behavior.
 
-To enable the OpenDataLoader parser, start it as a standalone service and point RAGFlow at it:
-
-1. Add `opendataloader` to `COMPOSE_PROFILES` in `docker/.env`:
-   ```env
-   COMPOSE_PROFILES=${COMPOSE_PROFILES},opendataloader
-   ```
-2. Set the API endpoint so RAGFlow knows where to reach the service:
-   ```env
-   OPENDATALOADER_APISERVER=http://opendataloader:9383
-   ```
-3. Build and start the service:
-   ```bash
-   docker compose up -d --build opendataloader
-   ```
-
-The `opendataloader` container bundles Java 11+ via `default-jre-headless`; the RAGFlow host does not need a JRE installed.
-
-:::note
-All MinerU environment variables are optional. When set, these values are used to auto-provision a MinerU OCR model for the tenant on first use. To avoid auto-provisioning, skip the environment variable settings and only configure MinerU from the **Model providers** page in the UI.
-:::
-
 :::caution WARNING
 Third-party visual models are marked **Experimental**, because we have not fully tested these models for the aforementioned data extraction tasks.
 :::
