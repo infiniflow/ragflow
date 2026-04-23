@@ -18,8 +18,6 @@ const {
   kbList,
   getDocumentList,
   documentChangeStatus,
-  documentRm,
-  documentDelete,
   documentCreate,
   documentChangeParser,
   documentThumbnails,
@@ -34,7 +32,6 @@ const {
   documentUpload,
   webCrawl,
   knowledgeGraph,
-  documentInfos,
   listTagByKnowledgeIds,
   setMeta,
   getMeta,
@@ -44,7 +41,6 @@ const {
   fetchPipelineDatasetLogs,
   checkEmbedding,
   kbUpdateMetaData,
-  documentUpdateMetaData,
 } = api;
 
 const methods = {
@@ -73,10 +69,6 @@ const methods = {
     url: documentChangeStatus,
     method: 'post',
   },
-  documentRm: {
-    url: documentRm,
-    method: 'post',
-  },
   documentCreate: {
     url: documentCreate,
     method: 'post',
@@ -99,10 +91,6 @@ const methods = {
   },
   webCrawl: {
     url: webCrawl,
-    method: 'post',
-  },
-  documentInfos: {
-    url: documentInfos,
     method: 'post',
   },
   setMeta: {
@@ -142,17 +130,13 @@ const methods = {
     url: knowledgeGraph,
     method: 'get',
   },
-  documentDelete: {
-    url: documentDelete,
-    method: 'delete',
-  },
   listTagByKnowledgeIds: {
     url: listTagByKnowledgeIds,
     method: 'get',
   },
   documentFilter: {
     url: api.getDatasetFilter,
-    method: 'post',
+    method: 'get',
   },
   getMeta: {
     url: getMeta,
@@ -192,14 +176,6 @@ const methods = {
     url: kbUpdateMetaData,
     method: 'post',
   },
-  documentUpdateMetaData: {
-    url: documentUpdateMetaData,
-    method: 'post',
-  },
-  // getMetaData: {
-  //   url: getMetaData,
-  //   method: 'get',
-  // },
 };
 
 const kbService = registerServer<keyof typeof methods>(methods, request);
@@ -262,7 +238,7 @@ export const listDocument = (
 };
 
 export const documentFilter = (kb_id: string) =>
-  request.post(api.getDatasetFilter, { kb_id });
+  request.get(api.getDatasetFilter(kb_id), { params: {} });
 
 // Custom upload function that handles dynamic URL using axios directly
 export const uploadDocument = async (datasetId: string, formData: FormData) => {
@@ -280,6 +256,9 @@ export const renameDocument = (
   documentId: string,
   data: { name?: string },
 ) => request.patch(api.documentRename(datasetId, documentId), { data });
+
+export const deleteDocument = (datasetId: string, documentIds: string[]) =>
+  request.delete(api.documentDelete(datasetId), { data: { ids: documentIds } });
 
 export const getMetaDataService = ({
   kb_id,
@@ -300,6 +279,19 @@ export const updateMetaData = ({
   doc_ids?: string[];
   data: any;
 }) => request.post(api.updateMetaData, { data: { kb_id, doc_ids, ...data } });
+
+export const updateDocumentMetaDataConfig = ({
+  kb_id,
+  doc_id,
+  data,
+}: {
+  kb_id: string;
+  doc_id: string;
+  data: any;
+}) =>
+  request.put(api.documentUpdateMetaDataConfig(kb_id, doc_id), {
+    data: { ...data },
+  });
 
 export const listDataPipelineLogDocument = (
   params?: IFetchKnowledgeListRequestParams,

@@ -478,46 +478,6 @@ class TestDocRoutesUnit:
         assert res["data"]["matched_docs"] == 1
 
 
-    def test_delete_branches(self, monkeypatch):
-        module = _load_doc_module(monkeypatch)
-        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
-        res = _run(module.delete.__wrapped__("tenant-1", "ds-1"))
-        assert "don't own the dataset" in res["message"]
-
-        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({}))
-        res = _run(module.delete.__wrapped__("tenant-1", "ds-1"))
-        assert res["code"] == module.RetCode.SUCCESS
-
-        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"ids": ["doc-1"]}))
-        monkeypatch.setattr(module, "check_duplicate_ids", lambda ids, _kind: (ids, []))
-        monkeypatch.setattr(module.FileService, "get_root_folder", lambda _tenant: {"id": "pf-1"})
-        monkeypatch.setattr(module.FileService, "init_knowledgebase_docs", lambda *_args, **_kwargs: None)
-        monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _id: (True, _DummyDoc()))
-        monkeypatch.setattr(module.DocumentService, "get_tenant_id", lambda _id: None)
-        res = _run(module.delete.__wrapped__("tenant-1", "ds-1"))
-        assert res["message"] == "Tenant not found!"
-
-        monkeypatch.setattr(module.DocumentService, "get_tenant_id", lambda _id: "tenant-1")
-        monkeypatch.setattr(module.File2DocumentService, "get_storage_address", lambda **_kwargs: ("b", "n"))
-        monkeypatch.setattr(module.DocumentService, "remove_document", lambda *_args, **_kwargs: False)
-        res = _run(module.delete.__wrapped__("tenant-1", "ds-1"))
-        assert "Document removal" in res["message"]
-
-        def _raise_get_by_id(_id):
-            raise RuntimeError("boom")
-
-        monkeypatch.setattr(module.DocumentService, "get_by_id", _raise_get_by_id)
-        res = _run(module.delete.__wrapped__("tenant-1", "ds-1"))
-        assert res["code"] == module.RetCode.SERVER_ERROR
-        assert "boom" in res["message"]
-
-        monkeypatch.setattr(module, "check_duplicate_ids", lambda _ids, _kind: ([], ["Duplicate document ids: doc-1"]))
-        monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _id: (False, None))
-        res = _run(module.delete.__wrapped__("tenant-1", "ds-1"))
-        assert res["code"] == module.RetCode.DATA_ERROR
-        assert "Duplicate document ids" in res["message"]
-
     def test_parse_branches(self, monkeypatch):
         module = _load_doc_module(monkeypatch)
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
