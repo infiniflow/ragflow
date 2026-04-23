@@ -14,15 +14,9 @@
 #  limitations under the License.
 #
 import logging
-from quart import request, make_response
-from api.db.services.canvas_service import UserCanvasService, API4ConversationService
-from api.db.services.file_service import FileService
-from common.constants import RetCode
-from api.utils.api_utils import (
-    get_json_result,
-)
+from api.utils.api_utils import get_json_result
 from rag.utils.redis_conn import REDIS_CONN
-from api.apps import login_required, current_user
+from api.apps import login_required
 
 
 @manager.route('/cancel/<task_id>', methods=['PUT'])  # noqa: F821
@@ -33,10 +27,3 @@ def cancel(task_id):
     except Exception as e:
         logging.exception(e)
     return get_json_result(data=True)
-    
-@manager.route('/download', methods=['GET'])  # noqa: F821
-async def download():
-    id = request.args.get("id")
-    created_by = request.args.get("created_by")
-    blob = FileService.get_blob(created_by, id)
-    return await make_response(blob)

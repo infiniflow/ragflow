@@ -219,6 +219,14 @@ def delete_agent_session_item(agent_id, session_id, tenant_id):
     return get_json_result(data=API4ConversationService.delete_by_id(session_id))
 
 
+@manager.route("/agents/download", methods=["GET"])  # noqa: F821
+async def download_agent_file():
+    id = request.args.get("id")
+    created_by = request.args.get("created_by")
+    blob = FileService.get_blob(created_by, id)
+    return Response(blob)
+
+
 async def _iter_session_completion_events(tenant_id, agent_id, req, return_trace):
     # Stream and non-stream session completions share the same event parsing and trace injection.
     trace_items = []
