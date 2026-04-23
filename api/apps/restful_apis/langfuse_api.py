@@ -23,7 +23,7 @@ from api.db.services.langfuse_service import TenantLangfuseService
 from api.utils.api_utils import get_error_data_result, get_json_result, get_request_json, server_error_response, validate_request
 
 
-@manager.route("/api_key", methods=["POST", "PUT"])  # noqa: F821
+@manager.route("/langfuse/api-key", methods=["POST", "PUT"])  # noqa: F821
 @login_required
 @validate_request("secret_key", "public_key", "host")
 async def set_api_key():
@@ -58,7 +58,7 @@ async def set_api_key():
             return server_error_response(e)
 
 
-@manager.route("/api_key", methods=["GET"])  # noqa: F821
+@manager.route("/langfuse/api-key", methods=["GET"])  # noqa: F821
 @login_required
 @validate_request()
 def get_api_key():
@@ -82,7 +82,7 @@ def get_api_key():
     return get_json_result(data=langfuse_entry)
 
 
-@manager.route("/api_key", methods=["DELETE"])  # noqa: F821
+@manager.route("/langfuse/api-key", methods=["DELETE"])  # noqa: F821
 @login_required
 @validate_request()
 def delete_api_key():

@@ -55,36 +55,18 @@ func (z *DeepSeekModel) Name() string {
 
 // Chat sends a message and returns response
 func (z *DeepSeekModel) Chat(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
 func (z *DeepSeekModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("not implemented")
+	return nil
 }
 
 // EncodeToEmbedding encodes a list of texts into embeddings
 func (z *DeepSeekModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
-
-/*
-{
-  "object": "list",
-  "data": [
-    {
-      "id": "deepseek-chat",
-      "object": "model",
-      "owned_by": "deepseek"
-    },
-    {
-      "id": "deepseek-reasoner",
-      "object": "model",
-      "owned_by": "deepseek"
-    }
-  ]
-}
-*/
 
 type Model struct {
 	ID      string `json:"id"`
@@ -152,4 +134,12 @@ func (z *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 func (z *DeepSeekModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *DeepSeekModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := z.ListModels(apiConfig)
+	if err != nil {
+		return err
+	}
+	return nil
 }

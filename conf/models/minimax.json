@@ -1,0 +1,78 @@
+{
+  "name": "MiniMax",
+  "url": {
+    "default": "https://api.minimaxi.com/",
+    "global": "https://api.minimax.io/"
+  },
+  "url_suffix": {
+    "chat": "v1/text/chatcompletion_v2",
+    "tts": "v1/t2a_v2",
+    "files": "v1/files/list"
+  },
+  "models": [
+    {
+      "name": "minimax-m2.7",
+      "max_tokens": 204800,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "minimax-m2.7-highspeed",
+      "max_tokens": 204800,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "minimax-m2.5",
+      "max_tokens": 204800,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "minimax-m2.5-highspeed",
+      "max_tokens": 204800,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "minimax-m2.1",
+      "max_tokens": 204800,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "minimax-m2.1-highspeed",
+      "max_tokens": 204800,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "minimax-m2",
+      "max_tokens": 204800,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "minimax-m2-her",
+      "max_tokens": 65536,
+      "model_types": [
+        "chat"
+      ]
+    }
+  ],
+  "features": {
+    "thinking": {
+      "default_value": true,
+      "supported_models": [
+        "deepseek-chat"
+      ]
+    }
+  }
+}
