@@ -6721,7 +6721,7 @@ requires-dist = [
     { name = "infinity-sdk", specifier = "==0.7.0.dev5" },
     { name = "jira", specifier = "==3.10.5" },
     { name = "json-repair", specifier = "==0.35.0" },
-    { name = "langfuse", specifier = ">=2.60.0" },
+    { name = "langfuse", specifier = ">=4.0.1" },
     { name = "litellm", specifier = "~=1.82.0,!=1.82.7,!=1.82.8" },
     { name = "mammoth", specifier = ">=1.11.0" },
     { name = "markdown", specifier = "==3.6" },
