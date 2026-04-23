@@ -855,7 +855,7 @@ print("Async bulk parsing cancelled.")
 ### Add chunk
 
 ```python
-Document.add_chunk(content:str, important_keywords:list[str] = [], image_base64:str = None, *, tag_kwd:list[str] = []) -> Chunk
+Document.add_chunk(content:str, important_keywords:list[str] = [], questions:list[str] = [], image_base64:str = None, *, tag_kwd:list[str] = []) -> Chunk
 ```
 
 Adds a chunk to the current document.
@@ -869,6 +869,10 @@ The text content of the chunk.
 ##### important_keywords: `list[str]`
 
 The key terms or phrases to tag with the chunk.
+
+##### questions: `list[str]`
+
+Optional questions to use when embedding the chunk.
 
 ##### image_base64: `string`
 
@@ -889,6 +893,7 @@ A `Chunk` object contains the following attributes:
 - `content`: `string` The text content of the chunk.
 - `important_keywords`: `list[str]` A list of key terms or phrases tagged with the chunk.
 - `tag_kwd`: `list[str]` A list of tag keywords associated with the chunk.
+- `questions`: `list[str]` A list of questions associated with the chunk.
 - `image_id`: `string` The image ID associated with the chunk (empty string if no image).
 - `create_time`: `string` The time when the chunk was created (added to the document).
 - `create_timestamp`: `float` The timestamp representing the creation time of the chunk, expressed in seconds since January 1, 1970.
@@ -1023,16 +1028,19 @@ Updates content or configurations for the current chunk.
 
 #### Parameters
 
-##### update_message: `dict[str, str|list[str]|int]` *Required*
+##### update_message: `dict[str, str|list[str]|bool]` *Required*
 
 A dictionary representing the attributes to update, with the following keys:
 
 - `"content"`: `string` The text content of the chunk.
 - `"important_keywords"`: `list[str]` A list of key terms or phrases to tag with the chunk.
+- `"questions"`: `list[str]` A list of questions associated with the chunk.
 - `"tag_kwd"`: `list[str]` A list of tag keywords to associate with the chunk.
+- `"positions"`: `list` Updated source positions for the chunk.
 - `"available"`: `bool` The chunk's availability status in the dataset. Value options:
   - `False`: Unavailable
   - `True`: Available (default)
+- `"image_base64"`: `string` Base64-encoded image content to associate with the chunk.
 
 #### Returns
 
@@ -2589,7 +2597,8 @@ Ragflow.search_message(
     query: str, 
     memory_id: list[str], 
     agent_id: str=None, 
-    session_id: str=None, 
+    session_id: str=None,
+    user_id: str=None,
     similarity_threshold: float=0.2, 
     keywords_similarity_weight: float=0.7, 
     top_n: int=10
@@ -2615,6 +2624,10 @@ The ID of the message's source agent. Defaults to `None`.
 ##### session_id: `string`, *Optional*
 
 The ID of the message's session. Defaults to `None`.
+
+##### user_id: `string`, *Optional*
+
+The user participating in the conversation with the agent. Defaults to `None`.
 
 ##### similarity_threshold: `float`, *Optional*
 

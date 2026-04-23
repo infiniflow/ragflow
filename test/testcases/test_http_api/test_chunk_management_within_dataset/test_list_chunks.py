@@ -17,7 +17,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import batch_add_chunks, list_chunks
+from common import batch_add_chunks, get_chunk, list_chunks
 from configs import INVALID_API_TOKEN, INVALID_ID_32
 from libs.auth import RAGFlowHttpApiAuth
 
@@ -27,12 +27,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
-            (
-                RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
-            ),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
+            (RAGFlowHttpApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
@@ -138,6 +134,15 @@ class TestChunksList:
                 assert res["data"]["chunks"][0]["id"] == params["id"]
         else:
             assert res["message"] == expected_message
+
+    @pytest.mark.p1
+    @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6499")
+    def test_get_chunk(self, HttpApiAuth, add_chunks):
+        dataset_id, document_id, chunk_ids = add_chunks
+        res = get_chunk(HttpApiAuth, dataset_id, document_id, chunk_ids[0])
+        assert res["code"] == 0
+        assert res["data"]["id"] == chunk_ids[0]
+        assert res["data"]["doc_id"] == document_id
 
     @pytest.mark.p3
     def test_invalid_params(self, HttpApiAuth, add_chunks):

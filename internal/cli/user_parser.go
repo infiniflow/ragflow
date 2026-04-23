@@ -352,6 +352,8 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 		return p.parseShowModel()
 	case TokenInstance:
 		return p.parseShowInstance()
+	case TokenBalance:
+		return p.parseShowBalance()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -1290,6 +1292,45 @@ func (p *Parser) parseShowInstance() (*Command, error) {
 	}
 
 	cmd := NewCommand("show_provider_instance")
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["provider_name"] = providerName
+
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// parseShowInstance parses SHOW BALANCE FROM <provider_name> <instance_name>
+func (p *Parser) parseShowBalance() (*Command, error) {
+	p.nextToken() // consume INSTANCE
+
+	if p.curToken.Type != TokenFrom {
+		return nil, fmt.Errorf("expected FROM")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected provider name after FROM PROVIDER")
+	}
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected provider name after FROM PROVIDER: %w", err)
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected instance name")
+	}
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected instance name: %w", err)
+	}
+	p.nextToken()
+
+	cmd := NewCommand("show_instance_balance")
 	cmd.Params["instance_name"] = instanceName
 	cmd.Params["provider_name"] = providerName
 
@@ -2282,6 +2323,42 @@ func (p *Parser) parseStreamCommand() (*Command, error) {
 
 	command.Params["stream"] = true
 	return command, nil
+}
+
+func (p *Parser) parseCheckCommand() (*Command, error) {
+	p.nextToken() // consume CHECK
+
+	if p.curToken.Type != TokenInstance {
+		return nil, fmt.Errorf("expected INSTANCE after CHECK")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected instance name after INSTANCE")
+	}
+	instanceName := p.curToken.Value
+	p.nextToken()
+
+	if p.curToken.Type != TokenFrom {
+		return nil, fmt.Errorf("expected FROM after instance name")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected provider name after FROM")
+	}
+	providerName := p.curToken.Value
+	p.nextToken()
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("check_provider_connection")
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["instance_name"] = instanceName
+	return cmd, nil
 }
 
 func (p *Parser) parseUseCommand() (*Command, error) {

@@ -17,7 +17,6 @@ const {
   deleteMessage,
   thumbup,
   chatsTts,
-  ask,
   chatsMindmap,
   chatsRelatedQuestions,
   uploadAndParse,
@@ -67,7 +66,7 @@ const methods = {
   },
   updateSession: {
     url: updateSession,
-    method: 'put',
+    method: 'patch',
   },
   removeSessions: {
     url: removeSessions,
@@ -79,14 +78,10 @@ const methods = {
   },
   thumbup: {
     url: thumbup,
-    method: 'put',
+    method: 'patch',
   },
   chatsTts: {
     url: chatsTts,
-    method: 'post',
-  },
-  ask: {
-    url: ask,
     method: 'post',
   },
   chatsMindmap: {
