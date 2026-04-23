@@ -18,10 +18,12 @@ from types import SimpleNamespace
 
 import pytest
 from test_common import (
+    delete_document,
     document_change_status,
     document_filter,
     document_infos,
     document_metadata_summary,
+    document_metadata_update,
     document_update_metadata_setting,
 )
 from configs import INVALID_API_TOKEN
@@ -69,7 +71,7 @@ class TestAuthorization:
     @pytest.mark.p2
     @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
     def test_update_metadata_setting_auth_invalid(self, invalid_auth, expected_code, expected_fragment):
-        res = document_update_metadata_setting(invalid_auth, {"doc_id": "doc_id", "metadata": {}})
+        res = document_update_metadata_setting(invalid_auth, "kb_id", "doc_id", {"metadata": {}})
         assert res["code"] == expected_code, res
         assert expected_fragment in res["message"], res
 
@@ -188,6 +190,19 @@ class TestDocumentMetadataNegative:
         assert "required argument are missing" in res["message"], res
         assert "metadata" in res["message"], res
 
+    @pytest.mark.p2
+    def test_update_metadata_setting_not_found(self, WebApiAuth, add_document_func):
+        """Test updating metadata setting for a non-existent document returns error."""
+        dataset_id, doc_id = add_document_func
+        # First delete the document
+        delete_res = delete_document(WebApiAuth, dataset_id, {"ids": [doc_id]})
+        assert delete_res["code"] == 0, delete_res
+
+        # Now try to update metadata setting for the deleted document
+        res = document_update_metadata_setting(WebApiAuth, dataset_id, doc_id, {"metadata": {"author": "test"}})
+        assert res["code"] == 102, res
+        assert f"Document {doc_id} not found in dataset {dataset_id}" in res["message"], res
+
     @pytest.mark.p3
     def test_change_status_invalid_status(self, WebApiAuth, add_document_func):
         _, doc_id = add_document_func
@@ -231,67 +246,44 @@ class TestDocumentMetadataUnit:
         monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id=tenant_id)])
         monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: True if _kwargs.get("id") == kb_id else False)
 
-    def test_metadata_update_missing_kb_id(self, document_app_module, monkeypatch):
-        module = document_app_module
+    @pytest.mark.p3
+    def test_update_metadata_missing_dataset_id(self, WebApiAuth, add_document_func):
+        """Test the new unified update_metadata API - missing dataset_id."""
+        # Call with empty dataset_id (should fail validation)
+        res = document_metadata_update(WebApiAuth, "", {"dataset_id": "", "selector": {"document_ids": ["doc1"]}, "updates": []})
+        assert res["code"] == 404
+        assert res["message"] == "Not Found: /api/v1/datasets//documents/metadatas", res
 
-        async def fake_request_json():
-            return {"doc_ids": ["doc1"], "updates": [], "deletes": []}
+    @pytest.mark.p3
+    def test_update_metadata_success(self, WebApiAuth, add_document_func):
+        """Test the new unified update_metadata API - success case."""
+        kb_id, doc_id = add_document_func
+        res = document_metadata_update(
+            WebApiAuth, kb_id,
+            {
+                "selector": {"document_ids": [doc_id]},
+                "updates": [{"key": "author", "value": "test_author"}],
+                "deletes": []
+            }
+        )
+        assert res["code"] == 0, res
 
-        monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.metadata_update.__wrapped__())
-        assert res["code"] == 101
-        assert "KB ID" in res["message"]
 
-    def test_metadata_update_success(self, document_app_module, monkeypatch):
-        module = document_app_module
-        monkeypatch.setattr(module.DocMetadataService, "batch_update_metadata", lambda *_args, **_kwargs: 1)
+    @pytest.mark.p3
+    def test_update_metadata_invalid_delete_item(self, WebApiAuth, add_document_func):
+        """Test the new unified update_metadata API - invalid delete item."""
+        kb_id, doc_id = add_document_func
+        res = document_metadata_update(
+            WebApiAuth, kb_id,
+            {
+                "selector": {"document_ids": [doc_id]},
+                "updates": [],
+                "deletes": [{}]  # Invalid - missing key
+            }
+        )
+        assert res["code"] == 102
+        assert "Each delete requires key" in res["message"], res
 
-        async def fake_request_json():
-            return {"kb_id": "kb1", "doc_ids": ["doc1"], "updates": [{"key": "author", "value": "alice"}], "deletes": []}
-
-        monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.metadata_update.__wrapped__())
-        assert res["code"] == 0
-        assert res["data"]["matched_docs"] == 1
-
-    def test_metadata_update_invalid_delete_item_unit(self, document_app_module, monkeypatch):
-        module = document_app_module
-
-        async def fake_request_json():
-            return {"kb_id": "kb1", "doc_ids": ["doc1"], "updates": [], "deletes": [{}]}
-
-        monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.metadata_update.__wrapped__())
-        assert res["code"] == module.RetCode.ARGUMENT_ERROR
-        assert "Each delete requires key." in res["message"]
-
-    def test_update_metadata_setting_authorization_and_refetch_not_found_unit(self, document_app_module, monkeypatch):
-        module = document_app_module
-
-        async def fake_request_json():
-            return {"doc_id": "doc1", "metadata": {"author": "alice"}}
-
-        monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        monkeypatch.setattr(module.DocumentService, "accessible", lambda *_args, **_kwargs: False)
-        res = _run(module.update_metadata_setting.__wrapped__())
-        assert res["code"] == module.RetCode.AUTHENTICATION_ERROR
-        assert "No authorization." in res["message"]
-
-        doc = SimpleNamespace(id="doc1", to_dict=lambda: {"id": "doc1", "parser_config": {}})
-        state = {"count": 0}
-
-        def fake_get_by_id(_doc_id):
-            state["count"] += 1
-            if state["count"] == 1:
-                return True, doc
-            return False, None
-
-        monkeypatch.setattr(module.DocumentService, "accessible", lambda *_args, **_kwargs: True)
-        monkeypatch.setattr(module.DocumentService, "get_by_id", fake_get_by_id)
-        monkeypatch.setattr(module.DocumentService, "update_parser_config", lambda *_args, **_kwargs: True)
-        res = _run(module.update_metadata_setting.__wrapped__())
-        assert res["code"] == module.RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
 
     def test_thumbnails_missing_ids_rewrite_and_exception_unit(self, document_app_module, monkeypatch):
         module = document_app_module
