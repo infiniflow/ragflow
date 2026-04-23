@@ -13,16 +13,14 @@
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ],
-      "features": {}
+      ]
     },
     {
       "name": "deepseek-reasoner",
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ],
-      "features": {}
+      ]
     }
   ],
   "features": {

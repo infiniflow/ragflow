@@ -409,8 +409,12 @@ def document_metadata_summary(auth, payload=None, *, headers=HEADERS, data=None)
     return res.json()
 
 
-def document_metadata_update(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/metadata/update", headers=headers, auth=auth, json=payload, data=data)
+def document_metadata_update(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
+    """New unified API for updating document metadata.
+
+    Uses PATCH method at /api/v1/datasets/{dataset_id}/documents/metadatas
+    """
+    res = requests.patch(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents/metadatas", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 

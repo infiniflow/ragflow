@@ -25,7 +25,6 @@ from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import FileType
 from api.db.db_models import Task
 from api.db.services import duplicate_name
-from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
@@ -181,33 +180,6 @@ async def create():
         return get_json_result(data=doc.to_json())
     except Exception as e:
         return server_error_response(e)
-
-
-@manager.route("/metadata/update", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("doc_ids")
-async def metadata_update():
-    req = await get_request_json()
-    kb_id = req.get("kb_id")
-    document_ids = req.get("doc_ids")
-    updates = req.get("updates", []) or []
-    deletes = req.get("deletes", []) or []
-
-    if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-
-    if not isinstance(updates, list) or not isinstance(deletes, list):
-        return get_json_result(data=False, message="updates and deletes must be lists.", code=RetCode.ARGUMENT_ERROR)
-
-    for upd in updates:
-        if not isinstance(upd, dict) or not upd.get("key") or "value" not in upd:
-            return get_json_result(data=False, message="Each update requires key and value.", code=RetCode.ARGUMENT_ERROR)
-    for d in deletes:
-        if not isinstance(d, dict) or not d.get("key"):
-            return get_json_result(data=False, message="Each delete requires key.", code=RetCode.ARGUMENT_ERROR)
-
-    updated = DocMetadataService.batch_update_metadata(kb_id, document_ids, updates, deletes)
-    return get_json_result(data={"updated": updated, "matched_docs": len(document_ids)})
 
 
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821

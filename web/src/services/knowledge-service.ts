@@ -265,15 +265,23 @@ export const getMetaDataService = ({
   request.get(api.getMetaData(kb_id), {
     params: doc_ids?.length ? { doc_ids: doc_ids.join(',') } : undefined,
   });
-export const updateMetaData = ({
-  kb_id,
-  doc_ids,
-  data,
+export const updateDocumentsMetadata = ({
+  dataset_id,
+  selector,
+  updates,
+  deletes,
 }: {
-  kb_id: string;
-  doc_ids?: string[];
-  data: any;
-}) => request.post(api.updateMetaData, { data: { kb_id, doc_ids, ...data } });
+  dataset_id: string;
+  selector?: {
+    document_ids?: string[];
+    metadata_condition?: any;
+  };
+  updates?: any[];
+  deletes?: any[];
+}) =>
+  request.patch(api.updateDocumentsMetadata(dataset_id), {
+    data: { selector, updates, deletes },
+  });
 
 export const changeDocumentsStatus = ({
   kb_id,
