@@ -134,7 +134,6 @@ export const IconMap = {
   [LLMFactory.Builtin]: 'builtin',
   [LLMFactory.MinerU]: 'mineru',
   [LLMFactory.PaddleOCR]: 'paddleocr',
-  [LLMFactory.OpenDataLoader]: 'opendataloader',
   [LLMFactory.N1n]: 'n1n',
   [LLMFactory.Avian]: 'avian',
   [LLMFactory.RAGcon]: 'ragcon',
