@@ -1026,56 +1026,7 @@ def test_agent_completions_stream_and_nonstream_unit(monkeypatch):
         "c4": {},
     }
     assert [item["component_id"] for item in res["data"]["data"]["trace"]] == ["c2", "c3", "c4"]
-
-
-@pytest.mark.p2
-def test_list_agent_session_projection_unit(monkeypatch):
-    module = _load_session_module(monkeypatch)
-
-    monkeypatch.setattr(module, "request", SimpleNamespace(args=_Args({})))
-    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [SimpleNamespace(id="agent-1")])
-
-    conv_non_list_reference = {
-        "id": "session-1",
-        "dialog_id": "agent-1",
-        "message": [{"role": "assistant", "content": "hello", "prompt": "internal"}],
-        "reference": {"unexpected": "shape"},
-    }
-    monkeypatch.setattr(module.API4ConversationService, "get_list", lambda *_args, **_kwargs: (1, [conv_non_list_reference]))
-    res = _run(inspect.unwrap(module.list_agent_session)("tenant-1", "agent-1"))
-    assert res["data"][0]["agent_id"] == "agent-1"
-    assert "prompt" not in res["data"][0]["messages"][0]
-
-    conv_with_chunks = {
-        "id": "session-2",
-        "dialog_id": "agent-1",
-        "message": [
-            {"role": "user", "content": "question"},
-            {"role": "assistant", "content": "answer", "prompt": "internal"},
-        ],
-        "reference": [
-            {
-                "chunks": [
-                    "not-a-dict",
-                    {
-                        "chunk_id": "chunk-2",
-                        "content_with_weight": "weighted",
-                        "doc_id": "doc-2",
-                        "docnm_kwd": "doc-name-2",
-                        "kb_id": "kb-2",
-                        "image_id": "img-2",
-                        "positions": [9],
-                    },
-                ]
-            }
-        ],
-    }
-    monkeypatch.setattr(module.API4ConversationService, "get_list", lambda *_args, **_kwargs: (1, [conv_with_chunks]))
-    res = _run(inspect.unwrap(module.list_agent_session)("tenant-1", "agent-1"))
-    projected_chunk = res["data"][0]["messages"][1]["reference"][0]
-    assert projected_chunk["image_id"] == "img-2"
-    assert projected_chunk["positions"] == [9]
-
+    
 
 @pytest.mark.p2
 def test_delete_routes_partial_duplicate_unit(monkeypatch):

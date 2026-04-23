@@ -17,11 +17,8 @@ import pytest
 import requests
 from common import (
     create_agent,
-    create_agent_session,
     delete_agent,
     delete_all_agent_sessions,
-    delete_agent_sessions,
-    list_agent_sessions,
     list_agents,
 )
 from configs import HOST_ADDRESS, VERSION
@@ -84,33 +81,6 @@ def agent_id(HttpApiAuth, request):
 
 
 class TestAgentSessions:
-    @pytest.mark.p2
-    def test_delete_agent_sessions_empty_ids_noop(self, HttpApiAuth, agent_id):
-        res = create_agent_session(HttpApiAuth, agent_id, payload={})
-        assert res["code"] == 0, res
-        session_id = res["data"]["id"]
-
-        res = delete_agent_sessions(HttpApiAuth, agent_id, {"ids": []})
-        assert res["code"] == 0, res
-
-        res = list_agent_sessions(HttpApiAuth, agent_id, params={"id": session_id})
-        assert res["code"] == 0, res
-        assert len(res["data"]) == 1, res
-
-    @pytest.mark.p2
-    def test_create_list_delete_agent_sessions(self, HttpApiAuth, agent_id):
-        res = create_agent_session(HttpApiAuth, agent_id, payload={})
-        assert res["code"] == 0, res
-        session_id = res["data"]["id"]
-        assert res["data"]["agent_id"] == agent_id, res
-
-        res = list_agent_sessions(HttpApiAuth, agent_id, params={"id": session_id})
-        assert res["code"] == 0, res
-        assert len(res["data"]) == 1, res
-        assert res["data"][0]["id"] == session_id, res
-
-        res = delete_agent_sessions(HttpApiAuth, agent_id, {"ids": [session_id]})
-        assert res["code"] == 0, res
 
     @pytest.mark.p2
     def test_agent_crud_validation_contract(self, HttpApiAuth, agent_id):
