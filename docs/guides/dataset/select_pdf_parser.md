@@ -89,12 +89,6 @@ To enable the OpenDataLoader parser, start it as a standalone service and point 
 
 The `opendataloader` container bundles Java 11+ via `default-jre-headless`; the RAGFlow host does not need a JRE installed.
 
-Optional tuning (set as environment variables on the RAGFlow container, forwarded to the service as request parameters):
-
-- `OPENDATALOADER_HYBRID`: Enable hybrid extraction (for example, `docling-fast`). Leaving it unset uses local-only mode (fastest, no AI backend).
-- `OPENDATALOADER_IMAGE_OUTPUT`: `off`, `embedded`, or `external` (default).
-- `OPENDATALOADER_SANITIZE`: `1` to filter known prompt-injection patterns from extracted text.
-
 :::note
 All MinerU environment variables are optional. When set, these values are used to auto-provision a MinerU OCR model for the tenant on first use. To avoid auto-provisioning, skip the environment variable settings and only configure MinerU from the **Model providers** page in the UI.
 :::
