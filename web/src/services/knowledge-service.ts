@@ -33,10 +33,6 @@ const {
   setMeta,
   getMeta,
   retrievalTestShare,
-  getKnowledgeBasicInfo,
-  checkEmbedding,
-  kbUpdateMetaData,
-  documentUpdateMetaData,
 } = api;
 
 const methods = {
@@ -132,18 +128,6 @@ const methods = {
   },
   pipelineRerun: {
     url: api.pipelineRerun,
-    method: 'post',
-  },
-  checkEmbedding: {
-    url: checkEmbedding,
-    method: 'post',
-  },
-  kbUpdateMetaData: {
-    url: kbUpdateMetaData,
-    method: 'post',
-  },
-  documentUpdateMetaData: {
-    url: documentUpdateMetaData,
     method: 'post',
   },
 };
