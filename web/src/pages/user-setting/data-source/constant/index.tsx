@@ -60,6 +60,21 @@ export const DataSourceFeatureVisibilityMap = {
   [DataSourceKey.CONFLUENCE]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.BOX]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.S3]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.R2]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.OCI_STORAGE]: {
+    syncDeletedFiles: true,
+  },
 };
 
 const isDataSourceFeatureVisible = (
