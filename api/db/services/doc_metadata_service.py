@@ -454,9 +454,9 @@ class DocMetadataService:
                 # Index exists - check if document exists
                 try:
                     doc_exists = settings.docStoreConn.get(
-                        index_name=index_name,
-                        id=doc_id,
-                        kb_id=kb_id
+                        doc_id,
+                        index_name,
+                        [kb_id]
                     )
                     if doc_exists:
                         # Document exists - use partial update

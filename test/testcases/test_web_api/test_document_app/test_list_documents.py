@@ -173,14 +173,14 @@ class TestDocumentsList:
         """Test missing KB ID returns error."""
         res = list_documents(WebApiAuth, {"kb_id": ""})
         assert res["code"] == 102
-        assert "You don't own the dataset" in res["message"]
+        assert "lacks permission for dataset" in res["message"]
 
     @pytest.mark.p2
     def test_unauthorized_dataset(self, WebApiAuth):
         """Test unauthorized dataset returns error."""
         res = list_documents(WebApiAuth, {"kb_id": "non_existent_kb_id"})
         assert res["code"] == 102
-        assert "You don't own the dataset" in res["message"]
+        assert "lacks permission for dataset" in res["message"]
 
     @pytest.mark.p3
     def test_invalid_run_status_filter(self, WebApiAuth, add_documents):
