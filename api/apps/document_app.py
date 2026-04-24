@@ -690,8 +690,9 @@ async def upload_info():
     files = await request.files
     file_objs = files.getlist("file") if files and files.get("file") else []
     url = request.args.get("url")
-    if url:
-        assert_url_is_safe(url)
+    if not url and not file_objs:
+        req = await get_request_json()
+        url = req.get("url") if req else None
 
     if file_objs and url:
         return get_json_result(
@@ -709,6 +710,7 @@ async def upload_info():
 
     try:
         if url and not file_objs:
+            assert_url_is_safe(url)
             return get_json_result(data=FileService.upload_info(current_user.id, None, url))
 
         if len(file_objs) == 1:
