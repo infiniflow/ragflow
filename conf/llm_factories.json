@@ -1136,14 +1136,14 @@
                 {
                     "llm_name": "deepseek-v4-flash",
                     "tags": "LLM,CHAT,",
-                    "max_tokens": 64000,
+                    "max_tokens": 1000000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
                     "llm_name": "deepseek-v4-pro",
                     "tags": "LLM,CHAT,",
-                    "max_tokens": 64000,
+                    "max_tokens": 1000000,
                     "model_type": "chat",
                     "is_tools": true
                 }
