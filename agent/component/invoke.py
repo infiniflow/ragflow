@@ -24,7 +24,6 @@ from functools import partial
 import requests
 
 from agent.component.base import ComponentBase, ComponentParamBase
-from common.ssrf_guard import assert_url_is_safe, pin_dns
 from common.connection_utils import timeout
 from deepdoc.parser import HtmlParser
 
@@ -180,10 +179,7 @@ class Invoke(ComponentBase, ABC):
         if not isinstance(headers, dict):
             raise ValueError("Invoke headers must be a JSON object.")
 
-        return {
-            key: self._resolve_header_text(value, kwargs) if isinstance(value, str) else value
-            for key, value in headers.items()
-        }
+        return {key: self._resolve_header_text(value, kwargs) if isinstance(value, str) else value for key, value in headers.items()}
 
     def _build_proxies(self) -> dict | None:
         if not re.sub(r"https?:?/?/?", "", self._param.proxy):
@@ -216,7 +212,7 @@ class Invoke(ComponentBase, ABC):
         # HtmlParser keeps the Invoke output text-focused when the endpoint returns HTML.
         sections = HtmlParser()(None, response.content)
         return "\n".join(sections)
-    
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))
     def _invoke(self, **kwargs):
         if self.check_if_canceled("Invoke processing"):
