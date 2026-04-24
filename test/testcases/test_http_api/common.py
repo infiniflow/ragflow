@@ -406,8 +406,11 @@ def delete_all_agent_sessions(auth, agent_id, *, page_size=1000):
 
 
 def agent_completions(auth, agent_id, payload=None):
-    url = f"{HOST_ADDRESS}{AGENT_API_URL}/{agent_id}/completions"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    url = f"{HOST_ADDRESS}{AGENT_API_URL}/chat/completion"
+    body = {"agent_id": agent_id}
+    if payload:
+        body.update(payload)
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=body)
     return res.json()
 
 
