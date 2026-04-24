@@ -808,13 +808,15 @@ func (m *ModelProviderService) ChatToModelByApiKey(providerName, modelName, apiK
 		return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
 	}
 
-	var response string
-	response, err = providerInfo.ModelDriver.Chat(&modelName, &apiKey, &message, nil)
+	var apiConfig = &modelModule.APIConfig{}
+	apiConfig.ApiKey = &apiKey
+	var response *modelModule.ChatResponse
+	response, err = providerInfo.ModelDriver.Chat(&modelName, &message, apiConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
 
-	return &response, common.CodeSuccess, nil
+	return response.Answer, common.CodeSuccess, nil
 }
 
 // ChatWithMessagesToModelByApiKey sends multiple messages with roles and returns response
