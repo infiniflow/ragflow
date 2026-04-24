@@ -34,7 +34,7 @@ from common import (
 from utils import wait_for
 
 
-@wait_for(200, 1, "Document parsing timeout")
+@wait_for(30, 1, "Document parsing timeout")
 def _condition_parsing_complete(_auth, dataset_id):
     res = list_documents(_auth, dataset_id)
     if res["code"] != 0:
@@ -42,7 +42,7 @@ def _condition_parsing_complete(_auth, dataset_id):
 
     for doc in res["data"]["docs"]:
         status = doc.get("run", "UNKNOWN")
-        if status == "FAILED":
+        if status in ("FAIL", "FAILED"):
             pytest.fail(f"Document parsing failed: {doc}")
             return False
         if status != "DONE":
@@ -70,7 +70,7 @@ def add_dataset_with_metadata(HttpApiAuth):
         headers={"Content-Type": "application/json"},
         auth=HttpApiAuth,
         json={
-            "enabled": True,
+            "enabled": False,
             "fields": [
                 {"name": "character", "type": "string", "description": "Historical figure name"},
                 {"name": "era", "type": "string", "description": "Historical era"},
