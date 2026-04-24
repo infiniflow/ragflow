@@ -200,6 +200,7 @@ def _load_agents_app(monkeypatch, *, target="rest"):
     common_pkg.__path__ = [str(repo_root / "common")]
     monkeypatch.setitem(sys.modules, "common", common_pkg)
     settings_mod = ModuleType("common.settings")
+    settings_mod.DATABASE_TYPE = "mysql"
     settings_mod.docStoreConn = SimpleNamespace(
         index_exist=lambda *_args, **_kwargs: False,
         delete=lambda *_args, **_kwargs: None,
@@ -226,6 +227,10 @@ def _load_agents_app(monkeypatch, *, target="rest"):
     services_pkg = ModuleType("api.db.services")
     services_pkg.__path__ = []
     monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
+
+    db_models_mod = ModuleType("api.db.db_models")
+    db_models_mod.Task = type("_StubTask", (), {"doc_id": "doc_id"})
+    monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
 
     canvas_service_mod = ModuleType("api.db.services.canvas_service")
 
