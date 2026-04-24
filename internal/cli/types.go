@@ -116,6 +116,7 @@ const (
 	TokenDisable
 	TokenEnable
 	TokenUse
+	TokenCheck
 	TokenThink
 	TokenLS
 	TokenCat

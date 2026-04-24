@@ -60,10 +60,11 @@ def _seed_tag(auth, kb_id, document_id, chunk_id):
     tag = f"tag_{uuid.uuid4().hex[:8]}"
     res = update_chunk(
         auth,
+        kb_id,
+        document_id,
+        chunk_id,
         {
-            "doc_id": document_id,
-            "chunk_id": chunk_id,
-            "content_with_weight": f"tag seed {tag}",
+            "content": f"tag seed {tag}",
             "tag_kwd": [tag],
         },
     )

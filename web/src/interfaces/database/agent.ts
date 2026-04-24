@@ -297,6 +297,7 @@ export interface IPipeLineListRequest {
   orderby?: string;
   desc?: boolean;
   canvas_category?: AgentCategory;
+  ext?: string;
 }
 
 export interface GlobalVariableType {

@@ -485,23 +485,58 @@ func (m *ModelProviderService) ShowInstanceBalance(providerName, instanceName, u
 		return nil, common.CodeServerError, err
 	}
 	return result, common.CodeSuccess, nil
+}
 
-	// convert instance.Extra (json string) to map
-	//var extra map[string]string
-	//err = json.Unmarshal([]byte(instance.Extra), &extra)
-	//if err != nil {
-	//	return nil, common.CodeServerError, err
-	//}
-	//
-	//result := map[string]interface{}{
-	//	"id":           instance.ID,
-	//	"instanceName": instance.InstanceName,
-	//	"providerID":   instance.ProviderID,
-	//	"status":       instance.Status,
-	//	"region":       extra["region"],
-	//}
-	//
-	//return result, common.CodeSuccess, nil
+func (m *ModelProviderService) CheckProviderConnection(providerName, instanceName, userID string) (common.ErrorCode, error) {
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+	if providerInfo == nil {
+		return common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
+	}
+
+	var extra map[string]string
+	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	apiConfig := &modelModule.APIConfig{
+		ApiKey: nil,
+		Region: nil,
+	}
+
+	region := extra["region"]
+	apiConfig.Region = &region
+	apiConfig.ApiKey = &instance.APIKey
+
+	err = providerInfo.ModelDriver.CheckConnection(apiConfig)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	return common.CodeSuccess, nil
 }
 
 func (m *ModelProviderService) AlterProviderInstance(providerName, instanceName, newInstanceName, apiKey, userID string) (common.ErrorCode, error) {
