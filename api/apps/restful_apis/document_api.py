@@ -279,112 +279,10 @@ async def upload_document(dataset_id, tenant_id):
         return get_error_data_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     if upload_type == "web":
-        form = await request.form
-        name = (form.get("name") or "").strip()
-        url = form.get("url")
-
-        if not name:
-            return get_error_data_result(message='Lack of "name"', code=RetCode.ARGUMENT_ERROR)
-        if not url:
-            return get_error_data_result(message='Lack of "url"', code=RetCode.ARGUMENT_ERROR)
-        if len(name.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-            return get_error_data_result(
-                message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.",
-                code=RetCode.ARGUMENT_ERROR,
-            )
-        if not is_valid_url(url):
-            return get_error_data_result(message="The URL format is invalid", code=RetCode.ARGUMENT_ERROR)
-
-        blob = html2pdf(url)
-        if not blob:
-            return server_error_response(ValueError("Download failure."))
-
-        root_folder = FileService.get_root_folder(current_user.id)
-        FileService.init_knowledgebase_docs(root_folder["id"], current_user.id)
-        kb_root_folder = FileService.get_kb_folder(current_user.id)
-        kb_folder = FileService.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
-
-        try:
-            filename = duplicate_name(DocumentService.query, name=f"{name}.pdf", kb_id=kb.id)
-            filetype = filename_type(filename)
-            if filetype == FileType.OTHER.value:
-                raise RuntimeError("This type of file has not been supported yet!")
-
-            location = filename
-            while settings.STORAGE_IMPL.obj_exist(dataset_id, location):
-                location += "_"
-            settings.STORAGE_IMPL.put(dataset_id, location, blob)
-
-            doc = {
-                "id": get_uuid(),
-                "kb_id": kb.id,
-                "parser_id": kb.parser_id,
-                "pipeline_id": kb.pipeline_id,
-                "parser_config": kb.parser_config,
-                "created_by": current_user.id,
-                "type": filetype,
-                "name": filename,
-                "location": location,
-                "size": len(blob),
-                "thumbnail": thumbnail(filename, blob),
-                "suffix": Path(filename).suffix.lstrip("."),
-            }
-            if doc["type"] == FileType.VISUAL:
-                doc["parser_id"] = ParserType.PICTURE.value
-            if doc["type"] == FileType.AURAL:
-                doc["parser_id"] = ParserType.AUDIO.value
-            if re.search(r"\.(ppt|pptx|pages)$", filename):
-                doc["parser_id"] = ParserType.PRESENTATION.value
-            if re.search(r"\.(eml)$", filename):
-                doc["parser_id"] = ParserType.EMAIL.value
-
-            DocumentService.insert(doc)
-            FileService.add_file_from_kb(doc, kb_folder["id"], kb.tenant_id)
-            return get_result(data=map_doc_keys_with_run_status(doc, run_status="0"))
-        except Exception as e:
-            return server_error_response(e)
+        return await _upload_web_document(dataset_id, kb)
 
     if upload_type == "empty":
-        req = await get_request_json()
-        name = (req.get("name") or "").strip()
-
-        if not name:
-            return get_error_data_result(message="File name can't be empty.", code=RetCode.ARGUMENT_ERROR)
-        if len(name.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-            return get_error_data_result(
-                message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.",
-                code=RetCode.ARGUMENT_ERROR,
-            )
-        if DocumentService.query(name=name, kb_id=dataset_id):
-            return get_error_data_result(message="Duplicated document name in the same dataset.")
-
-        try:
-            kb_root_folder = FileService.get_kb_folder(kb.tenant_id)
-            if not kb_root_folder:
-                return get_error_data_result(message="Cannot find the root folder.")
-            kb_folder = FileService.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
-            if not kb_folder:
-                return get_error_data_result(message="Cannot find the kb folder for this file.")
-
-            doc = DocumentService.insert(
-                {
-                    "id": get_uuid(),
-                    "kb_id": kb.id,
-                    "parser_id": kb.parser_id,
-                    "pipeline_id": kb.pipeline_id,
-                    "parser_config": kb.parser_config,
-                    "created_by": current_user.id,
-                    "type": FileType.VIRTUAL,
-                    "name": name,
-                    "suffix": Path(name).suffix.lstrip("."),
-                    "location": "",
-                    "size": 0,
-                }
-            )
-            FileService.add_file_from_kb(doc.to_dict(), kb_folder["id"], kb.tenant_id)
-            return get_result(data=map_doc_keys(doc))
-        except Exception as e:
-            return server_error_response(e)
+        return await _upload_empty_document(dataset_id, kb)
 
     if upload_type != "local":
         return get_error_data_result(
@@ -392,6 +290,120 @@ async def upload_document(dataset_id, tenant_id):
             code=RetCode.ARGUMENT_ERROR,
         )
 
+    return await _upload_local_documents(kb, tenant_id)
+
+
+async def _upload_web_document(dataset_id, kb):
+    form = await request.form
+    name = (form.get("name") or "").strip()
+    url = form.get("url")
+
+    if not name:
+        return get_error_data_result(message='Lack of "name"', code=RetCode.ARGUMENT_ERROR)
+    if not url:
+        return get_error_data_result(message='Lack of "url"', code=RetCode.ARGUMENT_ERROR)
+    if len(name.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
+        return get_error_data_result(
+            message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+    if not is_valid_url(url):
+        return get_error_data_result(message="The URL format is invalid", code=RetCode.ARGUMENT_ERROR)
+
+    blob = html2pdf(url)
+    if not blob:
+        return server_error_response(ValueError("Download failure."))
+
+    root_folder = FileService.get_root_folder(current_user.id)
+    FileService.init_knowledgebase_docs(root_folder["id"], current_user.id)
+    kb_root_folder = FileService.get_kb_folder(current_user.id)
+    kb_folder = FileService.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
+
+    try:
+        filename = duplicate_name(DocumentService.query, name=f"{name}.pdf", kb_id=kb.id)
+        filetype = filename_type(filename)
+        if filetype == FileType.OTHER.value:
+            raise RuntimeError("This type of file has not been supported yet!")
+
+        location = filename
+        while settings.STORAGE_IMPL.obj_exist(dataset_id, location):
+            location += "_"
+        settings.STORAGE_IMPL.put(dataset_id, location, blob)
+
+        doc = {
+            "id": get_uuid(),
+            "kb_id": kb.id,
+            "parser_id": kb.parser_id,
+            "pipeline_id": kb.pipeline_id,
+            "parser_config": kb.parser_config,
+            "created_by": current_user.id,
+            "type": filetype,
+            "name": filename,
+            "location": location,
+            "size": len(blob),
+            "thumbnail": thumbnail(filename, blob),
+            "suffix": Path(filename).suffix.lstrip("."),
+        }
+        if doc["type"] == FileType.VISUAL:
+            doc["parser_id"] = ParserType.PICTURE.value
+        if doc["type"] == FileType.AURAL:
+            doc["parser_id"] = ParserType.AUDIO.value
+        if re.search(r"\.(ppt|pptx|pages)$", filename):
+            doc["parser_id"] = ParserType.PRESENTATION.value
+        if re.search(r"\.(eml)$", filename):
+            doc["parser_id"] = ParserType.EMAIL.value
+
+        DocumentService.insert(doc)
+        FileService.add_file_from_kb(doc, kb_folder["id"], kb.tenant_id)
+        return get_result(data=map_doc_keys_with_run_status(doc, run_status="0"))
+    except Exception as e:
+        return server_error_response(e)
+
+
+async def _upload_empty_document(dataset_id, kb):
+    req = await get_request_json()
+    name = (req.get("name") or "").strip()
+
+    if not name:
+        return get_error_data_result(message="File name can't be empty.", code=RetCode.ARGUMENT_ERROR)
+    if len(name.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
+        return get_error_data_result(
+            message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+    if DocumentService.query(name=name, kb_id=dataset_id):
+        return get_error_data_result(message="Duplicated document name in the same dataset.")
+
+    try:
+        kb_root_folder = FileService.get_kb_folder(kb.tenant_id)
+        if not kb_root_folder:
+            return get_error_data_result(message="Cannot find the root folder.")
+        kb_folder = FileService.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
+        if not kb_folder:
+            return get_error_data_result(message="Cannot find the kb folder for this file.")
+
+        doc = DocumentService.insert(
+            {
+                "id": get_uuid(),
+                "kb_id": kb.id,
+                "parser_id": kb.parser_id,
+                "pipeline_id": kb.pipeline_id,
+                "parser_config": kb.parser_config,
+                "created_by": current_user.id,
+                "type": FileType.VIRTUAL,
+                "name": name,
+                "suffix": Path(name).suffix.lstrip("."),
+                "location": "",
+                "size": 0,
+            }
+        )
+        FileService.add_file_from_kb(doc.to_dict(), kb_folder["id"], kb.tenant_id)
+        return get_result(data=map_doc_keys(doc))
+    except Exception as e:
+        return server_error_response(e)
+
+
+async def _upload_local_documents(kb, tenant_id):
     form = await request.form
     files = await request.files
     if "file" not in files:
@@ -423,8 +435,6 @@ async def upload_document(dataset_id, tenant_id):
         return get_error_data_result(message=msg, code=RetCode.DATA_ERROR)
 
     files = [f[0] for f in files]  # remove the blob
-
-    # Check if we should return raw files without document key mapping
     return_raw_files = request.args.get("return_raw_files", "false").lower() == "true"
 
     if return_raw_files:
