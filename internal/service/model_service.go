@@ -944,6 +944,9 @@ func (m *ModelProviderService) GetDefaultModel(modelType entity.ModelType, tenan
 		return nil, fmt.Errorf("no default %s model found for tenant", modelType)
 	}
 
+	if tenantLLM.LLMName == nil || tenantLLM.APIKey == nil {
+		return nil, fmt.Errorf("tenant model %q has missing name or api key", defaultModelName)
+	}
 	return &entity.ModelCredentials{
 		ProviderName: tenantLLM.LLMFactory,
 		ModelName:    *tenantLLM.LLMName,

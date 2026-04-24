@@ -148,10 +148,8 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 	}
 
 	outputColumns = convertSelectFields(outputColumns)
-	if hasVectorMatch && req.MatchExprs != nil && len(req.MatchExprs) > 1 {
-		if matchDense, ok := req.MatchExprs[1].(*types.MatchDenseExpr); ok {
-			outputColumns = append(outputColumns, matchDense.VectorColumnName)
-		}
+	if hasVectorMatch && matchDense != nil && matchDense.VectorColumnName != "" {
+		outputColumns = append(outputColumns, matchDense.VectorColumnName)
 	}
 
 	var filterParts []string
@@ -321,13 +319,31 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 			if hasVectorMatch {
 				vectorSize := len(vectorData)
 				fieldName := fmt.Sprintf("q_%d_vec", vectorSize)
+				dataType := "float"
+				distanceType := "cosine"
+
+				if matchDense != nil {
+					if matchDense.VectorColumnName != "" {
+						fieldName = matchDense.VectorColumnName
+					}
+					if matchDense.EmbeddingDataType != "" {
+						dataType = matchDense.EmbeddingDataType
+					}
+					if matchDense.DistanceType != "" {
+						distanceType = matchDense.DistanceType
+					}
+				}
 
 				vectorTopN := pageSize
 				if matchDense != nil && matchDense.TopN > 0 {
 					vectorTopN = int(matchDense.TopN)
 				}
 
-				denseFilterStr := "available_int=1"
+				denseFilterStr := filterStr
+				if denseFilterStr == "" {
+					denseFilterStr = "available_int=1"
+				}
+
 				if hasTextMatch {
 					fieldsStr := strings.Join(convertedFields, ",")
 					filterFulltext := fmt.Sprintf("filter_fulltext('%s', '%s')", fieldsStr, questionText)
@@ -346,7 +362,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 					fieldName, vectorTopN, extraOptions,
 				))
 
-				table = table.MatchDense(fieldName, vectorData, "float", "cosine", vectorTopN, extraOptions)
+				table = table.MatchDense(fieldName, vectorData, dataType, distanceType, vectorTopN, extraOptions)
 			}
 
 			// Add fusion (for text + vector combination)
@@ -579,7 +595,7 @@ func equivalentConditionToStr(condition map[string]interface{}) string {
 				for kk, vv := range m {
 					if kk == "exists" {
 						// For must_not exists, use !='' since we don't have table schema
-						cond = append(cond, fmt.Sprintf("NOT (%s!='')", vv))
+						cond = append(cond, fmt.Sprintf("NOT (%v!='')", vv))
 					}
 				}
 			}
@@ -588,7 +604,7 @@ func equivalentConditionToStr(condition map[string]interface{}) string {
 
 		// Handle exists specially (without table schema, use string comparison)
 		if k == "exists" {
-			cond = append(cond, fmt.Sprintf("%s!=''", v))
+			cond = append(cond, fmt.Sprintf("%v!=''", v))
 			continue
 		}
 

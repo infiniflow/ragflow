@@ -33,13 +33,24 @@ import (
 	"ragflow/internal/logger"
 	"ragflow/internal/service/nlp"
 
-	"github.com/cespare/xxhash"
+	"github.com/cespare/xxhash/v2"
 )
 
 // getTagsCacheKey generates a cache key from kb_ids using xxhash64
 func getTagsCacheKey(kbIDs []string) string {
+	// Normalize: unique + sorted so the key is set-stable regardless of caller order.
+	seen := make(map[string]struct{}, len(kbIDs))
+	norm := make([]string, 0, len(kbIDs))
+	for _, id := range kbIDs {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		norm = append(norm, id)
+	}
+	sort.Strings(norm)
 	hasher := xxhash.New()
-	hasher.Write([]byte(fmt.Sprintf("%v", kbIDs)))
+	hasher.Write([]byte(strings.Join(norm, "\x00")))
 	return fmt.Sprintf("%x", hasher.Sum64())
 }
 
@@ -163,7 +174,11 @@ func (s *MetadataService) TagQuery(question string, tenantIDs []string, kbIDs []
 
 	// Process question to get match text
 	queryBuilder := nlp.GetQueryBuilder()
-	matchTextExpr, _ := queryBuilder.Question(question, "qa", 0.0) // min_match=0.0
+	matchTextExpr, warns := queryBuilder.Question(question, "qa", 0.0) // min_match=0.0
+	if len(warns) > 0 {
+		logger.Warn("TagQuery: failed to build match text", zap.Any("warnings", warns))
+		return make(map[string]float64), nil
+	}
 	matchText := matchTextExpr.MatchingText
 
 	logger.Debug("TagQuery match_text", zap.String("match_text", matchText))
@@ -225,10 +240,11 @@ func (s *MetadataService) TagQuery(question string, tenantIDs []string, kbIDs []
 	// Take top N tags and normalize dot notation
 	resultTags := make(map[string]float64)
 	for i := 0; i < topnTags && i < len(scoredTags); i++ {
-		tag := scoredTags[i].tag
-		score := scoredTags[i].score
-		normalizedTag := strings.ReplaceAll(tag, ".", "_")
-		resultTags[normalizedTag] = max(1, score)
+		normalizedTag := strings.ReplaceAll(scoredTags[i].tag, ".", "_")
+		score := max(1.0, scoredTags[i].score)
+		if existing, ok := resultTags[normalizedTag]; !ok || score > existing {
+			resultTags[normalizedTag] = score
+		}
 	}
 
 	return resultTags, nil
@@ -255,8 +271,8 @@ func (s *MetadataService) LabelQuestion(question string, kbs []*Knowledgebase) m
 			continue
 		}
 		lastKB = kb
-		if tagKBIDs, ok := kb.ParserConfig["tag_kb_ids"].([]interface{}); ok {
-			for _, id := range tagKBIDs {
+		if rawTagKBIDs, ok := kb.ParserConfig["tag_kb_ids"].([]interface{}); ok {
+			for _, id := range rawTagKBIDs {
 				if idStr, ok := id.(string); ok {
 					tagKBIDs = append(tagKBIDs, idStr)
 				}
@@ -310,10 +326,20 @@ func (s *MetadataService) LabelQuestion(question string, kbs []*Knowledgebase) m
 	}
 
 	// Get topn_tags from last KB's parser_config
+	// JSON-decoded numbers arrive as float64; also tolerate int/int64/json.Number for safety
 	topnTags := 3
 	if lastKB != nil && lastKB.ParserConfig != nil {
-		if topn, ok := lastKB.ParserConfig["topn_tags"].(int); ok {
-			topnTags = topn
+		switch v := lastKB.ParserConfig["topn_tags"].(type) {
+		case float64:
+			topnTags = int(v)
+		case int:
+			topnTags = v
+		case int64:
+			topnTags = int(v)
+		case json.Number:
+			if n, err := v.Int64(); err == nil {
+				topnTags = int(n)
+			}
 		}
 	}
 

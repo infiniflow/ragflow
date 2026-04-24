@@ -16,7 +16,6 @@ package nlp
 
 import (
 	"encoding/json"
-	"fmt"
 	"math"
 	"regexp"
 	"sort"
@@ -145,11 +144,17 @@ func RerankByModel(
 	// Get similarity scores from reranker model
 	modelSim, err := rerankModel.Similarity(query, docs)
 	if err != nil {
-		fmt.Printf("[DEBUG RerankByModel] rerankModel.Similarity error: %v\n", err)
+		logger.Error("RerankByModel: rerankModel.Similarity failed; falling back to token-only similarity", err)
 		// If model fails, fall back to token similarity only
 		modelSim = make([]float64, len(tsim))
 	}
-
+	if len(modelSim) != chunkCount {
+		logger.Warn("reranker returned mismatched score length; padding/truncating",
+			zap.Int("got", len(modelSim)), zap.Int("want", chunkCount))
+		fixed := make([]float64, chunkCount)
+		copy(fixed, modelSim)
+		modelSim = fixed
+	}
 	// Combine token similarity with model similarity
 	// Model similarity is treated as vector similarity component
 	sim = make([]float64, chunkCount)
@@ -234,9 +239,8 @@ func RerankStandard(
 	sim, tsim, vsim = HybridSimilarity(questionVector, insEmbd, keywords, insTw, tkWeight, vtWeight, qb)
 
 	// Apply rank feature scores (tag_score * 10 + pagerank)
-	if len(rankFeature) > 0 {
-		sim = applyRankFeatureScores(chunks, sim, rankFeature)
-	}
+	// Always apply pageranks, even when rankFeature is nil/empty
+	sim = applyRankFeatureScores(chunks, sim, rankFeature)
 
 	logger.Info("RerankStandard completed")
 	return sim, tsim, vsim

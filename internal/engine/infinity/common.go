@@ -244,20 +244,29 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 
 		// Handle keyword fields -> filter_fulltext with converted field name
 		if fieldKeyword(k) {
-			if listVal, ok := v.([]interface{}); ok {
-				var orConds []string
-				for _, item := range listVal {
-					if strItem, ok := item.(string); ok {
-						strItem = strings.ReplaceAll(strItem, "'", "''")
-						orConds = append(orConds, fmt.Sprintf("filter_fulltext('%s', '%s')", convertMatchingField(k), strItem))
-					}
+			var orConds []string
+			addFullText := func(item string) {
+				item = strings.ReplaceAll(item, "'", "''")
+				orConds = append(orConds, fmt.Sprintf("filter_fulltext('%s', '%s')", convertMatchingField(k), item))
+			}
+
+			switch val := v.(type) {
+			case []string:
+				for _, item := range val {
+					addFullText(item)
 				}
-				if len(orConds) > 0 {
-					conditions = append(conditions, "("+strings.Join(orConds, " OR ")+")")
+			case []interface{}:
+				for _, item := range val {
+					addFullText(fmt.Sprintf("%v", item))
 				}
-			} else if strVal, ok := v.(string); ok {
-				strVal = strings.ReplaceAll(strVal, "'", "''")
-				conditions = append(conditions, fmt.Sprintf("filter_fulltext('%s', '%s')", convertMatchingField(k), strVal))
+			case string:
+				addFullText(val)
+			default:
+				addFullText(fmt.Sprintf("%v", val))
+			}
+
+			if len(orConds) > 0 {
+				conditions = append(conditions, "("+strings.Join(orConds, " OR ")+")")
 			}
 			continue
 		}

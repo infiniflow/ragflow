@@ -178,8 +178,7 @@ func GenMetaFilter(ctx context.Context, creds *entity.ModelCredentials, metaData
 
 	// Clean up response
 	responseStr := strings.TrimSpace(*response)
-	responseStr = strings.ReplaceAll(responseStr, "<think>", "")
-	responseStr = strings.ReplaceAll(responseStr, "[/think]", "")
+	responseStr = thinkBlockRE.ReplaceAllString(responseStr, "")
 	responseStr = strings.TrimSpace(responseStr)
 
 	// Remove markdown code blocks if present

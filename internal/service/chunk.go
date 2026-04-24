@@ -200,16 +200,13 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		searchDetail, err := s.searchService.GetDetail(*req.SearchID)
 		if err != nil {
 			logger.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", *req.SearchID), zap.Error(err))
-		} else {
-			searchConfig := searchDetail["search_config"].(entity.JSONMap)
-			if searchConfig != nil {
-				if searchMetaFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
-					filter = searchMetaFilter
-				}
-				chatID, _ = searchConfig["chat_id"].(string)
-			} else {
-				logger.Warn("No search_config found in search detail", zap.String("searchID", *req.SearchID))
+		} else if searchConfig, ok := searchDetail["search_config"].(entity.JSONMap); ok && searchConfig != nil {
+			if searchMetaFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
+				filter = searchMetaFilter
 			}
+			chatID, _ = searchConfig["chat_id"].(string)
+		} else {
+			logger.Warn("No search_config found in search detail", zap.String("searchID", *req.SearchID))
 		}
 	}
 

@@ -150,6 +150,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	vtWeight := *req.VectorSimilarityWeight
 	tkWeight := 1.0 - vtWeight
 	qb := GetQueryBuilder()
+	useInfinity := engine.GetEngineType() != engine.EngineElasticsearch
 	sim, term_similarity, vector_similarity := Rerank(
 		req.RerankModel,
 		searchResult.Chunks,
@@ -159,7 +160,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		req.Question,
 		tkWeight,
 		vtWeight,
-		true,
+		useInfinity,
 		"content_ltks",
 		qb,
 		*req.RankFeature,
@@ -642,7 +643,7 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 	logger.Info("RetrievalByChildren started", zap.Int("chunks", len(chunks)), zap.Strings("tenantIDs", tenantIDs))
 
 	indexNames := buildIndexNames(tenantIDs)
-	if len(chunks) == 0 {
+	if len(chunks) == 0 || len(indexNames) == 0 {
 		return chunks
 	}
 
@@ -745,13 +746,14 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 		}
 
 		// Get vector from first child if available
+	childVecLoop:
 		for _, c := range childList {
 			for k := range c.chunk {
 				if strings.HasSuffix(k, "_vec") {
 					if vec, ok := c.chunk[k].([]float64); ok {
 						aggregated["vector"] = vec
 						vectorSize = len(vec)
-						break
+						break childVecLoop
 					}
 				}
 			}

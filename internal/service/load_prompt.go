@@ -26,10 +26,13 @@ import (
 )
 
 var (
-	promptCache   = make(map[string]string)
-	promptMu      sync.RWMutex
+	promptCache    = make(map[string]string)
+	promptMu       sync.RWMutex
 	promptsBaseDir string
 )
+
+// thinkBlockRE is used to strip think blocks from LLM responses
+var thinkBlockRE = regexp.MustCompile(`<think>[\s\S]*?`)
 
 func init() {
 	// Strategy 1: Check working directory first (most reliable during development/tests)
@@ -134,7 +137,7 @@ func applyFilter(value interface{}, filter string, args string) string {
 	case "join":
 		// {{ variable | join(', ') }} - expects value to be a slice, args is the separator
 		if slice, ok := value.([]string); ok {
-			sep := strings.TrimSpace(args)
+			sep := stripQuotes(strings.TrimSpace(args))
 			if sep == "" {
 				sep = ", "
 			}
@@ -144,4 +147,14 @@ func applyFilter(value interface{}, filter string, args string) string {
 	default:
 		return fmt.Sprintf("%v", value)
 	}
+}
+
+// stripQuotes removes matching surrounding single or double quotes.
+func stripQuotes(s string) string {
+	if len(s) >= 2 {
+		if (s[0] == '\'' && s[len(s)-1] == '\'') || (s[0] == '"' && s[len(s)-1] == '"') {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
 }

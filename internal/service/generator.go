@@ -77,8 +77,7 @@ func KeywordExtraction(ctx context.Context, creds *entity.ModelCredentials, cont
 
 	// Clean up response - remove thinking tags if present
 	response = strings.TrimSpace(response)
-	response = strings.ReplaceAll(response, "<think>", "")
-	response = strings.ReplaceAll(response, "[/think]", "")
+	response = thinkBlockRE.ReplaceAllString(response, "")
 	response = strings.TrimSpace(response)
 
 	if strings.Contains(response, "**ERROR**") {
@@ -137,8 +136,7 @@ func CrossLanguages(ctx context.Context, creds *entity.ModelCredentials, query s
 
 	// Clean up response - remove think tags and trim
 	response = strings.TrimSpace(response)
-	response = strings.ReplaceAll(response, "<think>", "")
-	response = strings.ReplaceAll(response, "[/think]", "")
+	response = thinkBlockRE.ReplaceAllString(response, "")
 	response = strings.TrimSpace(response)
 
 	if strings.Contains(response, "**ERROR**") {
