@@ -1,0 +1,43 @@
+{
+  "name": "SiliconFlow",
+  "url": {
+    "default": "https://api.siliconflow.cn/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embeddings": "embeddings",
+    "rerank": "rerank"
+  },
+  "models": [
+    {
+      "name": "qwen/qwen3-8b",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3.5-4b",
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "tencent/hunyuan-mt-7b",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    }
+  ],
+  "features": {
+    "thinking": {
+      "default_value": true,
+      "supported_models": [
+        "deepseek-chat"
+      ]
+    }
+  }
+}
