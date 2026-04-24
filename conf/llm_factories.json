@@ -1134,14 +1134,14 @@
             "url": "https://api.deepseek.com/v1",
             "llm": [
                 {
-                    "llm_name": "DeepSeek-V4-Flash",
+                    "llm_name": "deepseek-v4-flash",
                     "tags": "LLM,CHAT,",
                     "max_tokens": 64000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "DeepSeek-V4-Pro",
+                    "llm_name": "deepseek-v4-pro",
                     "tags": "LLM,CHAT,",
                     "max_tokens": 64000,
                     "model_type": "chat",
