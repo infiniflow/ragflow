@@ -10,7 +10,7 @@ import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import {
   useFetchAgent,
-  useUploadCanvasFileWithProgress,
+  useUploadAgentFileWithProgress,
 } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { buildMessageUuidWithRole } from '@/utils/chat';
@@ -44,7 +44,7 @@ function AgentChatBox() {
   useGetFileIcon();
   const { data: userInfo } = useFetchUserInfo();
   const { id: canvasId } = useParams();
-  const { uploadCanvasFile, loading } = useUploadCanvasFileWithProgress();
+  const { uploadAgentFile, loading } = useUploadAgentFileWithProgress();
 
   const { buildInputList, handleOk, isWaitting } = useAwaitCompentData({
     derivedMessages,
@@ -60,10 +60,10 @@ function AgentChatBox() {
   const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
     useCallback(
       async (files, options) => {
-        const ret = await uploadCanvasFile({ files, options });
+        const ret = await uploadAgentFile({ files, options });
         appendUploadResponseList(ret.data, files);
       },
-      [appendUploadResponseList, uploadCanvasFile],
+      [appendUploadResponseList, uploadAgentFile],
     );
 
   return (

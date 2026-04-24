@@ -30,6 +30,13 @@
       "model_types": [
         "chat"
       ]
+    },
+    {
+      "name": "BAAI/bge-reranker-v2-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "rerank"
+      ]
     }
   ],
   "features": {

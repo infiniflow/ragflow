@@ -30,16 +30,10 @@ const (
 	EngineInfinity      EngineType = "infinity"
 )
 
-// SearchRequest is an alias for types.SearchRequest
-type SearchRequest = types.SearchRequest
-
-// SearchResponse is an alias for types.SearchResponse
-type SearchResponse = types.SearchResponse
-
 // DocEngine document storage engine interface
 type DocEngine interface {
 	// Search
-	Search(ctx context.Context, req interface{}) (interface{}, error)
+	Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error)
 
 	// Dataset operations
 	CreateDataset(ctx context.Context, indexName, datasetID string, vectorSize int, parserID string) error
@@ -56,8 +50,14 @@ type DocEngine interface {
 
 	// Operations for both dataset and metadata tables
 	Delete(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error)
-    DropTable(ctx context.Context, indexName string) error
+	DropTable(ctx context.Context, indexName string) error
 	TableExists(ctx context.Context, indexName string) (bool, error)
+
+	// Utility functions for search result processing
+	GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{}
+	GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{}
+	GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string
+	GetDocIDs(chunks []map[string]interface{}) []string
 
 	// Health check
 	Ping(ctx context.Context) error
