@@ -643,10 +643,12 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 }
 
 type ChatToModelRequest struct {
-	ModelName string `json:"model_name" binding:"required"`
-	Message   string `json:"message" binding:"required"`
-	Stream    bool   `json:"stream"`
-	Thinking  bool   `json:"thinking"`
+	ModelName string  `json:"model_name" binding:"required"`
+	Message   string  `json:"message" binding:"required"`
+	Stream    bool    `json:"stream"`
+	Thinking  bool    `json:"thinking"`
+	Effort    *string `json:"effort"`
+	Verbosity *string `json:"verbosity"`
 }
 
 func (h *ProviderHandler) ChatToModel(c *gin.Context) {
@@ -680,6 +682,28 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
+	if !req.Thinking {
+		req.Effort = nil
+		req.Verbosity = nil
+	}
+
+	apiConfig := models.APIConfig{
+		ApiKey: nil,
+		Region: nil,
+	}
+
+	chatConfig := models.ChatConfig{
+		Thinking:    &req.Thinking,
+		Stream:      &req.Stream,
+		Stop:        &[]string{},
+		DoSample:    nil,
+		MaxTokens:   nil,
+		Temperature: nil,
+		TopP:        nil,
+		Effort:      req.Effort,
+		Verbosity:   req.Verbosity,
+	}
+
 	// Check if it's a stream request
 	if req.Stream {
 		// Set SSE headers
@@ -712,21 +736,6 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 			return nil
 		}
 
-		apiConfig := models.APIConfig{
-			ApiKey: nil,
-			Region: nil,
-		}
-
-		chatConfig := models.ChatConfig{
-			Thinking:    &req.Thinking,
-			Stream:      &req.Stream,
-			Stop:        &[]string{},
-			DoSample:    nil,
-			MaxTokens:   nil,
-			Temperature: nil,
-			TopP:        nil,
-		}
-
 		// Stream response using sender function (best performance, no channel)
 		errorCode := h.modelProviderService.ChatToModelStreamWithSender(providerName, instanceName, req.ModelName, userID, req.Message, &apiConfig, &chatConfig, sender)
 
@@ -734,21 +743,6 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 			c.SSEvent("error", "stream failed")
 		}
 		return
-	}
-
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
-	}
-
-	chatConfig := models.ChatConfig{
-		Thinking:    &req.Thinking,
-		Stream:      &req.Stream,
-		Stop:        &[]string{},
-		DoSample:    nil,
-		MaxTokens:   nil,
-		Temperature: nil,
-		TopP:        nil,
 	}
 
 	// Non-stream response

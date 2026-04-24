@@ -2271,18 +2271,69 @@ func (p *Parser) parseChatCommand() (*Command, error) {
 		return nil, fmt.Errorf("expected model name (quoted string) or message")
 	}
 
+	cmd := NewCommand("chat_to_model")
+
+	effort := "default"
+	verbosity := "low"
+	if p.curToken.Type == TokenWith {
+		p.nextToken() // pass WITH
+		switch p.curToken.Type {
+		case TokenEffort:
+			{
+				p.nextToken() // pass VERBOSITY
+				switch p.curToken.Type {
+				case TokenNone:
+					effort = "none"
+				case TokenMinimal:
+					effort = "minimal"
+				case TokenLow:
+					effort = "low"
+				case TokenMedium:
+					effort = "medium"
+				case TokenHigh:
+					effort = "high"
+				case TokenMax:
+					effort = "max"
+				default:
+					return nil, fmt.Errorf("invalid effort level")
+				}
+				p.nextToken()
+				break
+			}
+		case TokenVerbosity:
+			{
+				p.nextToken() // pass VERBOSITY
+				switch p.curToken.Type {
+				case TokenLow:
+					verbosity = "low"
+				case TokenMedium:
+					verbosity = "median"
+				case TokenHigh:
+					verbosity = "high"
+				default:
+					return nil, fmt.Errorf("invalid verbosity level")
+				}
+				p.nextToken()
+				break
+			}
+		default:
+			return nil, fmt.Errorf("expected VERBOSITY or EFFORT")
+		}
+	}
+
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
 
-	cmd := NewCommand("chat_to_model")
 	if compositeModelName != "" {
 		cmd.Params["composite_model_name"] = compositeModelName
 	}
 	cmd.Params["message"] = message
 	cmd.Params["thinking"] = false
 	cmd.Params["stream"] = false
+	cmd.Params["effort"] = effort
+	cmd.Params["verbosity"] = verbosity
 	return cmd, nil
 }
 

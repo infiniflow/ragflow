@@ -24,6 +24,7 @@ import (
 	"os"
 	ce "ragflow/internal/cli/contextengine"
 	"strings"
+	"time"
 )
 
 // PingServer pings the server to check if it's alive
@@ -1479,6 +1480,8 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	message := cmd.Params["message"].(string)
 	thinking := cmd.Params["thinking"].(bool)
 	stream := cmd.Params["stream"].(bool)
+	effort := cmd.Params["effort"].(string)
+	verbosity := cmd.Params["verbosity"].(string)
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
 
@@ -1489,9 +1492,15 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 		"thinking":   thinking,
 	}
 
+	if thinking {
+		payload["effort"] = effort
+		payload["verbosity"] = verbosity
+	}
+
 	if stream {
 		// Call stream http api
-		reader, duration, err := c.HTTPClient.RequestStream("POST", url, true, "web", nil, payload)
+		startTime := time.Now()
+		reader, err := c.HTTPClient.RequestStream("POST", url, true, "web", nil, payload)
 		if err != nil {
 			return nil, fmt.Errorf("failed to chat model: %w", err)
 		}
@@ -1545,7 +1554,7 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 				return nil, fmt.Errorf("chat error: received error event from server")
 			}
 		}
-
+		duration := time.Since(startTime).Seconds()
 		if err := scanner.Err(); err != nil {
 			return nil, fmt.Errorf("error reading stream: %w", err)
 		}

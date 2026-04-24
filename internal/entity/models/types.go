@@ -45,6 +45,8 @@ type ChatConfig struct {
 	DoSample    *bool
 	Stop        *[]string
 	ModelSeries *string
+	Effort      *string
+	Verbosity   *string
 }
 
 type APIConfig struct {
