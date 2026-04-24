@@ -172,8 +172,8 @@ class TestDocumentsList:
     def test_missing_kb_id(self, WebApiAuth):
         """Test missing KB ID returns error."""
         res = list_documents(WebApiAuth, {"kb_id": ""})
-        assert res["code"] == 100
-        assert res["message"] == "<MethodNotAllowed '405: Method Not Allowed'>"
+        assert res["code"] == 102
+        assert "You don't own the dataset" in res["message"]
 
     @pytest.mark.p2
     def test_unauthorized_dataset(self, WebApiAuth):
