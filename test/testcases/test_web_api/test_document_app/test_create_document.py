@@ -16,6 +16,7 @@
 import asyncio
 import string
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from types import SimpleNamespace
 
 import pytest
 from test_common import create_document, list_datasets
