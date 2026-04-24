@@ -178,9 +178,27 @@ def document_rest_api_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "xgboost", ModuleType("xgboost"))
 
     stub_apps = ModuleType("api.apps")
+    stub_apps.__path__ = [str(repo_root / "api" / "apps")]
     stub_apps.current_user = SimpleNamespace(id="user-1")
     stub_apps.login_required = lambda func: func
     monkeypatch.setitem(sys.modules, "api.apps", stub_apps)
+
+    stub_apps_services = ModuleType("api.apps.services")
+    stub_apps_services.__path__ = [str(repo_root / "api" / "apps" / "services")]
+    monkeypatch.setitem(sys.modules, "api.apps.services", stub_apps_services)
+
+    document_api_service_mod = ModuleType("api.apps.services.document_api_service")
+    document_api_service_mod.validate_document_update_fields = lambda *_args, **_kwargs: (None, None)
+    document_api_service_mod.map_doc_keys = lambda doc: doc.to_dict() if hasattr(doc, "to_dict") else doc
+    def _map_doc_keys_with_run_status(doc, run_status="0"):
+        payload = doc if isinstance(doc, dict) else doc.to_dict()
+        return {**payload, "run": run_status}
+
+    document_api_service_mod.map_doc_keys_with_run_status = _map_doc_keys_with_run_status
+    document_api_service_mod.update_document_name_only = lambda *_args, **_kwargs: None
+    document_api_service_mod.update_chunk_method_only = lambda *_args, **_kwargs: None
+    document_api_service_mod.update_document_status_only = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "api.apps.services.document_api_service", document_api_service_mod)
 
     module_path = repo_root / "api" / "apps" / "restful_apis" / "document_api.py"
     spec = importlib.util.spec_from_file_location("test_document_api_unit", module_path)

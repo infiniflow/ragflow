@@ -63,7 +63,7 @@ class TestDocumentCreate:
     def test_invalid_kb_id(self, WebApiAuth):
         res = create_document(WebApiAuth, {"name": "ragflow_test.txt", "kb_id": "invalid_kb_id"})
         assert res["code"] == 102, res
-        assert res["message"] == "Can't find this dataset!", res
+        assert res["message"] == "Can't find the dataset with ID invalid_kb_id!", res
 
     @pytest.mark.p3
     def test_filename_special_characters(self, WebApiAuth, add_dataset_func):
@@ -137,7 +137,7 @@ class TestDocumentCreateUnit:
         monkeypatch.setattr(module, "request", SimpleNamespace(args={"type": "empty"}))
         res = _run(module.upload_document(dataset_id="missing"))
         assert res["code"] == 102
-        assert res["message"] == "Can't find this dataset!"
+        assert res["message"] == "Can't find the dataset with ID missing!"
 
     def test_duplicate_name(self, document_rest_api_module, monkeypatch):
         module = document_rest_api_module
