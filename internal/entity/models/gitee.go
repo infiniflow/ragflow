@@ -28,16 +28,16 @@ import (
 	"time"
 )
 
-// DeepSeekModel implements ModelDriver for DeepSeek
-type DeepSeekModel struct {
+// GiteeModel implements ModelDriver for Gitee
+type GiteeModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
 	httpClient *http.Client // Reusable HTTP client with connection pool
 }
 
-// NewDeepSeekModel creates a new DeepSeek model instance
-func NewDeepSeekModel(baseURL map[string]string, urlSuffix URLSuffix) *DeepSeekModel {
-	return &DeepSeekModel{
+// NewGiteeModel creates a new Gitee model instance
+func NewGiteeModel(baseURL map[string]string, urlSuffix URLSuffix) *GiteeModel {
+	return &GiteeModel{
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
@@ -52,12 +52,12 @@ func NewDeepSeekModel(baseURL map[string]string, urlSuffix URLSuffix) *DeepSeekM
 	}
 }
 
-func (z *DeepSeekModel) Name() string {
-	return "deepseek"
+func (z *GiteeModel) Name() string {
+	return "gitee"
 }
 
 // Chat sends a message and returns response
-func (z *DeepSeekModel) Chat(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (z *GiteeModel) Chat(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if message == nil {
 		return nil, fmt.Errorf("message is nil")
 	}
@@ -68,6 +68,13 @@ func (z *DeepSeekModel) Chat(modelName, message *string, apiConfig *APIConfig, c
 	}
 
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
+
+	// I need to get the model series, such as qwen3 is the prefix, the model series will be qwen. glm is the prefix, the model series will be glm. such as the model name: qwen3-0.6b, the model series will be qwen3
+	// the model name is glm-4.7, the model series will be glm
+	modelSeries := strings.Split(*modelName, "-")[0]
+	if modelSeries == "qwen" || modelSeries == "glm" {
+		url = fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.AsyncChat)
+	}
 
 	// Build request body
 	reqBody := map[string]interface{}{
@@ -101,37 +108,8 @@ func (z *DeepSeekModel) Chat(modelName, message *string, apiConfig *APIConfig, c
 
 	if chatModelConfig.Thinking != nil {
 		if *chatModelConfig.Thinking {
-			var thinkingFlag string
-			switch *chatModelConfig.Effort {
-			case "none":
-				thinkingFlag = "disabled"
-				chatModelConfig.Thinking = nil
-				break
-			case "low":
-				thinkingFlag = "disabled"
-				chatModelConfig.Thinking = nil
-				break
-			case "medium":
-				thinkingFlag = "disabled"
-				chatModelConfig.Thinking = nil
-				break
-			case "high":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "high"
-				break
-			case "default":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "high"
-				break
-			case "max":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "max"
-				break
-			default:
-				return nil, fmt.Errorf("invalid effort level")
-			}
 			reqBody["thinking"] = map[string]interface{}{
-				"type": thinkingFlag,
+				"type": "enabled",
 			}
 		} else {
 			reqBody["thinking"] = map[string]interface{}{
@@ -194,33 +172,23 @@ func (z *DeepSeekModel) Chat(modelName, message *string, apiConfig *APIConfig, c
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	var reasonContent string
-	if chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid content format")
-		}
-		// if first char of reasonContent is \n remove the '\n'
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
-		}
-	}
+	thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelSeries, &content)
 
 	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
+		Answer:        answer,
+		ReasonContent: thinking,
 	}
 
 	return chatResponse, nil
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
-func (z *DeepSeekModel) ChatWithMessages(modelName string, apiKey *string, messages []Message, chatModelConfig *ChatConfig) (string, error) {
+func (z *GiteeModel) ChatWithMessages(modelName string, apiKey *string, messages []Message, chatModelConfig *ChatConfig) (string, error) {
 	return "", fmt.Errorf("%s, ChatWithMessages not implemented", z.Name())
 }
 
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (z *DeepSeekModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (z *GiteeModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	var region = "default"
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
@@ -264,37 +232,8 @@ func (z *DeepSeekModel) ChatStreamlyWithSender(modelName, message *string, apiCo
 
 	if chatModelConfig.Thinking != nil {
 		if *chatModelConfig.Thinking {
-			var thinkingFlag string
-			switch *chatModelConfig.Effort {
-			case "none":
-				thinkingFlag = "disabled"
-				chatModelConfig.Thinking = nil
-				break
-			case "low":
-				thinkingFlag = "disabled"
-				chatModelConfig.Thinking = nil
-				break
-			case "medium":
-				thinkingFlag = "disabled"
-				chatModelConfig.Thinking = nil
-				break
-			case "high":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "high"
-				break
-			case "default":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "high"
-				break
-			case "max":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "max"
-				break
-			default:
-				return fmt.Errorf("invalid effort level")
-			}
 			reqBody["thinking"] = map[string]interface{}{
-				"type": thinkingFlag,
+				"type": "enabled",
 			}
 		} else {
 			reqBody["thinking"] = map[string]interface{}{
@@ -326,6 +265,10 @@ func (z *DeepSeekModel) ChatStreamlyWithSender(modelName, message *string, apiCo
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
+
+	reserveText := ""
+	thinkingPhase := false
+	answerPhase := false
 
 	// SSE parsing: read line by line
 	scanner := bufio.NewScanner(resp.Body)
@@ -369,21 +312,44 @@ func (z *DeepSeekModel) ChatStreamlyWithSender(modelName, message *string, apiCo
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
+			if content == "<think>" {
+				thinkingPhase = true
+				continue
 
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
+			} else if content == "</think>" {
+				thinkingPhase = false
+				answerPhase = true
+				continue
+			}
+
+			if thinkingPhase {
+				if err = sender(nil, &content); err != nil {
+					return err
+				}
+				reserveText = ""
+			} else if answerPhase {
+				if err = sender(&content, nil); err != nil {
+					return err
+				}
+				reserveText = ""
+			} else {
+				content = strings.Trim(content, "\n")
+				content = strings.Trim(content, " ")
+				if content != "" {
+					reserveText += content
+				}
 			}
 		}
 
 		finishReason, ok := firstChoice["finish_reason"].(string)
 		if ok && finishReason != "" {
 			break
+		}
+	}
+
+	if reserveText != "" {
+		if err = sender(&reserveText, nil); err != nil {
+			return err
 		}
 	}
 
@@ -397,22 +363,11 @@ func (z *DeepSeekModel) ChatStreamlyWithSender(modelName, message *string, apiCo
 }
 
 // EncodeToEmbedding encodes a list of texts into embeddings
-func (z *DeepSeekModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+func (z *GiteeModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
-type DSModel struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	OwnedBy string `json:"owned_by"`
-}
-
-type DSModelList struct {
-	Object string    `json:"object"`
-	Models []DSModel `json:"data"`
-}
-
-func (z *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (z *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
@@ -459,20 +414,109 @@ func (z *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	var models []string
 	for _, model := range modelList.Models {
-		models = append(models, model.ID)
+		modelName := model.ID
+		if model.OwnedBy != "" {
+			modelName = model.ID + "@" + model.OwnedBy
+		}
+		models = append(models, modelName)
 	}
 
 	return models, nil
 }
 
-func (z *DeepSeekModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (z *GiteeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	var region = "default"
+	if apiConfig.Region != nil {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Balance)
+
+	// Build request body
+	reqBody := map[string]interface{}{}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var result map[string]interface{}
+	if err = json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	balance := result["balance"].(float64)
+
+	var response = map[string]interface{}{
+		"balance":  balance,
+		"currency": "CNY",
+	}
+
+	return response, nil
 }
 
-func (z *DeepSeekModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := z.ListModels(apiConfig)
-	if err != nil {
-		return err
+func (z *GiteeModel) CheckConnection(apiConfig *APIConfig) error {
+	var region = "default"
+	if apiConfig.Region != nil {
+		region = *apiConfig.Region
 	}
+
+	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Status)
+
+	// Build request body
+	reqBody := map[string]interface{}{}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
 	return nil
 }
