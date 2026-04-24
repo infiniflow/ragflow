@@ -38,6 +38,7 @@ from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.pdf_chunk_metadata import (
+    extract_pdf_positions,
     normalize_pdf_items_metadata,
     reorder_multi_column_bboxes,
 )
@@ -558,7 +559,12 @@ class Parser(ProcessBase):
                 first_outline_page = pdf_parser.outlines[0][2]
                 split_at = len(bboxes)
                 for i, item in enumerate(bboxes):
-                    if item["page_number"] >= first_outline_page:
+                    page_number = item.get("page_number")
+                    if page_number is None:
+                        positions = extract_pdf_positions(item)
+                        if positions:
+                            page_number = positions[0][0]
+                    if page_number is not None and page_number >= first_outline_page:
                         split_at = i
                         break
                 toc_bboxes, _ = remove_toc(bboxes[:split_at])
