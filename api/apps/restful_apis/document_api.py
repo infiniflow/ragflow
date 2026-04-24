@@ -37,9 +37,11 @@ from api.utils.api_utils import get_data_error_result, get_error_data_result, ge
 from api.utils.validation_utils import (
     UpdateDocumentReq, format_validation_error_message, validate_and_parse_json_request, DeleteDocumentReq,
 )
+from common import settings
 from common.constants import RetCode, TaskStatus
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
 from common.misc_utils import thread_pool_exec
+from rag.nlp import search
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PATCH"]) # noqa: F821
 @login_required
@@ -1171,7 +1173,10 @@ async def parse_documents(tenant_id, dataset_id):
             valid_doc_ids.append(doc_id)
 
     if not_found_ids:
-        return get_error_data_result(message=f"Documents not found: {not_found_ids}")
+        errors.append(f"Documents not found: {not_found_ids}")
+        # Still parse valid documents, but return error code
+        if not valid_doc_ids:
+            return get_error_data_result(message=f"Documents not found: {not_found_ids}")
 
     try:
         def _run_sync():
@@ -1193,6 +1198,8 @@ async def parse_documents(tenant_id, dataset_id):
 
                 DocumentService.update_by_id(doc_id, info)
                 TaskService.filter_delete([Task.doc_id == doc_id])
+                if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
+                    settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(tenant_id), doc.kb_id)
 
                 doc_dict = doc.to_dict()
                 DocumentService.run(tenant_id, doc_dict, kb_table_num_map)
@@ -1204,6 +1211,8 @@ async def parse_documents(tenant_id, dataset_id):
             return result
 
         result = await thread_pool_exec(_run_sync)
+        if not_found_ids:
+            return get_error_data_result(message=f"Documents not found: {not_found_ids}")
         return get_result(data=result)
     except Exception as e:
         logging.exception(e)
@@ -1304,6 +1313,8 @@ async def stop_parse_documents(tenant_id, dataset_id):
             return result
 
         result = await thread_pool_exec(_run_sync)
+        if not_found_ids:
+            return get_error_data_result(message=f"Documents not found: {not_found_ids}")
         return get_result(data=result)
     except Exception as e:
         logging.exception(e)
