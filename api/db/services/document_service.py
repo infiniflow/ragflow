@@ -427,6 +427,9 @@ class DocumentService(CommonService):
         if not cls.delete_document_and_update_kb_counts(doc.id):
             return True
 
+        chunk_index_name = search.index_name(tenant_id)
+        chunk_index_exists = settings.docStoreConn.index_exist(chunk_index_name, doc.kb_id)
+
         # Cancel all running tasks first Using preset function in task_service.py ---  set cancel flag in Redis
         try:
             cancel_all_task_of(doc.id)
@@ -442,7 +445,8 @@ class DocumentService(CommonService):
 
         # Delete chunk images (non-critical, log and continue)
         try:
-            cls.delete_chunk_images(doc, tenant_id)
+            if chunk_index_exists:
+                cls.delete_chunk_images(doc, tenant_id)
         except Exception as e:
             logging.warning(f"Failed to delete chunk images for document {doc.id}: {e}")
 
@@ -456,7 +460,7 @@ class DocumentService(CommonService):
 
         # Delete chunks from doc store - this is critical, log errors
         try:
-            settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+            settings.docStoreConn.delete({"doc_id": doc.id}, chunk_index_name, doc.kb_id)
         except Exception as e:
             logging.error(f"Failed to delete chunks from doc store for document {doc.id}: {e}")
 
@@ -468,23 +472,24 @@ class DocumentService(CommonService):
 
         # Cleanup knowledge graph references (non-critical, log and continue)
         try:
-            graph_source = settings.docStoreConn.get_fields(
-                settings.docStoreConn.search(["source_id"], [], {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]}, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [doc.kb_id]),
-                ["source_id"],
-            )
-            if len(graph_source) > 0 and doc.id in list(graph_source.values())[0]["source_id"]:
-                settings.docStoreConn.update(
-                    {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "source_id": doc.id},
-                    {"remove": {"source_id": doc.id}},
-                    search.index_name(tenant_id),
-                    doc.kb_id,
+            if chunk_index_exists:
+                graph_source = settings.docStoreConn.get_fields(
+                    settings.docStoreConn.search(["source_id"], [], {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]}, [], OrderByExpr(), 0, 1, chunk_index_name, [doc.kb_id]),
+                    ["source_id"],
                 )
-                settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]}, {"removed_kwd": "Y"}, search.index_name(tenant_id), doc.kb_id)
-                settings.docStoreConn.delete(
-                    {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "must_not": {"exists": "source_id"}},
-                    search.index_name(tenant_id),
-                    doc.kb_id,
-                )
+                if len(graph_source) > 0 and doc.id in list(graph_source.values())[0]["source_id"]:
+                    settings.docStoreConn.update(
+                        {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "source_id": doc.id},
+                        {"remove": {"source_id": doc.id}},
+                        chunk_index_name,
+                        doc.kb_id,
+                    )
+                    settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]}, {"removed_kwd": "Y"}, chunk_index_name, doc.kb_id)
+                    settings.docStoreConn.delete(
+                        {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "must_not": {"exists": "source_id"}},
+                        chunk_index_name,
+                        doc.kb_id,
+                    )
         except Exception as e:
             logging.warning(f"Failed to cleanup knowledge graph for document {doc.id}: {e}")
 
