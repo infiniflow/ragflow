@@ -315,19 +315,6 @@ class TestDocumentsUploadUnit:
         # Just verify we get a response
         assert "code" in res
 
-    def test_upload_and_parse_matrix_unit(self, document_app_module, monkeypatch):
-        module = document_app_module
-        monkeypatch.setattr(module, "request", _DummyRequest(form={"conversation_id": "conv-1"}, files=_DummyFiles({"file": [_DummyFile("")]})))
-        res = _run(module.upload_and_parse.__wrapped__())
-        assert res["code"] == module.RetCode.ARGUMENT_ERROR
-        assert res["message"] == "No file selected!"
-
-        files = _DummyFiles({"file": [_DummyFile("note.txt")]})
-        monkeypatch.setattr(module, "request", _DummyRequest(form={"conversation_id": "conv-1"}, files=files))
-        monkeypatch.setattr(module, "doc_upload_and_parse", lambda _conv_id, _files, _uid: ["doc-1"])
-        res = _run(module.upload_and_parse.__wrapped__())
-        assert res["code"] == 0
-        assert res["data"] == ["doc-1"]
 
     def test_parse_url_and_multipart_matrix_unit(self, document_app_module, monkeypatch, tmp_path):
         module = document_app_module

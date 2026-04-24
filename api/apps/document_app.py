@@ -25,7 +25,7 @@ from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import FileType
 from api.db.db_models import Task
 from api.db.services import duplicate_name
-from api.db.services.document_service import DocumentService, doc_upload_and_parse
+from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -479,24 +479,6 @@ async def get_artifact(filename):
         return response
     except Exception as e:
         return server_error_response(e)
-
-
-@manager.route("/upload_and_parse", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("conversation_id")
-async def upload_and_parse():
-    files = await request.files
-    if "file" not in files:
-        return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
-
-    file_objs = files.getlist("file")
-    for file_obj in file_objs:
-        if file_obj.filename == "":
-            return get_json_result(data=False, message="No file selected!", code=RetCode.ARGUMENT_ERROR)
-
-    form = await request.form
-    doc_ids = doc_upload_and_parse(form.get("conversation_id"), file_objs, current_user.id)
-    return get_json_result(data=doc_ids)
 
 
 @manager.route("/parse", methods=["POST"])  # noqa: F821
