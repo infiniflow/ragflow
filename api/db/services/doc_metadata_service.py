@@ -459,14 +459,22 @@ class DocMetadataService:
                         [kb_id]
                     )
                     if doc_exists:
-                        # Document exists - use partial update
+                        # Document exists - replace meta_fields entirely
+                        # Use upsert to fully replace the meta_fields field
+                        # (ES update with doc parameter does deep merge on object fields,
+                        # which would retain old keys that should be removed)
                         settings.docStoreConn.es.update(
                             index=index_name,
                             id=doc_id,
                             refresh=True,
-                            doc={"meta_fields": processed_meta}
+                            body={
+                                "script": {
+                                    "source": "ctx._source.meta_fields = params.meta_fields",
+                                    "params": {"meta_fields": processed_meta}
+                                }
+                            }
                         )
-                        logging.debug(f"Successfully updated metadata for document {doc_id} using ES partial update")
+                        logging.debug(f"Successfully updated metadata for document {doc_id} using ES script update")
                         return True
                 except Exception as e:
                     logging.debug(f"Document {doc_id} not found in index, will insert: {e}")

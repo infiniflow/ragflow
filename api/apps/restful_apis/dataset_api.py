@@ -460,6 +460,9 @@ async def rename_tag(tenant_id, dataset_id):
     if not isinstance(req["from_tag"], str) or not isinstance(req["to_tag"], str):
         return get_error_argument_result("from_tag and to_tag must be strings")
 
+    if not req["from_tag"].strip() or not req["to_tag"].strip():
+        return get_error_argument_result("from_tag and to_tag must not be empty")
+
     try:
         success, result = dataset_api_service.rename_tag(dataset_id, tenant_id, req["from_tag"], req["to_tag"])
         if success:
