@@ -15,7 +15,6 @@
 #
 import asyncio
 import string
-from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
@@ -24,6 +23,14 @@ from configs import DOCUMENT_NAME_LIMIT, INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 from utils.file_utils import create_txt_file
 from api.constants import FILE_NAME_LEN_LIMIT
+
+
+class _StubKBRecord(dict):
+    def __getattr__(self, item):
+        try:
+            return self[item]
+        except KeyError as exc:
+            raise AttributeError(item) from exc
 
 
 @pytest.mark.p1
@@ -141,7 +148,7 @@ class TestDocumentCreateUnit:
 
     def test_duplicate_name(self, document_rest_api_module, monkeypatch):
         module = document_rest_api_module
-        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
+        kb = _StubKBRecord(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
         monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [object()])
 
@@ -156,7 +163,7 @@ class TestDocumentCreateUnit:
 
     def test_root_folder_missing(self, document_rest_api_module, monkeypatch):
         module = document_rest_api_module
-        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
+        kb = _StubKBRecord(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
         monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
         monkeypatch.setattr(module.FileService, "get_kb_folder", lambda *_args, **_kwargs: None)
@@ -172,7 +179,7 @@ class TestDocumentCreateUnit:
 
     def test_kb_folder_missing(self, document_rest_api_module, monkeypatch):
         module = document_rest_api_module
-        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
+        kb = _StubKBRecord(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
         monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
         monkeypatch.setattr(module.FileService, "get_kb_folder", lambda *_args, **_kwargs: {"id": "root"})
@@ -189,7 +196,7 @@ class TestDocumentCreateUnit:
 
     def test_success(self, document_rest_api_module, monkeypatch):
         module = document_rest_api_module
-        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
+        kb = _StubKBRecord(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
         monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
         monkeypatch.setattr(module.FileService, "get_kb_folder", lambda *_args, **_kwargs: {"id": "root"})

@@ -31,6 +31,14 @@ class _DummyManager:
         return decorator
 
 
+class _StubKBRecord(dict):
+    def __getattr__(self, item):
+        try:
+            return self[item]
+        except KeyError as exc:
+            raise AttributeError(item) from exc
+
+
 @pytest.fixture(scope="function")
 def add_document_func(request, WebApiAuth, add_dataset, ragflow_tmp_dir):
     def cleanup():
@@ -205,4 +213,20 @@ def document_rest_api_module(monkeypatch):
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
     spec.loader.exec_module(module)
+    monkeypatch.setattr(
+        module.KnowledgebaseService,
+        "get_by_id",
+        lambda dataset_id: (
+            True,
+            _StubKBRecord(
+                id=dataset_id,
+                tenant_id="tenant1",
+                name="kb",
+                parser_id="parser",
+                pipeline_id="pipe",
+                parser_config={},
+            ),
+        ),
+    )
+    monkeypatch.setattr(module, "check_kb_team_permission", lambda *_args, **_kwargs: True)
     return module
