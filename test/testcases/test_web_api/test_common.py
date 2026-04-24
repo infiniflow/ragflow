@@ -370,7 +370,16 @@ def upload_documents(auth, payload=None, files_path=None, *, filename_override=N
 
 
 def create_document(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/create", headers=headers, auth=auth, json=payload, data=data)
+    kb_id = payload.get("kb_id") if payload else None
+    request_payload = dict(payload or {})
+    request_payload.pop("kb_id", None)
+    res = requests.post(
+        url=f"{HOST_ADDRESS}{DATASETS_URL}/{kb_id}/documents?type=empty",
+        headers=headers,
+        auth=auth,
+        json=request_payload,
+        data=data,
+    )
     return res.json()
 
 

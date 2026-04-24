@@ -18,13 +18,11 @@ const {
   kbList,
   getDocumentList,
   documentChangeStatus,
-  documentCreate,
   documentChangeParser,
   documentThumbnails,
   retrievalTest,
   documentRun,
   documentUpload,
-  webCrawl,
   knowledgeGraph,
   listTagByKnowledgeIds,
   setMeta,
@@ -63,10 +61,6 @@ const methods = {
     url: documentChangeStatus,
     method: 'post',
   },
-  documentCreate: {
-    url: documentCreate,
-    method: 'post',
-  },
   documentRun: {
     url: documentRun,
     method: 'post',
@@ -81,10 +75,6 @@ const methods = {
   },
   documentUpload: {
     url: documentUpload,
-    method: 'post',
-  },
-  webCrawl: {
-    url: webCrawl,
     method: 'post',
   },
   setMeta: {
@@ -345,6 +335,25 @@ export const documentFilter = (kb_id: string) =>
 export const uploadDocument = async (datasetId: string, formData: FormData) => {
   const url = api.documentUpload(datasetId);
   const response = await axios.post(url, formData, {
+    headers: {
+      [Authorization]: getAuthorization(),
+    },
+  });
+  return response.data;
+};
+
+export const createDocument = async (datasetId: string, name: string) => {
+  const response = await request.post(api.documentCreate(datasetId), {
+    data: { name },
+  });
+  return response.data;
+};
+
+export const webCrawlDocument = async (
+  datasetId: string,
+  formData: FormData,
+) => {
+  const response = await axios.post(api.webCrawl(datasetId), formData, {
     headers: {
       [Authorization]: getAuthorization(),
     },
