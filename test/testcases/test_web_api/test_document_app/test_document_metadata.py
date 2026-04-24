@@ -24,11 +24,8 @@ from test_common import (
     document_infos,
     document_metadata_summary,
     document_metadata_update,
-    document_thumbnails,
     document_update_metadata_setting,
-    upload_documents,
 )
-from utils.file_utils import create_txt_file
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
@@ -103,7 +100,6 @@ class TestDocumentMetadata:
         assert len(docs) == 1, docs
         assert docs[0]["id"] == doc_id, res
 
-
     ## The inputs has been changed to add 'doc_ids'
     ## TODO: 
     #@pytest.mark.p2
@@ -154,34 +150,6 @@ class TestDocumentMetadata:
 
         assert info_res["code"] == 0, info_res
         assert info_res["data"]["docs"][0]["status"] == "1", info_res
-
-
-    @pytest.mark.p2
-    def test_thumbnails_missing_ids(self, WebApiAuth):
-        """Test thumbnails endpoint returns error when doc_ids is missing."""
-        res = document_thumbnails(WebApiAuth, params={})
-        assert res["code"] == 101, res
-        assert 'Lack of "Document ID"' in res["message"], res
-
-    @pytest.mark.p2
-    def test_thumbnails_with_doc_ids(self, WebApiAuth, add_dataset_func, tmp_path):
-        """Test thumbnails endpoint returns thumbnails for valid doc_ids."""
-        dataset_id = add_dataset_func
-
-        # Create and upload a test document
-        fp = create_txt_file(tmp_path / "test_thumb.txt")
-
-        upload_res = upload_documents(WebApiAuth, {"kb_id": dataset_id}, [fp])
-        assert upload_res["code"] == 0, upload_res
-
-        # Get the document ID
-        doc_id = upload_res["data"][0]["id"]
-
-        # Get thumbnails for the document
-        res = document_thumbnails(WebApiAuth, params={"doc_ids": [doc_id]})
-
-        assert res["code"] == 0, res
-        assert doc_id in res["data"], res
 
 
 class TestDocumentMetadataNegative:

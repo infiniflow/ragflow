@@ -444,7 +444,7 @@ def list_docs(dataset_id, tenant_id):
         renamed_doc_list = [map_doc_keys(doc) for doc in docs]
         for doc_item in renamed_doc_list:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-                doc_item["thumbnail"] = f"/v1/document/image/{dataset_id}-{doc_item['thumbnail']}"
+                doc_item["thumbnail"] = f"/api/v1/documents/images/{dataset_id}-{doc_item['thumbnail']}"
             if doc_item.get("source_type"):
                 doc_item["source_type"] = doc_item["source_type"].split("/")[0]
             if doc_item["parser_config"].get("metadata"):
@@ -1057,3 +1057,45 @@ async def update_metadata(tenant_id, dataset_id):
     target_doc_ids = list(target_doc_ids)
     updated = DocMetadataService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
     return get_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
+
+
+@manager.route("/documents/images/<image_id>", methods=["GET"])  # noqa: F821
+async def get_document_image(image_id):
+    """
+    Get a document image by ID.
+    ---
+    tags:
+      - Documents
+    parameters:
+      - name: image_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The image ID (format: bucket-name-image-name)
+    responses:
+      200:
+        description: Image file
+        content:
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+    """
+    try:
+        from quart import make_response
+
+        from common import settings
+        from common.misc_utils import thread_pool_exec
+        from api.utils.api_utils import get_data_error_result, server_error_response
+
+        arr = image_id.split("-")
+        if len(arr) != 2:
+            return get_data_error_result(message="Image not found.")
+        bkt, nm = image_id.split("-")
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
+        response = await make_response(data)
+        response.headers.set("Content-Type", "image/JPEG")
+        return response
+    except Exception as e:
+        return server_error_response(e)
