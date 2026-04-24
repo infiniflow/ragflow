@@ -73,14 +73,12 @@ class BuiltinEmbed(Base):
         batch_size = 16
         # TEI is able to auto truncate inputs according to https://github.com/huggingface/text-embeddings-inference.
         token_count = 0
-        ress = None
+        batches = []
         for i in range(0, len(texts), batch_size):
             embeddings, token_count_delta = self._model.encode(texts[i : i + batch_size])
             token_count += token_count_delta
-            if ress is None:
-                ress = embeddings
-            else:
-                ress = np.concatenate((ress, embeddings), axis=0)
+            batches.append(embeddings)
+        ress = np.vstack(batches) if batches else np.array([])
         return ress, token_count
 
     def encode_queries(self, text: str):
