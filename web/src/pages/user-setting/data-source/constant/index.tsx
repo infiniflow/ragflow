@@ -75,6 +75,9 @@ export const DataSourceFeatureVisibilityMap = {
   [DataSourceKey.OCI_STORAGE]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.NOTION]: {
+    syncDeletedFiles: true,
+  },
 };
 
 const isDataSourceFeatureVisible = (

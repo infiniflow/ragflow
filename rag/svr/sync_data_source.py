@@ -450,6 +450,7 @@ class Notion(SyncBase):
     async def _generate(self, task: dict):
         self.connector = NotionConnector(root_page_id=self.conf["root_page_id"])
         self.connector.load_credentials(self.conf["credentials"])
+        file_list = None
         document_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
@@ -457,9 +458,20 @@ class Notion(SyncBase):
                                             datetime.now(timezone.utc).timestamp())
         )
 
+        if (
+            task["reindex"] != "1"
+            and task["poll_range_start"]
+            and self.conf.get("sync_deleted_files")
+        ):
+            file_list = []
+            for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                file_list.extend(slim_batch)
+
         _begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(
             task["poll_range_start"])
         self.log_connection("Notion", f"root({self.conf['root_page_id']})", task)
+        if file_list is not None:
+            return document_generator, file_list
         return document_generator
 
 
