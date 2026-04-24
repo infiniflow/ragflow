@@ -230,6 +230,11 @@ def _load_agents_app(monkeypatch, *, target="rest"):
 
     db_models_mod = ModuleType("api.db.db_models")
     db_models_mod.Task = type("_StubTask", (), {"doc_id": "doc_id"})
+    db_models_mod.APIToken = type(
+        "_StubAPIToken",
+        (),
+        {"query": staticmethod(lambda **_kwargs: [])},
+    )
     monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
 
     canvas_service_mod = ModuleType("api.db.services.canvas_service")
