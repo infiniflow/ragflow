@@ -341,42 +341,4 @@ func (r *ContextCatResponse) PrintOut() {
 	}
 }
 
-// ContextMountResponse represents the response for mount command
-type ContextMountResponse struct {
-	Code         int    `json:"code"`
-	Message      string `json:"message"`
-	Duration     float64
-	OutputFormat OutputFormat
-}
 
-func (r *ContextMountResponse) Type() string                        { return "ce_mount" }
-func (r *ContextMountResponse) TimeCost() float64                   { return r.Duration }
-func (r *ContextMountResponse) SetOutputFormat(format OutputFormat) { r.OutputFormat = format }
-func (r *ContextMountResponse) PrintOut() {
-	if r.Code == 0 {
-		fmt.Println(r.Message)
-	} else {
-		fmt.Println("ERROR")
-		fmt.Printf("%d, %s\n", r.Code, r.Message)
-	}
-}
-
-// ContextUnmountResponse represents the response for unmount command
-type ContextUnmountResponse struct {
-	Code         int    `json:"code"`
-	Message      string `json:"message"`
-	Duration     float64
-	OutputFormat OutputFormat
-}
-
-func (r *ContextUnmountResponse) Type() string                        { return "ce_unmount" }
-func (r *ContextUnmountResponse) TimeCost() float64                   { return r.Duration }
-func (r *ContextUnmountResponse) SetOutputFormat(format OutputFormat) { r.OutputFormat = format }
-func (r *ContextUnmountResponse) PrintOut() {
-	if r.Code == 0 {
-		fmt.Println(r.Message)
-	} else {
-		fmt.Println("ERROR")
-		fmt.Printf("%d, %s\n", r.Code, r.Message)
-	}
-}

@@ -295,10 +295,6 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CECat(cmd)
 	case "ce_search":
 		return c.CESearch(cmd)
-	case "ce_mount":
-		return c.ContextMount(cmd)
-	case "ce_unmount":
-		return c.ContextUnmount(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)

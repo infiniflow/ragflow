@@ -137,8 +137,6 @@ const (
 	TokenError
 	TokenFatal
 	TokenPanic
-	TokenMount
-	TokenUnmount
 	// Literals
 	TokenIdentifier
 	TokenQuotedString

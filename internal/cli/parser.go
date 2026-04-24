@@ -207,10 +207,6 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseUpdateCommand()
 	case TokenRemove:
 		return p.parseRemoveCommand()
-	case TokenMount:
-		return p.parseContextMountCommand()
-	case TokenUnmount:
-		return p.parseContextUnmountCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}

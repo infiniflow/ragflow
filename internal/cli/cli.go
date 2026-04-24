@@ -33,7 +33,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"ragflow/internal/cli/filesystem"
-	"ragflow/internal/cli/fuse"
 )
 
 // ConfigFile represents the rf.yml configuration file structure
@@ -840,60 +839,7 @@ func (c *CLI) executeFilesystem(input string) error {
 		fileProv, _ := fileProvider.(*filesystem.FileProvider)
 		cmd := filesystem.NewUninstallSkillCommand(httpAdapter, skillProvider, fileProv)
 		return cmd.Execute(cmdArgs)
-	case "mount":
-		if len(cmdArgs) == 0 {
-			return fmt.Errorf("mount requires a mountpoint")
-		}
-		// Find mountpoint and config file path
-		mountpoint := ""
-		configPath := ""
-		foreground := false
-		for i, arg := range cmdArgs {
-			if arg == "-f" || arg == "--foreground" {
-				foreground = true
-			} else if arg == "--file" {
-				// Next argument is the config file path
-				if i+1 < len(cmdArgs) {
-					configPath = cmdArgs[i+1]
-				}
-			} else if strings.HasPrefix(arg, "-") {
-				// Other flags, skip
-				continue
-			} else {
-				// This is a positional argument, likely the mountpoint
-				// Skip if it's the value of --file flag
-				if i > 0 && cmdArgs[i-1] == "--file" {
-					continue
-				}
-				mountpoint = arg
-			}
-		}
-		if mountpoint == "" {
-			return fmt.Errorf("mount requires a mountpoint")
-		}
 
-		serverURL := fmt.Sprintf("http://%s:%d", c.client.HTTPClient.Host, c.client.HTTPClient.Port)
-		// Use config file path from global args (parsed from -f flag)
-		if configPath == "" && c.args != nil {
-			configPath = c.args.ConfigFilePath
-		}
-		opts := &fuse.MountOptions{
-			Mountpoint: mountpoint,
-			ConfigPath: configPath,
-			ServerURL:  serverURL,
-			Foreground: foreground,
-		}
-
-		fmt.Printf("Mounting RAGFlow at %s...\n", mountpoint)
-		return fuse.Mount(c.contextEngine, opts)
-	case "unmount":
-		if len(cmdArgs) == 0 {
-			return fmt.Errorf("unmount requires a mountpoint")
-		}
-		return fuse.Unmount(cmdArgs[0])
-	case "mounts":
-		fuse.PrintMounts()
-		return nil
 	default:
 		return fmt.Errorf("unknown filesystem command: %s", cmdType)
 	}
@@ -1308,12 +1254,6 @@ Filesystem Commands (no quotes):
   cat <path>                   - Show file content
                                  e.g., cat files/docs/file.txt  - Show file content
                                  Note: cat datasets or cat datasets/kb1 will error
-  mount [-f] <path>            - Mount RAGFlow filesystem to local directory
-                                 e.g., mount /mnt/ragflow          - Mount in background
-                                 e.g., mount -f /mnt/ragflow       - Mount in foreground
-  unmount <path>               - Unmount RAGFlow filesystem
-                                 e.g., unmount /mnt/ragflow
-  mounts                       - List active RAGFlow mounts
 
 Examples:
   ragflow_cli -f rf.yml "LIST USERS"           # SQL mode (with quotes)
