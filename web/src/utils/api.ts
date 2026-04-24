@@ -83,7 +83,7 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/trace_raptor`,
   unbindPipelineTask: ({ kb_id, type }: { kb_id: string; type: string }) =>
     `${webAPI}/kb/unbind_task?kb_id=${kb_id}&pipeline_task_type=${type}`,
-  pipelineRerun: `${webAPI}/canvas/rerun`,
+  pipelineRerun: `${restAPIv1}/agents/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
   updateDocumentsMetadata: (datasetId: string) =>
@@ -177,45 +177,44 @@ export default {
   setLangfuseConfig: `${restAPIv1}/langfuse/api-key`,
 
   // flow
-  listTemplates: `${webAPI}/canvas/templates`,
-  listCanvas: `${webAPI}/canvas/list`,
-  getCanvas: `${webAPI}/canvas/get`,
-  getCanvasSSE: (canvasId: string) => `${webAPI}/canvas/getsse/${canvasId}`,
-  removeCanvas: `${webAPI}/canvas/rm`,
-  setCanvas: `${webAPI}/canvas/set`,
-  settingCanvas: `${webAPI}/canvas/setting`,
-  getListVersion: `${webAPI}/canvas/getlistversion`,
-  getVersion: `${webAPI}/canvas/getversion`,
-  resetCanvas: `${webAPI}/canvas/reset`,
-  runCanvas: `${webAPI}/canvas/completion`,
-  testDbConnect: `${webAPI}/canvas/test_db_connect`,
+  listAgentTemplate: `${restAPIv1}/agents/templates`,
+  listAgents: `${restAPIv1}/agents`,
+  createAgent: `${restAPIv1}/agents`,
+  updateAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
+  deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
+  agentChatCompletion: `${restAPIv1}/agents/chat/completion`,
+  resetAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}/reset`,
+  testDbConnect: `${restAPIv1}/agents/test_db_connection`,
   getInputElements: `${webAPI}/canvas/input_elements`,
-  debug: `${webAPI}/canvas/debug`,
-  uploadCanvasFile: `${webAPI}/canvas/upload`,
-  trace: `${webAPI}/canvas/trace`,
+  debug: (agentId: string, componentId: string) =>
+    `${restAPIv1}/agents/${agentId}/components/${componentId}/debug`,
+  trace: (agentId: string, messageId: string) =>
+    `${restAPIv1}/agents/${agentId}/logs/${messageId}`,
   cancelCanvas: (taskId: string) => `${webAPI}/canvas/cancel/${taskId}`, // cancel conversation
   // agent
-  inputForm: `${webAPI}/canvas/input_form`,
-  fetchVersionList: (id: string) => `${webAPI}/canvas/getlistversion/${id}`,
-  fetchVersion: (id: string) => `${webAPI}/canvas/getversion/${id}`,
-  fetchCanvas: (id: string) => `${webAPI}/canvas/get/${id}`,
-  fetchAgentAvatar: (id: string) => `${webAPI}/canvas/getsse/${id}`,
-  uploadAgentFile: (id?: string) => `${webAPI}/canvas/upload/${id}`,
+  inputForm: (agentId: string, componentId: string) =>
+    `${restAPIv1}/agents/${agentId}/components/${componentId}/input-form`,
+  fetchVersionList: (id: string) => `${restAPIv1}/agents/${id}/versions`,
+  fetchVersion: (agentId: string, versionId: string) =>
+    `${restAPIv1}/agents/${agentId}/versions/${versionId}`,
+  getAgent: (id: string) => `${restAPIv1}/agents/${id}`,
+  uploadAgentFile: (id?: string) => `${restAPIv1}/agents/${id}/upload`,
+  createAgentSession: (agentId: string) =>
+    `${restAPIv1}/agents/${agentId}/sessions`,
   fetchAgentLogs: (canvasId: string) => `${webAPI}/canvas/${canvasId}/sessions`,
-  fetchAgentLogsById: (canvasId: string, sessionId: string) =>
-    `${webAPI}/canvas/${canvasId}/sessions/${sessionId}`,
+  fetchAgentSessions: (agentId: string) =>
+    `${restAPIv1}/agents/${agentId}/sessions`,
+  fetchAgentSessionById: (agentId: string, sessionId: string) =>
+    `${restAPIv1}/agents/${agentId}/sessions/${sessionId}`,
   fetchExternalAgentInputs: (canvasId: string) =>
     `${restAPIv1}/agentbots/${canvasId}/inputs`,
-  prompt: `${webAPI}/canvas/prompts`,
+  prompt: `${restAPIv1}/agents/prompts`,
   cancelDataflow: (id: string) => `${webAPI}/canvas/cancel/${id}`,
-  downloadFile: `${webAPI}/canvas/download`,
+  downloadFile: `${restAPIv1}/agents/download`,
   testWebhook: (id: string) => `${restAPIv1}/agents/${id}/webhook/test`,
   fetchWebhookTrace: (id: string) => `${restAPIv1}/agents/${id}/webhook/logs`,
 
   // explore
-
-  runCanvasExplore: (canvasId: string) =>
-    `${webAPI}/canvas/${canvasId}/completion`,
 
   // mcp server
   listMcpServer: `${restAPIv1}/mcp/servers`,

@@ -108,10 +108,15 @@ class Session(Base):
         return res
 
     def _ask_agent(self, question: str, stream: bool, **kwargs):
-        json_data = {"question": question, "stream": stream, "session_id": self.id}
+        json_data = {
+            "agent_id": self.agent_id,
+            "query": question,
+            "stream": stream,
+            "session_id": self.id,
+            "openai-compatible": False,
+        }
         json_data.update(kwargs)
-        res = self.post(f"/agents/{self.agent_id}/completions",
-                        json_data, stream=stream)
+        res = self.post("/agents/chat/completion", json_data, stream=stream)
         return res
 
     def update(self, update_message):
