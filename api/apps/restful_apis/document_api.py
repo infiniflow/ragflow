@@ -279,10 +279,10 @@ async def upload_document(dataset_id, tenant_id):
         return get_error_data_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     if upload_type == "web":
-        return await _upload_web_document(dataset_id, kb)
+        return await _upload_web_document(dataset_id, kb, tenant_id)
 
     if upload_type == "empty":
-        return await _upload_empty_document(dataset_id, kb)
+        return await _upload_empty_document(dataset_id, kb, tenant_id)
 
     if upload_type != "local":
         return get_error_data_result(
@@ -293,7 +293,7 @@ async def upload_document(dataset_id, tenant_id):
     return await _upload_local_documents(kb, tenant_id)
 
 
-async def _upload_web_document(dataset_id, kb):
+async def _upload_web_document(dataset_id, kb, tenant_id):
     form = await request.form
     name = (form.get("name") or "").strip()
     url = form.get("url")
@@ -314,9 +314,9 @@ async def _upload_web_document(dataset_id, kb):
     if not blob:
         return server_error_response(ValueError("Download failure."))
 
-    root_folder = FileService.get_root_folder(current_user.id)
-    FileService.init_knowledgebase_docs(root_folder["id"], current_user.id)
-    kb_root_folder = FileService.get_kb_folder(current_user.id)
+    root_folder = FileService.get_root_folder(tenant_id)
+    FileService.init_knowledgebase_docs(root_folder["id"], tenant_id)
+    kb_root_folder = FileService.get_kb_folder(tenant_id)
     kb_folder = FileService.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
 
     try:
@@ -336,7 +336,7 @@ async def _upload_web_document(dataset_id, kb):
             "parser_id": kb.parser_id,
             "pipeline_id": kb.pipeline_id,
             "parser_config": kb.parser_config,
-            "created_by": current_user.id,
+            "created_by": tenant_id,
             "type": filetype,
             "name": filename,
             "location": location,
@@ -360,7 +360,7 @@ async def _upload_web_document(dataset_id, kb):
         return server_error_response(e)
 
 
-async def _upload_empty_document(dataset_id, kb):
+async def _upload_empty_document(dataset_id, kb, tenant_id):
     req = await get_request_json()
     name = (req.get("name") or "").strip()
 
@@ -389,7 +389,7 @@ async def _upload_empty_document(dataset_id, kb):
                 "parser_id": kb.parser_id,
                 "pipeline_id": kb.pipeline_id,
                 "parser_config": kb.parser_config,
-                "created_by": current_user.id,
+                "created_by": tenant_id,
                 "type": FileType.VIRTUAL,
                 "name": name,
                 "suffix": Path(name).suffix.lstrip("."),
