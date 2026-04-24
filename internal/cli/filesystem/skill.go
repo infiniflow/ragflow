@@ -282,6 +282,32 @@ func (p *SkillProvider) Search(ctx stdctx.Context, subPath string, opts *SearchO
 	}, nil
 }
 
+// searchSkillsFromFileSystem performs a simple name-based search via file system
+// when the search index is unavailable or empty.
+func (p *SkillProvider) searchSkillsFromFileSystem(ctx stdctx.Context, spaceName string, opts *SearchOptions) (*Result, error) {
+	listOpts := &ListOptions{
+		Limit:  opts.Limit,
+		Offset: opts.Offset,
+	}
+	result, err := p.listSkillsInSpaceFromFileSystem(ctx, spaceName, listOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	queryLower := strings.ToLower(opts.Query)
+	var matched []*Node
+	for _, node := range result.Nodes {
+		if strings.Contains(strings.ToLower(node.Name), queryLower) {
+			matched = append(matched, node)
+		}
+	}
+
+	return &Result{
+		Nodes: matched,
+		Total: len(matched),
+	}, nil
+}
+
 // Cat retrieves the content of a skill file at the given path
 // Path structure: skills/{space_id}/{skill_name}/{version}/.../{file_path}
 func (p *SkillProvider) Cat(ctx stdctx.Context, path string) ([]byte, error) {
@@ -295,59 +321,13 @@ func (p *SkillProvider) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 	version := parts[2]
 	_ = JoinPath(parts[3:]...) // file path within version folder (used for nested directories)
 
-	// Step 1: Get the space UUID
-	spaceUUID, err := p.getSpaceUUIDByName(ctx, spaceID)
+	// Get the skill folder ID (search API or file system fallback)
+	skillFolderID, err := p.getSkillFolderID(ctx, spaceID, skillName)
 	if err != nil {
-		return nil, fmt.Errorf("space '%s' not found: %w", spaceID, err)
+		return nil, fmt.Errorf("skill '%s' not found in space '%s': %w", skillName, spaceID, err)
 	}
 
-	// Step 2: Find the skill's folder_id by searching
-	payload := map[string]interface{}{
-		"query":      skillName,
-		"space_id":   spaceUUID,
-		"page":       1,
-		"page_size":  10,
-	}
-
-	resp, err := p.httpClient.Request("POST", "/skills/search", true, "auto", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find skill: %w", err)
-	}
-
-	var searchResult struct {
-		Code int    `json:"code"`
-		Msg  string `json:"message"`
-		Data struct {
-			Skills []struct {
-				SkillID  string `json:"skill_id"`
-				FolderID string `json:"folder_id"`
-				Name     string `json:"name"`
-			} `json:"skills"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(resp.Body, &searchResult); err != nil {
-		return nil, fmt.Errorf("failed to parse search response: %w", err)
-	}
-
-	if searchResult.Code != 0 {
-		return nil, fmt.Errorf("search failed: %s", searchResult.Msg)
-	}
-
-	// Find the matching skill
-	var skillFolderID string
-	for _, skill := range searchResult.Data.Skills {
-		if skill.Name == skillName {
-			skillFolderID = skill.FolderID
-			break
-		}
-	}
-
-	if skillFolderID == "" {
-		return nil, fmt.Errorf("skill '%s' not found in space '%s'", skillName, spaceID)
-	}
-
-	// Step 3: Find the version folder
+	// Find the version folder
 	filesResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", skillFolderID), true, "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list versions: %w", err)
@@ -777,61 +757,62 @@ func (p *SkillProvider) findFolderID(ctx stdctx.Context, parentID, folderName st
 	return "", fmt.Errorf("folder '%s' not found", folderName)
 }
 
-// listSkillVersions lists versions of a skill
-func (p *SkillProvider) listSkillVersions(ctx stdctx.Context, spaceID, skillName string, opts *ListOptions) (*Result, error) {
-	// Step 1: Get the space UUID
+// getSkillFolderID gets the folder ID of a skill in a space.
+// First tries the search API (which may have cached folder_id from indexing),
+// then falls back to direct file system traversal.
+func (p *SkillProvider) getSkillFolderID(ctx stdctx.Context, spaceID, skillName string) (string, error) {
+	// Try search API first
 	spaceUUID, err := p.getSpaceUUIDByName(ctx, spaceID)
-	if err != nil {
-		return nil, fmt.Errorf("space '%s' not found: %w", spaceID, err)
-	}
-
-	// Step 2: Find the skill's folder_id by searching
-	payload := map[string]interface{}{
-		"query":      skillName,
-		"space_id":   spaceUUID,
-		"page":       1,
-		"page_size":  10,
-	}
-
-	resp, err := p.httpClient.Request("POST", "/skills/search", true, "auto", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find skill: %w", err)
-	}
-
-	var searchResult struct {
-		Code int    `json:"code"`
-		Msg  string `json:"message"`
-		Data struct {
-			Skills []struct {
-				SkillID  string `json:"skill_id"`
-				FolderID string `json:"folder_id"`
-				Name     string `json:"name"`
-			} `json:"skills"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(resp.Body, &searchResult); err != nil {
-		return nil, fmt.Errorf("failed to parse search response: %w", err)
-	}
-
-	if searchResult.Code != 0 {
-		return nil, fmt.Errorf("search failed: %s", searchResult.Msg)
-	}
-
-	// Find the matching skill
-	var skillFolderID string
-	for _, skill := range searchResult.Data.Skills {
-		if skill.Name == skillName {
-			skillFolderID = skill.FolderID
-			break
+	if err == nil {
+		payload := map[string]interface{}{
+			"query":     skillName,
+			"space_id":  spaceUUID,
+			"page":      1,
+			"page_size": 10,
+		}
+		resp, err := p.httpClient.Request("POST", "/skills/search", true, "auto", nil, payload)
+		if err == nil {
+			var searchResult struct {
+				Code int    `json:"code"`
+				Msg  string `json:"message"`
+				Data struct {
+					Skills []struct {
+						SkillID  string `json:"skill_id"`
+						FolderID string `json:"folder_id"`
+						Name     string `json:"name"`
+					} `json:"skills"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(resp.Body, &searchResult); err == nil && searchResult.Code == 0 {
+				for _, skill := range searchResult.Data.Skills {
+					if skill.Name == skillName {
+						return skill.FolderID, nil
+					}
+				}
+			}
 		}
 	}
 
-	if skillFolderID == "" {
+	// Fallback: traverse file system directly
+	skillsFolderID, err := p.getSkillsFolderID(ctx)
+	if err != nil {
+		return "", err
+	}
+	spaceFolderID, err := p.findFolderID(ctx, skillsFolderID, spaceID)
+	if err != nil {
+		return "", err
+	}
+	return p.findFolderID(ctx, spaceFolderID, skillName)
+}
+
+// listSkillVersions lists versions of a skill
+func (p *SkillProvider) listSkillVersions(ctx stdctx.Context, spaceID, skillName string, opts *ListOptions) (*Result, error) {
+	skillFolderID, err := p.getSkillFolderID(ctx, spaceID, skillName)
+	if err != nil {
 		return nil, fmt.Errorf("skill '%s' not found in space '%s'", skillName, spaceID)
 	}
 
-	// Step 3: List the skill folder to get versions (subdirectories)
+	// List the skill folder to get versions (subdirectories)
 	filesResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", skillFolderID), true, "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list versions: %w", err)
@@ -886,61 +867,13 @@ func (p *SkillProvider) listSkillContent(ctx stdctx.Context, spaceID, skillName,
 	// Skill content is stored in file system under skills/{space}/{skill}/{version}/
 	// We need to traverse the file system to find the skill folder and list its contents
 
-	// Step 1: Get the skills space folder ID
-	spaceUUID, err := p.getSpaceUUIDByName(ctx, spaceID)
+	// Get the skill folder ID (search API or file system fallback)
+	skillFolderID, err := p.getSkillFolderID(ctx, spaceID, skillName)
 	if err != nil {
-		return nil, fmt.Errorf("space '%s' not found: %w", spaceID, err)
-	}
-
-	// Step 2: Find the skill folder by searching for the skill
-	// First get the skill's folder_id from search
-	payload := map[string]interface{}{
-		"query":      skillName,
-		"space_id":   spaceUUID,
-		"page":       1,
-		"page_size":  10,
-	}
-
-	resp, err := p.httpClient.Request("POST", "/skills/search", true, "auto", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find skill: %w", err)
-	}
-
-	var searchResult struct {
-		Code int    `json:"code"`
-		Msg  string `json:"message"`
-		Data struct {
-			Skills []struct {
-				SkillID  string `json:"skill_id"`
-				FolderID string `json:"folder_id"`
-				Name     string `json:"name"`
-			} `json:"skills"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(resp.Body, &searchResult); err != nil {
-		return nil, fmt.Errorf("failed to parse search response: %w", err)
-	}
-
-	if searchResult.Code != 0 {
-		return nil, fmt.Errorf("search failed: %s", searchResult.Msg)
-	}
-
-	// Find the matching skill
-	var skillFolderID string
-	for _, skill := range searchResult.Data.Skills {
-		if skill.Name == skillName {
-			skillFolderID = skill.FolderID
-			break
-		}
-	}
-
-	if skillFolderID == "" {
 		return nil, fmt.Errorf("skill '%s' not found in space '%s'", skillName, spaceID)
 	}
 
-	// Step 3: List the version folder under the skill folder
-	// First find the version folder
+	// List the version folder under the skill folder
 	filesResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", skillFolderID), true, "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list skill versions: %w", err)
@@ -951,11 +884,11 @@ func (p *SkillProvider) listSkillContent(ctx stdctx.Context, spaceID, skillName,
 		Msg  string `json:"message"`
 		Data struct {
 			Files []struct {
-				ID       string `json:"id"`
-				Name     string `json:"name"`
-				Type     string `json:"type"`
-				Size     int64  `json:"size"`
-				UpdateTime int64 `json:"update_time"`
+				ID         string `json:"id"`
+				Name       string `json:"name"`
+				Type       string `json:"type"`
+				Size       int64  `json:"size"`
+				UpdateTime int64  `json:"update_time"`
 			} `json:"files"`
 		} `json:"data"`
 	}

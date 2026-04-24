@@ -1907,7 +1907,7 @@ func (p *Parser) parseInsertDatasetFromFile() (*Command, error) {
 }
 
 // Internal CLI for GO
-// parseInsertMetadataFromFile parses: INSERT INTO METADATA FROM FILE "file_path"
+// parseInsertMetadataFromFile parses: INSERT METADATA FROM FILE "file_path"
 func (p *Parser) parseInsertMetadataFromFile() (*Command, error) {
 	p.nextToken() // consume METADATA
 
@@ -2617,6 +2617,7 @@ func (p *Parser) parseUpdateCommand() (*Command, error) {
 	return nil, fmt.Errorf("unknown UPDATE target: %s", p.curToken.Value)
 }
 
+// Internal CLI for GO
 // parseUpdateChunk parses: UPDATE CHUNK 'chunk_id' OF DATASET 'dataset_name' SET '{"content": "..."}'
 func (p *Parser) parseUpdateChunk() (*Command, error) {
 	p.nextToken() // consume CHUNK

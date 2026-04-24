@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/logger"
+	"ragflow/internal/utility"
 	"strings"
 
 	"github.com/google/uuid"
@@ -223,14 +224,14 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 
 	// Check if index exists before searching
 	indexName := getSkillIndexName(req.TenantID, req.SpaceID)
-	logger.Info("Searching skills", zap.String("indexName", indexName), zap.String("tenantID", req.TenantID), zap.String("spaceID", req.SpaceID), zap.String("query", req.Query))
+	logger.Debug("Searching skills", zap.String("indexName", indexName), zap.String("query", req.Query))
 
 	indexExists, err := docEngine.TableExists(ctx, indexName)
 	if err != nil {
 		logger.Error("Failed to check index existence", err)
 		return nil, common.CodeOperatingError, fmt.Errorf("failed to check index existence: %w", err)
 	}
-	logger.Info("Index existence check", zap.String("indexName", indexName), zap.Bool("exists", indexExists))
+	logger.Debug("Index existence check", zap.String("indexName", indexName), zap.Bool("exists", indexExists))
 	if !indexExists {
 		// Return empty result if index doesn't exist (no skills indexed yet)
 		// This allows listing skills via file system API as fallback
@@ -326,47 +327,45 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 
 // keywordSearch performs pure keyword search using BM25
 func (s *SkillSearchService) keywordSearch(ctx context.Context, docEngine engine.DocEngine, indexName, query string, config *entity.SkillSearchConfig, threshold float64, sortBy, sortOrder string) ([]entity.SkillSearchResult, error) {
-	// Analyze query: tokenize and extract keywords
-	matchText, keywords := s.analyzeQuery(query)
+	// Build order_by for sorting
+	orderBy := buildOrderByExpr(sortBy, sortOrder, query == "")
 
-	// Build order_by string for sorting
-	orderBy := s.buildOrderBy(sortBy, sortOrder, query == "")
-
-	// For empty query (list all), we need to set AvailableInt to ensure status filter
-	var availableInt *int
-	if query == "" {
-		v := 1
-		availableInt = &v
+	// Build MatchTextExpr for unified engine interface
+	// Note: MatchingText must be plain text, NOT ES query_string syntax.
+	// Infinity's MatchText expects plain text and tokenizes internally.
+	// ES's buildSkillKeywordQuery wraps it in a query_string query.
+	// Field names: Infinity uses raw names (name, tags, etc.),
+	// ES uses _tks suffix handled internally by elasticsearch/search.go
+	matchExpr := &types.MatchTextExpr{
+		MatchingText: query,
+		// Infinity: convertMatchingField maps these to column@index_name format
+		// (e.g., name→name@ft_name_rag_coarse, name_sm→name@ft_name_rag_fine)
+		// ES: buildSkillKeywordQuery uses its own field list internally
+		Fields: []string{
+			"name^10", "name_sm^5",
+			"tags^5", "tags_sm^2",
+			"description^3", "description_sm^1",
+			"content^1", "content_sm^0.5",
+		},
+		TopN: 100,
 	}
 
 	// Use unified search request with analyzed query
 	searchReq := &types.SearchRequest{
-		IndexNames:          []string{indexName},
-		Question:            query,
-		MatchText:           matchText,
-		Keywords:            keywords,
-		KeywordOnly:         true,
-		Page:                1,
-		Size:                100,
-		TopK:                100,
-		SimilarityThreshold: config.SimilarityThreshold,
-		OrderBy:             orderBy,
-		AvailableInt:        availableInt,
+		IndexNames: []string{indexName},
+		Offset:     0,
+		Limit:      100,
+		MatchExprs: []interface{}{matchExpr},
+		OrderBy:    orderBy,
 	}
 
-	resp, err := docEngine.Search(ctx, searchReq)
+	searchResult, err := docEngine.Search(ctx, searchReq)
 	if err != nil {
 		return nil, err
 	}
 
-	// Parse response
-	searchResp, ok := resp.(*types.SearchResponse)
-	if !ok {
-		return nil, fmt.Errorf("invalid search response type: %T", resp)
-	}
-
 	// Convert chunks to SkillSearchResult
-	return s.convertChunksToResults(searchResp.Chunks, threshold), nil
+	return s.convertChunksToResults(searchResult.Chunks, threshold), nil
 }
 
 // vectorSearch performs pure vector search
@@ -384,24 +383,39 @@ func (s *SkillSearchService) vectorSearch(ctx context.Context, docEngine engine.
 		zap.Int("dimension", len(vector)))
 
 	// Analyze query for potential keyword filtering
-	matchText, keywords := s.analyzeQuery(query)
+	matchExpr := &types.MatchTextExpr{
+		MatchingText: query,
+		Fields: []string{
+			"name^10", "name_sm^5",
+			"tags^5", "tags_sm^2",
+			"description^3", "description_sm^1",
+			"content^1", "content_sm^0.5",
+		},
+		TopN: int(config.TopK),
+	}
+
+	// Build MatchDenseExpr for vector search
+	vectorColumnName := fmt.Sprintf("q_%d_vec", len(vector))
+	matchDense := &types.MatchDenseExpr{
+		VectorColumnName:  vectorColumnName,
+		EmbeddingData:     vector,
+		EmbeddingDataType: "float",
+		DistanceType:      "cosine",
+		TopN:              int(config.TopK),
+		ExtraOptions: map[string]interface{}{
+			"similarity": config.SimilarityThreshold,
+		},
+	}
 
 	// Use unified search request
 	searchReq := &types.SearchRequest{
-		IndexNames:             []string{indexName},
-		Question:               query,
-		MatchText:              matchText,
-		Keywords:               keywords,
-		Vector:                 vector,
-		KeywordOnly:            false,
-		Page:                   1,
-		Size:                   100,
-		TopK:                   int(config.TopK),
-		SimilarityThreshold:    config.SimilarityThreshold,
-		VectorSimilarityWeight: 1.0, // Pure vector search
+		IndexNames: []string{indexName},
+		Offset:     0,
+		Limit:      100,
+		MatchExprs: []interface{}{matchExpr, matchDense},
 	}
 
-	resp, err := docEngine.Search(ctx, searchReq)
+	searchResult, err := docEngine.Search(ctx, searchReq)
 	if err != nil {
 		logger.Warn("Vector search: search execution failed",
 			zap.String("indexName", indexName),
@@ -409,15 +423,9 @@ func (s *SkillSearchService) vectorSearch(ctx context.Context, docEngine engine.
 		return nil, err
 	}
 
-	// Parse response
-	searchResp, ok := resp.(*types.SearchResponse)
-	if !ok {
-		return nil, fmt.Errorf("invalid search response type: %T", resp)
-	}
-
-	results := s.convertChunksToResults(searchResp.Chunks, config.SimilarityThreshold)
+	results := s.convertChunksToResults(searchResult.Chunks, config.SimilarityThreshold)
 	logger.Debug("Vector search: completed",
-		zap.Int("totalChunks", len(searchResp.Chunks)),
+		zap.Int("totalChunks", len(searchResult.Chunks)),
 		zap.Int("filteredResults", len(results)))
 
 	// If no results, return error to trigger fallback
@@ -434,7 +442,16 @@ func (s *SkillSearchService) vectorSearch(ctx context.Context, docEngine engine.
 // hybridSearch performs hybrid search combining BM25 and vector search
 func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.DocEngine, indexName, query string, config *entity.SkillSearchConfig, tenantID string) ([]entity.SkillSearchResult, error) {
 	// Analyze query first: tokenize and extract keywords
-	matchText, keywords := s.analyzeQuery(query)
+	matchExpr := &types.MatchTextExpr{
+		MatchingText: query,
+		Fields: []string{
+			"name^10", "name_sm^5",
+			"tags^5", "tags_sm^2",
+			"description^3", "description_sm^1",
+			"content^1", "content_sm^0.5",
+		},
+		TopN:         int(config.TopK),
+	}
 
 	// Get embedding for query
 	vector, err := s.getEmbedding(ctx, query, config.EmbdID, tenantID)
@@ -443,44 +460,54 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 			zap.String("embdID", config.EmbdID),
 			zap.Error(err))
 		// Fallback to keyword search with analyzed query
-		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchText, keywords, config)
+		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchExpr, config)
 	}
 	logger.Debug("Hybrid search: successfully got embedding",
 		zap.String("embdID", config.EmbdID),
 		zap.Int("dimension", len(vector)))
 
-	// Use unified search request for hybrid search with analyzed query
-	searchReq := &types.SearchRequest{
-		IndexNames:             []string{indexName},
-		Question:               query,
-		MatchText:              matchText,
-		Keywords:               keywords,
-		Vector:                 vector,
-		KeywordOnly:            false,
-		Page:                   1,
-		Size:                   100,
-		TopK:                   int(config.TopK),
-		SimilarityThreshold:    config.SimilarityThreshold,
-		VectorSimilarityWeight: config.VectorSimilarityWeight,
+	// Build MatchDenseExpr for hybrid search
+	vectorColumnName := fmt.Sprintf("q_%d_vec", len(vector))
+	matchDense := &types.MatchDenseExpr{
+		VectorColumnName:  vectorColumnName,
+		EmbeddingData:     vector,
+		EmbeddingDataType: "float",
+		DistanceType:      "cosine",
+		TopN:              int(config.TopK),
+		ExtraOptions: map[string]interface{}{
+			"similarity":  config.SimilarityThreshold,
+			"text_weight": 1.0 - config.VectorSimilarityWeight,
+		},
 	}
 
-	resp, err := docEngine.Search(ctx, searchReq)
+	// Build FusionExpr for hybrid search (required by Infinity to combine text + vector scores)
+	textWeight := 1.0 - config.VectorSimilarityWeight
+	vectorWeight := config.VectorSimilarityWeight
+	fusionExpr := &types.FusionExpr{
+		Method:       "weighted_sum",
+		TopN:         int(config.TopK),
+		FusionParams: map[string]interface{}{"weights": fmt.Sprintf("%.2f,%.2f", textWeight, vectorWeight)},
+	}
+
+	// Use unified search request for hybrid search with analyzed query
+	searchReq := &types.SearchRequest{
+		IndexNames: []string{indexName},
+		Offset:     0,
+		Limit:      100,
+		MatchExprs: []interface{}{matchExpr, matchDense, fusionExpr},
+	}
+
+	searchResult, err := docEngine.Search(ctx, searchReq)
 	if err != nil {
 		logger.Warn("Hybrid search: search execution failed, falling back to keyword search",
 			zap.String("indexName", indexName),
 			zap.Error(err))
-		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchText, keywords, config)
+		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchExpr, config)
 	}
 
-	// Parse response
-	searchResp, ok := resp.(*types.SearchResponse)
-	if !ok {
-		return nil, fmt.Errorf("invalid search response type: %T", resp)
-	}
-
-	results := s.convertChunksToResults(searchResp.Chunks, config.SimilarityThreshold)
-	logger.Debug("Hybrid search: completed",
-		zap.Int("totalChunks", len(searchResp.Chunks)),
+	results := s.convertChunksToResults(searchResult.Chunks, config.SimilarityThreshold)
+	logger.Debug("Hybrid search completed",
+		zap.Int("totalChunks", len(searchResult.Chunks)),
 		zap.Int("filteredResults", len(results)))
 
 	// If no results, fallback to keyword search
@@ -488,44 +515,34 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 		logger.Info("Hybrid search: no results found, falling back to keyword search",
 			zap.String("indexName", indexName),
 			zap.String("query", query))
-		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchText, keywords, config)
+		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchExpr, config)
 	}
 
 	return results, nil
 }
 
 // executeKeywordSearch executes a keyword search (used for fallback)
-func (s *SkillSearchService) executeKeywordSearch(ctx context.Context, docEngine engine.DocEngine, indexName, query, matchText string, keywords []string, config *entity.SkillSearchConfig) ([]entity.SkillSearchResult, error) {
-	logger.Info("Executing fallback keyword search",
+func (s *SkillSearchService) executeKeywordSearch(ctx context.Context, docEngine engine.DocEngine, indexName, query string, matchExpr *types.MatchTextExpr, config *entity.SkillSearchConfig) ([]entity.SkillSearchResult, error) {
+	logger.Debug("Executing fallback keyword search",
 		zap.String("indexName", indexName),
 		zap.String("query", query))
 
 	searchReq := &types.SearchRequest{
-		IndexNames:          []string{indexName},
-		Question:            query,
-		MatchText:           matchText,
-		Keywords:            keywords,
-		KeywordOnly:         true,
-		Page:                1,
-		Size:                100,
-		TopK:                100,
-		SimilarityThreshold: config.SimilarityThreshold,
+		IndexNames: []string{indexName},
+		Offset:     0,
+		Limit:      100,
+		MatchExprs: []interface{}{matchExpr},
 	}
 
-	resp, err := docEngine.Search(ctx, searchReq)
+	searchResult, err := docEngine.Search(ctx, searchReq)
 	if err != nil {
 		logger.Error("Keyword search fallback failed", err)
 		return nil, err
 	}
 
-	searchResp, ok := resp.(*types.SearchResponse)
-	if !ok {
-		return nil, fmt.Errorf("invalid search response type: %T", resp)
-	}
-
-	results := s.convertChunksToResults(searchResp.Chunks, config.SimilarityThreshold)
-	logger.Info("Keyword search fallback completed",
-		zap.Int("totalChunks", len(searchResp.Chunks)),
+	results := s.convertChunksToResults(searchResult.Chunks, config.SimilarityThreshold)
+	logger.Debug("Keyword search fallback completed",
+		zap.Int("totalChunks", len(searchResult.Chunks)),
 		zap.Int("results", len(results)))
 
 	return results, nil
@@ -544,6 +561,26 @@ func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interfac
 			score = scoreVal
 		}
 
+		// Extract BM25 and vector scores from Infinity columns
+		// Infinity returns "SCORE" for fulltext match and "SIMILARITY" for vector match
+		// Note: SCORE/SIMILARITY may be float32 or float64 depending on Infinity version
+		bm25Score := 0.0
+		if scoreVal, ok := chunk["SCORE"]; ok {
+			if f, ok := utility.ToFloat64(scoreVal); ok {
+				bm25Score = f
+			}
+		}
+		vectorScore := 0.0
+		if simVal, ok := chunk["SIMILARITY"]; ok {
+			if f, ok := utility.ToFloat64(simVal); ok {
+				vectorScore = f
+			}
+		}
+		// If _score is set but individual scores are 0, _score IS the BM25 score
+		if score > 0 && bm25Score == 0 && vectorScore == 0 {
+			bm25Score = score
+		}
+
 		// Filter by threshold
 		if score < threshold {
 			continue
@@ -555,12 +592,19 @@ func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interfac
 		name := getString(chunk, "name")
 		description := getString(chunk, "description")
 
-		// Extract tags
+		// Extract tags (Infinity stores as comma-separated string, ES may return as string too)
 		var tags []string
 		if tagsVal, ok := chunk["tags"].([]interface{}); ok {
 			for _, tag := range tagsVal {
 				if tagStr, ok := tag.(string); ok {
 					tags = append(tags, tagStr)
+				}
+			}
+		} else if tagsStr, ok := chunk["tags"].(string); ok && tagsStr != "" {
+			for _, tag := range strings.Split(tagsStr, ",") {
+				tag = strings.TrimSpace(tag)
+				if tag != "" {
+					tags = append(tags, tag)
 				}
 			}
 		}
@@ -589,6 +633,8 @@ func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interfac
 		Description: description,
 		Tags:        tags,
 		Score:       score,
+		BM25Score:   bm25Score,
+		VectorScore: vectorScore,
 		CreateTime:  createTime,
 		Version:     version,
 	}
@@ -929,4 +975,58 @@ func (s *SkillSearchService) buildOrderBy(sortBy, sortOrder string, isEmptyQuery
 	}
 
 	return backendField + " " + order
+}
+
+// buildOrderByExpr converts sort parameters to types.OrderByExpr for the unified engine interface
+func buildOrderByExpr(sortBy, sortOrder string, isEmptyQuery bool) *types.OrderByExpr {
+	// Normalize sort_by
+	if sortBy == "" {
+		if isEmptyQuery {
+			sortBy = "update_time"
+		} else {
+			return nil // Use default relevance sorting for search
+		}
+	}
+
+	// Normalize sort_order
+	order := strings.ToLower(sortOrder)
+	if order != "asc" && order != "desc" {
+		if sortBy == "name" {
+			order = "asc"
+		} else {
+			order = "desc"
+		}
+	}
+
+	// Map frontend field names to backend field names
+	fieldMapping := map[string]string{
+		"name":        "name",
+		"update_time": "update_time",
+		"create_time": "create_time",
+		"updateTime":  "update_time",
+		"createTime":  "create_time",
+		"relevance":   "",
+		"updated_at":  "update_time",
+		"created_at":  "create_time",
+	}
+
+	backendField, ok := fieldMapping[sortBy]
+	if !ok {
+		backendField = sortBy
+	}
+
+	if backendField == "" {
+		return nil // Relevance sorting
+	}
+
+	orderType := types.SortAsc
+	if order == "desc" {
+		orderType = types.SortDesc
+	}
+
+	return &types.OrderByExpr{
+		Fields: []types.OrderByField{
+			{Field: backendField, Type: orderType},
+		},
+	}
 }
