@@ -145,31 +145,32 @@ class TestClassifyError:
 class TestGetRetryDelay:
     """Tests for the get_retry_delay function."""
 
-    def test_delay_range(self):
-        """Test that delay is within expected range."""
-        base_delay = 2.0
-        min_expected = base_delay * 10
-        max_expected = base_delay * 150
+    def test_delay_range_per_attempt(self):
+        """Each attempt draws from [base * 2**attempt, base * 2**attempt + base], capped at 60s."""
+        base_delay = 1.0
+        for attempt in range(6):
+            expo = base_delay * (2 ** attempt)
+            lo, hi = min(expo, 60.0), min(expo + base_delay, 60.0)
+            for _ in range(50):
+                delay = get_retry_delay(base_delay, attempt)
+                assert lo <= delay <= hi, f"attempt={attempt} delay={delay} not in [{lo},{hi}]"
 
-        for _ in range(100):
-            delay = get_retry_delay(base_delay)
-            assert min_expected <= delay <= max_expected, f"Delay {delay} out of range"
+    def test_delay_is_capped(self):
+        """Very high attempts are capped at the max delay."""
+        for attempt in range(10, 20):
+            assert get_retry_delay(1.0, attempt) == 60.0
 
     def test_delay_variance(self):
-        """Test that delays vary between calls (random jitter)."""
-        delays = [get_retry_delay(2.0) for _ in range(10)]
-        unique_delays = set(delays)
-        # With 100 iterations, we should have significant variance
-        assert len(unique_delays) > 1, "Delays should have variance"
+        """Delays for the same attempt vary due to jitter."""
+        delays = {get_retry_delay(1.0, 2) for _ in range(20)}
+        assert len(delays) > 1, "Delays should have variance from jitter"
 
     def test_different_base_delays(self):
-        """Test that different base delays scale correctly."""
-        delay_1 = get_retry_delay(1.0)
-        delay_2 = get_retry_delay(5.0)
-
-        # Both should still be in their respective ranges
-        assert 10 <= delay_1 <= 150
-        assert 50 <= delay_2 <= 750
+        """Scaling the base delay scales the progression proportionally."""
+        # attempt 0 with base 1.0 -> [1, 2]; with base 5.0 -> [5, 10]
+        for _ in range(20):
+            assert 1.0 <= get_retry_delay(1.0, 0) <= 2.0
+            assert 5.0 <= get_retry_delay(5.0, 0) <= 10.0
 
 
 class TestRetryDecorator:

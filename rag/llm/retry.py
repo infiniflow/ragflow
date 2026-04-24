@@ -31,7 +31,9 @@ Public API:
 
 Environment variables:
     - LLM_MAX_RETRIES: Maximum retry attempts (default: 5)
-    - LLM_BASE_DELAY: Base delay in seconds for backoff (default: 2.0)
+    - LLM_BASE_DELAY: Base delay in seconds for exponential backoff (default: 1.0).
+      Retry N waits ``base_delay * 2**N + uniform(0, base_delay)`` seconds,
+      capped at 60 s.
 """
 
 from __future__ import annotations
@@ -59,9 +61,7 @@ def is_error_result(result: object) -> bool:
     """
     return isinstance(result, str) and ERROR_PREFIX in result
 
-
-_MIN_JITTER_MULTIPLIER = 10
-_MAX_JITTER_MULTIPLIER = 150
+_MAX_DELAY_SECONDS = 60.0
 
 _T = TypeVar("_T")
 
@@ -163,19 +163,24 @@ def classify_error(error: Exception) -> LLMErrorCode:
     return LLMErrorCode.ERROR_GENERIC
 
 
-def get_retry_delay(base_delay: float) -> float:
-    """Calculate a randomized retry delay with exponential backoff jitter.
+def get_retry_delay(base_delay: float, attempt: int) -> float:
+    """Calculate the retry delay using exponential backoff with additive jitter.
 
-    Applies a random multiplier between 10x and 150x the base delay
-    to spread out retry attempts and avoid thundering herd.
+    The delay is ``base_delay * 2**attempt + uniform(0, base_delay)``, capped
+    at ``_MAX_DELAY_SECONDS``. This makes the first retry fast (roughly one
+    base delay) and later retries exponentially more patient, while a small
+    jitter spreads concurrent callers to avoid thundering herd.
 
     Args:
         base_delay: The base delay in seconds.
+        attempt: The current retry attempt number (0-indexed).
 
     Returns:
-        The delay in seconds with random jitter applied.
+        The delay in seconds, capped at ``_MAX_DELAY_SECONDS``.
     """
-    return base_delay * random.uniform(_MIN_JITTER_MULTIPLIER, _MAX_JITTER_MULTIPLIER)
+    expo = base_delay * (2 ** attempt)
+    jitter = random.uniform(0, base_delay)
+    return min(expo + jitter, _MAX_DELAY_SECONDS)
 
 
 def retry(method: Callable[..., _T]) -> Callable[..., _T]:
@@ -209,14 +214,14 @@ def retry(method: Callable[..., _T]) -> Callable[..., _T]:
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
         max_retries = getattr(self, "max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
-        base_delay = getattr(self, "base_delay", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
+        base_delay = getattr(self, "base_delay", float(os.environ.get("LLM_BASE_DELAY", 1.0)))
         for attempt in range(max_retries + 1):
             try:
                 return method(self, *args, **kwargs)
             except Exception as e:
                 if attempt == max_retries or not is_retryable(e):
                     raise
-                delay = get_retry_delay(base_delay)
+                delay = get_retry_delay(base_delay, attempt)
                 logging.warning(f"Retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries})")
                 time.sleep(delay)
 
@@ -251,14 +256,14 @@ def retry_or_fallback(error_result: Callable[[Exception], _T]) -> Callable[[Call
         @functools.wraps(method)
         def wrapper(self, *args, **kwargs):
             max_retries = getattr(self, "max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
-            base_delay = getattr(self, "base_delay", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
+            base_delay = getattr(self, "base_delay", float(os.environ.get("LLM_BASE_DELAY", 1.0)))
             for attempt in range(max_retries + 1):
                 try:
                     return method(self, *args, **kwargs)
                 except Exception as e:
                     if attempt == max_retries or not is_retryable(e):
                         return error_result(e)
-                    delay = get_retry_delay(base_delay)
+                    delay = get_retry_delay(base_delay, attempt)
                     logging.warning(f"Retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries})")
                     time.sleep(delay)
 
@@ -300,7 +305,7 @@ async def async_handle_exception(
         return msg
 
     if is_retryable(error):
-        delay = get_retry_delay(base_delay)
+        delay = get_retry_delay(base_delay, attempt)
         logging.warning(f"Error: {error_code}. Retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries})")
         await asyncio.sleep(delay)
         return None
