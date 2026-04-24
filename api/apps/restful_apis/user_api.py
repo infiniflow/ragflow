@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import json
 import logging
 import string
 import os
@@ -60,7 +59,6 @@ from api.utils.web_utils import (
     captcha_key,
 )
 from common import settings
-from common.http_client import async_request
 
 
 @manager.route("/auth/login", methods=["POST"])  # noqa: F821
