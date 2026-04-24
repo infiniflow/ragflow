@@ -11,6 +11,7 @@ import GoogleDriveTokenField from '../component/google-drive-token-field';
 import { IDataSourceInfoMap } from '../interface';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
+import { jiraConstant } from './jira-constant';
 import { S3Constant } from './s3-constant';
 import { seafileConstant } from './seafile-constant';
 
@@ -76,6 +77,9 @@ export const DataSourceFeatureVisibilityMap = {
     syncDeletedFiles: true,
   },
   [DataSourceKey.NOTION]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.JIRA]: {
     syncDeletedFiles: true,
   },
 };
@@ -315,6 +319,47 @@ export const getCommonExtraDefaultValues = () => ({
     sync_deleted_files: false,
   },
 });
+
+export const getDataSourceFieldsWithExtras = (
+  source?: DataSourceKey,
+): FormFieldConfig[] => {
+  if (!source) {
+    return [];
+  }
+
+  const sourceFields =
+    DataSourceFormFields[source as keyof typeof DataSourceFormFields] || [];
+  const extraFields = getCommonExtraFields(source);
+
+  if (source !== DataSourceKey.JIRA) {
+    return [...sourceFields, ...extraFields];
+  }
+
+  const modeFieldIndex = sourceFields.findIndex(
+    (field) => field.name === 'config.is_cloud',
+  );
+  if (modeFieldIndex < 0) {
+    return [...sourceFields, ...extraFields];
+  }
+
+  const sharedFields = sourceFields.slice(0, modeFieldIndex);
+  const modeFields = sourceFields.slice(modeFieldIndex);
+
+  const sharedCheckboxFieldIndex = sharedFields.findIndex(
+    (field) => field.type === FormFieldType.Checkbox,
+  );
+
+  if (sharedCheckboxFieldIndex < 0) {
+    return [...sharedFields, ...extraFields, ...modeFields];
+  }
+
+  return [
+    ...sharedFields.slice(0, sharedCheckboxFieldIndex),
+    ...sharedFields.slice(sharedCheckboxFieldIndex),
+    ...extraFields,
+    ...modeFields,
+  ];
+};
 
 export const DataSourceFormFields = {
   [DataSourceKey.RSS]: [
@@ -591,106 +636,7 @@ export const DataSourceFormFields = {
       required: true,
     },
   ],
-  [DataSourceKey.JIRA]: [
-    {
-      label: 'Jira Base URL',
-      name: 'config.base_url',
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: 'https://your-domain.atlassian.net',
-      tooltip: t('setting.jiraBaseUrlTip'),
-    },
-    {
-      label: 'Project Key',
-      name: 'config.project_key',
-      type: FormFieldType.Text,
-      required: false,
-      placeholder: 'RAGFlow',
-      tooltip: t('setting.jiraProjectKeyTip'),
-    },
-    {
-      label: 'Custom JQL',
-      name: 'config.jql_query',
-      type: FormFieldType.Textarea,
-      required: false,
-      placeholder: 'project = RAG AND updated >= -7d',
-      tooltip: t('setting.jiraJqlTip'),
-    },
-    {
-      label: 'Batch Size',
-      name: 'config.batch_size',
-      type: FormFieldType.Number,
-      required: false,
-      tooltip: t('setting.jiraBatchSizeTip'),
-    },
-    {
-      label: 'Include Comments',
-      name: 'config.include_comments',
-      type: FormFieldType.Checkbox,
-      required: false,
-      defaultValue: true,
-      tooltip: t('setting.jiraCommentsTip'),
-    },
-    {
-      label: 'Include Attachments',
-      name: 'config.include_attachments',
-      type: FormFieldType.Checkbox,
-      required: false,
-      defaultValue: false,
-      tooltip: t('setting.jiraAttachmentsTip'),
-    },
-    {
-      label: 'Attachment Size Limit (bytes)',
-      name: 'config.attachment_size_limit',
-      type: FormFieldType.Number,
-      required: false,
-      defaultValue: 10 * 1024 * 1024,
-      tooltip: t('setting.jiraAttachmentSizeTip'),
-    },
-    {
-      label: 'Labels to Skip',
-      name: 'config.labels_to_skip',
-      type: FormFieldType.Tag,
-      required: false,
-      tooltip: t('setting.jiraLabelsTip'),
-    },
-    {
-      label: 'Comment Email Blacklist',
-      name: 'config.comment_email_blacklist',
-      type: FormFieldType.Tag,
-      required: false,
-      tooltip: t('setting.jiraBlacklistTip'),
-    },
-    {
-      label: 'Use Scoped Token (Clould only)',
-      name: 'config.scoped_token',
-      type: FormFieldType.Checkbox,
-      required: false,
-      tooltip: t('setting.jiraScopedTokenTip'),
-    },
-    {
-      label: 'Jira User Email (Cloud) or User Name (Server)',
-      name: 'config.credentials.jira_user_email',
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: 'you@example.com',
-      tooltip: t('setting.jiraEmailTip'),
-    },
-    {
-      label: 'Jira API Token (Cloud only)',
-      name: 'config.credentials.jira_api_token',
-      type: FormFieldType.Password,
-      required: false,
-      tooltip: t('setting.jiraTokenTip'),
-    },
-    {
-      label: 'Jira Password (Server only)',
-      name: 'config.credentials.jira_password',
-      type: FormFieldType.Password,
-      required: false,
-      tooltip: t('setting.jiraPasswordTip'),
-    },
-  ],
+  [DataSourceKey.JIRA]: jiraConstant(t),
   [DataSourceKey.WEBDAV]: [
     {
       label: 'WebDAV Server URL',
@@ -1269,6 +1215,7 @@ export const DataSourceFormDefaultValues = {
     name: '',
     source: DataSourceKey.JIRA,
     config: {
+      is_cloud: true,
       base_url: '',
       project_key: '',
       jql_query: '',

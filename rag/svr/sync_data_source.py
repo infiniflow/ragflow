@@ -706,12 +706,17 @@ class Jira(SyncBase):
 
         self.connector.load_credentials(credentials)
         self.connector.validate_connector_settings()
+        file_list = None
 
         if task["reindex"] == "1" or not task["poll_range_start"]:
             start_time = 0.0
             _begin_info = "totally"
         else:
             start_time = task["poll_range_start"].timestamp()
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
             _begin_info = f"from {task['poll_range_start']}"
 
         end_time = datetime.now(timezone.utc).timestamp()
@@ -770,6 +775,8 @@ class Jira(SyncBase):
                 f"overlap_buffer_s={getattr(self.connector, 'time_buffer_seconds', connector_kwargs.get('time_buffer_seconds'))}"
             ),
         )
+        if file_list is not None:
+            return document_batches(), file_list
         return document_batches()
 
     @staticmethod
