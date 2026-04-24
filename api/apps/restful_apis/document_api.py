@@ -22,7 +22,7 @@ from quart import request
 from peewee import OperationalError
 from pydantic import ValidationError
 
-from api.apps import current_user, login_required
+from api.apps import login_required
 from api.apps.services.document_api_service import validate_document_update_fields, map_doc_keys, \
     map_doc_keys_with_run_status, update_document_name_only, update_chunk_method_only, update_document_status_only
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
