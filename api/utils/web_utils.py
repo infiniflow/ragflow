@@ -17,7 +17,6 @@
 import base64
 import json
 import re
-from urllib.parse import urlparse
 import aiosmtplib
 from email.mime.text import MIMEText
 from email.header import Header
@@ -35,10 +34,10 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 
 OTP_LENGTH = 4
-OTP_TTL_SECONDS = 5 * 60 # valid for 5 minutes
-ATTEMPT_LIMIT = 5 # maximum attempts
-ATTEMPT_LOCK_SECONDS = 30 * 60 # lock for 30 minutes
-RESEND_COOLDOWN_SECONDS = 60 # cooldown for 1 minute
+OTP_TTL_SECONDS = 5 * 60  # valid for 5 minutes
+ATTEMPT_LIMIT = 5  # maximum attempts
+ATTEMPT_LOCK_SECONDS = 30 * 60  # lock for 30 minutes
+RESEND_COOLDOWN_SECONDS = 60  # cooldown for 1 minute
 
 
 CONTENT_TYPE_MAP = {
@@ -190,6 +189,7 @@ def is_valid_url(url: str) -> bool:
     if not re.match(r"(https?)://[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]", url):
         return False
     from common.ssrf_guard import assert_url_is_safe
+
     try:
         assert_url_is_safe(url)
         return True
