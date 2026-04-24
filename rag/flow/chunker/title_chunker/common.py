@@ -41,6 +41,7 @@ class TitleChunkerParam(ProcessParamBase):
         self.levels = []
         self.hierarchy = None
         self.include_heading_content = False
+        self.root_chunk_as_heading = False
 
     def check(self):
         if self.method in {"hierarchy", "group"}:
@@ -240,13 +241,13 @@ class BaseTitleChunker(ABC):
         # chunk box is defined by merged source positions and the text payload
         # is normalized by removing parser tags.
         if self.from_upstream.output_format in ["markdown", "text", "html"]:
-            return [
+            chunks = [
                 {"text": "".join(record["text"] + "\n" for record in records)}
                 for records in record_groups
                 if records
             ]
 
-        return [
+        chunks = [
             (
                 {
                     "text": RAGFlowPdfParser.remove_tag("".join(record["text"] + "\n" for record in records)),
@@ -264,6 +265,17 @@ class BaseTitleChunker(ABC):
             for records in record_groups
             if records
         ]
+        
+        if self.param.root_chunk_as_heading and len(chunks) > 1:
+            root_chunk = chunks[0]
+            root_text = root_chunk.get("text", "")
+
+            for ck in chunks[1:]:
+                ck['text'] = root_text + "\n" + ck.get("text", "")
+            
+            return chunks[1:]
+
+        return chunks
 
 
     async def set_chunks(self, chunks):

@@ -333,6 +333,7 @@ export const initialTitleChunkerValues = {
   method: 'hierarchy',
   hierarchy: Hierarchy.H3,
   include_heading_content: false,
+  root_chunk_as_heading: false,
   rules: rules,
 };
 
@@ -340,6 +341,7 @@ export const initialGroupValues = {
   method: 'group',
   hierarchy: '0',
   include_heading_content: false,
+  root_chunk_as_heading: false,
   rules: rules,
 };
 
