@@ -17,7 +17,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from test_common import bulk_upload_documents, list_documents, parse_documents, upload_documents
+from test_common import bulk_upload_documents, list_documents, parse_documents
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 from utils import wait_for
