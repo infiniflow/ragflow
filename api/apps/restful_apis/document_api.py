@@ -15,8 +15,10 @@
 #
 import logging
 import json
+import os.path
+import re
 
-from quart import request
+from quart import make_response, request
 from peewee import OperationalError
 from pydantic import ValidationError
 
@@ -35,9 +37,10 @@ from api.utils.api_utils import get_data_error_result, get_error_data_result, ge
 from api.utils.validation_utils import (
     UpdateDocumentReq, format_validation_error_message, validate_and_parse_json_request, DeleteDocumentReq,
 )
-from common.constants import RetCode
+from common.constants import RetCode, SANDBOX_ARTIFACT_BUCKET
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
 from common.misc_utils import thread_pool_exec
+from api.utils.web_utils import apply_safe_file_response_headers
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PATCH"]) # noqa: F821
 @login_required
@@ -1019,3 +1022,65 @@ async def update_metadata(tenant_id, dataset_id):
     target_doc_ids = list(target_doc_ids)
     updated = DocMetadataService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
     return get_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
+
+
+ARTIFACT_CONTENT_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".svg": "image/svg+xml",
+    ".pdf": "application/pdf",
+    ".csv": "text/csv",
+    ".json": "application/json",
+    ".html": "text/html",
+}
+
+
+@manager.route("/documents/artifact/<filename>", methods=["GET"])  # noqa: F821
+@login_required
+async def get_artifact(filename):
+    """
+    Get an artifact file.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: filename
+        type: string
+        required: true
+        description: Name of the artifact file.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    responses:
+      200:
+        description: Artifact file returned successfully.
+    """
+    from common import settings
+
+    try:
+        bucket = SANDBOX_ARTIFACT_BUCKET
+        # Validate filename: must be uuid hex + allowed extension, nothing else
+        basename = os.path.basename(filename)
+        if basename != filename or "/" in filename or "\\" in filename:
+            return get_data_error_result(message="Invalid filename.")
+        ext = os.path.splitext(basename)[1].lower()
+        if ext not in ARTIFACT_CONTENT_TYPES:
+            return get_data_error_result(message="Invalid file type.")
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, basename)
+        if not data:
+            return get_data_error_result(message="Artifact not found.")
+        content_type = ARTIFACT_CONTENT_TYPES.get(ext, "application/octet-stream")
+        response = await make_response(data)
+        safe_filename = re.sub(r"[^\w.\-]", "_", basename)
+        apply_safe_file_response_headers(response, content_type, ext)
+        if not response.headers.get("Content-Disposition"):
+            response.headers.set("Content-Disposition", f'inline; filename="{safe_filename}"')
+        return response
+    except Exception as e:
+        return server_error_response(e)
