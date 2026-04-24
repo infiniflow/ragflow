@@ -26,11 +26,11 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
+                401,
+                "<Unauthorized '401: Unauthorized'>",
             ),
         ],
     )
@@ -45,19 +45,19 @@ class TestDocumentsDeletion:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message, remaining",
         [
-            (None, 0, "", 0),
-            ({"ids": []}, 0, "", 0),
-            ({"ids": ["invalid_id"]}, 102, "Documents not found: ['invalid_id']", 3),
+            ({}, 102, "should either provide doc ids or set delete_all(true), dataset", 3),
+            ({"ids": []}, 102, "should either provide doc ids or set delete_all(true), dataset", 3),
+            ({"ids": ["invalid_id"]}, 101, "Field: <ids> - Message: <Invalid UUID1 format> - Value: <['invalid_id']>", 3),
             (
                 {"ids": ["\n!?。；！？\"'"]},
-                102,
-                """Documents not found: [\'\\n!?。；！？"\\\'\']""",
+                101,
+                "Field: <ids> - Message: <Invalid UUID1 format> - Value:",
                 3,
             ),
             (
                 "not json",
-                100,
-                "AttributeError(\"'str' object has no attribute 'get'\")",
+                101,
+                "Invalid request payload: expected object, got str",
                 3,
             ),
             (lambda r: {"ids": r[:1]}, 0, "", 2),
@@ -79,7 +79,7 @@ class TestDocumentsDeletion:
         res = delete_documents(HttpApiAuth, dataset_id, payload)
         assert res["code"] == expected_code
         if res["code"] != 0:
-            assert res["message"] == expected_message
+            assert expected_message in res["message"]
 
         res = list_documents(HttpApiAuth, dataset_id)
         assert len(res["data"]["docs"]) == remaining
@@ -117,12 +117,12 @@ class TestDocumentsDeletion:
         if callable(payload):
             payload = payload(document_ids)
         res = delete_documents(HttpApiAuth, dataset_id, payload)
-        assert res["code"] == 102
-        assert res["message"] == "Documents not found: ['invalid_id']"
+        assert res["code"] == 101
+        assert "Field: <ids> - Message: <Invalid UUID1 format> - Value" in res["message"]
 
         res = list_documents(HttpApiAuth, dataset_id)
-        assert len(res["data"]["docs"]) == 0
-        assert res["data"]["total"] == 0
+        assert len(res["data"]["docs"]) == 3
+        assert res["data"]["total"] == 3
 
     @pytest.mark.p2
     def test_repeated_deletion(self, HttpApiAuth, add_documents_func):
@@ -132,19 +132,18 @@ class TestDocumentsDeletion:
 
         res = delete_documents(HttpApiAuth, dataset_id, {"ids": document_ids})
         assert res["code"] == 102
-        assert "Documents not found" in res["message"]
+        assert "Document not found" in res["message"]
 
     @pytest.mark.p2
     def test_duplicate_deletion(self, HttpApiAuth, add_documents_func):
         dataset_id, document_ids = add_documents_func
         res = delete_documents(HttpApiAuth, dataset_id, {"ids": document_ids + document_ids})
-        assert res["code"] == 0
-        assert "Duplicate document ids" in res["data"]["errors"][0]
-        assert res["data"]["success_count"] == 3
+        assert res["code"] == 101, res
+        assert "Field: <ids> - Message: <Duplicate ids:" in res["message"]
 
         res = list_documents(HttpApiAuth, dataset_id)
-        assert len(res["data"]["docs"]) == 0
-        assert res["data"]["total"] == 0
+        assert len(res["data"]["docs"]) == 3
+        assert res["data"]["total"] == 3
 
 
 @pytest.mark.p3

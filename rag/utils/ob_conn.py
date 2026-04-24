@@ -127,7 +127,7 @@ FTS_COLUMNS_TKS: list[str] = [
 ]
 
 # Extra columns to add after table creation (for migration)
-EXTRA_COLUMNS: list[Column] = [column_order_id, column_group_id, column_mom_id]
+EXTRA_COLUMNS: list[Column] = [column_order_id, column_group_id, column_mom_id, column_chunk_data]
 
 
 class SearchResult(BaseModel):
@@ -1211,6 +1211,32 @@ class OBConnection(OBConnectionBase):
             return True
         except Exception as e:
             logger.error(f"OBConnection.update error: {str(e)}")
+        return False
+
+    def adjust_chunk_pagerank_fea(
+        self,
+        chunk_id: str,
+        index_name: str,
+        knowledgebase_id: str,
+        delta: int,
+        min_w: int = 0,
+        max_w: int = 100,
+    ) -> bool:
+        """Atomically adjust pagerank_fea on one chunk row (single UPDATE)."""
+        if not self._check_table_exists_cached(index_name):
+            return True
+        d = int(delta)
+        sql = (
+            f"UPDATE {index_name} SET {PAGERANK_FLD} = "
+            f"GREATEST({int(min_w)}, LEAST({int(max_w)}, COALESCE({PAGERANK_FLD}, 0) + ({d}))) "
+            f"WHERE id = {get_value_str(chunk_id)} AND kb_id = {get_value_str(knowledgebase_id)}"
+        )
+        logger.debug("OBConnection.adjust_chunk_pagerank_fea sql: %s", sql)
+        try:
+            self.client.perform_raw_text_sql(sql)
+            return True
+        except Exception as e:
+            logger.error("OBConnection.adjust_chunk_pagerank_fea error: %s", e)
         return False
 
     def _row_to_entity(self, data: Row, fields: list[str]) -> dict:

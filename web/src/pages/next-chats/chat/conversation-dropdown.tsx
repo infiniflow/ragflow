@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   useGetChatSearchParams,
-  useRemoveConversation,
+  useRemoveSessions,
 } from '@/hooks/use-chat-request';
 import { IConversation } from '@/interfaces/database/chat';
 import { Trash2 } from 'lucide-react';
@@ -25,23 +25,27 @@ export function ConversationDropdown({
 }) {
   const { t } = useTranslation();
   const { setConversationBoth } = useChatUrlParams();
-  const { removeConversation } = useRemoveConversation();
-  const { isNew } = useGetChatSearchParams();
+  const { removeSessions } = useRemoveSessions();
+  const { conversationId, isNew } = useGetChatSearchParams();
 
   const handleDelete: MouseEventHandler<HTMLDivElement> =
     useCallback(async () => {
       if (isNew === 'true' && removeTemporaryConversation) {
         removeTemporaryConversation(conversation.id);
+        if (conversationId === conversation.id) {
+          setConversationBoth('', '');
+        }
       } else {
-        const code = await removeConversation([conversation.id]);
+        const code = await removeSessions([conversation.id]);
         if (code === 0) {
           setConversationBoth('', '');
         }
       }
     }, [
       conversation.id,
+      conversationId,
       isNew,
-      removeConversation,
+      removeSessions,
       removeTemporaryConversation,
       setConversationBoth,
     ]);
@@ -59,6 +63,8 @@ export function ConversationDropdown({
             onClick={(e) => {
               e.stopPropagation();
             }}
+            data-testid="chat-detail-session-delete"
+            data-session-id={conversation.id}
           >
             {t('common.delete')} <Trash2 />
           </DropdownMenuItem>

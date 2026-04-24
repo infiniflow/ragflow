@@ -128,7 +128,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def register():
-    url = HOST_ADDRESS + f"/{VERSION}/user/register"
+    url = HOST_ADDRESS + f"/api/{VERSION}/users"
     name = "qa"
     register_data = {"email": EMAIL, "nickname": name, "password": PASSWORD}
     res = requests.post(url=url, json=register_data)
@@ -138,7 +138,7 @@ def register():
 
 
 def login():
-    url = HOST_ADDRESS + f"/{VERSION}/user/login"
+    url = HOST_ADDRESS + f"/api/{VERSION}/auth/login"
     login_data = {"email": EMAIL, "password": PASSWORD}
     response = requests.post(url=url, json=login_data)
     res = response.json()
@@ -160,12 +160,13 @@ def auth():
 
 @pytest.fixture(scope="session")
 def token(auth):
-    url = HOST_ADDRESS + f"/{VERSION}/system/new_token"
+    url = HOST_ADDRESS + f"/api/{VERSION}/system/tokens"
     auth = {"Authorization": auth}
     response = requests.post(url=url, headers=auth)
     res = response.json()
     if res.get("code") != 0:
-        raise Exception(res.get("message"))
+        error_msg = f"access: {url}, POST method, error code: {res.get('code')}, message: {res.get('message')}"
+        raise Exception(error_msg)
     return res["data"].get("token")
 
 
@@ -197,7 +198,7 @@ def add_models(auth):
 
 
 def get_tenant_info(auth):
-    url = HOST_ADDRESS + f"/{VERSION}/user/tenant_info"
+    url = HOST_ADDRESS + f"/api/{VERSION}/users/me/models"
     authorization = {"Authorization": auth}
     response = requests.get(url=url, headers=authorization)
     res = response.json()
@@ -214,7 +215,7 @@ def set_tenant_info(auth):
         tenant_id = get_tenant_info(auth)
     except Exception as e:
         pytest.exit(f"Error in set_tenant_info: {str(e)}")
-    url = HOST_ADDRESS + f"/{VERSION}/user/set_tenant_info"
+    url = HOST_ADDRESS + f"/api/{VERSION}/users/me/models"
     authorization = {"Authorization": auth}
     tenant_info = {
         "tenant_id": tenant_id,
@@ -224,7 +225,7 @@ def set_tenant_info(auth):
         "asr_id": "",
         "tts_id": None,
     }
-    response = requests.post(url=url, headers=authorization, json=tenant_info)
+    response = requests.patch(url=url, headers=authorization, json=tenant_info)
     res = response.json()
     if res.get("code") != 0:
         raise Exception(res.get("message"))

@@ -28,6 +28,7 @@ export default {
       traditionalChinese: 'Традиционен китайски',
       russian: 'Руски',
       bulgarian: 'Български',
+      arabic: 'Арабски',
       language: 'Език',
       languageMessage: 'Моля, въведете вашия език!',
       languagePlaceholder: 'изберете вашия език',
@@ -371,7 +372,7 @@ export default {
       changeSpecificCategory: 'Промени конкретна категория',
       uploadTitle: 'Плъзнете и пуснете файла тук за качване',
       uploadDescription:
-        'Поддържа единично или групово качване на файлове. За локално инсталиран RAGFlow: общият лимит за размер на файловете при качване е 1GB, с лимит от 32 файла на група. Няма ограничение за общия брой файлове на акаунт. За demo.ragflow.io, общият лимит за размер на файловете при качване е 10MB, като всеки файл не трябва да надвишава 10MB и максимум 128 файла на акаунт.',
+        'Поддържа единично или групово качване на файлове. За локално инсталиран RAGFlow: общият лимит за размер на файловете при качване е 1GB, с лимит от 32 файла на група. Няма ограничение за общия брой файлове на акаунт. За cloud.ragflow.io, общият лимит за размер на файловете при качване е 10MB, като всеки файл не трябва да надвишава 10MB и максимум 128 файла на акаунт.',
       chunk: 'Фрагмент',
       bulk: 'Групово',
       cancel: 'Отказ',
@@ -725,6 +726,9 @@ The above is the content you need to summarize.`,
       delete: 'Изтрий',
     },
     chat: {
+      chatSupport: 'Чат поддръжка',
+      replyInstantly: 'Обикновено отговаряме веднага',
+      typeYourMessage: 'Напишете съобщението си...',
       messagePlaceholder: 'Въведете вашето съобщение тук...',
       exit: 'Изход',
       multipleModels: 'Множество модели',
@@ -924,6 +928,7 @@ The above is the content you need to summarize.`,
       selectModelPlaceholder: 'Изберете модел',
       configureModelTitle: 'Конфигуриране на модел',
       connectorNameTip: 'Описателно име за конектора',
+      syncDeletedFiles: 'Синхронизирай изтритите файлове',
       confluenceIsCloudTip:
         'Отметнете, ако това е Confluence Cloud инстанция, махнете за Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
@@ -998,6 +1003,8 @@ The above is the content you need to summarize.`,
         'Свържете GitHub за синхронизиране на pull requests и issues за извличане.',
       airtableDescription:
         'Свържете се с Airtable и синхронизирайте файлове от определена таблица в определено работно пространство.',
+      dingtalkAITableDescription:
+        'Свържете се с Dingtalk AI Table и синхронизирайте записи от определена таблица.',
       gitlabDescription:
         'Свържете GitLab за синхронизиране на хранилища, issues, merge requests и свързана документация.',
       asanaDescription:
@@ -1137,6 +1144,8 @@ The above is the content you need to summarize.`,
         'Ако вашият API ключ е от OpenAI, просто го игнорирайте. Всеки друг междинен доставчик ще предостави този base url с API ключа.',
       tongyiBaseUrlTip:
         'За китайски потребители не е необходимо да попълвате или използвайте https://dashscope.aliyuncs.com/compatible-mode/v1. За международни потребители използвайте https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'За китайски потребители не е необходимо да попълвате или използвайте https://api.siliconflow.cn/v1. За международни потребители използвайте https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         '(Само за международни потребители, вижте съвета)',
       minimaxBaseUrlTip:
@@ -1385,7 +1394,7 @@ The above is the content you need to summarize.`,
       directory: 'Директория',
       uploadTitle: 'Плъзнете и пуснете файла тук за качване',
       uploadDescription:
-        'Поддържа единично или групово качване на файлове. За локално инсталиран RAGFlow: общият лимит за размер на файловете при качване е 1GB, с лимит от 32 файла на група. Няма ограничение за общия брой файлове на акаунт. За demo.ragflow.io, общият лимит за размер на файловете при качване е 10MB, като всеки файл не трябва да надвишава 10MB и максимум 128 файла на акаунт.',
+        'Поддържа единично или групово качване на файлове. За локално инсталиран RAGFlow: общият лимит за размер на файловете при качване е 1GB, с лимит от 32 файла на група. Няма ограничение за общия брой файлове на акаунт. За cloud.ragflow.io, общият лимит за размер на файловете при качване е 10MB, като всеки файл не трябва да надвишава 10MB и максимум 128 файла на акаунт.',
       local: 'Локални качвания',
       s3: 'S3 качвания',
       preview: 'Преглед',
@@ -1563,10 +1572,8 @@ The above is the content you need to summarize.`,
       searXNG: 'SearXNG',
       searXNGDescription:
         'Компонент, който търси чрез вашия SearXNG инстанция URL. Укажете TopN и URL на инстанцията.',
-      pdfGenerator: 'Генератор на документи',
-      pDFGenerator: 'Генератор на документи',
-      pdfGeneratorDescription: `Компонент, който генерира документи (PDF, DOCX, TXT) от markdown-форматирано съдържание с персонализирано стилизиране, изображения и таблици.`,
-      pDFGeneratorDescription: `Компонент, който генерира документи (PDF, DOCX, TXT) от markdown-форматирано съдържание с персонализирано стилизиране, изображения и таблици.`,
+      docGenerator: 'Генератор на документи',
+      docGeneratorDescription: `Генерира файл от Markdown съдържание.`,
       subtitle: 'Подзаглавие',
       logoImage: 'Лого изображение',
       logoPosition: 'Позиция на логото',
@@ -2113,12 +2120,10 @@ The above is the content you need to summarize.`,
       tokenizerRequired: 'Моля, първо добавете възел Индексатор',
       tokenizerDescription:
         'Трансформира текст в необходимата структура от данни (напр. векторни вграждания за Embedding Search) в зависимост от избрания метод за търсене.',
-      splitter: 'Токен',
-      splitterDescription:
+      tokenChunkerDescription:
         'Разделя текст на фрагменти по дължина на токени с незадължителни разделители и припокриване.',
-      hierarchicalMergerDescription:
+      titleChunkerDescription:
         'Разделя документи на секции по йерархия на заглавия с regex правила за по-фин контрол.',
-      hierarchicalMerger: 'Заглавие',
       extractor: 'Трансформатор',
       extractorDescription:
         'Използва LLM за извличане на структурирани прозрения от фрагменти на документи — като обобщения, класификации и др.',
@@ -2130,6 +2135,8 @@ The above is the content you need to summarize.`,
         image: 'Изображение',
         email: 'Имейл',
         'text&markdown': 'Текст и маркиране',
+        code: 'Code',
+        html: 'HTML',
         word: 'Word',
         slides: 'PPTX',
         audio: 'Аудио',
@@ -2376,10 +2383,12 @@ Important structured information may include: names, dates, locations, events, k
       vietnamese: 'Виетнамски',
       russian: 'Руски',
       bulgarian: 'Български',
+      arabic: 'Арабски',
+      turkish: 'Турски',
     },
     pagination: {
       total: 'Общо {{total}}',
-      page: '{{page}} /Страница',
+      page: '{{page}} / Страница',
     },
     dataflowParser: {
       result: 'Резултат',

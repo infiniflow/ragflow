@@ -15,6 +15,7 @@
 #
 import asyncio
 import base64
+import datetime
 import inspect
 import binascii
 import json
@@ -28,9 +29,11 @@ from typing import Any, Union, Tuple
 
 from agent.component import component_class
 from agent.component.base import ComponentBase
+from agent.dsl_migration import normalize_chunker_dsl
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import has_canceled
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
 from common.constants import LLMType
 from common.misc_utils import get_uuid, hash_str2int
 from common.exceptions import TaskCanceledException
@@ -82,7 +85,8 @@ class Graph:
         self.path = []
         self.components = {}
         self.error = ""
-        self.dsl = json.loads(dsl)
+        # Accept legacy DSL on read, but keep the in-memory canvas in the latest schema.
+        self.dsl = normalize_chunker_dsl(json.loads(dsl))
         self._tenant_id = tenant_id
         self.task_id = task_id if task_id else get_uuid()
         self.custom_header = custom_header
@@ -286,7 +290,8 @@ class Canvas(Graph):
             "sys.user_id": tenant_id,
             "sys.conversation_turns": 0,
             "sys.files": [],
-            "sys.history": []
+            "sys.history": [],
+            "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         }
         self.variables = {}
         super().__init__(dsl, tenant_id, task_id, custom_header=custom_header)
@@ -299,13 +304,16 @@ class Canvas(Graph):
             self.globals = self.dsl["globals"]
             if "sys.history" not in self.globals:
                 self.globals["sys.history"] = []
+            if "sys.date" not in self.globals:
+                self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         else:
             self.globals = {
             "sys.query": "",
             "sys.user_id": "",
             "sys.conversation_turns": 0,
             "sys.files": [],
-            "sys.history": []
+            "sys.history": [],
+            "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         }
         if "variables" in self.dsl:
             self.variables = self.dsl["variables"]
@@ -367,6 +375,7 @@ class Canvas(Graph):
                     self.globals[k] = ""
 
     async def run(self, **kwargs):
+        self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         st = time.perf_counter()
         self._loop = asyncio.get_running_loop()
         self.message_id = get_uuid()
@@ -386,10 +395,16 @@ class Canvas(Graph):
                             continue
                         self.components[k]["obj"].set_output(kk, vv)
 
+        layout_recognize = None
+        for cpn in self.components.values():
+            if cpn["obj"].component_name.lower() == "begin":
+                layout_recognize = getattr(cpn["obj"]._param, "layout_recognize", None)
+                break
+
         for k in kwargs.keys():
             if k in ["query", "user_id", "files"] and kwargs[k]:
                 if k == "files":
-                    self.globals[f"sys.{k}"] = await self.get_files_async(kwargs[k])
+                    self.globals[f"sys.{k}"] = await self.get_files_async(kwargs[k], layout_recognize)
                 else:
                     self.globals[f"sys.{k}"] = kwargs[k]
         if not self.globals["sys.conversation_turns"] :
@@ -502,7 +517,8 @@ class Canvas(Graph):
                 cpn_obj = self.get_component_obj(self.path[i])
                 if cpn_obj.component_name.lower() == "message":
                     if cpn_obj.get_param("auto_play"):
-                        tts_mdl = LLMBundle(self._tenant_id, LLMType.TTS)
+                        tts_model_config = get_tenant_default_model_by_type(self._tenant_id, LLMType.TTS)
+                        tts_mdl = LLMBundle(self._tenant_id, tts_model_config)
                     if isinstance(cpn_obj.output("content"), partial):
                         _m = ""
                         buff_m = ""
@@ -547,18 +563,10 @@ class Canvas(Graph):
                             yield decorate("message", {"content": "", "audio_binary": self.tts(tts_mdl, buff_m)})
                             buff_m = ""
                         cpn_obj.set_output("content", _m)
-                        cite = re.search(r"\[ID:[ 0-9]+\]", _m)
                     else:
                         yield decorate("message", {"content": cpn_obj.output("content")})
-                        cite = re.search(r"\[ID:[ 0-9]+\]",  cpn_obj.output("content"))
 
-                    message_end = {}
-                    if cpn_obj.get_param("status"):
-                        message_end["status"] = cpn_obj.get_param("status")
-                    if isinstance(cpn_obj.output("attachment"), dict):
-                        message_end["attachment"] = cpn_obj.output("attachment")
-                    if cite:
-                        message_end["reference"] = self.get_reference()
+                    message_end = self._build_message_end(cpn_obj)
                     yield decorate("message_end", message_end)
 
                     while partials:
@@ -748,7 +756,7 @@ class Canvas(Graph):
     def get_component_input_elements(self, cpnnm):
         return self.components[cpnnm]["obj"].get_input_elements()
 
-    async def get_files_async(self, files: Union[None, list[dict]]) -> list[str]:
+    async def get_files_async(self, files: Union[None, list[dict]], layout_recognize: str = None) -> list[str]:
         if not files:
             return  []
         def image_to_base64(file):
@@ -756,7 +764,7 @@ class Canvas(Graph):
                                         base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
         def parse_file(file):
             blob = FileService.get_blob(file["created_by"], file["id"])
-            return FileService.parse(file["name"], blob, True, file["created_by"])
+            return FileService.parse(file["name"], blob, True, file["created_by"], layout_recognize)
         loop = asyncio.get_running_loop()
         tasks = []
         for file in files:
@@ -766,15 +774,15 @@ class Canvas(Graph):
             tasks.append(loop.run_in_executor(self._thread_pool, parse_file, file))
         return await asyncio.gather(*tasks)
 
-    def get_files(self, files: Union[None, list[dict]]) -> list[str]:
+    def get_files(self, files: Union[None, list[dict]], layout_recognize: str = None) -> list[str]:
         """
         Synchronous wrapper for get_files_async, used by sync component invoke paths.
         """
         loop = getattr(self, "_loop", None)
         if loop and loop.is_running():
-            return asyncio.run_coroutine_threadsafe(self.get_files_async(files), loop).result()
+            return asyncio.run_coroutine_threadsafe(self.get_files_async(files, layout_recognize), loop).result()
 
-        return asyncio.run(self.get_files_async(files))
+        return asyncio.run(self.get_files_async(files, layout_recognize))
 
     def tool_use_callback(self, agent_id: str, func_name: str, params: dict, result: Any, elapsed_time=None):
         agent_ids = agent_id.split("-->")
@@ -819,6 +827,22 @@ class Canvas(Graph):
         if not self.retrieval:
             return {"chunks": {}, "doc_aggs": {}}
         return self.retrieval[-1]
+
+    def _has_reference(self) -> bool:
+        ref = self.get_reference()
+        if not isinstance(ref, dict):
+            return False
+        return bool(ref.get("chunks") or ref.get("doc_aggs"))
+
+    def _build_message_end(self, cpn_obj) -> dict:
+        message_end = {}
+        if cpn_obj.get_param("status"):
+            message_end["status"] = cpn_obj.get_param("status")
+        if isinstance(cpn_obj.output("attachment"), dict):
+            message_end["attachment"] = cpn_obj.output("attachment")
+        if self._has_reference():
+            message_end["reference"] = self.get_reference()
+        return message_end
 
     def add_memory(self, user:str, assist:str, summ: str):
         self.memory.append((user, assist, summ))

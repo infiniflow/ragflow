@@ -58,6 +58,10 @@ def delete_datasets(auth, payload=None, *, headers=HEADERS, data=None):
     return res.json()
 
 
+def delete_all_datasets(auth, *, page_size=1000):
+    return delete_datasets(auth, {"ids": None, "delete_all": True})
+
+
 def batch_create_datasets(auth, num):
     ids = []
     for i in range(num):
@@ -99,7 +103,8 @@ def download_document(auth, dataset_id, document_id, save_path):
     url = f"{HOST_ADDRESS}{FILE_API_URL}/{document_id}".format(dataset_id=dataset_id)
     res = requests.get(url=url, auth=auth, stream=True)
     try:
-        if res.status_code == 200:
+        # available for unauthed downloads
+        if res.status_code in (200, 401):
             with open(save_path, "wb") as f:
                 for chunk in res.iter_content(chunk_size=8192):
                     f.write(chunk)
@@ -117,7 +122,7 @@ def list_documents(auth, dataset_id, params=None):
 
 def update_document(auth, dataset_id, document_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_API_URL}/{document_id}".format(dataset_id=dataset_id)
-    res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
+    res = requests.patch(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
@@ -125,6 +130,10 @@ def delete_documents(auth, dataset_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
     res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
+
+
+def delete_all_documents(auth, dataset_id, *, page_size=1000):
+    return delete_documents(auth, dataset_id, {"ids": None, "delete_all": True})
 
 
 def parse_documents(auth, dataset_id, payload=None):
@@ -164,9 +173,15 @@ def list_chunks(auth, dataset_id, document_id, params=None):
     return res.json()
 
 
+def get_chunk(auth, dataset_id, document_id, chunk_id):
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}/{chunk_id}".format(dataset_id=dataset_id, document_id=document_id)
+    res = requests.get(url=url, headers=HEADERS, auth=auth)
+    return res.json()
+
+
 def update_chunk(auth, dataset_id, document_id, chunk_id, payload=None):
     url = f"{HOST_ADDRESS}{CHUNK_API_URL}/{chunk_id}".format(dataset_id=dataset_id, document_id=document_id)
-    res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
+    res = requests.patch(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
@@ -174,6 +189,10 @@ def delete_chunks(auth, dataset_id, document_id, payload=None):
     url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
     res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
+
+
+def delete_all_chunks(auth, dataset_id, document_id, *, page_size=1000):
+    return delete_chunks(auth, dataset_id, document_id, {"chunk_ids": None, "delete_all": True})
 
 
 def retrieval_chunks(auth, payload=None):
@@ -203,9 +222,21 @@ def list_chat_assistants(auth, params=None):
     return res.json()
 
 
+def get_chat_assistant(auth, chat_assistant_id):
+    url = f"{HOST_ADDRESS}{CHAT_ASSISTANT_API_URL}/{chat_assistant_id}"
+    res = requests.get(url=url, headers=HEADERS, auth=auth)
+    return res.json()
+
+
 def update_chat_assistant(auth, chat_assistant_id, payload=None):
     url = f"{HOST_ADDRESS}{CHAT_ASSISTANT_API_URL}/{chat_assistant_id}"
     res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def patch_chat_assistant(auth, chat_assistant_id, payload=None):
+    url = f"{HOST_ADDRESS}{CHAT_ASSISTANT_API_URL}/{chat_assistant_id}"
+    res = requests.patch(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
@@ -213,6 +244,10 @@ def delete_chat_assistants(auth, payload=None):
     url = f"{HOST_ADDRESS}{CHAT_ASSISTANT_API_URL}"
     res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
+
+
+def delete_all_chat_assistants(auth, *, page_size=1000):
+    return delete_chat_assistants(auth, {"ids": None, "delete_all": True})
 
 
 def batch_create_chat_assistants(auth, num):
@@ -238,16 +273,18 @@ def list_session_with_chat_assistants(auth, chat_assistant_id, params=None):
 
 def update_session_with_chat_assistant(auth, chat_assistant_id, session_id, payload=None):
     url = f"{HOST_ADDRESS}{SESSION_WITH_CHAT_ASSISTANT_API_URL}/{session_id}".format(chat_id=chat_assistant_id)
-    res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
+    res = requests.patch(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
 def delete_session_with_chat_assistants(auth, chat_assistant_id, payload=None):
     url = f"{HOST_ADDRESS}{SESSION_WITH_CHAT_ASSISTANT_API_URL}".format(chat_id=chat_assistant_id)
-    if payload is None:
-        payload = {}
     res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
+
+
+def delete_all_sessions_with_chat_assistant(auth, chat_assistant_id, *, page_size=1000):
+    return delete_session_with_chat_assistants(auth, chat_assistant_id, {"ids": None, "delete_all": True})
 
 
 def batch_add_sessions_with_chat_assistant(auth, chat_assistant_id, num):
@@ -310,6 +347,16 @@ def metadata_batch_update(auth, dataset_id, payload=None):
     return res.json()
 
 
+def update_documents_metadata(auth, dataset_id, payload=None):
+    """New unified API for updating document metadata.
+
+    Uses PATCH method at /api/v1/datasets/{dataset_id}/documents/metadatas
+    """
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/documents/metadatas"
+    res = requests.patch(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
 # CHAT COMPLETIONS AND RELATED QUESTIONS
 def related_questions(auth, payload=None):
     url = f"{HOST_ADDRESS}/api/{VERSION}/sessions/related_questions"
@@ -350,19 +397,24 @@ def list_agent_sessions(auth, agent_id, params=None):
 
 def delete_agent_sessions(auth, agent_id, payload=None):
     url = f"{HOST_ADDRESS}{SESSION_WITH_AGENT_API_URL}".format(agent_id=agent_id)
-    if payload is None:
-        payload = {}
     res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
+def delete_all_agent_sessions(auth, agent_id, *, page_size=1000):
+    return delete_agent_sessions(auth, agent_id, {"ids": None, "delete_all": True})
+
+
 def agent_completions(auth, agent_id, payload=None):
-    url = f"{HOST_ADDRESS}{AGENT_API_URL}/{agent_id}/completions"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    url = f"{HOST_ADDRESS}{AGENT_API_URL}/chat/completion"
+    body = {"agent_id": agent_id}
+    if payload:
+        body.update(payload)
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=body)
     return res.json()
 
 
-def chat_completions(auth, chat_id, payload=None):
+def chat_completions(auth, chat_id=None, payload=None):
     """
     Send a question/message to a chat assistant and get completion.
 
@@ -370,14 +422,19 @@ def chat_completions(auth, chat_id, payload=None):
         auth: Authentication object
         chat_id: Chat assistant ID
         payload: Dictionary containing:
-            - question: str (required) - The question to ask
+            - messages: list (required) - Conversation messages
             - stream: bool (optional) - Whether to stream responses, default False
             - session_id: str (optional) - Session ID for conversation context
 
     Returns:
         Response JSON with answer data
     """
-    url = f"{HOST_ADDRESS}/api/{VERSION}/chats/{chat_id}/completions"
+    url = f"{HOST_ADDRESS}/api/{VERSION}/chat/completions"
+    payload = dict(payload or {})
+    if chat_id:
+        payload.setdefault("chat_id", chat_id)
+    if "question" in payload and "messages" not in payload:
+        payload["messages"] = [{"role": "user", "content": payload.pop("question")}]
     res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 

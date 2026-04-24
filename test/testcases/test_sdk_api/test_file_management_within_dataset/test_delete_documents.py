@@ -24,10 +24,10 @@ class TestDocumentsDeletion:
     @pytest.mark.parametrize(
         "payload, expected_message, remaining",
         [
-            ({"ids": None}, "", 0),
-            ({"ids": []}, "", 0),
-            ({"ids": ["invalid_id"]}, "Documents not found: ['invalid_id']", 3),
-            ({"ids": ["\n!?。；！？\"'"]}, "Documents not found: ['\\n!?。；！？\"\\'']", 3),
+            ({"ids": None}, "should either provide doc ids or set delete_all(true), dataset:", 3),
+            ({"ids": []}, "should either provide doc ids or set delete_all(true), dataset:", 3),
+            ({"ids": ["invalid_id"]}, "Field: <ids> - Message: <Invalid UUID1 format> - Value: <['invalid_id']>", 3),
+            ({"ids": ["\n!?。；！？\"'"]}, "Field: <ids> - Message: <Invalid UUID1 format> - Value:", 3),
             ("not json", "must be a mapping", 3),
             (lambda r: {"ids": r[:1]}, "", 2),
             (lambda r: {"ids": r}, "", 0),
@@ -69,10 +69,10 @@ class TestDocumentsDeletion:
 
         with pytest.raises(Exception) as exception_info:
             dataset.delete_documents(**payload)
-        assert "Documents not found: ['invalid_id']" in str(exception_info.value), str(exception_info.value)
+        assert "Field: <ids> - Message: <Invalid UUID1 format> - Value: <" in str(exception_info.value), str(exception_info.value)
 
         documents = dataset.list_documents()
-        assert len(documents) == 0, str(documents)
+        assert len(documents) == 3, str(documents)
 
     @pytest.mark.p2
     def test_repeated_deletion(self, add_documents_func):
@@ -81,14 +81,16 @@ class TestDocumentsDeletion:
         dataset.delete_documents(ids=document_ids)
         with pytest.raises(Exception) as exception_info:
             dataset.delete_documents(ids=document_ids)
-        assert "Documents not found" in str(exception_info.value), str(exception_info.value)
+        assert "Document not found" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_duplicate_deletion(self, add_documents_func):
         dataset, documents = add_documents_func
         document_ids = [document.id for document in documents]
-        dataset.delete_documents(ids=document_ids + document_ids)
-        assert len(dataset.list_documents()) == 0, str(dataset.list_documents())
+        with pytest.raises(Exception) as exception_info:
+            dataset.delete_documents(ids=document_ids + document_ids)
+        assert "Field: <ids> - Message: <Duplicate ids:" in str(exception_info.value), str(exception_info.value)
+        assert len(dataset.list_documents()) == 3, str(dataset.list_documents())
 
 
 @pytest.mark.p3

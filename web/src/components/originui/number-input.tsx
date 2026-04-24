@@ -1,13 +1,16 @@
-import { isNumber, trim } from 'lodash';
+import { cn } from '@/lib/utils';
+import { isNumber, omit, trim } from 'lodash';
 import { MinusIcon, PlusIcon } from 'lucide-react';
 import React, {
   FocusEventHandler,
+  forwardRef,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
+import { InputProps } from '../ui/input';
 
 interface NumberInputProps {
   className?: string;
@@ -16,16 +19,27 @@ interface NumberInputProps {
   height?: number | string;
   min?: number;
   max?: number;
+  hideIcons?: boolean;
+  inputClassName?: string;
 }
 
-const NumberInput: React.FC<NumberInputProps> = ({
-  className,
-  value: initialValue,
-  onChange,
-  height,
-  min = 0,
-  max = Infinity,
-}) => {
+const NumberInput = forwardRef<
+  HTMLInputElement,
+  Omit<InputProps, 'onChange' | 'value'> & NumberInputProps
+>(function NumberInput(
+  {
+    className,
+    value: initialValue,
+    onChange,
+    height,
+    min = 0,
+    max = Infinity,
+    hideIcons = false,
+    inputClassName,
+    ...props
+  },
+  ref,
+) {
   const [value, setValue] = useState<number | ''>(() => {
     return initialValue ?? 0;
   });
@@ -94,37 +108,66 @@ const NumberInput: React.FC<NumberInputProps> = ({
     [height],
   );
   return (
-    <div
-      className={`flex h-10 items-center space-x-2 border-[1px] rounded-lg w-[150px] ${className || ''}`}
-      style={style}
-    >
-      <button
-        type="button"
-        className="w-10 p-2 focus:outline-none border-r-[1px]"
-        onClick={handleDecrement}
+    <>
+      <style>{`
+        .number-input-hide-spin::-webkit-inner-spin-button,
+        .number-input-hide-spin::-webkit-outer-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        .number-input-hide-spin[type='number'] {
+          -moz-appearance: textfield;
+        }
+      `}</style>
+      <div
+        className={cn(
+          `flex h-10 items-center space-x-2 border-[1px] rounded-lg w-[150px]`,
+          className,
+        )}
         style={style}
+        ref={ref}
       >
-        <MinusIcon size={16} aria-hidden="true" />
-      </button>
-      <input
-        type="text"
-        value={value}
-        onChange={handleChange}
-        onBlur={handleBlur}
-        className="w-full flex-1 text-center bg-transparent focus:outline-none"
-        style={style}
-        min={min}
-      />
-      <button
-        type="button"
-        className="w-10 p-2 focus:outline-none border-l-[1px]"
-        onClick={handleIncrement}
-        style={style}
-      >
-        <PlusIcon size={16} aria-hidden="true" />
-      </button>
-    </div>
+        {hideIcons || (
+          <button
+            type="button"
+            className="w-10 p-2 focus:outline-none border-r-[1px]"
+            onClick={handleDecrement}
+            style={style}
+          >
+            <MinusIcon size={16} aria-hidden="true" />
+          </button>
+        )}
+        <input
+          type="number"
+          value={value}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          className={cn(
+            'w-full flex-1 text-center bg-transparent focus-visible:outline-none number-input-hide-spin',
+            'disabled:cursor-not-allowed disabled:opacity-50 transition-colors',
+            {
+              'focus-visible:ring-1 focus-visible:ring-accent-primary rounded-lg':
+                hideIcons,
+            },
+            inputClassName,
+          )}
+          style={style}
+          min={min}
+          {...omit(props, ['prefix', 'suffix'])}
+        />
+        {hideIcons || (
+          <button
+            type="button"
+            className="w-10 p-2 focus:outline-none border-l-[1px]"
+            onClick={handleIncrement}
+            style={style}
+          >
+            <PlusIcon size={16} aria-hidden="true" />
+          </button>
+        )}
+      </div>
+    </>
   );
-};
+});
 
 export default NumberInput;

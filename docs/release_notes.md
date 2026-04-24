@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 1
 slug: /release_notes
 sidebar_custom_props: {
   sidebarIcon: LucideClipboardPenLine
@@ -8,6 +8,48 @@ sidebar_custom_props: {
 # Releases
 
 Key features, improvements and bug fixes in the latest releases.
+
+## v0.25.0
+
+Released on April 21, 2026.
+
+### New features
+
+- Agent
+  - Introduces seven prebuilt ingestion pipeline templates.
+  - Agent apps can be published.
+  - Supports sandbox code execution and chart generation.
+  - Adds a beginner's data analytics Agent template.
+- Memory: Supports user-level memory storage and retrieval.
+- New UI language: Arabic (implemented a Right-to-Left layout), Bulgarian, and Turkish.
+- Ecosystem integration: RAGFlow datasets are accessible via OpenClaw.
+
+### Improvements
+
+- Optimizes Docx parsing by supporting image lazy-loading, reducing memory footprint.
+- Optimizes Chat, Agent, and Search embedded dialog pages for mobile compatibility.
+- Underlying system & infrastructure optimization:
+  - Bumps RAGFlow's document engine, Elasticsearch to 9.x.
+  - Switches the default object storage container to `pgsty/minio` due to the deprecation of the official MinIO images.
+  - Adds database migration scripts; see [this readme](https://github.com/infiniflow/ragflow/tree/74b44e1aa3ecd6687b3aa4ef731d0187720c3cb5/tools/scripts) for further details.
+
+### Model support
+
+- MiniMax-M2.7 series
+- Perplexity embedding model (pplx-embed)
+- Tongyi rerank model
+
+### New model providers
+
+- avian.io
+- ragcon.ai
+
+### Data sources
+
+- Seafile
+- RSS
+- DingTalk AI Table
+- GitHub: Enables synchronization for deleted files.
 
 ## v0.24.0
 
@@ -20,7 +62,7 @@ Released on February 10, 2026.
   - Outputs Memory extraction log to the console.
 - Dataset
   - Supports batch metadata management.
-  - Renames "ToC (Table of Contents)" to "PageIndex". See [here](./guides/dataset/extract_table_of_contents.md).
+  - Renames "ToC (Table of Contents)" to "PageIndex". See [here](./guides/dataset/advanced/extract_table_of_contents.md).
 - Agent
   - Launches a new Chat-like Agent conversation management interface that retains sessions and dialogue history.
   - Introduces a multi-Sandbox mechanism supporting local gVisor and Alibaba Cloud, with compatibility for mainstream Sandbox APIs (configurable in the Admin page).
@@ -67,7 +109,6 @@ Released on December 31, 2025.
 - Memory: Enhances the stability of memory extraction when all memory types are selected.
 - RAG: Refines the context window extraction strategy for images and tables.
 
-
 ### Fixed issues
 
 - Memory: 
@@ -89,20 +130,20 @@ Released on December 27, 2025.
 ### New features
 
 - Memory
-   - Implements a **Memory** interface for managing memory.
-   - Supports configuring context via the **Retrieval** or **Message** component.
+  - Implements a **Memory** interface for managing memory.
+  - Supports configuring context via the **Retrieval** or **Message** component.
 - Agent
-   - Improves the **Agent** component's performance by refactoring the underlying architecture.
-   - The **Agent** component can now output structured data for use in downstream components.
-   - Supports using webhook to trigger agent execution.
-   - Supports voice input/output.
-   - Supports configuring multiple **Retrieval** components per **Agent** component.
+  - Improves the **Agent** component's performance by refactoring the underlying architecture.
+  - The **Agent** component can now output structured data for use in downstream components.
+  - Supports using webhook to trigger agent execution.
+  - Supports voice input/output.
+  - Supports configuring multiple **Retrieval** components per **Agent** component.
 - Ingestion pipeline
   - Supports extracting table of contents in the **Transformer** component to improve long-context RAG performance.
 - Dataset
-   - Supports configuring context window for images and tables.
-   - Introduces parent-child chunking strategy.
-   - Supports auto-generation of metadata during file parsing.
+  - Supports configuring context window for images and tables.
+  - Introduces parent-child chunking strategy.
+  - Supports auto-generation of metadata during file parsing.
 - Chat: Supports voice input.
 
 ### Improvements
@@ -225,7 +266,7 @@ Released on October 15, 2025.
 
 - Orchestratable ingestion pipeline: Supports customized data ingestion and cleansing workflows, enabling users to flexibly design their data flows or directly apply the official data flow templates on the canvas.
 - GraphRAG & RAPTOR write process optimized: Replaces the automatic incremental build process with manual batch building, significantly reducing construction overhead.
-- Long-context RAG: Automatically generates document-level table of contents (TOC) structures to mitigate context loss caused by inaccurate or excessive chunking, substantially improving retrieval quality. This feature is now available via a TOC extraction template. See [here](./guides/dataset/extract_table_of_contents.md).
+- Long-context RAG: Automatically generates document-level table of contents (TOC) structures to mitigate context loss caused by inaccurate or excessive chunking, substantially improving retrieval quality. This feature is now available via a TOC extraction template. See [here](./guides/dataset/advanced/extract_table_of_contents.md).
 - Video file parsing: Expands the system's multimodal data processing capabilities by supporting video file parsing.
 - Admin CLI: Introduces a new command-line tool for system administration, allowing users to manage and monitor RAGFlow's service status via command line.
 
@@ -364,7 +405,7 @@ Released on August 8, 2025.
 
 ### New agent templates (both workflow and agentic)
 
-- SQL Assistant Workflow: Empowers non-technical teams (e.g., operations, product) to independently query business data.
+- Text-to-SQL data expert Workflow: Empowers non-technical teams (e.g., operations, product) to independently query business data.
 - Choose Your Knowledge Base Workflow: Lets users select a dataset to query during conversations. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
 - Choose Your Knowledge Base Agent: Delivers higher-quality responses with extended reasoning time, suited for complex queries. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
 
@@ -397,14 +438,14 @@ From v0.20.0 onwards, Agents are no longer compatible with earlier versions, and
 
 ### New agent templates introduced
 
-- Multi-Agent based Deep Research: Collaborative Agent teamwork led by a Lead Agent with multiple Subagents, distinct from traditional workflow orchestration.
+- Multi-Agent based Deep research: Collaborative Agent teamwork led by a Lead Agent with multiple Subagents, distinct from traditional workflow orchestration.
 - An intelligent Q&A chatbot leveraging internal datasets, designed for customer service and training scenarios.
 - A resume analysis template used by the RAGFlow team to screen, analyze, and record candidate information.
 - A blog generation workflow that transforms raw ideas into SEO-friendly blog content.
 - An intelligent customer service workflow.
 - A user feedback analysis template that directs user feedback to appropriate teams through semantic analysis.
-- Trip Planner: Uses web search and map MCP servers to assist with travel planning.
-- Image Lingo: Translates content from uploaded photos.
+- Trip planner: Uses web search and map MCP servers to assist with travel planning.
+- Photo text translator: Translates content from uploaded photos.
 - An information search assistant that retrieves answers from both internal datasets and the web.
 
 ## v0.19.1
@@ -480,7 +521,7 @@ From this release onwards, built-in rerank models have been removed because they
 #### Added documents
 
 - [Set page rank](./guides/dataset/set_page_rank.md)
-- [Enable RAPTOR](./guides/dataset/enable_raptor.md)
+- [Enable RAPTOR](./guides/dataset/advanced/enable_raptor.md)
 - [Set variables for your chat assistant](./guides/chat/set_chat_variables.md)
 - [Launch RAGFlow MCP server](./develop/mcp/launch_mcp_server.md)
 
@@ -551,7 +592,7 @@ Released on March 3, 2025.
 
 ### New features
 
-- AI chat: Implements Deep Research for agentic reasoning. To activate this, enable the **Reasoning** toggle under the **Prompt engine** tab of your chat assistant dialogue.
+- AI chat: Implements Deep research for agentic reasoning. To activate this, enable the **Reasoning** toggle under the **Prompt engine** tab of your chat assistant dialogue.
 - AI chat: Leverages Tavily-based web search to enhance contexts in agentic reasoning. To activate this, enter the correct Tavily API key under the **Assistant settings** tab of your chat assistant dialogue.
 - AI chat: Supports starting a chat without specifying datasets.
 - AI chat: HTML files can also be previewed and referenced, in addition to PDF files.
@@ -561,11 +602,11 @@ Released on March 3, 2025.
 - Models: Updates the supported model list for Tongyi-Qianwen (Qwen), adding DeepSeek-specific models; adds ModelScope as a model provider.
 - APIs: Document metadata can be updated through an API.
 
-The following diagram illustrates the workflow of RAGFlow's Deep Research:
+The following diagram illustrates the workflow of RAGFlow's Deep research:
 
 ![Image](https://github.com/user-attachments/assets/f65d4759-4f09-4d9d-9549-c0e1fe907525)
 
-The following is a screenshot of a conversation that integrates Deep Research:
+The following is a screenshot of a conversation that integrates Deep research:
 
 ![Image](https://github.com/user-attachments/assets/165b88ff-1f5d-4fb8-90e2-c836b25e32e9)
 
@@ -592,7 +633,7 @@ Released on February 6, 2025.
 ### New features
 
 - Supports DeepSeek R1 and DeepSeek V3.
-- GraphRAG refactor: Knowledge graph is dynamically built on an entire dataset rather than on an individual file, and automatically updated when a newly uploaded file starts parsing. See [here](https://ragflow.io/docs/dev/construct_knowledge_graph).
+- GraphRAG refactor: Knowledge graph is dynamically built on an entire dataset rather than on an individual file, and automatically updated when a newly uploaded file starts parsing. See [here](./guides/dataset/advanced/construct_knowledge_graph.md).
 - Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](./guides/agent/agent_component_reference/iteration.mdx).
 - New UI language: Portuguese.
 - Allows setting metadata for a specific file in a dataset to enhance AI-powered chats. See [here](./guides/dataset/set_metadata.md).
@@ -608,7 +649,7 @@ The **Tag dataset** feature is *unavailable* on the [Infinity](https://github.co
 
 #### Added documents
 
-- [Construct knowledge graph](./guides/dataset/construct_knowledge_graph.md)
+- [Construct knowledge graph](./guides/dataset/advanced/construct_knowledge_graph.md)
 - [Set metadata](./guides/dataset/set_metadata.md)
 - [Begin component](./guides/agent/agent_component_reference/begin.mdx)
 - [Generate component](./guides/agent/agent_component_reference/generate.mdx)
@@ -734,7 +775,7 @@ From this release onwards, **service_config.yaml.template** replaces **service_c
 This approach eliminates the need to manually update **service_config.yaml** after making changes to **.env**, facilitating dynamic environment configurations.
 
 :::danger IMPORTANT
-Ensure that you [upgrade **both** your code **and** Docker image to this release](https://ragflow.io/docs/dev/upgrade_ragflow#upgrade-ragflow-to-the-most-recent-officially-published-release) before trying this new approach.
+Ensure that you [upgrade **both** your code **and** Docker image to this release](./administrator/upgrade_ragflow.mdx#upgrade-ragflow-to-the-most-recent-officially-published-release) before trying this new approach.
 :::
 
 ### API changes
@@ -812,13 +853,13 @@ The default Docker image edition is `nightly-slim`. The following list clarifies
 - `nightly`: The full edition of the most recent tested Docker image.
 - `v0.12.0`: The full edition of the most recent **officially released** Docker image.
 
-See [Upgrade RAGFlow](https://ragflow.io/docs/dev/upgrade_ragflow) for instructions on upgrading.
+See [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx) for instructions on upgrading.
 
 ### Documentation
 
 #### Added documents
 
-- [Upgrade RAGFlow](https://ragflow.io/docs/dev/upgrade_ragflow)
+- [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx)
 
 ## v0.11.0
 

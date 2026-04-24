@@ -1,3 +1,4 @@
+import { combineRefs } from '@/lib/utils';
 import { transformFile2Base64 } from '@/utils/file-util';
 import { LucidePencil, LucidePlus, LucideX } from 'lucide-react';
 import {
@@ -11,22 +12,37 @@ import {
 import { useTranslation } from 'react-i18next';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
 import { Modal } from './ui/modal/modal';
 
 type AvatarUploadProps = {
   value?: string;
   onChange?: (value: string) => void;
   tips?: string;
+  uploadInputTestId?: string;
+  removeButtonTestId?: string;
+  cropModalTestId?: string;
+  cropModalOkButtonTestId?: string;
 };
 
 export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
-  function AvatarUpload({ value, onChange, tips }, ref) {
+  function AvatarUpload(
+    {
+      value,
+      onChange,
+      tips,
+      uploadInputTestId,
+      removeButtonTestId,
+      cropModalTestId,
+      cropModalOkButtonTestId,
+    },
+    ref,
+  ) {
     const { t } = useTranslation();
     const [avatarBase64Str, setAvatarBase64Str] = useState(''); // Avatar Image base64
     const [isCropModalOpen, setIsCropModalOpen] = useState(false);
     const [imageToCrop, setImageToCrop] = useState<string | null>(null);
     const [cropArea, setCropArea] = useState({ x: 0, y: 0, size: 200 });
+    const innerInputRef = useRef<HTMLInputElement | null>(null);
     const imageRef = useRef<HTMLImageElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -195,7 +211,6 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
     const handleWheel = useCallback((e: React.WheelEvent) => {
       if (!imageRef.current) return;
 
-      e.preventDefault();
       const image = imageRef.current;
       const delta = e.deltaY > 0 ? 0.9 : 1.1; // Zoom factor
 
@@ -230,54 +245,61 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
       }
     }, [value]);
 
-    useEffect(() => {
-      const container = containerRef.current;
-      setTimeout(() => {
-        console.log('container', container);
-        // initCropArea();
-        if (imageToCrop && container && isCropModalOpen) {
-          container.addEventListener(
-            'wheel',
-            handleWheel as unknown as EventListener,
-            { passive: false },
-          );
-          return () => {
-            container.removeEventListener(
-              'wheel',
-              handleWheel as unknown as EventListener,
-            );
-          };
-        }
-      }, 100);
-    }, [handleWheel, imageToCrop, isCropModalOpen]);
-
     return (
       <div className="flex justify-start items-end space-x-2">
         <div className="relative group">
+          <input
+            placeholder=""
+            type="file"
+            title=""
+            accept="image/*"
+            className="peer/input size-0 absolute top-0 left-0 opacity-0 pointer-events-none"
+            onChange={handleChange}
+            ref={combineRefs(ref, innerInputRef)}
+            data-testid={uploadInputTestId}
+            tabIndex={-1}
+          />
+
           {!avatarBase64Str ? (
-            <div
-              className="
-                border border-dashed border-borer-button rounded-md size-16
-                flex flex-col gap-1 justify-center items-center text-sm text-text-secondary transition-colors
-                group-has-[input:focus-visible]:border-accent-primary group-has-[input:focus-visible]:text-text-primary"
+            <Button
+              variant="dashed"
+              size="icon"
+              className="size-16 flex flex-col items-center gap-1 !bg-transparent"
+              type="button"
+              onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+                e.stopPropagation();
+                innerInputRef.current?.click();
+              }}
             >
               <LucidePlus className="size-4" />
               <span>{t('common.upload')}</span>
-            </div>
+            </Button>
           ) : (
             <div className="size-16 relative grid place-content-center">
-              <Avatar className="size-16 rounded-md">
-                <AvatarImage className="block" src={avatarBase64Str} alt="" />
-                <AvatarFallback></AvatarFallback>
-              </Avatar>
-
-              <div
-                className="
-                absolute inset-0 bg-black/50 flex items-center justify-center
-                transition-opacity opacity-0 group-hover:opacity-100 group-has-[input:focus-visible]:opacity-100"
+              <Button
+                variant="transparent"
+                size="icon"
+                type="button"
+                className="group/button size-full p-0 transition-all relative gap-0 overflow-hidden"
+                onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+                  e.stopPropagation();
+                  innerInputRef.current?.click();
+                }}
               >
-                <LucidePencil className="size-5 opacity-75" />
-              </div>
+                <Avatar className="size-full rounded-none">
+                  <AvatarImage className="block" src={avatarBase64Str} alt="" />
+                  <AvatarFallback />
+                </Avatar>
+
+                <div
+                  className="
+                  absolute inset-0 flex items-center justify-center
+                  bg-black/40 opacity-0 transition-opacity
+                  group-hover/button:opacity-100 group-focus-visible/button:opacity-100"
+                >
+                  <LucidePencil className="size-5 opacity-75" />
+                </div>
+              </Button>
 
               <Button
                 onClick={handleRemove}
@@ -285,23 +307,15 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
                 className="border-background focus-visible:border-background absolute -top-2 -right-2 size-6 rounded-full border-2 shadow-none z-10"
                 aria-label="Remove image"
                 type="button"
+                data-testid={removeButtonTestId}
               >
                 <LucideX className="size-3" />
               </Button>
             </div>
           )}
-
-          <Input
-            placeholder=""
-            type="file"
-            title=""
-            accept="image/*"
-            className="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer"
-            onChange={handleChange}
-            ref={ref}
-          />
         </div>
-        <div className="margin-1 text-sm text-text-secondary">
+
+        <div className="ms-1 text-xs text-text-secondary">
           {tips ?? t('knowledgeConfiguration.photoTip')}
         </div>
 
@@ -318,6 +332,8 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
           size="small"
           onCancel={handleCancelCrop}
           onOk={handleCrop}
+          testId={cropModalTestId}
+          okButtonTestId={cropModalOkButtonTestId}
           // footer={
           //   <div className="flex justify-end space-x-2">
           //     <Button variant="secondary" onClick={handleCancelCrop}>
@@ -338,7 +354,7 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
                     height: '300px',
                     touchAction: 'none',
                   }}
-                  // onWheel={handleWheel}
+                  onWheel={handleWheel}
                 >
                   <img
                     ref={imageRef}

@@ -217,8 +217,10 @@ const VoiceInputBox = ({
 };
 export const AudioButton = ({
   onOk,
+  testId,
 }: {
   onOk?: (transcript: string) => void;
+  testId?: string;
 }) => {
   // const [showInputBox, setShowInputBox] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -254,7 +256,7 @@ export const AudioButton = ({
       formData.append('file', audioFile);
       formData.append('stream', 'false');
 
-      const response = await fetch(api.sequence2txt, {
+      const response = await fetch(api.chatsTranscriptions, {
         method: 'POST',
         headers: {
           [Authorization]: getAuthorization(),
@@ -415,6 +417,7 @@ export const AudioButton = ({
               'animate-pulse !bg-state-success/20 text-state-success rounded-full',
           )}
           disabled={isProcessing}
+          data-testid={testId}
         >
           {isProcessing ? (
             <Loader2 size={16} className=" animate-spin" />

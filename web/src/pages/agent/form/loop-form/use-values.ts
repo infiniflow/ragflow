@@ -1,4 +1,4 @@
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { isEmpty, omit } from 'lodash';
 import { useMemo } from 'react';
 

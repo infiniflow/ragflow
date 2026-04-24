@@ -21,7 +21,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
-from common import bulk_upload_documents, delete_document, list_documents
+from test_common import bulk_upload_documents, delete_document, list_documents
 
 
 class _DummyManager:
@@ -36,7 +36,7 @@ def add_document_func(request, WebApiAuth, add_dataset, ragflow_tmp_dir):
     def cleanup():
         res = list_documents(WebApiAuth, {"kb_id": dataset_id})
         for doc in res["data"]["docs"]:
-            delete_document(WebApiAuth, {"doc_id": doc["id"]})
+            delete_document(WebApiAuth, dataset_id, {"ids": [doc["id"]]})
 
     request.addfinalizer(cleanup)
 
@@ -49,7 +49,7 @@ def add_documents(request, WebApiAuth, add_dataset, ragflow_tmp_dir):
     def cleanup():
         res = list_documents(WebApiAuth, {"kb_id": dataset_id})
         for doc in res["data"]["docs"]:
-            delete_document(WebApiAuth, {"doc_id": doc["id"]})
+            delete_document(WebApiAuth, dataset_id, {"ids": [doc["id"]]})
 
     request.addfinalizer(cleanup)
 
@@ -62,7 +62,7 @@ def add_documents_func(request, WebApiAuth, add_dataset_func, ragflow_tmp_dir):
     def cleanup():
         res = list_documents(WebApiAuth, {"kb_id": dataset_id})
         for doc in res["data"]["docs"]:
-            delete_document(WebApiAuth, {"doc_id": doc["id"]})
+            delete_document(WebApiAuth, dataset_id, {"ids": [doc["id"]]})
 
     request.addfinalizer(cleanup)
 
@@ -101,6 +101,20 @@ def document_app_module(monkeypatch):
 
     deepdoc_html_module.RAGFlowHtmlParser = _StubHtmlParser
     monkeypatch.setitem(sys.modules, "deepdoc.parser.html_parser", deepdoc_html_module)
+    deepdoc_mineru_module = ModuleType("deepdoc.parser.mineru_parser")
+
+    class _StubMinerUParser:
+        pass
+
+    deepdoc_mineru_module.MinerUParser = _StubMinerUParser
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.mineru_parser", deepdoc_mineru_module)
+    deepdoc_paddleocr_module = ModuleType("deepdoc.parser.paddleocr_parser")
+
+    class _StubPaddleOCRParser:
+        pass
+
+    deepdoc_paddleocr_module.PaddleOCRParser = _StubPaddleOCRParser
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.paddleocr_parser", deepdoc_paddleocr_module)
     monkeypatch.setitem(sys.modules, "xgboost", ModuleType("xgboost"))
 
     stub_apps = ModuleType("api.apps")

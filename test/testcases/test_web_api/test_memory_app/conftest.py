@@ -15,7 +15,7 @@
 #
 import pytest
 import random
-from test_web_api.common import create_memory, list_memory, delete_memory
+from test_common import create_memory, list_memory, delete_memory
 
 @pytest.fixture(scope="function")
 def add_memory_func(request, WebApiAuth):
@@ -32,7 +32,7 @@ def add_memory_func(request, WebApiAuth):
         payload = {
             "name": f"test_memory_{i}",
             "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
-            "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW",
+            "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
             "llm_id": "glm-4-flash@ZHIPU-AI"
         }
         res = create_memory(WebApiAuth, payload)

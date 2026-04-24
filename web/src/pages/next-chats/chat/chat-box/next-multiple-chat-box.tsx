@@ -21,9 +21,9 @@ import {
   useScrollToBottom,
 } from '@/hooks/logic-hooks';
 import {
-  useFetchDialog,
+  useFetchChat,
   useGetChatSearchParams,
-  useSetDialog,
+  usePatchChat,
 } from '@/hooks/use-chat-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IClientConversation } from '@/interfaces/database/chat';
@@ -102,7 +102,7 @@ const ChatCard = forwardRef(function ChatCard(
   ref,
 ) {
   const { id: dialogId } = useParams();
-  const { setDialog } = useSetDialog();
+  const { patchChat } = usePatchChat();
 
   const { removeMessageById, derivedMessages, handlePressEnter, sendLoading } =
     useSendSingleMessage({
@@ -131,7 +131,7 @@ const ChatCard = forwardRef(function ChatCard(
   const llmId = useWatch({ control: form.control, name: 'llm_id' });
 
   const { data: userInfo } = useFetchUserInfo();
-  const { data: currentDialog } = useFetchDialog();
+  const { data: currentDialog } = useFetchChat();
 
   useSetDefaultModel(form);
 
@@ -143,13 +143,15 @@ const ChatCard = forwardRef(function ChatCard(
 
   const handleApplyConfig = useCallback(() => {
     const values = form.getValues();
-    setDialog({
-      ...currentDialog,
-      llm_id: values.llm_id,
-      llm_setting: omit(values, 'llm_id'),
-      dialog_id: dialogId,
+    patchChat({
+      chatId: dialogId!,
+      params: {
+        ...currentDialog,
+        llm_id: values.llm_id,
+        llm_setting: omit(values, 'llm_id'),
+      },
     });
-  }, [currentDialog, dialogId, form, setDialog]);
+  }, [currentDialog, dialogId, form, patchChat]);
 
   useImperativeHandle(
     ref,
@@ -162,23 +164,33 @@ const ChatCard = forwardRef(function ChatCard(
   }, [id, sendLoading, setLoading]);
 
   return (
-    <Card className="bg-transparent border flex-1 flex flex-col">
+    <Card
+      className="bg-transparent border flex-1 flex flex-col"
+      data-testid="chat-detail-multimodel-card"
+      data-card-index={idx}
+      data-card-key={id}
+    >
       <CardHeader className="border-b-0.5 px-5 py-3">
         <CardTitle className="flex justify-between items-center">
           <div className="flex items-center gap-3">
             <span className="text-base">{idx + 1}</span>
             <Form {...form}>
-              <LargeModelFormFieldWithoutFilter></LargeModelFormFieldWithoutFilter>
+              <LargeModelFormFieldWithoutFilter
+                triggerTestId="chat-detail-multimodel-card-model-select"
+                optionTestIdPrefix="chat-detail-llm-option-"
+              ></LargeModelFormFieldWithoutFilter>
             </Form>
           </div>
           <div className="space-x-2">
             <Tooltip>
-              <TooltipTrigger>
+              <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-sm"
                   disabled={isEmpty(llmId)}
                   onClick={handleApplyConfig}
+                  data-testid="chat-detail-multimodel-card-apply"
+                  data-card-index={idx}
                 >
                   <ListCheck />
                 </Button>
@@ -192,11 +204,18 @@ const ChatCard = forwardRef(function ChatCard(
                 variant="ghost"
                 size="icon-sm"
                 onClick={handleRemoveChatBox}
+                data-testid="chat-detail-multimodel-card-remove"
+                data-card-index={idx}
               >
                 <Trash2 />
               </Button>
             ) : (
-              <Button variant="ghost" size="icon-sm" onClick={addChatBox}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={addChatBox}
+                data-testid="chat-detail-multimodel-add-card"
+              >
                 <Plus />
               </Button>
             )}
@@ -221,7 +240,7 @@ const ChatCard = forwardRef(function ChatCard(
                   avatarDialog={currentDialog.icon}
                   reference={buildMessageItemReference(
                     {
-                      message: derivedMessages,
+                      messages: derivedMessages,
                       reference: conversation.reference,
                     },
                     message,
@@ -313,8 +332,11 @@ export function MultipleChatBox({
   );
 
   return (
-    <section className="h-full flex flex-col px-5">
-      <div className="flex gap-4 flex-1 px-5 pb-14 min-h-0">
+    <section className="flex flex-1 min-h-0 flex-col px-5">
+      <div
+        className="flex gap-4 flex-1 px-5 pb-14 min-h-0"
+        data-testid="chat-detail-multimodel-grid"
+      >
         {chatBoxIds.map((id, idx) => (
           <ChatCard
             key={id}

@@ -20,7 +20,7 @@ import logging
 import re
 from copy import deepcopy
 from typing import Tuple
-import jinja2
+from jinja2.sandbox import SandboxedEnvironment
 import json_repair
 from common.misc_utils import hash_str2int
 from rag.nlp import rag_tokenizer
@@ -40,6 +40,9 @@ def get_value(d, k1, k2):
 def chunks_format(reference):
     if not reference or not isinstance(reference, dict):
         return []
+    raw_chunks = reference.get("chunks", [])
+    if not isinstance(raw_chunks, list):
+        return []
     return [
         {
             "id": get_value(chunk, "chunk_id", "id"),
@@ -53,9 +56,11 @@ def chunks_format(reference):
             "similarity": chunk.get("similarity"),
             "vector_similarity": chunk.get("vector_similarity"),
             "term_similarity": chunk.get("term_similarity"),
+            "row_id": chunk.get("row_id"),
             "doc_type": get_value(chunk, "doc_type_kwd", "doc_type"),
         }
-        for chunk in reference.get("chunks", [])
+        for chunk in raw_chunks
+        if isinstance(chunk, dict)
     ]
 
 
@@ -178,7 +183,9 @@ RANK_MEMORY = load_prompt("rank_memory")
 META_FILTER = load_prompt("meta_filter")
 ASK_SUMMARY = load_prompt("ask_summary")
 
-PROMPT_JINJA_ENV = jinja2.Environment(autoescape=False, trim_blocks=True, lstrip_blocks=True)
+PROMPT_JINJA_ENV = SandboxedEnvironment(
+    autoescape=False, trim_blocks=True, lstrip_blocks=True
+)
 
 
 def citation_prompt(user_defined_prompts: dict = {}) -> str:
@@ -225,12 +232,14 @@ async def full_question(tenant_id=None, llm_id=None, messages=[], language=None,
     from common.constants import LLMType
     from api.db.services.llm_service import LLMBundle
     from api.db.services.tenant_llm_service import TenantLLMService
+    from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
 
     if not chat_mdl:
         if TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
-            chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
+            chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.IMAGE2TEXT, llm_id)
         else:
-            chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
+            chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, llm_id)
+        chat_mdl = LLMBundle(tenant_id, chat_model_config)
     conv = []
     for m in messages:
         if m["role"] not in ["user", "assistant"]:
@@ -259,12 +268,16 @@ async def cross_languages(tenant_id, llm_id, query, languages=[]):
     from common.constants import LLMType
     from api.db.services.llm_service import LLMBundle
     from api.db.services.tenant_llm_service import TenantLLMService
+    from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
 
     if llm_id and TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
-        chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
+        chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.IMAGE2TEXT, llm_id)
     else:
-        chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
-
+        if not llm_id:
+            chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+        else:
+            chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, llm_id)
+    chat_mdl = LLMBundle(tenant_id, chat_model_config)
     rendered_sys_prompt = PROMPT_JINJA_ENV.from_string(CROSS_LANGUAGES_SYS_PROMPT_TEMPLATE).render()
     rendered_user_prompt = PROMPT_JINJA_ENV.from_string(CROSS_LANGUAGES_USER_PROMPT_TEMPLATE).render(query=query,
                                                                                                      languages=languages)

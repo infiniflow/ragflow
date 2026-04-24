@@ -25,6 +25,7 @@ from functools import partial
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
+from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
 from agent.component.base import ComponentBase, ComponentParamBase
 from common.connection_utils import timeout
 from rag.prompts.generator import tool_call_summary, message_fit_in, citation_prompt, structured_output_prompt
@@ -84,10 +85,10 @@ class LLM(ComponentBase):
 
     def __init__(self, canvas, component_id, param: ComponentParamBase):
         super().__init__(canvas, component_id, param)
-        self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id),
-                                  self._param.llm_id, max_retries=self._param.max_retries,
-                                  retry_interval=self._param.delay_after_error
-                                  )
+        chat_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id), self._param.llm_id)
+        self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config,
+                                  max_retries=self._param.max_retries,
+                                  retry_interval=self._param.delay_after_error)
         self.imgs = []
 
     def get_input_form(self) -> dict[str, dict]:
@@ -226,7 +227,8 @@ class LLM(ComponentBase):
     def _prepare_prompt_variables(self):
         self.imgs = []
         if self._param.visual_files_var:
-            self.imgs.extend(self._extract_data_images(self._canvas.get_variable_value(self._param.visual_files_var)))
+            visual_val = self._canvas.get_variable_value(self._param.visual_files_var)
+            self.imgs.extend(self._extract_data_images(visual_val))
 
         args = {}
         vars = self.get_input_elements() if not self._param.debug_inputs else self._param.debug_inputs

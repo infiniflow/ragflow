@@ -1,4 +1,5 @@
 import { IconFontFill } from '@/components/icon-font';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,10 +25,10 @@ import { useHandleRunDocumentByIds } from './use-run-document';
 import { isParserRunning } from './utils';
 const IconMap = {
   [RunningStatus.UNSTART]: (
-    <IconFontFill name="play" className="text-accent-primary" />
+    <IconFontFill name="play" className="text-accent-primary size-[1em]" />
   ),
   [RunningStatus.RUNNING]: (
-    <CircleX size={14} color="rgba(var(--state-error))" />
+    <CircleX color="rgba(var(--state-error))" className="size-[1em]" />
   ),
   [RunningStatus.CANCEL]: (
     <IconFontFill name="reparse" className="text-accent-primary" />
@@ -36,6 +37,9 @@ const IconMap = {
     <IconFontFill name="reparse" className="text-accent-primary" />
   ),
   [RunningStatus.FAIL]: (
+    <IconFontFill name="reparse" className="text-accent-primary" />
+  ),
+  [RunningStatus.SCHEDULE]: (
     <IconFontFill name="reparse" className="text-accent-primary" />
   ),
 };
@@ -49,25 +53,63 @@ const ParseStatusStateMap = {
   [RunningStatus.SCHEDULE]: 'running',
 } as const;
 
-export function ParsingStatusCell({
+export function ParseDropdownButton({
   record,
   showChangeParserModal,
   // showSetMetaModal,
+}: {
+  record: IDocumentInfo;
+} & UseChangeDocumentParserShowType) {
+  const { t } = useTranslation();
+  const { pipeline_id, pipeline_name, chunk_method } = record;
+
+  const handleShowChangeParserModal = useCallback(() => {
+    showChangeParserModal(record);
+  }, [record, showChangeParserModal]);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="static" size="auto" className="capitalize">
+                {pipeline_id
+                  ? pipeline_name || pipeline_id
+                  : chunk_method === 'naive'
+                    ? 'general'
+                    : chunk_method}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="capitalize">
+                {pipeline_id
+                  ? pipeline_name || pipeline_id
+                  : chunk_method === 'naive'
+                    ? 'general'
+                    : chunk_method}
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <DropdownMenuItem onClick={handleShowChangeParserModal}>
+          {t('knowledgeDetails.dataPipeline')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export function ParsingStatusCell({
+  record,
   showLog,
 }: {
   record: IDocumentInfo;
   showLog: (record: IDocumentInfo) => void;
 } & UseChangeDocumentParserShowType) {
-  const { t } = useTranslation();
-  const {
-    run,
-    parser_id,
-    pipeline_id,
-    pipeline_name,
-    progress,
-    chunk_num,
-    id,
-  } = record;
+  const { run, progress, chunk_count, id } = record;
   const operationIcon = IconMap[run];
   const p = Number((progress * 100).toFixed(2));
   const {
@@ -77,7 +119,7 @@ export function ParsingStatusCell({
     hideModal: hideReparseDialogModal,
   } = useHandleRunDocumentByIds(id);
   const isRunning = isParserRunning(run);
-  const isZeroChunk = chunk_num === 0;
+  const isZeroChunk = chunk_count === 0;
 
   const handleOperationIconClick = (option?: {
     delete: boolean;
@@ -85,10 +127,6 @@ export function ParsingStatusCell({
   }) => {
     handleRunDocumentByIds(record.id, isRunning, option);
   };
-
-  const handleShowChangeParserModal = useCallback(() => {
-    showChangeParserModal(record);
-  }, [record, showChangeParserModal]);
 
   const showParse = useMemo(() => {
     return record.type !== DocumentType.Virtual;
@@ -103,71 +141,25 @@ export function ParsingStatusCell({
       data-testid="document-parse-status"
       data-state={ParseStatusStateMap[run] ?? 'unknown'}
     >
-      <div className="text-ellipsis w-[100px] flex items-center justify-between">
-        <DropdownMenu>
-          <DropdownMenuTrigger>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="border-none truncate max-w-32 cursor-pointer px-2 py-1 rounded-sm hover:bg-bg-card">
-                  {pipeline_id
-                    ? pipeline_name || pipeline_id
-                    : parser_id === 'naive'
-                      ? 'general'
-                      : parser_id}
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>
-                  {pipeline_id
-                    ? pipeline_name || pipeline_id
-                    : parser_id === 'naive'
-                      ? 'general'
-                      : parser_id}
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={handleShowChangeParserModal}>
-              {t('knowledgeDetails.dataPipeline')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
       {showParse && (
-        <div className="flex items-center gap-3">
-          <Separator orientation="vertical" className="h-2.5" />
-          {!isParserRunning(run) && (
-            // <ReparseDialog
-            //   hidden={isZeroChunk || isRunning}
-            //   handleOperationIconClick={handleOperationIconClick}
-            //   chunk_num={chunk_num}
-            // >
-            <div
-              className="cursor-pointer flex items-center gap-3"
-              onClick={() => {
-                showReparseDialogModal();
-              }}
-            >
-              {!isParserRunning(run) && operationIcon}
-            </div>
-            // {/* </ReparseDialog> */}
-          )}
+        <div className="flex items-center gap-2">
+          <Separator orientation="vertical" className="h-[1em]" />
+
           {isParserRunning(run) ? (
             <>
-              <div
-                className="flex items-center gap-1 cursor-pointer"
+              <Button
+                size="auto"
+                variant="static"
                 onClick={() => handleShowLog(record)}
               >
                 <Progress value={p} className="h-1 flex-1 min-w-10" />
                 {p}%
-              </div>
-              <div
-                className="cursor-pointer flex items-center gap-3"
-                onClick={() => {
-                  showReparseDialogModal();
-                }}
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => showReparseDialogModal()}
                 // onClick={
                 //   isZeroChunk || isRunning
                 //     ? handleOperationIconClick(false)
@@ -175,13 +167,22 @@ export function ParsingStatusCell({
                 // }
               >
                 {operationIcon}
-              </div>
+              </Button>
             </>
           ) : (
-            <ParsingCard
-              record={record}
-              handleShowLog={handleShowLog}
-            ></ParsingCard>
+            <>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => {
+                  showReparseDialogModal();
+                }}
+              >
+                {operationIcon}
+              </Button>
+
+              <ParsingCard record={record} handleShowLog={handleShowLog} />
+            </>
           )}
         </div>
       )}
@@ -194,7 +195,7 @@ export function ParsingStatusCell({
           // hidden={false}
           enable_metadata={record?.parser_config?.enable_metadata}
           handleOperationIconClick={handleOperationIconClick}
-          chunk_num={chunk_num}
+          chunk_num={chunk_count}
           visible={reparseDialogVisible}
           hideModal={hideReparseDialogModal}
         ></ReparseDialog>

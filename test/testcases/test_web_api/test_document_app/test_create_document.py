@@ -19,7 +19,7 @@ from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import create_document, list_kbs
+from test_common import create_document, list_datasets
 from configs import DOCUMENT_NAME_LIMIT, INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 from utils.file_utils import create_txt_file
@@ -75,7 +75,7 @@ class TestDocumentCreate:
 
         res = create_document(WebApiAuth, {"name": filename, "kb_id": kb_id})
         assert res["code"] == 0, res
-        assert res["data"]["kb_id"] == kb_id, res
+        assert res["data"]["dataset_id"] == kb_id, res
         assert res["data"]["name"] == filename, f"Expected: {filename}, Got: {res['data']['name']}"
 
     @pytest.mark.p3
@@ -91,8 +91,8 @@ class TestDocumentCreate:
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures), responses
 
-        res = list_kbs(WebApiAuth, {"id": kb_id})
-        assert res["data"]["kbs"][0]["doc_num"] == count, res
+        res = list_datasets(WebApiAuth, {"id": kb_id})
+        assert res["data"][0]["document_count"] == count, res
 
 
 def _run(coro):

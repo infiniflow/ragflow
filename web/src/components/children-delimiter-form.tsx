@@ -18,7 +18,10 @@ interface IProps {
 }
 
 export const DelimiterInput = forwardRef<HTMLInputElement, InputProps & IProps>(
-  ({ value, onChange, maxLength, defaultValue, ...props }, ref) => {
+  function DelimiterInput(
+    { value, onChange, maxLength, defaultValue, ...props },
+    ref,
+  ) {
     const nextValue = value
       ?.replaceAll('\n', '\\n')
       .replaceAll('\t', '\\t')
@@ -75,6 +78,7 @@ export function ChildrenDelimiterForm() {
                       onChange(checked);
                     }}
                     {...restProps}
+                    data-testid="ds-settings-parser-child-chunk-switch"
                   />
                 </FormControl>
               </div>
@@ -99,7 +103,10 @@ export function ChildrenDelimiterForm() {
                 </FormLabel>
                 <div className="w-3/4">
                   <FormControl>
-                    <DelimiterInput {...field} />
+                    <DelimiterInput
+                      {...field}
+                      data-testid="ds-settings-parser-child-chunk-delimiter-input"
+                    />
                   </FormControl>
                 </div>
               </div>

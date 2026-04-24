@@ -8,26 +8,33 @@
     "build": "vite build --mode production",
     "build-storybook": "storybook build",
     "dev": "vite --host",
-    "lint": "eslint src --ext .ts,.tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint src --ext .ts,.tsx --report-unused-disable-directives",
     "prepare": "cd .. && husky web/.husky",
     "preview": "vite preview",
     "storybook": "storybook dev -p 6006",
-    "test": "jest --no-cache --coverage"
+    "test": "jest --no-cache --coverage",
+    "type-check": "tsc --noEmit"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx,css,less,json}": [
-      "prettier --write --ignore-unknown"
+    "*.{css,less,json}": "prettier --write --ignore-unknown",
+    "*.{js,jsx,ts,tsx}": [
+      "prettier --write --ignore-unknown",
+      "eslint"
     ]
   },
   "overrides": {
-    "@radix-ui/react-dismissable-layer": "1.1.4"
+    "@radix-ui/react-dismissable-layer": "1.1.4",
+    "monaco-editor": {
+      "dompurify": "3.3.2"
+    }
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",
     "@ant-design/pro-components": "^2.6.46",
     "@ant-design/pro-layout": "^7.17.16",
     "@antv/g2": "^5.2.10",
-    "@antv/g6": "^5.0.10",
+    "@antv/g6": "^5.1.0",
+    "@floating-ui/react": "^0.27.19",
     "@hookform/resolvers": "^3.9.1",
     "@js-preview/excel": "^1.7.14",
     "@lexical/react": "^0.23.1",
@@ -76,7 +83,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.0.4",
     "dayjs": "^1.11.10",
-    "dompurify": "^3.1.6",
+    "dompurify": "^3.3.2",
     "embla-carousel-react": "^8.6.0",
     "eventsource-parser": "^1.1.2",
     "human-id": "^4.1.1",
@@ -88,8 +95,8 @@
     "jsencrypt": "^3.3.2",
     "jsoneditor": "^10.4.2",
     "lexical": "^0.23.1",
-    "lodash": "^4.17.21",
-    "lucide-react": "^0.546.0",
+    "lodash": "^4.17.23",
+    "lucide-react": "^1.7.0",
     "mammoth": "^1.7.2",
     "next-themes": "^0.4.6",
     "openai-speech-stream-player": "^1.0.8",

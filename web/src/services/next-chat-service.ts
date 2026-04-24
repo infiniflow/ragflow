@@ -2,135 +2,99 @@ import api from '@/utils/api';
 import { registerNextServer } from '@/utils/register-server';
 
 const {
-  getDialog,
-  setDialog,
-  // listDialog,
-  removeDialog,
-  getConversation,
-  getConversationSSE,
-  setConversation,
-  completeConversation,
-  listConversation,
-  removeConversation,
-  createToken,
-  listToken,
-  removeToken,
-  getStats,
-  createExternalConversation,
-  getExternalConversation,
-  completeExternalConversation,
-  uploadAndParseExternal,
+  createChat,
+  listChats,
+  getChat,
+  updateChat,
+  patchChat,
+  deleteChat,
+  bulkDeleteChats,
+  createSession,
+  listSessions,
+  getSession,
+  updateSession,
+  removeSessions,
   deleteMessage,
   thumbup,
-  tts,
-  ask,
-  mindmap,
-  getRelatedQuestions,
-  listNextDialog,
-  upload_and_parse,
+  chatsTts,
+  chatsMindmap,
+  chatsRelatedQuestions,
+  uploadAndParse,
   fetchExternalChatInfo,
 } = api;
 
 const methods = {
-  getDialog: {
-    url: getDialog,
+  createChat: {
+    url: createChat,
+    method: 'post',
+  },
+  listChats: {
+    url: listChats,
     method: 'get',
   },
-  setDialog: {
-    url: setDialog,
-    method: 'post',
-  },
-  removeDialog: {
-    url: removeDialog,
-    method: 'post',
-  },
-  listDialog: {
-    url: listNextDialog,
-    method: 'post',
-  },
-  listConversation: {
-    url: listConversation,
+  getChat: {
+    url: getChat,
     method: 'get',
   },
-  getConversation: {
-    url: getConversation,
+  updateChat: {
+    url: updateChat,
+    method: 'put',
+  },
+  patchChat: {
+    url: patchChat,
+    method: 'patch',
+  },
+  deleteChat: {
+    url: deleteChat,
+    method: 'delete',
+  },
+  bulkDeleteChats: {
+    url: bulkDeleteChats,
+    method: 'delete',
+  },
+  createSession: {
+    url: createSession,
+    method: 'post',
+  },
+  listSessions: {
+    url: listSessions,
     method: 'get',
   },
-  getConversationSSE: {
-    url: getConversationSSE,
+  getSession: {
+    url: getSession,
     method: 'get',
   },
-  setConversation: {
-    url: setConversation,
-    method: 'post',
+  updateSession: {
+    url: updateSession,
+    method: 'patch',
   },
-  completeConversation: {
-    url: completeConversation,
-    method: 'post',
-  },
-  removeConversation: {
-    url: removeConversation,
-    method: 'post',
-  },
-  createToken: {
-    url: createToken,
-    method: 'post',
-  },
-  listToken: {
-    url: listToken,
-    method: 'get',
-  },
-  removeToken: {
-    url: removeToken,
-    method: 'post',
-  },
-  getStats: {
-    url: getStats,
-    method: 'get',
-  },
-  createExternalConversation: {
-    url: createExternalConversation,
-    method: 'get',
-  },
-  getExternalConversation: {
-    url: getExternalConversation,
-    method: 'get',
-  },
-  completeExternalConversation: {
-    url: completeExternalConversation,
-    method: 'post',
-  },
-  uploadAndParseExternal: {
-    url: uploadAndParseExternal,
-    method: 'post',
+  removeSessions: {
+    url: removeSessions,
+    method: 'delete',
   },
   deleteMessage: {
     url: deleteMessage,
-    method: 'post',
+    method: 'delete',
   },
   thumbup: {
     url: thumbup,
+    method: 'patch',
+  },
+  chatsTts: {
+    url: chatsTts,
     method: 'post',
   },
-  tts: {
-    url: tts,
+  chatsMindmap: {
+    url: chatsMindmap,
     method: 'post',
   },
-  ask: {
-    url: ask,
-    method: 'post',
-  },
-  getMindMap: {
-    url: mindmap,
-    method: 'post',
-  },
-  getRelatedQuestions: {
-    url: getRelatedQuestions,
+  chatsRelatedQuestions: {
+    url: chatsRelatedQuestions,
     method: 'post',
   },
   uploadAndParse: {
     method: 'post',
-    url: upload_and_parse,
+    url: uploadAndParse,
   },
   fetchExternalChatInfo: {
     url: fetchExternalChatInfo,

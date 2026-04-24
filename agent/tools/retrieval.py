@@ -27,6 +27,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.memory_service import MemoryService
 from api.db.joint_services import memory_message_service
+from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from common import settings
 from common.connection_utils import timeout
 from rag.app.tag import label_question
@@ -58,7 +59,8 @@ class RetrievalParam(ToolParamBase):
         self.keywords_similarity_weight = 0.5
         self.top_n = 8
         self.top_k = 1024
-        self.kb_ids = []
+        self.dataset_ids = []
+        self.kb_ids = []  # Deprecated: keep for backward compatibility
         self.memory_ids = []
         self.kb_vars = []
         self.rerank_id = ""
@@ -84,9 +86,14 @@ class RetrievalParam(ToolParamBase):
 class Retrieval(ToolBase, ABC):
     component_name = "Retrieval"
 
+    @property
+    def _dataset_ids(self):
+        """Get dataset IDs with backward compatibility for kb_ids."""
+        return self._param.dataset_ids or getattr(self._param, "kb_ids", None) or []
+
     async def _retrieve_kb(self, query_text: str):
         kb_ids: list[str] = []
-        for id in self._param.kb_ids:
+        for id in self._dataset_ids:
             if id.find("@") < 0:
                 kb_ids.append(id)
                 continue
@@ -113,11 +120,14 @@ class Retrieval(ToolBase, ABC):
 
         embd_mdl = None
         if embd_nms:
-            embd_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.EMBEDDING, embd_nms[0])
+            tenant_id = self._canvas.get_tenant_id()
+            embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embd_nms[0])
+            embd_mdl = LLMBundle(tenant_id, embd_model_config)
 
         rerank_mdl = None
         if self._param.rerank_id:
-            rerank_mdl = LLMBundle(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
+            rerank_model_config = get_model_config_by_type_and_name(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
+            rerank_mdl = LLMBundle(kbs[0].tenant_id, rerank_model_config)
 
         vars = self.get_input_elements_from_text(query_text)
         vars = {k: o["value"] for k, o in vars.items()}
@@ -158,7 +168,9 @@ class Retrieval(ToolBase, ABC):
 
             chat_mdl = None
             if self._param.meta_data_filter.get("method") in ["auto", "semi_auto"]:
-                chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT)
+                tenant_id = self._canvas.get_tenant_id()
+                chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+                chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
             doc_ids = await apply_meta_data_filter(
                 self._param.meta_data_filter,
@@ -184,7 +196,7 @@ class Retrieval(ToolBase, ABC):
                 self._param.similarity_threshold,
                 1 - self._param.keywords_similarity_weight,
                 doc_ids=doc_ids,
-                aggs=False,
+                aggs=True,
                 rerank_mdl=rerank_mdl,
                 rank_feature=label_question(query, kbs),
             )
@@ -192,7 +204,9 @@ class Retrieval(ToolBase, ABC):
                 return
 
             if self._param.toc_enhance:
-                chat_mdl = LLMBundle(self._canvas._tenant_id, LLMType.CHAT)
+                tenant_id = self._canvas._tenant_id
+                chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+                chat_mdl = LLMBundle(tenant_id, chat_model_config)
                 cks = await settings.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs],
                                                           chat_mdl, self._param.top_n)
                 if self.check_if_canceled("Retrieval processing"):
@@ -202,11 +216,13 @@ class Retrieval(ToolBase, ABC):
             kbinfos["chunks"] = settings.retriever.retrieval_by_children(kbinfos["chunks"],
                                                                          [kb.tenant_id for kb in kbs])
             if self._param.use_kg:
+                tenant_id = self._canvas.get_tenant_id()
+                chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
                 ck = await settings.kg_retriever.retrieval(query,
                                                      [kb.tenant_id for kb in kbs],
                                                      kb_ids,
                                                      embd_mdl,
-                                                     LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT))
+                                                     LLMBundle(tenant_id, chat_model_config))
                 if self.check_if_canceled("Retrieval processing"):
                     return
                 if ck["content_with_weight"]:
@@ -215,8 +231,9 @@ class Retrieval(ToolBase, ABC):
             kbinfos = {"chunks": [], "doc_aggs": []}
 
         if self._param.use_kg and kbs:
+            chat_model_config = get_tenant_default_model_by_type(kbs[0].tenant_id, LLMType.CHAT)
             ck = await settings.kg_retriever.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl,
-                                                 LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
+                                                 LLMBundle(kbs[0].tenant_id, chat_model_config))
             if self.check_if_canceled("Retrieval processing"):
                 return
             if ck["content_with_weight"]:
@@ -248,6 +265,7 @@ class Retrieval(ToolBase, ABC):
 
     async def _retrieve_memory(self, query_text: str):
         memory_ids: list[str] = [memory_id for memory_id in self._param.memory_ids]
+        user_id: str = self._param.user_id if hasattr(self._param, "user_id") else None
         memory_list = MemoryService.get_by_ids(memory_ids)
         if not memory_list:
             raise Exception("No memory is selected.")
@@ -259,7 +277,14 @@ class Retrieval(ToolBase, ABC):
         vars = {k: o["value"] for k, o in vars.items()}
         query = self.string_format(query_text, vars)
         # query message
-        message_list = memory_message_service.query_message({"memory_id": memory_ids}, {
+        filter_dict: dict = {"memory_id": memory_ids}
+        if user_id:
+            import re
+            # is variable
+            if re.match(r"^{.*}$", user_id):
+                user_id = self._canvas.get_variable_value(user_id)
+            filter_dict["user_id"] = user_id
+        message_list = memory_message_service.query_message(filter_dict, {
             "query": query,
             "similarity_threshold": self._param.similarity_threshold,
             "keywords_similarity_weight": self._param.keywords_similarity_weight,
@@ -286,7 +311,7 @@ class Retrieval(ToolBase, ABC):
             return await self._retrieve_kb(kwargs["query"])
         elif hasattr(self._param, "retrieval_from") and self._param.retrieval_from == "memory":
             return await self._retrieve_memory(kwargs["query"])
-        elif self._param.kb_ids:
+        elif self._dataset_ids:
             return await self._retrieve_kb(kwargs["query"])
         elif hasattr(self._param, "memory_ids") and self._param.memory_ids:
             return await self._retrieve_memory(kwargs["query"])
