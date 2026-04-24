@@ -174,11 +174,6 @@ func (z *GiteeModel) Chat(modelName, message *string, apiConfig *APIConfig, chat
 
 	thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelSeries, &content)
 
-	if chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-	} else {
-		thinking = nil
-	}
-
 	chatResponse := &ChatResponse{
 		Answer:        answer,
 		ReasonContent: thinking,
@@ -266,6 +261,10 @@ func (z *GiteeModel) ChatStreamlyWithSender(modelName, message *string, apiConfi
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
+	reserveText := ""
+	thinkingPhase := false
+	answerPhase := false
+
 	// SSE parsing: read line by line
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
@@ -308,21 +307,44 @@ func (z *GiteeModel) ChatStreamlyWithSender(modelName, message *string, apiConfi
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
+			if content == "<think>" {
+				thinkingPhase = true
+				continue
 
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
+			} else if content == "</think>" {
+				thinkingPhase = false
+				answerPhase = true
+				continue
+			}
+
+			if thinkingPhase {
+				if err = sender(nil, &content); err != nil {
+					return err
+				}
+				reserveText = ""
+			} else if answerPhase {
+				if err = sender(&content, nil); err != nil {
+					return err
+				}
+				reserveText = ""
+			} else {
+				content = strings.Trim(content, "\n")
+				content = strings.Trim(content, " ")
+				if content != "" {
+					reserveText += content
+				}
 			}
 		}
 
 		finishReason, ok := firstChoice["finish_reason"].(string)
 		if ok && finishReason != "" {
 			break
+		}
+	}
+
+	if reserveText != "" {
+		if err = sender(&reserveText, nil); err != nil {
+			return err
 		}
 	}
 

@@ -1513,6 +1513,7 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 					if reasoningPrint {
 						fmt.Print("Thinking: ")
 						reasoningPrint = false
+						thinking = true
 					} else {
 						fmt.Print(data)
 					}
