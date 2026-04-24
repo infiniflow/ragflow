@@ -1,0 +1,298 @@
+{
+  "id": 0,
+  "title": {
+    "en": "interactive_research",
+    "zh": "interactive_research"
+  },
+  "description": {
+    "en": "Two-stage research workflow with planning and human feedback.",
+    "zh": "Two-stage research workflow with planning and human feedback."
+  },
+  "canvas_type": "Agent",
+  "dsl": {
+    "components": {
+      "begin": {
+        "downstream": [
+          "Agent:Plan"
+        ],
+        "obj": {
+          "component_name": "Begin",
+          "params": {
+            "enablePrologue": true,
+            "inputs": {},
+            "mode": "conversational",
+            "prologue": "Hi! Describe the research task you want to automate."
+          }
+        },
+        "upstream": []
+      },
+      "Agent:Plan": {
+        "downstream": [
+          "UserFillUp:ReviewPlan"
+        ],
+        "obj": {
+          "component_name": "Agent",
+          "params": {
+            "cite": true,
+            "delay_after_error": 1,
+            "description": "",
+            "exception_default_value": "",
+            "exception_goto": [],
+            "exception_method": "",
+            "frequencyPenaltyEnabled": false,
+            "frequency_penalty": 0.7,
+            "llm_id": "qwen-turbo@Tongyi-Qianwen",
+            "maxTokensEnabled": false,
+            "max_retries": 3,
+            "max_rounds": 1,
+            "max_tokens": 512,
+            "mcp": [],
+            "message_history_window_size": 12,
+            "outputs": {
+              "content": {
+                "type": "string",
+                "value": ""
+              },
+              "structured": {}
+            },
+            "presencePenaltyEnabled": false,
+            "presence_penalty": 0.4,
+            "prompts": [
+              {
+                "role": "user",
+                "content": "User query:{sys.query}"
+              }
+            ],
+            "sys_prompt": "You are the planning agent. Break the scenario into concrete research steps, define what evidence is needed, and prepare a short execution plan.",
+            "temperature": 0.1,
+            "temperatureEnabled": false,
+            "tools": [],
+            "topPEnabled": false,
+            "top_p": 0.3,
+            "user_prompt": "",
+            "visual_files_var": ""
+          }
+        },
+        "upstream": [
+          "begin"
+        ]
+      },
+      "UserFillUp:ReviewPlan": {
+        "downstream": [
+          "Agent:ExecuteResearch"
+        ],
+        "obj": {
+          "component_name": "UserFillUp",
+          "params": {
+            "enable_tips": true,
+            "inputs": {
+              "instructions": {
+                "name": "instructions",
+                "optional": false,
+                "options": [],
+                "type": "paragraph"
+              }
+            },
+            "outputs": {
+              "instructions": {
+                "name": "instructions",
+                "optional": false,
+                "options": [],
+                "type": "paragraph"
+              }
+            },
+            "tips": "Here is the draft plan:\n{Agent:Plan@content}\nPlease refine or approve it before execution."
+          }
+        },
+        "upstream": [
+          "Agent:Plan"
+        ]
+      },
+      "Agent:ExecuteResearch": {
+        "downstream": [
+          "Message:Output"
+        ],
+        "obj": {
+          "component_name": "Agent",
+          "params": {
+            "cite": true,
+            "delay_after_error": 1,
+            "description": "",
+            "exception_default_value": "",
+            "exception_goto": [],
+            "exception_method": "",
+            "frequencyPenaltyEnabled": false,
+            "frequency_penalty": 0.7,
+            "llm_id": "qwen-turbo@Tongyi-Qianwen",
+            "maxTokensEnabled": false,
+            "max_retries": 3,
+            "max_rounds": 3,
+            "max_tokens": 512,
+            "mcp": [],
+            "message_history_window_size": 12,
+            "outputs": {
+              "content": {
+                "type": "string",
+                "value": ""
+              },
+              "structured": {}
+            },
+            "presencePenaltyEnabled": false,
+            "presence_penalty": 0.4,
+            "prompts": [
+              {
+                "role": "user",
+                "content": "Plan:{Agent:Plan@content}\nUser feedback:{UserFillUp:ReviewPlan@instructions}\nQuery:{sys.query}"
+              }
+            ],
+            "sys_prompt": "You are the execution agent. Follow the approved plan, collect evidence, and draft a concise final answer with clear traceability.",
+            "temperature": 0.1,
+            "temperatureEnabled": false,
+            "tools": [],
+            "topPEnabled": false,
+            "top_p": 0.3,
+            "user_prompt": "",
+            "visual_files_var": ""
+          }
+        },
+        "upstream": [
+          "UserFillUp:ReviewPlan"
+        ]
+      },
+      "Message:Output": {
+        "downstream": [],
+        "obj": {
+          "component_name": "Message",
+          "params": {
+            "content": [
+              "{Agent:ExecuteResearch@content}"
+            ]
+          }
+        },
+        "upstream": [
+          "Agent:ExecuteResearch"
+        ]
+      }
+    },
+    "globals": {
+      "sys.conversation_turns": 0,
+      "sys.date": "",
+      "sys.files": [],
+      "sys.history": [],
+      "sys.query": "",
+      "sys.user_id": ""
+    },
+    "graph": {
+      "edges": [
+        {
+          "id": "xy-edge__beginstart-Agent:Planend",
+          "source": "begin",
+          "sourceHandle": "start",
+          "target": "Agent:Plan",
+          "targetHandle": "end",
+          "data": {
+            "isHovered": false
+          }
+        },
+        {
+          "id": "xy-edge__Agent:Planstart-UserFillUp:ReviewPlanend",
+          "source": "Agent:Plan",
+          "sourceHandle": "start",
+          "target": "UserFillUp:ReviewPlan",
+          "targetHandle": "end",
+          "data": {
+            "isHovered": false
+          }
+        },
+        {
+          "id": "xy-edge__UserFillUp:ReviewPlanstart-Agent:ExecuteResearchend",
+          "source": "UserFillUp:ReviewPlan",
+          "sourceHandle": "start",
+          "target": "Agent:ExecuteResearch",
+          "targetHandle": "end",
+          "data": {
+            "isHovered": false
+          }
+        },
+        {
+          "id": "xy-edge__Agent:ExecuteResearchstart-Message:Outputend",
+          "source": "Agent:ExecuteResearch",
+          "sourceHandle": "start",
+          "target": "Message:Output",
+          "targetHandle": "end",
+          "data": {
+            "isHovered": false
+          }
+        }
+      ],
+      "nodes": [
+        {
+          "id": "begin",
+          "data": {
+            "label": "Begin",
+            "name": "begin"
+          },
+          "position": {
+            "x": 120,
+            "y": 160
+          }
+        },
+        {
+          "id": "Agent:Plan",
+          "data": {
+            "label": "Agent",
+            "name": "Agent:Plan"
+          },
+          "position": {
+            "x": 380,
+            "y": 160
+          }
+        },
+        {
+          "id": "UserFillUp:ReviewPlan",
+          "data": {
+            "label": "UserFillUp",
+            "name": "UserFillUp:ReviewPlan"
+          },
+          "position": {
+            "x": 640,
+            "y": 160
+          }
+        },
+        {
+          "id": "Agent:ExecuteResearch",
+          "data": {
+            "label": "Agent",
+            "name": "Agent:ExecuteResearch"
+          },
+          "position": {
+            "x": 900,
+            "y": 160
+          }
+        },
+        {
+          "id": "Message:Output",
+          "data": {
+            "label": "Message",
+            "name": "Message:Output"
+          },
+          "position": {
+            "x": 1160,
+            "y": 160
+          }
+        }
+      ]
+    },
+    "history": [],
+    "messages": [],
+    "path": [
+      "begin"
+    ],
+    "retrieval": {
+      "chunks": [],
+      "doc_aggs": []
+    },
+    "variables": {}
+  },
+  "avatar": ""
+}

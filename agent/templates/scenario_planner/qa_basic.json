@@ -1,0 +1,174 @@
+{
+  "id": 0,
+  "title": {
+    "en": "qa_basic",
+    "zh": "qa_basic"
+  },
+  "description": {
+    "en": "Simple question answering or retrieval assistant.",
+    "zh": "Simple question answering or retrieval assistant."
+  },
+  "canvas_type": "Agent",
+  "dsl": {
+    "components": {
+      "begin": {
+        "downstream": [
+          "Agent:DraftAnswer"
+        ],
+        "obj": {
+          "component_name": "Begin",
+          "params": {
+            "enablePrologue": true,
+            "inputs": {},
+            "mode": "conversational",
+            "prologue": "Hi! Describe the task you want this workflow to handle."
+          }
+        },
+        "upstream": []
+      },
+      "Agent:DraftAnswer": {
+        "downstream": [
+          "Message:Output"
+        ],
+        "obj": {
+          "component_name": "Agent",
+          "params": {
+            "cite": true,
+            "delay_after_error": 1,
+            "description": "",
+            "exception_default_value": "",
+            "exception_goto": [],
+            "exception_method": "",
+            "frequencyPenaltyEnabled": false,
+            "frequency_penalty": 0.7,
+            "llm_id": "qwen-turbo@Tongyi-Qianwen",
+            "maxTokensEnabled": false,
+            "max_retries": 3,
+            "max_rounds": 1,
+            "max_tokens": 512,
+            "mcp": [],
+            "message_history_window_size": 12,
+            "outputs": {
+              "content": {
+                "type": "string",
+                "value": ""
+              },
+              "structured": {}
+            },
+            "presencePenaltyEnabled": false,
+            "presence_penalty": 0.4,
+            "prompts": [
+              {
+                "role": "user",
+                "content": "{sys.query}"
+              }
+            ],
+            "sys_prompt": "You are a draft QA agent skeleton. Users should replace this prompt, attach tools, and refine citations or retrieval settings as needed.",
+            "temperature": 0.1,
+            "temperatureEnabled": false,
+            "tools": [],
+            "topPEnabled": false,
+            "top_p": 0.3,
+            "user_prompt": "",
+            "visual_files_var": ""
+          }
+        },
+        "upstream": [
+          "begin"
+        ]
+      },
+      "Message:Output": {
+        "downstream": [],
+        "obj": {
+          "component_name": "Message",
+          "params": {
+            "content": [
+              "{Agent:DraftAnswer@content}"
+            ]
+          }
+        },
+        "upstream": [
+          "Agent:DraftAnswer"
+        ]
+      }
+    },
+    "globals": {
+      "sys.conversation_turns": 0,
+      "sys.date": "",
+      "sys.files": [],
+      "sys.history": [],
+      "sys.query": "",
+      "sys.user_id": ""
+    },
+    "graph": {
+      "edges": [
+        {
+          "id": "xy-edge__beginstart-Agent:DraftAnswerend",
+          "source": "begin",
+          "sourceHandle": "start",
+          "target": "Agent:DraftAnswer",
+          "targetHandle": "end",
+          "data": {
+            "isHovered": false
+          }
+        },
+        {
+          "id": "xy-edge__Agent:DraftAnswerstart-Message:Outputend",
+          "source": "Agent:DraftAnswer",
+          "sourceHandle": "start",
+          "target": "Message:Output",
+          "targetHandle": "end",
+          "data": {
+            "isHovered": false
+          }
+        }
+      ],
+      "nodes": [
+        {
+          "id": "begin",
+          "data": {
+            "label": "Begin",
+            "name": "begin"
+          },
+          "position": {
+            "x": 120,
+            "y": 160
+          }
+        },
+        {
+          "id": "Agent:DraftAnswer",
+          "data": {
+            "label": "Agent",
+            "name": "Agent:DraftAnswer"
+          },
+          "position": {
+            "x": 380,
+            "y": 160
+          }
+        },
+        {
+          "id": "Message:Output",
+          "data": {
+            "label": "Message",
+            "name": "Message:Output"
+          },
+          "position": {
+            "x": 640,
+            "y": 160
+          }
+        }
+      ]
+    },
+    "history": [],
+    "messages": [],
+    "path": [
+      "begin"
+    ],
+    "retrieval": {
+      "chunks": [],
+      "doc_aggs": []
+    },
+    "variables": {}
+  },
+  "avatar": ""
+}

@@ -40,6 +40,7 @@ from api.utils.api_utils import (
 )
 from agent.canvas import Canvas
 from agent.dsl_migration import normalize_chunker_dsl
+from agent.scenario_planner import ScenarioPlanner
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken, Task
 
@@ -56,6 +57,50 @@ from api.db.services.canvas_service import completion as agent_completion
 @login_required
 def templates():
     return get_json_result(data=[c.to_dict() for c in CanvasTemplateService.get_all()])
+
+
+@manager.route('/scenario_plan', methods=['POST'])  # noqa: F821
+@validate_request("title", "scenario")
+@login_required
+async def scenario_plan():
+    req = await get_request_json()
+    existing_dsl = req.get("existing_dsl")
+    if existing_dsl is not None and not isinstance(existing_dsl, dict):
+        return get_data_error_result(message="existing_dsl must be a JSON object.")
+    canvas_category = req.get("canvas_category", CanvasCategory.Agent)
+    if canvas_category not in {CanvasCategory.Agent, CanvasCategory.DataFlow}:
+        return get_data_error_result(message="canvas_category must be one of: agent_canvas, dataflow_canvas.")
+
+    requested_mode = "modify" if existing_dsl is not None else "create"
+    logging.info(
+        "scenario_plan request user_id=%s mode=%s",
+        current_user.id,
+        requested_mode,
+    )
+    planner = ScenarioPlanner()
+    try:
+        draft = planner.plan(
+            title=req["title"],
+            scenario=req["scenario"],
+            canvas_category=canvas_category,
+            existing_dsl=existing_dsl,
+        )
+    except ValueError as e:
+        logging.warning(
+            "scenario_plan validation_failed user_id=%s mode=%s error=%s",
+            current_user.id,
+            requested_mode,
+            str(e),
+        )
+        return get_data_error_result(message=str(e))
+    logging.info(
+        "scenario_plan result user_id=%s mode=%s archetype=%s operations=%s",
+        current_user.id,
+        draft.get("mode"),
+        draft.get("archetype"),
+        len(draft.get("operations", []) or []),
+    )
+    return get_json_result(data=draft)
 
 
 @manager.route('/rm', methods=['POST'])  # noqa: F821

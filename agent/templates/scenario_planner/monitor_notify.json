@@ -1,0 +1,406 @@
+{
+  "id": 0,
+  "title": {
+    "en": "monitor_notify",
+    "zh": "monitor_notify"
+  },
+  "description": {
+    "en": "Fetch/analyze/branch/notify skeleton for monitoring tasks.",
+    "zh": "Fetch/analyze/branch/notify skeleton for monitoring tasks."
+  },
+  "canvas_type": "Agent",
+  "dsl": {
+    "components": {
+      "begin": {
+        "downstream": [
+          "Agent:FetchState"
+        ],
+        "obj": {
+          "component_name": "Begin",
+          "params": {
+            "enablePrologue": true,
+            "inputs": {},
+            "mode": "conversational",
+            "prologue": "Hi! Describe what should be monitored and how you want to be notified."
+          }
+        },
+        "upstream": []
+      },
+      "Agent:FetchState": {
+        "downstream": [
+          "Agent:CompareState"
+        ],
+        "obj": {
+          "component_name": "Agent",
+          "params": {
+            "cite": true,
+            "delay_after_error": 1,
+            "description": "",
+            "exception_default_value": "",
+            "exception_goto": [],
+            "exception_method": "",
+            "frequencyPenaltyEnabled": false,
+            "frequency_penalty": 0.7,
+            "llm_id": "qwen-turbo@Tongyi-Qianwen",
+            "maxTokensEnabled": false,
+            "max_retries": 3,
+            "max_rounds": 1,
+            "max_tokens": 512,
+            "mcp": [],
+            "message_history_window_size": 12,
+            "outputs": {
+              "content": {
+                "type": "string",
+                "value": ""
+              },
+              "structured": {}
+            },
+            "presencePenaltyEnabled": false,
+            "presence_penalty": 0.4,
+            "prompts": [
+              {
+                "role": "user",
+                "content": "Monitoring target:{sys.query}"
+              }
+            ],
+            "sys_prompt": "You are the fetch step skeleton. Configure this node to collect the latest state from the monitored source before comparison.",
+            "temperature": 0.1,
+            "temperatureEnabled": false,
+            "tools": [],
+            "topPEnabled": false,
+            "top_p": 0.3,
+            "user_prompt": "",
+            "visual_files_var": ""
+          }
+        },
+        "upstream": [
+          "begin"
+        ]
+      },
+      "Agent:CompareState": {
+        "downstream": [
+          "Switch:Decision"
+        ],
+        "obj": {
+          "component_name": "Agent",
+          "params": {
+            "cite": true,
+            "delay_after_error": 1,
+            "description": "",
+            "exception_default_value": "",
+            "exception_goto": [],
+            "exception_method": "",
+            "frequencyPenaltyEnabled": false,
+            "frequency_penalty": 0.7,
+            "llm_id": "qwen-turbo@Tongyi-Qianwen",
+            "maxTokensEnabled": false,
+            "max_retries": 3,
+            "max_rounds": 1,
+            "max_tokens": 512,
+            "mcp": [],
+            "message_history_window_size": 12,
+            "outputs": {
+              "content": {
+                "type": "string",
+                "value": ""
+              },
+              "structured": {}
+            },
+            "presencePenaltyEnabled": false,
+            "presence_penalty": 0.4,
+            "prompts": [
+              {
+                "role": "user",
+                "content": "Fetched state:{Agent:FetchState@content}\nOriginal task:{sys.query}"
+              }
+            ],
+            "sys_prompt": "You are the comparison step skeleton. Decide whether there is a meaningful change. Return CHANGED or NO_CHANGE plus a short rationale.",
+            "temperature": 0.1,
+            "temperatureEnabled": false,
+            "tools": [],
+            "topPEnabled": false,
+            "top_p": 0.3,
+            "user_prompt": "",
+            "visual_files_var": ""
+          }
+        },
+        "upstream": [
+          "Agent:FetchState"
+        ]
+      },
+      "Switch:Decision": {
+        "downstream": [
+          "Agent:Notify",
+          "Message:NoChange"
+        ],
+        "obj": {
+          "component_name": "Switch",
+          "params": {
+            "conditions": [
+              {
+                "items": [
+                  {
+                    "cpn_id": "Agent:CompareState@content",
+                    "operator": "contains",
+                    "value": "CHANGED"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "Agent:Notify"
+                ]
+              }
+            ],
+            "end_cpn_ids": [
+              "Message:NoChange"
+            ]
+          }
+        },
+        "upstream": [
+          "Agent:CompareState"
+        ]
+      },
+      "Agent:Notify": {
+        "downstream": [
+          "Message:Output"
+        ],
+        "obj": {
+          "component_name": "Agent",
+          "params": {
+            "cite": true,
+            "delay_after_error": 1,
+            "description": "",
+            "exception_default_value": "",
+            "exception_goto": [],
+            "exception_method": "",
+            "frequencyPenaltyEnabled": false,
+            "frequency_penalty": 0.7,
+            "llm_id": "qwen-turbo@Tongyi-Qianwen",
+            "maxTokensEnabled": false,
+            "max_retries": 3,
+            "max_rounds": 1,
+            "max_tokens": 512,
+            "mcp": [],
+            "message_history_window_size": 12,
+            "outputs": {
+              "content": {
+                "type": "string",
+                "value": ""
+              },
+              "structured": {}
+            },
+            "presencePenaltyEnabled": false,
+            "presence_penalty": 0.4,
+            "prompts": [
+              {
+                "role": "user",
+                "content": "Comparison result:{Agent:CompareState@content}\nTask:{sys.query}"
+              }
+            ],
+            "sys_prompt": "You are the notification step skeleton. Prepare the alert payload, summary, or follow-up action when a change is detected.",
+            "temperature": 0.1,
+            "temperatureEnabled": false,
+            "tools": [],
+            "topPEnabled": false,
+            "top_p": 0.3,
+            "user_prompt": "",
+            "visual_files_var": ""
+          }
+        },
+        "upstream": [
+          "Switch:Decision"
+        ]
+      },
+      "Message:NoChange": {
+        "downstream": [],
+        "obj": {
+          "component_name": "Message",
+          "params": {
+            "content": [
+              "No meaningful change was detected."
+            ]
+          }
+        },
+        "upstream": [
+          "Switch:Decision"
+        ]
+      },
+      "Message:Output": {
+        "downstream": [],
+        "obj": {
+          "component_name": "Message",
+          "params": {
+            "content": [
+              "{Agent:Notify@content}"
+            ]
+          }
+        },
+        "upstream": [
+          "Agent:Notify"
+        ]
+      }
+    },
+    "globals": {
+      "sys.conversation_turns": 0,
+      "sys.date": "",
+      "sys.files": [],
+      "sys.history": [],
+      "sys.query": "",
+      "sys.user_id": ""
+    },
+    "graph": {
+      "edges": [
+        {
+          "id": "xy-edge__beginstart-Agent:FetchStateend",
+          "source": "begin",
+          "sourceHandle": "start",
+          "target": "Agent:FetchState",
+          "targetHandle": "end",
+          "data": {
+            "isHovered": false
+          }
+        },
+        {
+          "id": "xy-edge__Agent:FetchStatestart-Agent:CompareStateend",
+          "source": "Agent:FetchState",
+          "sourceHandle": "start",
+          "target": "Agent:CompareState",
+          "targetHandle": "end",
+          "data": {
+            "isHovered": false
+          }
+        },
+        {
+          "id": "xy-edge__Agent:CompareStatestart-Switch:Decisionend",
+          "source": "Agent:CompareState",
+          "sourceHandle": "start",
+          "target": "Switch:Decision",
+          "targetHandle": "end",
+          "data": {
+            "isHovered": false
+          }
+        },
+        {
+          "id": "xy-edge__Switch:Decisionstart-Agent:Notifyend",
+          "source": "Switch:Decision",
+          "sourceHandle": "start",
+          "target": "Agent:Notify",
+          "targetHandle": "end",
+          "data": {
+            "isHovered": false
+          }
+        },
+        {
+          "id": "xy-edge__Switch:Decisionstart-Message:NoChangeend",
+          "source": "Switch:Decision",
+          "sourceHandle": "start",
+          "target": "Message:NoChange",
+          "targetHandle": "end",
+          "data": {
+            "isHovered": false
+          }
+        },
+        {
+          "id": "xy-edge__Agent:Notifystart-Message:Outputend",
+          "source": "Agent:Notify",
+          "sourceHandle": "start",
+          "target": "Message:Output",
+          "targetHandle": "end",
+          "data": {
+            "isHovered": false
+          }
+        }
+      ],
+      "nodes": [
+        {
+          "id": "begin",
+          "data": {
+            "label": "Begin",
+            "name": "begin"
+          },
+          "position": {
+            "x": 120,
+            "y": 160
+          }
+        },
+        {
+          "id": "Agent:FetchState",
+          "data": {
+            "label": "Agent",
+            "name": "Agent:FetchState"
+          },
+          "position": {
+            "x": 380,
+            "y": 160
+          }
+        },
+        {
+          "id": "Agent:CompareState",
+          "data": {
+            "label": "Agent",
+            "name": "Agent:CompareState"
+          },
+          "position": {
+            "x": 640,
+            "y": 160
+          }
+        },
+        {
+          "id": "Switch:Decision",
+          "data": {
+            "label": "Switch",
+            "name": "Switch:Decision"
+          },
+          "position": {
+            "x": 900,
+            "y": 160
+          }
+        },
+        {
+          "id": "Agent:Notify",
+          "data": {
+            "label": "Agent",
+            "name": "Agent:Notify"
+          },
+          "position": {
+            "x": 1160,
+            "y": 160
+          }
+        },
+        {
+          "id": "Message:NoChange",
+          "data": {
+            "label": "Message",
+            "name": "Message:NoChange"
+          },
+          "position": {
+            "x": 1420,
+            "y": 160
+          }
+        },
+        {
+          "id": "Message:Output",
+          "data": {
+            "label": "Message",
+            "name": "Message:Output"
+          },
+          "position": {
+            "x": 1680,
+            "y": 160
+          }
+        }
+      ]
+    },
+    "history": [],
+    "messages": [],
+    "path": [
+      "begin"
+    ],
+    "retrieval": {
+      "chunks": [],
+      "doc_aggs": []
+    },
+    "variables": {}
+  },
+  "avatar": ""
+}
