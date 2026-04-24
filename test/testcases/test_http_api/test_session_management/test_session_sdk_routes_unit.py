@@ -552,6 +552,7 @@ def _load_agent_api_module(monkeypatch):
 
     api_apps_mod = ModuleType("api.apps")
     api_apps_mod.__path__ = [str(repo_root / "api" / "apps")]
+    api_apps_mod.current_user = SimpleNamespace(id="tenant-1")
     api_apps_mod.login_required = lambda func: func
     monkeypatch.setitem(sys.modules, "api.apps", api_apps_mod)
 
