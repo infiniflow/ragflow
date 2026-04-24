@@ -690,9 +690,6 @@ async def upload_info():
     files = await request.files
     file_objs = files.getlist("file") if files and files.get("file") else []
     url = request.args.get("url")
-    if not url and not file_objs:
-        req = await get_request_json()
-        url = req.get("url") if req else None
 
     if file_objs and url:
         return get_json_result(
