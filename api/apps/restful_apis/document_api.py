@@ -893,6 +893,44 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
     return get_result(data=doc.to_dict())
 
 
+@manager.route("/thumbnails", methods=["GET"])  # noqa: F821
+def list_thumbnails():
+    """
+    Get thumbnails for documents.
+    ---
+    tags:
+      - Documents
+    parameters:
+      - in: query
+        name: doc_ids
+        type: array
+        required: true
+        description: List of document IDs to get thumbnails for.
+    responses:
+      200:
+        description: Successfully retrieved thumbnails
+      400:
+        description: Missing document IDs
+    """
+    from api.constants import IMG_BASE64_PREFIX
+    from api.db.services.document_service import DocumentService
+
+    doc_ids = request.args.getlist("doc_ids")
+    if not doc_ids:
+        return get_json_result(data=False, message='Lack of "Document ID"', code=RetCode.ARGUMENT_ERROR)
+
+    try:
+        docs = DocumentService.get_thumbnails(doc_ids)
+
+        for doc_item in docs:
+            if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
+                doc_item["thumbnail"] = f"/v1/document/image/{doc_item['kb_id']}-{doc_item['thumbnail']}"
+
+        return get_json_result(data={d["id"]: d["thumbnail"] for d in docs})
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route("/datasets/<dataset_id>/documents/metadatas", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs

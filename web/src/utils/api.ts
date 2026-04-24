@@ -117,7 +117,7 @@ export default {
   documentCreate: `${webAPI}/document/create`,
   documentRun: `${webAPI}/document/run`,
   documentChangeParser: `${webAPI}/document/change_parser`,
-  documentThumbnails: `${webAPI}/document/thumbnails`,
+  documentThumbnails: `${restAPIv1}/thumbnails`,
   getDocumentFile: `${webAPI}/document/get`,
   getDocumentFileDownload: (docId: string) =>
     `${webAPI}/document/download/${docId}`,

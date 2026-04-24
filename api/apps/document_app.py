@@ -21,7 +21,7 @@ from quart import make_response, request
 
 from api.apps import current_user, login_required
 from api.common.check_team_permission import check_kb_team_permission
-from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
+from api.constants import FILE_NAME_LEN_LIMIT
 from api.db import FileType
 from api.db.db_models import Task
 from api.db.services import duplicate_name
@@ -178,25 +178,6 @@ async def create():
         FileService.add_file_from_kb(doc.to_dict(), kb_folder["id"], kb.tenant_id)
 
         return get_json_result(data=doc.to_json())
-    except Exception as e:
-        return server_error_response(e)
-
-
-@manager.route("/thumbnails", methods=["GET"])  # noqa: F821
-# @login_required
-def thumbnails():
-    doc_ids = request.args.getlist("doc_ids")
-    if not doc_ids:
-        return get_json_result(data=False, message='Lack of "Document ID"', code=RetCode.ARGUMENT_ERROR)
-
-    try:
-        docs = DocumentService.get_thumbnails(doc_ids)
-
-        for doc_item in docs:
-            if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-                doc_item["thumbnail"] = f"/v1/document/image/{doc_item['kb_id']}-{doc_item['thumbnail']}"
-
-        return get_json_result(data={d["id"]: d["thumbnail"] for d in docs})
     except Exception as e:
         return server_error_response(e)
 
