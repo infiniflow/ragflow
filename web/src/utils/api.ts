@@ -124,7 +124,7 @@ export default {
   documentUpload: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents`,
   webCrawl: `${webAPI}/document/web_crawl`,
-  uploadAndParse: `${webAPI}/document/upload_info`,
+  documentInfoUpload: `${restAPIv1}/documents/upload`,
   setMeta: `${webAPI}/document/set_meta`,
   getDatasetFilter: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents?type=filter`,
