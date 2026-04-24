@@ -115,7 +115,7 @@ export default {
   documentRename: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
   documentCreate: `${webAPI}/document/create`,
-  documentRun: `${webAPI}/document/run`,
+  documentIngest: `${restAPIv1}/documents/ingest`,
   documentChangeParser: `${webAPI}/document/change_parser`,
   documentThumbnails: `${webAPI}/document/thumbnails`,
   getDocumentFile: `${webAPI}/document/get`,

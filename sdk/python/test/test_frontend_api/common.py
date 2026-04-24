@@ -111,7 +111,7 @@ def get_docs_info(auth, dataset_id, doc_ids=None, doc_id=None):
 def parse_docs(auth, doc_ids):
     authorization = {"Authorization": auth}
     json_req = {"doc_ids": doc_ids, "run": 1}
-    url = f"{HOST_ADDRESS}/v1/document/run"
+    url = f"{HOST_ADDRESS}/api/v1/documents/ingest"
     res = requests.post(url=url, headers=authorization, json=json_req)
     return res.json()
 

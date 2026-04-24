@@ -22,7 +22,7 @@ const {
   documentChangeParser,
   documentThumbnails,
   retrievalTest,
-  documentRun,
+  documentIngest,
   documentUpload,
   webCrawl,
   knowledgeGraph,
@@ -67,8 +67,8 @@ const methods = {
     url: documentCreate,
     method: 'post',
   },
-  documentRun: {
-    url: documentRun,
+  documentIngest: {
+    url: documentIngest,
     method: 'post',
   },
   documentChangeParser: {
