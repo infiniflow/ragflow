@@ -2241,12 +2241,12 @@ func (p *Parser) parseChatCommand() (*Command, error) {
 	var message string
 
 	// Check if we have a quoted string that looks like a model identifier (contains two slashes)
-	// Format: 'provider/instance/model' or just 'message'
+	// Format: 'model@instance@provider' or just 'message'
 	if p.curToken.Type == TokenQuotedString {
 		firstArg := p.curToken.Value
 
 		// Check if it looks like a model identifier (contains exactly 2 slashes)
-		slashCount := strings.Count(firstArg, "/")
+		slashCount := strings.Count(firstArg, "@")
 		if slashCount == 2 {
 			// This is likely a model identifier, expect another quoted string for message
 			compositeModelName = firstArg
@@ -2369,10 +2369,10 @@ func (p *Parser) parseUseCommand() (*Command, error) {
 	}
 	p.nextToken() // consume MODEL
 
-	// Parse model identifier in format 'provider/instance/model'
+	// Parse model identifier in format 'model@instance@provider'
 	compositeModelName, err := p.parseQuotedString()
 	if err != nil {
-		return nil, fmt.Errorf("expected model identifier in format 'provider/instance/model': %w", err)
+		return nil, fmt.Errorf("expected model identifier in format 'model@instance@provider': %w", err)
 	}
 	p.nextToken()
 
