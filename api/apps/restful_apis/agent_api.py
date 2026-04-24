@@ -67,9 +67,6 @@ from rag.flow.pipeline import Pipeline
 from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
 
-from api.apps import current_user, login_required
-
-
 def _get_user_nickname(user_id: str) -> str:
     exists, user = UserService.get_by_id(user_id)
     if not exists:
