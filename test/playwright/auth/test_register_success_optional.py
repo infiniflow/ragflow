@@ -167,7 +167,7 @@ def step_03_submit_registration(
                         snap("retry_submitted" if retried else "submitted"),
                     ),
                     lambda resp: resp.request.method == "POST"
-                    and "/v1/user/register" in resp.url,
+                    and "/api/v1/users" in resp.url,
                     timeout_ms=RESULT_TIMEOUT_MS,
                 )
             except PlaywrightTimeoutError as exc:

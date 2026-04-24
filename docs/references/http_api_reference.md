@@ -4424,62 +4424,71 @@ Failure:
 
 Asks a specified agent a question to start an AI-powered conversation.
 
+Uses a single completion endpoint for all agent conversations.
+
+- Standard mode: send `agent_id` with `query`.
+- OpenAI-compatible mode: send the same endpoint with `"openai-compatible": true`.
+
 :::tip NOTE
 
-- In streaming mode, not all responses include a reference, as this depends on the system's judgement.
-- In streaming mode, the last message is an empty message:
-
-  ```
-  [DONE]
-  ```
-
-- You can optionally return step-by-step trace logs (see `return_trace` below).
+- Older agent completion routes have been removed. Use only `/api/v1/agents/chat/completion`.
+- In standard streaming mode, not all responses include a reference, as this depends on the workflow result.
+- In streaming mode, the server terminates the stream with `[DONE]`.
 
 :::
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/agents/{agent_id}/completions`
+- URL: `/api/v1/agents/chat/completion`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
-- Body:
-  - `"question"`: `string`
-  - `"stream"`: `boolean`
-  - `"session_id"`: `string` (optional)
-  - `"inputs"`: `object` (optional)
-  - `"user_id"`: `string` (optional)
-  - `"return_trace"`: `boolean` (optional, default `false`) — whether to include execution trace logs. See the `node_finished` event.
-  - `"release"`: `boolean` (optional, default `false`) - whether to visit the latest published canvas.
+
+#### Standard mode
+
+Use this mode for the native agent API.
+
+##### Body
+
+- `"agent_id"`: `string`
+- `"query"`: `string`
+- `"stream"`: `boolean`
+- `"session_id"`: `string` (optional)
+- `"inputs"`: `object` (optional)
+- `"files"`: `list[object]` (optional)
+- `"user_id"`: `string` (optional)
+- `"return_trace"`: `boolean` (optional, default `false`)
+- `"release"`: `boolean` (optional, default `false`)
 
 #### Streaming events to handle
 
 When `stream=true`, the server sends Server-Sent Events (SSE). A client should handle these events:
 
 - `message`: Streaming content from the **Message** components.
-- `message_end`: End of a **Message** component, which may include `reference`/`attachment`.
-- `node_finished`: A component finishes; `data.inputs/outputs/error/elapsed_time` describes the node result. If a component produces structured output, read it from that component's `data.outputs.structured`. If `return_trace=true`, the trace is attached inside the same `node_finished` event (`data.trace`).
+- `message_end`: End of a **Message** component, which may include `reference` or `attachment`.
+- `node_finished`: A component finishes. `data.inputs`, `data.outputs`, `data.error`, and `data.elapsed_time` describe the node result. If `return_trace=true`, the same event also contains `data.trace`.
 
 The stream terminates with `[DONE]`.
 
 :::info IMPORTANT
-You can include custom parameters in the request body, but first ensure they are defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) component.
+You can include custom parameters in the request body, but they must be defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) component first.
 :::
 
-##### Request example
+##### Request examples
 
-- If the **Begin** component does not take parameters:
+If the **Begin** component does not take parameters:
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents/{agent_id}/completions \
+     --url http://{address}/api/v1/agents/chat/completion \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
      {
-        "question": "Hello",
-        "stream": false,
+        "agent_id": "AGENT_ID",
+        "query": "Hello",
+        "stream": false
      }'
 ```
 
@@ -4487,12 +4496,13 @@ curl --request POST \
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents/{agent_id}/completions \
+     --url http://{address}/api/v1/agents/chat/completion \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
-    {
-        "question": "Hello",
+     {
+        "agent_id": "AGENT_ID",
+        "query": "",
         "stream": false,
         "inputs": {
             "line_var": {
@@ -4516,25 +4526,26 @@ curl --request POST \
                 "value": true
             }
         }
-    }'
+     }'
 ```
 
-The following code will execute the completion process
+To continue an existing session:
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents/{agent_id}/completions \
+     --url http://{address}/api/v1/agents/chat/completion \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
      {
-          "question": "Hello",
-          "stream": true,
-          "session_id": "cb2f385cb86211efa36e0242ac120005"
+        "agent_id": "AGENT_ID",
+        "query": "Hello again",
+        "stream": true,
+        "session_id": "cb2f385cb86211efa36e0242ac120005"
      }'
 ```
 
-##### Request Parameters
+##### Request parameters
 
 - `agent_id`: (*Path parameter*), `string`
   The ID of the associated agent.
@@ -4557,33 +4568,18 @@ For now, this method does *not* support a file type input/variable. As a workaro
 *You will get a corresponding file ID from its response body.*
 :::
 
-#### Response
+##### Response
 
-success without `session_id` provided and with no variables specified in the **Begin** component:
-
-Stream:
+Standard mode stream:
 
 ```json
-...
-
 data: {
     "event": "message",
     "message_id": "cecdcb0e83dc11f0858253708ecb6573",
     "created_at": 1756364483,
     "task_id": "d1f79142831f11f09cc51795b9eb07c0",
     "data": {
-        "content": " themes"
-    },
-    "session_id": "cd097ca083dc11f0858253708ecb6573"
-}
-
-data: {
-    "event": "message",
-    "message_id": "cecdcb0e83dc11f0858253708ecb6573",
-    "created_at": 1756364483,
-    "task_id": "d1f79142831f11f09cc51795b9eb07c0",
-    "data": {
-        "content": "."
+        "content": "Hello"
     },
     "session_id": "cd097ca083dc11f0858253708ecb6573"
 }
@@ -4594,140 +4590,7 @@ data: {
     "created_at": 1756364483,
     "task_id": "d1f79142831f11f09cc51795b9eb07c0",
     "data": {
-        "reference": {
-            "chunks": {
-                "20": {
-                    "id": "4b8935ac0a22deb1",
-                    "content": "```cd /usr/ports/editors/neovim/ && make install```## Android[Termux](https://github.com/termux/termux-app) offers a Neovim package.",
-                    "document_id": "4bdd2ff65e1511f0907f09f583941b45",
-                    "document_name": "INSTALL22.md",
-                    "dataset_id": "456ce60c5e1511f0907f09f583941b45",
-                    "image_id": "",
-                    "positions": [
-                        [
-                            12,
-                            11,
-                            11,
-                            11,
-                            11
-                        ]
-                    ],
-                    "url": null,
-                    "similarity": 0.5705525104787287,
-                    "vector_similarity": 0.7351750337624289,
-                    "term_similarity": 0.5000000005,
-                    "doc_type": ""
-                }
-            },
-            "doc_aggs": {
-                "INSTALL22.md": {
-                    "doc_name": "INSTALL22.md",
-                    "doc_id": "4bdd2ff65e1511f0907f09f583941b45",
-                    "count": 3
-                },
-                "INSTALL.md": {
-                    "doc_name": "INSTALL.md",
-                    "doc_id": "4bd7fdd85e1511f0907f09f583941b45",
-                    "count": 2
-                },
-                "INSTALL(1).md": {
-                    "doc_name": "INSTALL(1).md",
-                    "doc_id": "4bdfb42e5e1511f0907f09f583941b45",
-                    "count": 2
-                },
-                "INSTALL3.md": {
-                    "doc_name": "INSTALL3.md",
-                    "doc_id": "4bdab5825e1511f0907f09f583941b45",
-                    "count": 1
-                }
-            }
-        }
-    },
-    "session_id": "cd097ca083dc11f0858253708ecb6573"
-}
-
-data: {
-    "event": "node_finished",
-    "message_id": "cecdcb0e83dc11f0858253708ecb6573",
-    "created_at": 1756364483,
-    "task_id": "d1f79142831f11f09cc51795b9eb07c0",
-    "data": {
-        "inputs": {
-            "sys.query": "how to install neovim?"
-        },
-        "outputs": {
-            "content": "xxxxxxx",
-            "_created_time": 15294.0382,
-            "_elapsed_time": 0.00017
-        },
-        "component_id": "Agent:EveryHairsChew",
-        "component_name": "Agent_1",
-        "component_type": "Agent",
-        "error": null,
-        "elapsed_time": 11.2091,
-        "created_at": 15294.0382,
-        "trace": [
-            {
-                "component_id": "begin",
-                "trace": [
-                    {
-                        "inputs": {},
-                        "outputs": {
-                            "_created_time": 15257.7949,
-                            "_elapsed_time": 0.00070
-                        },
-                        "component_id": "begin",
-                        "component_name": "begin",
-                        "component_type": "Begin",
-                        "error": null,
-                        "elapsed_time": 0.00085,
-                        "created_at": 15257.7949
-                    }
-                ]
-            },
-            {
-                "component_id": "Agent:WeakDragonsRead",
-                "trace": [
-                    {
-                        "inputs": {
-                            "sys.query": "how to install neovim?"
-                        },
-                        "outputs": {
-                            "content": "xxxxxxx",
-                            "_created_time": 15257.7982,
-                            "_elapsed_time": 36.2382
-                        },
-                        "component_id": "Agent:WeakDragonsRead",
-                        "component_name": "Agent_0",
-                        "component_type": "Agent",
-                        "error": null,
-                        "elapsed_time": 36.2385,
-                        "created_at": 15257.7982
-                    }
-                ]
-            },
-            {
-                "component_id": "Agent:EveryHairsChew",
-                "trace": [
-                    {
-                        "inputs": {
-                            "sys.query": "how to install neovim?"
-                        },
-                        "outputs": {
-                            "content": "xxxxxxxxxxxxxxxxx",
-                            "_created_time": 15294.0382,
-                            "_elapsed_time": 0.00017
-                        },
-                        "component_id": "Agent:EveryHairsChew",
-                        "component_name": "Agent_1",
-                        "component_type": "Agent",
-                        "error": null,
-                        "elapsed_time": 11.2091,
-                        "created_at": 15294.0382
-                    }
-                ]
-            }
-        ]
+        "reference": {}
     },
     "session_id": "cd097ca083dc11f0858253708ecb6573"
 }
@@ -4737,175 +4600,17 @@ data:[DONE]
 
 When `extra_body.reference_metadata.include` is `true`, each reference chunk may include a `document_metadata` object.
 
-Non-stream:
-
-If one or more components produce structured output, ensure you set `return_trace=true` and check each component's structured output via `trace`. The top-level `data.structured` field is a shortcut aggregated by `component_id`.
+Standard mode non-stream:
 
 ```json
 {
     "code": 0,
     "data": {
-        "created_at": 1756363177,
         "data": {
-            "content": "\nTo install Neovim, the process varies depending on your operating system:\n\n### For macOS:\nUsing Homebrew:\n```bash\nbrew install neovim\n```\n\n### For Linux (Debian/Ubuntu):\n```bash\nsudo apt update\nsudo apt install neovim\n```\n\nFor other Linux distributions, you can use their respective package managers or build from source.\n\n### For Windows:\n1. Download the latest Windows installer from the official Neovim GitHub releases page\n2. Run the installer and follow the prompts\n3. Add Neovim to your PATH if not done automatically\n\n### From source (Unix-like systems):\n```bash\ngit clone https://github.com/neovim/neovim.git\ncd neovim\nmake CMAKE_BUILD_TYPE=Release\nsudo make install\n```\n\nAfter installation, you can verify it by running `nvim --version` in your terminal.",
-            "created_at": 18129.044975627,
-            "elapsed_time": 10.0157331670016,
-            "inputs": {
-                "var1": {
-                    "value": "I am var1"
-                },
-                "var2": {
-                    "value": "I am var2"
-                }
-            },
-            "outputs": {
-                "_created_time": 18129.502422278,
-                "_elapsed_time": 0.00013378599760471843,
-                "content": "\nTo install Neovim, the process varies depending on your operating system:\n\n### For macOS:\nUsing Homebrew:\n```bash\nbrew install neovim\n```\n\n### For Linux (Debian/Ubuntu):\n```bash\nsudo apt update\nsudo apt install neovim\n```\n\nFor other Linux distributions, you can use their respective package managers or build from source.\n\n### For Windows:\n1. Download the latest Windows installer from the official Neovim GitHub releases page\n2. Run the installer and follow the prompts\n3. Add Neovim to your PATH if not done automatically\n\n### From source (Unix-like systems):\n```bash\ngit clone https://github.com/neovim/neovim.git\ncd neovim\nmake CMAKE_BUILD_TYPE=Release\nsudo make install\n```\n\nAfter installation, you can verify it by running `nvim --version` in your terminal."
-            },
-            "reference": {
-                "chunks": {
-                    "20": {
-                        "content": "```cd /usr/ports/editors/neovim/ && make install```## Android[Termux](https://github.com/termux/termux-app) offers a Neovim package.",
-                        "dataset_id": "456ce60c5e1511f0907f09f583941b45",
-                        "doc_type": "",
-                        "document_id": "4bdd2ff65e1511f0907f09f583941b45",
-                        "document_name": "INSTALL22.md",
-                        "id": "4b8935ac0a22deb1",
-                        "image_id": "",
-                        "positions": [
-                            [
-                                12,
-                                11,
-                                11,
-                                11,
-                                11
-                            ]
-                        ],
-                        "similarity": 0.5705525104787287,
-                        "term_similarity": 0.5000000005,
-                        "url": null,
-                        "vector_similarity": 0.7351750337624289
-                    }
-                },
-                "doc_aggs": {
-                    "INSTALL(1).md": {
-                        "count": 2,
-                        "doc_id": "4bdfb42e5e1511f0907f09f583941b45",
-                        "doc_name": "INSTALL(1).md"
-                    },
-                    "INSTALL.md": {
-                        "count": 2,
-                        "doc_id": "4bd7fdd85e1511f0907f09f583941b45",
-                        "doc_name": "INSTALL.md"
-                    },
-                    "INSTALL22.md": {
-                        "count": 3,
-                        "doc_id": "4bdd2ff65e1511f0907f09f583941b45",
-                        "doc_name": "INSTALL22.md"
-                    },
-                    "INSTALL3.md": {
-                        "count": 1,
-                        "doc_id": "4bdab5825e1511f0907f09f583941b45",
-                        "doc_name": "INSTALL3.md"
-                    }
-                }
-            },
-            "trace": [
-                {
-                    "component_id": "begin",
-                    "trace": [
-                        {
-                            "component_id": "begin",
-                            "component_name": "begin",
-                            "component_type": "Begin",
-                            "created_at": 15926.567517862,
-                            "elapsed_time": 0.0008189299987861887,
-                            "error": null,
-                            "inputs": {},
-                            "outputs": {
-                                "_created_time": 15926.567517862,
-                                "_elapsed_time": 0.0006958619997021742
-                            }
-                        }
-                    ]
-                },
-                {
-                    "component_id": "Agent:WeakDragonsRead",
-                    "trace": [
-                        {
-                            "component_id": "Agent:WeakDragonsRead",
-                            "component_name": "Agent_0",
-                            "component_type": "Agent",
-                            "created_at": 15926.569121755,
-                            "elapsed_time": 53.49016142000073,
-                            "error": null,
-                            "inputs": {
-                                "sys.query": "how to install neovim?"
-                            },
-                            "outputs": {
-                                "_created_time": 15926.569121755,
-                                "_elapsed_time": 53.489981256001556,
-                                "content": "xxxxxxxxxxxxxx",
-                                "use_tools": [
-                                    {
-                                        "arguments": {
-                                            "query": "xxxx"
-                                        },
-                                        "name": "search_my_dateset",
-                                        "results": "xxxxxxxxxxx"
-                                    }
-                                ]
-                            }
-                        }
-                    ]
-                },
-                {
-                    "component_id": "Agent:EveryHairsChew",
-                    "trace": [
-                        {
-                            "component_id": "Agent:EveryHairsChew",
-                            "component_name": "Agent_1",
-                            "component_type": "Agent",
-                            "created_at": 15980.060569101,
-                            "elapsed_time": 23.61718057500002,
-                            "error": null,
-                            "inputs": {
-                                "sys.query": "how to install neovim?"
-                            },
-                            "outputs": {
-                                "_created_time": 15980.060569101,
-                                "_elapsed_time": 0.0003451630000199657,
-                                "content": "xxxxxxxxxxxx"
-                            }
-                        }
-                    ]
-                },
-                {
-                    "component_id": "Message:SlickDingosHappen",
-                    "trace": [
-                        {
-                            "component_id": "Message:SlickDingosHappen",
-                            "component_name": "Message_0",
-                            "component_type": "Message",
-                            "created_at": 15980.061302513,
-                            "elapsed_time": 23.61655923699982,
-                            "error": null,
-                            "inputs": {
-                                "Agent:EveryHairsChew@content": "xxxxxxxxx",
-                                "Agent:WeakDragonsRead@content": "xxxxxxxxxxx"
-                            },
-                            "outputs": {
-                                "_created_time": 15980.061302513,
-                                "_elapsed_time": 0.0006695749998471001,
-                                "content": "xxxxxxxxxxx"
-                            }
-                        }
-                    ]
-                }
-            ]
+            "content": "Hello",
+            "reference": {},
+            "trace": []
         },
-        "event": "workflow_finished",
         "message_id": "c4692a2683d911f0858253708ecb6573",
         "session_id": "c39f6f9c83d911f0858253708ecb6573",
         "task_id": "d1f79142831f11f09cc51795b9eb07c0"
@@ -4913,159 +4618,126 @@ If one or more components produce structured output, ensure you set `return_trac
 }
 ```
 
-Success without `session_id` provided and with variables specified in the **Begin** component:
+If one or more components produce structured output, set `return_trace=true` and inspect that component output from `trace`.
 
-Stream:
+#### OpenAI-compatible mode
 
-```json
-data:{
-    "event": "message",
-    "message_id": "0e273472783711f0806e1a6272e682d8",
-    "created_at": 1755083830,
-    "task_id": "99ee29d6783511f09c921a6272e682d8",
-    "data": {
-        "content": "Hello"
-    },
-    "session_id": "0e0d1542783711f0806e1a6272e682d8"
-}
+Use the same endpoint and add `"openai-compatible": true`.
 
-data:{
-    "event": "message",
-    "message_id": "0e273472783711f0806e1a6272e682d8",
-    "created_at": 1755083830,
-    "task_id": "99ee29d6783511f09c921a6272e682d8",
-    "data": {
-        "content": "!"
-    },
-    "session_id": "0e0d1542783711f0806e1a6272e682d8"
-}
+##### Body
 
-data:{
-    "event": "message",
-    "message_id": "0e273472783711f0806e1a6272e682d8",
-    "created_at": 1755083830,
-    "task_id": "99ee29d6783511f09c921a6272e682d8",
-    "data": {
-        "content": " How"
-    },
-    "session_id": "0e0d1542783711f0806e1a6272e682d8"
-}
+- `"agent_id"`: `string`
+- `"messages"`: `list[object]`
+- `"openai-compatible"`: `boolean`, must be `true`
+- `"stream"`: `boolean`
+- `"session_id"`: `string` (optional)
+- `"model"`: `string` (optional, accepted for compatibility)
 
-...
+##### Request examples
 
-data:[DONE]
+Streaming request:
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents/chat/completion \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data-binary '
+     {
+        "agent_id": "AGENT_ID",
+        "openai-compatible": true,
+        "stream": true,
+        "messages": [
+            {
+                "role": "user",
+                "content": "Hello"
+            }
+        ]
+     }'
 ```
 
-Non-stream:
+Non-stream request with existing session:
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents/chat/completion \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data-binary '
+     {
+        "agent_id": "AGENT_ID",
+        "openai-compatible": true,
+        "stream": false,
+        "session_id": "cb2f385cb86211efa36e0242ac120005",
+        "messages": [
+            {
+                "role": "user",
+                "content": "Hello"
+            }
+        ]
+     }'
+```
+
+##### Request parameters
+
+- `"agent_id"`: (*Body parameter*), `string`, *Required*  
+  The ID of the associated agent.
+- `"messages"`: (*Body parameter*), `list[object]`, *Required*  
+  OpenAI-style chat messages.
+- `"openai-compatible"`: (*Body parameter*), `boolean`, *Required*  
+  Must be `true` to enable OpenAI-compatible responses.
+- `"stream"`: (*Body parameter*), `boolean`  
+  Whether to return streaming chunks.
+- `"session_id"`: (*Body parameter*), `string`  
+  Optional existing session ID.
+- `"model"`: (*Body parameter*), `string`  
+  Optional compatibility field. The server still routes by `agent_id`.
+
+##### Response
+
+OpenAI-compatible stream:
 
 ```json
-{
-    "code": 0,
-    "data": {
-        "created_at": 1755083779,
-        "data": {
-            "created_at": 547400.868004651,
-            "elapsed_time": 3.5037803899031132,
-            "inputs": {
-                "boolean_var": {
-                    "type": "boolean",
-                    "value": true
-                },
-                "int_var": {
-                    "type": "integer",
-                    "value": 1
-                },
-                "line_var": {
-                    "type": "line",
-                    "value": "I am line_var"
-                },
-                "option_var": {
-                    "type": "options",
-                    "value": "option 2"
-                },
-                "paragraph_var": {
-                    "type": "paragraph",
-                    "value": "a\nb\nc"
-                }
+data: {
+    "id": "chatcmpl-xxx",
+    "object": "chat.completion.chunk",
+    "model": "AGENT_ID",
+    "choices": [
+        {
+            "delta": {
+                "content": "Hello"
             },
-            "outputs": {
-                "_created_time": 547400.869271305,
-                "_elapsed_time": 0.0001251999055966735,
-                "content": "Hello there! How can I assist you today?"
-            }
-        },
-        "event": "workflow_finished",
-        "message_id": "effdad8c783611f089261a6272e682d8",
-        "session_id": "efe523b6783611f089261a6272e682d8",
-        "task_id": "99ee29d6783511f09c921a6272e682d8"
-    }
+            "finish_reason": null,
+            "index": 0
+        }
+    ]
 }
+
+data: [DONE]
 ```
 
-Success with variables specified in the **Begin** component:
-
-Stream:
-
-```json
-data:{
-    "event": "message",
-    "message_id": "5b62e790783711f0bc531a6272e682d8",
-    "created_at": 1755083960,
-    "task_id": "99ee29d6783511f09c921a6272e682d8",
-    "data": {
-        "content": "Hello"
-    },
-    "session_id": "979e450c781d11f095cb729e3aa55728"
-}
-
-data:{
-    "event": "message",
-    "message_id": "5b62e790783711f0bc531a6272e682d8",
-    "created_at": 1755083960,
-    "task_id": "99ee29d6783511f09c921a6272e682d8",
-    "data": {
-        "content": "!"
-    },
-    "session_id": "979e450c781d11f095cb729e3aa55728"
-}
-
-data:{
-    "event": "message",
-    "message_id": "5b62e790783711f0bc531a6272e682d8",
-    "created_at": 1755083960,
-    "task_id": "99ee29d6783511f09c921a6272e682d8",
-    "data": {
-        "content": " You"
-    },
-    "session_id": "979e450c781d11f095cb729e3aa55728"
-}
-
-...
-
-data:[DONE]
-```
-
-Non-stream:
+OpenAI-compatible non-stream:
 
 ```json
 {
-    "code": 0,
-    "data": {
-        "created_at": 1755084029,
-        "data": {
-            "created_at": 547650.750818867,
-            "elapsed_time": 1.6227330720284954,
-            "inputs": {},
-            "outputs": {
-                "_created_time": 547650.752800839,
-                "_elapsed_time": 9.628792759031057e-05,
-                "content": "Hello! It appears you've sent another \"Hello\" without additional context. I'm here and ready to respond to any requests or questions you may have. Is there something specific you'd like to discuss or learn about?"
+    "id": "chatcmpl-xxx",
+    "object": "chat.completion",
+    "model": "AGENT_ID",
+    "choices": [
+        {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": "Hello",
+                "reference": {}
             }
-        },
-        "event": "workflow_finished",
-        "message_id": "84eec534783711f08db41a6272e682d8",
-        "session_id": "979e450c781d11f095cb729e3aa55728",
-        "task_id": "99ee29d6783511f09c921a6272e682d8"
+        }
+    ],
+    "usage": {
+        "prompt_tokens": 6,
+        "completion_tokens": 1,
+        "total_tokens": 7
     }
 }
 ```
@@ -5075,7 +4747,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "`question` is required."
+    "message": "Agent not found."
 }
 ```
 
