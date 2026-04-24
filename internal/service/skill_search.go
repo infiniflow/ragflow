@@ -338,14 +338,15 @@ func (s *SkillSearchService) keywordSearch(ctx context.Context, docEngine engine
 	// ES uses _tks suffix handled internally by elasticsearch/search.go
 	matchExpr := &types.MatchTextExpr{
 		MatchingText: query,
+		// Skill index uses single tokenizer (rag-coarse) per field, no _sm variants needed.
 		// Infinity: convertMatchingField maps these to column@index_name format
-		// (e.g., name→name@ft_name_rag_coarse, name_sm→name@ft_name_rag_fine)
+		// (e.g., name→name@ft_name_rag_coarse)
 		// ES: buildSkillKeywordQuery uses its own field list internally
 		Fields: []string{
-			"name^10", "name_sm^5",
-			"tags^5", "tags_sm^2",
-			"description^3", "description_sm^1",
-			"content^1", "content_sm^0.5",
+			"name^10",
+			"tags^5",
+			"description^3",
+			"content^1",
 		},
 		TopN: 100,
 	}
@@ -386,10 +387,10 @@ func (s *SkillSearchService) vectorSearch(ctx context.Context, docEngine engine.
 	matchExpr := &types.MatchTextExpr{
 		MatchingText: query,
 		Fields: []string{
-			"name^10", "name_sm^5",
-			"tags^5", "tags_sm^2",
-			"description^3", "description_sm^1",
-			"content^1", "content_sm^0.5",
+			"name^10",
+			"tags^5",
+			"description^3",
+			"content^1",
 		},
 		TopN: int(config.TopK),
 	}
@@ -445,10 +446,10 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 	matchExpr := &types.MatchTextExpr{
 		MatchingText: query,
 		Fields: []string{
-			"name^10", "name_sm^5",
-			"tags^5", "tags_sm^2",
-			"description^3", "description_sm^1",
-			"content^1", "content_sm^0.5",
+			"name^10",
+			"tags^5",
+			"description^3",
+			"content^1",
 		},
 		TopN:         int(config.TopK),
 	}

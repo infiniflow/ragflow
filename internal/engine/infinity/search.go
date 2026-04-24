@@ -29,7 +29,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 
 	"ragflow/internal/logger"
 
@@ -294,10 +293,10 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 				textFields = matchText.Fields
 			} else if isSkillIndex {
 			textFields = []string{
-				"name^10", "name_sm^5",
-				"tags^5", "tags_sm^2",
-				"description^3", "description_sm^1",
-				"content^1", "content_sm^0.5",
+				"name^10",
+				"tags^5",
+				"description^3",
+				"content^1",
 			}
 			} else {
 				textFields = []string{
@@ -391,9 +390,6 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 			}
 
 				if hasTextMatch && fusionExpr == nil {
-					// Only add filter_fulltext when there's no FusionExpr.
-					// With Fusion, the text match is already handled by MatchText + Fusion,
-					// and adding filter_fulltext would incorrectly restrict the vector search results.
 					fieldsStr := strings.Join(convertedFields, ",")
 					filterFulltext := fmt.Sprintf("filter_fulltext('%s', '%s')", fieldsStr, questionText)
 					denseFilterStr = fmt.Sprintf("(%s) AND %s", denseFilterStr, filterFulltext)
@@ -487,17 +483,8 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 				}
 			}
 
-			// Debug: log DataFrame info for hybrid search
-		if hasTextMatch && hasVectorMatch && logger.IsDebugEnabled() {
-				colNames := make([]string, 0, len(df.ColumnData))
-				for colName := range df.ColumnData {
-					colNames = append(colNames, colName)
-				}
-				logger.Debug("Hybrid search DataFrame columns", zap.Strings("columns", colNames), zap.Int("rowCount", len(chunks)))
-			}
-
 			// Apply field name mapping and row_id handling
-			// Skill index uses different schema (no docnm, content_ltks, etc.)
+			// Skill index uses different schema
 			// so we skip the document-specific field mappings
 			if !isSkillIndex {
 				GetFields(chunks, nil)
@@ -535,8 +522,6 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 	if hasTextMatch || hasVectorMatch {
 		scoreColumn := ""
 		if hasTextMatch && hasVectorMatch {
-			// Hybrid search with Fusion: only SCORE exists (Fusion produces combined score).
-			// similarity() is not allowed by Infinity when MATCH TEXT is present.
 			scoreColumn = "SCORE"
 		} else if hasTextMatch {
 			scoreColumn = "SCORE"
@@ -546,20 +531,6 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 		pagerankField := common.PAGERANK_FLD
 		if isSkillIndex {
 			pagerankField = "" // Skill index has no pagerank field
-		}
-
-		// Debug: log score column info for hybrid search
-		if hasTextMatch && hasVectorMatch && len(allResults) > 0 && logger.IsDebugEnabled() {
-			firstResult := allResults[0]
-			scoreDebug := make([]string, 0)
-			for k, v := range firstResult {
-				if k == "SCORE" || k == "SIMILARITY" || k == "_score" || k == "ROW_ID" {
-					scoreDebug = append(scoreDebug, fmt.Sprintf("%s=%v", k, v))
-				}
-			}
-			logger.Debug("Hybrid search score columns before calculateScores",
-				zap.String("scoreColumn", scoreColumn),
-				zap.Strings("available", scoreDebug))
 		}
 
 		allResults = calculateScores(allResults, scoreColumn, pagerankField)
@@ -645,63 +616,6 @@ func convertSelectFields(output []string, isSkillIndex ...bool) []string {
 	return result
 }
 
-// isChinese checks if a string contains Chinese characters
-func isChinese(s string) bool {
-	for _, r := range s {
-		if '\u4e00' <= r && r <= '\u9fff' {
-			return true
-		}
-	}
-	return false
-}
-
-// hasSubTokens checks if the text has sub-tokens after fine-grained tokenization
-// - Returns False if len < 3
-// - Returns False if text is only ASCII alphanumeric
-// - Returns True otherwise (meaning there are sub-tokens)
-func hasSubTokens(s string) bool {
-	if utf8.RuneCountInString(s) < 3 {
-		return false
-	}
-	isASCIIOnly := true
-	for _, r := range s {
-		if r > 127 {
-			isASCIIOnly = false
-			break
-		}
-	}
-	if isASCIIOnly {
-		// Check if it's only alphanumeric and allowed special chars
-		for _, r := range s {
-			if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '.' || r == '+' || r == '#' || r == '_' || r == '*' || r == '-') {
-				isASCIIOnly = false
-				break
-			}
-		}
-		if isASCIIOnly {
-			return false
-		}
-	}
-	// Has sub-tokens if it's Chinese and length >= 3
-	return isChinese(s)
-}
-
-// formatQuestion formats the question
-// - If len < 3: returns ((query)^1.0)
-// - If has sub-tokens: adds fuzzy search ((query OR "query" OR ("query"~2)^0.5)^1.0)
-// - Otherwise: returns ((query)^1.0)
-func formatQuestion(question string) string {
-	// Trim whitespace
-	question = strings.TrimSpace(question)
-
-	// If no sub-tokens, use simple format
-	if !hasSubTokens(question) {
-		return fmt.Sprintf("((%s)^1.0)", question)
-	}
-
-	return fmt.Sprintf("((%s OR \"%s\" OR (\"%s\"~2)^0.5)^1.0)", question, question, question)
-}
-
 // convertMatchingField converts field names for matching
 // For regular document indices: maps _tks/_kwd fields to column@index_name format
 // For skill indices: maps raw field names to column@index_name format
@@ -713,7 +627,6 @@ func convertMatchingField(fieldWeightStr string) string {
 
 	// Field name conversion
 	fieldMapping := map[string]string{
-		// Regular document index fields
 		"docnm_kwd":           "docnm@ft_docnm_rag_coarse",
 		"title_tks":           "docnm@ft_docnm_rag_coarse",
 		"title_sm_tks":        "docnm@ft_docnm_rag_fine",
@@ -727,15 +640,11 @@ func convertMatchingField(fieldWeightStr string) string {
 		"authors_tks":         "authors@ft_authors_rag_coarse",
 		"authors_sm_tks":      "authors@ft_authors_rag_fine",
 		"tag_kwd":             "tag_kwd@ft_tag_kwd_whitespace__",
-		// Skill index fields (each has rag_coarse and rag_fine indexes)
+		// Skill index fields
 		"name":               "name@ft_name_rag_coarse",
-		"name_sm":            "name@ft_name_rag_fine",
 		"tags":               "tags@ft_tags_rag_coarse",
-		"tags_sm":            "tags@ft_tags_rag_fine",
 		"description":        "description@ft_description_rag_coarse",
-		"description_sm":     "description@ft_description_rag_fine",
 		"content":            "content@ft_content_rag_coarse",
-		"content_sm":         "content@ft_content_rag_fine",
 	}
 
 	if newField, ok := fieldMapping[field]; ok {
@@ -744,8 +653,6 @@ func convertMatchingField(fieldWeightStr string) string {
 
 	return strings.Join(parts, "^")
 }
-
-
 
 // escapeFilterValue escapes single quotes for filter values
 func escapeFilterValue(s string) string {
@@ -1039,7 +946,7 @@ func (e *infinityEngine) GetAggregation(chunks []map[string]interface{}, fieldNa
 					}
 				}
 			}
-				}
+		}
 	}
 
 	if len(tagCounts) == 0 {
@@ -1187,5 +1094,3 @@ func (e *infinityEngine) GetHighlight(chunks []map[string]interface{}, keywords 
 
 	return result
 }
-
-
