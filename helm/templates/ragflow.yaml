@@ -38,8 +38,6 @@ spec:
       containers:
       - name: ragflow
         image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.ragflow.image.repository) }}:{{ .Values.ragflow.image.tag }}
-        args:
-          - --enable-adminserver
         {{- with .Values.ragflow.image.pullPolicy }}
         imagePullPolicy: {{ . }}
         {{- end }}
@@ -57,8 +55,8 @@ spec:
             name: admin
           {{- end }}
         volumeMounts:
-          - mountPath: /etc/nginx/conf.d/ragflow.conf
-            subPath: ragflow.conf
+          - mountPath: /etc/nginx/conf.d/ragflow.conf.python
+            subPath: ragflow.conf.python
             name: nginx-config-volume
           - mountPath: /etc/nginx/proxy.conf
             subPath: proxy.conf
