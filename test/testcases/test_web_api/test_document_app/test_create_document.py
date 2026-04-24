@@ -101,83 +101,77 @@ def _run(coro):
 
 @pytest.mark.p2
 class TestDocumentCreateUnit:
-    def test_missing_kb_id(self, document_app_module, monkeypatch):
-        module = document_app_module
-
-        async def fake_request_json():
-            return {"kb_id": "", "name": "doc.txt"}
-
-        monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.create.__wrapped__())
-        assert res["code"] == 101
-        assert res["message"] == 'Lack of "KB ID"'
-
-    def test_filename_too_long(self, document_app_module, monkeypatch):
-        module = document_app_module
+    def test_filename_too_long(self, document_rest_api_module, monkeypatch):
+        module = document_rest_api_module
         long_name = "a" * (FILE_NAME_LEN_LIMIT + 1)
 
         async def fake_request_json():
-            return {"kb_id": "kb1", "name": long_name}
+            return {"name": long_name}
 
         monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.create.__wrapped__())
+        monkeypatch.setattr(module, "request", SimpleNamespace(args={"type": "empty"}))
+        res = _run(module.upload_document(dataset_id="kb1"))
         assert res["code"] == 101
         assert res["message"] == f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less."
 
-    def test_filename_whitespace(self, document_app_module, monkeypatch):
-        module = document_app_module
+    def test_filename_whitespace(self, document_rest_api_module, monkeypatch):
+        module = document_rest_api_module
 
         async def fake_request_json():
-            return {"kb_id": "kb1", "name": "   "}
+            return {"name": "   "}
 
         monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.create.__wrapped__())
+        monkeypatch.setattr(module, "request", SimpleNamespace(args={"type": "empty"}))
+        res = _run(module.upload_document(dataset_id="kb1"))
         assert res["code"] == 101
         assert res["message"] == "File name can't be empty."
 
-    def test_kb_not_found(self, document_app_module, monkeypatch):
-        module = document_app_module
+    def test_kb_not_found(self, document_rest_api_module, monkeypatch):
+        module = document_rest_api_module
         monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
 
         async def fake_request_json():
-            return {"kb_id": "missing", "name": "doc.txt"}
+            return {"name": "doc.txt"}
 
         monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.create.__wrapped__())
+        monkeypatch.setattr(module, "request", SimpleNamespace(args={"type": "empty"}))
+        res = _run(module.upload_document(dataset_id="missing"))
         assert res["code"] == 102
         assert res["message"] == "Can't find this dataset!"
 
-    def test_duplicate_name(self, document_app_module, monkeypatch):
-        module = document_app_module
+    def test_duplicate_name(self, document_rest_api_module, monkeypatch):
+        module = document_rest_api_module
         kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
         monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [object()])
 
         async def fake_request_json():
-            return {"kb_id": "kb1", "name": "doc.txt"}
+            return {"name": "doc.txt"}
 
         monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.create.__wrapped__())
+        monkeypatch.setattr(module, "request", SimpleNamespace(args={"type": "empty"}))
+        res = _run(module.upload_document(dataset_id="kb1"))
         assert res["code"] == 102
         assert "Duplicated document name" in res["message"]
 
-    def test_root_folder_missing(self, document_app_module, monkeypatch):
-        module = document_app_module
+    def test_root_folder_missing(self, document_rest_api_module, monkeypatch):
+        module = document_rest_api_module
         kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
         monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
         monkeypatch.setattr(module.FileService, "get_kb_folder", lambda *_args, **_kwargs: None)
 
         async def fake_request_json():
-            return {"kb_id": "kb1", "name": "doc.txt"}
+            return {"name": "doc.txt"}
 
         monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.create.__wrapped__())
+        monkeypatch.setattr(module, "request", SimpleNamespace(args={"type": "empty"}))
+        res = _run(module.upload_document(dataset_id="kb1"))
         assert res["code"] == 102
         assert res["message"] == "Cannot find the root folder."
 
-    def test_kb_folder_missing(self, document_app_module, monkeypatch):
-        module = document_app_module
+    def test_kb_folder_missing(self, document_rest_api_module, monkeypatch):
+        module = document_rest_api_module
         kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
         monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
@@ -185,15 +179,16 @@ class TestDocumentCreateUnit:
         monkeypatch.setattr(module.FileService, "new_a_file_from_kb", lambda *_args, **_kwargs: None)
 
         async def fake_request_json():
-            return {"kb_id": "kb1", "name": "doc.txt"}
+            return {"name": "doc.txt"}
 
         monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.create.__wrapped__())
+        monkeypatch.setattr(module, "request", SimpleNamespace(args={"type": "empty"}))
+        res = _run(module.upload_document(dataset_id="kb1"))
         assert res["code"] == 102
         assert res["message"] == "Cannot find the kb folder for this file."
 
-    def test_success(self, document_app_module, monkeypatch):
-        module = document_app_module
+    def test_success(self, document_rest_api_module, monkeypatch):
+        module = document_rest_api_module
         kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
         monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
@@ -214,9 +209,10 @@ class TestDocumentCreateUnit:
         monkeypatch.setattr(module.FileService, "add_file_from_kb", lambda *_args, **_kwargs: None)
 
         async def fake_request_json():
-            return {"kb_id": "kb1", "name": "doc.txt"}
+            return {"name": "doc.txt"}
 
         monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.create.__wrapped__())
+        monkeypatch.setattr(module, "request", SimpleNamespace(args={"type": "empty"}))
+        res = _run(module.upload_document(dataset_id="kb1"))
         assert res["code"] == 0
         assert res["data"]["id"] == "doc1"

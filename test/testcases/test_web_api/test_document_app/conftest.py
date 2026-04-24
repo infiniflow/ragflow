@@ -128,3 +128,63 @@ def document_app_module(monkeypatch):
     module.manager = _DummyManager()
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture()
+def document_rest_api_module(monkeypatch):
+    repo_root = Path(__file__).resolve().parents[4]
+    common_pkg = ModuleType("common")
+    common_pkg.__path__ = [str(repo_root / "common")]
+    monkeypatch.setitem(sys.modules, "common", common_pkg)
+
+    deepdoc_pkg = ModuleType("deepdoc")
+    deepdoc_parser_pkg = ModuleType("deepdoc.parser")
+    deepdoc_parser_pkg.__path__ = []
+
+    class _StubPdfParser:
+        pass
+
+    class _StubExcelParser:
+        pass
+
+    deepdoc_parser_pkg.PdfParser = _StubPdfParser
+    deepdoc_pkg.parser = deepdoc_parser_pkg
+    monkeypatch.setitem(sys.modules, "deepdoc", deepdoc_pkg)
+    monkeypatch.setitem(sys.modules, "deepdoc.parser", deepdoc_parser_pkg)
+    deepdoc_excel_module = ModuleType("deepdoc.parser.excel_parser")
+    deepdoc_excel_module.RAGFlowExcelParser = _StubExcelParser
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.excel_parser", deepdoc_excel_module)
+    deepdoc_html_module = ModuleType("deepdoc.parser.html_parser")
+
+    class _StubHtmlParser:
+        pass
+
+    deepdoc_html_module.RAGFlowHtmlParser = _StubHtmlParser
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.html_parser", deepdoc_html_module)
+    deepdoc_mineru_module = ModuleType("deepdoc.parser.mineru_parser")
+
+    class _StubMinerUParser:
+        pass
+
+    deepdoc_mineru_module.MinerUParser = _StubMinerUParser
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.mineru_parser", deepdoc_mineru_module)
+    deepdoc_paddleocr_module = ModuleType("deepdoc.parser.paddleocr_parser")
+
+    class _StubPaddleOCRParser:
+        pass
+
+    deepdoc_paddleocr_module.PaddleOCRParser = _StubPaddleOCRParser
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.paddleocr_parser", deepdoc_paddleocr_module)
+    monkeypatch.setitem(sys.modules, "xgboost", ModuleType("xgboost"))
+
+    stub_apps = ModuleType("api.apps")
+    stub_apps.current_user = SimpleNamespace(id="user-1")
+    stub_apps.login_required = lambda func: func
+    monkeypatch.setitem(sys.modules, "api.apps", stub_apps)
+
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "document_api.py"
+    spec = importlib.util.spec_from_file_location("test_document_api_unit", module_path)
+    module = importlib.util.module_from_spec(spec)
+    module.manager = _DummyManager()
+    spec.loader.exec_module(module)
+    return module
