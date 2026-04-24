@@ -19,6 +19,7 @@ package tokenizer
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/engine"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -408,7 +409,12 @@ func withAnalyzerResult[T any](fn func(*rag.Analyzer) (T, error)) (T, error) {
 
 // Tokenize tokenizes the text and returns a space-separated string of tokens
 // Example: "hello world" -> "hello world"
+//
+// NOTE: For Infinity engine, returns input unchanged to match python's behavior
 func Tokenize(text string) (string, error) {
+	if engine.GetEngineType() == "infinity" {
+		return text, nil
+	}
 	return withAnalyzerResult(func(a *rag.Analyzer) (string, error) {
 		return a.Tokenize(text)
 	})
@@ -440,7 +446,12 @@ func SetFineGrained(fineGrained bool) {
 // FineGrainedTokenize performs fine-grained tokenization on space-separated tokens
 // Input: space-separated tokens (e.g., "hello world 测试")
 // Output: space-separated fine-grained tokens (e.g., "hello world 测 试")
+//
+// NOTE: For Infinity engine, returns input unchanged to match python's behavior
 func FineGrainedTokenize(tokens string) (string, error) {
+	if engine.GetEngineType() == "infinity" {
+		return tokens, nil
+	}
 	return withAnalyzerResult(func(a *rag.Analyzer) (string, error) {
 		return a.FineGrainedTokenize(tokens)
 	})
