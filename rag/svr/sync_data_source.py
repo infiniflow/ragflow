@@ -374,14 +374,17 @@ class Confluence(SyncBase):
                                                          credential_json=self.conf["credentials"])
         self.connector.set_credentials_provider(credentials_provider)
 
+        file_list = None
         # Determine the time range for synchronization based on reindex or poll_range_start
         if task["reindex"] == "1" or not task["poll_range_start"]:
             start_time = 0.0
-            _begin_info = "totally"
         else:
             start_time = task["poll_range_start"].timestamp()
-            _begin_info = f"from {task['poll_range_start']}"
-
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
+            
         end_time = datetime.now(timezone.utc).timestamp()
 
         raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
@@ -426,7 +429,7 @@ class Confluence(SyncBase):
                 yield batch
 
         self.log_connection("Confluence", self.conf["wiki_base"], task)
-        return wrapper()
+        return wrapper(), file_list
 
 
 class Notion(SyncBase):
@@ -979,10 +982,8 @@ class Github(SyncBase):
         file_list = None
         if task.get("reindex") == "1" or not task.get("poll_range_start"):
             start_time = datetime.fromtimestamp(0, tz=timezone.utc)
-            _begin_info = "totally"
         else:
             start_time = task.get("poll_range_start")
-            _begin_info = f"from {start_time}"
             if self.conf.get("sync_deleted_files"):
                 file_list = []
                 for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():

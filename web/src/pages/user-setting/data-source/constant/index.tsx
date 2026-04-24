@@ -56,6 +56,9 @@ export const DataSourceFeatureVisibilityMap = {
   [DataSourceKey.GITHUB]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.CONFLUENCE]: {
+    syncDeletedFiles: true,
+  },
 };
 
 const isDataSourceFeatureVisible = (
