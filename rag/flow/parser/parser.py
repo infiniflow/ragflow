@@ -50,6 +50,7 @@ from rag.flow.parser.utils import (
     remove_toc_word,
 )
 from rag.llm.cv_model import Base as VLM
+from rag.llm.retry import is_error_result
 from rag.utils.base64_image import image2id
 
 
@@ -1063,7 +1064,7 @@ class Parser(ProcessBase):
             except Exception as e:
                 logging.warning(f"CV model describe failed: {e}")
                 txt = ""
-            if isinstance(txt, str) and txt.startswith("**ERROR**"):
+            if is_error_result(txt):
                 logging.warning(f"CV model describe returned error: {txt}")
                 txt = ""
 

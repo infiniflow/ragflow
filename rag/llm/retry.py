@@ -48,6 +48,17 @@ from typing import TypeVar
 
 ERROR_PREFIX = "**ERROR**"
 
+
+def is_error_result(result: object) -> bool:
+    """Return True if *result* is a string carrying the LLM error marker.
+
+    Producers encode failures as strings containing ``ERROR_PREFIX`` (either
+    as a leading marker or appended after partial streamed output). Callers
+    use this helper instead of ad-hoc substring checks.
+    """
+    return isinstance(result, str) and ERROR_PREFIX in result
+
+
 _MIN_JITTER_MULTIPLIER = 10
 _MAX_JITTER_MULTIPLIER = 150
 

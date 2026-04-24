@@ -30,7 +30,7 @@ from strenum import StrEnum
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
-from rag.llm.retry import async_handle_exception
+from rag.llm.retry import ERROR_PREFIX, async_handle_exception
 from rag.nlp import is_chinese, is_english
 
 
@@ -473,7 +473,7 @@ class Base(ABC):
                 tol_token = tol
 
             if len(final_ans.strip()) == 0:
-                final_ans = "**ERROR**: Empty response from reasoning model"
+                final_ans = f"{ERROR_PREFIX}: Empty response from reasoning model"
 
             return final_ans.strip(), tol_token
 
@@ -607,7 +607,7 @@ class BaiChuanChat(Base):
                 yield ans
 
         except Exception as e:
-            yield ans + "\n**ERROR**: " + str(e)
+            yield f"{ans}\n{ERROR_PREFIX}: {e}"
 
         yield total_tokens
 
@@ -653,7 +653,7 @@ class LocalLLM(Base):
             except StopAsyncIteration:
                 pass
         except Exception as e:
-            yield answer + "\n**ERROR**: " + str(e)
+            yield f"{answer}\n{ERROR_PREFIX}: {e}"
         yield num_tokens_from_string(answer)
 
     def chat(self, system, history, gen_conf={}, **kwargs):
@@ -736,7 +736,7 @@ class MistralChat(Base):
                 yield ans
 
         except openai.APIError as e:
-            yield ans + "\n**ERROR**: " + str(e)
+            yield f"{ans}\n{ERROR_PREFIX}: {e}"
 
         yield total_tokens
 
@@ -808,7 +808,7 @@ class ReplicateChat(Base):
                 yield ans
 
         except Exception as e:
-            yield ans + "\n**ERROR**: " + str(e)
+            yield f"{ans}\n{ERROR_PREFIX}: {e}"
 
         yield num_tokens_from_string(ans)
 
@@ -879,7 +879,7 @@ class BaiduYiyanChat(Base):
                 yield ans
 
         except Exception as e:
-            return ans + "\n**ERROR**: " + str(e), 0
+            return f"{ans}\n{ERROR_PREFIX}: {e}", 0
 
         yield total_tokens
 
@@ -1035,7 +1035,7 @@ class GoogleChat(Base):
                         ans = text
                         total_tokens += num_tokens_from_string(text)
             except Exception as e:
-                yield ans + "\n**ERROR**: " + str(e)
+                yield f"{ans}\n{ERROR_PREFIX}: {e}"
 
             yield total_tokens
         else:
@@ -1095,7 +1095,7 @@ class GoogleChat(Base):
                     yield ans
 
             except Exception as e:
-                yield ans + "\n**ERROR**: " + str(e)
+                yield f"{ans}\n{ERROR_PREFIX}: {e}"
 
             yield total_tokens
 

@@ -31,7 +31,7 @@ from openai import OpenAI, AsyncOpenAI
 from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
-from rag.llm.retry import retry
+from rag.llm.retry import ERROR_PREFIX, retry
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
 
@@ -148,7 +148,7 @@ class Base(ABC):
             )
             return response.choices[0].message.content.strip(), response.usage.total_tokens
         except Exception as e:
-            return "**ERROR**: " + str(e), 0
+            return f"{ERROR_PREFIX}: {e}", 0
 
     async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
@@ -171,7 +171,7 @@ class Base(ABC):
                     tk_count += resp.usage.total_tokens
                 yield ans
         except Exception as e:
-            yield ans + "\n**ERROR**: " + str(e)
+            yield f"{ans}\n{ERROR_PREFIX}: {e}"
 
         yield tk_count
 
@@ -349,7 +349,7 @@ class QWenCV(GptV4):
                 summary, summary_num_tokens = self._process_video(video_bytes, filename, self._resolve_video_prompt(system, history, **kwargs))
                 return summary, summary_num_tokens
             except Exception as e:
-                return "**ERROR**: " + str(e), 0
+                return f"{ERROR_PREFIX}: {e}", 0
 
         return await super().async_chat(system, history, gen_conf, images=images, **kwargs)
 
@@ -491,7 +491,7 @@ class Zhipu4V(GptV4):
                     tk_count = total_token_count_from_response(resp)
                 yield ans
         except Exception as e:
-            yield ans + "\n**ERROR**: " + str(e)
+            yield f"{ans}\n{ERROR_PREFIX}: {e}"
 
         yield tk_count
 
@@ -756,7 +756,7 @@ class OllamaCV(Base):
             ans = response["message"]["content"].strip()
             return ans, response["eval_count"] + response.get("prompt_eval_count", 0)
         except Exception as e:
-            return "**ERROR**: " + str(e), 0
+            return f"{ERROR_PREFIX}: {e}", 0
 
     async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
@@ -768,7 +768,7 @@ class OllamaCV(Base):
                 ans = resp["message"]["content"]
                 yield ans
         except Exception as e:
-            yield ans + "\n**ERROR**: " + str(e)
+            yield f"{ans}\n{ERROR_PREFIX}: {e}"
         yield 0
 
 
@@ -905,7 +905,7 @@ class GeminiCV(Base):
                 return summary, summary_num_tokens
             except Exception as e:
                 logging.info(f"[GeminiCV] async_chat video error: {e}")
-                return "**ERROR**: " + str(e), 0
+                return f"{ERROR_PREFIX}: {e}", 0
 
         from google.genai import types
 
@@ -928,7 +928,7 @@ class GeminiCV(Base):
             return ans, total_token_count_from_response(response)
         except Exception as e:
             logging.warning(f"[GeminiCV] async_chat error: {e}")
-            return "**ERROR**: " + str(e), 0
+            return f"{ERROR_PREFIX}: {e}", 0
 
     async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
@@ -957,7 +957,7 @@ class GeminiCV(Base):
             logging.info("[GeminiCV] chat_streamly completed")
         except Exception as e:
             logging.warning(f"[GeminiCV] chat_streamly error: {e}")
-            yield ans + "\n**ERROR**: " + str(e)
+            yield f"{ans}\n{ERROR_PREFIX}: {e}"
 
         yield total_token_count_from_response(response)
 
@@ -1062,7 +1062,7 @@ class NvidiaCV(Base):
             response = await thread_pool_exec(self._request, self._form_history(system, history, images), gen_conf)
             return (response["choices"][0]["message"]["content"].strip(), total_token_count_from_response(response))
         except Exception as e:
-            return "**ERROR**: " + str(e), 0
+            return f"{ERROR_PREFIX}: {e}", 0
 
     async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         total_tokens = 0
@@ -1073,7 +1073,7 @@ class NvidiaCV(Base):
             for resp in cnt:
                 yield resp
         except Exception as e:
-            yield "\n**ERROR**: " + str(e)
+            yield f"\n{ERROR_PREFIX}: {e}"
 
         yield total_tokens
 
@@ -1153,7 +1153,7 @@ class AnthropicCV(Base):
                 total_token_count_from_response(response),
             )
         except Exception as e:
-            return ans + "\n**ERROR**: " + str(e), 0
+            return f"{ans}\n{ERROR_PREFIX}: {e}", 0
 
     async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         gen_conf = self._clean_conf(gen_conf)
@@ -1181,7 +1181,7 @@ class AnthropicCV(Base):
                         yield res.delta.text
                         total_tokens += num_tokens_from_string(res.delta.text)
         except Exception as e:
-            yield "\n**ERROR**: " + str(e)
+            yield f"\n{ERROR_PREFIX}: {e}"
 
         yield total_tokens
 

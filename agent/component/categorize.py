@@ -24,7 +24,7 @@ from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
 from agent.component.llm import LLMParam, LLM
 from common.connection_utils import timeout
-from rag.llm.retry import ERROR_PREFIX
+from rag.llm.retry import is_error_result
 
 
 class CategorizeParam(LLMParam):
@@ -136,7 +136,7 @@ class Categorize(LLM, ABC):
 
         ans = await chat_mdl.async_chat(self._param.sys_prompt, [{"role": "user", "content": user_prompt}], self._param.gen_conf())
         logging.info(f"input: {user_prompt}, answer: {str(ans)}")
-        if ERROR_PREFIX in ans:
+        if is_error_result(ans):
             raise Exception(ans)
 
         if self.check_if_canceled("Categorize processing"):

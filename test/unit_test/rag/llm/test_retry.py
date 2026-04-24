@@ -32,6 +32,7 @@ from rag.llm.retry import (
     async_handle_exception,
     classify_error,
     get_retry_delay,
+    is_error_result,
     is_retryable,
     retry,
     retry_or_fallback,
@@ -497,6 +498,29 @@ class TestErrorPrefix:
     def test_error_prefix_value(self):
         """Test that ERROR_PREFIX has correct value."""
         assert ERROR_PREFIX == "**ERROR**"
+
+
+class TestIsErrorResult:
+    """Tests for the is_error_result helper."""
+
+    def test_prefix_marker(self):
+        assert is_error_result("**ERROR**: something went wrong")
+
+    def test_appended_marker(self):
+        # Streamed chat paths yield "partial answer\n**ERROR**: ..."
+        assert is_error_result("partial answer\n**ERROR**: boom")
+
+    def test_clean_string(self):
+        assert not is_error_result("all good")
+
+    def test_empty_string(self):
+        assert not is_error_result("")
+
+    def test_non_string_inputs(self):
+        assert not is_error_result(None)
+        assert not is_error_result(42)
+        assert not is_error_result(("**ERROR**: tuple", 0))
+        assert not is_error_result(["**ERROR**"])
 
 
 class AsyncMock:
