@@ -17,11 +17,6 @@ from common.ssrf_guard import assert_url_is_safe, pin_dns as _pin_dns
 _MAX_REDIRECTS = 10
 
 
-def _validate_url_no_ssrf(url: str) -> tuple[str, str]:
-    """Validate *url* against SSRF rules; return ``(hostname, resolved_ip)``."""
-    return assert_url_is_safe(url)
-
-
 class RSSConnector(LoadConnector, PollConnector):
     def __init__(self, feed_url: str, batch_size: int = INDEX_BATCH_SIZE) -> None:
         self.feed_url = feed_url.strip()
@@ -80,7 +75,7 @@ class RSSConnector(LoadConnector, PollConnector):
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("feed_url must be a valid http or https URL")
 
-        return _validate_url_no_ssrf(self.feed_url)
+        return assert_url_is_safe(self.feed_url)
 
     def _read_feed(self, require_entries: bool) -> Any:
         if self._cached_feed is not None:
@@ -113,7 +108,7 @@ class RSSConnector(LoadConnector, PollConnector):
 
             redirect_url = urljoin(current_url, location)
             # Validate redirect target before following it.
-            current_hostname, current_ip = _validate_url_no_ssrf(redirect_url)
+            current_hostname, current_ip = assert_url_is_safe(redirect_url)
             current_url = redirect_url
         else:
             raise ValueError(f"Exceeded {_MAX_REDIRECTS} redirects fetching {self.feed_url!r}")
