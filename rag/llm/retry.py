@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import inspect
 import logging
 import os
 import random
@@ -192,7 +193,18 @@ def retry(method: Callable[..., _T]) -> Callable[..., _T]:
 
     Returns:
         The wrapped method with retry behavior.
+
+    Limitations:
+        Generator functions are rejected at decoration time. Calling a
+        generator returns the generator object without raising, so the
+        try/except would never see iteration errors and the decorator
+        would silently be a no-op.
     """
+    if inspect.isgeneratorfunction(method):
+        raise TypeError(
+            "@retry does not support generator functions; "
+            "wrap the non-streaming call instead"
+        )
 
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
@@ -223,9 +235,19 @@ def retry_or_fallback(error_result: Callable[[Exception], _T]) -> Callable[[Call
 
     Returns:
         A decorator that wraps the method with retry-or-fallback behavior.
+
+    Limitations:
+        Generator functions are rejected at decoration time for the same
+        reason as ``retry``: the try/except would never see iteration errors.
     """
 
     def decorator(method: Callable[..., _T]) -> Callable[..., _T]:
+        if inspect.isgeneratorfunction(method):
+            raise TypeError(
+                "@retry_or_fallback does not support generator functions; "
+                "wrap the non-streaming call instead"
+            )
+
         @functools.wraps(method)
         def wrapper(self, *args, **kwargs):
             max_retries = getattr(self, "max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))

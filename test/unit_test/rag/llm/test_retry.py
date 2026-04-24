@@ -523,6 +523,34 @@ class TestIsErrorResult:
         assert not is_error_result(["**ERROR**"])
 
 
+class TestGeneratorGuard:
+    """@retry / @retry_or_fallback must reject generator functions at decoration time."""
+
+    def test_retry_rejects_generator(self):
+        with pytest.raises(TypeError, match="does not support generator"):
+            @retry
+            def gen(self):
+                yield 1
+
+    def test_retry_or_fallback_rejects_generator(self):
+        with pytest.raises(TypeError, match="does not support generator"):
+            @retry_or_fallback(lambda e: None)
+            def gen(self):
+                yield 1
+
+    def test_retry_accepts_regular_function(self):
+        @retry
+        def plain(self):
+            return 1
+        assert callable(plain)
+
+    def test_retry_or_fallback_accepts_regular_function(self):
+        @retry_or_fallback(lambda e: None)
+        def plain(self):
+            return 1
+        assert callable(plain)
+
+
 class AsyncMock:
     """Helper class to mock async functions."""
 
