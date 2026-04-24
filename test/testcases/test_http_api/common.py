@@ -23,7 +23,8 @@ from utils.file_utils import create_txt_file
 HEADERS = {"Content-Type": "application/json"}
 DATASETS_API_URL = f"/api/{VERSION}/datasets"
 FILE_API_URL = f"/api/{VERSION}/datasets/{{dataset_id}}/documents"
-FILE_CHUNK_API_URL = f"/api/{VERSION}/datasets/{{dataset_id}}/chunks"
+FILE_PARSE_API_URL = f"/api/{VERSION}/datasets/{{dataset_id}}/documents/parse"
+FILE_STOP_PARSE_API_URL = f"/api/{VERSION}/datasets/{{dataset_id}}/documents/stop"
 CHUNK_API_URL = f"/api/{VERSION}/datasets/{{dataset_id}}/documents/{{document_id}}/chunks"
 CHAT_ASSISTANT_API_URL = f"/api/{VERSION}/chats"
 SESSION_WITH_CHAT_ASSISTANT_API_URL = f"/api/{VERSION}/chats/{{chat_id}}/sessions"
@@ -137,14 +138,14 @@ def delete_all_documents(auth, dataset_id, *, page_size=1000):
 
 
 def parse_documents(auth, dataset_id, payload=None, *, headers=HEADERS):
-    url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
+    url = f"{HOST_ADDRESS}{FILE_PARSE_API_URL}".format(dataset_id=dataset_id)
     res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
 def stop_parse_documents(auth, dataset_id, payload=None):
-    url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
-    res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
+    url = f"{HOST_ADDRESS}{FILE_STOP_PARSE_API_URL}".format(dataset_id=dataset_id)
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 

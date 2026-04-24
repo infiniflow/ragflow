@@ -105,7 +105,7 @@ class TestDocumentsParseStop:
     @pytest.mark.parametrize(
         "invalid_dataset_id, expected_code, expected_message",
         [
-            ("", 100, "<MethodNotAllowed '405: Method Not Allowed'>"),
+            ("", 102, "You don't own the dataset ."),
             (
                 "invalid_dataset_id",
                 102,
