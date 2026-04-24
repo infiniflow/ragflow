@@ -8,7 +8,7 @@
     "models": "models",
     "status": "",
     "balance": "tokens/packages/balance",
-    "embeddings": "embeddings",
+    "embedding": "embedding",
     "rerank": "rerank"
   },
   "models": [

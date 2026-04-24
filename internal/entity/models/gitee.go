@@ -182,6 +182,11 @@ func (z *GiteeModel) Chat(modelName, message *string, apiConfig *APIConfig, chat
 	return chatResponse, nil
 }
 
+// ChatWithMessages sends multiple messages with roles and returns response
+func (z *GiteeModel) ChatWithMessages(modelName string, apiKey *string, messages []Message, chatModelConfig *ChatConfig) (string, error) {
+	return "", fmt.Errorf("%s, ChatWithMessages not implemented", z.Name())
+}
+
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
 func (z *GiteeModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	var region = "default"

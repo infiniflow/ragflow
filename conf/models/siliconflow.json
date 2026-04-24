@@ -6,7 +6,7 @@
   "url_suffix": {
     "chat": "chat/completions",
     "models": "models",
-    "embeddings": "embeddings",
+    "embedding": "embeddings",
     "rerank": "rerank"
   },
   "models": [
