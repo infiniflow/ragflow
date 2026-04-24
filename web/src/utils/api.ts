@@ -51,7 +51,7 @@ export default {
   boxWebAuthResult: () => `${restAPIv1}/connectors/box/oauth/web/result`,
 
   // plugin
-  llmTools: `${webAPI}/plugin/llm_tools`,
+  llmTools: `${restAPIv1}/plugin/tools`,
 
   chatsTranscriptions: `${restAPIv1}/chat/audio/transcription`,
 
@@ -174,7 +174,7 @@ export default {
   createSystemToken: `${restAPIv1}/system/tokens`,
   removeSystemToken: `${restAPIv1}/system/tokens`,
   getSystemConfig: `${restAPIv1}/system/config`,
-  setLangfuseConfig: `${restAPIv1}/langfuse/api_key`,
+  setLangfuseConfig: `${restAPIv1}/langfuse/api-key`,
 
   // flow
   listTemplates: `${webAPI}/canvas/templates`,
