@@ -54,7 +54,7 @@ class Chunk(Base):
 
 
     def update(self, update_message: dict):
-        res = self.patch(f"/datasets/{self.dataset_id}/documents/{self.document_id}/chunks/{self.id}", update_message)
+        res = self.put(f"/datasets/{self.dataset_id}/documents/{self.document_id}/chunks/{self.id}", update_message)
         res = res.json()
         if res.get("code") != 0:
             raise ChunkUpdateError(

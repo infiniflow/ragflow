@@ -429,7 +429,7 @@ def _is_register_disabled_message(message: str) -> bool:
 
 
 def _api_register_user(base_url: str, email: str, password: str, nickname: str) -> None:
-    url = _build_url(base_url, "/api/v1/users")
+    url = _build_url(base_url, "/v1/user/register")
     encrypted_password = _rsa_encrypt_password(password)
     status, payload = _api_post_json(
         url,
@@ -446,7 +446,7 @@ def _api_register_user(base_url: str, email: str, password: str, nickname: str) 
 
 
 def _api_login_user(base_url: str, email: str, password: str) -> None:
-    url = _build_url(base_url, "/api/v1/auth/login")
+    url = _build_url(base_url, "/v1/user/login")
     encrypted_password = _rsa_encrypt_password(password)
     status, payload = _api_post_json(
         url,
@@ -1047,7 +1047,7 @@ def _ensure_model_provider_ready_via_api(base_url: str, auth_header: str) -> dic
         pytest.skip("No model provider configured and ZHIPU_AI_API_KEY is not set.")
 
     _, tenant_payload = _api_request_json(
-        _build_url(base_url, "/api/v1/users/me/models"), headers=headers
+        _build_url(base_url, "/v1/user/tenant_info"), headers=headers
     )
     tenant_data = _response_data(tenant_payload)
     tenant_id = tenant_data.get("tenant_id")
@@ -1123,8 +1123,8 @@ def _ensure_model_provider_ready_via_api(base_url: str, auth_header: str) -> dic
             "tts_id": target_tts,
         }
         _, set_tenant_payload = _api_request_json(
-            _build_url(base_url, "/api/v1/users/me/models"),
-            method="PATCH",
+            _build_url(base_url, "/v1/user/set_tenant_info"),
+            method="POST",
             payload=tenant_payload,
             headers=headers,
         )

@@ -230,7 +230,7 @@ class RAGFlow:
             return chunks
         raise Exception(res.get("message"))
 
-    def list_agents(self, page: int = 1, page_size: int = 30, orderby: str = "update_time", desc: bool = True) -> list[Agent]:
+    def list_agents(self, page: int = 1, page_size: int = 30, orderby: str = "update_time", desc: bool = True, id: str | None = None, title: str | None = None) -> list[Agent]:
         res = self.get(
             "/agents",
             {
@@ -238,23 +238,16 @@ class RAGFlow:
                 "page_size": page_size,
                 "orderby": orderby,
                 "desc": desc,
+                "id": id,
+                "title": title,
             },
         )
         res = res.json()
         result_list = []
         if res.get("code") == 0:
-            data = res.get("data") or {}
-            data_list = data.get("canvas", [])
-            for data in data_list:
+            for data in res["data"]:
                 result_list.append(Agent(self, data))
             return result_list
-        raise Exception(res["message"])
-
-    def get_agent(self, agent_id: str) -> Agent:
-        res = self.get(f"/agents/{agent_id}")
-        res = res.json()
-        if res.get("code") == 0:
-            return Agent(self, res["data"])
         raise Exception(res["message"])
 
     def create_agent(self, title: str, dsl: dict, description: str | None = None) -> None:

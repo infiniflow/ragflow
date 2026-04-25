@@ -51,7 +51,7 @@ import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';
 export const getFileLogsTableColumns = (
   t: TFunction<'translation', string>,
   showLog: (row: Row<IFileLogItem & DocumentLog>, active: LogTabs) => void,
-  knowledgeId: string,
+  kowledgeId: string,
   navigateToDataflowResult: (
     props: NavigateToDataflowResultProps,
   ) => () => void,
@@ -210,8 +210,7 @@ export const getFileLogsTableColumns = (
               size="icon-sm"
               onClick={navigateToDataflowResult({
                 id: row.original.id,
-                [PipelineResultSearchParams.KnowledgeId]:
-                  row.original.kb_id || knowledgeId,
+                [PipelineResultSearchParams.KnowledgeId]: kowledgeId,
                 [PipelineResultSearchParams.DocumentId]:
                   row.original.document_id,
                 [PipelineResultSearchParams.IsReadOnly]: 'false',
@@ -359,7 +358,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   const [isModalVisible, setIsModalVisible] = useState(false);
   const { navigateToDataflowResult } = useNavigatePage();
   const [logInfo, setLogInfo] = useState<IFileLogItem>();
-  const knowledgeId = useParams().id;
+  const kowledgeId = useParams().id;
   const showLog = (row: Row<IFileLogItem & DocumentLog>) => {
     const logDetail = {
       taskId: row.original?.dsl?.task_id,
@@ -383,7 +382,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       ? getFileLogsTableColumns(
           t,
           showLog,
-          knowledgeId || '',
+          kowledgeId || '',
           navigateToDataflowResult,
           dataSourceInfo,
         )

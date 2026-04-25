@@ -40,7 +40,6 @@ export const useSelectChunkList = () => {
 export const useDeleteChunk = () => {
   const queryClient = useQueryClient();
   const { setPaginationParams } = useSetPaginationParams();
-  const { knowledgeId } = useGetKnowledgeSearchParams();
   const {
     data,
     isPending: loading,
@@ -48,10 +47,7 @@ export const useDeleteChunk = () => {
   } = useMutation({
     mutationKey: ['deleteChunk'],
     mutationFn: async (params: { chunkIds: string[]; doc_id: string }) => {
-      const { data } = await kbService.rmChunk({
-        ...params,
-        kb_id: knowledgeId,
-      });
+      const { data } = await kbService.rmChunk(params);
       if (data.code === 0) {
         setPaginationParams(1);
         queryClient.invalidateQueries({ queryKey: ['fetchChunkList'] });
@@ -66,7 +62,6 @@ export const useDeleteChunk = () => {
 export const useCreateChunk = () => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const { knowledgeId } = useGetKnowledgeSearchParams();
 
   const {
     data,
@@ -79,10 +74,7 @@ export const useCreateChunk = () => {
       if (payload.chunk_id) {
         service = kbService.setChunk;
       }
-      const { data } = await service({
-        ...payload,
-        kb_id: payload.kb_id || knowledgeId,
-      });
+      const { data } = await service(payload);
       if (data.code === 0) {
         message.success(t('message.created'));
         setTimeout(() => {
@@ -96,20 +88,14 @@ export const useCreateChunk = () => {
   return { data, loading, createChunk: mutateAsync };
 };
 
-export const useFetchChunk = (
-  chunkId?: string,
-  documentId?: string,
-): ResponseType<any> => {
-  const { knowledgeId } = useGetKnowledgeSearchParams();
+export const useFetchChunk = (chunkId?: string): ResponseType<any> => {
   const { data } = useQuery({
-    queryKey: ['fetchChunk', knowledgeId, documentId, chunkId],
-    enabled: !!chunkId && !!documentId && !!knowledgeId,
+    queryKey: ['fetchChunk'],
+    enabled: !!chunkId,
     initialData: {},
     gcTime: 0,
     queryFn: async () => {
       const data = await kbService.getChunk({
-        kb_id: knowledgeId,
-        doc_id: documentId,
         chunk_id: chunkId,
       });
 
@@ -129,7 +115,7 @@ export const useFetchNextChunkList = (
 }> &
   IChunkListResult => {
   const { pagination, setPagination } = useGetPaginationWithRouter();
-  const { documentId, knowledgeId } = useGetKnowledgeSearchParams();
+  const { documentId } = useGetKnowledgeSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
   const [available, setAvailable] = useState<number | undefined>();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
@@ -141,7 +127,6 @@ export const useFetchNextChunkList = (
   } = useQuery({
     queryKey: [
       'fetchChunkList',
-      knowledgeId,
       documentId,
       pagination.current,
       pagination.pageSize,
@@ -151,10 +136,9 @@ export const useFetchNextChunkList = (
     placeholderData: (previousData: any) =>
       previousData ?? { data: [], total: 0, documentInfo: {} }, // https://github.com/TanStack/query/issues/8183
     gcTime: 0,
-    enabled: enabled && !!knowledgeId && !!documentId,
+    enabled,
     queryFn: async () => {
       const { data } = await kbService.chunkList({
-        kb_id: knowledgeId,
         doc_id: documentId,
         page: pagination.current,
         size: pagination.pageSize,
@@ -211,7 +195,6 @@ export const useFetchNextChunkList = (
 
 export const useSwitchChunk = () => {
   const { t } = useTranslation();
-  const { knowledgeId } = useGetKnowledgeSearchParams();
   const {
     data,
     isPending: loading,
@@ -223,10 +206,7 @@ export const useSwitchChunk = () => {
       available_int?: number;
       doc_id: string;
     }) => {
-      const { data } = await kbService.switchChunk({
-        ...params,
-        kb_id: knowledgeId,
-      });
+      const { data } = await kbService.switchChunk(params);
       if (data.code === 0) {
         message.success(t('message.modified'));
       }

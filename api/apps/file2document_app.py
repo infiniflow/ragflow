@@ -25,6 +25,7 @@ from api.apps import login_required, current_user
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from common.misc_utils import get_uuid
+from common.constants import RetCode
 from api.db import FileType
 from api.db.services.document_service import DocumentService
 
@@ -73,7 +74,7 @@ def _convert_files(file_ids, kb_ids, user_id):
             })
 
 
-@manager.route('/files/link-to-datasets', methods=['POST'])  # noqa: F821
+@manager.route('/convert', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("file_ids", "kb_ids")
 async def convert():
@@ -114,6 +115,39 @@ async def convert():
         future.add_done_callback(
             lambda f: logging.error("_convert_files failed: %s", f.exception()) if f.exception() else None
         )
+        return get_json_result(data=True)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/rm', methods=['POST'])  # noqa: F821
+@login_required
+@validate_request("file_ids")
+async def rm():
+    req = await get_request_json()
+    file_ids = req["file_ids"]
+    if not file_ids:
+        return get_json_result(
+            data=False, message='Lack of "Files ID"', code=RetCode.ARGUMENT_ERROR)
+    try:
+        for file_id in file_ids:
+            informs = File2DocumentService.get_by_file_id(file_id)
+            if not informs:
+                return get_data_error_result(message="Inform not found!")
+            for inform in informs:
+                if not inform:
+                    return get_data_error_result(message="Inform not found!")
+                File2DocumentService.delete_by_file_id(file_id)
+                doc_id = inform.document_id
+                e, doc = DocumentService.get_by_id(doc_id)
+                if not e:
+                    return get_data_error_result(message="Document not found!")
+                tenant_id = DocumentService.get_tenant_id(doc_id)
+                if not tenant_id:
+                    return get_data_error_result(message="Tenant not found!")
+                if not DocumentService.remove_document(doc, tenant_id):
+                    return get_data_error_result(
+                        message="Database error (Document removal)!")
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

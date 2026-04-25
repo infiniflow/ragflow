@@ -18,7 +18,7 @@ def encrypt_password(password_plain: str) -> str:
 
 def register_user(client: HttpClient, email: str, nickname: str, password_enc: str) -> None:
     payload = {"email": email, "nickname": nickname, "password": password_enc}
-    res = client.request_json("POST", "/users", use_api_base=True, auth_kind=None, json_body=payload)
+    res = client.request_json("POST", "/user/register", use_api_base=False, auth_kind=None, json_body=payload)
     if res.get("code") == 0:
         return
     msg = res.get("message", "")
@@ -29,7 +29,7 @@ def register_user(client: HttpClient, email: str, nickname: str, password_enc: s
 
 def login_user(client: HttpClient, email: str, password_enc: str) -> str:
     payload = {"email": email, "password": password_enc}
-    response = client.request("POST", "/auth/login", use_api_base=True, auth_kind=None, json_body=payload)
+    response = client.request("POST", "/user/login", use_api_base=False, auth_kind=None, json_body=payload)
     try:
         res = response.json()
     except Exception as exc:
@@ -76,13 +76,13 @@ def set_llm_api_key(
 
 
 def get_tenant_info(client: HttpClient) -> Dict[str, Any]:
-    res = client.request_json("GET", "/users/me/models", use_api_base=True, auth_kind="login")
+    res = client.request_json("GET", "/user/tenant_info", use_api_base=False, auth_kind="login")
     if res.get("code") != 0:
         raise AuthError(f"Failed to get tenant info: {res.get('message')}")
     return res.get("data", {})
 
 
 def set_tenant_info(client: HttpClient, payload: Dict[str, Any]) -> None:
-    res = client.request_json("PATCH", "/users/me/models", use_api_base=True, auth_kind="login", json_body=payload)
+    res = client.request_json("POST", "/user/set_tenant_info", use_api_base=False, auth_kind="login", json_body=payload)
     if res.get("code") != 0:
         raise AuthError(f"Failed to set tenant info: {res.get('message')}")

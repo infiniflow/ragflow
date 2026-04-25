@@ -2,7 +2,6 @@ import {
   KnowledgeRouteKey,
   KnowledgeSearchParams,
 } from '@/constants/knowledge';
-import { Routes } from '@/routes';
 import { useCallback } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 
@@ -28,16 +27,13 @@ export const useThirdPathName = () => {
 
 export const useGetKnowledgeSearchParams = () => {
   const [currentQueryParameters] = useSearchParams();
-  const { pathname } = useLocation();
-  const isDataflowResultPage = pathname === Routes.DataflowResult;
 
   return {
     type: currentQueryParameters.get(KnowledgeSearchParams.Type) || '',
     documentId:
       currentQueryParameters.get(KnowledgeSearchParams.DocumentId) || '',
-    knowledgeId: isDataflowResultPage
-      ? currentQueryParameters.get('knowledgeId') || ''
-      : currentQueryParameters.get(KnowledgeSearchParams.KnowledgeId) || '',
+    knowledgeId:
+      currentQueryParameters.get(KnowledgeSearchParams.KnowledgeId) || '',
   };
 };
 

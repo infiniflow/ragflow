@@ -44,14 +44,6 @@ class APITokenService(CommonService):
 class API4ConversationService(CommonService):
     model = API4Conversation
 
-    @staticmethod
-    def _normalize_query_date(value, is_end=False):
-        if "T" in value:
-            value = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone().replace(tzinfo=None).strftime("%Y-%m-%d %H:%M:%S")
-        elif len(value) == 10:
-            value = f"{value} 23:59:59" if is_end else f"{value} 00:00:00"
-        return value
-
     @classmethod
     @DB.connection_context()
     def get_list(cls, dialog_id, tenant_id,
@@ -70,11 +62,10 @@ class API4ConversationService(CommonService):
             sessions = sessions.where(cls.model.user_id == user_id)
         if keywords:
             sessions = sessions.where(peewee.fn.LOWER(cls.model.message).contains(keywords.lower()))
-        date_field = cls.model.update_date if orderby.startswith("update_") else cls.model.create_date
         if from_date:
-            sessions = sessions.where(date_field >= cls._normalize_query_date(from_date))
+            sessions = sessions.where(cls.model.create_date >= from_date)
         if to_date:
-            sessions = sessions.where(date_field <= cls._normalize_query_date(to_date, is_end=True))
+            sessions = sessions.where(cls.model.create_date <= to_date)
         if exp_user_id:
             sessions = sessions.where(cls.model.exp_user_id == exp_user_id)
         if desc:

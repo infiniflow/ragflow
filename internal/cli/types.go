@@ -115,7 +115,6 @@ const (
 	TokenDisable
 	TokenEnable
 	TokenUse
-	TokenCheck
 	TokenThink
 	TokenEffort
 	TokenVerbosity

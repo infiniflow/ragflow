@@ -79,7 +79,7 @@ def _load_langfuse_app(monkeypatch):
     stub_langfuse.Langfuse = _FakeLangfuseClient
     monkeypatch.setitem(sys.modules, "langfuse", stub_langfuse)
 
-    module_path = repo_root / "api" / "apps" / "restful_apis" / "langfuse_api.py"
+    module_path = repo_root / "api" / "apps" / "langfuse_app.py"
     spec = importlib.util.spec_from_file_location("test_langfuse_app_unit", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()

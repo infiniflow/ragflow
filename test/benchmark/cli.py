@@ -59,7 +59,7 @@ def _parse_args() -> argparse.Namespace:
     base_parser.add_argument("--login-email", default=os.getenv("RAGFLOW_EMAIL"), help="Login email")
     base_parser.add_argument("--login-nickname", default=os.getenv("RAGFLOW_NICKNAME"), help="Nickname for registration")
     base_parser.add_argument("--login-password", help="Login password (encrypted client-side)")
-    base_parser.add_argument("--allow-register", action="store_true", help="Attempt /users before login")
+    base_parser.add_argument("--allow-register", action="store_true", help="Attempt /user/register before login")
     base_parser.add_argument("--token-name", help="Optional API token name")
     base_parser.add_argument("--bootstrap-llm", action="store_true", help="Ensure LLM factory API key is configured")
     base_parser.add_argument("--llm-factory", default=os.getenv("RAGFLOW_LLM_FACTORY"), help="LLM factory name")

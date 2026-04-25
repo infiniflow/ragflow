@@ -5,7 +5,7 @@ import { DocumentApiAction } from '@/hooks/use-document-request';
 import kbService, {
   getMetaDataService,
   updateDocumentMetaDataConfig,
-  updateDocumentsMetadata,
+  updateMetaData,
 } from '@/services/knowledge-service';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { RowSelectionState } from '@tanstack/react-table';
@@ -375,11 +375,10 @@ export const useManageMetaDataModal = (
   const handleSaveManage = useCallback(
     async (callback: () => void) => {
       console.log('handleSaveManage', tableData);
-      const { data: res } = await updateDocumentsMetadata({
-        dataset_id: id as string,
-        selector: { document_ids: documentIds },
-        updates: operations.updates,
-        deletes: operations.deletes,
+      const { data: res } = await updateMetaData({
+        kb_id: id as string,
+        data: operations,
+        doc_ids: documentIds,
       });
       if (res.code === 0) {
         queryClient.invalidateQueries({

@@ -20,7 +20,7 @@ from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response
 from api.apps import login_required, current_user
 
-@manager.route('/system/stats', methods=['GET'])  # noqa: F821
+@manager.route('/stats', methods=['GET'])  # noqa: F821
 @login_required
 def stats():
     try:

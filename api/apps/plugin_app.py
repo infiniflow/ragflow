@@ -21,7 +21,7 @@ from api.utils.api_utils import get_json_result
 from agent.plugin import GlobalPluginManager
 
 
-@manager.route('/plugin/tools', methods=['GET'])  # noqa: F821
+@manager.route('/llm_tools', methods=['GET'])  # noqa: F821
 @login_required
 def llm_tools() -> Response:
     tools = GlobalPluginManager.get_llm_tools()

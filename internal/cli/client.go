@@ -250,8 +250,6 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ChatToModel(cmd)
 	case "think_chat_to_model":
 		return c.ChatToModel(cmd)
-	case "check_provider_connection":
-		return c.CheckProviderConnection(cmd)
 	case "use_model":
 		return c.UseModel(cmd)
 	case "show_current_model":

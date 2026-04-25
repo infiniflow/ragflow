@@ -128,7 +128,6 @@ function transformApiResponseToForm(
     method,
     hierarchy,
     include_heading_content: Boolean(apiData.include_heading_content),
-    root_chunk_as_heading: Boolean(apiData.root_chunk_as_heading),
     rules,
   };
 }

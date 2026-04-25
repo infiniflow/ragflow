@@ -212,17 +212,18 @@ class TestDeleteQueryConstruction:
         assert len(kw_terms) == 1
 
 
-class TestChunkApiDeleteCondition:
+class TestChunkAppDeleteCondition:
     """
-    Tests that verify the RESTful chunk DELETE endpoint passes the correct
+    Tests that verify the chunk_app.py rm endpoint passes the correct
     condition to docStoreConn.delete.
     """
 
     def test_rm_endpoint_includes_doc_id_in_condition(self):
         """
-        The /api/v1/datasets/<dataset_id>/documents/<document_id>/chunks endpoint
-        MUST include doc_id in the condition
+        The /chunk/rm endpoint MUST include doc_id in the condition
         passed to settings.docStoreConn.delete.
+        
+        This is the fix applied to api/apps/chunk_app.py
         """
         # Simulate what the rm endpoint should construct
         req = {
@@ -247,7 +248,7 @@ class TestChunkApiDeleteCondition:
 
 class TestSDKDocDeleteCondition:
     """
-    Tests that verify the RESTful chunk delete endpoint constructs
+    Tests that verify the SDK doc.py rm_chunk endpoint constructs
     the correct deletion condition.
     """
 
@@ -260,7 +261,7 @@ class TestSDKDocDeleteCondition:
         document_id = "doc456"
         chunk_ids = ["chunk1", "chunk2"]
         
-        # The CORRECT condition construction (from restful_apis/chunk_api.py):
+        # The CORRECT condition construction (from sdk/doc.py):
         condition = {"doc_id": document_id}
         if chunk_ids:
             condition["id"] = chunk_ids

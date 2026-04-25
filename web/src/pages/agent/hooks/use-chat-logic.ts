@@ -8,7 +8,7 @@ type IAwaitCompentData = {
   derivedMessages: IMessage[];
   sendFormMessage: (params: {
     inputs: Record<string, BeginQuery>;
-    agent_id: string;
+    id: string;
   }) => void;
   canvasId: string;
 };
@@ -37,7 +37,7 @@ const useAwaitCompentData = (props: IAwaitCompentData) => {
       const nextInputs = buildBeginQueryWithObject(inputs, values);
       sendFormMessage({
         inputs: nextInputs,
-        agent_id: canvasId,
+        id: canvasId,
       });
     },
     [getInputs, sendFormMessage, canvasId],

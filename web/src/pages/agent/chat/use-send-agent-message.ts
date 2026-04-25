@@ -240,7 +240,7 @@ export const useSendAgentMessage = ({
   const inputs = useSelectBeginNodeDataInputs();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const { send, answerList, done, stopOutputMessage, resetAnswerList } =
-    useSendMessageBySSE(url || api.agentChatCompletion);
+    useSendMessageBySSE(url || api.runCanvas);
   const firstAnswer = answerList[0];
   const messageId = useMemo(() => {
     return firstAnswer?.message_id;
@@ -298,12 +298,13 @@ export const useSendAgentMessage = ({
       beginInputs?: BeginQuery[];
       exploreSessionId?: string;
     }) => {
-      const params: Record<string, unknown> = { agent_id: agentId };
+      const params: Record<string, unknown> = {
+        id: agentId,
+      };
 
       params.running_hint_text = i18n.t('flow.runningHintText', {
         defaultValue: 'is running...🕞',
       });
-      params['openai-compatible'] = false;
       if (typeof message.content === 'string') {
         const query = inputs;
 
@@ -360,7 +361,7 @@ export const useSendAgentMessage = ({
   );
 
   const sendFormMessage = useCallback(
-    async (body: { agent_id?: string; inputs: Record<string, BeginQuery> }) => {
+    async (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
       addNewestOneQuestion({
         content: Object.entries(body.inputs)
           .map(([, val]) => `${val.name}: ${val.value}`)

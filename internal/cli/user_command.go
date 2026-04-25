@@ -1590,46 +1590,6 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) CheckProviderConnection(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
-		return nil, fmt.Errorf("API token not set. Please login first")
-	}
-
-	if c.ServerType != "user" {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	instanceName, ok := cmd.Params["instance_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("instance name not provided")
-	}
-
-	providerName, ok := cmd.Params["provider_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("provider name not provided")
-	}
-
-	url := fmt.Sprintf("/providers/%s/instances/%s/connection", providerName, instanceName)
-
-	resp, err := c.HTTPClient.Request("GET", url, true, "web", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check provider connection: %w", err)
-	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to check provider connection: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
-	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
-
-}
-
 // UseModel sets the current model for chat
 func (c *RAGFlowClient) UseModel(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {

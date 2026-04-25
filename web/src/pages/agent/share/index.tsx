@@ -6,7 +6,7 @@ import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { useSyncThemeFromParams } from '@/components/theme-provider';
 import { MessageType } from '@/constants/chat';
-import { useUploadAgentFileWithProgress } from '@/hooks/use-agent-request';
+import { useUploadCanvasFileWithProgress } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
 import i18n, { changeLanguageAsync } from '@/locales/config';
 import DebugContent from '@/pages/agent/debug-content';
@@ -33,8 +33,8 @@ const ChatContainer = () => {
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
-  const { uploadAgentFile, loading } =
-    useUploadAgentFileWithProgress(conversationId);
+  const { uploadCanvasFile, loading } =
+    useUploadCanvasFileWithProgress(conversationId);
   const {
     addEventList,
     setCurrentMessageId,
@@ -80,10 +80,10 @@ const ChatContainer = () => {
   const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
     useCallback(
       async (files, options) => {
-        const ret = await uploadAgentFile({ files, options });
+        const ret = await uploadCanvasFile({ files, options });
         appendUploadResponseList(ret.data, files);
       },
-      [appendUploadResponseList, uploadAgentFile],
+      [appendUploadResponseList, uploadCanvasFile],
     );
 
   React.useEffect(() => {

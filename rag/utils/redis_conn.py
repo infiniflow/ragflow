@@ -284,17 +284,6 @@ class RedisDB:
             self.__open__()
         return 0
 
-    def zcard(self, key: str):
-        try:
-            res = self.REDIS.zcard(key)
-            return res
-        except Exception as e:
-            logging.warning(
-                f"RedisDB.zcard {key} got exception: {e}"
-            )
-            self.__open__()
-        return 0
-
     def incrby(self, key: str, increment: int):
         return self.REDIS.incrby(key, increment)
 

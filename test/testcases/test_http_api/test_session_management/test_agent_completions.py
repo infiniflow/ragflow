@@ -49,18 +49,11 @@ MINIMAL_DSL = {
     "variables": {},
 }
 
-
-def _agent_items(res):
-    data = res.get("data", [])
-    if isinstance(data, dict):
-        return data.get("canvas", [])
-    return data
-
 @pytest.fixture(scope="function")
 def agent_id(HttpApiAuth, request):
     res = list_agents(HttpApiAuth, {"page_size": 1000})
     assert res["code"] == 0, res
-    for agent in _agent_items(res):
+    for agent in res.get("data", []):
         if agent.get("title") == AGENT_TITLE:
             delete_agent(HttpApiAuth, agent["id"])
 
@@ -68,9 +61,8 @@ def agent_id(HttpApiAuth, request):
     assert res["code"] == 0, res
     res = list_agents(HttpApiAuth, {"title": AGENT_TITLE})
     assert res["code"] == 0, res
-    agents = _agent_items(res)
-    assert agents, res
-    agent_id = agents[0]["id"]
+    assert res.get("data"), res
+    agent_id = res["data"][0]["id"]
 
     def cleanup():
         delete_all_agent_sessions(HttpApiAuth, agent_id)
@@ -90,7 +82,7 @@ class TestAgentCompletions:
         res = agent_completions(
             HttpApiAuth,
             agent_id,
-            {"query": "hello", "stream": False, "session_id": session_id},
+            {"question": "hello", "stream": False, "session_id": session_id},
         )
         assert res["code"] == 0, res
         if isinstance(res["data"], dict):

@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
 import logging
 import string
 import os
@@ -59,9 +60,10 @@ from api.utils.web_utils import (
     captcha_key,
 )
 from common import settings
+from common.http_client import async_request
 
 
-@manager.route("/auth/login", methods=["POST"])  # noqa: F821
+@manager.route("/login", methods=["POST", "GET"])  # noqa: F821
 async def login():
     """
     User login endpoint.
@@ -138,7 +140,7 @@ async def login():
         )
 
 
-@manager.route("/auth/login/channels", methods=["GET"])  # noqa: F821
+@manager.route("/login/channels", methods=["GET"])  # noqa: F821
 async def get_login_channels():
     """
     Get all supported authentication channels.
@@ -159,7 +161,7 @@ async def get_login_channels():
         return get_json_result(data=[], message=f"Load channels failure, error: {str(e)}", code=RetCode.EXCEPTION_ERROR)
 
 
-@manager.route("/auth/login/<channel>", methods=["GET"])  # noqa: F821
+@manager.route("/login/<channel>", methods=["GET"])  # noqa: F821
 async def oauth_login(channel):
     channel_config = settings.OAUTH_CONFIG.get(channel)
     if not channel_config:
@@ -172,7 +174,7 @@ async def oauth_login(channel):
     return redirect(auth_url)
 
 
-@manager.route("/auth/oauth/<channel>/callback", methods=["GET"])  # noqa: F821
+@manager.route("/oauth/callback/<channel>", methods=["GET"])  # noqa: F821
 async def oauth_callback(channel):
     """
     Handle the OAuth/OIDC callback for various channels dynamically.
@@ -267,7 +269,224 @@ async def oauth_callback(channel):
         return redirect(f"/?error={str(e)}")
 
 
-@manager.route("/auth/logout", methods=["POST"])  # noqa: F821
+@manager.route("/github_callback", methods=["GET"])  # noqa: F821
+async def github_callback():
+    """
+    **Deprecated**, Use `/oauth/callback/<channel>` instead.
+
+    GitHub OAuth callback endpoint.
+    ---
+    tags:
+      - OAuth
+    parameters:
+      - in: query
+        name: code
+        type: string
+        required: true
+        description: Authorization code from GitHub.
+    responses:
+      200:
+        description: Authentication successful.
+        schema:
+          type: object
+    """
+    res = await async_request(
+        "POST",
+        settings.GITHUB_OAUTH.get("url"),
+        data={
+            "client_id": settings.GITHUB_OAUTH.get("client_id"),
+            "client_secret": settings.GITHUB_OAUTH.get("secret_key"),
+            "code": request.args.get("code"),
+        },
+        headers={"Accept": "application/json"},
+    )
+    res = res.json()
+    if "error" in res:
+        return redirect("/?error=%s" % res["error_description"])
+
+    if "user:email" not in res["scope"].split(","):
+        return redirect("/?error=user:email not in scope")
+
+    session["access_token"] = res["access_token"]
+    session["access_token_from"] = "github"
+    user_info = await user_info_from_github(session["access_token"])
+    email_address = user_info["email"]
+    users = UserService.query(email=email_address)
+    user_id = get_uuid()
+    if not users:
+        # User isn't try to register
+        try:
+            try:
+                avatar = await download_img(user_info["avatar_url"])
+            except Exception as e:
+                logging.exception(e)
+                avatar = ""
+            users = user_register(
+                user_id,
+                {
+                    "access_token": session["access_token"],
+                    "email": email_address,
+                    "avatar": avatar,
+                    "nickname": user_info["login"],
+                    "login_channel": "github",
+                    "last_login_time": get_format_time(),
+                    "is_superuser": False,
+                },
+            )
+            if not users:
+                raise Exception(f"Fail to register {email_address}.")
+            if len(users) > 1:
+                raise Exception(f"Same email: {email_address} exists!")
+
+            # Try to log in
+            user = users[0]
+            login_user(user)
+            return redirect("/?auth=%s" % user.get_id())
+        except Exception as e:
+            rollback_user_registration(user_id)
+            logging.exception(e)
+            return redirect("/?error=%s" % str(e))
+
+    # User has already registered, try to log in
+    user = users[0]
+    user.access_token = get_uuid()
+    if user and hasattr(user, 'is_active') and user.is_active == "0":
+        return redirect("/?error=user_inactive")
+    login_user(user)
+    user.save()
+    return redirect("/?auth=%s" % user.get_id())
+
+
+@manager.route("/feishu_callback", methods=["GET"])  # noqa: F821
+async def feishu_callback():
+    """
+    Feishu OAuth callback endpoint.
+    ---
+    tags:
+      - OAuth
+    parameters:
+      - in: query
+        name: code
+        type: string
+        required: true
+        description: Authorization code from Feishu.
+    responses:
+      200:
+        description: Authentication successful.
+        schema:
+          type: object
+    """
+    app_access_token_res = await async_request(
+        "POST",
+        settings.FEISHU_OAUTH.get("app_access_token_url"),
+        data=json.dumps(
+            {
+                "app_id": settings.FEISHU_OAUTH.get("app_id"),
+                "app_secret": settings.FEISHU_OAUTH.get("app_secret"),
+            }
+        ),
+        headers={"Content-Type": "application/json; charset=utf-8"},
+    )
+    app_access_token_res = app_access_token_res.json()
+    if app_access_token_res["code"] != 0:
+        return redirect("/?error=%s" % app_access_token_res)
+
+    res = await async_request(
+        "POST",
+        settings.FEISHU_OAUTH.get("user_access_token_url"),
+        data=json.dumps(
+            {
+                "grant_type": settings.FEISHU_OAUTH.get("grant_type"),
+                "code": request.args.get("code"),
+            }
+        ),
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            "Authorization": f"Bearer {app_access_token_res['app_access_token']}",
+        },
+    )
+    res = res.json()
+    if res["code"] != 0:
+        return redirect("/?error=%s" % res["message"])
+
+    if "contact:user.email:readonly" not in res["data"]["scope"].split():
+        return redirect("/?error=contact:user.email:readonly not in scope")
+    session["access_token"] = res["data"]["access_token"]
+    session["access_token_from"] = "feishu"
+    user_info = await user_info_from_feishu(session["access_token"])
+    email_address = user_info["email"]
+    users = UserService.query(email=email_address)
+    user_id = get_uuid()
+    if not users:
+        # User isn't try to register
+        try:
+            try:
+                avatar = await download_img(user_info["avatar_url"])
+            except Exception as e:
+                logging.exception(e)
+                avatar = ""
+            users = user_register(
+                user_id,
+                {
+                    "access_token": session["access_token"],
+                    "email": email_address,
+                    "avatar": avatar,
+                    "nickname": user_info["en_name"],
+                    "login_channel": "feishu",
+                    "last_login_time": get_format_time(),
+                    "is_superuser": False,
+                },
+            )
+            if not users:
+                raise Exception(f"Fail to register {email_address}.")
+            if len(users) > 1:
+                raise Exception(f"Same email: {email_address} exists!")
+
+            # Try to log in
+            user = users[0]
+            login_user(user)
+            return redirect("/?auth=%s" % user.get_id())
+        except Exception as e:
+            rollback_user_registration(user_id)
+            logging.exception(e)
+            return redirect("/?error=%s" % str(e))
+
+    # User has already registered, try to log in
+    user = users[0]
+    if user and hasattr(user, 'is_active') and user.is_active == "0":
+        return redirect("/?error=user_inactive")
+    user.access_token = get_uuid()
+    login_user(user)
+    user.save()
+    return redirect("/?auth=%s" % user.get_id())
+
+
+async def user_info_from_feishu(access_token):
+    headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "Authorization": f"Bearer {access_token}",
+    }
+    res = await async_request("GET", "https://open.feishu.cn/open-apis/authen/v1/user_info", headers=headers)
+    user_info = res.json()["data"]
+    user_info["email"] = None if user_info.get("email") == "" else user_info["email"]
+    return user_info
+
+
+async def user_info_from_github(access_token):
+    headers = {"Accept": "application/json", "Authorization": f"token {access_token}"}
+    res = await async_request("GET", f"https://api.github.com/user?access_token={access_token}", headers=headers)
+    user_info = res.json()
+    email_info_response = await async_request(
+        "GET",
+        f"https://api.github.com/user/emails?access_token={access_token}",
+        headers=headers,
+    )
+    email_info = email_info_response.json()
+    user_info["email"] = next((email for email in email_info if email["primary"]), None)["email"]
+    return user_info
+
+
+@manager.route("/logout", methods=["GET"])  # noqa: F821
 @login_required
 async def log_out():
     """
@@ -289,7 +508,7 @@ async def log_out():
     return get_json_result(data=True)
 
 
-@manager.route("/users/me", methods=["PATCH"])  # noqa: F821
+@manager.route("/setting", methods=["POST"])  # noqa: F821
 @login_required
 async def setting_user():
     """
@@ -357,7 +576,7 @@ async def setting_user():
         return get_json_result(data=False, message="Update failure!", code=RetCode.EXCEPTION_ERROR)
 
 
-@manager.route("/users/me", methods=["GET"])  # noqa: F821
+@manager.route("/info", methods=["GET"])  # noqa: F821
 @login_required
 async def user_profile():
     """
@@ -448,7 +667,7 @@ def user_register(user_id, user):
     return UserService.query(email=user["email"])
 
 
-@manager.route("/users", methods=["POST"])  # noqa: F821
+@manager.route("/register", methods=["POST"])  # noqa: F821
 @validate_request("nickname", "email", "password")
 async def user_add():
     """
@@ -542,7 +761,7 @@ async def user_add():
         )
 
 
-@manager.route("/users/me/models", methods=["GET"])  # noqa: F821
+@manager.route("/tenant_info", methods=["GET"])  # noqa: F821
 @login_required
 async def tenant_info():
     """
@@ -580,7 +799,7 @@ async def tenant_info():
         return server_error_response(e)
 
 
-@manager.route("/users/me/models", methods=["PATCH"])  # noqa: F821
+@manager.route("/set_tenant_info", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("tenant_id", "asr_id", "embd_id", "img2txt_id", "llm_id")
 async def set_tenant_info():
@@ -630,7 +849,7 @@ async def set_tenant_info():
         return server_error_response(e)
 
 
-@manager.route("/auth/password/forgot/captcha", methods=["POST"])  # noqa: F821
+@manager.route("/forget/captcha", methods=["GET"])  # noqa: F821
 async def forget_get_captcha():
     """
     GET /forget/captcha?email=<email>
@@ -658,7 +877,7 @@ async def forget_get_captcha():
     return response
 
 
-@manager.route("/auth/password/forgot/otp", methods=["POST"])  # noqa: F821
+@manager.route("/forget/otp", methods=["POST"])  # noqa: F821
 async def forget_send_otp():
     """
     POST /forget/otp
@@ -728,7 +947,7 @@ def _verified_key(email: str) -> str:
     return f"otp:verified:{email}"
 
 
-@manager.route("/auth/password/forgot/otp/verify", methods=["POST"])  # noqa: F821
+@manager.route("/forget/verify-otp", methods=["POST"])  # noqa: F821
 async def forget_verify_otp():
     """
     Verify email + OTP only. On success:
@@ -789,7 +1008,7 @@ async def forget_verify_otp():
     return get_json_result(data=True, code=RetCode.SUCCESS, message="otp verified")
 
 
-@manager.route("/auth/password/reset", methods=["POST"])  # noqa: F821
+@manager.route("/forget/reset-password", methods=["POST"])  # noqa: F821
 async def forget_reset_password():
     """
     Reset password after successful OTP verification.

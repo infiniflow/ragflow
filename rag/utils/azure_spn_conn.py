@@ -68,7 +68,7 @@ class RAGFlowAzureSpnBlob:
         f.append_data(binary, offset=0, length=len(binary))
         return f.flush_data(len(binary))
 
-    def put(self, bucket, fnm, binary, tenant_id=None):
+    def put(self, bucket, fnm, binary):
         for _ in range(3):
             try:
                 f = self.conn.create_file(fnm)

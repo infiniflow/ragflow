@@ -14,14 +14,16 @@
       "max_tokens": 1048576,
       "model_types": [
         "chat"
-      ]
+      ],
+      "features": {}
     },
     {
       "name": "deepseek-v4-pro",
       "max_tokens": 1048576,
       "model_types": [
         "chat"
-      ]
+      ],
+      "features": {}
     }
   ],
   "features": {

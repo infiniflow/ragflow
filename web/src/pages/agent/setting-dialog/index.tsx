@@ -6,7 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useSetAgent } from '@/hooks/use-agent-request';
+import { useSetAgentSetting } from '@/hooks/use-agent-request';
 import { IModalProps } from '@/interfaces/common';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -18,16 +18,16 @@ import {
 
 export function SettingDialog({ hideModal }: IModalProps<any>) {
   const { t } = useTranslation();
-  const { setAgent } = useSetAgent();
+  const { setAgentSetting } = useSetAgentSetting();
 
   const submit = useCallback(
     async (values: SettingFormSchemaType) => {
-      const ret = await setAgent(values);
-      if (ret?.code === 0) {
+      const code = await setAgentSetting(values);
+      if (code === 0) {
         hideModal?.();
       }
     },
-    [hideModal, setAgent],
+    [hideModal, setAgentSetting],
   );
 
   return (

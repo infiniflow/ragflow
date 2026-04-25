@@ -782,7 +782,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
 
     if langfuse_tracer:
-        langfuse_generation = langfuse_tracer.start_observation(as_type="generation",
+        langfuse_generation = langfuse_tracer.start_generation(
             trace_context=trace_context, name="chat", model=llm_model_config["llm_name"],
             input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg}
         )

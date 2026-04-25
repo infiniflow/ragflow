@@ -30,7 +30,7 @@ def step_02_initiate_sso(flow_page, flow_state, login_url, active_auth_context, 
         if not clicked:
             pytest.skip("SSO buttons were present but not interactable")
 
-        page.wait_for_url(re.compile(r".*/api/v1/auth/login/"), timeout=5000)
+        page.wait_for_url(re.compile(r".*/v1/user/login/"), timeout=5000)
     flow_state["sso_clicked"] = True
     snap("sso_clicked")
 

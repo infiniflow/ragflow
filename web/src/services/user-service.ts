@@ -33,7 +33,7 @@ const methods = {
   },
   logout: {
     url: logout,
-    method: 'post',
+    method: 'get',
   },
   register: {
     url: register,
@@ -41,7 +41,7 @@ const methods = {
   },
   setting: {
     url: setting,
-    method: 'patch',
+    method: 'post',
   },
   userInfo: {
     url: userInfo,
@@ -53,7 +53,7 @@ const methods = {
   },
   setTenantInfo: {
     url: setTenantInfo,
-    method: 'patch',
+    method: 'post',
   },
   factoriesList: {
     url: factoriesList,

@@ -172,7 +172,7 @@ def step_03_register_user(
                     snap("register_submitted"),
                 ),
                 lambda resp: resp.request.method == "POST"
-                and "/api/v1/users" in resp.url,
+                and "/v1/user/register" in resp.url,
                 timeout_ms=RESULT_TIMEOUT_MS,
             )
         except PlaywrightTimeoutError as exc:

@@ -306,8 +306,8 @@ def select_default_model(
         capture_response(
             page,
             trigger,
-            lambda resp: resp.request.method == "PATCH"
-            and "/api/v1/users/me/models" in resp.url,
+            lambda resp: resp.request.method == "POST"
+            and "/v1/user/set_tenant_info" in resp.url,
         )
     except PlaywrightTimeoutError:
         if not selected[0]:

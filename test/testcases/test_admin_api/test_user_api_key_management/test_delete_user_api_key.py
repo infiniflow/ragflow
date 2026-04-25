@@ -151,7 +151,7 @@ class TestDeleteUserApiKey:
         user_name: str = EMAIL
 
         # create second user
-        url: str = HOST_ADDRESS + f"/api/{VERSION}/users"
+        url: str = HOST_ADDRESS + f"/{VERSION}/user/register"
         user2_email: str = "qa2@ragflow.io"
         register_data: dict[str, str] = {"email": user2_email, "nickname": "qa2", "password": PASSWORD}
         res: Any = requests.post(url=url, json=register_data)

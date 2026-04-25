@@ -156,7 +156,7 @@ def _load_system_module(monkeypatch):
     quart_mod.jsonify = lambda payload: payload
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
-    module_path = repo_root / "api" / "apps" / "restful_apis" / "system_api.py"
+    module_path = repo_root / "api" / "apps" / "system_app.py"
     spec = importlib.util.spec_from_file_location("test_system_routes_unit_module", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()

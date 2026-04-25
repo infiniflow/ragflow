@@ -21,6 +21,12 @@ const {
   documentCreate,
   documentChangeParser,
   documentThumbnails,
+  chunkList,
+  createChunk,
+  setChunk,
+  getChunk,
+  switchChunk,
+  rmChunk,
   retrievalTest,
   documentRun,
   documentUpload,
@@ -91,6 +97,31 @@ const methods = {
     url: setMeta,
     method: 'post',
   },
+  // chunk管理
+  chunkList: {
+    url: chunkList,
+    method: 'post',
+  },
+  createChunk: {
+    url: createChunk,
+    method: 'post',
+  },
+  setChunk: {
+    url: setChunk,
+    method: 'post',
+  },
+  getChunk: {
+    url: getChunk,
+    method: 'get',
+  },
+  switchChunk: {
+    url: switchChunk,
+    method: 'post',
+  },
+  rmChunk: {
+    url: rmChunk,
+    method: 'post',
+  },
   retrievalTest: {
     url: retrievalTest,
     method: 'post',
@@ -147,139 +178,7 @@ const methods = {
   },
 };
 
-const baseKbService = registerServer<keyof typeof methods>(methods, request);
-
-const getDatasetId = (params: Record<string, any>) =>
-  params.dataset_id || params.kb_id || params.knowledge_id;
-
-const getDocumentId = (params: Record<string, any>) =>
-  params.document_id || params.doc_id;
-
-const mapChunkToLegacy = (chunk: Record<string, any>) => ({
-  ...chunk,
-  chunk_id: chunk.chunk_id || chunk.id,
-  content_with_weight: chunk.content_with_weight || chunk.content,
-  doc_id: chunk.doc_id || chunk.document_id,
-  doc_name: chunk.doc_name || chunk.docnm_kwd,
-  image_id: chunk.image_id || chunk.img_id,
-  important_kwd: chunk.important_kwd || chunk.important_keywords || [],
-  question_kwd: chunk.question_kwd || chunk.questions || [],
-  available_int: chunk.available_int ?? (chunk.available === false ? 0 : 1),
-  positions: chunk.positions || chunk.position_int || [],
-});
-
-const mapDocumentToLegacy = (doc: Record<string, any>) => ({
-  ...doc,
-  chunk_num: doc.chunk_num ?? doc.chunk_count,
-  kb_id: doc.kb_id || doc.dataset_id,
-});
-
-const mapChunkPayloadToRest = (payload: Record<string, any>) => ({
-  content: payload.content ?? payload.content_with_weight,
-  important_keywords: payload.important_keywords ?? payload.important_kwd,
-  questions: payload.questions ?? payload.question_kwd,
-  tag_kwd: payload.tag_kwd,
-  tag_feas: payload.tag_feas,
-  positions: payload.positions,
-  available:
-    payload.available ??
-    (payload.available_int === undefined
-      ? undefined
-      : payload.available_int === 1),
-  image_base64: payload.image_base64,
-});
-
-const getAvailableParam = (available?: number) => {
-  if (available === undefined) {
-    return undefined;
-  }
-  return available === 1 ? 'true' : 'false';
-};
-
-const chunkService = {
-  chunkList: async (params: Record<string, any>) => {
-    const datasetId = getDatasetId(params);
-    const documentId = getDocumentId(params);
-    const response = await request.get(api.chunkList(datasetId, documentId), {
-      params: {
-        page: params.page,
-        page_size: params.page_size || params.size,
-        keywords: params.keywords,
-        available: getAvailableParam(params.available_int),
-      },
-    });
-
-    if (response.data?.code === 0) {
-      response.data.data = {
-        ...response.data.data,
-        chunks: (response.data.data?.chunks || []).map(mapChunkToLegacy),
-        doc: mapDocumentToLegacy(response.data.data?.doc || {}),
-      };
-    }
-
-    return response;
-  },
-  createChunk: async (payload: Record<string, any>) => {
-    const datasetId = getDatasetId(payload);
-    const documentId = getDocumentId(payload);
-    const response = await request.post(api.chunkList(datasetId, documentId), {
-      data: mapChunkPayloadToRest(payload),
-    });
-
-    if (response.data?.code === 0 && response.data.data?.chunk) {
-      response.data.data.chunk = mapChunkToLegacy(response.data.data.chunk);
-    }
-
-    return response;
-  },
-  setChunk: (payload: Record<string, any>) => {
-    const datasetId = getDatasetId(payload);
-    const documentId = getDocumentId(payload);
-    const chunkId = payload.chunk_id || payload.id;
-    return request.patch(api.chunkDetail(datasetId, documentId, chunkId), {
-      data: mapChunkPayloadToRest(payload),
-    });
-  },
-  getChunk: async (params: Record<string, any>) => {
-    const datasetId = getDatasetId(params);
-    const documentId = getDocumentId(params);
-    const chunkId = params.chunk_id || params.id;
-    const response = await request.get(
-      api.chunkDetail(datasetId, documentId, chunkId),
-    );
-
-    if (response.data?.code === 0) {
-      response.data.data = mapChunkToLegacy(response.data.data || {});
-    }
-
-    return response;
-  },
-  switchChunk: (params: Record<string, any>) => {
-    const datasetId = getDatasetId(params);
-    const documentId = getDocumentId(params);
-    return request.patch(api.chunkList(datasetId, documentId), {
-      data: {
-        chunk_ids: params.chunk_ids || params.chunkIds,
-        available_int: params.available_int,
-      },
-    });
-  },
-  rmChunk: (params: Record<string, any>) => {
-    const datasetId = getDatasetId(params);
-    const documentId = getDocumentId(params);
-    return request.delete(api.chunkList(datasetId, documentId), {
-      data: {
-        chunk_ids: params.chunk_ids || params.chunkIds,
-        delete_all: params.delete_all,
-      },
-    });
-  },
-};
-
-const kbService = {
-  ...baseKbService,
-  ...chunkService,
-};
+const kbService = registerServer<keyof typeof methods>(methods, request);
 
 export const listTag = (knowledgeId: string) =>
   request.get(api.listTag(knowledgeId));
@@ -371,23 +270,15 @@ export const getMetaDataService = ({
   request.get(api.getMetaData(kb_id), {
     params: doc_ids?.length ? { doc_ids: doc_ids.join(',') } : undefined,
   });
-export const updateDocumentsMetadata = ({
-  dataset_id,
-  selector,
-  updates,
-  deletes,
+export const updateMetaData = ({
+  kb_id,
+  doc_ids,
+  data,
 }: {
-  dataset_id: string;
-  selector?: {
-    document_ids?: string[];
-    metadata_condition?: any;
-  };
-  updates?: any[];
-  deletes?: any[];
-}) =>
-  request.patch(api.updateDocumentsMetadata(dataset_id), {
-    data: { selector, updates, deletes },
-  });
+  kb_id: string;
+  doc_ids?: string[];
+  data: any;
+}) => request.post(api.updateMetaData, { data: { kb_id, doc_ids, ...data } });
 
 export const updateDocumentMetaDataConfig = ({
   kb_id,

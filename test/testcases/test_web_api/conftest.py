@@ -157,17 +157,17 @@ def add_document(request, WebApiAuth, add_dataset, ragflow_tmp_dir):
 @pytest.fixture(scope="class")
 def add_chunks(request, WebApiAuth, add_document):
     def cleanup():
-        res = list_chunks(WebApiAuth, dataset_id, document_id)
+        res = list_chunks(WebApiAuth, {"doc_id": document_id})
         if res["code"] == 0:
-            chunk_ids = [chunk["id"] for chunk in res["data"]["chunks"]]
-            delete_chunks(WebApiAuth, dataset_id, document_id, {"chunk_ids": chunk_ids})
+            chunk_ids = [chunk["chunk_id"] for chunk in res["data"]["chunks"]]
+            delete_chunks(WebApiAuth, {"doc_id": document_id, "chunk_ids": chunk_ids})
 
     request.addfinalizer(cleanup)
 
-    dataset_id, document_id = add_document
+    kb_id, document_id = add_document
     parse_documents(WebApiAuth, {"doc_ids": [document_id], "run": "1"})
-    condition(WebApiAuth, dataset_id)
-    chunk_ids = batch_add_chunks(WebApiAuth, dataset_id, document_id, 4)
+    condition(WebApiAuth, kb_id)
+    chunk_ids = batch_add_chunks(WebApiAuth, document_id, 4)
     # issues/6487
     sleep(1)
-    return dataset_id, document_id, chunk_ids
+    return kb_id, document_id, chunk_ids

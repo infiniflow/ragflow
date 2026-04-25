@@ -23,7 +23,6 @@ from test_common import (
     document_filter,
     document_infos,
     document_metadata_summary,
-    document_metadata_update,
     document_update_metadata_setting,
 )
 from configs import INVALID_API_TOKEN
@@ -246,44 +245,39 @@ class TestDocumentMetadataUnit:
         monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id=tenant_id)])
         monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: True if _kwargs.get("id") == kb_id else False)
 
-    @pytest.mark.p3
-    def test_update_metadata_missing_dataset_id(self, WebApiAuth, add_document_func):
-        """Test the new unified update_metadata API - missing dataset_id."""
-        # Call with empty dataset_id (should fail validation)
-        res = document_metadata_update(WebApiAuth, "", {"dataset_id": "", "selector": {"document_ids": ["doc1"]}, "updates": []})
-        assert res["code"] == 404
-        assert res["message"] == "Not Found: /api/v1/datasets//documents/metadatas", res
+    def test_metadata_update_missing_kb_id(self, document_app_module, monkeypatch):
+        module = document_app_module
 
-    @pytest.mark.p3
-    def test_update_metadata_success(self, WebApiAuth, add_document_func):
-        """Test the new unified update_metadata API - success case."""
-        kb_id, doc_id = add_document_func
-        res = document_metadata_update(
-            WebApiAuth, kb_id,
-            {
-                "selector": {"document_ids": [doc_id]},
-                "updates": [{"key": "author", "value": "test_author"}],
-                "deletes": []
-            }
-        )
-        assert res["code"] == 0, res
+        async def fake_request_json():
+            return {"doc_ids": ["doc1"], "updates": [], "deletes": []}
 
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.metadata_update.__wrapped__())
+        assert res["code"] == 101
+        assert "KB ID" in res["message"]
 
-    @pytest.mark.p3
-    def test_update_metadata_invalid_delete_item(self, WebApiAuth, add_document_func):
-        """Test the new unified update_metadata API - invalid delete item."""
-        kb_id, doc_id = add_document_func
-        res = document_metadata_update(
-            WebApiAuth, kb_id,
-            {
-                "selector": {"document_ids": [doc_id]},
-                "updates": [],
-                "deletes": [{}]  # Invalid - missing key
-            }
-        )
-        assert res["code"] == 102
-        assert "Each delete requires key" in res["message"], res
+    def test_metadata_update_success(self, document_app_module, monkeypatch):
+        module = document_app_module
+        monkeypatch.setattr(module.DocMetadataService, "batch_update_metadata", lambda *_args, **_kwargs: 1)
 
+        async def fake_request_json():
+            return {"kb_id": "kb1", "doc_ids": ["doc1"], "updates": [{"key": "author", "value": "alice"}], "deletes": []}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.metadata_update.__wrapped__())
+        assert res["code"] == 0
+        assert res["data"]["matched_docs"] == 1
+
+    def test_metadata_update_invalid_delete_item_unit(self, document_app_module, monkeypatch):
+        module = document_app_module
+
+        async def fake_request_json():
+            return {"kb_id": "kb1", "doc_ids": ["doc1"], "updates": [], "deletes": [{}]}
+
+        monkeypatch.setattr(module, "get_request_json", fake_request_json)
+        res = _run(module.metadata_update.__wrapped__())
+        assert res["code"] == module.RetCode.ARGUMENT_ERROR
+        assert "Each delete requires key." in res["message"]
 
     def test_thumbnails_missing_ids_rewrite_and_exception_unit(self, document_app_module, monkeypatch):
         module = document_app_module

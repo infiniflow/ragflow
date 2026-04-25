@@ -13,7 +13,7 @@ import {
   type FileUploadProps,
 } from '@/components/file-upload';
 import { Button } from '@/components/ui/button';
-import { useUploadAgentFile } from '@/hooks/use-agent-request';
+import { useUploadCanvasFile } from '@/hooks/use-agent-request';
 import { Upload, X } from 'lucide-react';
 import * as React from 'react';
 import { toast } from 'sonner';
@@ -34,7 +34,7 @@ export function FileUploadDirectUpload({
     Array.isArray(value) ? value : value ? [value] : [],
   );
 
-  const { uploadAgentFile } = useUploadAgentFile();
+  const { uploadCanvasFile } = useUploadCanvasFile();
 
   const onUpload: NonNullable<FileUploadProps['onUpload']> = React.useCallback(
     async (files, { onSuccess, onError }) => {
@@ -47,7 +47,7 @@ export function FileUploadDirectUpload({
             );
           };
           try {
-            const ret = await uploadAgentFile([file]);
+            const ret = await uploadCanvasFile([file]);
             if (ret.code === 0) {
               onSuccess(file);
               uploadedFilesRef.current = [
@@ -70,7 +70,7 @@ export function FileUploadDirectUpload({
         console.error('Unexpected error during upload:', error);
       }
     },
-    [onChange, uploadAgentFile],
+    [onChange, uploadCanvasFile],
   );
 
   const onFileReject = React.useCallback((file: File, message: string) => {

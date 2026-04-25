@@ -855,7 +855,7 @@ print("Async bulk parsing cancelled.")
 ### Add chunk
 
 ```python
-Document.add_chunk(content:str, important_keywords:list[str] = [], questions:list[str] = [], image_base64:str = None, *, tag_kwd:list[str] = []) -> Chunk
+Document.add_chunk(content:str, important_keywords:list[str] = [], image_base64:str = None, *, tag_kwd:list[str] = []) -> Chunk
 ```
 
 Adds a chunk to the current document.
@@ -869,10 +869,6 @@ The text content of the chunk.
 ##### important_keywords: `list[str]`
 
 The key terms or phrases to tag with the chunk.
-
-##### questions: `list[str]`
-
-Optional questions to use when embedding the chunk.
 
 ##### image_base64: `string`
 
@@ -893,7 +889,6 @@ A `Chunk` object contains the following attributes:
 - `content`: `string` The text content of the chunk.
 - `important_keywords`: `list[str]` A list of key terms or phrases tagged with the chunk.
 - `tag_kwd`: `list[str]` A list of tag keywords associated with the chunk.
-- `questions`: `list[str]` A list of questions associated with the chunk.
 - `image_id`: `string` The image ID associated with the chunk (empty string if no image).
 - `create_time`: `string` The time when the chunk was created (added to the document).
 - `create_timestamp`: `float` The timestamp representing the creation time of the chunk, expressed in seconds since January 1, 1970.
@@ -1028,19 +1023,16 @@ Updates content or configurations for the current chunk.
 
 #### Parameters
 
-##### update_message: `dict[str, str|list[str]|bool]` *Required*
+##### update_message: `dict[str, str|list[str]|int]` *Required*
 
 A dictionary representing the attributes to update, with the following keys:
 
 - `"content"`: `string` The text content of the chunk.
 - `"important_keywords"`: `list[str]` A list of key terms or phrases to tag with the chunk.
-- `"questions"`: `list[str]` A list of questions associated with the chunk.
 - `"tag_kwd"`: `list[str]` A list of tag keywords to associate with the chunk.
-- `"positions"`: `list` Updated source positions for the chunk.
 - `"available"`: `bool` The chunk's availability status in the dataset. Value options:
   - `False`: Unavailable
   - `True`: Available (default)
-- `"image_base64"`: `string` Base64-encoded image content to associate with the chunk.
 
 #### Returns
 
@@ -1710,7 +1702,7 @@ from ragflow_sdk import RAGFlow, Agent
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 agent_id = "AGENT_ID"
-agent = rag_object.get_agent(agent_id)
+agent = rag_object.list_agents(id = agent_id)[0]
 session = agent.create_session()
 # Or create in release mode:
 # session = agent.create_session(release=True)
@@ -1721,10 +1713,10 @@ session = agent.create_session()
 ### Converse with agent
 
 ```python
-Session.ask(question: str = "", stream: bool = False, **kwargs) -> Optional[Message | iter[Message]]
+Session.ask(question: str="", stream: bool = False) -> Optional[Message, iter[Message]]
 ```
 
-Asks a specified agent through the unified completion endpoint.
+Asks a specified agent a question to start an AI-powered conversation.
 
 :::tip NOTE
 In streaming mode, not all responses include a reference, as this depends on the system's judgement.
@@ -1734,24 +1726,14 @@ In streaming mode, not all responses include a reference, as this depends on the
 
 ##### question: `string`
 
-The user message sent to the agent. If the **Begin** component takes parameters, `question` can be an empty string.
+The question to start an AI-powered conversation. If the **Begin** component takes parameters, a question is not required.
 
 ##### stream: `bool`
 
 Indicates whether to output responses in a streaming way:
 
-- `True`: Enable streaming.
+- `True`: Enable streaming (default).
 - `False`: Disable streaming.
-
-##### kwargs: `dict`
-
-Additional request parameters forwarded to the completion API. Common options:
-
-- `inputs`: Variables defined in the **Begin** component.
-- `session_id`: Continue an existing session instead of creating a new one.
-- `release`: Use the latest published version of the agent.
-- `return_trace`: Include execution trace information in the response.
-- Other custom Begin component parameters supported by the current workflow.
 
 #### Returns
 
@@ -1802,8 +1784,8 @@ from ragflow_sdk import RAGFlow, Agent
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_id = "AGENT_ID"
-agent = rag_object.get_agent(AGENT_id)
-session = agent.create_session()
+agent = rag_object.list_agents(id = AGENT_id)[0]
+session = agent.create_session()    
 
 print("\n===== Miss R ====\n")
 print("Hello. What can I do for you?")
@@ -1816,31 +1798,6 @@ while True:
     for ans in session.ask(question, stream=True):
         print(ans.content[len(cont):], end='', flush=True)
         cont = ans.content
-```
-
-Use Begin inputs and request trace output:
-
-```python
-from ragflow_sdk import RAGFlow, Agent
-
-rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-agent = rag_object.get_agent("AGENT_ID")
-session = agent.create_session()
-
-message = session.ask(
-    "",
-    stream=False,
-    inputs={
-        "line_var": {
-            "type": "line",
-            "value": "I am line_var",
-        }
-    },
-    return_trace=True,
-)
-
-print(message.content)
-print(message.reference)
 ```
 
 ---
@@ -1896,7 +1853,7 @@ from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_id = "AGENT_ID"
-agent = rag_object.get_agent(AGENT_id)
+agent = rag_object.list_agents(id = AGENT_id)[0]
 sessons = agent.list_sessions()
 for session in sessions:
     print(session)
@@ -1935,7 +1892,7 @@ from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_id = "AGENT_ID"
-agent = rag_object.get_agent(AGENT_id)
+agent = rag_object.list_agents(id = AGENT_id)[0]
 agent.delete_sessions(ids=["id_1","id_2"])
 agent.delete_sessions(delete_all=True)
 ```
@@ -1952,12 +1909,14 @@ agent.delete_sessions(delete_all=True)
 RAGFlow.list_agents(
     page: int = 1, 
     page_size: int = 30, 
-    orderby: str = "update_time", 
-    desc: bool = True
+    orderby: str = "create_time", 
+    desc: bool = True,
+    id: str = None,
+    title: str = None
 ) -> List[Agent]
 ```
 
-Lists agents. This is a collection API and always returns a list.
+Lists agents.
 
 #### Parameters
 
@@ -1973,12 +1932,20 @@ The number of agents on each page. Defaults to `30`.
 
 The attribute by which the results are sorted. Available options:
 
-- `"create_time"`
-- `"update_time"` (default)
+- `"create_time"` (default)
+- `"update_time"`
 
 ##### desc: `bool`
 
 Indicates whether the retrieved agents should be sorted in descending order. Defaults to `True`.
+
+##### id: `string`  
+
+The ID of the agent to retrieve. Defaults to `None`.
+
+##### name: `string`  
+
+The name of the agent to retrieve. Defaults to `None`.
 
 #### Returns
 
@@ -1992,37 +1959,6 @@ from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 for agent in rag_object.list_agents():
     print(agent)
-```
-
----
-
-### Get agent
-
-```python
-RAGFlow.get_agent(agent_id: str) -> Agent
-```
-
-Gets a single agent by ID and returns the detailed agent payload.
-
-#### Parameters
-
-##### agent_id: `string`
-
-The ID of the agent to retrieve.
-
-#### Returns
-
-- Success: An `Agent` object.
-- Failure: `Exception`.
-
-#### Examples
-
-```python
-from ragflow_sdk import RAGFlow
-
-rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-agent = rag_object.get_agent("AGENT_ID")
-print(agent)
 ```
 
 ---

@@ -16,9 +16,9 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
+from test_common import batch_add_chunks, delete_chunks, list_chunks
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
-from test_common import batch_add_chunks, delete_chunks, list_chunks
 
 
 @pytest.mark.p2
@@ -31,7 +31,7 @@ class TestAuthorization:
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
-        res = delete_chunks(invalid_auth, "dataset_id", "document_id", {"chunk_ids": ["1"]})
+        res = delete_chunks(invalid_auth, {"doc_id": "document_id", "chunk_ids": ["1"]})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -39,16 +39,17 @@ class TestAuthorization:
 class TestChunksDeletion:
     @pytest.mark.p3
     @pytest.mark.parametrize(
-        "document_id, expected_code, expected_message",
+        "doc_id, expected_code, expected_message",
         [
-            ("invalid_document_id", 100, "Can't find the document with ID invalid_document_id!"),
+            ("", 102, "Document not found!"),
+            ("invalid_document_id", 102, "Document not found!"),
         ],
     )
-    def test_invalid_document_id(self, WebApiAuth, add_chunks_func, document_id, expected_code, expected_message):
-        dataset_id, _, chunk_ids = add_chunks_func
-        res = delete_chunks(WebApiAuth, dataset_id, document_id, {"chunk_ids": chunk_ids})
+    def test_invalid_document_id(self, WebApiAuth, add_chunks_func, doc_id, expected_code, expected_message):
+        _, _, chunk_ids = add_chunks_func
+        res = delete_chunks(WebApiAuth, {"doc_id": doc_id, "chunk_ids": chunk_ids})
         assert res["code"] == expected_code, res
-        assert expected_message in res["message"], res
+        assert res["message"] == expected_message, res
 
     @pytest.mark.parametrize(
         "payload",
@@ -59,41 +60,61 @@ class TestChunksDeletion:
         ],
     )
     def test_delete_partial_invalid_id(self, WebApiAuth, add_chunks_func, payload):
-        dataset_id, document_id, chunk_ids = add_chunks_func
-        payload = payload(chunk_ids)
-        res = delete_chunks(WebApiAuth, dataset_id, document_id, payload)
-        assert res["code"] == 102, res
-        assert "rm_chunk deleted chunks" in res["message"], res
+        _, doc_id, chunk_ids = add_chunks_func
+        if callable(payload):
+            payload = payload(chunk_ids)
+        payload["doc_id"] = doc_id
+        res = delete_chunks(WebApiAuth, payload)
+        assert res["code"] == 0, res
+
+        res = list_chunks(WebApiAuth, {"doc_id": doc_id})
+        assert res["code"] == 0, res
+        assert len(res["data"]["chunks"]) == 0, res
+        assert res["data"]["total"] == 0, res
 
     @pytest.mark.p3
     def test_repeated_deletion(self, WebApiAuth, add_chunks_func):
-        dataset_id, document_id, chunk_ids = add_chunks_func
-        payload = {"chunk_ids": chunk_ids}
-        res = delete_chunks(WebApiAuth, dataset_id, document_id, payload)
+        _, doc_id, chunk_ids = add_chunks_func
+        payload = {"chunk_ids": chunk_ids, "doc_id": doc_id}
+        res = delete_chunks(WebApiAuth, payload)
         assert res["code"] == 0, res
 
-        res = delete_chunks(WebApiAuth, dataset_id, document_id, payload)
+        res = delete_chunks(WebApiAuth, payload)
         assert res["code"] == 102, res
-        assert res["message"] == f"rm_chunk deleted chunks 0, expect {len(chunk_ids)}", res
+        assert res["message"] == "Index updating failure", res
 
     @pytest.mark.p3
     def test_duplicate_deletion(self, WebApiAuth, add_chunks_func):
-        dataset_id, document_id, chunk_ids = add_chunks_func
-        res = delete_chunks(WebApiAuth, dataset_id, document_id, {"chunk_ids": chunk_ids * 2})
+        _, doc_id, chunk_ids = add_chunks_func
+        payload = {"chunk_ids": chunk_ids * 2, "doc_id": doc_id}
+        res = delete_chunks(WebApiAuth, payload)
         assert res["code"] == 0, res
 
-        res = list_chunks(WebApiAuth, dataset_id, document_id)
+        res = list_chunks(WebApiAuth, {"doc_id": doc_id})
         assert res["code"] == 0, res
         assert len(res["data"]["chunks"]) == 0, res
         assert res["data"]["total"] == 0, res
 
     @pytest.mark.p2
-    def test_delete_duplicate_ids_dedup_behavior(self, WebApiAuth, add_chunks_func):
-        dataset_id, document_id, chunk_ids = add_chunks_func
-        res = delete_chunks(WebApiAuth, dataset_id, document_id, {"chunk_ids": [chunk_ids[0], chunk_ids[0]]})
+    def test_delete_scalar_chunk_id_payload(self, WebApiAuth, add_chunks_func):
+        _, doc_id, chunk_ids = add_chunks_func
+        payload = {"chunk_ids": chunk_ids[0], "doc_id": doc_id}
+        res = delete_chunks(WebApiAuth, payload)
         assert res["code"] == 0, res
 
-        res = list_chunks(WebApiAuth, dataset_id, document_id)
+        res = list_chunks(WebApiAuth, {"doc_id": doc_id})
+        assert res["code"] == 0, res
+        assert len(res["data"]["chunks"]) == 3, res
+        assert res["data"]["total"] == 3, res
+
+    @pytest.mark.p2
+    def test_delete_duplicate_ids_dedup_behavior(self, WebApiAuth, add_chunks_func):
+        _, doc_id, chunk_ids = add_chunks_func
+        payload = {"chunk_ids": [chunk_ids[0], chunk_ids[0]], "doc_id": doc_id}
+        res = delete_chunks(WebApiAuth, payload)
+        assert res["code"] == 0, res
+
+        res = list_chunks(WebApiAuth, {"doc_id": doc_id})
         assert res["code"] == 0, res
         assert len(res["data"]["chunks"]) == 3, res
         assert res["data"]["total"] == 3, res
@@ -101,12 +122,16 @@ class TestChunksDeletion:
     @pytest.mark.p3
     def test_concurrent_deletion(self, WebApiAuth, add_document):
         count = 100
-        dataset_id, document_id = add_document
-        chunk_ids = batch_add_chunks(WebApiAuth, dataset_id, document_id, count)
+        _, doc_id = add_document
+        chunk_ids = batch_add_chunks(WebApiAuth, doc_id, count)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [
-                executor.submit(delete_chunks, WebApiAuth, dataset_id, document_id, {"chunk_ids": chunk_ids[i : i + 1]})
+                executor.submit(
+                    delete_chunks,
+                    WebApiAuth,
+                    {"doc_id": doc_id, "chunk_ids": chunk_ids[i : i + 1]},
+                )
                 for i in range(count)
             ]
         responses = list(as_completed(futures))
@@ -116,40 +141,45 @@ class TestChunksDeletion:
     @pytest.mark.p3
     def test_delete_1k(self, WebApiAuth, add_document):
         chunks_num = 1_000
-        dataset_id, document_id = add_document
-        chunk_ids = batch_add_chunks(WebApiAuth, dataset_id, document_id, chunks_num)
+        _, doc_id = add_document
+        chunk_ids = batch_add_chunks(WebApiAuth, doc_id, chunks_num)
 
         from time import sleep
 
         sleep(1)
 
-        res = delete_chunks(WebApiAuth, dataset_id, document_id, {"chunk_ids": chunk_ids})
+        res = delete_chunks(WebApiAuth, {"doc_id": doc_id, "chunk_ids": chunk_ids})
         assert res["code"] == 0
 
-        res = list_chunks(WebApiAuth, dataset_id, document_id)
-        assert res["code"] == 0, res
+        res = list_chunks(WebApiAuth, {"doc_id": doc_id})
+        if res["code"] != 0:
+            assert False, res
         assert len(res["data"]["chunks"]) == 0, res
         assert res["data"]["total"] == 0, res
 
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message, remaining",
         [
-            pytest.param({"chunk_ids": ["invalid_id"]}, 102, "rm_chunk deleted chunks 0, expect 1", 4, marks=pytest.mark.p3),
+            pytest.param(None, 100, """TypeError("argument of type \'NoneType\' is not iterable")""", 5, marks=pytest.mark.skip),
+            pytest.param({"chunk_ids": ["invalid_id"]}, 102, "Index updating failure", 4, marks=pytest.mark.p3),
+            pytest.param("not json", 100, """UnboundLocalError("local variable \'duplicate_messages\' referenced before assignment")""", 5, marks=pytest.mark.skip(reason="pull/6376")),
             pytest.param(lambda r: {"chunk_ids": r[:1]}, 0, "", 3, marks=pytest.mark.p3),
             pytest.param(lambda r: {"chunk_ids": r}, 0, "", 0, marks=pytest.mark.p1),
             pytest.param({"chunk_ids": []}, 0, "", 4, marks=pytest.mark.p3),
         ],
     )
     def test_basic_scenarios(self, WebApiAuth, add_chunks_func, payload, expected_code, expected_message, remaining):
-        dataset_id, document_id, chunk_ids = add_chunks_func
+        _, doc_id, chunk_ids = add_chunks_func
         if callable(payload):
             payload = payload(chunk_ids)
-        res = delete_chunks(WebApiAuth, dataset_id, document_id, payload)
+        payload["doc_id"] = doc_id
+        res = delete_chunks(WebApiAuth, payload)
         assert res["code"] == expected_code, res
         if res["code"] != 0:
             assert res["message"] == expected_message, res
 
-        res = list_chunks(WebApiAuth, dataset_id, document_id)
-        assert res["code"] == 0, res
+        res = list_chunks(WebApiAuth, {"doc_id": doc_id})
+        if res["code"] != 0:
+            assert False, res
         assert len(res["data"]["chunks"]) == remaining, res
         assert res["data"]["total"] == remaining, res

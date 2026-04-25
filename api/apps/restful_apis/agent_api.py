@@ -44,6 +44,7 @@ from api.db.services.canvas_service import (
     completion_openai,
 )
 from api.db.services.document_service import DocumentService
+from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
@@ -81,6 +82,107 @@ def _build_sse_response(body):
     resp.headers.add_header("X-Accel-Buffering", "no")
     resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
     return resp
+
+
+def _parse_reference_metadata(req):
+    extra_body = req.get("extra_body")
+    if extra_body is None:
+        extra_body = {}
+    elif not isinstance(extra_body, dict):
+        return get_data_error_result(message="extra_body must be an object."), False, None
+
+    reference_metadata = extra_body.get("reference_metadata")
+    if reference_metadata is None:
+        reference_metadata = {}
+    elif not isinstance(reference_metadata, dict):
+        return get_data_error_result(message="reference_metadata must be an object."), False, None
+
+    metadata_fields = reference_metadata.get("fields")
+    if metadata_fields is not None and not isinstance(metadata_fields, list):
+        return get_data_error_result(message="reference_metadata.fields must be an array."), False, None
+
+    include_reference_metadata = reference_metadata.get("include", False)
+    if not isinstance(include_reference_metadata, bool):
+        return get_data_error_result(message="reference_metadata.include must be a boolean."), False, None
+
+    return None, include_reference_metadata, metadata_fields
+
+
+def _build_agent_reference(reference, metadata_fields=None):
+    if not isinstance(reference, dict):
+        return reference
+
+    raw_chunks = reference.get("chunks")
+    if isinstance(raw_chunks, dict):
+        chunks = [chunk for chunk in raw_chunks.values() if isinstance(chunk, dict)]
+    elif isinstance(raw_chunks, list):
+        chunks = [chunk for chunk in raw_chunks if isinstance(chunk, dict)]
+    else:
+        return reference
+
+    if metadata_fields is not None:
+        metadata_fields = {field for field in metadata_fields if isinstance(field, str)}
+        if not metadata_fields:
+            return reference
+
+    doc_ids_by_kb = {}
+    for chunk in chunks:
+        kb_id = chunk.get("kb_id") or chunk.get("dataset_id")
+        doc_id = chunk.get("doc_id") or chunk.get("document_id")
+        if not kb_id or not doc_id:
+            continue
+        doc_ids_by_kb.setdefault(kb_id, set()).add(doc_id)
+
+    if not doc_ids_by_kb:
+        return reference
+
+    meta_by_doc = {}
+    for kb_id, doc_ids in doc_ids_by_kb.items():
+        meta_map = DocMetadataService.get_metadata_for_documents(list(doc_ids), kb_id)
+        if meta_map:
+            meta_by_doc.update(meta_map)
+
+    if not meta_by_doc:
+        return reference
+
+    for chunk in chunks:
+        doc_id = chunk.get("doc_id") or chunk.get("document_id")
+        meta = meta_by_doc.get(doc_id)
+        if not meta:
+            continue
+        if metadata_fields is not None:
+            meta = {key: value for key, value in meta.items() if key in metadata_fields}
+        if meta:
+            chunk["document_metadata"] = meta
+    return reference
+
+
+def _build_agent_openai_response(answer, metadata_fields=None):
+    if isinstance(answer, str):
+        if answer.strip() in {"data:[DONE]", "data: [DONE]"}:
+            return answer
+        if not answer.startswith("data:"):
+            return answer
+        try:
+            payload = json.loads(answer[5:].strip())
+        except Exception:
+            return answer
+        payload = _build_agent_openai_response(payload, metadata_fields=metadata_fields)
+        return "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
+
+    if not isinstance(answer, dict):
+        return answer
+
+    for choice in answer.get("choices", []):
+        if not isinstance(choice, dict):
+            continue
+        delta = choice.get("delta")
+        if isinstance(delta, dict) and delta.get("reference") is not None:
+            delta["reference"] = _build_agent_reference(delta["reference"], metadata_fields=metadata_fields)
+        message = choice.get("message")
+        if isinstance(message, dict) and message.get("reference") is not None:
+            message["reference"] = _build_agent_reference(message["reference"], metadata_fields=metadata_fields)
+    return answer
 
 
 def _normalize_agent_session(conv):
@@ -237,7 +339,14 @@ async def download_agent_file():
     return Response(blob)
 
 
-async def _iter_session_completion_events(tenant_id, agent_id, req, return_trace):
+async def _iter_session_completion_events(
+    tenant_id,
+    agent_id,
+    req,
+    return_trace,
+    include_reference_metadata=False,
+    metadata_fields=None,
+):
     # Stream and non-stream session completions share the same event parsing and trace injection.
     trace_items = []
     async for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
@@ -246,13 +355,22 @@ async def _iter_session_completion_events(tenant_id, agent_id, req, return_trace
                 ans = json.loads(answer[5:])
             except Exception:
                 continue
-        else:
+        elif isinstance(answer, dict):
             ans = answer
+        else:
+            continue
+
+        data = ans.get("data")
+        if not isinstance(data, dict):
+            data = {}
+        ans["data"] = data
+
+        if include_reference_metadata and data.get("reference") is not None:
+            data["reference"] = _build_agent_reference(data["reference"], metadata_fields=metadata_fields)
 
         event = ans.get("event")
         if event == "node_finished":
             if return_trace:
-                data = ans.get("data", {})
                 trace_items.append(
                     {
                         "component_id": data.get("component_id"),
@@ -863,6 +981,9 @@ async def agent_chat_completion(tenant_id):
     # - Regular mode emits internal agent events.
     # - openai-compatible mode reshapes the same execution into an OpenAI-like wire format.
     req = await get_request_json()
+    err, include_reference_metadata, metadata_fields = _parse_reference_metadata(req)
+    if err:
+        return err
     agent_id = req.get("agent_id")
     openai_compatible = bool(req.get("openai-compatible", False))
     if not agent_id:
@@ -899,19 +1020,29 @@ async def agent_chat_completion(tenant_id):
         if not messages:
             return get_data_error_result(message="You must provide at least one message.")
         question = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
+        metadata = req.get("metadata")
+        if metadata is None:
+            metadata = {}
+        elif not isinstance(metadata, dict):
+            return get_data_error_result(message="metadata must be an object.")
         stream = req.pop("stream", False)
-        session_id = req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", "")
+        session_id = req.pop("session_id", req.get("id", "")) or metadata.get("id", "")
         if stream:
-            return _build_sse_response(
-                completion_openai(
-                    tenant_id,
-                    agent_id,
-                    question,
-                    session_id=session_id,
-                    stream=True,
-                    **req,
-                )
+            body = completion_openai(
+                tenant_id,
+                agent_id,
+                question,
+                session_id=session_id,
+                stream=True,
+                **req,
             )
+            if include_reference_metadata:
+                async def generate():
+                    async for answer in body:
+                        yield _build_agent_openai_response(answer, metadata_fields=metadata_fields)
+
+                body = generate()
+            return _build_sse_response(body)
 
         async for response in completion_openai(
             tenant_id,
@@ -921,6 +1052,8 @@ async def agent_chat_completion(tenant_id):
             stream=False,
             **req,
         ):
+            if include_reference_metadata:
+                response = _build_agent_openai_response(response, metadata_fields=metadata_fields)
             return jsonify(response)
         return None
 
@@ -983,6 +1116,16 @@ async def agent_chat_completion(tenant_id):
             nonlocal canvas
             try:
                 async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+                    if include_reference_metadata and isinstance(ans, dict):
+                        data = ans.get("data")
+                        if not isinstance(data, dict):
+                            data = {}
+                        ans["data"] = data
+                        if data.get("reference") is not None:
+                            data["reference"] = _build_agent_reference(
+                                data["reference"],
+                                metadata_fields=metadata_fields,
+                            )
                     yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
                 commit_ok = CanvasReplicaService.commit_after_run(
@@ -1015,7 +1158,14 @@ async def agent_chat_completion(tenant_id):
     if req.get("stream", True):
 
         async def generate():
-            async for ans in _iter_session_completion_events(tenant_id, agent_id, req, return_trace):
+            async for ans in _iter_session_completion_events(
+                tenant_id,
+                agent_id,
+                req,
+                return_trace,
+                include_reference_metadata=include_reference_metadata,
+                metadata_fields=metadata_fields,
+            ):
                 yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
             yield "data:[DONE]\n\n"
 
@@ -1026,20 +1176,29 @@ async def agent_chat_completion(tenant_id):
     final_ans = ""
     trace_items = []
     structured_output = {}
-    async for ans in _iter_session_completion_events(tenant_id, agent_id, req, return_trace):
+    async for ans in _iter_session_completion_events(
+        tenant_id,
+        agent_id,
+        req,
+        return_trace,
+        include_reference_metadata=include_reference_metadata,
+        metadata_fields=metadata_fields,
+    ):
         try:
             if ans["event"] == "message":
-                full_content += ans["data"]["content"]
-            if ans.get("data", {}).get("reference", None):
+                full_content += ans["data"].get("content", "")
+            if ans["data"].get("reference", None):
                 reference.update(ans["data"]["reference"])
             if ans.get("event") == "node_finished":
-                data = ans.get("data", {})
+                data = ans["data"]
                 node_out = data.get("outputs", {})
+                if not isinstance(node_out, dict):
+                    node_out = {}
                 component_id = data.get("component_id")
                 if component_id is not None and "structured" in node_out:
                     structured_output[component_id] = copy.deepcopy(node_out["structured"])
                 if return_trace:
-                    trace_items = ans.get("data", {}).get("trace", trace_items)
+                    trace_items = data.get("trace", trace_items)
             final_ans = ans
         except Exception as exc:
             return get_result(data=f"**ERROR**: {str(exc)}")

@@ -338,7 +338,6 @@ function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
     method: params.method,
     hierarchy: Number(params.hierarchy || 0),
     include_heading_content: Boolean(params.include_heading_content),
-    root_chunk_as_heading: Boolean(params.root_chunk_as_heading),
     levels,
   };
 }
