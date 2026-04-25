@@ -206,6 +206,16 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
         del req["connectors"]
 
     if req.get("parser_config"):
+        # Flatten parent_child config into children_delimiter for the execution layer
+        pc = req["parser_config"].get("parent_child", {})
+        if pc.get("use_parent_child"):
+            req["parser_config"]["children_delimiter"] = pc.get("children_delimiter", "\n")
+            req["parser_config"]["enable_children"] = pc.get("use_parent_child", True)
+        else:
+            req["parser_config"]["children_delimiter"] = ""
+            req["parser_config"]["enable_children"] = False
+            req["parser_config"]["parent_child"] = {}
+
         parser_config = req["parser_config"]
         req_ext_fields = parser_config.pop("ext", {})
         parser_config.update(req_ext_fields)
@@ -437,7 +447,7 @@ def run_graphrag(dataset_id: str, tenant_id: str):
     sample_document = documents[0]
     document_ids = [document["id"] for document in documents]
 
-    task_id = queue_raptor_o_graphrag_tasks(sample_doc_id=sample_document, ty="graphrag", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
+    task_id = queue_raptor_o_graphrag_tasks(sample_doc=sample_document, ty="graphrag", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
 
     if not KnowledgebaseService.update_by_id(kb.id, {"graphrag_task_id": task_id}):
         logging.warning(f"Cannot save graphrag_task_id for Dataset {dataset_id}")
@@ -516,7 +526,7 @@ def run_raptor(dataset_id: str, tenant_id: str):
     sample_document = documents[0]
     document_ids = [document["id"] for document in documents]
 
-    task_id = queue_raptor_o_graphrag_tasks(sample_doc_id=sample_document, ty="raptor", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
+    task_id = queue_raptor_o_graphrag_tasks(sample_doc=sample_document, ty="raptor", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
 
     if not KnowledgebaseService.update_by_id(kb.id, {"raptor_task_id": task_id}):
         logging.warning(f"Cannot save raptor_task_id for Dataset {dataset_id}")

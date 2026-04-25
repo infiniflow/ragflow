@@ -21,7 +21,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
-from common import bulk_upload_documents, delete_document, list_documents
+from test_common import bulk_upload_documents, delete_document, list_documents
 
 
 class _DummyManager:
@@ -36,7 +36,7 @@ def add_document_func(request, WebApiAuth, add_dataset, ragflow_tmp_dir):
     def cleanup():
         res = list_documents(WebApiAuth, {"kb_id": dataset_id})
         for doc in res["data"]["docs"]:
-            delete_document(WebApiAuth, {"doc_id": doc["id"]})
+            delete_document(WebApiAuth, dataset_id, {"ids": [doc["id"]]})
 
     request.addfinalizer(cleanup)
 
@@ -49,7 +49,7 @@ def add_documents(request, WebApiAuth, add_dataset, ragflow_tmp_dir):
     def cleanup():
         res = list_documents(WebApiAuth, {"kb_id": dataset_id})
         for doc in res["data"]["docs"]:
-            delete_document(WebApiAuth, {"doc_id": doc["id"]})
+            delete_document(WebApiAuth, dataset_id, {"ids": [doc["id"]]})
 
     request.addfinalizer(cleanup)
 
@@ -62,7 +62,7 @@ def add_documents_func(request, WebApiAuth, add_dataset_func, ragflow_tmp_dir):
     def cleanup():
         res = list_documents(WebApiAuth, {"kb_id": dataset_id})
         for doc in res["data"]["docs"]:
-            delete_document(WebApiAuth, {"doc_id": doc["id"]})
+            delete_document(WebApiAuth, dataset_id, {"ids": [doc["id"]]})
 
     request.addfinalizer(cleanup)
 

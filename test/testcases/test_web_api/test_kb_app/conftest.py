@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import batch_create_datasets, list_datasets, delete_datasets
+from test_common import batch_create_datasets, list_datasets, delete_datasets
 from libs.auth import RAGFlowWebApiAuth
 from pytest import FixtureRequest
 from ragflow_sdk import RAGFlow

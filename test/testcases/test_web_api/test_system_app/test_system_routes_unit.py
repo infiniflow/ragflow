@@ -156,7 +156,7 @@ def _load_system_module(monkeypatch):
     quart_mod.jsonify = lambda payload: payload
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
-    module_path = repo_root / "api" / "apps" / "system_app.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "system_api.py"
     spec = importlib.util.spec_from_file_location("test_system_routes_unit_module", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
@@ -213,106 +213,6 @@ def test_status_branch_matrix_unit(monkeypatch):
     assert res["data"]["redis"]["status"] == "red"
     assert "Lost connection!" in res["data"]["redis"]["error"]
     assert res["data"]["task_executor_heartbeats"] == {}
-
-
-@pytest.mark.p2
-def test_healthz_and_oceanbase_status_matrix_unit(monkeypatch):
-    module = _load_system_module(monkeypatch)
-
-    monkeypatch.setattr(module, "run_health_checks", lambda: ({"status": "ok"}, True))
-    payload, status = module.healthz()
-    assert status == 200
-    assert payload["status"] == "ok"
-
-    monkeypatch.setattr(module, "run_health_checks", lambda: ({"status": "degraded"}, False))
-    payload, status = module.healthz()
-    assert status == 500
-    assert payload["status"] == "degraded"
-
-    monkeypatch.setattr(module, "get_oceanbase_status", lambda: {"status": "alive", "latency_ms": 8})
-    res = module.oceanbase_status()
-    assert res["code"] == 0
-    assert res["data"]["status"] == "alive"
-
-    monkeypatch.setattr(module, "get_oceanbase_status", lambda: (_ for _ in ()).throw(RuntimeError("ocean boom")))
-    res = module.oceanbase_status()
-    assert res["code"] == 500
-    assert res["data"]["status"] == "error"
-    assert "ocean boom" in res["data"]["message"]
-
-
-@pytest.mark.p2
-def test_system_token_routes_matrix_unit(monkeypatch):
-    module = _load_system_module(monkeypatch)
-
-    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [])
-    res = module.new_token()
-    assert res["message"] == "Tenant not found!"
-
-    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(role="owner", tenant_id="tenant-1")])
-    monkeypatch.setattr(module.APITokenService, "save", lambda **_kwargs: False)
-    res = module.new_token()
-    assert res["message"] == "Fail to new a dialog!"
-
-    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("tenant query boom")))
-    res = module.new_token()
-    assert res["code"] == 100
-    assert "tenant query boom" in res["message"]
-
-    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [])
-    res = module.token_list()
-    assert res["message"] == "Tenant not found!"
-
-    class _Token:
-        def __init__(self, token, beta):
-            self.token = token
-            self.beta = beta
-
-        def to_dict(self):
-            return {"token": self.token, "beta": self.beta}
-
-    filter_updates = []
-    monkeypatch.setattr(module, "generate_confirmation_token", lambda: "ragflow-abcdefghijklmnopqrstuvwxyz0123456789")
-    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(role="owner", tenant_id="tenant-9")])
-    monkeypatch.setattr(module.APITokenService, "query", lambda **_kwargs: [_Token("tok-1", ""), _Token("tok-2", "beta-2")])
-    monkeypatch.setattr(module.APITokenService, "filter_update", lambda conds, payload: filter_updates.append((conds, payload)))
-    res = module.token_list()
-    assert res["code"] == 0
-    assert len(res["data"]) == 2
-    assert len(res["data"][0]["beta"]) == 32
-    assert res["data"][1]["beta"] == "beta-2"
-    assert len(filter_updates) == 1
-
-    monkeypatch.setattr(
-        module.APITokenService,
-        "query",
-        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("token list boom")),
-    )
-    res = module.token_list()
-    assert res["code"] == 100
-    assert "token list boom" in res["message"]
-
-    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [])
-    res = module.rm("tok-1")
-    assert res["message"] == "Tenant not found!"
-
-    deleted = []
-    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(role="owner", tenant_id="tenant-3")])
-    monkeypatch.setattr(module.APITokenService, "filter_delete", lambda conds: deleted.append(conds))
-    res = module.rm("tok-1")
-    assert res["code"] == 0
-    assert res["data"] is True
-    assert deleted
-
-    monkeypatch.setattr(
-        module.APITokenService,
-        "filter_delete",
-        lambda _conds: (_ for _ in ()).throw(RuntimeError("delete boom")),
-    )
-    res = module.rm("tok-1")
-    assert res["code"] == 100
-    assert "delete boom" in res["message"]
-
 
 @pytest.mark.p2
 def test_get_config_returns_register_enabled_unit(monkeypatch):

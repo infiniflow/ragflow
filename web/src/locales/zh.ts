@@ -18,6 +18,7 @@ export default {
       name: '名称',
       save: '保存',
       namePlaceholder: '请输入名称',
+      descriptionPlaceholder: '请输入描述',
       next: '下一步',
       create: '创建',
       edit: '编辑',
@@ -33,6 +34,8 @@ export default {
       languagePlaceholder: '请选择语言',
       copy: '复制',
       copied: '复制成功',
+      viewMore: '查看更多',
+      viewLess: '收起',
       comingSoon: '即将推出',
       download: '下载',
       close: '关闭',
@@ -177,6 +180,7 @@ export default {
       searchKnowledgePlaceholder: '搜索',
       noMoreData: '没有更多数据了',
       parserRequired: '分块方法必填',
+      dataFlowRequired: '数据流必填',
     },
     knowledgeDetails: {
       metadata: {
@@ -352,6 +356,11 @@ export default {
       delimiter: `文本分段标识符`,
       delimiterTip:
         '支持多字符作为分隔符，多字符用两个反引号 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
+      enableChildrenDelimiter: '子文本块用于检索',
+      childrenDelimiter: '文本分段标识符',
+      childrenDelimiterTip:
+        '支持多字符作为分隔符，多字符用两个反引号 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
+
       html4excel: '表格转HTML',
       html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel 97-2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dev/enable_excel2html。`,
       autoKeywords: '自动关键词提取',
@@ -680,6 +689,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       delete: '删除',
     },
     chat: {
+      chatSupport: '聊天支持',
+      replyInstantly: '我们通常会即时回复',
+      typeYourMessage: '输入您的消息...',
       messagePlaceholder: '请输入消息...',
       exit: '退出',
       multipleModels: '多模型',
@@ -929,6 +941,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       bitbucketRepositorySlugsTip:
         '用英文逗号分隔的仓库 slug，例如：repo-one,repo-two',
       connectorNameTip: '为连接器命名',
+      syncDeletedFiles: '同步删除文件',
       githubDescription:
         '连接 GitHub，可同步 Pull Request 与 Issue 内容用于检索。',
       airtableDescription: '连接 Airtable，同步指定工作区下指定表格中的文件。',
@@ -1108,7 +1121,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       FishAudioModelNameMessage: '请为你的TTS模型起名',
       addFishAudioAK: 'Fish Audio API KEY',
       FishAudioAKMessage: '请输入 API KEY',
-      addFishAudioRefID: 'FishAudio Refrence ID',
+      addFishAudioRefID: 'FishAudio Reference ID',
       FishAudioRefIDMessage: '请输入引用模型的ID（留空表示使用默认模型）',
       GoogleModelIDMessage: '请输入 model ID!',
       addGoogleProjectID: 'Project ID',
@@ -1248,6 +1261,21 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         author: '作者',
         sectionTitle: '章节标题',
       },
+      includeHeadingContent: '包含标题内容',
+      includeHeadingContentTip:
+        '启用后，标题下的直接内容将作为一个独立的块保留。子块仅保留标题路径。',
+      rootAsHeading: '将首个切片设为 H0 标题',
+      rootAsHeadingTip: '将首个切片设为全局标题，以确保整个文档层级结构中拥有一致的上下文信息。该功能尤其适用于首段包含关键信息的简历。',
+      hierarchyTip: `构建标题树并生成独立的块，每个块携带其完整的祖先标题路径（例如 第1部分 › 第3章 › 第2节 + 正文）。\n
+适用场景：具有独立的、结构性重要章节的文档——如法律条款、法规、合同和技术规范——其中每个块即使没有上下文也能通过其结构位置来识别。`,
+      groupTip: `在选定的标题级别将文档扁平分割，并自动合并相邻的小节以保持内容连续性。不注入父标题路径。\n
+适用场景：具有流动性的、内容相关联的文档——如书籍、手册、报告和文章——其中相邻段落应保持在一起以维持叙述连贯性。`,
+      enableMultiColumn: '启用多栏',
+      enableMultiColumnTip:
+        '检测并解析多栏页面布局以保持正确的阅读顺序。对于具有双栏或报纸式布局的PDF或文档，请开启此功能。',
+      removeToc: '移除原始目录',
+      removeTocTip:
+        '移除原始PDF中包含的目录，这样它就不会被解析为常规内容或作为检索块。',
       autoPlay: '自动播放',
       downloadFileTypeTip: '文件下载的类型',
       downloadFileType: '文件类型',
@@ -1299,6 +1327,12 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tab: '制表符',
       space: '空格',
       delimiters: '分隔符',
+      one: 'One',
+      oneChunkTitle: 'Note',
+      oneChunkDescription:
+        '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
+      flattenMediaToText: '禁用视觉模型',
+      flattenMediaToTextTip: '将图片和表格区块按普通文本处理，并跳过视觉增强。',
       merge: '合并',
       split: '拆分',
       script: '脚本',
@@ -1433,10 +1467,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       searXNG: 'SearXNG',
       searXNGDescription:
         '该组件通过您提供的 SearXNG 实例地址进行搜索。请设置 Top N 和实例 URL。',
-      pdfGenerator: '文档生成器',
-      pDFGenerator: '文档生成器',
-      pdfGeneratorDescription: `该组件从 markdown 格式的内容生成文档（PDF、DOCX、TXT），支持自定义样式、图片和表格。支持：**粗体**、*斜体*、# 标题、- 列表、使用 | 语法的表格。`,
-      pDFGeneratorDescription: `该组件从 markdown 格式的内容生成文档（PDF、DOCX、TXT），支持自定义样式、图片和表格。支持：**粗体**、*斜体*、# 标题、- 列表、使用 | 语法的表格。`,
+      docGenerator: '文档生成器',
+      docGeneratorDescription: `从 Markdown 内容生成文件。`,
       subtitle: '副标题',
       logoImage: '标志图片',
       logoPosition: '标志位置',
@@ -1818,6 +1850,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       categoryName: '分类名称',
       nextStep: '下一步',
       insertVariableTip: `输入 / 插入变量`,
+      mergePath: '合并路径',
+      mergePathTip:
+        '开启后，紧跟在变量后面的点号后缀会合并为路径查询，例如 {node@result.name}。',
       setting: '设置',
       settings: {
         agentSetting: 'Agent设置',
@@ -1927,20 +1962,38 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tokenizerRequired: '请先添加Tokenizer节点',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的向量嵌入）。',
-      splitter: '按字符分割',
-      splitterDescription:
+      tokenChunker: '按 Token 分块',
+      tokenChunkerDescription:
         '根据分词器长度将文本拆分成块，并带有可选的分隔符和重叠。',
-      hierarchicalMergerDescription:
-        '使用正则表达式规则按标题层次结构将文档拆分成多个部分，以实现更精细的控制。',
-      hierarchicalMerger: '按标题分割',
+      titleChunkerDescription:
+        '按标题层级拆分文档。通过正则表达式定义各级标题，再选择层级或分组模式控制切片方式。',
+      titleChunker: '按标题分块',
       extractor: '提取器',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
       outputFormat: '输出格式',
       fileFormats: '文件类型',
+      fileFormatOptions: {
+        pdf: 'PDF',
+        spreadsheet: '表格',
+        image: '图片',
+        email: '邮件',
+        markdown: 'Markdown',
+        'text&code': '文本与代码',
+        html: 'HTML',
+        doc: 'DOC',
+        docx: 'DOCX',
+        slides: 'PPTX',
+        audio: '音频',
+        video: '视频',
+      },
       fields: '字段',
       addParser: '增加解析器',
-      hierarchy: '层次结构',
+      rule: '规则',
+      addRule: '增加规则',
+      addRegularExpressions: '增加正则表达式',
+      // group: '聚合',
+      // hierarchy: '层次结构',
       regularExpressions: '正则表达式',
       overlappedPercent: '重叠百分比（%）',
       searchMethod: '搜索方法',

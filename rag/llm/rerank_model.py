@@ -297,7 +297,8 @@ class SILICONFLOWRerank(Base):
             "max_chunks_per_doc": 1024,
             "overlap_tokens": 80,
         }
-        response = requests.post(self.base_url, json=payload, headers=self.headers).json()
+        response_raw = requests.post(self.base_url, json=payload, headers=self.headers)
+        response = response_raw.json()
         rank = np.zeros(len(texts), dtype=float)
         try:
             for d in response["results"]:
@@ -375,7 +376,19 @@ class QWenRerank(Base):
 
         import dashscope
 
-        resp = dashscope.TextReRank.call(api_key=self.api_key, model=self.model_name, query=query, documents=texts, top_n=len(texts), return_documents=False)
+        # qwen3-rerank does not support return_documents parameter  
+        if self.model_name.startswith("qwen3-rerank"):  
+            resp = dashscope.TextReRank.call(  
+                api_key=self.api_key, model=self.model_name,  
+                query=query, documents=texts, top_n=len(texts)  
+            )  
+        else:  
+            resp = dashscope.TextReRank.call(  
+                api_key=self.api_key, model=self.model_name,  
+                query=query, documents=texts,  
+                top_n=len(texts), return_documents=False  
+            )  
+
         rank = np.zeros(len(texts), dtype=float)
         if resp.status_code == HTTPStatus.OK:
             try:

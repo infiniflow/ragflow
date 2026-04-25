@@ -30,11 +30,12 @@ import openai
 from openai import AsyncOpenAI, OpenAI
 from strenum import StrEnum
 
+from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.nlp import is_chinese, is_english
 
-from common.misc_utils import thread_pool_exec
+
 class LLMErrorCode(StrEnum):
     ERROR_RATE_LIMIT = "RATE_LIMIT_EXCEEDED"
     ERROR_AUTHENTICATION = "AUTH_ERROR"
@@ -77,9 +78,6 @@ def _apply_model_family_policies(
         sanitized_kwargs["extra_body"] = {"enable_thinking": False}
 
     if backend == "base":
-        # GPT-5 and GPT-5.1 endpoints in this path have inconsistent generation-param support.
-        if "gpt-5" in model_name_lower:
-            sanitized_gen_conf = {}
         return sanitized_gen_conf, sanitized_kwargs
 
     if backend == "litellm":
@@ -151,14 +149,11 @@ class Base(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
-        model_name_lower = (self.model_name or "").lower()
         gen_conf, _ = _apply_model_family_policies(
             self.model_name,
             backend="base",
             gen_conf=gen_conf,
         )
-        if "gpt-5" in model_name_lower:
-            return gen_conf
 
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
@@ -1211,6 +1206,24 @@ class AvianChat(Base):
     def __init__(self, key, model_name, base_url="https://api.avian.io/v1", **kwargs):
         if not base_url:
             base_url = "https://api.avian.io/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class AstraflowChat(Base):
+    _FACTORY_NAME = "Astraflow"
+
+    def __init__(self, key, model_name, base_url="https://api-us-ca.umodelverse.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api-us-ca.umodelverse.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class AstraflowCNChat(Base):
+    _FACTORY_NAME = "Astraflow-CN"
+
+    def __init__(self, key, model_name, base_url="https://api.modelverse.cn/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.modelverse.cn/v1"
         super().__init__(key, model_name, base_url, **kwargs)
 
 

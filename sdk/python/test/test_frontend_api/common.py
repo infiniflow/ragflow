@@ -69,17 +69,42 @@ def upload_file(auth, dataset_id, path):
 
 def list_document(auth, dataset_id):
     authorization = {"Authorization": auth}
-    url = f"{HOST_ADDRESS}/v1/document/list?kb_id={dataset_id}"
+    url = f"{HOST_ADDRESS}/v1/document/list?id={dataset_id}"
     json = {}
     res = requests.post(url=url, headers=authorization, json=json)
     return res.json()
 
 
-def get_docs_info(auth, doc_ids):
+def get_docs_info(auth, dataset_id, doc_ids=None, doc_id=None):
+    """
+    Get document information by IDs.
+    
+    Args:
+        auth: Authorization header
+        dataset_id: Dataset ID
+        doc_ids: List of document IDs (use for multiple) - exclusive with doc_id
+        doc_id: Single document ID (use for one) - exclusive with doc_ids
+    
+    Raises:
+        ValueError: If both doc_id and doc_ids are provided
+    """
+    # Validate that id and ids are not used together
+    if doc_id and doc_ids:
+        raise ValueError("Cannot use both 'id' and 'ids' parameters at the same time.")
+    
     authorization = {"Authorization": auth}
-    json_req = {"doc_ids": doc_ids}
-    url = f"{HOST_ADDRESS}/v1/document/infos"
-    res = requests.post(url=url, headers=authorization, json=json_req)
+    params = {}
+    if doc_ids:
+        # Multiple IDs
+        for id in doc_ids:
+            params.append(("ids", id))
+    elif doc_id:
+        # Single ID
+        params["id"] = doc_id
+    
+    # Use /api/v1 prefix for dataset API
+    url = f"{HOST_ADDRESS}/api/v1/datasets/{dataset_id}/documents"
+    res = requests.get(url=url, headers=authorization, params=params)
     return res.json()
 
 

@@ -706,9 +706,9 @@ func (c *RAGFlowClient) ShowUser(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// ListDatasets lists datasets for a specific user (admin mode)
+// ListUserDatasets lists datasets for a specific user (admin mode)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *RAGFlowClient) ListDatasets(cmd *Command) (ResponseIf, error) {
+func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "admin" {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}

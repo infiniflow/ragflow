@@ -40,7 +40,7 @@ X8f7fp9c7vUsfOCkM+gHY3PadG+QHa7KI7mzTKgUTZImK6BZtfRBATDTthEUbbaTewY4H0MnWiCeeDhc
 
 
 def register():
-    url = HOST_ADDRESS + "/v1/user/register"
+    url = HOST_ADDRESS + "/api/v1/users"
     name = "user"
     register_data = {"email": EMAIL, "nickname": name, "password": PASSWORD}
     res = requests.post(url=url, json=register_data)
@@ -50,7 +50,7 @@ def register():
 
 
 def login():
-    url = HOST_ADDRESS + "/v1/user/login"
+    url = HOST_ADDRESS + "/api/v1/auth/login"
     login_data = {"email": EMAIL, "password": PASSWORD}
     response = requests.post(url=url, json=login_data)
     res = response.json()
@@ -67,7 +67,7 @@ def get_api_key_fixture():
     except Exception as e:
         print(e)
     auth = login()
-    url = HOST_ADDRESS + "/v1/system/new_token"
+    url = HOST_ADDRESS + "/v1/system/tokens"
     auth = {"Authorization": auth}
     response = requests.post(url=url, headers=auth)
     res = response.json()
@@ -119,7 +119,7 @@ def add_models(auth):
 
 
 def get_tenant_info(auth):
-    url = HOST_ADDRESS + "/v1/user/tenant_info"
+    url = HOST_ADDRESS + "/api/v1/users/me/models"
     authorization = {"Authorization": auth}
     response = requests.get(url=url, headers=authorization)
     res = response.json()
@@ -136,7 +136,7 @@ def set_tenant_info(get_auth):
         tenant_id = get_tenant_info(auth)
     except Exception as e:
         pytest.exit(f"Error in set_tenant_info: {str(e)}")
-    url = HOST_ADDRESS + "/v1/user/set_tenant_info"
+    url = HOST_ADDRESS + "/api/v1/users/me/models"
     authorization = {"Authorization": get_auth}
     tenant_info = {
         "tenant_id": tenant_id,
@@ -146,7 +146,7 @@ def set_tenant_info(get_auth):
         "asr_id": "",
         "tts_id": None,
     }
-    response = requests.post(url=url, headers=authorization, json=tenant_info)
+    response = requests.patch(url=url, headers=authorization, json=tenant_info)
     res = response.json()
     if res.get("code") != 0:
         raise Exception(res.get("message"))

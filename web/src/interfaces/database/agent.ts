@@ -87,6 +87,7 @@ export declare interface IFlow {
 export interface IFlowTemplate {
   avatar: string;
   canvas_type: string;
+  canvas_types?: string[];
   create_date: string;
   create_time: number;
   canvas_category?: string;
@@ -160,7 +161,7 @@ export interface ICodeForm {
   arguments: Record<string, string>;
   lang: string;
   script?: string;
-  outputs: Record<string, { value: string; type: string }>;
+  outputs: Record<string, { value: unknown; type: string }>;
 }
 
 export interface IAgentForm {
@@ -192,7 +193,7 @@ export interface IAgentForm {
   };
 }
 
-export type BaseNodeData<TForm extends any> = {
+export type BaseNodeData<TForm = any> = {
   label: string; // operator type
   name: string; // operator name
   color?: string;
@@ -296,6 +297,7 @@ export interface IPipeLineListRequest {
   orderby?: string;
   desc?: boolean;
   canvas_category?: AgentCategory;
+  ext?: string;
 }
 
 export interface GlobalVariableType {
