@@ -152,9 +152,10 @@ class PipelineTaskType(StrEnum):
     GRAPH_RAG = "GraphRAG"
     MINDMAP = "Mindmap"
     MEMORY = "Memory"
+    COMPILED_PAGES = "CompiledPages"
 
 
-VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR, PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP}
+VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR, PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP, PipelineTaskType.COMPILED_PAGES}
 
 
 class MCPServerType(StrEnum):
