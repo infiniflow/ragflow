@@ -143,6 +143,11 @@ func Warn(msg string, fields ...zap.Field) {
 	Logger.Warn(msg, fields...)
 }
 
+// IsDebugEnabled returns true if debug logging is enabled
+func IsDebugEnabled() bool {
+	return atomicLevel.Enabled(zapcore.DebugLevel)
+}
+
 // GetLevel returns the current log level
 func GetLevel() string {
 	levelMu.RLock()

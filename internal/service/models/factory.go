@@ -27,8 +27,16 @@ import (
 // EmbeddingModelFactory creates an EmbeddingModel instance
 type EmbeddingModelFactory func(apiKey, apiBase, modelName string, httpClient *http.Client) entity.EmbeddingModel
 
+// ChatModelFactory creates a ChatModel instance
+type ChatModelFactory func(apiKey, apiBase, modelName string, httpClient *http.Client) entity.ChatModel
+
+// RerankModelFactory creates a RerankModel instance
+type RerankModelFactory func(apiKey, apiBase, modelName string, httpClient *http.Client) entity.RerankModel
+
 var (
 	embeddingModelFactories = make(map[string]EmbeddingModelFactory)
+	chatModelFactories      = make(map[string]ChatModelFactory)
+	rerankModelFactories    = make(map[string]RerankModelFactory)
 	factoryMu               sync.RWMutex
 )
 
@@ -40,6 +48,22 @@ func RegisterEmbeddingModelFactory(providerName string, factory EmbeddingModelFa
 	embeddingModelFactories[providerName] = factory
 }
 
+// RegisterChatModelFactory registers a factory for a chat provider name.
+// Should be called from init() functions of provider implementations.
+func RegisterChatModelFactory(providerName string, factory ChatModelFactory) {
+	factoryMu.Lock()
+	defer factoryMu.Unlock()
+	chatModelFactories[providerName] = factory
+}
+
+// RegisterRerankModelFactory registers a factory for a rerank provider name.
+// Should be called from init() functions of provider implementations.
+func RegisterRerankModelFactory(providerName string, factory RerankModelFactory) {
+	factoryMu.Lock()
+	defer factoryMu.Unlock()
+	rerankModelFactories[providerName] = factory
+}
+
 // GetEmbeddingModelFactory returns the factory for the given provider name.
 // Returns nil if not found.
 func GetEmbeddingModelFactory(providerName string) EmbeddingModelFactory {
@@ -48,12 +72,48 @@ func GetEmbeddingModelFactory(providerName string) EmbeddingModelFactory {
 	return embeddingModelFactories[providerName]
 }
 
+// GetChatModelFactory returns the factory for the given chat provider name.
+// Returns nil if not found.
+func GetChatModelFactory(providerName string) ChatModelFactory {
+	factoryMu.RLock()
+	defer factoryMu.RUnlock()
+	return chatModelFactories[providerName]
+}
+
+// GetRerankModelFactory returns the factory for the given rerank provider name.
+// Returns nil if not found.
+func GetRerankModelFactory(providerName string) RerankModelFactory {
+	factoryMu.RLock()
+	defer factoryMu.RUnlock()
+	return rerankModelFactories[providerName]
+}
+
 // CreateEmbeddingModel creates an EmbeddingModel instance for the given provider.
 // Returns error if provider not registered.
 func CreateEmbeddingModel(providerName, apiKey, apiBase, modelName string, httpClient *http.Client) (entity.EmbeddingModel, error) {
 	factory := GetEmbeddingModelFactory(providerName)
 	if factory == nil {
 		return nil, fmt.Errorf("no embedding model factory registered for provider %s", providerName)
+	}
+	return factory(apiKey, apiBase, modelName, httpClient), nil
+}
+
+// CreateChatModel creates a ChatModel instance for the given provider.
+// Returns error if provider not registered.
+func CreateChatModel(providerName, apiKey, apiBase, modelName string, httpClient *http.Client) (entity.ChatModel, error) {
+	factory := GetChatModelFactory(providerName)
+	if factory == nil {
+		return nil, fmt.Errorf("no chat model factory registered for provider %s", providerName)
+	}
+	return factory(apiKey, apiBase, modelName, httpClient), nil
+}
+
+// CreateRerankModel creates a RerankModel instance for the given provider.
+// Returns error if provider not registered.
+func CreateRerankModel(providerName, apiKey, apiBase, modelName string, httpClient *http.Client) (entity.RerankModel, error) {
+	factory := GetRerankModelFactory(providerName)
+	if factory == nil {
+		return nil, fmt.Errorf("no rerank model factory registered for provider %s", providerName)
 	}
 	return factory(apiKey, apiBase, modelName, httpClient), nil
 }

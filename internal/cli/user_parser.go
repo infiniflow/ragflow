@@ -1907,7 +1907,7 @@ func (p *Parser) parseInsertDatasetFromFile() (*Command, error) {
 }
 
 // Internal CLI for GO
-// parseInsertMetadataFromFile parses: INSERT INTO METADATA FROM FILE "file_path"
+// parseInsertMetadataFromFile parses: INSERT METADATA FROM FILE "file_path"
 func (p *Parser) parseInsertMetadataFromFile() (*Command, error) {
 	p.nextToken() // consume METADATA
 
@@ -2241,12 +2241,12 @@ func (p *Parser) parseChatCommand() (*Command, error) {
 	var message string
 
 	// Check if we have a quoted string that looks like a model identifier (contains two slashes)
-	// Format: 'provider/instance/model' or just 'message'
+	// Format: 'model@instance@provider' or just 'message'
 	if p.curToken.Type == TokenQuotedString {
 		firstArg := p.curToken.Value
 
 		// Check if it looks like a model identifier (contains exactly 2 slashes)
-		slashCount := strings.Count(firstArg, "/")
+		slashCount := strings.Count(firstArg, "@")
 		if slashCount == 2 {
 			// This is likely a model identifier, expect another quoted string for message
 			compositeModelName = firstArg
@@ -2271,18 +2271,69 @@ func (p *Parser) parseChatCommand() (*Command, error) {
 		return nil, fmt.Errorf("expected model name (quoted string) or message")
 	}
 
+	cmd := NewCommand("chat_to_model")
+
+	effort := "default"
+	verbosity := "low"
+	if p.curToken.Type == TokenWith {
+		p.nextToken() // pass WITH
+		switch p.curToken.Type {
+		case TokenEffort:
+			{
+				p.nextToken() // pass VERBOSITY
+				switch p.curToken.Type {
+				case TokenNone:
+					effort = "none"
+				case TokenMinimal:
+					effort = "minimal"
+				case TokenLow:
+					effort = "low"
+				case TokenMedium:
+					effort = "medium"
+				case TokenHigh:
+					effort = "high"
+				case TokenMax:
+					effort = "max"
+				default:
+					return nil, fmt.Errorf("invalid effort level")
+				}
+				p.nextToken()
+				break
+			}
+		case TokenVerbosity:
+			{
+				p.nextToken() // pass VERBOSITY
+				switch p.curToken.Type {
+				case TokenLow:
+					verbosity = "low"
+				case TokenMedium:
+					verbosity = "median"
+				case TokenHigh:
+					verbosity = "high"
+				default:
+					return nil, fmt.Errorf("invalid verbosity level")
+				}
+				p.nextToken()
+				break
+			}
+		default:
+			return nil, fmt.Errorf("expected VERBOSITY or EFFORT")
+		}
+	}
+
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
 
-	cmd := NewCommand("chat_to_model")
 	if compositeModelName != "" {
 		cmd.Params["composite_model_name"] = compositeModelName
 	}
 	cmd.Params["message"] = message
 	cmd.Params["thinking"] = false
 	cmd.Params["stream"] = false
+	cmd.Params["effort"] = effort
+	cmd.Params["verbosity"] = verbosity
 	return cmd, nil
 }
 
@@ -2369,10 +2420,10 @@ func (p *Parser) parseUseCommand() (*Command, error) {
 	}
 	p.nextToken() // consume MODEL
 
-	// Parse model identifier in format 'provider/instance/model'
+	// Parse model identifier in format 'model@instance@provider'
 	compositeModelName, err := p.parseQuotedString()
 	if err != nil {
-		return nil, fmt.Errorf("expected model identifier in format 'provider/instance/model': %w", err)
+		return nil, fmt.Errorf("expected model identifier in format 'model@instance@provider': %w", err)
 	}
 	p.nextToken()
 
@@ -2617,6 +2668,7 @@ func (p *Parser) parseUpdateCommand() (*Command, error) {
 	return nil, fmt.Errorf("unknown UPDATE target: %s", p.curToken.Value)
 }
 
+// Internal CLI for GO
 // parseUpdateChunk parses: UPDATE CHUNK 'chunk_id' OF DATASET 'dataset_name' SET '{"content": "..."}'
 func (p *Parser) parseUpdateChunk() (*Command, error) {
 	p.nextToken() // consume CHUNK

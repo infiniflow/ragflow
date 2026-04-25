@@ -11,6 +11,7 @@
     "rerank": "rerank",
     "files": "files"
   },
+  "series": "glm",
   "models": [
     {
       "name": "glm-5.1",

@@ -69,3 +69,10 @@ type ModelConfig struct {
 	MaxTokens  int64     `json:"max_tokens"`
 	IsTools    bool      `json:"is_tools"`
 }
+
+// ModelCredentials holds the credentials for a model
+type ModelCredentials struct {
+	ProviderName string
+	ModelName    string
+	APIKey       string
+}

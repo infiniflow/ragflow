@@ -53,7 +53,7 @@ dependencies = [
     "infinity-emb>=0.0.66,<0.0.67",
     "jira==3.10.5",
     "json-repair==0.35.0",
-    "langfuse>=2.60.0",
+    "langfuse>=4.0.1",
     "mammoth>=1.11.0",
     "markdown==3.6",
     "markdown-to-json==2.1.1",

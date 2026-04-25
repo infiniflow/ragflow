@@ -19,7 +19,7 @@ import logging
 from peewee import IntegrityError
 from langfuse import Langfuse
 from common import settings
-from common.constants import MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS, LLMType
+from common.constants import MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS, LLMType
 from api.db.db_models import DB, LLMFactories, TenantLLM
 from api.db.services.common_service import CommonService
 from api.db.services.langfuse_service import TenantLangfuseService
@@ -360,6 +360,67 @@ class TenantLLMService(CommonService):
                 return candidate
             except IntegrityError:
                 logging.warning("PaddleOCR env model %s already exists for tenant %s, retry with next name", candidate, tenant_id)
+                used_names.add(candidate)
+                idx += 1
+                continue
+
+    @classmethod
+    def _collect_opendataloader_env_config(cls) -> dict | None:
+        cfg = dict(OPENDATALOADER_DEFAULT_CONFIG)
+        found = False
+        for key in OPENDATALOADER_ENV_KEYS:
+            val = os.environ.get(key)
+            if val:
+                found = True
+                cfg[key] = val
+        return cfg if found else None
+
+    @classmethod
+    @DB.connection_context()
+    def ensure_opendataloader_from_env(cls, tenant_id: str) -> str | None:
+        """
+        Ensure an OpenDataLoader OCR model exists for the tenant if env variables are present.
+        Return the existing or newly created llm_name, or None if env not set.
+        """
+        cfg = cls._collect_opendataloader_env_config()
+        if not cfg:
+            return None
+
+        saved_models = cls.query(tenant_id=tenant_id, llm_factory="OpenDataLoader", model_type=LLMType.OCR.value)
+
+        def _parse_api_key(raw: str) -> dict:
+            try:
+                return json.loads(raw or "{}")
+            except Exception:
+                return {}
+
+        for item in saved_models:
+            api_cfg = _parse_api_key(item.api_key)
+            normalized = {k: api_cfg.get(k, OPENDATALOADER_DEFAULT_CONFIG.get(k)) for k in OPENDATALOADER_ENV_KEYS}
+            if normalized == cfg:
+                return item.llm_name
+
+        used_names = {item.llm_name for item in saved_models}
+        idx = 1
+        base_name = "opendataloader-from-env"
+        while True:
+            candidate = f"{base_name}-{idx}"
+            if candidate in used_names:
+                idx += 1
+                continue
+            try:
+                cls.save(
+                    tenant_id=tenant_id,
+                    llm_factory="OpenDataLoader",
+                    llm_name=candidate,
+                    model_type=LLMType.OCR.value,
+                    api_key=json.dumps(cfg),
+                    api_base="",
+                    max_tokens=0,
+                )
+                return candidate
+            except IntegrityError:
+                logging.warning("OpenDataLoader env model %s already exists for tenant %s, retry with next name", candidate, tenant_id)
                 used_names.add(candidate)
                 idx += 1
                 continue

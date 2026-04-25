@@ -403,7 +403,7 @@ func (e *infinityEngine) UpdateDataset(ctx context.Context, condition map[string
 			if ok && len(qr.Data) > 0 {
 				// Get the id column and columns to remove
 				idCol := qr.Data["id"]
-				removeOpt := make(map[string]map[string][]string); // column -> value -> [ids]
+				removeOpt := make(map[string]map[string][]string) // column -> value -> [ids]
 
 				for colName, colData := range qr.Data {
 					if colName == "id" {

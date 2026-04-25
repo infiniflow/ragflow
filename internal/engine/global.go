@@ -30,6 +30,7 @@ import (
 
 var (
 	globalEngine DocEngine
+	engineType   EngineType
 	once         sync.Once
 )
 
@@ -37,8 +38,9 @@ var (
 func Init(cfg *server.DocEngineConfig) error {
 	var initErr error
 	once.Do(func() {
+		engineType = EngineType(cfg.Type)
 		var err error
-		switch EngineType(cfg.Type) {
+		switch engineType {
 		case EngineElasticsearch:
 			globalEngine, err = elasticsearch.NewEngine(cfg.ES)
 		case EngineInfinity:
@@ -54,6 +56,11 @@ func Init(cfg *server.DocEngineConfig) error {
 		logger.Info("Doc engine initialized", zap.String("type", string(cfg.Type)))
 	})
 	return initErr
+}
+
+// GetEngineType returns the document engine type
+func GetEngineType() EngineType {
+	return engineType
 }
 
 // Get gets global document engine instance

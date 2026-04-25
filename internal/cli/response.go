@@ -140,6 +140,7 @@ func (r *NonStreamResponse) PrintOut() {
 			fmt.Printf("Thinking: %s\n", r.ReasoningContent)
 		}
 		fmt.Printf("Answer: %s\n", r.Answer)
+		fmt.Printf("Time: %f\n", r.Duration)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
@@ -166,7 +167,9 @@ func (r *StreamMessageResponse) SetOutputFormat(format OutputFormat) {
 }
 
 func (r *StreamMessageResponse) PrintOut() {
-	if r.Code != 0 {
+	if r.Code == 0 {
+		fmt.Printf("Time: %f\n", r.Duration)
+	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
 	}

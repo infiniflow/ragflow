@@ -58,6 +58,11 @@ func (z *MoonshotModel) Chat(modelName, message *string, apiConfig *APIConfig, c
 	return nil, fmt.Errorf("not implemented")
 }
 
+// ChatWithMessages sends multiple messages with roles and returns response
+func (z *MoonshotModel) ChatWithMessages(modelName string, apiKey *string, messages []Message, chatModelConfig *ChatConfig) (string, error) {
+	return "", fmt.Errorf("%s, ChatWithMessages not implemented", z.Name())
+}
+
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
 func (z *MoonshotModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("not implemented")

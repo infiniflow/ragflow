@@ -14,6 +14,7 @@ import {
   useSubmitGoogle,
   useSubmitMinerU,
   useSubmitOllama,
+  useSubmitOpenDataLoader,
   useSubmitPaddleOCR,
   useSubmitSpark,
   useSubmitSystemModelSetting,
@@ -30,6 +31,7 @@ import GoogleModal from './modal/google-modal';
 import MinerUModal from './modal/mineru-modal';
 import TencentCloudModal from './modal/next-tencent-modal';
 import OllamaModal from './modal/ollama-modal';
+import OpenDataLoaderModal from './modal/opendataloader-modal';
 import PaddleOCRModal from './modal/paddleocr-modal';
 import SparkModal from './modal/spark-modal';
 import VolcEngineModal from './modal/volcengine-modal';
@@ -139,6 +141,14 @@ const ModelProviders = () => {
     paddleocrLoading,
   } = useSubmitPaddleOCR();
 
+  const {
+    opendataloaderVisible,
+    hideOpenDataLoaderModal,
+    showOpenDataLoaderModal,
+    onOpenDataLoaderOk,
+    opendataloaderLoading,
+  } = useSubmitOpenDataLoader();
+
   const ModalMap = useMemo(
     () => ({
       [LLMFactory.Bedrock]: showBedrockAddingModal,
@@ -151,6 +161,7 @@ const ModelProviders = () => {
       [LLMFactory.AzureOpenAI]: showAzureAddingModal,
       [LLMFactory.MinerU]: showMineruModal,
       [LLMFactory.PaddleOCR]: showPaddleOCRModal,
+      [LLMFactory.OpenDataLoader]: showOpenDataLoaderModal,
     }),
     [
       showBedrockAddingModal,
@@ -163,6 +174,7 @@ const ModelProviders = () => {
       showAzureAddingModal,
       showMineruModal,
       showPaddleOCRModal,
+      showOpenDataLoaderModal,
     ],
   );
 
@@ -240,6 +252,9 @@ const ModelProviders = () => {
     if (paddleocrVisible) {
       return onPaddleOCROk;
     }
+    if (opendataloaderVisible) {
+      return onOpenDataLoaderOk;
+    }
     if (GoogleAddingVisible) {
       return onGoogleAddingOk;
     }
@@ -269,6 +284,8 @@ const ModelProviders = () => {
     onMineruOk,
     paddleocrVisible,
     onPaddleOCROk,
+    opendataloaderVisible,
+    onOpenDataLoaderOk,
   ]);
 
   const { onApiKeyVerifying } = useVerifySettings({
@@ -391,6 +408,13 @@ const ModelProviders = () => {
         loading={paddleocrLoading}
         onVerify={onApiKeyVerifying}
       ></PaddleOCRModal>
+      <OpenDataLoaderModal
+        visible={opendataloaderVisible}
+        hideModal={hideOpenDataLoaderModal}
+        onOk={onOpenDataLoaderOk}
+        loading={opendataloaderLoading}
+        onVerify={onApiKeyVerifying}
+      ></OpenDataLoaderModal>
     </div>
   );
 };

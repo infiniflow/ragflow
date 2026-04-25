@@ -807,6 +807,56 @@ export const useSubmitPaddleOCR = () => {
   };
 };
 
+export const useSubmitOpenDataLoader = () => {
+  const [saveLoading, setSaveLoading] = useState(false);
+  const { addLlm } = useAddLlm();
+  const {
+    visible: opendataloaderVisible,
+    hideModal: hideOpenDataLoaderModal,
+    showModal: showOpenDataLoaderModal,
+  } = useSetModalState();
+
+  const onOpenDataLoaderOk = useCallback(
+    async (payload: any, isVerify = false) => {
+      if (!isVerify) {
+        setSaveLoading(true);
+      }
+      const req: IAddLlmRequestBody = {
+        llm_factory: LLMFactory.OpenDataLoader,
+        llm_name: payload.llm_name,
+        model_type: 'ocr',
+        api_key: { ...payload },
+        api_base: '',
+        max_tokens: 0,
+      };
+      const ret = await addLlm({ ...req, verify: isVerify });
+      if (!isVerify) {
+        setSaveLoading(false);
+        if (ret.code === 0) {
+          hideOpenDataLoaderModal();
+          return true;
+        }
+      }
+      if (isVerify) {
+        return {
+          isValid: !!ret.data?.success,
+          logs: ret.data?.message,
+        } as VerifyResult;
+      }
+      return false;
+    },
+    [addLlm, hideOpenDataLoaderModal, setSaveLoading],
+  );
+
+  return {
+    opendataloaderVisible,
+    hideOpenDataLoaderModal,
+    showOpenDataLoaderModal,
+    onOpenDataLoaderOk,
+    opendataloaderLoading: saveLoading,
+  };
+};
+
 export const useVerifySettings = ({
   onVerify,
 }: {

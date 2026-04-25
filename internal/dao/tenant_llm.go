@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"fmt"
 	"ragflow/internal/entity"
 )
 
@@ -28,10 +29,30 @@ func NewTenantLLMDAO() *TenantLLMDAO {
 	return &TenantLLMDAO{}
 }
 
+// GetByID get tenant LLM by primary key ID
+func (dao *TenantLLMDAO) GetByID(id int64) (*entity.TenantLLM, error) {
+	var tenantLLM entity.TenantLLM
+	err := DB.Where("id = ?", id).First(&tenantLLM).Error
+	if err != nil {
+		return nil, err
+	}
+	return &tenantLLM, nil
+}
+
 // GetByTenantAndModelName get tenant LLM by tenant ID and model name
 func (dao *TenantLLMDAO) GetByTenantAndModelName(tenantID, providerName string, modelName string) (*entity.TenantLLM, error) {
 	var tenantLLM entity.TenantLLM
 	err := DB.Where("tenant_id = ? AND llm_factory = ? AND llm_name = ?", tenantID, providerName, modelName).First(&tenantLLM).Error
+	if err != nil {
+		return nil, err
+	}
+	return &tenantLLM, nil
+}
+
+// GetByTenantNameAndType get tenant LLM by tenant ID, model name, and model type
+func (dao *TenantLLMDAO) GetByTenantNameAndType(tenantID, modelName string, modelType entity.ModelType) (*entity.TenantLLM, error) {
+	var tenantLLM entity.TenantLLM
+	err := DB.Where("tenant_id = ? AND llm_name = ? AND model_type = ?", tenantID, modelName, modelType).First(&tenantLLM).Error
 	if err != nil {
 		return nil, err
 	}
@@ -267,4 +288,51 @@ func (dao *TenantLLMDAO) GetByTenantIDLLMNameAndFactory(tenantID, llmName, facto
 		return nil, err
 	}
 	return &tenantLLM, nil
+}
+
+// LookupTenantLLMByID looks up a TenantLLM record by ID and returns the record plus composite model name.
+func LookupTenantLLMByID(tenantLLMDao *TenantLLMDAO, id int64) (*entity.TenantLLM, string, error) {
+	tenantLLM, err := tenantLLMDao.GetByID(id)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get tenant_llm by id %d: %w", id, err)
+	}
+	if tenantLLM == nil || tenantLLM.LLMName == nil || *tenantLLM.LLMName == "" {
+		return nil, "", fmt.Errorf("tenant_llm record not found for id %d", id)
+	}
+	compositeName := fmt.Sprintf("%s@%s", *tenantLLM.LLMName, tenantLLM.LLMFactory)
+	return tenantLLM, compositeName, nil
+}
+
+// LookupTenantLLMByName looks up a TenantLLM record by tenant name and model type.
+func LookupTenantLLMByName(tenantLLMDao *TenantLLMDAO, tenantID, name string, modelType entity.ModelType) (*entity.TenantLLM, string, error) {
+	// Parse factory from name if present (e.g., "model@Factory")
+	modelName, factory := splitModelNameAndFactory(name)
+
+	// If factory is found, use factory-based lookup
+	if factory != "" {
+		return LookupTenantLLMByFactory(tenantLLMDao, tenantID, factory, modelName, modelType)
+	}
+
+	tenantLLM, err := tenantLLMDao.GetByTenantNameAndType(tenantID, modelName, modelType)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get tenant_llm by name %s: %w", name, err)
+	}
+	if tenantLLM == nil || tenantLLM.LLMName == nil || *tenantLLM.LLMName == "" {
+		return nil, "", fmt.Errorf("tenant_llm record not found for name %s", name)
+	}
+	compositeName := fmt.Sprintf("%s@%s", *tenantLLM.LLMName, tenantLLM.LLMFactory)
+	return tenantLLM, compositeName, nil
+}
+
+// LookupTenantLLMByFactory looks up a TenantLLM record by tenant, factory, and model name.
+func LookupTenantLLMByFactory(tenantLLMDao *TenantLLMDAO, tenantID, factory, name string, modelType entity.ModelType) (*entity.TenantLLM, string, error) {
+	tenantLLM, err := tenantLLMDao.GetByTenantFactoryAndModelName(tenantID, factory, name)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get tenant_llm by factory %s and name %s: %w", factory, name, err)
+	}
+	if tenantLLM == nil || tenantLLM.LLMName == nil || *tenantLLM.LLMName == "" {
+		return nil, "", fmt.Errorf("tenant_llm record not found for factory %s and name %s", factory, name)
+	}
+	compositeName := fmt.Sprintf("%s@%s", *tenantLLM.LLMName, tenantLLM.LLMFactory)
+	return tenantLLM, compositeName, nil
 }

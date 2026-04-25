@@ -56,6 +56,11 @@ func (z *MinimaxModel) Chat(modelName, message *string, apiConfig *APIConfig, mo
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
+// ChatWithMessages sends multiple messages with roles and returns response
+func (z *MinimaxModel) ChatWithMessages(modelName string, apiKey *string, messages []Message, chatModelConfig *ChatConfig) (string, error) {
+	return "", fmt.Errorf("%s, ChatWithMessages not implemented", z.Name())
+}
+
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
 func (z *MinimaxModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", z.Name())

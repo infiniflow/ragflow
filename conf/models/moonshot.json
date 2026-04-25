@@ -8,10 +8,11 @@
     "models": "models",
     "balance": "users/me/balance"
   },
+  "series": "kimi",
   "models": [
     {
       "name": "kimi-k2.6",
-      "max_tokens": 256000,
+      "max_tokens": 262144,
       "model_types": [
         "chat",
         "vision"
@@ -19,7 +20,7 @@
     },
     {
       "name": "kimi-k2.5",
-      "max_tokens": 256000,
+      "max_tokens": 262144,
       "model_types": [
         "chat",
         "vision"

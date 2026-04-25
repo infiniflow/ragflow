@@ -34,6 +34,22 @@ type siliconflowEmbeddingModel struct {
 	httpClient *http.Client
 }
 
+// siliconflowChatModel implements ChatModel for SILICONFLOW API
+type siliconflowChatModel struct {
+	apiKey     string
+	apiBase    string
+	model      string
+	httpClient *http.Client
+}
+
+// siliconflowRerankModel implements RerankModel for SILICONFLOW API
+type siliconflowRerankModel struct {
+	apiKey     string
+	apiBase    string
+	model      string
+	httpClient *http.Client
+}
+
 // SiliconflowEmbeddingRequest represents SILICONFLOW embedding request
 type SiliconflowEmbeddingRequest struct {
 	Model string   `json:"model"`
@@ -46,6 +62,54 @@ type SiliconflowEmbeddingResponse struct {
 		Embedding []float64 `json:"embedding"`
 		Index     int       `json:"index"`
 	} `json:"data"`
+}
+
+// SiliconflowChatRequest represents SILICONFLOW chat request
+type SiliconflowChatRequest struct {
+	Model       string        `json:"model"`
+	Messages    []ChatMessage `json:"messages"`
+	Temperature float64       `json:"temperature,omitempty"`
+	MaxTokens   int           `json:"max_tokens,omitempty"`
+	Stream      bool          `json:"stream,omitempty"`
+}
+
+// SiliconflowChatResponse represents SILICONFLOW chat response
+type SiliconflowChatResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	Error struct {
+		Message string `json:"message"`
+		Code    string `json:"code"`
+	} `json:"error,omitempty"`
+}
+
+// ChatMessage represents a chat message
+type ChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// SiliconflowRerankRequest represents SILICONFLOW rerank request
+type SiliconflowRerankRequest struct {
+	Model           string   `json:"model"`
+	Query           string   `json:"query"`
+	Documents       []string `json:"documents"`
+	TopN            int      `json:"top_n"`
+	ReturnDocuments bool     `json:"return_documents"`
+	MaxChunksPerDoc int      `json:"max_chunks_per_doc"`
+	OverlapTokens   int      `json:"overlap_tokens"`
+}
+
+// SiliconflowRerankResponse represents SILICONFLOW rerank response
+type SiliconflowRerankResponse struct {
+	Results []struct {
+		Index          int     `json:"index"`
+		RelevanceScore float64 `json:"relevance_score"`
+	} `json:"results"`
 }
 
 // Encode encodes a list of texts into embeddings using SILICONFLOW API
@@ -111,10 +175,202 @@ func (m *siliconflowEmbeddingModel) EncodeQuery(query string) ([]float64, error)
 	return embeddings[0], nil
 }
 
-// init registers the SILICONFLOW embedding model factory
+// Chat sends a chat message and returns response
+func (m *siliconflowChatModel) Chat(system string, history []map[string]string, genConf map[string]interface{}) (string, error) {
+	// Build messages array
+	var messages []ChatMessage
+
+	// Add system message if provided
+	if system != "" {
+		messages = append(messages, ChatMessage{Role: "system", Content: system})
+	}
+
+	// Add history messages
+	for _, msg := range history {
+		role := msg["role"]
+		content := msg["content"]
+		if role != "" && content != "" {
+			messages = append(messages, ChatMessage{Role: role, Content: content})
+		}
+	}
+
+	// Extract generation config
+	temperature := 0.7
+	if temp, ok := genConf["temperature"].(float64); ok {
+		temperature = temp
+	}
+	maxTokens := 1024
+	if mt, ok := genConf["max_tokens"].(int); ok {
+		maxTokens = mt
+	}
+
+	// Build request
+	reqBody := SiliconflowChatRequest{
+		Model:       m.model,
+		Messages:    messages,
+		Temperature: temperature,
+		MaxTokens:   maxTokens,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Build URL - append /chat/completions if not already present
+	url := m.apiBase
+	if !strings.HasSuffix(url, "/chat/completions") {
+		if !strings.HasSuffix(url, "/") {
+			url += "/"
+		}
+		url += "chat/completions"
+	}
+
+	req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+m.apiKey)
+
+	resp, err := m.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("SILICONFLOW API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var chatResp SiliconflowChatResponse
+	if err := json.Unmarshal(body, &chatResp); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if chatResp.Error.Message != "" {
+		return "", fmt.Errorf("chat error: %s", chatResp.Error.Message)
+	}
+
+	if len(chatResp.Choices) == 0 {
+		return "", fmt.Errorf("no response choices returned")
+	}
+
+	return chatResp.Choices[0].Message.Content, nil
+}
+
+// ChatStreamly sends a chat message and streams response
+func (m *siliconflowChatModel) ChatStreamly(system string, history []map[string]string, genConf map[string]interface{}) (<-chan string, error) {
+	// For now, return a simple non-streaming implementation
+	// Streaming can be implemented later with SSE support
+	responseChan := make(chan string)
+
+	go func() {
+		defer close(responseChan)
+		response, err := m.Chat(system, history, genConf)
+		if err != nil {
+			responseChan <- "**ERROR**: " + err.Error()
+			return
+		}
+		responseChan <- response
+	}()
+
+	return responseChan, nil
+}
+
+// Similarity calculates similarity scores between query and texts using SiliconFlow API
+func (m *siliconflowRerankModel) Similarity(query string, texts []string) ([]float64, error) {
+	if len(texts) == 0 {
+		return []float64{}, nil
+	}
+
+	reqBody := SiliconflowRerankRequest{
+		Model:           m.model,
+		Query:           query,
+		Documents:       texts,
+		TopN:            len(texts),
+		ReturnDocuments: false,
+		MaxChunksPerDoc: 1024,
+		OverlapTokens:   80,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	reqURL := m.apiBase
+	if !strings.Contains(reqURL, "/rerank") {
+		if !strings.HasSuffix(reqURL, "/") {
+			reqURL += "/"
+		}
+		reqURL += "rerank"
+	}
+
+	req, err := http.NewRequest("POST", reqURL, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+m.apiKey)
+
+	resp, err := m.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("SiliconFlow Rerank API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+
+	var rerankResp SiliconflowRerankResponse
+	if err := json.Unmarshal(body, &rerankResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	scores := make([]float64, len(texts))
+	for _, result := range rerankResp.Results {
+		if result.Index >= 0 && result.Index < len(texts) {
+			scores[result.Index] = result.RelevanceScore
+		}
+	}
+
+	return scores, nil
+}
+
+// init registers the SILICONFLOW model factories
 func init() {
 	RegisterEmbeddingModelFactory("SILICONFLOW", func(apiKey, apiBase, modelName string, httpClient *http.Client) entity.EmbeddingModel {
 		return &siliconflowEmbeddingModel{
+			apiKey:     apiKey,
+			apiBase:    apiBase,
+			model:      modelName,
+			httpClient: httpClient,
+		}
+	})
+
+	RegisterChatModelFactory("SILICONFLOW", func(apiKey, apiBase, modelName string, httpClient *http.Client) entity.ChatModel {
+		return &siliconflowChatModel{
+			apiKey:     apiKey,
+			apiBase:    apiBase,
+			model:      modelName,
+			httpClient: httpClient,
+		}
+	})
+
+	RegisterRerankModelFactory("SILICONFLOW", func(apiKey, apiBase, modelName string, httpClient *http.Client) entity.RerankModel {
+		return &siliconflowRerankModel{
 			apiKey:     apiKey,
 			apiBase:    apiBase,
 			model:      modelName,

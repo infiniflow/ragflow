@@ -159,6 +159,7 @@ type Model struct {
 	MaxTokens    int            `json:"max_tokens"`
 	ModelTypes   []string       `json:"model_types"`
 	Thinking     *ModelThinking `json:"thinking"`
+	Series       *string        `json:"series"`
 	ModelTypeMap map[string]bool
 }
 
@@ -169,6 +170,7 @@ type Provider struct {
 	URLSuffix   models.URLSuffix  `json:"url_suffix"`
 	Models      []*Model          `json:"models"`
 	Features    Features          `json:"features"`
+	Series      string            `json:"series"`
 	ModelDriver models.ModelDriver
 }
 
@@ -253,6 +255,14 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 				if strings.HasPrefix(model.Name, modelPrefix) {
 					model.Thinking.ClearContent = true
 				}
+			}
+
+			if provider.Series == "" {
+				pos := strings.Index(model.Name, "-")
+				modelSeries := model.Name[0:pos]
+				model.Series = &modelSeries
+			} else {
+				model.Series = &provider.Name
 			}
 
 			model.ModelTypeMap = make(map[string]bool)
