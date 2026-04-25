@@ -53,7 +53,6 @@ export default {
       previousPage: '上一页',
       nextPage: '下一页',
       previous: '上一步',
-      next: '下一步',
       add: '添加',
       remove: '移除',
       search: '搜索',

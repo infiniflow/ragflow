@@ -63,7 +63,6 @@ export default {
       previousPage: 'Previous',
       nextPage: 'Next',
       previous: 'Previous',
-      next: 'Next',
       add: 'Add',
       remove: 'Remove',
       search: 'Search',

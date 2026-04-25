@@ -1,10 +1,10 @@
+import message from '@/components/ui/message';
 import fileManagerService from '@/services/file-manager-service';
 import skillSpaceService, {
   SkillSearchConfig,
 } from '@/services/skill-space-service';
 import { getAuthorization } from '@/utils/authorization-util';
 import { useQuery } from '@tanstack/react-query';
-import { message } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Skill, SkillFileEntry, SkillMetadata, SkillSpace } from './types';
