@@ -24,6 +24,7 @@ import (
 	"os"
 	ce "ragflow/internal/cli/contextengine"
 	"strings"
+	"time"
 )
 
 // PingServer pings the server to check if it's alive
@@ -1460,13 +1461,13 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 
 	// Check if composite_model_name is provided in command
 	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "/")
+		names := strings.Split(compositeModelName, "@")
 		if len(names) != 3 {
-			return nil, fmt.Errorf("model name must be in format 'provider/instance/model'")
+			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
 		}
-		providerName = names[0]
+		providerName = names[2]
 		instanceName = names[1]
-		modelName = names[2]
+		modelName = names[0]
 	} else if c.CurrentModel != nil {
 		// Use current model if set
 		providerName = c.CurrentModel.Provider
@@ -1479,18 +1480,27 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	message := cmd.Params["message"].(string)
 	thinking := cmd.Params["thinking"].(bool)
 	stream := cmd.Params["stream"].(bool)
+	effort := cmd.Params["effort"].(string)
+	verbosity := cmd.Params["verbosity"].(string)
 
-	url := fmt.Sprintf("/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
+	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
 
 	payload := map[string]interface{}{
-		"message":  message,
-		"stream":   stream, // use stream API
-		"thinking": thinking,
+		"model_name": modelName,
+		"message":    message,
+		"stream":     stream, // use stream API
+		"thinking":   thinking,
+	}
+
+	if thinking {
+		payload["effort"] = effort
+		payload["verbosity"] = verbosity
 	}
 
 	if stream {
 		// Call stream http api
-		reader, duration, err := c.HTTPClient.RequestStream("POST", url, true, "web", nil, payload)
+		startTime := time.Now()
+		reader, err := c.HTTPClient.RequestStream("POST", url, true, "web", nil, payload)
 		if err != nil {
 			return nil, fmt.Errorf("failed to chat model: %w", err)
 		}
@@ -1513,6 +1523,7 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 					if reasoningPrint {
 						fmt.Print("Thinking: ")
 						reasoningPrint = false
+						thinking = true
 					} else {
 						fmt.Print(data)
 					}
@@ -1543,7 +1554,7 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 				return nil, fmt.Errorf("chat error: received error event from server")
 			}
 		}
-
+		duration := time.Since(startTime).Seconds()
 		if err := scanner.Err(); err != nil {
 			return nil, fmt.Errorf("error reading stream: %w", err)
 		}
@@ -1593,15 +1604,15 @@ func (c *RAGFlowClient) UseModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("model identifier not provided")
 	}
 
-	names := strings.Split(compositeModelName, "/")
+	names := strings.Split(compositeModelName, "@")
 	if len(names) != 3 {
-		return nil, fmt.Errorf("model identifier must be in format 'provider/instance/model'")
+		return nil, fmt.Errorf("model identifier must be in format 'model@instance@provider'")
 	}
 
 	c.CurrentModel = &CurrentModel{
-		Provider: names[0],
+		Provider: names[2],
 		Instance: names[1],
-		Model:    names[2],
+		Model:    names[0],
 	}
 
 	var result SimpleResponse

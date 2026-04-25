@@ -39,6 +39,12 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewDeepSeekModel(baseURL, urlSuffix), nil
 	case "moonshot":
 		return NewMoonshotModel(baseURL, urlSuffix), nil
+	case "minimax":
+		return NewMinimaxModel(baseURL, urlSuffix), nil
+	case "gitee":
+		return NewGiteeModel(baseURL, urlSuffix), nil
+	case "siliconflow":
+		return NewSiliconflowModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

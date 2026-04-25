@@ -116,6 +116,14 @@ const (
 	TokenEnable
 	TokenUse
 	TokenThink
+	TokenEffort
+	TokenVerbosity
+	TokenNone
+	TokenMinimal
+	TokenLow
+	TokenMedium
+	TokenHigh
+	TokenMax
 	TokenLS
 	TokenCat
 	TokenInsert

@@ -10,6 +10,7 @@
     "embedding": "embedding",
     "rerank": "rerank"
   },
+  "series": "glm",
   "models": [
     {
       "name": "glm-4.7",

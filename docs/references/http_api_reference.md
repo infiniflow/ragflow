@@ -7581,16 +7581,16 @@ or
 
 ---
 
-### Convert files to documents and link them to datasets
+### Links files to datasets and convert to documents
 
-**POST** `/v1/file2document/convert`
+**POST** `/api/v1/files/link-to-datasets`
 
 Converts files to documents and links them to specified datasets.
 
 #### Request
 
 - Method: POST
-- URL: `/v1/file2document/convert`
+- URL: `/api/v1/files/link-to-datasets`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -7602,7 +7602,7 @@ Converts files to documents and links them to specified datasets.
 
 ```bash
 curl --request POST \
-     --url http://{address}/v1/file2document/convert \
+     --url http://{address}/api/v1/files/link-to-datasets \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
