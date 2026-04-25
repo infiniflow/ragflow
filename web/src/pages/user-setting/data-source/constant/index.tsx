@@ -56,6 +56,9 @@ export const DataSourceFeatureVisibilityMap = {
   [DataSourceKey.GITHUB]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.GOOGLE_DRIVE]: {
+    syncDeletedFiles: true,
+  },
 };
 
 const isDataSourceFeatureVisible = (

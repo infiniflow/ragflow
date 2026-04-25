@@ -563,9 +563,19 @@ class Dropbox(SyncBase):
 
 
 class GoogleDrive(SyncBase):
+    """
+    Data synchronization connector for Google Drive.
+    Handles both full re-indexing and incremental polling, including the capability
+    to synchronize deleted files by retrieving a lightweight snapshot of current files.
+    """
     SOURCE_NAME: str = FileSource.GOOGLE_DRIVE
 
     async def _generate(self, task: dict):
+        """
+        Generates document batches from Google Drive based on the given task configuration.
+        Returns a tuple of (document_batches_generator, current_file_list) if deleted file
+        syncing is enabled, otherwise (document_batches_generator, None).
+        """
         connector_kwargs = {
             "include_shared_drives": self.conf.get("include_shared_drives", False),
             "include_my_drives": self.conf.get("include_my_drives", False),
@@ -587,12 +597,22 @@ class GoogleDrive(SyncBase):
         if new_credentials:
             self._persist_rotated_credentials(task["connector_id"], new_credentials)
 
+        file_list = None
         if task["reindex"] == "1" or not task["poll_range_start"]:
             start_time = 0.0
             _begin_info = "totally"
         else:
             start_time = task["poll_range_start"].timestamp()
             _begin_info = f"from {task['poll_range_start']}"
+            
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                # Use namedtuple to project only the required 'id' attribute,
+                # avoiding massive memory bloat for enterprise-scale drives.
+                SlimDoc = namedtuple('SlimDoc', ['id'])
+                
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend([SlimDoc(doc.id) for doc in slim_batch])
 
         end_time = datetime.now(timezone.utc).timestamp()
         raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
@@ -637,9 +657,11 @@ class GoogleDrive(SyncBase):
         except RuntimeError:
             admin_email = "unknown"
         self.log_connection("Google Drive", f"as {admin_email}", task)
-        return document_batches()
+        
+        return document_batches(), file_list
 
     def _persist_rotated_credentials(self, connector_id: str, credentials: dict[str, Any]) -> None:
+        """Saves refreshed OAuth credentials back to the database configuration."""
         try:
             updated_conf = copy.deepcopy(self.conf)
             updated_conf["credentials"] = credentials
@@ -648,8 +670,7 @@ class GoogleDrive(SyncBase):
             logging.info("Persisted refreshed Google Drive credentials for connector %s", connector_id)
         except Exception:
             logging.exception("Failed to persist refreshed Google Drive credentials for connector %s", connector_id)
-
-
+            
 class Jira(SyncBase):
     SOURCE_NAME: str = FileSource.JIRA
 
