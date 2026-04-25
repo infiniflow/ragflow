@@ -74,6 +74,7 @@ from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
 from box_sdk_gen import BoxOAuth, OAuthConfig, AccessToken
+from collections import namedtuple
 
 MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
 task_limiter = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
@@ -607,6 +608,7 @@ class GoogleDrive(SyncBase):
             
             if self.conf.get("sync_deleted_files"):
                 file_list = []
+                logging.info("Syncing deleted files (connector_id=%s)", task["connector_id"])
                 # Use namedtuple to project only the required 'id' attribute,
                 # avoiding massive memory bloat for enterprise-scale drives.
                 SlimDoc = namedtuple('SlimDoc', ['id'])
