@@ -606,17 +606,28 @@ class GoogleDrive(SyncBase):
             start_time = task["poll_range_start"].timestamp()
             _begin_info = f"from {task['poll_range_start']}"
             
+            # Capture end_time BEFORE the snapshot to prevent the ingestion race condition
+            end_time = datetime.now(timezone.utc).timestamp()
+            
             if self.conf.get("sync_deleted_files"):
                 file_list = []
                 logging.info("Syncing deleted files (connector_id=%s)", task["connector_id"])
-                # Use namedtuple to project only the required 'id' attribute,
-                # avoiding massive memory bloat for enterprise-scale drives.
                 SlimDoc = namedtuple('SlimDoc', ['id'])
+                
+                # Add observability timing so operators can track the O(N) cost
+                import time
+                snapshot_start = time.time()
                 
                 for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
                     file_list.extend([SlimDoc(doc.id) for doc in slim_batch])
+                    
+                logging.info("Slim snapshot fetched %d files in %.2f seconds", len(file_list), time.time() - snapshot_start)
+                
+                # The Blast Radius Guard
+                if len(file_list) == 0:
+                    logging.warning("Slim retrieval returned 0 files. Nullifying file_list to prevent mass KB deletion.")
+                    file_list = None
 
-        end_time = datetime.now(timezone.utc).timestamp()
         raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
         try:
             batch_size = int(raw_batch_size)
