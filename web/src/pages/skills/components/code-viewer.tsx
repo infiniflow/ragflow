@@ -1,14 +1,11 @@
 import { useIsDarkTheme } from '@/components/theme-provider';
-import { Tag, Typography, theme } from 'antd';
+import { Badge } from '@/components/ui/badge';
 import React, { memo } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import {
   oneDark,
   oneLight,
 } from 'react-syntax-highlighter/dist/esm/styles/prism';
-
-const { Text } = Typography;
-const { useToken } = theme;
 
 interface CodeViewerProps {
   content: string;
@@ -71,7 +68,6 @@ const getLang = (filename: string): string => {
 
 const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename }) => {
   const isDarkTheme = useIsDarkTheme();
-  const { token } = useToken();
   const language = getLang(filename);
 
   const lineCount = content.split('\n').length;
@@ -87,22 +83,13 @@ const CodeViewer: React.FC<CodeViewerProps> = ({ content, filename }) => {
   return (
     <div>
       {/* File Header */}
-      <div
-        style={{
-          padding: '12px 16px',
-          backgroundColor: token.colorBgElevated,
-          borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-      >
-        <Text strong>{filename}</Text>
-        <div>
-          <Tag color="blue">{language}</Tag>
-          <Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
+      <div className="flex items-center justify-between px-4 py-3 border-b bg-background">
+        <span className="font-semibold">{filename}</span>
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary">{language}</Badge>
+          <span className="text-xs text-muted-foreground">
             {lineCount} lines | {formatSize(charCount)}
-          </Text>
+          </span>
         </div>
       </div>
 

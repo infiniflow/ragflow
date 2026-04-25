@@ -14,12 +14,12 @@ import {
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import message from '@/components/ui/message';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { LlmModelType } from '@/constants/knowledge';
 import { useSelectLlmOptionsByModelType } from '@/hooks/use-llm-request';
 import { SkillSearchConfig } from '@/services/skill-space-service';
-import { message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
