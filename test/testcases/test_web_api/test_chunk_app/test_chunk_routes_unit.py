@@ -906,13 +906,13 @@ def test_resolve_reference_metadata_legacy_keys_unit(monkeypatch):
     assert include is True
     assert fields == {"title", "page"}
     
-    # Legacy keys don't override reference_metadata
+    # Legacy request keys override nested reference_metadata for request compatibility
     req = {
         "reference_metadata": {"include": False},
         "include_metadata": True
     }
     include, fields = module._resolve_reference_metadata(req, None)
-    assert include is False
+    assert include is True
 
 
 @pytest.mark.p2

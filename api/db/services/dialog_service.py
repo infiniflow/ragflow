@@ -708,6 +708,11 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     kbinfos["chunks"].insert(0, ck)
 
     if include_reference_metadata:
+        logging.debug(
+            "reference_metadata enrichment enabled for async_chat: chunk_count=%d metadata_fields=%s",
+            len(kbinfos.get("chunks", [])),
+            metadata_fields,
+        )
         _enrich_chunks_with_document_metadata(kbinfos.get("chunks", []), metadata_fields)
 
     knowledges = kb_prompt(kbinfos, max_tokens)
@@ -1516,6 +1521,11 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         rank_feature=label_question(question, kbs)
     )
     if include_reference_metadata:
+        logging.debug(
+            "reference_metadata enrichment enabled for async_ask: chunk_count=%d metadata_fields=%s",
+            len(kbinfos.get("chunks", [])),
+            metadata_fields,
+        )
         _enrich_chunks_with_document_metadata(kbinfos.get("chunks", []), metadata_fields)
 
     knowledges = kb_prompt(kbinfos, max_tokens)

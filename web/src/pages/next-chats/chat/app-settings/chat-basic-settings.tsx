@@ -13,14 +13,13 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchKnowledgeMetadataKeys } from '@/hooks/use-knowledge-request';
 import { getDirAttribute } from '@/utils/text-direction';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 
 export default function ChatBasicSetting() {
