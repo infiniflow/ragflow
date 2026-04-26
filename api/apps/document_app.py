@@ -39,7 +39,7 @@ from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_heade
 from common import settings
 from common.constants import SANDBOX_ARTIFACT_BUCKET, RetCode, TaskStatus
 from common.file_utils import get_project_base_directory
-from common.misc_utils import get_uuid, thread_pool_exec
+from common.misc_utils import thread_pool_exec
 from common.ssrf_guard import assert_url_is_safe
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search
