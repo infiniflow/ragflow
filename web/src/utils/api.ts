@@ -5,15 +5,15 @@ export { restAPIv1, webAPI };
 
 export default {
   // user
-  login: `${webAPI}/user/login`,
-  logout: `${webAPI}/user/logout`,
-  register: `${webAPI}/user/register`,
-  setting: `${webAPI}/user/setting`,
-  userInfo: `${webAPI}/user/info`,
-  tenantInfo: `${webAPI}/user/tenant_info`,
-  setTenantInfo: `${webAPI}/user/set_tenant_info`,
-  loginChannels: `${webAPI}/user/login/channels`,
-  loginChannel: (channel: string) => `${webAPI}/user/login/${channel}`,
+  login: `${restAPIv1}/auth/login`,
+  logout: `${restAPIv1}/auth/logout`,
+  register: `${restAPIv1}/users`,
+  setting: `${restAPIv1}/users/me`,
+  userInfo: `${restAPIv1}/users/me`,
+  tenantInfo: `${restAPIv1}/users/me/models`,
+  setTenantInfo: `${restAPIv1}/users/me/models`,
+  loginChannels: `${restAPIv1}/auth/login/channels`,
+  loginChannel: (channel: string) => `${restAPIv1}/auth/login/${channel}`,
 
   // team
   addTenantUser: (tenantId: string) => `${restAPIv1}/tenants/${tenantId}/users`,
@@ -213,8 +213,8 @@ export default {
   prompt: `${restAPIv1}/agents/prompts`,
   cancelDataflow: (id: string) => `${webAPI}/canvas/cancel/${id}`,
   downloadFile: `${restAPIv1}/agents/download`,
-  testWebhook: (id: string) => `${restAPIv1}/webhook_test/${id}`,
-  fetchWebhookTrace: (id: string) => `${restAPIv1}/webhook_trace/${id}`,
+  testWebhook: (id: string) => `${restAPIv1}/agents/${id}/webhook/test`,
+  fetchWebhookTrace: (id: string) => `${restAPIv1}/agents/${id}/webhook/logs`,
 
   // explore
 

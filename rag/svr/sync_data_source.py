@@ -267,6 +267,7 @@ class _BlobLikeBase(SyncBase):
             bucket_name=self.conf["bucket_name"],
             prefix=self.conf.get("prefix", ""),
         )
+        self.connector.set_allow_images(self.conf.get("allow_images", False))
         self.connector.load_credentials(self.conf["credentials"])
 
         document_batch_generator = (
