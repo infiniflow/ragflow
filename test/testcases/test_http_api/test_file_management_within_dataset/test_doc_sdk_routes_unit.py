@@ -17,6 +17,7 @@ import asyncio
 import inspect
 import importlib.util
 import sys
+from functools import wraps
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -24,6 +25,16 @@ import numpy as np
 import pytest
 
 from api.db import FileType
+
+
+@pytest.fixture(scope="session")
+def auth():
+    return "unit-auth"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def set_tenant_info():
+    return None
 
 
 class _DummyManager:
@@ -125,6 +136,103 @@ def _load_doc_module(monkeypatch):
     common_pkg = ModuleType("common")
     common_pkg.__path__ = [str(repo_root / "common")]
     monkeypatch.setitem(sys.modules, "common", common_pkg)
+
+    common_settings_mod = ModuleType("common.settings")
+    common_settings_mod.retriever = SimpleNamespace()
+    common_settings_mod.kg_retriever = SimpleNamespace()
+    common_settings_mod.STORAGE_IMPL = SimpleNamespace(get=lambda *_args, **_kwargs: b"", rm=lambda *_args, **_kwargs: None)
+    monkeypatch.setitem(sys.modules, "common.settings", common_settings_mod)
+
+    db_models_mod = ModuleType("api.db.db_models")
+    db_models_mod.APIToken = SimpleNamespace(query=lambda **_kwargs: [])
+    db_models_mod.Document = SimpleNamespace()
+    db_models_mod.Task = SimpleNamespace()
+    monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
+
+    services_pkg = ModuleType("api.db.services")
+    services_pkg.__path__ = [str(repo_root / "api" / "db" / "services")]
+    monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
+
+    doc_metadata_service_mod = ModuleType("api.db.services.doc_metadata_service")
+    doc_metadata_service_mod.DocMetadataService = SimpleNamespace(
+        get_flatted_meta_by_kbs=lambda *_args, **_kwargs: [],
+        get_metadata_for_documents=lambda *_args, **_kwargs: {},
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.doc_metadata_service", doc_metadata_service_mod)
+
+    document_service_mod = ModuleType("api.db.services.document_service")
+    document_service_mod.DocumentService = SimpleNamespace(
+        query=lambda **_kwargs: [],
+        filter_update=lambda *_args, **_kwargs: 0,
+        get_by_id=lambda *_args, **_kwargs: (False, None),
+        update_by_id=lambda *_args, **_kwargs: True,
+        decrement_chunk_num=lambda *_args, **_kwargs: None,
+        get_embd_id=lambda *_args, **_kwargs: "",
+        get_tenant_embd_id=lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.document_service", document_service_mod)
+
+    file2document_service_mod = ModuleType("api.db.services.file2document_service")
+    file2document_service_mod.File2DocumentService = SimpleNamespace(
+        get_storage_address=lambda **_kwargs: ("", ""),
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.file2document_service", file2document_service_mod)
+
+    knowledgebase_service_mod = ModuleType("api.db.services.knowledgebase_service")
+    knowledgebase_service_mod.KnowledgebaseService = SimpleNamespace(
+        accessible=lambda **_kwargs: False,
+        get_by_id=lambda *_args, **_kwargs: (False, None),
+        get_by_ids=lambda *_args, **_kwargs: [],
+        list_documents_by_ids=lambda *_args, **_kwargs: [],
+        query=lambda **_kwargs: [],
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", knowledgebase_service_mod)
+
+    task_service_mod = ModuleType("api.db.services.task_service")
+    task_service_mod.TaskService = SimpleNamespace(filter_delete=lambda *_args, **_kwargs: None)
+    task_service_mod.cancel_all_task_of = lambda *_args, **_kwargs: None
+    task_service_mod.queue_tasks = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "api.db.services.task_service", task_service_mod)
+
+    api_utils_mod = ModuleType("api.utils.api_utils")
+    api_utils_mod.check_duplicate_ids = lambda ids, _kind="item": (ids, [])
+    api_utils_mod.construct_json_result = lambda code=0, message="success", data=None: {"code": code, "message": message, "data": data}
+    api_utils_mod.get_error_data_result = lambda message="Sorry! Data missing!", code=102: {"code": code, "message": message}
+    api_utils_mod.get_request_json = lambda: _AwaitableValue({})
+    api_utils_mod.get_result = lambda code=0, message="", data=None, total=None: {
+        key: value
+        for key, value in {"code": code, "message": message, "data": data, "total": total}.items()
+        if value is not None
+    }
+    api_utils_mod.server_error_response = lambda e: {"code": 500, "message": str(e)}
+    def _token_required(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            return await func(*args, **kwargs)
+
+        return wrapper
+
+    api_utils_mod.token_required = _token_required
+    monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
+
+    common_metadata_utils_mod = ModuleType("common.metadata_utils")
+    common_metadata_utils_mod.convert_conditions = lambda conditions: conditions
+    common_metadata_utils_mod.meta_filter = lambda *_args, **_kwargs: []
+    monkeypatch.setitem(sys.modules, "common.metadata_utils", common_metadata_utils_mod)
+
+    rag_app_tag_mod = ModuleType("rag.app.tag")
+    rag_app_tag_mod.label_question = lambda *_args, **_kwargs: {}
+    monkeypatch.setitem(sys.modules, "rag.app.tag", rag_app_tag_mod)
+
+    rag_prompts_generator_mod = ModuleType("rag.prompts.generator")
+    rag_prompts_generator_mod.cross_languages = lambda *_args, **_kwargs: ""
+    rag_prompts_generator_mod.keyword_extraction = lambda *_args, **_kwargs: ""
+    monkeypatch.setitem(sys.modules, "rag.prompts.generator", rag_prompts_generator_mod)
+
+    rag_nlp_mod = ModuleType("rag.nlp")
+    rag_nlp_mod.search = SimpleNamespace(index_name=lambda tenant_id: f"idx_{tenant_id}")
+    monkeypatch.setitem(sys.modules, "rag.nlp", rag_nlp_mod)
+    monkeypatch.setitem(sys.modules, "rag.nlp.search", rag_nlp_mod.search)
 
     deepdoc_pkg = ModuleType("deepdoc")
     deepdoc_parser_pkg = ModuleType("deepdoc.parser")
@@ -643,7 +751,7 @@ class TestDocRoutesUnit:
         res = _run(_route_core(module.update_chunk)("tenant-1", "ds-1", "doc-1", "chunk-1"))
         assert res["code"] == 0
 
-    def test_retrieval_validation_matrix(self, monkeypatch):
+    def test_retrieval_metadata_validation_matrix(self, monkeypatch):
         module = _load_doc_module(monkeypatch)
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"dataset_ids": "bad"}))
         res = _run(module.retrieval_test.__wrapped__("tenant-1"))
