@@ -454,7 +454,7 @@ export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
 }
 
 export function useFetchKnowledgeMetadataKeys(kbIds: string[] = []) {
-  const sortedKbIds = [...kbIds].sort();
+  const sortedKbIds = useMemo(() => [...kbIds].sort(), [kbIds]);
   const { data, isFetching: loading } = useQuery<string[]>({
     queryKey: [KnowledgeApiAction.FetchMetadataKeys, sortedKbIds],
     initialData: [],

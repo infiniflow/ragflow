@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from io import BytesIO
 
 from quart import request, send_file
@@ -22,7 +23,6 @@ from api.db.joint_services.tenant_model_service import get_model_config_by_id, g
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
-import logging
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks

@@ -958,6 +958,12 @@ async def delete_documents(tenant_id, dataset_id):
         else:
             doc_ids = unique_doc_ids
 
+        if not delete_all:
+            for doc_id in doc_ids:
+                doc = DocumentService.query(id=doc_id, kb_id=dataset_id)
+                if not doc:
+                    return get_error_data_result(message="Document not found!")
+
         # Delete documents using existing FileService.delete_docs
         errors = await thread_pool_exec(FileService.delete_docs, doc_ids, tenant_id)
 

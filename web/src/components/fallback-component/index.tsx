@@ -12,11 +12,27 @@ const FallbackComponent: React.FC<FallbackComponentProps> = ({
   reset,
 }) => {
   const { t } = useTranslation();
-  const routeError = useRouteError() as unknown;
+  const routeError = useRouteError();
   const error =
     errorProp ?? (routeError instanceof Error ? routeError : undefined);
+
+  let routeErrorDataStr = '';
+  if (isRouteErrorResponse(routeError)) {
+    if (typeof routeError.data === 'string') {
+      routeErrorDataStr = routeError.data;
+    } else if (routeError.data == null) {
+      routeErrorDataStr = 'no body';
+    } else {
+      try {
+        routeErrorDataStr = JSON.stringify(routeError.data);
+      } catch {
+        routeErrorDataStr = String(routeError.data);
+      }
+    }
+  }
+
   const errorMessage = isRouteErrorResponse(routeError)
-    ? `${routeError.status} ${routeError.statusText}: ${routeError.data}`
+    ? `${routeError.status} ${routeError.statusText}${routeErrorDataStr ? `: ${routeErrorDataStr}` : ''}`
     : (error?.toString() ?? (routeError ? String(routeError) : undefined));
 
   return (

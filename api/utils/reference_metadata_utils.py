@@ -48,6 +48,7 @@ def resolve_reference_metadata_preferences(
     if fields is None:
         return include_metadata, None
     if not isinstance(fields, list):
+        logging.getLogger(__name__).warning("reference_metadata.fields must be a list, got %s (%s)", fields, type(fields))
         return include_metadata, set()
     return include_metadata, {f for f in fields if isinstance(f, str)}
 

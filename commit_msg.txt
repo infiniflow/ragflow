@@ -1,9 +1,0 @@
-fix(metadata): address PR review feedback on metadata enrichment and error handling
-
-- api/session: fix empty list check in `metadata_fields` enrichment logic
-- web/use-knowledge-request: sort `kbIds` to prevent order-sensitive cache misses
-- api/doc, chunk_app: hoist `logging` imports and remove unused imports
-- api/dialog_service: forward `request_payload` in `_resolve_reference_metadata` for accurate LLM context overrides
-- api/reference_metadata_utils: refactor `kb_ids` grouping and legacy payload override handling
-- web/fallback-component: correctly format React Router `ErrorResponse` and update inline styles to Tailwind
-- api/kb_app: add request logging to `/get_meta_keys` route
