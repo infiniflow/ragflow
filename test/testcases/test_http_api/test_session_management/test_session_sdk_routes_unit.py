@@ -1757,8 +1757,17 @@ def test_build_reference_chunks_metadata_matrix_unit(monkeypatch):
 
     monkeypatch.setattr(module, "chunks_format", lambda _reference: [{"dataset_id": "kb-1", "document_id": "doc-1"}])
     monkeypatch.setattr(module.DocMetadataService, "get_metadata_for_documents", lambda _doc_ids, _kb_id: {"doc-1": {"author": "alice"}})
-    res = module._build_reference_chunks([], include_metadata=True, metadata_fields=[1, None])
+    res = module._build_reference_chunks([], include_metadata=True, metadata_fields=None)
     assert res[0]["document_metadata"] == {"author": "alice"}
+
+    res = module._build_reference_chunks([], include_metadata=True, metadata_fields=[])
+    assert "document_metadata" not in res[0]
+
+    res = module._build_reference_chunks([], include_metadata=True, metadata_fields=[1, None])
+    assert "document_metadata" not in res[0]
+
+    res = module._build_reference_chunks([], include_metadata=True, metadata_fields="author")
+    assert "document_metadata" not in res[0]
 
     source_chunks = [
         {"dataset_id": "kb-1", "document_id": "doc-1"},
