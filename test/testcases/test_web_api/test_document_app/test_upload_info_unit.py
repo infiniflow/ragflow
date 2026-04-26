@@ -79,6 +79,7 @@ def _load_document_app_module(monkeypatch):
 @pytest.mark.p2
 def test_upload_info_rejects_mixed_inputs(monkeypatch):
     module = _load_document_app_module(monkeypatch)
+    monkeypatch.setattr(module, "assert_url_is_safe", lambda url: ("example.com", "93.184.216.34"))
     files = _DummyFiles({"file": [_DummyFile("a.txt")]})
     monkeypatch.setattr(module, "request", _DummyRequest(files=files, args={"url": "https://example.com/a.txt"}))
 
@@ -100,6 +101,7 @@ def test_upload_info_requires_file_or_url(monkeypatch):
 @pytest.mark.p2
 def test_upload_info_supports_url_single_and_multiple_files(monkeypatch):
     module = _load_document_app_module(monkeypatch)
+    monkeypatch.setattr(module, "assert_url_is_safe", lambda url: ("example.com", "93.184.216.34"))
     captured = []
 
     def fake_upload_info(user_id, file_obj, url=None):
