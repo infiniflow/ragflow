@@ -810,6 +810,7 @@ async def forget_reset_password():
     new_pwd_string = base64.b64decode(new_pwd_base64).decode('utf-8')
     new_pwd2_string = base64.b64decode(decrypt(new_pwd2)).decode('utf-8')
 
+    REDIS_CONN.get(_verified_key(email))
     if not REDIS_CONN.get(_verified_key(email)):
         return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="email not verified")
 
