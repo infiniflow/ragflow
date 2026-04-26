@@ -52,6 +52,17 @@ from rag.utils.tavily_conn import Tavily
 from common.string_utils import remove_redundant_spaces
 from common import settings
 
+def _resolve_reference_metadata(request_payload=None, config=None):
+    return resolve_reference_metadata_preferences(request_payload or {}, config)
+
+def _enrich_chunks_with_document_metadata(chunks, metadata_fields=None):
+    enrich_chunks_with_document_metadata(chunks, metadata_fields)
+
+def _chunk_kb_id_for_doc(row_dict, kb_ids, doc_id):
+    if len(kb_ids or []) == 1:
+        return kb_ids[0]
+    return row_dict.get("kb_id") or row_dict.get("kb_id_kwd")
+
 def _normalize_internet_flag(value):
     if isinstance(value, bool):
         return value
@@ -569,10 +580,12 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         # For aggregate queries (COUNT, SUM, etc.), chunks may be empty but answer is still valid
         if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
             if include_reference_metadata and ans.get("reference", {}).get("chunks"):
-                kb_id = dialog.kb_ids[0] if len(dialog.kb_ids) == 1 else None
-                if kb_id:
-                    for c in ans["reference"]["chunks"]:
-                        c["kb_id"] = kb_id
+                if len(dialog.kb_ids) != 1 and any(not c.get("kb_id") for c in ans["reference"]["chunks"]):
+                    logging.warning(
+                        "Skipping some _enrich_chunks_with_document_metadata results because "
+                        "dialog.kb_ids has %d entries and use_sql returned chunks without kb_id.",
+                        len(dialog.kb_ids),
+                    )
                 _enrich_chunks_with_document_metadata(ans["reference"]["chunks"], metadata_fields)
             yield ans
             return
@@ -1143,11 +1156,12 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
 
     docid_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"].lower() == "doc_id"])
     doc_name_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"].lower() in ["docnm_kwd", "docnm"]])
+    kb_id_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"].lower() in ["kb_id", "kb_id_kwd"]])
 
     logging.debug(f"use_sql: All columns: {[(i, c['name']) for i, c in enumerate(tbl['columns'])]}")
-    logging.debug(f"use_sql: docid_idx={docid_idx}, doc_name_idx={doc_name_idx}")
+    logging.debug(f"use_sql: docid_idx={docid_idx}, doc_name_idx={doc_name_idx}, kb_id_idx={kb_id_idx}")
 
-    column_idx = [ii for ii in range(len(tbl["columns"])) if ii not in (docid_idx | doc_name_idx)]
+    column_idx = [ii for ii in range(len(tbl["columns"])) if ii not in (docid_idx | doc_name_idx | kb_id_idx)]
 
     logging.debug(f"use_sql: column_idx={column_idx}")
     logging.debug(f"use_sql: field_map={field_map}")
@@ -1243,8 +1257,11 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
             where_match = re.search(r"\bwhere\b(.+?)(?:\bgroup by\b|\border by\b|\blimit\b|$)", sql, re.IGNORECASE)
             if where_match:
                 where_clause = where_match.group(1).strip()
-                # Build a query to get doc_id and docnm_kwd with the same WHERE clause
-                chunks_sql = f"select doc_id, docnm_kwd from {table_name} where {where_clause}"
+                # Build a query to get source fields with the same WHERE clause.
+                # Single-KB queries can derive kb_id from the dialog, while multi-KB
+                # ES/OS queries need the row value for metadata enrichment.
+                chunks_kb_column = ", kb_id" if not (kb_ids and len(kb_ids) == 1) else ""
+                chunks_sql = f"select doc_id, {expected_doc_name_column}{chunks_kb_column} from {table_name} where {where_clause}"
                 # Add LIMIT to avoid fetching too many chunks
                 if "limit" not in chunks_sql.lower():
                     chunks_sql += " limit 20"
@@ -1255,8 +1272,18 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
                         # Build chunks reference - use case-insensitive matching
                         chunks_did_idx = next((i for i, c in enumerate(chunks_tbl["columns"]) if c["name"].lower() == "doc_id"), None)
                         chunks_dn_idx = next((i for i, c in enumerate(chunks_tbl["columns"]) if c["name"].lower() in ["docnm_kwd", "docnm"]), None)
+                        chunks_kb_idx = next((i for i, c in enumerate(chunks_tbl["columns"]) if c["name"].lower() in ["kb_id", "kb_id_kwd"]), None)
                         if chunks_did_idx is not None and chunks_dn_idx is not None:
-                            chunks = [{"doc_id": r[chunks_did_idx], "docnm_kwd": r[chunks_dn_idx]} for r in chunks_tbl["rows"]]
+                            chunks = []
+                            for r in chunks_tbl["rows"]:
+                                chunk = {"doc_id": r[chunks_did_idx], "docnm_kwd": r[chunks_dn_idx]}
+                                row_dict = {chunks_tbl["columns"][i]["name"]: r[i] for i in range(len(chunks_tbl["columns"])) if i < len(r)}
+                                kb_id = _chunk_kb_id_for_doc(row_dict, kb_ids, chunk["doc_id"])
+                                if kb_id:
+                                    chunk["kb_id"] = kb_id
+                                elif chunks_kb_idx is not None:
+                                    chunk["kb_id"] = r[chunks_kb_idx]
+                                chunks.append(chunk)
                             # Build doc_aggs
                             doc_aggs = {}
                             for r in chunks_tbl["rows"]:
@@ -1286,7 +1313,22 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
     result = {
         "answer": "\n".join([columns, line, rows]),
         "reference": {
-            "chunks": [{"doc_id": r[docid_idx], "docnm_kwd": r[doc_name_idx]} for r in tbl["rows"]],
+            "chunks": [
+                {
+                    key: value
+                    for key, value in {
+                        "doc_id": r[docid_idx],
+                        "docnm_kwd": r[doc_name_idx],
+                        "kb_id": _chunk_kb_id_for_doc(
+                            {tbl["columns"][i]["name"]: r[i] for i in range(len(tbl["columns"])) if i < len(r)},
+                            kb_ids,
+                            r[docid_idx],
+                        ),
+                    }.items()
+                    if value
+                }
+                for r in tbl["rows"]
+            ],
             "doc_aggs": [{"doc_id": did, "doc_name": d["doc_name"], "count": d["count"]} for did, d in doc_aggs.items()],
         },
         "prompt": sys_prompt,

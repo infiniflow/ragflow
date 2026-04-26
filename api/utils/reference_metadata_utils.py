@@ -16,6 +16,8 @@
 
 import logging
 
+logger = logging.getLogger(__name__)
+
 
 def resolve_reference_metadata_preferences(
     request_payload: dict | None = None,
@@ -48,7 +50,14 @@ def resolve_reference_metadata_preferences(
     if fields is None:
         return include_metadata, None
     if not isinstance(fields, list):
-        logging.getLogger(__name__).warning("reference_metadata.fields must be a list, got %s (%s)", fields, type(fields))
+        logger.warning(
+            "reference_metadata.fields is not a list; include_metadata=%s fields=%r type=%s resolved=%r. "
+            "enrich_chunks_with_document_metadata will skip enrichment.",
+            include_metadata,
+            fields,
+            type(fields).__name__,
+            resolved,
+        )
         return include_metadata, set()
     return include_metadata, {f for f in fields if isinstance(f, str)}
 
