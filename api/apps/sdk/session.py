@@ -44,6 +44,10 @@ from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, keyword_extraction
 from common.constants import RetCode, LLMType
 from common import settings
+from api.utils.reference_metadata_utils import (
+    enrich_chunks_with_document_metadata,
+    resolve_reference_metadata_preferences,
+)
 
 
 @token_required

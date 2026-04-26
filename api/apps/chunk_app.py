@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import logging
 
 from quart import request
 
@@ -48,10 +49,12 @@ from rag.nlp import search
 from rag.prompts.generator import cross_languages, keyword_extraction
 
 def _resolve_reference_metadata(req: dict, search_config: dict | None = None) -> tuple[bool, set[str] | None]:
+    """Helper method solely for testing to access resolve_reference_metadata_preferences logic."""
     return resolve_reference_metadata_preferences(req, search_config)
 
 
 def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields: set[str] | None = None) -> None:
+    """Helper method solely for testing to access enrich_chunks_with_document_metadata logic."""
     enrich_chunks_with_document_metadata(chunks, metadata_fields)
 
 
@@ -512,7 +515,6 @@ async def retrieval_test():
 
         include_metadata, metadata_fields = _resolve_reference_metadata(req, search_config)
         if include_metadata:
-            import logging
             logging.info(
                 "retrieval_test reference_metadata enabled kb_ids=%s fields=%s chunks=%s",
                 kb_ids,

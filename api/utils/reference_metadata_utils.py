@@ -38,9 +38,9 @@ def resolve_reference_metadata_preferences(
     if isinstance(request_ref, dict):
         resolved.update(request_ref)
 
-    if "include_metadata" in request_payload and "include" not in resolved:
+    if "include_metadata" in request_payload:
         resolved["include"] = bool(request_payload.get("include_metadata"))
-    if "metadata_fields" in request_payload and "fields" not in resolved:
+    if "metadata_fields" in request_payload:
         resolved["fields"] = request_payload.get("metadata_fields")
 
     include_metadata = bool(resolved.get("include", False))
@@ -69,11 +69,16 @@ def enrich_chunks_with_document_metadata(
 
     doc_ids_by_kb: dict[str, set[str]] = {}
     for chunk in chunks:
-        kb_id = chunk.get(kb_field)
+        kb_ids = chunk.get(kb_field)
         doc_id = chunk.get(doc_field)
-        if not kb_id or not doc_id:
+        if not kb_ids or not doc_id:
             continue
-        doc_ids_by_kb.setdefault(kb_id, set()).add(doc_id)
+        if isinstance(kb_ids, (list, tuple)):
+            for kid in kb_ids:
+                if kid:
+                    doc_ids_by_kb.setdefault(kid, set()).add(doc_id)
+        else:
+            doc_ids_by_kb.setdefault(kb_ids, set()).add(doc_id)
 
     if not doc_ids_by_kb:
         return

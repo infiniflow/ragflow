@@ -454,13 +454,16 @@ export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
 }
 
 export function useFetchKnowledgeMetadataKeys(kbIds: string[] = []) {
+  const sortedKbIds = [...kbIds].sort();
   const { data, isFetching: loading } = useQuery<string[]>({
-    queryKey: [KnowledgeApiAction.FetchMetadataKeys, kbIds],
+    queryKey: [KnowledgeApiAction.FetchMetadataKeys, sortedKbIds],
     initialData: [],
-    enabled: kbIds.length > 0,
+    enabled: sortedKbIds.length > 0,
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await kbService.getMetaKeys({ kb_ids: kbIds.join(',') });
+      const { data } = await kbService.getMetaKeys({
+        kb_ids: sortedKbIds.join(','),
+      });
       return data?.data ?? [];
     },
   });

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useRouteError } from 'react-router';
+import { isRouteErrorResponse, useRouteError } from 'react-router';
 
 interface FallbackComponentProps {
   error?: Error;
@@ -15,8 +15,9 @@ const FallbackComponent: React.FC<FallbackComponentProps> = ({
   const routeError = useRouteError() as unknown;
   const error =
     errorProp ?? (routeError instanceof Error ? routeError : undefined);
-  const errorMessage =
-    error?.toString() ?? (routeError ? String(routeError) : undefined);
+  const errorMessage = isRouteErrorResponse(routeError)
+    ? `${routeError.status} ${routeError.statusText}: ${routeError.data}`
+    : (error?.toString() ?? (routeError ? String(routeError) : undefined));
 
   return (
     <div style={{ padding: '20px', textAlign: 'center' }}>
@@ -28,7 +29,7 @@ const FallbackComponent: React.FC<FallbackComponentProps> = ({
         )}
       </p>
       {errorMessage && (
-        <details open style={{ whiteSpace: 'pre-wrap', marginTop: '16px' }}>
+        <details open className="mt-4 whitespace-pre-wrap">
           <summary>{t('error_boundary.details', 'Error details')}</summary>
           {errorMessage}
         </details>
