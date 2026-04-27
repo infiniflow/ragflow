@@ -354,23 +354,26 @@ class Canvas(Graph):
                 key = k[4:]
                 if key in self.variables:
                     variable = self.variables[key]
-                    if variable["type"] == "string":
-                        self.globals[k] = ""
-                        variable["value"] = ""
-                    elif variable["type"] == "number":
-                        self.globals[k] = 0
-                        variable["value"] = 0
-                    elif variable["type"] == "boolean":
-                        self.globals[k] = False
-                        variable["value"] = False
-                    elif variable["type"] == "object":
-                        self.globals[k] = {}
-                        variable["value"] = {}
-                    elif variable["type"].startswith("array"):
-                        self.globals[k] = []
-                        variable["value"] = []
+                    if variable["value"]:
+                        self.globals[k] = variable["value"]
                     else:
-                        self.globals[k] = ""
+                        if variable["type"] == "string":
+                            self.globals[k] = ""
+                            # variable["value"] = ""
+                        elif variable["type"] == "number":
+                            self.globals[k] = 0
+                            # variable["value"] = 0
+                        elif variable["type"] == "boolean":
+                            self.globals[k] = False
+                            # variable["value"] = False
+                        elif variable["type"] == "object":
+                            self.globals[k] = {}
+                            # variable["value"] = {}
+                        elif variable["type"].startswith("array"):
+                            self.globals[k] = []
+                            # variable["value"] = []
+                        else:
+                            self.globals[k] = ""
                 else:
                     self.globals[k] = ""
 
