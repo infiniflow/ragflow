@@ -288,11 +288,6 @@ class TestDocumentMetadataUnit:
         assert "Each delete requires key" in res["message"], res
 
 
-        module = document_app_module
-        assert res["code"] == module.RetCode.ARGUMENT_ERROR
-
-        assert res["code"] == 0
-
     def test_get_route_not_found_success_and_exception_unit(self, document_app_module, monkeypatch):
         module = document_app_module
         monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (False, None))

@@ -13,16 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
-import logging
 import re
 
 from quart import make_response, request
 
 from api.apps import current_user, login_required
-from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType
 from api.db.db_models import Task
-from api.db.services.document_service import DocumentService, doc_upload_and_parse
+from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService, cancel_all_task_of
