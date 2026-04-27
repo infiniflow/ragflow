@@ -15,8 +15,6 @@ const {
   createKb,
   rmKb,
   kbList,
-  getDocumentList,
-  documentCreate,
   documentChangeStatus,
   documentChangeParser,
   documentThumbnails,
@@ -45,9 +43,9 @@ const methods = {
     method: 'get',
   },
   // document manager
-  getDocumentList: {
-    url: getDocumentList,
-    method: 'get',
+  documentChangeStatus: {
+    url: documentChangeStatus,
+    method: 'post',
   },
   documentRun: {
     url: documentRun,
