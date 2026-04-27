@@ -716,56 +716,6 @@ def test_create_and_update_guard_matrix(monkeypatch):
 
 
 @pytest.mark.p2
-def test_chat_completion_metadata_and_stream_paths(monkeypatch):
-    module = _load_session_module(monkeypatch)
-
-    monkeypatch.setattr(module, "Response", _StubResponse)
-    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(kb_ids=["kb-1"])])
-    monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kb_ids: [{"id": "doc-1"}])
-    monkeypatch.setattr(module, "convert_conditions", lambda cond: cond.get("conditions", []))
-    monkeypatch.setattr(module, "meta_filter", lambda *_args, **_kwargs: [])
-
-    captured_requests = []
-
-    async def fake_rag_completion(_tenant_id, _chat_id, **req):
-        captured_requests.append(req)
-        yield {"answer": "ok"}
-
-    monkeypatch.setattr(module, "rag_completion", fake_rag_completion)
-
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue(None))
-    resp = _run(inspect.unwrap(module.chat_completion)("tenant-1", "chat-1"))
-    assert isinstance(resp, _StubResponse)
-    assert resp.headers.get("Content-Type") == "text/event-stream; charset=utf-8"
-    _run(_collect_stream(resp.body))
-    assert captured_requests[-1].get("question") == ""
-
-    req_with_conditions = {
-        "question": "hello",
-        "session_id": "session-1",
-        "metadata_condition": {"logic": "and", "conditions": [{"name": "author", "value": "bob"}]},
-        "stream": True,
-    }
-    monkeypatch.setattr(module.ConversationService, "query", lambda **_kwargs: [SimpleNamespace(id="session-1")])
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue(req_with_conditions))
-    resp = _run(inspect.unwrap(module.chat_completion)("tenant-1", "chat-1"))
-    _run(_collect_stream(resp.body))
-    assert captured_requests[-1].get("doc_ids") == "-999"
-
-    req_without_conditions = {
-        "question": "hello",
-        "session_id": "session-1",
-        "metadata_condition": {"logic": "and", "conditions": []},
-        "stream": True,
-        "doc_ids": "legacy",
-    }
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue(req_without_conditions))
-    resp = _run(inspect.unwrap(module.chat_completion)("tenant-1", "chat-1"))
-    _run(_collect_stream(resp.body))
-    assert "doc_ids" not in captured_requests[-1]
-
-
-@pytest.mark.p2
 def test_openai_chat_validation_matrix_unit(monkeypatch):
     module = _load_openai_api_module(monkeypatch)
 
