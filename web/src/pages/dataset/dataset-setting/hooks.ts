@@ -4,7 +4,7 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { useSelectLlmOptionsByModelType } from '@/hooks/use-llm-request';
 import { useSelectParserList } from '@/hooks/use-user-setting-request';
-import kbService from '@/services/knowledge-service';
+import { checkEmbedding } from '@/services/knowledge-service';
 import { useIsFetching } from '@tanstack/react-query';
 import { pick } from 'lodash';
 import { useCallback, useEffect, useState } from 'react';
@@ -108,8 +108,7 @@ export const useHandleKbEmbedding = () => {
   const knowledgeBaseId = searchParams.get('id') || id;
   const handleChange = useCallback(
     async ({ embed_id }: { embed_id: string }) => {
-      const res = await kbService.checkEmbedding({
-        kb_id: knowledgeBaseId,
+      const res = await checkEmbedding(knowledgeBaseId || '', {
         embd_id: embed_id,
       });
       return res.data;

@@ -3,7 +3,8 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
 import dataSourceService, {
   dataSourceRebuild,
-  dataSourceResume, dataSourceUpdate,
+  dataSourceResume,
+  dataSourceUpdate,
   deleteDataSource,
   featchDataSourceDetail,
   getDataSourceLogs,
@@ -68,7 +69,7 @@ export const useListDataSource = () => {
   return { list, categorizedList: updatedDataSourceTemplates, isFetching };
 };
 
-export const useAddDataSource = ({isEdit=false}:{isEdit?:boolean} ) => {
+export const useAddDataSource = ({ isEdit = false }: { isEdit?: boolean }) => {
   const [addSource, setAddSource] = useState<IDataSorceInfo | undefined>(
     undefined,
   );

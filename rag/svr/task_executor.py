@@ -290,6 +290,19 @@ async def build_chunks(task, progress_callback):
         logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
         raise
 
+    # Extract and persist PDF outline if the parser attached it.
+    if cks and cks[0].get("__outline__"):
+        outline = cks[0].pop("__outline__")
+        try:
+            DocMetadataService.update_document_metadata(
+                task["doc_id"],
+                update_metadata_to({"outline": outline},
+                                   DocMetadataService.get_document_metadata(task["doc_id"]) or {})
+            )
+            logging.info("Persisted PDF outline (%d entries) for doc %s", len(outline), task["doc_id"])
+        except Exception as e:
+            logging.warning("Failed to persist PDF outline for doc %s: %s", task["doc_id"], e)
+
     docs = []
     doc = {
         "doc_id": task["doc_id"],
@@ -843,7 +856,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
             max_errors=max_errors,
         )
         original_length = len(chunks)
-        chunks = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])
+        chunks, layers = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])
         effective_doc_name = row["name"] if did == fake_doc_id else doc_name_by_id.get(did, row["name"])
         doc = {
             "doc_id": did,
@@ -855,7 +868,17 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
         if row["pagerank"]:
             doc[PAGERANK_FLD] = int(row["pagerank"])
 
-        for content, vctr in chunks[original_length:]:
+        # Build index→layer mapping from RAPTOR layer boundaries.
+        # layers is [(start, end), ...] where layer 0 is the original chunks
+        # and layer 1+ are summary layers. We skip layer 0 (original chunks).
+        chunk_layer = {}
+        for layer_idx, (layer_start, layer_end) in enumerate(layers):
+            if layer_idx == 0:
+                continue  # layer 0 = original input chunks, not summaries
+            for ci in range(layer_start, layer_end):
+                chunk_layer[ci] = layer_idx
+
+        for idx, (content, vctr) in enumerate(chunks[original_length:], start=original_length):
             d = copy.deepcopy(doc)
             d["id"] = xxhash.xxh64((content + str(fake_doc_id)).encode("utf-8")).hexdigest()
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
@@ -864,6 +887,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
             d["content_with_weight"] = content
             d["content_ltks"] = rag_tokenizer.tokenize(content)
             d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+            d["raptor_layer_int"] = chunk_layer.get(idx, 1)
             res.append(d)
             tk_count += num_tokens_from_string(content)
 

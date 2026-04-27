@@ -3,7 +3,8 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from '@/hooks/logic-hooks';
-import kbService, {
+import {
+  getKnowledgeBasicInfo,
   listDataPipelineLogDocument,
   listPipelineDatasetLogs,
 } from '@/services/knowledge-service';
@@ -20,9 +21,9 @@ const useFetchOverviewTotal = () => {
   const { data } = useQuery<IOverviewTotal>({
     queryKey: ['overviewTotal'],
     queryFn: async () => {
-      const { data: res = {} } = await kbService.getKnowledgeBasicInfo({
-        kb_id: knowledgeBaseId,
-      });
+      const { data: res = {} } = await getKnowledgeBasicInfo(
+        knowledgeBaseId || '',
+      );
       return res.data || [];
     },
   });
@@ -61,16 +62,12 @@ const useFetchFileLogList = () => {
     },
     enabled: true,
     queryFn: async () => {
-      const { data: res = {} } = await fetchFunc(
-        {
-          kb_id: knowledgeBaseId,
-          page: pagination.current,
-          page_size: pagination.pageSize,
-          keywords: searchString,
-          // order_by: '',
-        },
-        { ...filterValue },
-      );
+      const { data: res = {} } = await fetchFunc(knowledgeBaseId || '', {
+        page: pagination.current,
+        page_size: pagination.pageSize,
+        keywords: searchString,
+        ...filterValue,
+      });
       return res.data || [];
     },
   });

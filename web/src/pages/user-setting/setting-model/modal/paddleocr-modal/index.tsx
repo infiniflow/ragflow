@@ -1,4 +1,5 @@
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { Button, ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -128,20 +129,12 @@ const PaddleOCRModal = ({
             )}
             <DialogFooter>
               <div className="flex justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={hideModal}
-                  className="btn btn-secondary"
-                >
+                <Button type="button" onClick={hideModal} variant={'outline'}>
                   {t('common.cancel')}
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="btn btn-primary"
-                >
-                  {t('common.add')}
-                </button>
+                </Button>
+                <ButtonLoading type="submit" loading={loading}>
+                  {t('common.ok')}
+                </ButtonLoading>
               </div>
             </DialogFooter>
           </form>
