@@ -649,13 +649,7 @@ def list_docs(dataset_id, tenant_id):
         docs_filter = _aggregate_filters(docs)
         return get_json_result(data={"total": total, "filter": docs_filter})
     else:
-
-        print(f"---------before map doc keys: {docs}")
-
         renamed_doc_list = [map_doc_keys(doc) for doc in docs]
-
-        print(f"------------after map doc keys: {renamed_doc_list}")
-
         for doc_item in renamed_doc_list:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
                 doc_item["thumbnail"] = f"/v1/document/image/{dataset_id}-{doc_item['thumbnail']}"
@@ -1494,13 +1488,15 @@ async def batch_update_document_status(tenant_id, dataset_id):
       200:
         description: Document statuses updated successfully.
     """
-    from common import settings
-    from rag.nlp import search
 
     req = await get_request_json()
     doc_ids = req.get("doc_ids", [])
-    status = str(req.get("status", -1))
+    if not isinstance(doc_ids, list) or not doc_ids:
+        return get_error_argument_result(message='"doc_ids" must be a non-empty list.')
+    if any(not isinstance(doc_id, str) or not doc_id for doc_id in doc_ids):
+        return get_error_argument_result(message='"doc_ids" must contain non-empty document IDs.')
 
+    status = str(req.get("status", -1))
     if status not in ["0", "1"]:
         return get_error_argument_result(message=f'"Status" must be either 0 or 1:{status}!')
 
