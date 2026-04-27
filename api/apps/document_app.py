@@ -21,8 +21,6 @@ from pathlib import PurePosixPath, PureWindowsPath
 from quart import make_response, request
 
 from api.apps import current_user, login_required
-from api.common.check_team_permission import check_kb_team_permission
-from api.constants import IMG_BASE64_PREFIX, FILE_NAME_LEN_LIMIT
 from api.db import FileType
 from api.db.db_models import Task
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
