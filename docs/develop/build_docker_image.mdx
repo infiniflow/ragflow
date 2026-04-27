@@ -36,7 +36,7 @@ This image is approximately 2 GB in size and relies on external LLM and embeddin
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-uv run download_deps.py
+uv run python3 download_deps.py
 docker build -f Dockerfile.deps -t infiniflow/ragflow_deps .
 docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
@@ -49,7 +49,7 @@ After building the infiniflow/ragflow:nightly image, you are ready to launch a f
 
 1. Edit Docker Compose Configuration
 
-Open the `docker/.env` file. Find the `RAGFLOW_IMAGE` setting and change the image reference from `infiniflow/ragflow:v0.24.0` to `infiniflow/ragflow:nightly` to use the pre-built image.
+Open the `docker/.env` file. Find the `RAGFLOW_IMAGE` setting and change the image reference from `infiniflow/ragflow:v0.25.0` to `infiniflow/ragflow:nightly` to use the pre-built image.
 
 
 2. Launch the Service

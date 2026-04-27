@@ -52,6 +52,10 @@ class Tokenizer(ProcessBase):
     component_name = "Tokenizer"
 
     async def _embedding(self, name, chunks):
+        # Tokenization may legitimately produce zero chunks; embedding should be a no-op.
+        if not chunks:
+            return [], 0
+
         parts = sum(["full_text" in self._param.search_method, "embedding" in self._param.search_method])
         token_count = 0
         if self._canvas._kb_id:
@@ -64,7 +68,8 @@ class Tokenizer(ProcessBase):
             embd_model_config = get_tenant_default_model_by_type(self._canvas._tenant_id, LLMType.EMBEDDING)
         embedding_model = LLMBundle(self._canvas._tenant_id, embd_model_config)
         texts = []
-        for c in chunks:
+        valid_pairs = []
+        for i, c in enumerate(chunks):
             txt = ""
             if isinstance(self._param.fields, str):
                 self._param.fields=[self._param.fields]
@@ -74,7 +79,15 @@ class Tokenizer(ProcessBase):
                     txt += f
                 elif isinstance(f, list):
                     txt += "\n".join(f)
-            texts.append(re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt))
+            cleaned_txt = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt).strip()
+            if not cleaned_txt:
+                continue
+            texts.append(cleaned_txt)
+            valid_pairs.append((i, c))
+
+        if not texts:
+            return chunks, token_count
+
         vts, c = embedding_model.encode([name])
         token_count += c
         tts = np.concatenate([vts[0] for _ in range(len(texts))], axis=0)
@@ -100,8 +113,8 @@ class Tokenizer(ProcessBase):
         title_w = float(self._param.filename_embd_weight)
         vects = (title_w * tts + (1 - title_w) * cnts) if len(tts) == len(cnts) else cnts
 
-        assert len(vects) == len(chunks)
-        for i, ck in enumerate(chunks):
+        assert len(vects) == len(valid_pairs)
+        for i, (_, ck) in enumerate(valid_pairs):
             v = vects[i].tolist()
             ck["q_%d_vec" % len(v)] = v
         return chunks, token_count
@@ -121,8 +134,9 @@ class Tokenizer(ProcessBase):
         parts = sum(["full_text" in self._param.search_method, "embedding" in self._param.search_method])
         if "full_text" in self._param.search_method:
             self.callback(random.randint(1, 5) / 100.0, "Start to tokenize.")
-            if from_upstream.chunks:
-                chunks = from_upstream.chunks
+            # Branch on the declared upstream format so an empty chunk list stays on the chunk path.
+            if from_upstream.output_format == "chunks":
+                chunks = from_upstream.chunks or []
                 for i, ck in enumerate(chunks):
                     ck["chunk_order_int"] = i
                     ck["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", from_upstream.name))
@@ -161,7 +175,8 @@ class Tokenizer(ProcessBase):
                     ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
                 chunks = [ck]
             else:
-                chunks = from_upstream.json_result
+                # Empty JSON payloads are valid and should remain empty downstream.
+                chunks = from_upstream.json_result or []
                 for i, ck in enumerate(chunks):
                     ck["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", from_upstream.name))
                     ck["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(ck["title_tks"])

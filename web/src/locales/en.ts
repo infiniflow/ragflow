@@ -1516,6 +1516,9 @@ Example: Virtual Hosted Style`,
       includeHeadingContent: 'Include heading content',
       includeHeadingContentTip:
         'When enabled, content directly under a heading is kept as its own chunk. Child chunks keep only the heading path.',
+      rootAsHeading: 'Set first chunk as global context',
+      rootAsHeadingTip:
+        'Treats the initial split as a global heading to maintain consistent context across the document hierarchy. Ideal for resumes where the first section identifies the subject.',
       hierarchyTip: `Build a heading tree and produce self-contained chunks, each carrying its full ancestor heading path (e.g. Part 1 › Chapter 3 › Section 2 + body text).\n
 Best for: Documents with independent, structurally significant sections — such as legal statutes, regulations, contracts, and technical specifications — where each chunk must be identifiable by its structural position even without surrounding context.`,
       groupTip: `Split the document flat at a chosen heading level and automatically merge adjacent small sections to preserve content continuity. No parent-heading path is injected.\n

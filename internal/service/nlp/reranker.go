@@ -15,11 +15,17 @@
 package nlp
 
 import (
+	"encoding/json"
 	"math"
-	"ragflow/internal/engine"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"ragflow/internal/common"
+	"ragflow/internal/logger"
+
+	"go.uber.org/zap"
 )
 
 // RerankModel defines the interface for reranker models
@@ -55,69 +61,70 @@ type SearchResult struct {
 //   - vsim: vector similarity scores
 func Rerank(
 	rerankModel RerankModel,
-	resp *engine.SearchResponse,
+	chunks []map[string]interface{},
+	total int,
 	keywords []string,
 	questionVector []float64,
-	sres *SearchResult,
 	query string,
 	tkWeight, vtWeight float64,
 	useInfinity bool,
 	cfield string,
 	qb *QueryBuilder,
+	rankFeature map[string]float64,
 ) (sim []float64, tsim []float64, vsim []float64) {
 	// If reranker model is provided and there are results, use model reranking
-	if rerankModel != nil && resp.Total > 0 {
-		return RerankByModel(rerankModel, nil, query, tkWeight, vtWeight, cfield, qb)
+	if rerankModel != nil && total > 0 {
+		return RerankByModel(rerankModel, chunks, query, tkWeight, vtWeight, cfield, qb, rankFeature)
 	}
 
 	// Otherwise, use fallback logic based on engine type
 	if useInfinity {
 		// For Infinity: scores are already normalized before fusion
 		// Just extract the scores from results
-		// Check if there are results to rerank
-		if resp == nil || resp.Total == 0 || len(resp.Chunks) == 0 {
+		if chunks == nil || total == 0 || len(chunks) == 0 {
 			return []float64{}, []float64{}, []float64{}
 		}
 
-		return RerankInfinityFallback(resp)
+		return RerankInfinityFallback(chunks)
 	}
 
-	// For Elasticsearch: need to perform reranking
-	return RerankStandard(resp, keywords, questionVector, nil, query, tkWeight, vtWeight, cfield, qb)
+	// For Elasticsearch: need to perform reranking and apply rank features
+	return RerankStandard(chunks, keywords, questionVector, query, tkWeight, vtWeight, cfield, qb, rankFeature)
 }
 
 // RerankByModel performs reranking using a reranker model
-// Reference: rag/nlp/search.py L333-L354
 func RerankByModel(
 	rerankModel RerankModel,
-	sres *SearchResult,
+	chunks []map[string]interface{},
 	query string,
 	tkWeight, vtWeight float64,
 	cfield string,
 	qb *QueryBuilder,
+	rankFeature map[string]float64,
 ) (sim []float64, tsim []float64, vsim []float64) {
-	if sres.Total == 0 || len(sres.IDs) == 0 {
+	if chunks == nil || len(chunks) == 0 {
 		return []float64{}, []float64{}, []float64{}
 	}
 
+	chunkCount := len(chunks)
+
+	logger.Info("RerankByModel started", zap.String("query", query), zap.Int("chunkCount", chunkCount), zap.Float64("tkWeight", tkWeight), zap.Float64("vtWeight", vtWeight))
+
 	// Extract keywords from query
-	_, keywords := qb.Question(query, "qa", 0.6)
+	keywords := []string{}
+	if qb != nil {
+		_, keywords = qb.Question(query, "qa", 0.6)
+	}
+	logger.Info("RerankByModel keywords extracted", zap.Any("keywords", keywords))
 
 	// Build token lists and document texts for each chunk
-	insTw := make([][]string, 0, len(sres.IDs))
-	docs := make([]string, 0, len(sres.IDs))
+	insTw := make([][]string, 0, chunkCount)
+	docs := make([]string, 0, chunkCount)
 
-	for _, id := range sres.IDs {
-		fields := sres.Field[id]
-		if fields == nil {
-			insTw = append(insTw, []string{})
-			docs = append(docs, "")
-			continue
-		}
-
-		contentLtks := extractContentTokens(fields, cfield)
-		titleTks := extractTitleTokens(fields)
-		importantKwd := extractImportantKeywords(fields)
+	for _, chunk := range chunks {
+		contentLtks := extractContentTokens(chunk, cfield)
+		titleTks := extractTitleTokens(chunk)
+		importantKwd := extractImportantKeywords(chunk)
 
 		// Combine tokens without repetition (simpler version for model reranking)
 		tks := make([]string, 0, len(contentLtks)+len(titleTks)+len(importantKwd))
@@ -127,7 +134,7 @@ func RerankByModel(
 		insTw = append(insTw, tks)
 
 		// Build document text for model reranking
-		docText := removeRedundantSpaces(strings.Join(tks, " "))
+		docText := RemoveRedundantSpaces(strings.Join(tks, " "))
 		docs = append(docs, docText)
 	}
 
@@ -137,37 +144,56 @@ func RerankByModel(
 	// Get similarity scores from reranker model
 	modelSim, err := rerankModel.Similarity(query, docs)
 	if err != nil {
+		logger.Error("RerankByModel: rerankModel.Similarity failed; falling back to token-only similarity", err)
 		// If model fails, fall back to token similarity only
 		modelSim = make([]float64, len(tsim))
 	}
-
+	if len(modelSim) != chunkCount {
+		logger.Warn("reranker returned mismatched score length; padding/truncating",
+			zap.Int("got", len(modelSim)), zap.Int("want", chunkCount))
+		fixed := make([]float64, chunkCount)
+		copy(fixed, modelSim)
+		modelSim = fixed
+	}
 	// Combine token similarity with model similarity
 	// Model similarity is treated as vector similarity component
-	sim = make([]float64, len(tsim))
+	sim = make([]float64, chunkCount)
 	for i := range tsim {
 		sim[i] = tkWeight*tsim[i] + vtWeight*modelSim[i]
 	}
 
+	// Apply rank feature scores (tag_score * 10 + pagerank)
+	// Always apply pageranks, even when rankFeature is nil/empty
+	sim = applyRankFeatureScores(chunks, sim, rankFeature)
+
+	logger.Info("RerankByModel completed")
 	return sim, tsim, modelSim
 }
 
 // RerankStandard performs standard reranking without a reranker model
 // Used for Elasticsearch when no reranker model is provided
-// Reference: rag/nlp/search.py L294-L331
 func RerankStandard(
-	resp *engine.SearchResponse,
+	chunks []map[string]interface{},
 	keywords []string,
 	questionVector []float64,
-	sres *SearchResult,
 	query string,
 	tkWeight, vtWeight float64,
 	cfield string,
 	qb *QueryBuilder,
+	rankFeature map[string]float64,
 ) (sim []float64, tsim []float64, vsim []float64) {
-	chunkCount := len(resp.Chunks)
-	if resp.Total == 0 || chunkCount == 0 {
+	chunkCount := len(chunks)
+	if chunkCount == 0 {
 		return []float64{}, []float64{}, []float64{}
 	}
+
+	logger.Info("RerankStandard started", zap.Int("chunkCount", chunkCount), zap.Float64("tkWeight", tkWeight), zap.Float64("vtWeight", vtWeight))
+
+	// Compute keywords fresh from query
+	if qb != nil && len(keywords) == 0 {
+		_, keywords = qb.Question(query, "qa", 0.6)
+	}
+	logger.Info("RerankStandard keywords", zap.Any("keywords", keywords))
 
 	// Get vector information
 	vectorSize := len(questionVector)
@@ -178,9 +204,9 @@ func RerankStandard(
 	insEmbd := make([][]float64, 0, chunkCount)
 	insTw := make([][]string, 0, chunkCount)
 
-	for index := range resp.Chunks {
+	for index := range chunks {
 		// Extract vector
-		chunk := resp.Chunks[index]
+		chunk := chunks[index]
 		chunkVector := extractVector(chunk, vectorColumn, zeroVector)
 		insEmbd = append(insEmbd, chunkVector)
 
@@ -210,16 +236,25 @@ func RerankStandard(
 	}
 
 	// Calculate hybrid similarity
-	return HybridSimilarity(questionVector, insEmbd, keywords, insTw, tkWeight, vtWeight, qb)
+	sim, tsim, vsim = HybridSimilarity(questionVector, insEmbd, keywords, insTw, tkWeight, vtWeight, qb)
+
+	// Apply rank feature scores (tag_score * 10 + pagerank)
+	// Always apply pageranks, even when rankFeature is nil/empty
+	sim = applyRankFeatureScores(chunks, sim, rankFeature)
+
+	logger.Info("RerankStandard completed")
+	return sim, tsim, vsim
 }
 
 // RerankInfinityFallback is used as a fallback when no reranker model is provided for Infinity engine.
 // Infinity can return scores in various field names (SCORE, score, SIMILARITY, etc.),
 // so we check multiple possible field names. If no score is found, we default to 1.0
 // to ensure the chunk passes through any similarity threshold filters.
-func RerankInfinityFallback(resp *engine.SearchResponse) (sim []float64, tsim []float64, vsim []float64) {
-	sim = make([]float64, len(resp.Chunks))
-	for i, chunk := range resp.Chunks {
+func RerankInfinityFallback(chunks []map[string]interface{}) (sim []float64, tsim []float64, vsim []float64) {
+	logger.Info("RerankInfinityFallback started", zap.Int("chunkCount", len(chunks)))
+
+	sim = make([]float64, len(chunks))
+	for i, chunk := range chunks {
 		scoreFound := false
 		scoreFields := []string{"SCORE", "score", "SIMILARITY", "similarity", "_score", "score()", "similarity()"}
 		for _, field := range scoreFields {
@@ -233,11 +268,11 @@ func RerankInfinityFallback(resp *engine.SearchResponse) (sim []float64, tsim []
 			sim[i] = 1.0
 		}
 	}
+	logger.Info("RerankInfinityFallback completed")
 	return sim, sim, sim
 }
 
 // HybridSimilarity calculates hybrid similarity between query and documents
-// Reference: rag/nlp/query.py L174-L182
 func HybridSimilarity(
 	avec []float64,
 	bvecs [][]float64,
@@ -277,7 +312,6 @@ func HybridSimilarity(
 }
 
 // TokenSimilarity calculates token-based similarity
-// Reference: rag/nlp/query.py L184-L199
 func TokenSimilarity(atks []string, btkss [][]string, qb *QueryBuilder) []float64 {
 	atksDict := tokensToDict(atks, qb)
 	btkssDicts := make([]map[string]float64, len(btkss))
@@ -294,9 +328,11 @@ func TokenSimilarity(atks []string, btkss [][]string, qb *QueryBuilder) []float6
 }
 
 // tokensToDict converts tokens to a weighted dictionary
-// Reference: rag/nlp/query.py L185-L195
 func tokensToDict(tks []string, qb *QueryBuilder) map[string]float64 {
 	d := make(map[string]float64)
+	if qb == nil || qb.termWeight == nil {
+		return d
+	}
 	wts := qb.termWeight.Weights(tks, false)
 
 	for i, tw := range wts {
@@ -314,7 +350,6 @@ func tokensToDict(tks []string, qb *QueryBuilder) map[string]float64 {
 }
 
 // tokenDictSimilarity calculates similarity between two token dictionaries
-// Reference: rag/nlp/query.py L201-L213
 func tokenDictSimilarity(qtwt, dtwt map[string]float64) float64 {
 	if len(qtwt) == 0 || len(dtwt) == 0 {
 		return 0.0
@@ -386,7 +421,10 @@ func extractContentTokens(fields map[string]interface{}, cfield string) []string
 		return []string{}
 	}
 
-	// Remove duplicates while preserving order
+	// Remove redundant spaces first to handle irregular spacing in Chinese text
+	v = RemoveRedundantSpaces(v)
+
+	// Now split by whitespace to get individual tokens
 	seen := make(map[string]bool)
 	var result []string
 	for _, t := range strings.Fields(v) {
@@ -404,6 +442,8 @@ func extractTitleTokens(fields map[string]interface{}) []string {
 	if !ok {
 		return []string{}
 	}
+	// Remove redundant spaces first
+	v = RemoveRedundantSpaces(v)
 	var result []string
 	for _, t := range strings.Fields(v) {
 		if t != "" {
@@ -473,12 +513,128 @@ func cosineSimilarity(a, b []float64) float64 {
 	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
 }
 
-// removeRedundantSpaces removes redundant spaces from text
-func removeRedundantSpaces(s string) string {
-	return strings.Join(strings.Fields(s), " ")
+// RemoveRedundantSpaces removes redundant spaces from text
+// First pass: remove spaces after left-boundary characters
+// Second pass: remove spaces before right-boundary characters
+func RemoveRedundantSpaces(s string) string {
+	// First pass: remove spaces after left-boundary characters (opening brackets, etc.)
+	// e.g., "（ text" -> "（text", "【 text" -> "【text"
+	s = regexp.MustCompile(`([^\sa-z0-9.,\)>]) +([^\s])`).ReplaceAllString(s, "$1$2")
+
+	// Second pass: remove spaces before right-boundary characters (closing brackets, punctuation)
+	// e.g., "text ！" -> "text！"
+	s = regexp.MustCompile(`([^\s]) +([^\sa-z0-9.,\(])`).ReplaceAllString(s, "$1$2")
+
+	return s
 }
 
 // parseFloat parses a string to float64
 func parseFloat(s string) (float64, error) {
 	return strconv.ParseFloat(strings.TrimSpace(s), 64)
+}
+
+// applyRankFeatureScores applies rank feature scores to similarity
+// Formula: tag_score * 10 + pagerank (per document)
+func applyRankFeatureScores(chunks []map[string]interface{}, sim []float64, rankFeature map[string]float64) []float64 {
+	if len(chunks) == 0 || len(sim) == 0 {
+		return sim
+	}
+
+	// Collect pageranks from each chunk
+	pageranks := make([]float64, len(chunks))
+	for i, chunk := range chunks {
+		if pr, ok := chunk[common.PAGERANK_FLD]; ok {
+			if f, ok := toFloat64(pr); ok {
+				pageranks[i] = f
+			}
+		}
+	}
+
+	// If no query rank features (no tag features), just add pageranks to sim
+	if len(rankFeature) == 0 {
+		for i := range sim {
+			sim[i] += pageranks[i]
+		}
+		return sim
+	}
+
+	// Compute query denominator: sqrt(sum of squares of query rank feature weights, excluding pagerank)
+	qDenor := 0.0
+	for t, s := range rankFeature {
+		if t != common.PAGERANK_FLD {
+			qDenor += s * s
+		}
+	}
+	qDenor = math.Sqrt(qDenor)
+
+	// Compute tag score for each chunk
+	tagScores := make([]float64, len(chunks))
+	for i, chunk := range chunks {
+		tagFeaStr, ok := chunk[common.TAG_FLD].(string)
+		if !ok || tagFeaStr == "" {
+			tagScores[i] = 0
+			continue
+		}
+
+		// Parse tag_feas JSON string: {"tag1": 0.5, "tag2": 0.3}
+		nor, denor := 0.0, 0.0
+		tagFeaMap := parseTagFeasRerank(tagFeaStr)
+		for t, sc := range tagFeaMap {
+			if weight, exists := rankFeature[t]; exists {
+				nor += weight * sc
+			}
+			denor += sc * sc
+		}
+		if denor == 0 {
+			tagScores[i] = 0
+		} else {
+			tagScores[i] = nor / math.Sqrt(denor) / qDenor
+		}
+	}
+
+	// Final score: tag_score * 10 + pagerank
+	for i := range sim {
+		sim[i] += tagScores[i]*10 + pageranks[i]
+	}
+
+	return sim
+}
+
+// toFloat64 converts various numeric types to float64
+func toFloat64(v interface{}) (float64, bool) {
+	switch val := v.(type) {
+	case float64:
+		return val, true
+	case float32:
+		return float64(val), true
+	case int:
+		return float64(val), true
+	case int64:
+		return float64(val), true
+	case int32:
+		return float64(val), true
+	default:
+		return 0, false
+	}
+}
+
+// parseTagFeasRerank parses a tag_feas JSON string into a map
+// Format: {"tag1": 0.5, "tag2": 0.3}
+func parseTagFeasRerank(tagFeasStr string) map[string]float64 {
+	result := make(map[string]float64)
+	if tagFeasStr == "" || tagFeasStr == "{}" {
+		return result
+	}
+
+	// Parse JSON string
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(tagFeasStr), &m); err != nil {
+		return result
+	}
+	for k, v := range m {
+		if f, ok := toFloat64(v); ok {
+			result[k] = f
+		}
+	}
+	return result
 }

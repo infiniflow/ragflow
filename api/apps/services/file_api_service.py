@@ -121,7 +121,7 @@ async def create_folder(tenant_id: str, name: str, pf_id: str = None, file_type:
     if FileService.query(name=name, parent_id=pf_id):
         return False, "Duplicated folder name in the same folder."
 
-    if file_type == FileType.FOLDER.value:
+    if (file_type or "").lower() == FileType.FOLDER.value:
         ft = FileType.FOLDER.value
     else:
         ft = FileType.VIRTUAL.value
