@@ -28,18 +28,22 @@ from api.apps.services.document_api_service import validate_document_update_fiel
 from api.constants import IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES
 from api.db.services.doc_metadata_service import DocMetadataService
+from api.db.db_models import Task
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.common.check_team_permission import check_kb_team_permission
 from api.utils.api_utils import get_data_error_result, get_error_data_result, get_result, get_json_result, \
     server_error_response, add_tenant_id_to_kwargs, get_request_json, get_error_argument_result, check_duplicate_ids
 from api.utils.validation_utils import (
     UpdateDocumentReq, format_validation_error_message, validate_and_parse_json_request, DeleteDocumentReq,
 )
-from common.constants import RetCode, SANDBOX_ARTIFACT_BUCKET
+from common import settings
+from common.constants import RetCode, SANDBOX_ARTIFACT_BUCKET, TaskStatus
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
 from common.misc_utils import thread_pool_exec
+from rag.nlp import search
 from api.utils.web_utils import apply_safe_file_response_headers
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PATCH"]) # noqa: F821
@@ -193,6 +197,88 @@ async def metadata_summary(dataset_id, tenant_id):
         return get_result(data={"summary": summary})
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route("/datasets/<dataset_id>/metadata/update", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def metadata_batch_update(dataset_id, tenant_id):
+    """
+    Batch update metadata for documents in a dataset.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              selector:
+                type: object
+              updates:
+                type: array
+              deletes:
+                type: array
+    responses:
+      200:
+        description: Metadata updated successfully.
+    """
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+
+    req = await get_request_json()
+    selector = req.get("selector", {}) or {}
+    updates = req.get("updates", []) or []
+    deletes = req.get("deletes", []) or []
+
+    if not isinstance(selector, dict):
+        return get_error_data_result(message="selector must be an object.")
+    if not isinstance(updates, list) or not isinstance(deletes, list):
+        return get_error_data_result(message="updates and deletes must be lists.")
+
+    metadata_condition = selector.get("metadata_condition", {}) or {}
+    if metadata_condition and not isinstance(metadata_condition, dict):
+        return get_error_data_result(message="metadata_condition must be an object.")
+
+    document_ids = selector.get("document_ids", []) or []
+    if document_ids and not isinstance(document_ids, list):
+        return get_error_data_result(message="document_ids must be a list.")
+
+    for upd in updates:
+        if not isinstance(upd, dict) or not upd.get("key") or "value" not in upd:
+            return get_error_data_result(message="Each update requires key and value.")
+    for d in deletes:
+        if not isinstance(d, dict) or not d.get("key"):
+            return get_error_data_result(message="Each delete requires key.")
+
+    target_doc_ids = set()
+    if document_ids:
+        kb_doc_ids = KnowledgebaseService.list_documents_by_ids([dataset_id])
+        invalid_ids = set(document_ids) - set(kb_doc_ids)
+        if invalid_ids:
+            return get_error_data_result(message=f"These documents do not belong to dataset {dataset_id}: {', '.join(invalid_ids)}")
+        target_doc_ids = set(document_ids)
+
+    if metadata_condition:
+        metas = DocMetadataService.get_flatted_meta_by_kbs([dataset_id])
+        filtered_ids = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
+        target_doc_ids = target_doc_ids & filtered_ids
+        if metadata_condition.get("conditions") and not target_doc_ids:
+            return get_result(data={"updated": 0, "matched_docs": 0})
+
+    target_doc_ids = list(target_doc_ids)
+    updated = DocMetadataService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
+    return get_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
 
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["POST"])  # noqa: F821
@@ -1022,6 +1108,220 @@ async def update_metadata(tenant_id, dataset_id):
     target_doc_ids = list(target_doc_ids)
     updated = DocMetadataService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
     return get_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
+
+
+@manager.route("/datasets/<dataset_id>/documents/parse", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def parse_documents(tenant_id, dataset_id):
+    """
+    Start parsing documents in a dataset.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: body
+        name: body
+        description: Document parse parameters.
+        required: true
+        schema:
+          type: object
+          properties:
+            document_ids:
+              type: array
+              items:
+                type: string
+              description: List of document IDs to parse.
+    responses:
+      200:
+        description: Successful operation.
+    """
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+
+    req = await get_request_json()
+    if req is None:
+        return get_error_data_result(message="Request body is required")
+
+    document_ids = req.get("document_ids")
+    if document_ids is None or not isinstance(document_ids, list):
+        return get_error_data_result(message="`document_ids` is required")
+    if len(document_ids) == 0:
+        return get_error_data_result(message="`document_ids` is required")
+
+    # Check for duplicate document IDs
+    unique_doc_ids, duplicate_messages = check_duplicate_ids(document_ids, "document")
+    errors = duplicate_messages if duplicate_messages else []
+
+    # Validate all document IDs belong to the dataset
+    not_found_ids = []
+    valid_doc_ids = []
+    for doc_id in unique_doc_ids:
+        docs = DocumentService.query(kb_id=dataset_id, id=doc_id)
+        if not docs:
+            not_found_ids.append(doc_id)
+        else:
+            valid_doc_ids.append(doc_id)
+
+    if not_found_ids:
+        errors.append(f"Documents not found: {not_found_ids}")
+        # Still parse valid documents, but return error code
+        if not valid_doc_ids:
+            return get_error_data_result(message=f"Documents not found: {not_found_ids}")
+
+    try:
+        def _run_sync():
+            kb_table_num_map = {}
+            success_count = 0
+            for doc_id in valid_doc_ids:
+                e, doc = DocumentService.get_by_id(doc_id)
+                if not e:
+                    errors.append(f"Document not found: {doc_id}")
+                    continue
+
+                info = {"run": str(TaskStatus.RUNNING.value), "progress": 0}
+                # If re-running a completed document, clear previous chunks
+                if str(doc.run) == TaskStatus.DONE.value:
+                    DocumentService.clear_chunk_num_when_rerun(doc.id)
+                    info["progress_msg"] = ""
+                    info["chunk_num"] = 0
+                    info["token_num"] = 0
+
+                DocumentService.update_by_id(doc_id, info)
+                TaskService.filter_delete([Task.doc_id == doc_id])
+                if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
+                    settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(tenant_id), doc.kb_id)
+
+                doc_dict = doc.to_dict()
+                DocumentService.run(tenant_id, doc_dict, kb_table_num_map)
+                success_count += 1
+
+            result = {"success_count": success_count}
+            if errors:
+                result["errors"] = errors
+            return result
+
+        result = await thread_pool_exec(_run_sync)
+        if not_found_ids:
+            return get_error_data_result(message=f"Documents not found: {not_found_ids}")
+        return get_result(data=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/documents/stop", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def stop_parse_documents(tenant_id, dataset_id):
+    """
+    Stop parsing documents in a dataset.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: body
+        name: body
+        description: Document stop parse parameters.
+        required: true
+        schema:
+          type: object
+          properties:
+            document_ids:
+              type: array
+              items:
+                type: string
+              description: List of document IDs to stop parsing.
+    responses:
+      200:
+        description: Successful operation.
+    """
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+
+    req = await get_request_json()
+    if req is None:
+        return get_error_data_result(message="Request body is required")
+
+    document_ids = req.get("document_ids")
+    if document_ids is None or not isinstance(document_ids, list):
+        return get_error_data_result(message="`document_ids` is required")
+    if len(document_ids) == 0:
+        return get_error_data_result(message="`document_ids` is required")
+
+    # Check for duplicate document IDs
+    unique_doc_ids, duplicate_messages = check_duplicate_ids(document_ids, "document")
+    errors = duplicate_messages if duplicate_messages else []
+
+    # Validate all document IDs belong to the dataset
+    not_found_ids = []
+    valid_doc_ids = []
+    for doc_id in unique_doc_ids:
+        docs = DocumentService.query(kb_id=dataset_id, id=doc_id)
+        if not docs:
+            not_found_ids.append(doc_id)
+        else:
+            valid_doc_ids.append(doc_id)
+
+    if not_found_ids:
+        return get_error_data_result(message=f"Documents not found: {not_found_ids}")
+
+    try:
+        def _run_sync():
+            success_count = 0
+            for doc_id in valid_doc_ids:
+                e, doc = DocumentService.get_by_id(doc_id)
+                if not e:
+                    errors.append(f"Document not found: {doc_id}")
+                    continue
+
+                # Check if the document is currently running
+                tasks = list(TaskService.query(doc_id=doc_id))
+                has_unfinished_task = any((task.progress or 0) < 1 for task in tasks)
+                if str(doc.run) not in [TaskStatus.RUNNING.value, TaskStatus.CANCEL.value] and not has_unfinished_task:
+                    errors.append("Can't stop parsing document that has not started or already completed")
+                    continue
+
+                cancel_all_task_of(doc_id)
+                DocumentService.update_by_id(doc_id, {"run": str(TaskStatus.CANCEL.value)})
+                success_count += 1
+
+            result = {"success_count": success_count}
+            if errors:
+                result["errors"] = errors
+            return result
+
+        result = await thread_pool_exec(_run_sync)
+        if not_found_ids:
+            return get_error_data_result(message=f"Documents not found: {not_found_ids}")
+        return get_result(data=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
 
 
 ARTIFACT_CONTENT_TYPES = {
