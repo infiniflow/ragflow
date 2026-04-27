@@ -18,25 +18,16 @@ import re
 from quart import make_response, request
 
 from api.apps import current_user, login_required
-from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType
-from api.db.db_models import Task
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
-from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.utils.api_utils import (
     get_data_error_result,
-    get_json_result,
-    get_request_json,
     server_error_response,
-    validate_request,
 )
 from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers
 from common import settings
-from common.constants import RetCode, TaskStatus
 from common.misc_utils import thread_pool_exec
-from rag.nlp import search
 
 
 @manager.route("/get/<doc_id>", methods=["GET"])  # noqa: F821
