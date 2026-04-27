@@ -1706,27 +1706,33 @@ class RAGFlowPdfParser:
             total_pages = self.total_page_number(fnm, binary=fnm)
 
         if total_pages is None:
-            total_pages = to_page
+            effective_to_page = to_page
+            logging.warning(
+                "parse_into_bboxes: total_page_number returned None; using caller-supplied to_page=%s",
+                to_page,
+            )
+        else:
+            effective_to_page = min(to_page, total_pages)
 
-        if to_page - from_page <= batch_size:
-            self.__images__(fnm, zoomin, page_from=from_page, page_to=to_page, callback=callback)
+        if effective_to_page - from_page <= batch_size:
+            self.__images__(fnm, zoomin, page_from=from_page, page_to=effective_to_page, callback=callback)
             return self._parse_loaded_window_into_bboxes(zoomin, callback=callback)
 
         logging.info(
-            "parse_into_bboxes uses chunk mode: from_page=%s, to_page=%s, batch_size=%s",
+            "parse_into_bboxes uses chunk mode: from_page=%s, effective_to_page=%s, batch_size=%s",
             from_page,
-            to_page,
+            effective_to_page,
             batch_size,
         )
         all_boxes = []
         start = timer()
-        for page_from in range(from_page, to_page, batch_size):
-            page_to = min(page_from + batch_size, to_page)
+        for page_from in range(from_page, effective_to_page, batch_size):
+            page_to = min(page_from + batch_size, effective_to_page)
             self.__images__(fnm, zoomin, page_from=page_from, page_to=page_to, callback=None)
             chunk_boxes = self._parse_loaded_window_into_bboxes(zoomin)
             all_boxes.extend(self._to_global_boxes(chunk_boxes))
             if callback:
-                callback((page_to - from_page) / (to_page - from_page), f"Structured: {page_to}/{to_page} pages")
+                callback((page_to - from_page) / max(1, effective_to_page - from_page), f"Structured: {page_to}/{effective_to_page} pages")
 
         logging.info("parse_into_bboxes chunk mode cost %.2fs", timer() - start)
         return all_boxes
