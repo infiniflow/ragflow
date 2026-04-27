@@ -14,6 +14,7 @@ import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
   deleteKnowledgeGraph,
+  getKbDetail,
   getKnowledgeGraph,
   listDataset,
   listTag,
@@ -407,9 +408,7 @@ export const useFetchKnowledgeBaseConfiguration = (props?: {
     gcTime: 0,
     enabled: !!knowledgeBaseId && isEdit,
     queryFn: async () => {
-      const { data } = await kbService.getKbDetail({
-        kb_id: knowledgeBaseId,
-      });
+      const { data } = await getKbDetail(knowledgeBaseId || '');
       return data?.data ?? {};
     },
   });
@@ -443,7 +442,9 @@ export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
     enabled: kbIds.length > 0,
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await kbService.getMeta({ kb_ids: kbIds.join(',') });
+      const { data } = await kbService.getMeta({
+        dataset_ids: kbIds.join(','),
+      });
       return data?.data ?? {};
     },
   });
@@ -549,7 +550,7 @@ export const useFetchTagListByKnowledgeIds = () => {
     gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
     queryFn: async () => {
       const { data } = await kbService.listTagByKnowledgeIds({
-        kb_ids: knowledgeIds.join(','),
+        dataset_ids: knowledgeIds.join(','),
       });
       const list = data?.data || [];
       return list;
@@ -622,7 +623,6 @@ export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
       const { data } = await kbService.retrievalTest({
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
-        highlight: true,
         page,
         size: pageSize,
       });
@@ -667,7 +667,6 @@ export const useTestChunkAllRetrieval = (): ResponsePostType<ITestingResult> & {
       const { data } = await kbService.retrievalTest({
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
-        highlight: true,
         doc_ids: [],
         page,
         size: pageSize,

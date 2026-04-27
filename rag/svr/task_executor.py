@@ -407,25 +407,26 @@ async def build_chunks(task, progress_callback):
             raise
         progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
-    if task["parser_config"].get("enable_metadata", False) and task["parser_config"].get("metadata"):
+    if task["parser_config"].get("enable_metadata", False) and (task["parser_config"].get("metadata") or task["parser_config"].get("built_in_metadata")):
         st = timer()
         progress_callback(msg="Start to generate meta-data for every chunk ...")
         chat_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.CHAT, task["llm_id"])
         chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
 
         async def gen_metadata_task(chat_mdl, d):
+            metadata_conf = list(task["parser_config"].get("metadata", [])) + list(task["parser_config"].get("built_in_metadata") or [])
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "metadata",
-                                   task["parser_config"]["metadata"])
+                                   metadata_conf)
             if not cached:
                 if has_canceled(task["id"]):
                     progress_callback(-1, msg="Task has been canceled.")
                     return
                 async with chat_limiter:
                     cached = await gen_metadata(chat_mdl,
-                                                turn2jsonschema(task["parser_config"]["metadata"]),
+                                                turn2jsonschema(metadata_conf),
                                                 d["content_with_weight"])
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "metadata",
-                              task["parser_config"]["metadata"])
+                              metadata_conf)
             if cached:
                 d["metadata_obj"] = cached
 
@@ -842,7 +843,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
             max_errors=max_errors,
         )
         original_length = len(chunks)
-        chunks = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])
+        chunks, layers = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])
         effective_doc_name = row["name"] if did == fake_doc_id else doc_name_by_id.get(did, row["name"])
         doc = {
             "doc_id": did,
@@ -854,7 +855,17 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
         if row["pagerank"]:
             doc[PAGERANK_FLD] = int(row["pagerank"])
 
-        for content, vctr in chunks[original_length:]:
+        # Build index→layer mapping from RAPTOR layer boundaries.
+        # layers is [(start, end), ...] where layer 0 is the original chunks
+        # and layer 1+ are summary layers. We skip layer 0 (original chunks).
+        chunk_layer = {}
+        for layer_idx, (layer_start, layer_end) in enumerate(layers):
+            if layer_idx == 0:
+                continue  # layer 0 = original input chunks, not summaries
+            for ci in range(layer_start, layer_end):
+                chunk_layer[ci] = layer_idx
+
+        for idx, (content, vctr) in enumerate(chunks[original_length:], start=original_length):
             d = copy.deepcopy(doc)
             d["id"] = xxhash.xxh64((content + str(fake_doc_id)).encode("utf-8")).hexdigest()
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
@@ -863,6 +874,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
             d["content_with_weight"] = content
             d["content_ltks"] = rag_tokenizer.tokenize(content)
             d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+            d["raptor_layer_int"] = chunk_layer.get(idx, 1)
             res.append(d)
             tk_count += num_tokens_from_string(content)
 

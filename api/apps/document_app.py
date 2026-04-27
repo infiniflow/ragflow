@@ -16,23 +16,19 @@
 import logging
 import os.path
 import re
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import PurePosixPath, PureWindowsPath
 
 from quart import make_response, request
 
 from api.apps import current_user, login_required
-from api.common.check_team_permission import check_kb_team_permission
-from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
-from api.db import VALID_FILE_TYPES, FileType
+from api.constants import IMG_BASE64_PREFIX
+from api.db import FileType
 from api.db.db_models import Task
-from api.db.services import duplicate_name
-from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService, cancel_all_task_of
-from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
@@ -40,12 +36,12 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.file_utils import filename_type, thumbnail
-from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers, html2pdf, is_valid_url
+from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers, is_valid_url
 from common import settings
-from common.constants import SANDBOX_ARTIFACT_BUCKET, VALID_TASK_STATUS, ParserType, RetCode, TaskStatus
+from common.constants import SANDBOX_ARTIFACT_BUCKET, RetCode, TaskStatus
 from common.file_utils import get_project_base_directory
-from common.misc_utils import get_uuid, thread_pool_exec
+from common.misc_utils import thread_pool_exec
+from common.ssrf_guard import assert_url_is_safe
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search
 
@@ -61,229 +57,6 @@ def _is_safe_download_filename(name: str) -> bool:
         return False
     return True
 
-
-@manager.route("/web_crawl", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("kb_id", "name", "url")
-async def web_crawl():
-    form = await request.form
-    kb_id = form.get("kb_id")
-    if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-    name = form.get("name")
-    url = form.get("url")
-    if not is_valid_url(url):
-        return get_json_result(data=False, message="The URL format is invalid", code=RetCode.ARGUMENT_ERROR)
-    e, kb = KnowledgebaseService.get_by_id(kb_id)
-    if not e:
-        raise LookupError("Can't find this dataset!")
-    if not check_kb_team_permission(kb, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-
-    blob = html2pdf(url)
-    if not blob:
-        return server_error_response(ValueError("Download failure."))
-
-    root_folder = FileService.get_root_folder(current_user.id)
-    pf_id = root_folder["id"]
-    FileService.init_knowledgebase_docs(pf_id, current_user.id)
-    kb_root_folder = FileService.get_kb_folder(current_user.id)
-    kb_folder = FileService.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
-
-    try:
-        filename = duplicate_name(DocumentService.query, name=name + ".pdf", kb_id=kb.id)
-        filetype = filename_type(filename)
-        if filetype == FileType.OTHER.value:
-            raise RuntimeError("This type of file has not been supported yet!")
-
-        location = filename
-        while settings.STORAGE_IMPL.obj_exist(kb_id, location):
-            location += "_"
-        settings.STORAGE_IMPL.put(kb_id, location, blob)
-        doc = {
-            "id": get_uuid(),
-            "kb_id": kb.id,
-            "parser_id": kb.parser_id,
-            "parser_config": kb.parser_config,
-            "created_by": current_user.id,
-            "type": filetype,
-            "name": filename,
-            "location": location,
-            "size": len(blob),
-            "thumbnail": thumbnail(filename, blob),
-            "suffix": Path(filename).suffix.lstrip("."),
-        }
-        if doc["type"] == FileType.VISUAL:
-            doc["parser_id"] = ParserType.PICTURE.value
-        if doc["type"] == FileType.AURAL:
-            doc["parser_id"] = ParserType.AUDIO.value
-        if re.search(r"\.(ppt|pptx|pages)$", filename):
-            doc["parser_id"] = ParserType.PRESENTATION.value
-        if re.search(r"\.(eml)$", filename):
-            doc["parser_id"] = ParserType.EMAIL.value
-        DocumentService.insert(doc)
-        FileService.add_file_from_kb(doc, kb_folder["id"], kb.tenant_id)
-    except Exception as e:
-        return server_error_response(e)
-    return get_json_result(data=True)
-
-
-@manager.route("/create", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("name", "kb_id")
-async def create():
-    req = await get_request_json()
-    kb_id = req["kb_id"]
-    if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-    if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-        return get_json_result(data=False, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=RetCode.ARGUMENT_ERROR)
-
-    if req["name"].strip() == "":
-        return get_json_result(data=False, message="File name can't be empty.", code=RetCode.ARGUMENT_ERROR)
-    req["name"] = req["name"].strip()
-
-    try:
-        e, kb = KnowledgebaseService.get_by_id(kb_id)
-        if not e:
-            return get_data_error_result(message="Can't find this dataset!")
-
-        if DocumentService.query(name=req["name"], kb_id=kb_id):
-            return get_data_error_result(message="Duplicated document name in the same dataset.")
-
-        kb_root_folder = FileService.get_kb_folder(kb.tenant_id)
-        if not kb_root_folder:
-            return get_data_error_result(message="Cannot find the root folder.")
-        kb_folder = FileService.new_a_file_from_kb(
-            kb.tenant_id,
-            kb.name,
-            kb_root_folder["id"],
-        )
-        if not kb_folder:
-            return get_data_error_result(message="Cannot find the kb folder for this file.")
-
-        doc = DocumentService.insert(
-            {
-                "id": get_uuid(),
-                "kb_id": kb.id,
-                "parser_id": kb.parser_id,
-                "pipeline_id": kb.pipeline_id,
-                "parser_config": kb.parser_config,
-                "created_by": current_user.id,
-                "type": FileType.VIRTUAL,
-                "name": req["name"],
-                "suffix": Path(req["name"]).suffix.lstrip("."),
-                "location": "",
-                "size": 0,
-            }
-        )
-
-        FileService.add_file_from_kb(doc.to_dict(), kb_folder["id"], kb.tenant_id)
-
-        return get_json_result(data=doc.to_json())
-    except Exception as e:
-        return server_error_response(e)
-
-
-@manager.route("/filter", methods=["POST"])  # noqa: F821
-@login_required
-async def get_filter():
-    req = await get_request_json()
-
-    kb_id = req.get("kb_id")
-    if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-    tenants = UserTenantService.query(user_id=current_user.id)
-    for tenant in tenants:
-        if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
-            break
-    else:
-        return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
-
-    keywords = req.get("keywords", "")
-
-    suffix = req.get("suffix", [])
-
-    run_status = req.get("run_status", [])
-    if run_status:
-        invalid_status = {s for s in run_status if s not in VALID_TASK_STATUS}
-        if invalid_status:
-            return get_data_error_result(message=f"Invalid filter run status conditions: {', '.join(invalid_status)}")
-
-    types = req.get("types", [])
-    if types:
-        invalid_types = {t for t in types if t not in VALID_FILE_TYPES}
-        if invalid_types:
-            return get_data_error_result(message=f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}")
-
-    try:
-        filter, total = DocumentService.get_filter_by_kb_id(kb_id, keywords, run_status, types, suffix)
-        return get_json_result(data={"total": total, "filter": filter})
-    except Exception as e:
-        return server_error_response(e)
-
-
-@manager.route("/infos", methods=["POST"])  # noqa: F821
-@login_required
-async def doc_infos():
-    req = await get_request_json()
-    doc_ids = req["doc_ids"]
-    for doc_id in doc_ids:
-        if not DocumentService.accessible(doc_id, current_user.id):
-            return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-    docs = DocumentService.get_by_ids(doc_ids)
-    docs_list = list(docs.dicts())
-    # Add meta_fields for each document
-    for doc in docs_list:
-        doc["meta_fields"] = DocMetadataService.get_document_metadata(doc["id"])
-    return get_json_result(data=docs_list)
-
-
-@manager.route("/metadata/update", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("doc_ids")
-async def metadata_update():
-    req = await get_request_json()
-    kb_id = req.get("kb_id")
-    document_ids = req.get("doc_ids")
-    updates = req.get("updates", []) or []
-    deletes = req.get("deletes", []) or []
-
-    if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-
-    if not isinstance(updates, list) or not isinstance(deletes, list):
-        return get_json_result(data=False, message="updates and deletes must be lists.", code=RetCode.ARGUMENT_ERROR)
-
-    for upd in updates:
-        if not isinstance(upd, dict) or not upd.get("key") or "value" not in upd:
-            return get_json_result(data=False, message="Each update requires key and value.", code=RetCode.ARGUMENT_ERROR)
-    for d in deletes:
-        if not isinstance(d, dict) or not d.get("key"):
-            return get_json_result(data=False, message="Each delete requires key.", code=RetCode.ARGUMENT_ERROR)
-
-    updated = DocMetadataService.batch_update_metadata(kb_id, document_ids, updates, deletes)
-    return get_json_result(data={"updated": updated, "matched_docs": len(document_ids)})
-
-
-@manager.route("/update_metadata_setting", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("doc_id", "metadata")
-async def update_metadata_setting():
-    req = await get_request_json()
-    if not DocumentService.accessible(req["doc_id"], current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-
-    e, doc = DocumentService.get_by_id(req["doc_id"])
-    if not e:
-        return get_data_error_result(message="Document not found!")
-
-    DocumentService.update_parser_config(doc.id, {"metadata": req["metadata"]})
-    e, doc = DocumentService.get_by_id(doc.id)
-    if not e:
-        return get_data_error_result(message="Document not found!")
-
-    return get_json_result(data=doc.to_dict())
 
 
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
@@ -379,27 +152,6 @@ async def change_status():
     return get_json_result(data=result)
 
 
-@manager.route("/rm", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("doc_id")
-async def rm():
-    req = await get_request_json()
-    doc_ids = req["doc_id"]
-    if isinstance(doc_ids, str):
-        doc_ids = [doc_ids]
-
-    for doc_id in doc_ids:
-        if not DocumentService.accessible4deletion(doc_id, current_user.id):
-            return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-
-    errors = await thread_pool_exec(FileService.delete_docs, doc_ids, current_user.id)
-
-    if errors:
-        return get_json_result(data=False, message=errors, code=RetCode.SERVER_ERROR)
-
-    return get_json_result(data=True)
-
-
 @manager.route("/run", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_ids", "run")
@@ -461,6 +213,7 @@ async def run():
         return await thread_pool_exec(_run_sync)
     except Exception as e:
         return server_error_response(e)
+
 
 @manager.route("/get/<doc_id>", methods=["GET"])  # noqa: F821
 @login_required
@@ -710,6 +463,7 @@ async def upload_info():
 
     try:
         if url and not file_objs:
+            assert_url_is_safe(url)
             return get_json_result(data=FileService.upload_info(current_user.id, None, url))
 
         if len(file_objs) == 1:

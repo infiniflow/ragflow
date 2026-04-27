@@ -25,10 +25,10 @@ from utils.file_utils import create_txt_file
 
 HEADERS = {"Content-Type": "application/json"}
 
-KB_APP_URL = f"/{VERSION}/kb"
 DATASETS_URL = f"/api/{VERSION}/datasets"
 DOCUMENT_APP_URL = f"/{VERSION}/document"
-CHUNK_API_URL = f"/{VERSION}/chunk"
+CHUNK_APP_URL = f"/{VERSION}/chunk"
+CHUNK_API_URL = f"/api/{VERSION}/datasets/{{dataset_id}}/documents/{{document_id}}/chunks"
 # SESSION_WITH_CHAT_ASSISTANT_API_URL = "/api/v1/chats/{chat_id}/sessions"
 # SESSION_WITH_AGENT_API_URL = "/api/v1/agents/{agent_id}/sessions"
 MEMORY_API_URL = f"/api/{VERSION}/memories"
@@ -37,7 +37,7 @@ API_APP_URL = f"/{VERSION}/api"
 SYSTEM_APP_URL = f"/{VERSION}/system"
 SYSTEM_API_URL = f"/api/{VERSION}/system"
 LLM_APP_URL = f"/{VERSION}/llm"
-PLUGIN_APP_URL = f"/{VERSION}/plugin"
+PLUGIN_APP_URL = f"/api/{VERSION}/plugin"
 SEARCHES_URL = f"/api/{VERSION}/searches"
 CHATS_URL = f"/api/{VERSION}/chats"
 
@@ -90,7 +90,7 @@ def system_delete_token(auth, token, *, headers=HEADERS):
 
 
 def system_status(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{SYSTEM_APP_URL}/status", headers=headers, auth=auth, params=params)
+    res = requests.get(url=f"{HOST_ADDRESS}{SYSTEM_API_URL}/status", headers=headers, auth=auth, params=params)
     return res.json()
 
 
@@ -100,7 +100,7 @@ def system_version(auth, params=None, *, headers=HEADERS):
 
 
 def system_config(auth=None, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{SYSTEM_APP_URL}/config", headers=headers, auth=auth, params=params)
+    res = requests.get(url=f"{HOST_ADDRESS}{SYSTEM_API_URL}/config", headers=headers, auth=auth, params=params)
     return res.json()
 
 
@@ -117,7 +117,7 @@ def llm_list(auth, params=None, *, headers=HEADERS):
 
 # PLUGIN APP
 def plugin_llm_tools(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{PLUGIN_APP_URL}/llm_tools", headers=headers, auth=auth, params=params)
+    res = requests.get(url=f"{HOST_ADDRESS}{PLUGIN_APP_URL}/tools", headers=headers, auth=auth, params=params)
     return res.json()
 
 
@@ -206,49 +206,41 @@ def delete_datasets(auth, payload=None, *, headers=HEADERS, data=None):
     return res.json()
 
 
-def detail_kb(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/detail", headers=headers, auth=auth, params=params)
+def detail_kb(auth, dataset_id, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}", headers=headers, auth=auth)
     return res.json()
 
 
-def kb_get_meta(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/get_meta", headers=headers, auth=auth, params=params)
+def kb_get_meta(auth, dataset_ids, *, headers=HEADERS):
+    params = {"dataset_ids": dataset_ids}
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_URL}/metadata/flattened", headers=headers, auth=auth, params=params)
     return res.json()
 
 
-def kb_basic_info(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/basic_info", headers=headers, auth=auth, params=params)
+def kb_basic_info(auth, dataset_id, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/ingestions/summary", headers=headers, auth=auth)
     return res.json()
 
 
-def kb_update_metadata_setting(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/update_metadata_setting", headers=headers, auth=auth, json=payload, data=data)
+def kb_update_metadata_setting(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
+    res = requests.put(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/metadata/config", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
-def kb_list_pipeline_logs(auth, params=None, payload=None, *, headers=HEADERS, data=None):
-    if payload is None:
-        payload = {}
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/list_pipeline_logs", headers=headers, auth=auth, params=params, json=payload, data=data)
+def kb_list_pipeline_logs(auth, dataset_id, params=None, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/ingestions"
+    res = requests.get(url=url, headers=headers, auth=auth, params=params)
     return res.json()
 
 
-def kb_list_pipeline_dataset_logs(auth, params=None, payload=None, *, headers=HEADERS, data=None):
-    if payload is None:
-        payload = {}
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/list_pipeline_dataset_logs", headers=headers, auth=auth, params=params, json=payload, data=data)
+def kb_list_pipeline_dataset_logs(auth, dataset_id, params=None, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/ingestions"
+    res = requests.get(url=url, headers=headers, auth=auth, params=params)
     return res.json()
 
 
-def kb_delete_pipeline_logs(auth, params=None, payload=None, *, headers=HEADERS, data=None):
-    if payload is None:
-        payload = {}
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/delete_pipeline_logs", headers=headers, auth=auth, params=params, json=payload, data=data)
-    return res.json()
-
-
-def kb_pipeline_log_detail(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/pipeline_log_detail", headers=headers, auth=auth, params=params)
+def kb_pipeline_log_detail(auth, dataset_id, log_id, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/ingestions/{log_id}", headers=headers, auth=auth)
     return res.json()
 
 
@@ -268,57 +260,24 @@ def delete_knowledge_graph(auth, dataset_id, payload=None):
     return res.json()
 
 
-def run_graphrag(auth, dataset_id, payload=None):
-    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/run_graphrag"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+def list_tags_from_kbs(auth, dataset_ids, *, headers=HEADERS):
+    params = {"dataset_ids": dataset_ids}
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_URL}/tags/aggregation", headers=headers, auth=auth, params=params)
     return res.json()
 
 
-def trace_graphrag(auth, dataset_id, params=None):
-    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/trace_graphrag"
-    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
-    return res.json()
-
-
-def run_raptor(auth, dataset_id, payload=None):
-    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/run_raptor"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
-    return res.json()
-
-
-def trace_raptor(auth, dataset_id, params=None):
-    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/trace_raptor"
-    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
-    return res.json()
-
-
-def kb_run_mindmap(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/run_mindmap", headers=headers, auth=auth, json=payload, data=data)
-    return res.json()
-
-
-def kb_trace_mindmap(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/trace_mindmap", headers=headers, auth=auth, params=params)
-    return res.json()
-
-
-def list_tags_from_kbs(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/tags", headers=headers, auth=auth, params=params)
-    return res.json()
-
-
-def list_tags(auth, dataset_id, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{KB_APP_URL}/{dataset_id}/tags", headers=headers, auth=auth, params=params)
+def list_tags(auth, dataset_id, *, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/tags", headers=headers, auth=auth)
     return res.json()
 
 
 def rm_tags(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/{dataset_id}/rm_tags", headers=headers, auth=auth, json=payload, data=data)
+    res = requests.delete(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/tags", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
 def rename_tags(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{KB_APP_URL}/{dataset_id}/rename_tag", headers=headers, auth=auth, json=payload, data=data)
+    res = requests.put(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/tags", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
@@ -369,21 +328,32 @@ def upload_documents(auth, payload=None, files_path=None, *, filename_override=N
 
 
 def create_document(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/create", headers=headers, auth=auth, json=payload, data=data)
+    kb_id = payload.get("kb_id") if payload else None
+    request_payload = dict(payload or {})
+    request_payload.pop("kb_id", None)
+    res = requests.post(
+        url=f"{HOST_ADDRESS}{DATASETS_URL}/{kb_id}/documents?type=empty",
+        headers=headers,
+        auth=auth,
+        json=request_payload,
+        data=data,
+    )
     return res.json()
 
 
 def list_documents(auth, params=None, payload=None, *, headers=HEADERS, data=None):
     kb_id = params.get("kb_id") if params else None
-    url = f"{HOST_ADDRESS}/api/{VERSION}/datasets/{kb_id}/documents"
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{kb_id}/documents"
     if payload is None:
         payload = {}
     res = requests.get(url=url, headers=headers, auth=auth, params=params, json=payload, data=data)
     return res.json()
 
 
-def delete_document(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/rm", headers=headers, auth=auth, json=payload, data=data)
+def delete_document(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
+    # New API: DELETE /api/v1/datasets/<dataset_id>/documents
+    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents"
+    res = requests.delete(url=url, headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
@@ -392,13 +362,13 @@ def parse_documents(auth, payload=None, *, headers=HEADERS, data=None):
     return res.json()
 
 
-def document_filter(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/filter", headers=headers, auth=auth, json=payload, data=data)
+def document_filter(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents?type=filter", params=payload, headers=headers, auth=auth, data=data)
     return res.json()
 
 
-def document_infos(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/infos", headers=headers, auth=auth, json=payload, data=data)
+def document_infos(auth, dataset_id, params=None, payload=None, *, headers=HEADERS, data=None):
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents", params=params, json=payload, headers=headers, auth=auth, data=data)
     return res.json()
 
 
@@ -407,13 +377,17 @@ def document_metadata_summary(auth, payload=None, *, headers=HEADERS, data=None)
     return res.json()
 
 
-def document_metadata_update(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/metadata/update", headers=headers, auth=auth, json=payload, data=data)
+def document_metadata_update(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
+    """New unified API for updating document metadata.
+
+    Uses PATCH method at /api/v1/datasets/{dataset_id}/documents/metadatas
+    """
+    res = requests.patch(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents/metadatas", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
-def document_update_metadata_setting(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/update_metadata_setting", headers=headers, auth=auth, json=payload, data=data)
+def document_update_metadata_setting(auth, dataset_id, doc_id, payload=None, *, headers=HEADERS, data=None):
+    res = requests.put(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents/{doc_id}/metadata/config", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
@@ -435,47 +409,53 @@ def bulk_upload_documents(auth, kb_id, num, tmp_path):
     return document_ids
 
 
-# CHUNK APP
-def add_chunk(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{CHUNK_API_URL}/create", headers=headers, auth=auth, json=payload, data=data)
+# CHUNK MANAGEMENT
+def add_chunk(auth, dataset_id, document_id, payload=None, *, headers=HEADERS, data=None):
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
-def list_chunks(auth, payload=None, *, headers=HEADERS):
-    res = requests.post(url=f"{HOST_ADDRESS}{CHUNK_API_URL}/list", headers=headers, auth=auth, json=payload)
+def list_chunks(auth, dataset_id, document_id, params=None, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
+    res = requests.get(url=url, headers=headers, auth=auth, params=params)
     return res.json()
 
 
-def get_chunk(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{CHUNK_API_URL}/get", headers=headers, auth=auth, params=params)
+def get_chunk(auth, dataset_id, document_id, chunk_id, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}/{chunk_id}".format(dataset_id=dataset_id, document_id=document_id)
+    res = requests.get(url=url, headers=headers, auth=auth)
     return res.json()
 
 
-def update_chunk(auth, payload=None, *, headers=HEADERS):
-    res = requests.post(url=f"{HOST_ADDRESS}{CHUNK_API_URL}/set", headers=headers, auth=auth, json=payload)
+def update_chunk(auth, dataset_id, document_id, chunk_id, payload=None, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}/{chunk_id}".format(dataset_id=dataset_id, document_id=document_id)
+    res = requests.patch(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
-def switch_chunks(auth, payload=None, *, headers=HEADERS):
-    res = requests.post(url=f"{HOST_ADDRESS}{CHUNK_API_URL}/switch", headers=headers, auth=auth, json=payload)
+def switch_chunks(auth, dataset_id, document_id, payload=None, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
+    res = requests.patch(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
-def delete_chunks(auth, payload=None, *, headers=HEADERS):
-    res = requests.post(url=f"{HOST_ADDRESS}{CHUNK_API_URL}/rm", headers=headers, auth=auth, json=payload)
+def delete_chunks(auth, dataset_id, document_id, payload=None, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
+    res = requests.delete(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
 
 def retrieval_chunks(auth, payload=None, *, headers=HEADERS):
-    res = requests.post(url=f"{HOST_ADDRESS}{CHUNK_API_URL}/retrieval_test", headers=headers, auth=auth, json=payload)
+    res = requests.post(url=f"{HOST_ADDRESS}{CHUNK_APP_URL}/retrieval_test", headers=headers, auth=auth, json=payload)
     return res.json()
 
 
-def batch_add_chunks(auth, doc_id, num):
+def batch_add_chunks(auth, dataset_id, document_id, num):
     chunk_ids = []
     for i in range(num):
-        res = add_chunk(auth, {"doc_id": doc_id, "content_with_weight": f"chunk test {i}"})
-        chunk_ids.append(res["data"]["chunk_id"])
+        res = add_chunk(auth, dataset_id, document_id, {"content": f"chunk test {i}"})
+        chunk_ids.append(res["data"]["chunk"]["id"])
     return chunk_ids
 
 

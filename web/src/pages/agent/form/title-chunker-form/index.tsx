@@ -29,6 +29,7 @@ import { transformApiResponseToForm, useDynamicHierarchyOptions } from './hook';
 type FormModeValues = {
   hierarchy?: string;
   include_heading_content?: boolean;
+  root_chunk_as_heading?: boolean;
   rules: Array<{ levels: Array<{ expression: string }> }>;
 };
 
@@ -60,6 +61,7 @@ export const FormSchema = z.object({
   method: z.enum(['hierarchy', 'group']),
   hierarchy: z.string().optional(),
   include_heading_content: z.boolean().optional(),
+  root_chunk_as_heading: z.boolean().optional(),
   rules: rulesSchema,
 });
 
@@ -221,12 +223,14 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
         hierarchyModeValues.current = {
           hierarchy: hierarchyValue,
           include_heading_content: form.getValues('include_heading_content'),
+          root_chunk_as_heading: form.getValues('root_chunk_as_heading'),
           rules: rulesValue,
         };
       } else if (currentMode === 'group') {
         groupValues.current = {
           hierarchy: hierarchyValue,
           include_heading_content: form.getValues('include_heading_content'),
+          root_chunk_as_heading: form.getValues('root_chunk_as_heading'),
           rules: rulesValue,
         };
       }
@@ -239,6 +243,7 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
           method: 'group',
           hierarchy: modeValues?.hierarchy ?? '0',
           include_heading_content: false,
+          root_chunk_as_heading: false,
           rules: modeValues?.rules || initialGroupValues.rules,
         });
       } else {
@@ -251,12 +256,14 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
             hierarchy: modeValues.hierarchy || defaultHierarchy,
             include_heading_content:
               modeValues.include_heading_content || false,
+            root_chunk_as_heading: modeValues.root_chunk_as_heading || false,
             rules: modeValues.rules,
           });
         } else {
           const newModeValues: FormModeValues = {
             hierarchy: defaultHierarchy,
             include_heading_content: false,
+            root_chunk_as_heading: false,
             rules: JSON.parse(JSON.stringify(initialTitleChunkerValues.rules)),
           };
 
@@ -264,6 +271,7 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
             method: method,
             hierarchy: defaultHierarchy,
             include_heading_content: newModeValues.include_heading_content,
+            root_chunk_as_heading: newModeValues.root_chunk_as_heading,
             rules: newModeValues.rules,
           });
         }
@@ -323,23 +331,46 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
           <SelectWithSearch options={hierarchyOptions}></SelectWithSearch>
         </RAGFlowFormItem>
         {method === 'hierarchy' && (
-          <RAGFlowFormItem
-            name="include_heading_content"
-            label={t('flow.includeHeadingContent', 'Include heading content')}
-            tooltip={t('flow.includeHeadingContentTip')}
-            horizontal={true}
-            labelClassName="w-full"
-            valueClassName="w-8"
-          >
-            {(field) => (
-              <Switch
-                checked={field.value}
-                onCheckedChange={(checked) => {
-                  field.onChange?.(checked);
-                }}
-              />
-            )}
-          </RAGFlowFormItem>
+          <>
+            <RAGFlowFormItem
+              name="include_heading_content"
+              label={t('flow.includeHeadingContent', 'Include heading content')}
+              tooltip={t('flow.includeHeadingContentTip')}
+              horizontal={true}
+              labelClassName="w-full"
+              valueClassName="w-8"
+            >
+              {(field) => (
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={(checked) => {
+                    field.onChange?.(checked);
+                  }}
+                />
+              )}
+            </RAGFlowFormItem>
+
+            <RAGFlowFormItem
+              name="root_chunk_as_heading"
+              label={t('flow.rootAsHeading', 'Use root as heading')}
+              tooltip={t(
+                'flow.rootAsHeadingTip',
+                'Treat the root node as a H0 heading when building the hierarchy',
+              )}
+              horizontal={true}
+              labelClassName="w-full"
+              valueClassName="w-8"
+            >
+              {(field) => (
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={(checked) => {
+                    field.onChange?.(checked);
+                  }}
+                />
+              )}
+            </RAGFlowFormItem>
+          </>
         )}
         {/* {method === 'group' ? (
           <Card>

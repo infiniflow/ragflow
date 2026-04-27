@@ -303,6 +303,24 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenChat, Value: ident}
 	case "THINK":
 		return Token{Type: TokenThink, Value: ident}
+	case "EFFORT":
+		return Token{Type: TokenEffort, Value: ident}
+	case "VERBOSITY":
+		return Token{Type: TokenVerbosity, Value: ident}
+	case "NONE":
+		return Token{Type: TokenNone, Value: ident}
+	case "MINIMAL":
+		return Token{Type: TokenMinimal, Value: ident}
+	case "LOW":
+		return Token{Type: TokenLow, Value: ident}
+	case "MEDIUM":
+		return Token{Type: TokenMedium, Value: ident}
+	case "HIGH":
+		return Token{Type: TokenHigh, Value: ident}
+	case "MAX":
+		return Token{Type: TokenMax, Value: ident}
+	case "STREAM":
+		return Token{Type: TokenStream, Value: ident}
 	case "LS":
 		return Token{Type: TokenLS, Value: ident}
 	case "CAT":
@@ -363,8 +381,12 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenTable, Value: ident}
 	case "AVAILABLE":
 		return Token{Type: TokenAvailable, Value: ident}
+	case "SUPPORTED":
+		return Token{Type: TokenSupported, Value: ident}
 	case "NAME":
 		return Token{Type: TokenName, Value: ident}
+	case "BALANCE":
+		return Token{Type: TokenBalance, Value: ident}
 	case "INSTANCE":
 		return Token{Type: TokenInstance, Value: ident}
 	case "INSTANCES":
@@ -379,6 +401,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenFile, Value: ident}
 	case "USE":
 		return Token{Type: TokenUse, Value: ident}
+	case "CHECK":
+		return Token{Type: TokenCheck, Value: ident}
 	case "UPDATE":
 		return Token{Type: TokenUpdate, Value: ident}
 	case "REMOVE":

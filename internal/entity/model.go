@@ -61,14 +61,14 @@ type Reasoning struct {
 
 // Reasoning represents the reasoning capability (can be one of three types)
 type ClearReasoningContent struct {
-	DefaultValue bool `json:"default_value"`
+	DefaultValue    bool     `json:"default_value"`
+	SupportedModels []string `json:"supported_models"`
 }
 
 // Reasoning represents the reasoning capability (can be one of three types)
 type Thinking struct {
-	DefaultValue    bool                  `json:"default_value"`
-	SupportedModels []string              `json:"supported_models"`
-	Clear           ClearReasoningContent `json:"clear"`
+	DefaultValue    bool     `json:"default_value"`
+	SupportedModels []string `json:"supported_models"`
 }
 
 // UnmarshalJSON custom unmarshal for Reasoning
@@ -142,9 +142,10 @@ type Multimodal struct {
 
 // Features represents all features of a model
 type Features struct {
-	Multimodal *Multimodal `json:"multimodal,omitempty"`
-	Reasoning  *Reasoning  `json:"reasoning,omitempty"`
-	Thinking   *Thinking   `json:"thinking,omitempty"`
+	Multimodal    *Multimodal            `json:"multimodal,omitempty"`
+	Reasoning     *Reasoning             `json:"reasoning,omitempty"`
+	Thinking      *Thinking              `json:"thinking,omitempty"`
+	ClearThinking *ClearReasoningContent `json:"clear_thinking,omitempty"`
 }
 
 type ModelThinking struct {
@@ -158,6 +159,7 @@ type Model struct {
 	MaxTokens    int            `json:"max_tokens"`
 	ModelTypes   []string       `json:"model_types"`
 	Thinking     *ModelThinking `json:"thinking"`
+	Series       *string        `json:"series"`
 	ModelTypeMap map[string]bool
 }
 
@@ -168,6 +170,7 @@ type Provider struct {
 	URLSuffix   models.URLSuffix  `json:"url_suffix"`
 	Models      []*Model          `json:"models"`
 	Features    Features          `json:"features"`
+	Series      string            `json:"series"`
 	ModelDriver models.ModelDriver
 }
 
@@ -231,16 +234,37 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 			}
 		}
 
+		modelClearThinking := make(map[string]bool)
+		if provider.Features.ClearThinking != nil {
+			for _, modelName := range provider.Features.ClearThinking.SupportedModels {
+				modelClearThinking[modelName] = true
+			}
+		}
+
 		for _, model := range provider.Models {
 			// if the prefix of mode.Name is matched with keys of modelSupportThinking
 			for modelPrefix, _ := range modelSupportThinking {
 				if strings.HasPrefix(model.Name, modelPrefix) {
 					model.Thinking = &ModelThinking{
 						DefaultValue: provider.Features.Thinking.DefaultValue,
-						ClearContent: provider.Features.Thinking.Clear.DefaultValue,
 					}
 				}
 			}
+
+			for modelPrefix, _ := range modelClearThinking {
+				if strings.HasPrefix(model.Name, modelPrefix) {
+					model.Thinking.ClearContent = true
+				}
+			}
+
+			if provider.Series == "" {
+				pos := strings.Index(model.Name, "-")
+				modelSeries := model.Name[0:pos]
+				model.Series = &modelSeries
+			} else {
+				model.Series = &provider.Name
+			}
+
 			model.ModelTypeMap = make(map[string]bool)
 			for _, modelType := range model.ModelTypes {
 				model.ModelTypeMap[modelType] = true

@@ -190,10 +190,14 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseEnableCommand()
 	case TokenDisable:
 		return p.parseDisableCommand()
+	case TokenStream:
+		return p.parseStreamCommand()
 	case TokenChat:
 		return p.parseChatCommand()
 	case TokenThink:
 		return p.parseThinkCommand()
+	case TokenCheck:
+		return p.parseCheckCommand()
 	case TokenLS:
 		return p.parseContextListCommand()
 	case TokenCat:

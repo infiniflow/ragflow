@@ -87,13 +87,19 @@ func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID stri
 	if apiKey == nil || *apiKey == "" {
 		return nil, fmt.Errorf("no API key found for tenant %s and model %s", tenantID, compositeModelName)
 	}
-	// Always get API base from model provider configuration
-	providerDAO := dao.NewModelProviderDAO()
-	providerConfig := providerDAO.GetProviderByName(provider)
-	if providerConfig == nil || providerConfig.DefaultURL == "" {
-		return nil, fmt.Errorf("no API base found for provider %s", provider)
+
+	// Get API base from TenantLLM if set, otherwise from model provider configuration
+	apiBase := ""
+	if embeddingModel.APIBase != nil && *embeddingModel.APIBase != "" {
+		apiBase = *embeddingModel.APIBase
+	} else {
+		providerDAO := dao.NewModelProviderDAO()
+		providerConfig := providerDAO.GetProviderByName(provider)
+		if providerConfig == nil || providerConfig.DefaultURL == "" {
+			return nil, fmt.Errorf("no API base found for provider %s", provider)
+		}
+		apiBase = providerConfig.DefaultURL
 	}
-	apiBase := fmt.Sprintf("%sembeddings/", providerConfig.DefaultURL)
 
 	return models.CreateEmbeddingModel(provider, *apiKey, apiBase, modelName, p.httpClient)
 }
@@ -101,23 +107,71 @@ func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID stri
 // GetChatModel returns a chat model for the given tenant
 func (p *ModelProviderImpl) GetChatModel(ctx context.Context, tenantID string, compositeModelName string) (entity.ChatModel, error) {
 	// Parse composite model name to extract model name and provider
-	_, _, err := parseModelName(compositeModelName)
+	modelName, provider, err := parseModelName(compositeModelName)
 	if err != nil {
 		return nil, err
 	}
-	// TODO: implement chat model creation
-	return nil, fmt.Errorf("chat model not implemented yet for model: %s", compositeModelName)
+
+	// Get chat model from database
+	chatModel, err := dao.NewTenantLLMDAO().GetByTenantFactoryAndModelName(tenantID, provider, modelName)
+	if err != nil {
+		return nil, fmt.Errorf("no chat model found for tenant %s and model %s: %w", tenantID, compositeModelName, err)
+	}
+
+	apiKey := chatModel.APIKey
+	if apiKey == nil || *apiKey == "" {
+		return nil, fmt.Errorf("no API key found for tenant %s and model %s", tenantID, compositeModelName)
+	}
+
+	// Get API base from TenantLLM if set, otherwise from model provider configuration
+	apiBase := ""
+	if chatModel.APIBase != nil && *chatModel.APIBase != "" {
+		apiBase = *chatModel.APIBase
+	} else {
+		providerDAO := dao.NewModelProviderDAO()
+		providerConfig := providerDAO.GetProviderByName(provider)
+		if providerConfig == nil || providerConfig.DefaultURL == "" {
+			return nil, fmt.Errorf("no API base found for provider %s", provider)
+		}
+		apiBase = providerConfig.DefaultURL
+	}
+
+	return models.CreateChatModel(provider, *apiKey, apiBase, modelName, p.httpClient)
 }
 
 // GetRerankModel returns a rerank model for the given tenant
 func (p *ModelProviderImpl) GetRerankModel(ctx context.Context, tenantID string, compositeModelName string) (entity.RerankModel, error) {
 	// Parse composite model name to extract model name and provider
-	_, _, err := parseModelName(compositeModelName)
+	modelName, provider, err := parseModelName(compositeModelName)
 	if err != nil {
 		return nil, err
 	}
-	// TODO: implement rerank model creation
-	return nil, fmt.Errorf("rerank model not implemented yet for model: %s", compositeModelName)
+
+	// Get rerank model from database
+	rerankModel, err := dao.NewTenantLLMDAO().GetByTenantFactoryAndModelName(tenantID, provider, modelName)
+	if err != nil {
+		return nil, fmt.Errorf("no rerank model found for tenant %s and model %s: %w", tenantID, compositeModelName, err)
+	}
+
+	apiKey := rerankModel.APIKey
+	if apiKey == nil || *apiKey == "" {
+		return nil, fmt.Errorf("no API key found for tenant %s and model %s", tenantID, compositeModelName)
+	}
+
+	// Get API base from TenantLLM if set, otherwise from model provider configuration
+	apiBase := ""
+	if rerankModel.APIBase != nil && *rerankModel.APIBase != "" {
+		apiBase = *rerankModel.APIBase
+	} else {
+		providerDAO := dao.NewModelProviderDAO()
+		providerConfig := providerDAO.GetProviderByName(provider)
+		if providerConfig == nil || providerConfig.DefaultURL == "" {
+			return nil, fmt.Errorf("no API base found for provider %s", provider)
+		}
+		apiBase = providerConfig.DefaultURL
+	}
+
+	return models.CreateRerankModel(provider, *apiKey, apiBase, modelName, p.httpClient)
 }
 
 func NewModelProviderService() *ModelProviderService {
@@ -227,6 +281,54 @@ func (m *ModelProviderService) DeleteModelProvider(providerName, userID string) 
 	}
 
 	return common.CodeSuccess, nil
+}
+
+func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, userID string) ([]string, error) {
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return nil, errors.New("fail to get tenant")
+	}
+
+	if len(tenants) == 0 {
+		return nil, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return nil, err
+	}
+
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return nil, err
+	}
+
+	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+	if providerInfo == nil {
+		return nil, fmt.Errorf("provider %s not found", providerName)
+	}
+
+	var extra map[string]string
+	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	if err != nil {
+		return nil, err
+	}
+
+	apiConfig := &modelModule.APIConfig{
+		ApiKey: nil,
+		Region: nil,
+	}
+
+	region := extra["region"]
+	apiConfig.Region = &region
+	apiConfig.ApiKey = &instance.APIKey
+
+	return providerInfo.ModelDriver.ListModels(apiConfig)
 }
 
 func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName, apiKey, userID, region string) (common.ErrorCode, error) {
@@ -373,6 +475,111 @@ func (m *ModelProviderService) ShowProviderInstance(providerName, instanceName, 
 	}
 
 	return result, common.CodeSuccess, nil
+}
+
+func (m *ModelProviderService) ShowInstanceBalance(providerName, instanceName, userID string) (map[string]interface{}, common.ErrorCode, error) {
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return nil, common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+	if providerInfo == nil {
+		return nil, common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
+	}
+
+	var extra map[string]string
+	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	apiConfig := &modelModule.APIConfig{
+		ApiKey: nil,
+		Region: nil,
+	}
+
+	region := extra["region"]
+	apiConfig.Region = &region
+	apiConfig.ApiKey = &instance.APIKey
+
+	var result map[string]interface{}
+	result, err = providerInfo.ModelDriver.Balance(apiConfig)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	return result, common.CodeSuccess, nil
+}
+
+func (m *ModelProviderService) CheckProviderConnection(providerName, instanceName, userID string) (common.ErrorCode, error) {
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+	if providerInfo == nil {
+		return common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
+	}
+
+	var extra map[string]string
+	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	apiConfig := &modelModule.APIConfig{
+		ApiKey: nil,
+		Region: nil,
+	}
+
+	region := extra["region"]
+	apiConfig.Region = &region
+	apiConfig.ApiKey = &instance.APIKey
+
+	err = providerInfo.ModelDriver.CheckConnection(apiConfig)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	return common.CodeSuccess, nil
 }
 
 func (m *ModelProviderService) AlterProviderInstance(providerName, instanceName, newInstanceName, apiKey, userID string) (common.ErrorCode, error) {
@@ -531,7 +738,7 @@ func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, mod
 	return common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName, userID, message string, modelConfig *modelModule.ChatConfig) (*string, common.ErrorCode, error) {
+func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName, userID, message string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig) (*modelModule.ChatResponse, common.ErrorCode, error) {
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -563,10 +770,13 @@ func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName
 			return nil, common.CodeNotFound, errors.New("provider not found")
 		}
 
-		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		var model *entity.Model = nil
+		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
 		}
+
+		modelConfig.ModelSeries = model.Series
 
 		var extra map[string]string
 		err = json.Unmarshal([]byte(instance.Extra), &extra)
@@ -575,22 +785,66 @@ func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName
 		}
 
 		region := extra["region"]
-		modelConfig.Region = &region
+		apiConfig.Region = &region
+		apiConfig.ApiKey = &instance.APIKey
 
-		var response string
-		response, err = providerInfo.ModelDriver.Chat(&modelName, &instance.APIKey, &message, modelConfig)
+		var response *modelModule.ChatResponse
+		response, err = providerInfo.ModelDriver.Chat(&modelName, &message, apiConfig, modelConfig)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
 
-		return &response, common.CodeSuccess, nil
+		return response, common.CodeSuccess, nil
 	}
 
 	return nil, common.CodeServerError, errors.New("model is disabled")
 }
 
+func (m *ModelProviderService) ChatToModelByApiKey(providerName, modelName, apiKey, message string) (*string, common.ErrorCode, error) {
+	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+	if providerInfo == nil {
+		return nil, common.CodeNotFound, errors.New("provider not found")
+	}
+
+	_, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+	if err != nil {
+		return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
+	}
+
+	var apiConfig = &modelModule.APIConfig{}
+	apiConfig.ApiKey = &apiKey
+	var response *modelModule.ChatResponse
+	response, err = providerInfo.ModelDriver.Chat(&modelName, &message, apiConfig, nil)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	return response.Answer, common.CodeSuccess, nil
+}
+
+// ChatWithMessagesToModelByApiKey sends multiple messages with roles and returns response
+func (m *ModelProviderService) ChatWithMessagesToModelByApiKey(providerName, modelName, apiKey string, messages []modelModule.Message) (*string, common.ErrorCode, error) {
+	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+	if providerInfo == nil {
+		return nil, common.CodeNotFound, errors.New("provider not found")
+	}
+
+	_, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+	if err != nil {
+		return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
+	}
+
+	var response string
+	response, err = providerInfo.ModelDriver.ChatWithMessages(modelName, &apiKey, messages, nil)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	return &response, common.CodeSuccess, nil
+}
+
 // ChatToModelStreamWithSender streams chat response directly via sender function (best performance, no channel)
-func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, message string, modelConfig *modelModule.ChatConfig, sender func(*string, *string) error) common.ErrorCode {
+func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, message string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, sender func(*string, *string) error) common.ErrorCode {
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -633,10 +887,11 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		}
 
 		region := extra["region"]
-		modelConfig.Region = &region
+		apiConfig.Region = &region
+		apiConfig.ApiKey = &instance.APIKey
 
 		// Direct call with sender function
-		err := providerInfo.ModelDriver.ChatStreamlyWithSender(&modelName, &instance.APIKey, &message, modelConfig, sender)
+		err = providerInfo.ModelDriver.ChatStreamlyWithSender(&modelName, &message, apiConfig, modelConfig, sender)
 		if err != nil {
 			return common.CodeServerError
 		}
@@ -645,4 +900,76 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 	}
 
 	return common.CodeServerError
+}
+
+func (m *ModelProviderService) GetDefaultModel(modelType entity.ModelType, tenantID string) (*entity.ModelCredentials, error) {
+	// Get tenant record to find default model name
+	tenant, err := dao.NewTenantDAO().GetByID(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("tenant not found: %w", err)
+	}
+
+	// Determine model name based on model type
+	var defaultModelName string
+	switch modelType {
+	case entity.ModelTypeChat:
+		defaultModelName = tenant.LLMID
+	case entity.ModelTypeEmbedding:
+		defaultModelName = tenant.EmbdID
+	case entity.ModelTypeSpeech2Text:
+		defaultModelName = tenant.ASRID
+	case entity.ModelTypeImage2Text:
+		defaultModelName = tenant.Img2TxtID
+	case entity.ModelTypeRerank:
+		defaultModelName = tenant.RerankID
+	case entity.ModelTypeTTS:
+		if tenant.TTSID != nil {
+			defaultModelName = *tenant.TTSID
+		}
+	case entity.ModelTypeOCR:
+		return nil, errors.New("OCR model name is required")
+	default:
+		return nil, fmt.Errorf("unknown model type: %s", modelType)
+	}
+
+	if defaultModelName == "" {
+		return nil, fmt.Errorf("no default %s model is set", modelType)
+	}
+
+	// Look up the TenantLLM record to get provider name and API key
+	// Use GetByTenantIDAndLLMName which handles splitting model name and factory
+	tenantLLM, err := dao.NewTenantLLMDAO().GetByTenantIDAndLLMName(tenantID, defaultModelName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tenant default model: %w", err)
+	}
+
+	if tenantLLM == nil {
+		return nil, fmt.Errorf("no default %s model found for tenant", modelType)
+	}
+
+	if tenantLLM.LLMName == nil || tenantLLM.APIKey == nil {
+		return nil, fmt.Errorf("tenant model %q has missing name or api key", defaultModelName)
+	}
+	return &entity.ModelCredentials{
+		ProviderName: tenantLLM.LLMFactory,
+		ModelName:    *tenantLLM.LLMName,
+		APIKey:       *tenantLLM.APIKey,
+	}, nil
+}
+
+// GetModelByName gets model credentials by model name (chat_id from search_config)
+func (m *ModelProviderService) GetModelByName(modelName string, tenantID string) (*entity.ModelCredentials, error) {
+	tenantLLM, err := dao.NewTenantLLMDAO().GetByTenantIDAndLLMName(tenantID, modelName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get model by name: %w", err)
+	}
+	if tenantLLM == nil {
+		return nil, fmt.Errorf("model not found: %s", modelName)
+	}
+
+	return &entity.ModelCredentials{
+		ProviderName: tenantLLM.LLMFactory,
+		ModelName:    *tenantLLM.LLMName,
+		APIKey:       *tenantLLM.APIKey,
+	}, nil
 }

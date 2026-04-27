@@ -73,6 +73,7 @@ const (
 	TokenKeys
 	TokenGenerate
 	TokenAvailable
+	TokenSupported
 	TokenModel
 	TokenModels
 	TokenProvider
@@ -80,6 +81,7 @@ const (
 	TokenDefault
 	TokenChats
 	TokenChat
+	TokenStream
 	TokenFiles
 	TokenAs
 	TokenParse
@@ -106,14 +108,23 @@ const (
 	TokenIndex
 	TokenVector
 	TokenSize
-	TokenDocMeta
 	TokenName // For ALTER PROVIDER <name> NAME <new_name>
+	TokenBalance
 	TokenInstance
 	TokenInstances
 	TokenDisable
 	TokenEnable
 	TokenUse
+	TokenCheck
 	TokenThink
+	TokenEffort
+	TokenVerbosity
+	TokenNone
+	TokenMinimal
+	TokenLow
+	TokenMedium
+	TokenHigh
+	TokenMax
 	TokenLS
 	TokenCat
 	TokenInsert
