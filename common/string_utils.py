@@ -71,3 +71,7 @@ def clean_markdown_block(text):
 
     # Return text with surrounding whitespace removed
     return text.strip()
+
+
+def is_content_empty(content: str) -> bool:
+    return content is None or not str(content).strip()

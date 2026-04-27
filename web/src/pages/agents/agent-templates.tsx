@@ -1,12 +1,3 @@
-import { PageHeader } from '@/components/page-header';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchAgentTemplates, useSetAgent } from '@/hooks/use-agent-request';
@@ -15,14 +6,11 @@ import { CardContainer } from '@/components/card-container';
 import { AgentCategory } from '@/constants/agent';
 import { IFlowTemplate } from '@/interfaces/database/agent';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { TemplateCard } from './template-card';
 import { MenuItemKey, SideBar } from './template-sidebar';
 
 export default function AgentTemplates() {
-  const { navigateToAgents } = useNavigatePage();
-  const { t } = useTranslation();
   const list = useFetchAgentTemplates();
   const { loading, setAgent } = useSetAgent();
   const [templateList, setTemplateList] = useState<IFlowTemplate[]>([]);
@@ -54,7 +42,7 @@ export default function AgentTemplates() {
 
   const handleOk = useCallback(
     async (payload: any) => {
-      let dsl = template?.dsl;
+      const dsl = template?.dsl;
       const canvasCategory = template?.canvas_category;
 
       const ret = await setAgent({
@@ -90,30 +78,21 @@ export default function AgentTemplates() {
     if (!selectMenuItem) {
       return templateList;
     }
-    return templateList.filter(
-      (item) =>
-        item.canvas_type?.toLocaleLowerCase() ===
-        selectMenuItem?.toLocaleLowerCase(),
-    );
+    const selectedCanvasType = selectMenuItem.toLocaleLowerCase();
+    return templateList.filter((item) => {
+      if (Array.isArray(item.canvas_types) && item.canvas_types.length > 0) {
+        return item.canvas_types.some(
+          (canvasType) =>
+            typeof canvasType === 'string' &&
+            canvasType.toLocaleLowerCase() === selectedCanvasType,
+        );
+      }
+      return item.canvas_type?.toLocaleLowerCase() === selectedCanvasType;
+    });
   }, [selectMenuItem, templateList]);
 
   return (
     <section>
-      <PageHeader>
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink onClick={navigateToAgents}>
-                {t('flow.agent')}
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>{t('flow.createGraph')}</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-      </PageHeader>
       <div className="flex flex-1 h-dvh">
         <SideBar
           change={handleSiderBarChange}

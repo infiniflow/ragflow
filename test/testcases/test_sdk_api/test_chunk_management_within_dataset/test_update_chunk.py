@@ -26,22 +26,14 @@ class TestUpdatedChunk:
         "payload, expected_message",
         [
             ({"content": None}, ""),
-            pytest.param(
-                {"content": ""},
-                """APIRequestFailedError(\'Error code: 400, with error text {"error":{"code":"1213","message":"未正常接收到prompt参数。"}}\')""",
-                marks=pytest.mark.skip(reason="issues/6541"),
-            ),
+            ({"content": ""}, "`content` is required"),
             pytest.param(
                 {"content": 1},
                 "TypeError('expected string or bytes-like object')",
                 marks=pytest.mark.skip,
             ),
             ({"content": "update chunk"}, ""),
-            pytest.param(
-                {"content": " "},
-                """APIRequestFailedError(\'Error code: 400, with error text {"error":{"code":"1213","message":"未正常接收到prompt参数。"}}\')""",
-                marks=pytest.mark.skip(reason="issues/6541"),
-            ),
+            ({"content": " "}, "`content` is required"),
             ({"content": "\n!?。；！？\"'"}, ""),
         ],
     )
@@ -92,6 +84,29 @@ class TestUpdatedChunk:
         ],
     )
     def test_questions(self, add_chunks, payload, expected_message):
+        _, _, chunks = add_chunks
+        chunk = chunks[0]
+
+        if expected_message:
+            with pytest.raises(Exception) as exception_info:
+                chunk.update(payload)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
+        else:
+            chunk.update(payload)
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "payload, expected_message",
+        [
+            ({"tag_kwd": ["tag1", "tag2"]}, ""),
+            ({"tag_kwd": [""]}, ""),
+            ({"tag_kwd": [1]}, "`tag_kwd` must be a list of strings"),
+            ({"tag_kwd": ["tag", "tag"]}, ""),
+            ({"tag_kwd": "tag"}, "`tag_kwd` should be a list"),
+            ({"tag_kwd": 123}, "`tag_kwd` should be a list"),
+        ],
+    )
+    def test_tag_kwd(self, add_chunks, payload, expected_message):
         _, _, chunks = add_chunks
         chunk = chunks[0]
 

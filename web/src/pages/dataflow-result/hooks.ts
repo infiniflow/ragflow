@@ -46,7 +46,7 @@ export const useFetchPipelineFileLogDetail = ({
     enabled: !isAgent,
     queryFn: async () => {
       if (isEdit) {
-        const { data } = await kbService.get_pipeline_detail({
+        const { data } = await kbService.getPipelineDetail({
           log_id: logId,
         });
         return data?.data ?? {};
@@ -233,10 +233,10 @@ export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
         } else if (name === TimelineNodeType.tokenizer) {
           tempType = TimelineNodeType.tokenizer;
         } else if (
-          name === TimelineNodeType.characterSplitter ||
-          name === TimelineNodeType.titleSplitter
+          name === TimelineNodeType.tokenChunker ||
+          name === TimelineNodeType.titleChunker
         ) {
-          tempType = TimelineNodeType.characterSplitter;
+          tempType = name;
         }
         const timeNode = {
           ...TimelineNodeObj[name],

@@ -39,7 +39,7 @@ const AvatarFallback = React.forwardRef<
   <AvatarPrimitive.Fallback
     ref={ref}
     className={cn(
-      'flex h-full w-full items-center justify-center rounded-full bg-bg-member',
+      'flex h-full w-full items-center justify-center bg-bg-member',
       className,
     )}
     {...props}
@@ -86,7 +86,7 @@ export const AvatarGroup = ({
         return (
           <div key={index} className="-ml-2 hover:z-10 relative">
             {React.cloneElement(avatar as React.ReactElement<AvatarProps>, {
-              className: 'ring-2 ring-background',
+              className: cn('ring-2 ring-background', avatar.props.className),
             })}
           </div>
         );

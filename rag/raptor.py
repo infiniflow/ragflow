@@ -91,7 +91,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             return response
         embds, _ = await thread_pool_exec(self._embd_model.encode, [txt])
         if len(embds) < 1 or len(embds[0]) < 1:
-            raise Exception("Embedding error: ")
+            raise Exception("Embedding error: empty embeddings returned")
         embds = embds[0]
         await thread_pool_exec(set_embed_cache, self._embd_model.llm_name, txt, embds)
         return embds
@@ -111,7 +111,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
     async def __call__(self, chunks, random_state, callback=None, task_id: str = ""):
         if len(chunks) <= 1:
-            return []
+            return [], []
         chunks = [(s, a) for s, a in chunks if s and a is not None and len(a) > 0]
         layers = [(0, len(chunks))]
         start, end = 0, len(chunks)
@@ -161,7 +161,6 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 if self._error_count >= self._max_errors:
                     raise RuntimeError(f"RAPTOR aborted after {self._error_count} errors. Last error: {exc}") from exc
 
-        labels = []
         while end - start > 1:
             self._check_task_canceled(task_id, "layer processing")
 
@@ -170,7 +169,6 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 await summarize([start, start + 1])
                 if callback:
                     callback(msg="Cluster one layer: {} -> {}".format(end - start, len(chunks) - end))
-                labels.extend([0, 0])
                 layers.append((end, len(chunks)))
                 start = end
                 end = len(chunks)
@@ -208,11 +206,10 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 raise
 
             assert len(chunks) - end == n_clusters, "{} vs. {}".format(len(chunks) - end, n_clusters)
-            labels.extend(lbls)
             layers.append((end, len(chunks)))
             if callback:
                 callback(msg="Cluster one layer: {} -> {}".format(end - start, len(chunks) - end))
             start = end
             end = len(chunks)
 
-        return chunks
+        return chunks, layers

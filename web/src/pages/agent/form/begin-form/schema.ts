@@ -5,6 +5,7 @@ export const BeginFormSchema = z.object({
   enablePrologue: z.boolean().optional(),
   prologue: z.string().trim().optional(),
   mode: z.string(),
+  layout_recognize: z.string().optional(),
   inputs: z
     .array(
       z.object({

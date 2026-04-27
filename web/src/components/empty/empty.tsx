@@ -4,6 +4,7 @@ import { useIsDarkTheme } from '../theme-provider';
 
 import { Plus } from 'lucide-react';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import SvgIcon from '../svg-icon';
 import { EmptyCardData, EmptyCardType, EmptyType } from './constant';
 import { EmptyCardProps, EmptyProps } from './interface';
@@ -52,22 +53,24 @@ const Empty = (props: EmptyProps) => {
 export default Empty;
 
 export const EmptyCard = (props: EmptyCardProps) => {
-  const { icon, className, children, title, description, style } = props;
+  const { icon, className, children, title, description, style, ...restProps } =
+    props;
   return (
-    <div
+    <article
       className={cn(
         'flex flex-col gap-3 items-start justify-start border border-dashed border-border-button rounded-md p-5 w-fit',
         className,
       )}
       style={style}
+      {...restProps}
     >
       {icon}
-      {title && <div className="text-text-primary text-base">{title}</div>}
+      {title && <div className="text-text-primary text-sm">{title}</div>}
       {description && (
-        <div className="text-text-secondary text-sm">{description}</div>
+        <p className="text-text-secondary text-sm">{description}</p>
       )}
       {children}
-    </div>
+    </article>
   );
 };
 
@@ -80,10 +83,17 @@ export const EmptyAppCard = (props: {
   size?: 'small' | 'large';
   children?: React.ReactNode;
   testId?: string;
+  tabIndex?: number;
 }) => {
-  const { type, showIcon, className, isSearch, children, testId } = props;
+  const { type, showIcon, className, isSearch, children, testId, tabIndex } =
+    props;
+  const { t } = useTranslation();
   let defaultClass = '';
   let style = {};
+  const cardData = EmptyCardData[type];
+  const title = t(cardData.titleKey);
+  const notFound = t(cardData.notFoundKey);
+
   switch (props.size) {
     case 'small':
       style = { width: '256px' };
@@ -98,13 +108,14 @@ export const EmptyAppCard = (props: {
       break;
   }
   return (
-    <div onClick={isSearch ? undefined : props.onClick} data-testid={testId}>
+    <div>
       <EmptyCard
-        icon={showIcon ? EmptyCardData[type].icon : undefined}
-        title={
-          isSearch ? EmptyCardData[type].notFound : EmptyCardData[type].title
-        }
-        className={cn('cursor-pointer ', className)}
+        onClick={isSearch ? undefined : props.onClick}
+        data-testid={testId}
+        tabIndex={tabIndex ?? (isSearch ? undefined : 0)}
+        icon={showIcon ? cardData.icon : undefined}
+        title={isSearch ? notFound : title}
+        className={cn(!isSearch && 'cursor-pointer', className)}
         style={style}
         // description={EmptyCardData[type].description}
       >

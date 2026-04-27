@@ -1,5 +1,5 @@
 <div align="center">
-<a href="https://demo.ragflow.io/">
+<a href="https://cloud.ragflow.io/">
 <img src="web/src/assets/logo-with-text.svg" width="520" alt="ragflow logo">
 </a>
 </div>
@@ -13,17 +13,19 @@
   <a href="./README_id.md"><img alt="Bahasa Indonesia" src="https://img.shields.io/badge/Bahasa Indonesia-DFE0E5"></a>
   <a href="./README_pt_br.md"><img alt="Português(Brasil)" src="https://img.shields.io/badge/Português(Brasil)-DFE0E5"></a>
   <a href="./README_fr.md"><img alt="README en Français" src="https://img.shields.io/badge/Français-DFE0E5"></a>
+  <a href="./README_ar.md"><img alt="README in Arabic" src="https://img.shields.io/badge/Arabic-DFE0E5"></a>
+  <a href="./README_tr.md"><img alt="Türkçe README" src="https://img.shields.io/badge/Türkçe-DFE0E5"></a>
 </p>
 
 <p align="center">
     <a href="https://x.com/intent/follow?screen_name=infiniflowai" target="_blank">
         <img src="https://img.shields.io/twitter/follow/infiniflow?logo=X&color=%20%23f5f5f5" alt="follow on X(Twitter)">
     </a>
-    <a href="https://demo.ragflow.io" target="_blank">
+    <a href="https://cloud.ragflow.io" target="_blank">
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.24.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.25.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -41,7 +43,7 @@
   <a href="https://github.com/infiniflow/ragflow/issues/12241">Roadmap</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
   <a href="https://discord.gg/NjYzJD3GM3">Discord</a> |
-  <a href="https://demo.ragflow.io">Demo</a>
+  <a href="https://cloud.ragflow.io">Demo</a>
 </h4>
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
@@ -77,7 +79,7 @@
 
 ## 🎮 Demo
 
-Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
+Try our demo at [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -86,6 +88,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
+- 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — Provides an official skill for accessing RAGFlow datasets via OpenClaw.
 - 2025-12-26 Supports 'Memory' for AI agent.
 - 2025-11-19 Supports Gemini 3 Pro.
 - 2025-11-12 Supports data synchronization from Confluence, S3, Notion, Discord, Google Drive.
@@ -189,12 +192,12 @@ releases! 🌟
 > All Docker images are built for x86 platforms. We don't currently offer Docker images for ARM64.
 > If you are on an ARM64 platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a Docker image compatible with your system.
 
-> The command below downloads the `v0.24.0` edition of the RAGFlow Docker image. See the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.24.0`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server.
+> The command below downloads the `v0.25.0` edition of the RAGFlow Docker image. See the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.25.0`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server.
 
 ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.24.0
+   # git checkout v0.25.0
    # Optional: use a stable tag (see releases: https://github.com/infiniflow/ragflow/releases)
    # This step ensures the **entrypoint.sh** file in the code matches the Docker image version.
 
@@ -326,7 +329,7 @@ docker build --platform linux/amd64 \
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.12 # install RAGFlow dependent python modules
-   uv run download_deps.py
+   uv run python3 download_deps.py
    pre-commit install
    ```
 3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
@@ -390,8 +393,8 @@ docker build --platform linux/amd64 \
 - [Quickstart](https://ragflow.io/docs/dev/)
 - [Configuration](https://ragflow.io/docs/dev/configurations)
 - [Release notes](https://ragflow.io/docs/dev/release_notes)
-- [User guides](https://ragflow.io/docs/dev/category/guides)
-- [Developer guides](https://ragflow.io/docs/dev/category/developers)
+- [User guides](https://ragflow.io/docs/category/user-guides)
+- [Developer guides](https://ragflow.io/docs/category/developer-guides)
 - [References](https://ragflow.io/docs/dev/category/references)
 - [FAQs](https://ragflow.io/docs/dev/faq)
 

@@ -31,13 +31,14 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
   }, [chunkMethod]);
 
   return (
-    <section>
+    <div>
       {imageList.length > 0 ? (
         <>
           <h5 className="font-semibold text-base mt-0 mb-1">
             {`"${item.title}" ${t('methodTitle')}`}
           </h5>
           <p
+            className="[&_ul]:list-disc [&_ol]:list-decimal [&_:is(ul,ol)]:pl-8"
             dangerouslySetInnerHTML={{
               __html: DOMPurify.sanitize(item.description),
             }}
@@ -68,7 +69,7 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
         </div>
       )}
       {chunkMethod === 'tag' && <TagTabs></TagTabs>}
-    </section>
+    </div>
   );
 };
 

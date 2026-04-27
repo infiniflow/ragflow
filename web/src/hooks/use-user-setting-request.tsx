@@ -1,18 +1,16 @@
 import message from '@/components/ui/message';
 import { Modal } from '@/components/ui/modal/modal';
-import { LanguageTranslationMap } from '@/constants/common';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IToken } from '@/interfaces/database/chat';
 import { ITenantInfo } from '@/interfaces/database/knowledge';
 import { ILangfuseConfig } from '@/interfaces/database/system';
 import {
-  ISystemStatus,
   ITenant,
   ITenantUser,
   IUserInfo,
 } from '@/interfaces/database/user-setting';
 import { ISetLangfuseConfigRequestBody } from '@/interfaces/request/system';
-import { changeLanguageAsync } from '@/locales/config';
+import { DEFAULT_LANGUAGE_CODE, supportedLanguages } from '@/locales/config';
 import { Routes } from '@/routes';
 import userService, {
   addTenantUser,
@@ -47,22 +45,24 @@ export const enum UserSettingApiAction {
 }
 
 export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
-  const { i18n } = useTranslation();
-
   const { data, isFetching: loading } = useQuery({
     queryKey: [UserSettingApiAction.UserInfo],
     initialData: {},
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await userService.user_info();
+      const { data } = await userService.userInfo();
+
       if (data.code === 0) {
         const targetLng =
-          LanguageTranslationMap[
-            data.data.language as keyof typeof LanguageTranslationMap
-          ];
-        await changeLanguageAsync(targetLng);
+          supportedLanguages.find((lang) => lang.code === data.data.language)
+            ?.code ?? DEFAULT_LANGUAGE_CODE;
+
+        return Object.assign({}, data.data, {
+          language: targetLng,
+        });
       }
-      return data?.data ?? {};
+
+      return data.data ?? {};
     },
   });
 
@@ -79,7 +79,7 @@ export const useFetchTenantInfo = (
     initialData: {},
     gcTime: 0,
     queryFn: async () => {
-      const { data: res } = await userService.get_tenant_info();
+      const { data: res } = await userService.getTenantInfo();
       if (res.code === 0) {
         // llm_id is chat_id
         // asr_id is speech2txt
@@ -118,47 +118,63 @@ export const useFetchTenantInfo = (
   return { data, loading };
 };
 
-const DEFAULT_PARSERS = [
-  { value: 'naive', label: 'General' },
-  { value: 'qa', label: 'Q&A' },
-  { value: 'resume', label: 'Resume' },
-  { value: 'manual', label: 'Manual' },
-  { value: 'table', label: 'Table' },
-  { value: 'paper', label: 'Paper' },
-  { value: 'book', label: 'Book' },
-  { value: 'laws', label: 'Laws' },
-  { value: 'presentation', label: 'Presentation' },
-  { value: 'picture', label: 'Picture' },
-  { value: 'one', label: 'One' },
-  { value: 'audio', label: 'Audio' },
-  { value: 'email', label: 'Email' },
-  { value: 'tag', label: 'Tag' },
-];
-
 export const useSelectParserList = (): Array<{
   value: string;
   label: string;
 }> => {
   const { data: tenantInfo } = useFetchTenantInfo(true);
+  const { t } = useTranslation();
+
+  const defaultParsers = useMemo(
+    () => [
+      { value: 'naive', label: t('knowledgeConfiguration.parserLabel.naive') },
+      { value: 'qa', label: t('knowledgeConfiguration.parserLabel.qa') },
+      {
+        value: 'resume',
+        label: t('knowledgeConfiguration.parserLabel.resume'),
+      },
+      {
+        value: 'manual',
+        label: t('knowledgeConfiguration.parserLabel.manual'),
+      },
+      { value: 'table', label: t('knowledgeConfiguration.parserLabel.table') },
+      { value: 'paper', label: t('knowledgeConfiguration.parserLabel.paper') },
+      { value: 'book', label: t('knowledgeConfiguration.parserLabel.book') },
+      { value: 'laws', label: t('knowledgeConfiguration.parserLabel.laws') },
+      {
+        value: 'presentation',
+        label: t('knowledgeConfiguration.parserLabel.presentation'),
+      },
+      {
+        value: 'picture',
+        label: t('knowledgeConfiguration.parserLabel.picture'),
+      },
+      { value: 'one', label: t('knowledgeConfiguration.parserLabel.one') },
+      { value: 'audio', label: t('knowledgeConfiguration.parserLabel.audio') },
+      { value: 'email', label: t('knowledgeConfiguration.parserLabel.email') },
+      { value: 'tag', label: t('knowledgeConfiguration.parserLabel.tag') },
+    ],
+    [t],
+  );
 
   const parserList = useMemo(() => {
     const parserArray: Array<string> = tenantInfo?.parser_ids?.split(',') ?? [];
     const filteredArray = parserArray.filter((x) => x.trim() !== '');
 
     if (filteredArray.length === 0) {
-      return DEFAULT_PARSERS;
+      return defaultParsers;
     }
 
     return filteredArray.map((x) => {
       const arr = x.split(':');
       return { value: arr[0], label: arr[1] };
     });
-  }, [tenantInfo]);
+  }, [tenantInfo, defaultParsers]);
 
   return parserList;
 };
 
-export const useSaveSetting = () => {
+export const useSaveSetting = (silent = false) => {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
   const {
@@ -172,7 +188,9 @@ export const useSaveSetting = () => {
     ) => {
       const { data } = await userService.setting(userInfo);
       if (data.code === 0) {
-        message.success(t('message.modified'));
+        if (!silent) {
+          message.success(t('message.modified'));
+        }
         queryClient.invalidateQueries({ queryKey: ['userInfo'] });
       }
       return data?.code;
@@ -200,28 +218,6 @@ export const useFetchSystemVersion = () => {
   }, []);
 
   return { fetchSystemVersion, version, loading };
-};
-
-export const useFetchSystemStatus = () => {
-  const [systemStatus, setSystemStatus] = useState<ISystemStatus>(
-    {} as ISystemStatus,
-  );
-  const [loading, setLoading] = useState(false);
-
-  const fetchSystemStatus = useCallback(async () => {
-    setLoading(true);
-    const { data } = await userService.getSystemStatus();
-    if (data.code === 0) {
-      setSystemStatus(data.data);
-      setLoading(false);
-    }
-  }, []);
-
-  return {
-    systemStatus,
-    fetchSystemStatus,
-    loading,
-  };
 };
 
 export const useFetchManualSystemTokenList = () => {

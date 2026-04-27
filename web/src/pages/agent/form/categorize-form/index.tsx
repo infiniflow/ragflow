@@ -1,7 +1,7 @@
-import { FormContainer } from '@/components/form-container';
 import { LargeModelFormField } from '@/components/large-model-form-field';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
 import { Form } from '@/components/ui/form';
+import { Separator } from '@/components/ui/separator';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo } from 'react';
 import { useForm } from 'react-hook-form';
@@ -33,13 +33,12 @@ function CategorizeForm({ node }: INextOperatorForm) {
   return (
     <Form {...form}>
       <FormWrapper>
-        <FormContainer>
-          <QueryVariable></QueryVariable>
-          <LargeModelFormField></LargeModelFormField>
-        </FormContainer>
+        <QueryVariable></QueryVariable>
+        <LargeModelFormField></LargeModelFormField>
         <MessageHistoryWindowSizeFormField
           min={0}
         ></MessageHistoryWindowSizeFormField>
+        <Separator />
         <DynamicCategorize nodeId={node?.id}></DynamicCategorize>
         <Output list={outputList}></Output>
       </FormWrapper>

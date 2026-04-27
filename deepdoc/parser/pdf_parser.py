@@ -22,6 +22,7 @@ import random
 import re
 import sys
 import threading
+import unicodedata
 from collections import Counter, defaultdict
 from copy import deepcopy
 from io import BytesIO
@@ -37,10 +38,10 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
 from common.file_utils import get_project_base_directory
-from common.misc_utils import pip_install_torch
 from deepdoc.vision import OCR, AscendLayoutRecognizer, LayoutRecognizer, Recognizer, TableStructureRecognizer
 from rag.nlp import rag_tokenizer
 from rag.prompts.generator import vision_llm_describe_prompt
+from deepdoc.parser.utils import extract_pdf_outlines
 from common import settings
 
 
@@ -89,14 +90,9 @@ class RAGFlowPdfParser:
         self.tbl_det = TableStructureRecognizer()
 
         self.updown_cnt_mdl = xgb.Booster()
-        try:
-            pip_install_torch()
-            import torch.cuda
-
-            if torch.cuda.is_available():
-                self.updown_cnt_mdl.set_param({"device": "cuda"})
-        except Exception:
-            logging.info("No torch found.")
+        # xgboost model is very small; using CPU explicitly
+        self.updown_cnt_mdl.set_param({"device": "cpu"})
+        logging.info("updown_cnt_mdl initialized on CPU")
         try:
             model_dir = os.path.join(get_project_base_directory(), "rag/res/deepdoc")
             self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
@@ -196,6 +192,127 @@ class RAGFlowPdfParser:
                 if re.match(r"[a-zT_\[\]\(\)-]+", o.get("text", "")):
                     return False
         return True
+
+    # CID pattern regex for unmapped font characters from pdfminer
+    _CID_PATTERN = re.compile(r"\(cid\s*:\s*\d+\s*\)")
+
+    @staticmethod
+    def _is_garbled_char(ch):
+        """Check if a single character is garbled (unmappable from PDF font encoding).
+
+        A character is considered garbled if it falls into Unicode Private Use Areas
+        or certain replacement/control character ranges that typically indicate
+        pdfminer failed to map a CID to a valid Unicode codepoint.
+        """
+        if not ch:
+            return False
+        cp = ord(ch)
+        if 0xE000 <= cp <= 0xF8FF:
+            return True
+        if 0xF0000 <= cp <= 0xFFFFF:
+            return True
+        if 0x100000 <= cp <= 0x10FFFF:
+            return True
+        if cp == 0xFFFD:
+            return True
+        if cp < 0x20 and ch not in ('\t', '\n', '\r'):
+            return True
+        if 0x80 <= cp <= 0x9F:
+            return True
+        cat = unicodedata.category(ch)
+        if cat in ("Cn", "Cs"):
+            return True
+        return False
+
+    @staticmethod
+    def _is_garbled_text(text, threshold=0.5):
+        """Check if a text string contains too many garbled characters.
+
+        Examines each character and determines if the overall proportion
+        of garbled characters exceeds the given threshold. Also detects
+        pdfminer's CID placeholder patterns like '(cid:123)'.
+        """
+        if not text or not text.strip():
+            return False
+        if RAGFlowPdfParser._CID_PATTERN.search(text):
+            return True
+        garbled_count = 0
+        total = 0
+        for ch in text:
+            if ch.isspace():
+                continue
+            total += 1
+            if RAGFlowPdfParser._is_garbled_char(ch):
+                garbled_count += 1
+        if total == 0:
+            return False
+        return garbled_count / total >= threshold
+
+    @staticmethod
+    def _has_subset_font_prefix(fontname):
+        """Check if a font name has a subset prefix (e.g. 'DY1+ZLQDm1-1').
+
+        PDF subset fonts use a 6-letter uppercase tag followed by '+' before
+        the actual font name. Some tools use shorter tags (e.g. 'DY1+').
+        """
+        if not fontname:
+            return False
+        return bool(re.match(r"^[A-Z0-9]{2,6}\+", fontname))
+
+    @staticmethod
+    def _is_garbled_by_font_encoding(page_chars, min_chars=20):
+        """Detect garbled text caused by broken font encoding mappings.
+
+        Some PDFs (especially older Chinese standards) embed custom fonts that
+        map CJK glyphs to ASCII codepoints. The extracted text appears as
+        random ASCII punctuation/symbols instead of actual CJK characters.
+
+        Detection strategy: if a significant proportion of characters come from
+        subset-embedded fonts and the page produces overwhelmingly ASCII
+        (punctuation, digits, symbols) with virtually no CJK/Hangul/Kana
+        characters, the page is likely garbled due to broken font encoding.
+        """
+        if not page_chars or len(page_chars) < min_chars:
+            return False
+
+        subset_font_count = 0
+        total_non_space = 0
+        ascii_punct_sym = 0
+        cjk_like = 0
+
+        for c in page_chars:
+            text = c.get("text", "")
+            fontname = c.get("fontname", "")
+            if not text or text.isspace():
+                continue
+            total_non_space += 1
+
+            if RAGFlowPdfParser._has_subset_font_prefix(fontname):
+                subset_font_count += 1
+
+            cp = ord(text[0])
+            if (0x2E80 <= cp <= 0x9FFF or 0xF900 <= cp <= 0xFAFF
+                    or 0x20000 <= cp <= 0x2FA1F
+                    or 0xAC00 <= cp <= 0xD7AF
+                    or 0x3040 <= cp <= 0x30FF):
+                cjk_like += 1
+            elif (0x21 <= cp <= 0x2F or 0x3A <= cp <= 0x40
+                    or 0x5B <= cp <= 0x60 or 0x7B <= cp <= 0x7E):
+                ascii_punct_sym += 1
+
+        if total_non_space < min_chars:
+            return False
+
+        subset_ratio = subset_font_count / total_non_space
+        if subset_ratio < 0.3:
+            return False
+
+        cjk_ratio = cjk_like / total_non_space
+        punct_ratio = ascii_punct_sym / total_non_space
+        if cjk_ratio < 0.05 and punct_ratio > 0.4:
+            return True
+
+        return False
 
     def _evaluate_table_orientation(self, table_img, sample_ratio=0.3):
         """
@@ -585,7 +702,7 @@ class RAGFlowPdfParser:
     def __ocr(self, pagenum, img, chars, ZM=3, device_id: int | None = None):
         start = timer()
         bxs = self.ocr.detect(np.array(img), device_id)
-        logging.info(f"__ocr detecting boxes of a image cost ({timer() - start}s)")
+        logging.info(f"__ocr detecting boxes of an image cost ({timer() - start}s)")
 
         start = timer()
         if not bxs:
@@ -618,14 +735,40 @@ class RAGFlowPdfParser:
             if not b["chars"]:
                 del b["chars"]
                 continue
-            m_ht = np.mean([c["height"] for c in b["chars"]])
-            for c in Recognizer.sort_Y_firstly(b["chars"], m_ht):
+            box_chars = b["chars"]
+            m_ht = np.mean([c["height"] for c in box_chars])
+            garbled_count = 0
+            total_count = 0
+            for c in Recognizer.sort_Y_firstly(box_chars, m_ht):
                 if c["text"] == " " and b["text"]:
                     if re.match(r"[0-9a-zA-Zа-яА-Я,.?;:!%%]", b["text"][-1]):
                         b["text"] += " "
                 else:
                     b["text"] += c["text"]
+                    for ch in c["text"]:
+                        if not ch.isspace():
+                            total_count += 1
+                            if self._is_garbled_char(ch):
+                                garbled_count += 1
             del b["chars"]
+            # If the majority of characters from pdfplumber are garbled,
+            # clear the text so OCR recognition will be used as fallback.
+            # Strategy 1: PUA / unmapped CID characters
+            if total_count > 0 and garbled_count / total_count >= 0.5:
+                logging.info(
+                    "Page %d: detected garbled pdfplumber text (garbled=%d/%d), falling back to OCR for box at (%.1f, %.1f)",
+                    pagenum, garbled_count, total_count, b["x0"], b["top"],
+                )
+                b["text"] = ""
+                continue
+            # Strategy 2: font-encoding garbling — all chars are ASCII
+            # punctuation from subset fonts (no CJK output)
+            if total_count > 0 and self._is_garbled_by_font_encoding(box_chars, min_chars=5):
+                logging.info(
+                    "Page %d: detected font-encoding garbled text (%d chars), falling back to OCR for box at (%.1f, %.1f)",
+                    pagenum, total_count, b["x0"], b["top"],
+                )
+                b["text"] = ""
 
         logging.info(f"__ocr sorting {len(chars)} chars cost {timer() - start}s")
         start = timer()
@@ -1400,33 +1543,39 @@ class RAGFlowPdfParser:
                         logging.warning(f"Failed to extract characters for pages {page_from}-{page_to}: {str(e)}")
                         self.page_chars = [[] for _ in range(page_to - page_from)]  # If failed to extract, using empty list instead.
 
+                    # Detect garbled pages and clear their chars so the OCR
+                    # path will be used instead. Two detection strategies:
+                    # 1) PUA / unmapped CID characters (threshold=0.3)
+                    # 2) Font-encoding garbling: subset fonts mapping CJK to ASCII
+                    for pi, page_ch in enumerate(self.page_chars):
+                        if not page_ch:
+                            continue
+                        # Strategy 1: PUA / CID garbling
+                        sample = page_ch if len(page_ch) <= 200 else page_ch[:200]
+                        sample_text = "".join(c.get("text", "") for c in sample)
+                        if self._is_garbled_text(sample_text, threshold=0.3):
+                            logging.warning(
+                                "Page %d: pdfplumber extracted mostly garbled characters (%d chars), "
+                                "clearing to use OCR fallback.",
+                                page_from + pi + 1, len(page_ch),
+                            )
+                            self.page_chars[pi] = []
+                            continue
+                        # Strategy 2: font-encoding garbling (CJK mapped to ASCII)
+                        if self._is_garbled_by_font_encoding(page_ch):
+                            logging.warning(
+                                "Page %d: detected font-encoding garbled text "
+                                "(subset fonts with no CJK output, %d chars), "
+                                "clearing to use OCR fallback.",
+                                page_from + pi + 1, len(page_ch),
+                            )
+                            self.page_chars[pi] = []
+
                     self.total_page = len(self.pdf.pages)
 
         except Exception as e:
             logging.exception(f"RAGFlowPdfParser __images__, exception: {e}")
         logging.info(f"__images__ dedupe_chars cost {timer() - start}s")
-
-        self.outlines = []
-        try:
-            with pdf2_read(fnm if isinstance(fnm, str) else BytesIO(fnm)) as pdf:
-                self.pdf = pdf
-
-                outlines = self.pdf.outline
-
-                def dfs(arr, depth):
-                    for a in arr:
-                        if isinstance(a, dict):
-                            self.outlines.append((a["/Title"], depth))
-                            continue
-                        dfs(a, depth + 1)
-
-                dfs(outlines, 0)
-
-        except Exception as e:
-            logging.warning(f"Outlines exception: {e}")
-
-        if not self.outlines:
-            logging.warning("Miss outlines")
 
         logging.debug("Images converted.")
         self.is_english = [
@@ -1535,6 +1684,7 @@ class RAGFlowPdfParser:
         if auto_rotate_tables is None:
             auto_rotate_tables = os.getenv("TABLE_AUTO_ROTATE", "true").lower() in ("true", "1", "yes")
 
+        self.outlines = extract_pdf_outlines(fnm)
         self.__images__(fnm, zoomin)
         self._layouts_rec(zoomin)
         self._table_transformer_job(zoomin, auto_rotate=auto_rotate_tables)
@@ -1546,6 +1696,7 @@ class RAGFlowPdfParser:
 
     def parse_into_bboxes(self, fnm, callback=None, zoomin=3):
         start = timer()
+        self.outlines = extract_pdf_outlines(fnm)
         self.__images__(fnm, zoomin, callback=callback)
         if callback:
             callback(0.40, "OCR finished ({:.2f}s)".format(timer() - start))
@@ -1594,19 +1745,41 @@ class RAGFlowPdfParser:
                 return math.sqrt(dx * dx + dy * dy)  # + (pn2-pn1)*10000
 
             for (img, txt), poss in tbls_or_figs:
-                bboxes = [(i, (b["page_number"], b["x0"], b["x1"], b["top"], b["bottom"])) for i, b in enumerate(self.boxes)]
-                dists = [
-                    (min_rectangle_distance((pn, left, right, top + self.page_cum_height[pn], bott + self.page_cum_height[pn]), rect), i) for i, rect in bboxes for pn, left, right, top, bott in poss
-                ]
-                min_i = np.argmin(dists, axis=0)[0]
-                min_i, rect = bboxes[dists[min_i][-1]]
+                # Positions coming from _extract_table_figure carry absolute 0-based page
+                # indices (page_from offset). Convert back to chunk-local indices so we
+                # stay consistent with self.boxes/page_cum_height, which are all relative
+                # to the current parsing window.
+                local_poss = []
+                for pn, left, right, top, bott in poss:
+                    local_pn = pn - self.page_from
+                    if 0 <= local_pn < len(self.page_cum_height) - 1:
+                        local_poss.append((local_pn, left, right, top, bott))
+                    else:
+                        logging.debug(f"Skip out-of-range table/figure position pn={pn}, page_from={self.page_from}")
+                if not local_poss:
+                    logging.debug("No valid local positions for table/figure; skip insertion.")
+                    continue
+
                 if isinstance(txt, list):
                     txt = "\n".join(txt)
-                pn, left, right, top, bott = poss[0]
-                if self.boxes[min_i]["bottom"] < top + self.page_cum_height[pn]:
-                    min_i += 1
+                pn, left, right, top, bott = local_poss[0]
+                insert_at = len(self.boxes)
+                bboxes = [(i, (b["page_number"], b["x0"], b["x1"], b["top"], b["bottom"])) for i, b in enumerate(self.boxes)]
+                if bboxes:
+                    dists = [
+                        (min_rectangle_distance((cand_pn, cand_left, cand_right, cand_top + self.page_cum_height[cand_pn], cand_bott + self.page_cum_height[cand_pn]), rect), i)
+                        for i, rect in bboxes
+                        for cand_pn, cand_left, cand_right, cand_top, cand_bott in local_poss
+                    ]
+                    if dists:
+                        nearest_bbox_idx = int(np.argmin([dist for dist, _ in dists]))
+                        insert_at, _ = bboxes[dists[nearest_bbox_idx][-1]]
+                        if self.boxes[insert_at]["bottom"] < top + self.page_cum_height[pn]:
+                            insert_at += 1
+                else:
+                    logging.debug("No text boxes available; append %s block directly.", layout_type)
                 self.boxes.insert(
-                    min_i,
+                    insert_at,
                     {
                         "page_number": pn + 1,
                         "x0": left,
@@ -1771,27 +1944,14 @@ class RAGFlowPdfParser:
 
 class PlainParser:
     def __call__(self, filename, from_page=0, to_page=100000, **kwargs):
-        self.outlines = []
         lines = []
         try:
             self.pdf = pdf2_read(filename if isinstance(filename, str) else BytesIO(filename))
             for page in self.pdf.pages[from_page:to_page]:
                 lines.extend([t for t in page.extract_text().split("\n")])
-
-            outlines = self.pdf.outline
-
-            def dfs(arr, depth):
-                for a in arr:
-                    if isinstance(a, dict):
-                        self.outlines.append((a["/Title"], depth))
-                        continue
-                    dfs(a, depth + 1)
-
-            dfs(outlines, 0)
         except Exception:
             logging.exception("Outlines exception")
-        if not self.outlines:
-            logging.warning("Miss outlines")
+        self.outlines = extract_pdf_outlines(filename)
 
         return [(line, "") for line in lines], []
 

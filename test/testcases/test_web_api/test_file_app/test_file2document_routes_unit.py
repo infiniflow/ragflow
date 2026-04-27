@@ -143,6 +143,10 @@ def _load_file2document_module(monkeypatch):
         def get_by_id(_file_id):
             return True, _DummyFile(_file_id, _FileType.DOC.value)
 
+        @staticmethod
+        def get_parser(_file_type, _file_name, parser_id):
+            return parser_id
+
     file_service_mod.FileService = _StubFileService
     monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
     services_pkg.file_service = file_service_mod
@@ -225,7 +229,7 @@ def _load_file2document_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
     module_name = "test_file2document_routes_unit_module"
-    module_path = repo_root / "api" / "apps" / "file2document_app.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "file2document_api.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
@@ -240,60 +244,33 @@ def test_convert_branch_matrix_unit(monkeypatch):
     req_state = {"kb_ids": ["kb-1"], "file_ids": ["f1"]}
     _set_request_json(monkeypatch, module, req_state)
 
-    events = {"deleted": []}
-
+    # Falsy file → "File not found!" (synchronous validation)
     monkeypatch.setattr(module.FileService, "get_by_ids", lambda _ids: [_FalsyFile("f1", module.FileType.DOC.value)])
     res = _run(module.convert())
     assert res["message"] == "File not found!"
 
+    # Valid file but invalid kb → "Can't find this dataset!" (synchronous validation)
+    # KnowledgebaseService stub returns (False, None) by default
     monkeypatch.setattr(module.FileService, "get_by_ids", lambda _ids: [_DummyFile("f1", module.FileType.DOC.value)])
-    monkeypatch.setattr(module.File2DocumentService, "get_by_file_id", lambda _file_id: [SimpleNamespace(document_id="doc-1")])
-    monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (False, None))
-    res = _run(module.convert())
-    assert res["message"] == "Document not found!"
-
-    monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (True, SimpleNamespace(id=_doc_id)))
-    monkeypatch.setattr(module.DocumentService, "get_tenant_id", lambda _doc_id: None)
-    res = _run(module.convert())
-    assert res["message"] == "Tenant not found!"
-
-    monkeypatch.setattr(module.DocumentService, "get_tenant_id", lambda _doc_id: "tenant-1")
-    monkeypatch.setattr(module.DocumentService, "remove_document", lambda *_args, **_kwargs: False)
-    res = _run(module.convert())
-    assert "Document removal" in res["message"]
-
-    monkeypatch.setattr(module.DocumentService, "remove_document", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(module.File2DocumentService, "get_by_file_id", lambda _file_id: [])
-    monkeypatch.setattr(module.File2DocumentService, "delete_by_file_id", lambda file_id: events["deleted"].append(file_id))
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
     res = _run(module.convert())
     assert res["message"] == "Can't find this dataset!"
-    assert events["deleted"] == ["f1"]
 
+    # Valid file and kb → schedules background work, returns data=True immediately
     kb = SimpleNamespace(id="kb-1", parser_id="naive", pipeline_id="p1", parser_config={})
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
-    monkeypatch.setattr(module.FileService, "get_by_id", lambda _file_id: (False, None))
     res = _run(module.convert())
-    assert res["message"] == "Can't find this file!"
+    assert res["code"] == 0
+    assert res["data"] is True
 
+    # Folder expansion → schedules background work, returns data=True immediately
     req_state["file_ids"] = ["folder-1"]
     monkeypatch.setattr(module.FileService, "get_by_ids", lambda _ids: [_DummyFile("folder-1", module.FileType.FOLDER.value, name="folder")])
     monkeypatch.setattr(module.FileService, "get_all_innermost_file_ids", lambda _file_id, _acc: ["inner-1"])
-    monkeypatch.setattr(
-        module.FileService,
-        "get_by_id",
-        lambda _file_id: (True, _DummyFile("inner-1", module.FileType.DOC.value, name="inner.txt", location="inner.loc", size=2)),
-    )
-    monkeypatch.setattr(module.DocumentService, "insert", lambda _payload: SimpleNamespace(id="doc-new"))
-    monkeypatch.setattr(
-        module.File2DocumentService,
-        "insert",
-        lambda _payload: SimpleNamespace(to_json=lambda: {"file_id": "inner-1", "document_id": "doc-new"}),
-    )
     res = _run(module.convert())
     assert res["code"] == 0
-    assert res["data"] == [{"file_id": "inner-1", "document_id": "doc-new"}]
+    assert res["data"] is True
 
+    # Exception in file lookup → 500
     req_state["file_ids"] = ["f1"]
     monkeypatch.setattr(
         module.FileService,
@@ -303,65 +280,3 @@ def test_convert_branch_matrix_unit(monkeypatch):
     res = _run(module.convert())
     assert res["code"] == 500
     assert "convert boom" in res["message"]
-
-
-@pytest.mark.p2
-def test_rm_branch_matrix_unit(monkeypatch):
-    module = _load_file2document_module(monkeypatch)
-    req_state = {"file_ids": []}
-    _set_request_json(monkeypatch, module, req_state)
-
-    deleted = []
-
-    res = _run(module.rm())
-    assert res["code"] == module.RetCode.ARGUMENT_ERROR
-    assert 'Lack of "Files ID"' in res["message"]
-
-    req_state["file_ids"] = ["f1"]
-    monkeypatch.setattr(module.File2DocumentService, "get_by_file_id", lambda _file_id: [])
-    res = _run(module.rm())
-    assert res["message"] == "Inform not found!"
-
-    monkeypatch.setattr(module.File2DocumentService, "get_by_file_id", lambda _file_id: [None])
-    res = _run(module.rm())
-    assert res["message"] == "Inform not found!"
-
-    monkeypatch.setattr(module.File2DocumentService, "get_by_file_id", lambda _file_id: [SimpleNamespace(document_id="doc-1")])
-    monkeypatch.setattr(module.File2DocumentService, "delete_by_file_id", lambda file_id: deleted.append(file_id))
-    monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (False, None))
-    res = _run(module.rm())
-    assert res["message"] == "Document not found!"
-    assert deleted == ["f1"]
-
-    monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (True, SimpleNamespace(id=_doc_id)))
-    monkeypatch.setattr(module.DocumentService, "get_tenant_id", lambda _doc_id: None)
-    res = _run(module.rm())
-    assert res["message"] == "Tenant not found!"
-
-    monkeypatch.setattr(module.DocumentService, "get_tenant_id", lambda _doc_id: "tenant-1")
-    monkeypatch.setattr(module.DocumentService, "remove_document", lambda *_args, **_kwargs: False)
-    res = _run(module.rm())
-    assert "Document removal" in res["message"]
-
-    req_state["file_ids"] = ["f1", "f2"]
-    monkeypatch.setattr(
-        module.File2DocumentService,
-        "get_by_file_id",
-        lambda file_id: [SimpleNamespace(document_id=f"doc-{file_id}")],
-    )
-    monkeypatch.setattr(module.DocumentService, "get_by_id", lambda doc_id: (True, SimpleNamespace(id=doc_id)))
-    monkeypatch.setattr(module.DocumentService, "get_tenant_id", lambda _doc_id: "tenant-1")
-    monkeypatch.setattr(module.DocumentService, "remove_document", lambda *_args, **_kwargs: True)
-    res = _run(module.rm())
-    assert res["code"] == 0
-    assert res["data"] is True
-
-    monkeypatch.setattr(
-        module.File2DocumentService,
-        "get_by_file_id",
-        lambda _file_id: (_ for _ in ()).throw(RuntimeError("rm boom")),
-    )
-    req_state["file_ids"] = ["boom"]
-    res = _run(module.rm())
-    assert res["code"] == 500
-    assert "rm boom" in res["message"]

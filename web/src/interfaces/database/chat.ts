@@ -1,6 +1,13 @@
 import { MessageType } from '@/constants/chat';
 import { IAttachment } from '@/hooks/use-send-message';
 
+export interface IDocumentDownloadInfo {
+  doc_id: string;
+  filename: string;
+  mime_type: string;
+  size?: number;
+}
+
 export interface PromptConfig {
   empty_response: string;
   parameters: Parameter[];
@@ -14,6 +21,7 @@ export interface PromptConfig {
   reasoning?: boolean;
   cross_languages?: Array<string>;
   tavily_api_key?: string;
+  toc_enhance?: boolean;
 }
 
 export interface Parameter {
@@ -34,7 +42,8 @@ export interface Variable {
   presence_penalty?: number;
   temperature?: number;
   top_p?: number;
-  llm_id?: string;
+  tenant_llm_id?: string;
+  model_type?: string;
 }
 
 export interface IDialog {
@@ -43,13 +52,14 @@ export interface IDialog {
   description: string;
   icon: string;
   id: string;
-  dialog_id: string;
-  kb_ids: string[];
+  dialog_id?: string;
+  dataset_ids: string[];
   kb_names: string[];
   language: string;
   llm_id: string;
+  tenant_llm_id?: string;
   llm_setting: Variable;
-  llm_setting_type: string;
+  llm_setting_type?: string;
   name: string;
   prompt_config: PromptConfig;
   prompt_type: string;
@@ -61,6 +71,7 @@ export interface IDialog {
   similarity_threshold: number;
   top_k: number;
   top_n: number;
+  rerank_id?: string;
   meta_data_filter: MetaDataFilter;
 }
 
@@ -78,10 +89,10 @@ interface Manual {
 export interface IConversation {
   create_date: string;
   create_time: number;
-  dialog_id: string;
+  chat_id: string;
   id: string;
   avatar: string;
-  message: Message[];
+  messages: Message[];
   reference: IReference[];
   name: string;
   update_date: string;
@@ -100,6 +111,7 @@ export interface Message {
   files?: (File | UploadResponseDataType)[];
   chatBoxId?: string;
   attachment?: IAttachment;
+  downloads?: IDocumentDownloadInfo[];
 }
 
 export interface IReferenceChunk {
@@ -130,6 +142,7 @@ export interface IReferenceObject {
 export interface IAnswer {
   answer: string;
   attachment?: IAttachment;
+  downloads?: IDocumentDownloadInfo[];
   reference?: IReference;
   conversationId?: string;
   prompt?: string;
@@ -193,7 +206,7 @@ export interface IMessage extends Message {
 }
 
 export interface IClientConversation extends IConversation {
-  message: IMessage[];
+  messages: IMessage[];
 }
 
 export interface UploadResponseDataType {

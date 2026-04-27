@@ -1,6 +1,10 @@
 import message from '@/components/ui/message';
 import agentService from '@/services/agent-service';
-import kbService, { deletePipelineTask } from '@/services/knowledge-service';
+import {
+  deletePipelineTask,
+  runIndex,
+  traceIndex,
+} from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { useEffect, useState } from 'react';
@@ -53,9 +57,7 @@ export const useTraceGenerate = ({ open }: { open: boolean }) => {
       retryDelay: 1000,
       enabled: open,
       queryFn: async () => {
-        const { data } = await kbService.traceGraphRag({
-          kb_id: id,
-        });
+        const { data } = await traceIndex(id, 'graph');
         return data?.data || {};
       },
     });
@@ -70,9 +72,7 @@ export const useTraceGenerate = ({ open }: { open: boolean }) => {
       retryDelay: 1000,
       enabled: open,
       queryFn: async () => {
-        const { data } = await kbService.traceRaptor({
-          kb_id: id,
-        });
+        const { data } = await traceIndex(id, 'raptor');
         return data?.data || {};
       },
     });
@@ -132,13 +132,9 @@ export const useDatasetGenerate = () => {
   } = useMutation({
     mutationKey: [DatasetKey.generate],
     mutationFn: async ({ type }: { type: GenerateType }) => {
-      const func =
-        type === GenerateType.KnowledgeGraph
-          ? kbService.runGraphRag
-          : kbService.runRaptor;
-      const { data } = await func({
-        kb_id: id,
-      });
+      const indexType =
+        type === GenerateType.KnowledgeGraph ? 'graph' : 'raptor';
+      const { data } = await runIndex(id, indexType);
       if (data.code === 0) {
         message.success(t('message.operated'));
         queryClient.invalidateQueries({

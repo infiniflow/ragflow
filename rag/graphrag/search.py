@@ -91,7 +91,7 @@ class KGSearch(Dealer):
         es_res = self.dataStore.get_fields(es_res, ["content_with_weight", "_score", "from_entity_kwd", "to_entity_kwd",
                                                    "weight_int"])
         for _, ent in es_res.items():
-            if get_float(ent["_score"]) < sim_thr:
+            if get_float(ent.get("_score", 0)) < sim_thr:
                 continue
             f, t = sorted([ent["from_entity_kwd"], ent["to_entity_kwd"]])
             if isinstance(f, list):
@@ -99,7 +99,7 @@ class KGSearch(Dealer):
             if isinstance(t, list):
                 t = t[0]
             res[(f, t)] = {
-                "sim": get_float(ent["_score"]),
+                "sim": get_float(ent.get("_score", 0)),
                 "pagerank": get_float(ent.get("weight_int", 0)),
                 "description": ent["content_with_weight"]
             }
@@ -299,7 +299,7 @@ class KGSearch(Dealer):
         fltr["knowledge_graph_kwd"] = "community_report"
         fltr["entities_kwd"] = entities
         comm_res = self.dataStore.search(fields, [], fltr, [],
-                                         OrderByExpr(), 0, topn, idxnms, kb_ids)
+                                         odr, 0, topn, idxnms, kb_ids)
         comm_res_fields = self.dataStore.get_fields(comm_res, fields)
         txts = []
         for ii, (_, row) in enumerate(comm_res_fields.items()):
@@ -318,7 +318,7 @@ if __name__ == "__main__":
     from common.constants import LLMType
     from api.db.services.knowledgebase_service import KnowledgebaseService
     from api.db.services.llm_service import LLMBundle
-    from api.db.services.user_service import TenantService
+    from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_by_id, get_model_config_by_type_and_name
     from rag.nlp import search
 
     settings.init_settings()
@@ -329,10 +329,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     kb_id = args.kb_id
-    _, tenant = TenantService.get_by_id(args.tenant_id)
-    llm_bdl = LLMBundle(args.tenant_id, LLMType.CHAT, tenant.llm_id)
+    llm_config = get_tenant_default_model_by_type(args.tenant_id, LLMType.CHAT)
+    llm_bdl = LLMBundle(args.tenant_id, llm_config)
     _, kb = KnowledgebaseService.get_by_id(kb_id)
-    embed_bdl = LLMBundle(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+    if kb.tenant_embd_id:
+        embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+    else:
+        embd_model_config = get_model_config_by_type_and_name(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+    embed_bdl = LLMBundle(args.tenant_id, embd_model_config)
 
     kg = KGSearch(settings.docStoreConn)
     print(asyncio.run(kg.retrieval({"question": args.question, "kb_ids": [kb_id]},

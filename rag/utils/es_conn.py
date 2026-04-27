@@ -28,6 +28,34 @@ from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
 
 ATTEMPT_TIME = 2
+MAX_RESULT_WINDOW = 10000
+SEARCH_AFTER_BATCH_SIZE = 1000
+
+# Single-document atomic pagerank_fea adjust (chunk feedback). Clamps using params.min_w / max_w;
+# removes field at zero for rank_feature compatibility.
+_PAGERANK_FEA_ADJUST_SCRIPT = """
+double cur = 0.0;
+if (ctx._source.containsKey(params.pf)) {
+  Object v = ctx._source[params.pf];
+  if (v != null) {
+    if (v instanceof Number) {
+      cur = ((Number)v).doubleValue();
+    } else {
+      try { cur = Double.parseDouble(v.toString()); } catch (Exception e) { cur = 0.0; }
+    }
+  }
+}
+double nw = cur + params.delta;
+if (nw < params.min_w) { nw = params.min_w; }
+if (nw > params.max_w) { nw = params.max_w; }
+if (nw <= 0.0) {
+  if (ctx._source.containsKey(params.pf)) {
+    ctx._source.remove(params.pf);
+  }
+} else {
+  ctx._source[params.pf] = nw;
+}
+"""
 
 
 @singleton
@@ -35,6 +63,81 @@ class ESConnection(ESConnectionBase):
     """
     CRUD operations
     """
+
+    def _es_search_once(self, index_names: list[str], query: dict, track_total_hits: bool):
+        return self.es.search(
+            index=index_names,
+            body=query,
+            timeout="600s",
+            track_total_hits=track_total_hits,
+            _source=True,
+        )
+
+    def _search_with_search_after(self, index_names: list[str], query: dict, offset: int, limit: int):
+        q_base = copy.deepcopy(query)
+        q_base.pop("from", None)
+        q_base.pop("size", None)
+
+        search_after = None
+        template_res = None
+        collected_hits = []
+        remaining_skip = max(0, offset)
+        remaining_take = max(0, limit)
+        with_aggs = True
+
+        while remaining_skip > 0:
+            batch = min(SEARCH_AFTER_BATCH_SIZE, remaining_skip)
+            q_iter = copy.deepcopy(q_base)
+            q_iter["size"] = batch
+            if search_after is not None:
+                q_iter["search_after"] = search_after
+            if not with_aggs:
+                q_iter.pop("aggs", None)
+            res = self._es_search_once(index_names, q_iter, track_total_hits=template_res is None)
+            if template_res is None:
+                template_res = res
+            hits = res.get("hits", {}).get("hits", [])
+            if not hits:
+                break
+            next_search_after = hits[-1].get("sort")
+            if not next_search_after or next_search_after == search_after:
+                break
+            search_after = next_search_after
+            remaining_skip -= len(hits)
+            with_aggs = False
+            if len(hits) < batch:
+                break
+
+        while remaining_skip <= 0 and remaining_take > 0:
+            batch = min(SEARCH_AFTER_BATCH_SIZE, remaining_take)
+            q_iter = copy.deepcopy(q_base)
+            q_iter["size"] = batch
+            if search_after is not None:
+                q_iter["search_after"] = search_after
+            if not with_aggs:
+                q_iter.pop("aggs", None)
+            res = self._es_search_once(index_names, q_iter, track_total_hits=template_res is None)
+            if template_res is None:
+                template_res = res
+            hits = res.get("hits", {}).get("hits", [])
+            if not hits:
+                break
+            collected_hits.extend(hits)
+            remaining_take -= len(hits)
+            next_search_after = hits[-1].get("sort")
+            if not next_search_after or next_search_after == search_after:
+                break
+            search_after = next_search_after
+            with_aggs = False
+            if len(hits) < batch:
+                break
+
+        if template_res is None:
+            q_count = copy.deepcopy(q_base)
+            q_count["size"] = 0
+            template_res = self._es_search_once(index_names, q_count, track_total_hits=True)
+        template_res["hits"]["hits"] = collected_hits
+        return template_res
 
     def search(
             self, select_fields: list[str],
@@ -66,6 +169,16 @@ class ESConnection(ESConnectionBase):
                 else:
                     bool_query.filter.append(
                         Q("bool", must_not=Q("range", available_int={"lt": 1})))
+                continue
+            if k == "id":
+                if not v:
+                    continue
+                if isinstance(v, list):
+                    bool_query.filter.append(
+                        Q("bool", should=[Q("terms", id=v), Q("terms", _id=v)], minimum_should_match=1))
+                elif isinstance(v, str) or isinstance(v, int):
+                    bool_query.filter.append(
+                        Q("bool", should=[Q("term", id=v), Q("term", _id=v)], minimum_should_match=1))
                 continue
             if not v:
                 continue
@@ -139,20 +252,38 @@ class ESConnection(ESConnectionBase):
             for fld in agg_fields:
                 s.aggs.bucket(f'aggs_{fld}', 'terms', field=fld, size=1000000)
 
-        if limit > 0:
+        has_dense = any(isinstance(m, MatchDenseExpr) for m in match_expressions)
+        has_explicit_sort = bool(order_by and order_by.fields)
+        use_search_after = (
+            limit > 0
+            and (offset + limit > MAX_RESULT_WINDOW)
+            and has_explicit_sort
+            and not has_dense
+        )
+
+        if limit > 0 and not use_search_after:
             s = s[offset:offset + limit]
+        # Filter _source to only requested fields for efficiency, and add vector
+        # fields to "fields" param so they appear in hit.fields when ES 9.x
+        # exclude_source_vectors is enabled (dense_vector not in _source).
+        if select_fields:
+            s = s.source(select_fields)
         q = s.to_dict()
+        # ES 9.x: dense_vector fields excluded from _source; request them via fields.
+        # Note: knn does NOT have a "fields" parameter - adding it inside the knn
+        # object causes BadRequestError on ES 9.x. We add "fields" at top level.
+        vector_fields = [f for f in (select_fields or []) if f.endswith("_vec")]
+        if vector_fields:
+            q["fields"] = vector_fields
         self.logger.debug(f"ESConnection.search {str(index_names)} query: " + json.dumps(q))
 
         for i in range(ATTEMPT_TIME):
             try:
-                # print(json.dumps(q, ensure_ascii=False))
-                res = self.es.search(index=index_names,
-                                     body=q,
-                                     timeout="600s",
-                                     # search_type="dfs_query_then_fetch",
-                                     track_total_hits=True,
-                                     _source=True)
+                if use_search_after:
+                    res = self._search_with_search_after(index_names, q, offset, limit)
+                else:
+                    # print(json.dumps(q, ensure_ascii=False))
+                    res = self._es_search_once(index_names, q, track_total_hits=True)
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
                 self.logger.debug(f"ESConnection.search {str(index_names)} res: " + str(res))
@@ -180,7 +311,8 @@ class ESConnection(ESConnectionBase):
             assert "id" in d
             d_copy = copy.deepcopy(d)
             d_copy["kb_id"] = knowledgebase_id
-            meta_id = d_copy.pop("id", "")
+            # Use id as _id for uniqueness, also keep "id" as a regular field for sorting
+            meta_id = d_copy.get("id", "")
             operations.append(
                 {"index": {"_index": index_name, "_id": meta_id}})
             operations.append(d_copy)
@@ -218,7 +350,11 @@ class ESConnection(ESConnectionBase):
             # update specific single document
             chunk_id = condition["id"]
             for i in range(ATTEMPT_TIME):
-                for k in doc.keys():
+                doc_part = copy.deepcopy(doc)
+                remove_value = doc_part.pop("remove", None)
+                remove_field = remove_value if isinstance(remove_value, str) else None
+                remove_dict = remove_value if isinstance(remove_value, dict) else None
+                for k in doc_part.keys():
                     if "feas" != k.split("_")[-1]:
                         continue
                     try:
@@ -227,8 +363,32 @@ class ESConnection(ESConnectionBase):
                         self.logger.exception(
                             f"ESConnection.update(index={index_name}, id={chunk_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
                 try:
-                    self.es.update(index=index_name, id=chunk_id, doc=doc)
-                    return True
+                    if remove_field is not None:
+                        self.es.update(
+                            index=index_name,
+                            id=chunk_id,
+                            script=f"ctx._source.remove('{remove_field}');",
+                        )
+                    if remove_dict is not None:
+                        scripts = []
+                        params = {}
+                        for kk, vv in remove_dict.items():
+                            scripts.append(
+                                f"if (ctx._source.containsKey('{kk}') && ctx._source.{kk} != null) "
+                                f"{{ int i = ctx._source.{kk}.indexOf(params.p_{kk}); "
+                                f"if (i >= 0) {{ ctx._source.{kk}.remove(i); }} }}"
+                            )
+                            params[f"p_{kk}"] = vv
+                        if scripts:
+                            self.es.update(
+                                index=index_name,
+                                id=chunk_id,
+                                script={"source": "".join(scripts), "params": params},
+                            )
+                    if doc_part:
+                        self.es.update(index=index_name, id=chunk_id, doc=doc_part)
+                    if remove_field is not None or remove_dict is not None or doc_part:
+                        return True
                 except Exception as e:
                     self.logger.exception(
                         f"ESConnection.update(index={index_name}, id={chunk_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception: " + str(
@@ -304,6 +464,61 @@ class ESConnection(ESConnectionBase):
                 break
         return False
 
+    def adjust_chunk_pagerank_fea(
+        self,
+        chunk_id: str,
+        index_name: str,
+        knowledgebase_id: str,
+        delta: float,
+        min_w: float = 0.0,
+        max_w: float = 100.0,
+        row_id: int | None = None,
+    ) -> bool:
+        """Atomically adjust pagerank_fea on one chunk (painless script)."""
+        _ = row_id
+        for _ in range(ATTEMPT_TIME):
+            try:
+                self.es.update(
+                    index=index_name,
+                    id=chunk_id,
+                    retry_on_conflict=3,
+                    script={
+                        "source": _PAGERANK_FEA_ADJUST_SCRIPT.strip(),
+                        "lang": "painless",
+                        "params": {
+                            "pf": PAGERANK_FLD,
+                            "delta": float(delta),
+                            "min_w": float(min_w),
+                            "max_w": float(max_w),
+                        },
+                    },
+                )
+                self.logger.debug(
+                    "ESConnection.adjust_chunk_pagerank_fea(index=%s, id=%s, delta=%s) succeeded",
+                    index_name,
+                    chunk_id,
+                    delta,
+                )
+                return True
+            except ConnectionTimeout:
+                self.logger.exception("ES request timeout")
+                time.sleep(3)
+                self._connect()
+                continue
+            except Exception as e:
+                self.logger.exception(
+                    "ESConnection.adjust_chunk_pagerank_fea(index=%s, id=%s): %s",
+                    index_name,
+                    chunk_id,
+                    e,
+                )
+                if re.search(r"connection", str(e).lower()):
+                    time.sleep(3)
+                    self._connect()
+                    continue
+                break
+        return False
+
     def delete(self, condition: dict, index_name: str, knowledgebase_id: str) -> int:
         assert "_id" not in condition
         condition["kb_id"] = knowledgebase_id
@@ -371,8 +586,24 @@ class ESConnection(ESConnectionBase):
         res_fields = {}
         if not fields:
             return {}
-        for d in self._get_source(res):
-            m = {n: d.get(n) for n in fields if d.get(n) is not None}
+        hits = res.get("hits", {}).get("hits", [])
+        for hit in hits:
+            doc_id = hit.get("_id")
+            d = hit.get("_source", {})
+            # Also extract fields from ES "fields" response (used by dense_vector in ES 9.x)
+            hit_fields = hit.get("fields", {})
+            m = {}
+            for n in fields:
+                # First check _source
+                if d.get(n) is not None:
+                    m[n] = d.get(n)
+                # Then check fields (ES 9.x stores dense_vector here, not in _source)
+                elif n in hit_fields:
+                    vals = hit_fields[n]
+                    # ES fields response wraps dense_vector in 2 levels: [[v1,v2,...]] -> [v1,v2,...]
+                    if isinstance(vals, list) and len(vals) == 1:
+                        vals = vals[0]
+                    m[n] = vals
             for n, v in m.items():
                 if isinstance(v, list):
                     m[n] = v
@@ -386,5 +617,5 @@ class ESConnection(ESConnectionBase):
                 #     m[n] = remove_redundant_spaces(m[n])
 
             if m:
-                res_fields[d["id"]] = m
+                res_fields[doc_id] = m
         return res_fields

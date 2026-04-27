@@ -1,3 +1,4 @@
+import { ParseType } from '@/constants/knowledge';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useCreateKnowledge } from '@/hooks/use-knowledge-request';
@@ -16,8 +17,14 @@ export const useSearchKnowledge = () => {
 
 export interface Iknowledge {
   name: string;
-  embd_id: string;
-  parser_id: string;
+  embedding_model?: string;
+  chunk_method?: string;
+  parseType?: ParseType;
+  pipeline_id?: string | null;
+  ext?: {
+    language?: string;
+    [key: string]: any;
+  };
 }
 export const useSaveKnowledge = () => {
   const { visible: visible, hideModal, showModal } = useSetModalState();
@@ -30,7 +37,7 @@ export const useSaveKnowledge = () => {
 
       if (ret?.code === 0) {
         hideModal();
-        navigateToDataset(ret.data.kb_id)();
+        navigateToDataset(ret.data.id)();
       }
     },
     [createKnowledge, hideModal, navigateToDataset],

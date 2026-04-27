@@ -1,8 +1,8 @@
-import { FormFieldType } from '@/components/dynamic-form';
+import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
-import { Mail } from 'lucide-react';
+import { Mail, Rss } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
@@ -12,9 +12,10 @@ import { IDataSourceInfoMap } from '../interface';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
 import { S3Constant } from './s3-constant';
-import { seafileConstant } from './seafile-constant'; 
+import { seafileConstant } from './seafile-constant';
 
 export enum DataSourceKey {
+  RSS = 'rss',
   CONFLUENCE = 'confluence',
   S3 = 's3',
   NOTION = 'notion',
@@ -30,6 +31,7 @@ export enum DataSourceKey {
   OCI_STORAGE = 'oci_storage',
   GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
   AIRTABLE = 'airtable',
+  DINGTALK_AI_TABLE = 'dingtalk_ai_table',
   GITLAB = 'gitlab',
   ASANA = 'asana',
   IMAP = 'imap',
@@ -44,8 +46,36 @@ export enum DataSourceKey {
   //   TEAMS = 'teams',
 }
 
+type DataSourceFeatureVisibility = {
+  syncDeletedFiles?: boolean;
+};
+
+type DataSourceFormValues = Record<string, any>;
+
+export const DataSourceFeatureVisibilityMap = {
+  [DataSourceKey.GITHUB]: {
+    syncDeletedFiles: true,
+  },
+};
+
+const isDataSourceFeatureVisible = (
+  source?: DataSourceKey,
+  feature?: keyof DataSourceFeatureVisibility,
+) => {
+  if (!source || !feature) {
+    return false;
+  }
+
+  return Boolean(DataSourceFeatureVisibilityMap[source]?.[feature]);
+};
+
 export const generateDataSourceInfo = (t: TFunction) => {
   return {
+    [DataSourceKey.RSS]: {
+      name: 'RSS',
+      description: t(`setting.${DataSourceKey.RSS}Description`),
+      icon: <Rss className="text-text-primary" size={22} />,
+    },
     [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
       name: 'Google Cloud Storage',
       description: t(
@@ -123,6 +153,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.AIRTABLE}Description`),
       icon: <SvgIcon name={'data-source/airtable'} width={38} />,
     },
+    [DataSourceKey.DINGTALK_AI_TABLE]: {
+      name: 'Dingtalk AI Table',
+      description: t(`setting.dingtalkAITableDescription`),
+      icon: <SvgIcon name={'data-source/dingtalk-ai-table'} width={38} />,
+    },
     [DataSourceKey.GITLAB]: {
       name: 'GitLab',
       description: t(`setting.${DataSourceKey.GITLAB}Description`),
@@ -188,6 +223,30 @@ export const useDataSourceInfo = () => {
   return { dataSourceInfo };
 };
 
+const isPlainObject = (value: unknown): value is DataSourceFormValues =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export const mergeDataSourceFormValues = (
+  ...values: Array<DataSourceFormValues | undefined>
+): DataSourceFormValues =>
+  values.reduce<DataSourceFormValues>((result, current) => {
+    if (!current) {
+      return result;
+    }
+
+    const next = { ...result };
+
+    Object.entries(current).forEach(([key, value]) => {
+      if (isPlainObject(value) && isPlainObject(next[key])) {
+        next[key] = mergeDataSourceFormValues(next[key], value);
+      } else {
+        next[key] = value;
+      }
+    });
+
+    return next;
+  }, {});
+
 export const DataSourceFormBaseFields = [
   {
     id: 'Id',
@@ -215,7 +274,46 @@ export const DataSourceFormBaseFields = [
     })),
   },
 ];
+
+export const getCommonExtraFields = (
+  source?: DataSourceKey,
+): FormFieldConfig[] => [
+  {
+    label: t('setting.syncDeletedFiles'),
+    name: 'config.sync_deleted_files',
+    type: FormFieldType.Checkbox,
+    required: false,
+    defaultValue: false,
+    shouldRender: () => isDataSourceFeatureVisible(source, 'syncDeletedFiles'),
+  },
+];
+
+export const getCommonExtraDefaultValues = () => ({
+  config: {
+    sync_deleted_files: false,
+  },
+});
+
 export const DataSourceFormFields = {
+  [DataSourceKey.RSS]: [
+    {
+      label: 'Feed URL',
+      name: 'config.feed_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://example.com/feed.xml',
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: 'Batch Size must be at least 1',
+      },
+    },
+  ],
   [DataSourceKey.GOOGLE_CLOUD_STORAGE]: [
     {
       label: 'GCS Access Key ID',
@@ -658,6 +756,26 @@ export const DataSourceFormFields = {
       required: true,
     },
   ],
+  [DataSourceKey.DINGTALK_AI_TABLE]: [
+    {
+      label: 'Access Token',
+      name: 'config.credentials.access_token',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Base ID',
+      name: 'config.table_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Operator ID',
+      name: 'config.operator_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+  ],
   [DataSourceKey.GITLAB]: [
     {
       label: 'Project Owner',
@@ -885,6 +1003,30 @@ export const DataSourceFormFields = {
       placeholder: 'title,description,content',
       tooltip: t('setting.mysqlContentColumnsTip'),
     },
+    {
+      label: 'Metadata Columns',
+      name: 'config.metadata_columns',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id,category,status',
+      tooltip: t('setting.mysqlMetadataColumnsTip'),
+    },
+    {
+      label: 'ID Column',
+      name: 'config.id_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id',
+      tooltip: t('setting.mysqlIdColumnTip'),
+    },
+    {
+      label: 'Timestamp Column',
+      name: 'config.timestamp_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'updated_at',
+      tooltip: t('setting.mysqlTimestampColumnTip'),
+    },
   ],
   [DataSourceKey.POSTGRESQL]: [
     {
@@ -935,10 +1077,42 @@ export const DataSourceFormFields = {
       placeholder: 'title,description,content',
       tooltip: t('setting.postgresqlContentColumnsTip'),
     },
+    {
+      label: 'Metadata Columns',
+      name: 'config.metadata_columns',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id,category,status',
+      tooltip: t('setting.postgresqlMetadataColumnsTip'),
+    },
+    {
+      label: 'ID Column',
+      name: 'config.id_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id',
+      tooltip: t('setting.postgresqlIdColumnTip'),
+    },
+    {
+      label: 'Timestamp Column',
+      name: 'config.timestamp_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'updated_at',
+      tooltip: t('setting.postgresqlTimestampColumnTip'),
+    },
   ],
 };
 
 export const DataSourceFormDefaultValues = {
+  [DataSourceKey.RSS]: {
+    name: '',
+    source: DataSourceKey.RSS,
+    config: {
+      feed_url: '',
+      batch_size: 2,
+    },
+  },
   [DataSourceKey.S3]: {
     name: '',
     source: DataSourceKey.S3,
@@ -1135,6 +1309,17 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
+  [DataSourceKey.DINGTALK_AI_TABLE]: {
+    name: '',
+    source: DataSourceKey.DINGTALK_AI_TABLE,
+    config: {
+      table_id: '',
+      operator_id: '',
+      credentials: {
+        access_token: '',
+      },
+    },
+  },
   [DataSourceKey.GITLAB]: {
     name: '',
     source: DataSourceKey.GITLAB,
@@ -1222,14 +1407,14 @@ export const DataSourceFormDefaultValues = {
     source: DataSourceKey.SEAFILE,
     config: {
       seafile_url: '',
-      sync_scope: 'account', 
-      repo_id: '',             
-      sync_path: '',            
-      include_shared: true,     
+      sync_scope: 'account',
+      repo_id: '',
+      sync_path: '',
+      include_shared: true,
       batch_size: 100,
       credentials: {
-        seafile_token: '',   
-        repo_token: '',          
+        seafile_token: '',
+        repo_token: '',
       },
     },
   },

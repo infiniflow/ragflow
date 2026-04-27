@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from types import SimpleNamespace
 
 import pytest
-from common import bulk_upload_documents, list_documents, parse_documents
+from test_common import bulk_upload_documents, list_documents, parse_documents
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 from utils import wait_for
@@ -32,17 +32,16 @@ def _run(coro):
 def condition(_auth, _kb_id, _document_ids=None):
     res = list_documents(_auth, {"kb_id": _kb_id})
     target_docs = res["data"]["docs"]
-
     if _document_ids is None:
         for doc in target_docs:
-            if doc["run"] != "3":
+            if doc["run"] != "DONE":
                 return False
         return True
 
     target_ids = set(_document_ids)
     for doc in target_docs:
         if doc["id"] in target_ids:
-            if doc.get("run") != "3":
+            if doc.get("run") != "DONE":
                 return False
     return True
 
@@ -52,7 +51,7 @@ def validate_document_parse_done(auth, _kb_id, _document_ids):
     for doc in res["data"]["docs"]:
         if doc["id"] not in _document_ids:
             continue
-        assert doc["run"] == "3"
+        assert doc["run"] == "DONE"
         assert len(doc["process_begin_at"]) > 0
         assert doc["process_duration"] > 0
         assert doc["progress"] > 0
@@ -64,7 +63,7 @@ def validate_document_parse_cancel(auth, _kb_id, _document_ids):
     for doc in res["data"]["docs"]:
         if doc["id"] not in _document_ids:
             continue
-        assert doc["run"] == "2"
+        assert doc["run"] == "CANCEL"
         assert len(doc["process_begin_at"]) > 0
         assert doc["progress"] == 0.0
 
@@ -153,7 +152,7 @@ def test_parse_100_files(WebApiAuth, add_dataset_func, tmp_path):
     def condition(_auth, _kb_id, _document_num):
         res = list_documents(_auth, {"kb_id": _kb_id, "page_size": _document_num})
         for doc in res["data"]["docs"]:
-            if doc["run"] != "3":
+            if doc["run"] != "DONE":
                 return False
         return True
 
@@ -303,17 +302,18 @@ class TestDocumentsParseStop:
         ],
     )
     def test_basic_scenarios(self, WebApiAuth, add_documents_func, payload, expected_code, expected_message):
-        @wait_for(10, 1, "Document parsing timeout")
+        @wait_for(30, 1, "Document parsing timeout")
         def condition(_auth, _kb_id, _doc_ids):
             res = list_documents(_auth, {"kb_id": _kb_id})
             for doc in res["data"]["docs"]:
                 if doc["id"] in _doc_ids:
-                    if doc["run"] != "3":
+                    if doc["run"] != "DONE":
                         return False
             return True
 
         kb_id, document_ids = add_documents_func
-        parse_documents(WebApiAuth, {"doc_ids": document_ids, "run": "1"})
+        parse_documents(WebApiAuth, {"doc_ids": document_ids, "run":
+            "1"})
 
         if callable(payload):
             payload = payload(document_ids)

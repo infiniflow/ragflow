@@ -43,11 +43,32 @@ export const useSubmitApiKey = () => {
       if (!isVerify) {
         setSaveLoading(true);
       }
-      const ret = await saveApiKey({
+      const payload: IApiKeySavingParams = {
         ...savingParams,
         ...postBody,
         verify: isVerify,
-      });
+      };
+      if (savingParams.llm_factory === LLMFactory.SILICONFLOW) {
+        let sourceFid = LLMFactory.SILICONFLOW;
+        const baseUrl = postBody.base_url;
+        if (baseUrl) {
+          try {
+            const parsed = new URL(baseUrl);
+            const host = parsed.hostname.toLowerCase();
+            if (
+              host === 'api.siliconflow.com' ||
+              host.endsWith('.api.siliconflow.com')
+            ) {
+              sourceFid = 'siliconflow_intl';
+            }
+          } catch {
+            // ignore invalid URL and keep default sourceFid
+          }
+        }
+        payload.source_fid = sourceFid;
+      }
+
+      const ret = await saveApiKey(payload);
       if (!isVerify) {
         setSaveLoading(false);
         if (ret.code === 0) {
@@ -783,6 +804,56 @@ export const useSubmitPaddleOCR = () => {
     showPaddleOCRModal,
     onPaddleOCROk,
     paddleocrLoading: saveLoading,
+  };
+};
+
+export const useSubmitOpenDataLoader = () => {
+  const [saveLoading, setSaveLoading] = useState(false);
+  const { addLlm } = useAddLlm();
+  const {
+    visible: opendataloaderVisible,
+    hideModal: hideOpenDataLoaderModal,
+    showModal: showOpenDataLoaderModal,
+  } = useSetModalState();
+
+  const onOpenDataLoaderOk = useCallback(
+    async (payload: any, isVerify = false) => {
+      if (!isVerify) {
+        setSaveLoading(true);
+      }
+      const req: IAddLlmRequestBody = {
+        llm_factory: LLMFactory.OpenDataLoader,
+        llm_name: payload.llm_name,
+        model_type: 'ocr',
+        api_key: { ...payload },
+        api_base: '',
+        max_tokens: 0,
+      };
+      const ret = await addLlm({ ...req, verify: isVerify });
+      if (!isVerify) {
+        setSaveLoading(false);
+        if (ret.code === 0) {
+          hideOpenDataLoaderModal();
+          return true;
+        }
+      }
+      if (isVerify) {
+        return {
+          isValid: !!ret.data?.success,
+          logs: ret.data?.message,
+        } as VerifyResult;
+      }
+      return false;
+    },
+    [addLlm, hideOpenDataLoaderModal, setSaveLoading],
+  );
+
+  return {
+    opendataloaderVisible,
+    hideOpenDataLoaderModal,
+    showOpenDataLoaderModal,
+    onOpenDataLoaderOk,
+    opendataloaderLoading: saveLoading,
   };
 };
 

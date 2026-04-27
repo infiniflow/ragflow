@@ -11,7 +11,10 @@ export const UsedModel = ({
 }) => {
   const { myLlmList: llmList } = useSelectLlmList();
   return (
-    <div className="flex flex-col w-full gap-5 mb-4" data-testid="added-models-section">
+    <div
+      className="flex flex-col w-full gap-5 mb-4"
+      data-testid="added-models-section"
+    >
       <div className="text-text-primary text-2xl font-medium mb-2 mt-4">
         {t('setting.addedModels')}
       </div>

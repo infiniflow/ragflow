@@ -1,6 +1,8 @@
 import { useFetchAgent } from '@/hooks/use-agent-request';
-import { GlobalVariableType } from '@/interfaces/database/agent';
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import {
+  GlobalVariableType,
+  RAGFlowNodeType,
+} from '@/interfaces/database/agent';
 import { useCallback } from 'react';
 import { Operator } from '../constant';
 import useGraphStore from '../store';
