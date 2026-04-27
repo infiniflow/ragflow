@@ -13,18 +13,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
+import logging
 import os.path
 import re
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import PurePosixPath, PureWindowsPath
 
 from quart import make_response, request
 
 from api.apps import current_user, login_required
-from api.common.check_team_permission import check_kb_team_permission
-from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
+from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType
 from api.db.db_models import Task
-from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
@@ -37,12 +36,11 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.file_utils import filename_type, thumbnail
-from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers, html2pdf, is_valid_url
+from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers, is_valid_url
 from common import settings
-from common.constants import ParserType, RetCode, TaskStatus
+from common.constants import RetCode, ParserTyp, SANDBOX_ARTIFACT_BUCKET, TaskStatus
 from common.file_utils import get_project_base_directory
-from common.misc_utils import get_uuid, thread_pool_exec
+from common.misc_utils import thread_pool_exec
 from common.ssrf_guard import assert_url_is_safe
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search
@@ -59,128 +57,6 @@ def _is_safe_download_filename(name: str) -> bool:
         return False
     return True
 
-
-@manager.route("/web_crawl", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("kb_id", "name", "url")
-async def web_crawl():
-    form = await request.form
-    kb_id = form.get("kb_id")
-    if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-    name = form.get("name")
-    url = form.get("url")
-    if not is_valid_url(url):
-        return get_json_result(data=False, message="The URL format is invalid", code=RetCode.ARGUMENT_ERROR)
-    e, kb = KnowledgebaseService.get_by_id(kb_id)
-    if not e:
-        raise LookupError("Can't find this dataset!")
-    if not check_kb_team_permission(kb, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-
-    blob = html2pdf(url)
-    if not blob:
-        return server_error_response(ValueError("Download failure."))
-
-    root_folder = FileService.get_root_folder(current_user.id)
-    pf_id = root_folder["id"]
-    FileService.init_knowledgebase_docs(pf_id, current_user.id)
-    kb_root_folder = FileService.get_kb_folder(current_user.id)
-    kb_folder = FileService.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
-
-    try:
-        filename = duplicate_name(DocumentService.query, name=name + ".pdf", kb_id=kb.id)
-        filetype = filename_type(filename)
-        if filetype == FileType.OTHER.value:
-            raise RuntimeError("This type of file has not been supported yet!")
-
-        location = filename
-        while settings.STORAGE_IMPL.obj_exist(kb_id, location):
-            location += "_"
-        settings.STORAGE_IMPL.put(kb_id, location, blob)
-        doc = {
-            "id": get_uuid(),
-            "kb_id": kb.id,
-            "parser_id": kb.parser_id,
-            "parser_config": kb.parser_config,
-            "created_by": current_user.id,
-            "type": filetype,
-            "name": filename,
-            "location": location,
-            "size": len(blob),
-            "thumbnail": thumbnail(filename, blob),
-            "suffix": Path(filename).suffix.lstrip("."),
-        }
-        if doc["type"] == FileType.VISUAL:
-            doc["parser_id"] = ParserType.PICTURE.value
-        if doc["type"] == FileType.AURAL:
-            doc["parser_id"] = ParserType.AUDIO.value
-        if re.search(r"\.(ppt|pptx|pages)$", filename):
-            doc["parser_id"] = ParserType.PRESENTATION.value
-        if re.search(r"\.(eml)$", filename):
-            doc["parser_id"] = ParserType.EMAIL.value
-        DocumentService.insert(doc)
-        FileService.add_file_from_kb(doc, kb_folder["id"], kb.tenant_id)
-    except Exception as e:
-        return server_error_response(e)
-    return get_json_result(data=True)
-
-
-@manager.route("/create", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("name", "kb_id")
-async def create():
-    req = await get_request_json()
-    kb_id = req["kb_id"]
-    if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-    if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-        return get_json_result(data=False, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=RetCode.ARGUMENT_ERROR)
-
-    if req["name"].strip() == "":
-        return get_json_result(data=False, message="File name can't be empty.", code=RetCode.ARGUMENT_ERROR)
-    req["name"] = req["name"].strip()
-
-    try:
-        e, kb = KnowledgebaseService.get_by_id(kb_id)
-        if not e:
-            return get_data_error_result(message="Can't find this dataset!")
-
-        if DocumentService.query(name=req["name"], kb_id=kb_id):
-            return get_data_error_result(message="Duplicated document name in the same dataset.")
-
-        kb_root_folder = FileService.get_kb_folder(kb.tenant_id)
-        if not kb_root_folder:
-            return get_data_error_result(message="Cannot find the root folder.")
-        kb_folder = FileService.new_a_file_from_kb(
-            kb.tenant_id,
-            kb.name,
-            kb_root_folder["id"],
-        )
-        if not kb_folder:
-            return get_data_error_result(message="Cannot find the kb folder for this file.")
-
-        doc = DocumentService.insert(
-            {
-                "id": get_uuid(),
-                "kb_id": kb.id,
-                "parser_id": kb.parser_id,
-                "pipeline_id": kb.pipeline_id,
-                "parser_config": kb.parser_config,
-                "created_by": current_user.id,
-                "type": FileType.VIRTUAL,
-                "name": req["name"],
-                "suffix": Path(req["name"]).suffix.lstrip("."),
-                "location": "",
-                "size": 0,
-            }
-        )
-
-        FileService.add_file_from_kb(doc.to_dict(), kb_folder["id"], kb.tenant_id)
-
-        return get_json_result(data=doc.to_json())
-    except Exception as e:
-        return server_error_response(e)
 
 
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
@@ -250,16 +126,20 @@ async def change_status():
                         search.index_name(kb.tenant_id),
                         doc.kb_id,
                     )
-                except Exception as exc:
-                    msg = str(exc)
-                    if "3022" in msg:
-                        result[doc_id] = {"error": "Document store table missing."}
-                    else:
-                        result[doc_id] = {"error": f"Document store update failed: {msg}"}
+                except Exception:
+                    logging.exception(
+                        "Document store update failed in change_status: doc_id=%s kb_id=%s status=%s",
+                        doc_id, doc.kb_id, status_int,
+                    )
+                    result[doc_id] = {"error": "Document store update failed."}
                     has_error = True
                     continue
                 if not ok:
-                    result[doc_id] = {"error": "Database error (docStore update)!"}
+                    logging.warning(
+                        "Document store update returned False in change_status: doc_id=%s kb_id=%s status=%s",
+                        doc_id, doc.kb_id, status_int,
+                    )
+                    result[doc_id] = {"error": "Document store table missing or update failed."}
                     has_error = True
                     continue
             result[doc_id] = {"status": status}
