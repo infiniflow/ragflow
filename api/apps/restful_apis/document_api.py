@@ -1514,6 +1514,10 @@ async def get_document_image(image_id):
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
         response = await make_response(data)
         response.headers.set("Content-Type", "image/JPEG")
+        return response
+    except Exception as e:
+        return server_error_response(e)
+
 
 ARTIFACT_CONTENT_TYPES = {
     ".png": "image/png",
