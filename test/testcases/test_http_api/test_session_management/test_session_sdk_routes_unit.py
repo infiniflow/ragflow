@@ -245,6 +245,10 @@ def _load_session_module(monkeypatch):
     common_constants_mod.SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_task_broker"
     common_constants_mod.PAGERANK_FLD = "pagerank_fea"
     common_constants_mod.TAG_FLD = "tag_feas"
+    # Import pure-Python constants from the real module (no heavy deps)
+    from common.constants import MAXIMUM_PAGE_NUMBER as _MPN, MAXIMUM_TASK_PAGE_NUMBER as _MTPN
+    common_constants_mod.MAXIMUM_PAGE_NUMBER = _MPN
+    common_constants_mod.MAXIMUM_TASK_PAGE_NUMBER = _MTPN
     monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
 
     deepdoc_pkg = ModuleType("deepdoc")
