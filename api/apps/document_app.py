@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
+import logging
 import os.path
 import re
 from pathlib import PurePosixPath, PureWindowsPath
@@ -125,16 +126,20 @@ async def change_status():
                         search.index_name(kb.tenant_id),
                         doc.kb_id,
                     )
-                except Exception as exc:
-                    msg = str(exc)
-                    if "3022" in msg:
-                        result[doc_id] = {"error": "Document store table missing."}
-                    else:
-                        result[doc_id] = {"error": f"Document store update failed: {msg}"}
+                except Exception:
+                    logging.exception(
+                        "Document store update failed in change_status: doc_id=%s kb_id=%s status=%s",
+                        doc_id, doc.kb_id, status_int,
+                    )
+                    result[doc_id] = {"error": "Document store update failed."}
                     has_error = True
                     continue
                 if not ok:
-                    result[doc_id] = {"error": "Database error (docStore update)!"}
+                    logging.warning(
+                        "Document store update returned False in change_status: doc_id=%s kb_id=%s status=%s",
+                        doc_id, doc.kb_id, status_int,
+                    )
+                    result[doc_id] = {"error": "Document store table missing or update failed."}
                     has_error = True
                     continue
             result[doc_id] = {"status": status}
