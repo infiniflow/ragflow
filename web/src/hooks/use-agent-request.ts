@@ -794,9 +794,7 @@ export function useCancelConversation() {
   return { data, loading, cancelConversation: mutateAsync };
 }
 
-export const useFetchFlowSSE = (
-  enabled: boolean = true,
-): {
+export const useFetchFlowSSE = (): {
   data: IFlow;
   loading: boolean;
   refetch: () => void;
@@ -810,7 +808,7 @@ export const useFetchFlowSSE = (
   } = useQuery({
     queryKey: [AgentApiAction.FetchSharedAgent, sharedId],
     initialData: {} as IFlow,
-    enabled: enabled && !!sharedId,
+    enabled: !!sharedId,
     refetchOnReconnect: false,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
