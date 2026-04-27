@@ -405,7 +405,7 @@ def delete_document(auth, dataset_id, payload=None, *, headers=HEADERS, data=Non
 
 
 def parse_documents(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/run", headers=headers, auth=auth, json=payload, data=data)
+    res = requests.post(url=f"{HOST_ADDRESS}/api/{VERSION}/documents/ingest", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
@@ -438,8 +438,33 @@ def document_update_metadata_setting(auth, dataset_id, doc_id, payload=None, *, 
     return res.json()
 
 
-def document_change_status(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/change_status", headers=headers, auth=auth, json=payload, data=data)
+def document_change_status(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
+    """
+    Batch update document status within a dataset.
+    
+    Args:
+        auth: Authentication credentials
+        dataset_id: ID of the dataset
+        payload: Request body containing doc_ids and status
+    """
+    res = requests.post(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents/batch-update-status", headers=headers, auth=auth, json=payload, data=data)
+    return res.json()
+
+
+def document_update(auth, dataset_id, doc_id, payload=None, *, headers=HEADERS, data=None):
+    """Update document via PATCH /api/v1/datasets/<dataset_id>/documents/<doc_id>"""
+    res = requests.patch(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents/{doc_id}", headers=headers, auth=auth, json=payload, data=data)
+    return res.json()
+
+
+def document_thumbnails(auth, params=None, *, headers=HEADERS, data=None):
+    """Get document thumbnails.
+
+    Args:
+        auth: Authentication object
+        params: Query parameters (e.g., {"doc_ids": ["doc1", "doc2"]})
+    """
+    res = requests.get(url=f"{HOST_ADDRESS}/api/v1/thumbnails", params=params, headers=headers, auth=auth, data=data)
     return res.json()
 
 

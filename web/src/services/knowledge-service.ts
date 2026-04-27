@@ -19,7 +19,7 @@ const {
   documentChangeParser,
   documentThumbnails,
   retrievalTest,
-  documentRun,
+  documentIngest,
   documentUpload,
   webCrawl,
   knowledgeGraph,
@@ -47,8 +47,8 @@ const methods = {
     url: documentChangeStatus,
     method: 'post',
   },
-  documentRun: {
-    url: documentRun,
+  documentIngest: {
+    url: documentIngest,
     method: 'post',
   },
   documentChangeParser: {
@@ -328,6 +328,12 @@ export const renameDocument = (
   data: { name?: string },
 ) => request.patch(api.documentRename(datasetId, documentId), { data });
 
+export const changeDocumentParser = (
+  datasetId: string,
+  documentId: string,
+  data: { name?: string },
+) => request.patch(api.documentChangeParser(datasetId, documentId), { data });
+
 export const deleteDocument = (datasetId: string, documentIds: string[]) =>
   request.delete(api.documentDelete(datasetId), { data: { ids: documentIds } });
 
@@ -371,6 +377,17 @@ export const updateDocumentMetaDataConfig = ({
   request.put(api.documentUpdateMetaDataConfig(kb_id, doc_id), {
     data: { ...data },
   });
+
+export const changeDocumentsStatus = ({
+  kb_id,
+  doc_ids,
+  status,
+}: {
+  kb_id: string;
+  doc_ids?: string[];
+  status: number;
+}) =>
+  request.post(api.documentChangeStatus(kb_id), { data: { doc_ids, status } });
 
 export const listDataPipelineLogDocument = (
   datasetId: string,
