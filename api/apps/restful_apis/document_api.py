@@ -93,15 +93,23 @@ async def upload_info(tenant_id: str):
 
     try:
         if url and not file_objs:
-            assert_url_is_safe(url)
-            return get_result(data=FileService.upload_info(tenant_id, None, url))
+            try:
+                assert_url_is_safe(url)
+            except ValueError as ve:
+                logging.warning("upload_info: rejected unsafe url: %s", ve)
+                return get_error_argument_result(str(ve))
+
+            data = await thread_pool_exec(FileService.upload_info, tenant_id, None, url)
+            return get_result(data=data)
 
         if len(file_objs) == 1:
-            return get_result(data=FileService.upload_info(tenant_id, file_objs[0], None))
+            data = await thread_pool_exec(FileService.upload_info, tenant_id, file_objs[0], None)
+            return get_result(data=data)
 
-        results = [FileService.upload_info(tenant_id, f, None) for f in file_objs]
+        results = [await thread_pool_exec(FileService.upload_info, tenant_id, f, None) for f in file_objs]
         return get_result(data=results)
     except Exception as e:
+        logging.exception("upload_info failed")
         return server_error_response(e)
 
 
