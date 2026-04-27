@@ -451,6 +451,12 @@ def document_change_status(auth, dataset_id, payload=None, *, headers=HEADERS, d
     return res.json()
 
 
+def document_update(auth, dataset_id, doc_id, payload=None, *, headers=HEADERS, data=None):
+    """Update document via PATCH /api/v1/datasets/<dataset_id>/documents/<doc_id>"""
+    res = requests.patch(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents/{doc_id}", headers=headers, auth=auth, json=payload, data=data)
+    return res.json()
+
+
 def document_thumbnails(auth, params=None, *, headers=HEADERS, data=None):
     """Get document thumbnails.
 

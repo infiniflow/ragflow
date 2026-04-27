@@ -16,6 +16,7 @@ import {
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
 import kbService, {
+  changeDocumentParser,
   changeDocumentsStatus,
   createDocument,
   deleteDocument,
@@ -38,6 +39,7 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
+import { extractParserConfigExt } from './parser-config-utils';
 import {
   useGetKnowledgeSearchParams,
   useSetPaginationParams,
@@ -393,19 +395,33 @@ export const useSetDocumentParser = () => {
       parserId,
       pipelineId,
       documentId,
+      datasetId,
       parserConfig,
     }: {
       parserId: string;
       pipelineId: string;
       documentId: string;
-      parserConfig: IChangeParserConfigRequestBody;
+      datasetId: string;
+      parserConfig?: IChangeParserConfigRequestBody;
     }) => {
-      const { data } = await kbService.documentChangeParser({
-        parser_id: parserId,
-        pipeline_id: pipelineId,
-        doc_id: documentId,
-        parser_config: parserConfig,
-      });
+      // Build update payload
+      const updateData: Record<string, unknown> = {};
+      if (parserId) {
+        updateData.chunk_method = parserId;
+      }
+      if (pipelineId) {
+        updateData.pipeline_id = pipelineId;
+      }
+
+      if (parserConfig) {
+        updateData.parser_config = extractParserConfigExt(parserConfig);
+      }
+
+      const { data } = await changeDocumentParser(
+        datasetId,
+        documentId,
+        updateData,
+      );
       if (data.code === 0) {
         queryClient.invalidateQueries({
           queryKey: [DocumentApiAction.FetchDocumentList],
