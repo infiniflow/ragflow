@@ -88,7 +88,7 @@ class ListOperations(ComponentBase,ABC):
     def _head(self):
         n = self._coerce_n()
         if 1 <= n <= len(self.inputs):
-            outputs = [self.inputs[n - 1]]
+            outputs = self.inputs[:n]
         else:
             outputs = []
         self._set_outputs(outputs)
@@ -96,7 +96,7 @@ class ListOperations(ComponentBase,ABC):
     def _tail(self):
         n = self._coerce_n()
         if 1 <= n <= len(self.inputs):
-            outputs = [self.inputs[-n]]
+            outputs = self.inputs[-n:]
         else:
             outputs = []
         self._set_outputs(outputs)
