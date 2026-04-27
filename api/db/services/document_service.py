@@ -27,13 +27,15 @@ from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService, retry_deadlock_operation
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.doc_metadata_service import DocMetadataService
+
+from common import settings
+from common.constants import ParserType, StatusEnum, TaskStatus, SVR_CONSUMER_GROUP_NAME
+from common.doc_store.doc_store_base import OrderByExpr
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, get_format_time
-from common.constants import ParserType, StatusEnum, TaskStatus, SVR_CONSUMER_GROUP_NAME
-from rag.nlp import search
+
+from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import REDIS_CONN
-from common.doc_store.doc_store_base import OrderByExpr
-from common import settings
 
 
 class DocumentService(CommonService):
@@ -994,8 +996,8 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
         return {
             "id": get_uuid(),
             "doc_id": fake_doc_id,
-            "from_page": 100000000,
-            "to_page": 100000000,
+            "from_page": MAXIMUM_TASK_PAGE_NUMBER,
+            "to_page": MAXIMUM_TASK_PAGE_NUMBER,
             "task_type": ty,
             "progress_msg": datetime.now().strftime("%H:%M:%S") + " created task " + ty,
             "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
