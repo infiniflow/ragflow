@@ -1704,8 +1704,8 @@ class RAGFlowPdfParser:
         else:
             total_pages = self.total_page_number(fnm, binary=fnm)
 
-        if total_pages <= batch_size:
-            self.__images__(fnm, zoomin, callback=callback)
+        if total_pages is None or total_pages <= batch_size:
+            self.__images__(fnm, zoomin, page_to=total_pages, callback=callback)
             return self._parse_loaded_window_into_bboxes(zoomin, callback=callback)
 
         logging.info(
@@ -1846,7 +1846,10 @@ class RAGFlowPdfParser:
                 box["position_tag"] = self._offset_position_tag(box["position_tag"], self.page_from)
             if isinstance(box.get("positions"), list):
                 box["positions"] = [
-                    [int(pos[0]) + self.page_from, *pos[1:]] if isinstance(pos, list) and pos else pos for pos in box["positions"]
+                    [int(pos[0]) + self.page_from, *pos[1:]]
+                    if isinstance(pos, list) and len(pos) > 0 and isinstance(pos[0], (int, float))
+                    else pos
+                    for pos in box["positions"]
                 ]
         return boxes
 

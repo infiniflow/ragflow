@@ -54,6 +54,8 @@ class LayoutRecognizer(Recognizer):
             from deepdoc.vision.dla_cli import DLAClient
 
             self.client = DLAClient(dla_url)
+            env_used = "DEEPDOC_URL" if os.environ.get("DEEPDOC_URL") else "TENSORRT_DLA_SVR"
+            logging.info(f"LayoutRecognizer using remote DLA client at {dla_url} (via {env_used})")
             return
 
         try:
