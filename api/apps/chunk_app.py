@@ -13,9 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import base64
+import datetime
 import json
 import logging
+import re
 
+import xxhash
 from quart import request
 
 from api.apps import current_user, login_required
@@ -42,10 +46,13 @@ from api.utils.api_utils import (
     validate_request,
 )
 from common import settings
-from common.constants import LLMType, RetCode
+from common.constants import LLMType, RetCode, ParserType, PAGERANK_FLD
 from common.metadata_utils import apply_meta_data_filter
+from common.misc_utils import thread_pool_exec
+from common.string_utils import remove_redundant_spaces
+from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
-from rag.nlp import search
+from rag.nlp import search, rag_tokenizer
 from rag.prompts.generator import cross_languages, keyword_extraction
 
 def _resolve_reference_metadata(req: dict, search_config: dict | None = None) -> tuple[bool, set[str] | None]:

@@ -48,6 +48,7 @@ def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     return None
 
 
+import logging
 from api.utils.reference_metadata_utils import enrich_chunks_with_document_metadata
 
 def _build_reference_chunks(reference, include_metadata=False, metadata_fields=None):

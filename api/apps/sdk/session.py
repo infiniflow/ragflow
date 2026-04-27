@@ -423,7 +423,7 @@ async def retrieval_test_embedded():
 
         include_metadata, metadata_fields = _resolve_reference_metadata(req, search_config)
         if include_metadata:
-            _enrich_retrieval_chunks_with_metadata(ranks["chunks"], metadata_fields)
+            enrich_chunks_with_document_metadata(ranks["chunks"], metadata_fields)
 
         ranks["labels"] = labels
 
@@ -540,68 +540,6 @@ async def mindmap():
         return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)
 
+
 def _resolve_reference_metadata(req, search_config=None):
-    """
-    Resolve metadata include/fields from request and optional search config.
-    Request values take precedence over search config values.
-    Also supports legacy flat keys: include_metadata / metadata_fields.
-    """
-    config_ref = (search_config or {}).get("reference_metadata", {})
-    request_ref = req.get("reference_metadata", {})
-
-    resolved = {}
-    if isinstance(config_ref, dict):
-        resolved.update(config_ref)
-    if isinstance(request_ref, dict):
-        resolved.update(request_ref)
-
-    if "include_metadata" in req and "include" not in resolved:
-        resolved["include"] = bool(req.get("include_metadata"))
-    if "metadata_fields" in req and "fields" not in resolved:
-        resolved["fields"] = req.get("metadata_fields")
-
-    include_metadata = bool(resolved.get("include", False))
-    fields = resolved.get("fields")
-    if fields is None:
-        return include_metadata, None
-    if not isinstance(fields, list):
-        return include_metadata, set()
-    return include_metadata, {f for f in fields if isinstance(f, str)}
-
-
-def _enrich_retrieval_chunks_with_metadata(chunks, metadata_fields=None):
-    """
-    Mutates retrieval_test chunk payloads in-place by attaching `document_metadata`.
-    """
-    if metadata_fields is not None and not metadata_fields:
-        return
-
-    doc_ids_by_kb = {}
-    for chunk in chunks:
-        kb_id = chunk.get("kb_id")
-        doc_id = chunk.get("doc_id")
-        if not kb_id or not doc_id:
-            continue
-        doc_ids_by_kb.setdefault(kb_id, set()).add(doc_id)
-
-    if not doc_ids_by_kb:
-        return
-
-    meta_by_doc = {}
-    for kb_id, doc_ids in doc_ids_by_kb.items():
-        meta_map = DocMetadataService.get_metadata_for_documents(list(doc_ids), kb_id)
-        if meta_map:
-            meta_by_doc.update(meta_map)
-
-    for chunk in chunks:
-        doc_id = chunk.get("doc_id")
-        if not doc_id:
-            continue
-        meta = meta_by_doc.get(doc_id)
-        if not meta:
-            continue
-        if metadata_fields is not None:
-            meta = {k: v for k, v in meta.items() if k in metadata_fields}
-        if meta:
-            chunk["document_metadata"] = meta
-
+    return resolve_reference_metadata_preferences(req, search_config)
