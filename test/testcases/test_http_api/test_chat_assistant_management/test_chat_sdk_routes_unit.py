@@ -210,6 +210,10 @@ def _load_chat_module(monkeypatch):
     common_constants_mod.LLMType = _StubLLMType
     common_constants_mod.RetCode = _StubRetCode
     common_constants_mod.StatusEnum = _StubStatusEnum
+    # Import pure-Python constants from the real module (no heavy deps)
+    from common.constants import MAXIMUM_PAGE_NUMBER as _MPN, MAXIMUM_TASK_PAGE_NUMBER as _MTPN
+    common_constants_mod.MAXIMUM_PAGE_NUMBER = _MPN
+    common_constants_mod.MAXIMUM_TASK_PAGE_NUMBER = _MTPN
     monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
 
     misc_utils_mod = ModuleType("common.misc_utils")
