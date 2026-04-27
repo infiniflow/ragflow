@@ -14,7 +14,6 @@
 #  limitations under the License
 #
 import logging
-import os.path
 import re
 from pathlib import PurePosixPath, PureWindowsPath
 
@@ -38,8 +37,7 @@ from api.utils.api_utils import (
 )
 from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers
 from common import settings
-from common.constants import SANDBOX_ARTIFACT_BUCKET, RetCode, TaskStatus
-from common.file_utils import get_project_base_directory
+from common.constants import RetCode, TaskStatus
 from common.misc_utils import thread_pool_exec
 from common.ssrf_guard import assert_url_is_safe
 from rag.nlp import search
