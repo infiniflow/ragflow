@@ -482,7 +482,7 @@ async def rename_tag(tenant_id, dataset_id):
 async def search(tenant_id, dataset_id):
     req = await get_request_json()
     if not req.get("question"):
-        return get_error_argument_result("`question` is required")
+        return get_error_data_result("`question` is required")
     try:
         success, result = await dataset_api_service.search(dataset_id, tenant_id, req)
         if success:
