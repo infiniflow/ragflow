@@ -347,25 +347,39 @@ class XinferenceEmbed(Base):
 
 class YoudaoEmbed(Base):
     _FACTORY_NAME = "Youdao"
-    _client = None
 
-    def __init__(self, key=None, model_name="maidalun1020/bce-embedding-base_v1", **kwargs):
-        pass
+    def __init__(self, key=None, model_name="maidalun1020/bce-embedding-base_v1", base_url=None, **kwargs):
+        if not base_url:
+            base_url = "https://dashvector.cn-shanghai.ivolces.com/api/v1"
+        self.base_url = base_url
+        self.api_key = key
+        self.model_name = model_name
 
     def encode(self, texts: list):
         batch_size = 10
-        res = []
+        ress = []
         token_count = 0
         for t in texts:
             token_count += num_tokens_from_string(t)
         for i in range(0, len(texts), batch_size):
-            embds = YoudaoEmbed._client.encode(texts[i : i + batch_size])
-            res.extend(embds)
-        return np.array(res), token_count
+            payload = {"model": self.model_name, "input": {"texts": texts[i : i + batch_size]}}
+            headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"}
+            response = requests.post(f"{self.base_url}/embeddings", json=payload, headers=headers)
+            if response.status_code != 200:
+                raise Exception(f"Error: {response.status_code} - {response.text}")
+            res = response.json()
+            ress.extend([d["embedding"] for d in res["data"]])
+            token_count += res.get("usage", {}).get("total_tokens", 0)
+        return np.array(ress), token_count
 
     def encode_queries(self, text):
-        embds = YoudaoEmbed._client.encode([text])
-        return np.array(embds[0]), num_tokens_from_string(text)
+        payload = {"model": self.model_name, "input": {"texts": [text]}}
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"}
+        response = requests.post(f"{self.base_url}/embeddings", json=payload, headers=headers)
+        if response.status_code != 200:
+            raise Exception(f"Error: {response.status_code} - {response.text}")
+        res = response.json()
+        return np.array(res["data"][0]["embedding"]), res.get("usage", {}).get("total_tokens", 0)
 
 
 class JinaMultiVecEmbed(Base):
