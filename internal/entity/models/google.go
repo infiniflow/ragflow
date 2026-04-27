@@ -171,3 +171,25 @@ func (z *GoogleModel) Balance(apiConfig *APIConfig) (map[string]interface{}, err
 func (z *GoogleModel) CheckConnection(apiConfig *APIConfig) error {
 	return fmt.Errorf("no such method")
 }
+
+// Encode encodes a list of texts into embeddings (convenience method)
+func (z *GoogleModel) Encode(modelName *string, texts []string, apiConfig *APIConfig) ([][]float64, error) {
+	return z.EncodeToEmbedding(modelName, texts, apiConfig, nil)
+}
+
+// EncodeQuery encodes a single query string into embedding (convenience method)
+func (z *GoogleModel) EncodeQuery(modelName *string, query string, apiConfig *APIConfig) ([]float64, error) {
+	embeddings, err := z.Encode(modelName, []string{query}, apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	if len(embeddings) == 0 {
+		return nil, fmt.Errorf("no embedding returned")
+	}
+	return embeddings[0], nil
+}
+
+// Rerank calculates similarity scores between query and texts
+func (z *GoogleModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
+}
