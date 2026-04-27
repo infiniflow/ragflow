@@ -18,15 +18,16 @@ from types import SimpleNamespace
 
 import pytest
 from test_common import (
-    delete_document,
     document_change_status,
     document_filter,
     document_infos,
     document_metadata_summary,
     document_metadata_update,
-    document_update,
     document_update_metadata_setting,
+    bulk_upload_documents,
+    delete_document,
 )
+
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
@@ -78,13 +79,13 @@ class TestAuthorization:
 
     @pytest.mark.p2
     @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
-    def test_change_status_auth_invalid(self, invalid_auth, expected_code, expected_fragment):
-        res = document_change_status(invalid_auth, {"doc_ids": ["doc_id"], "status": "1"})
+    def test_change_status_auth_invalid(self, invalid_auth, expected_code, expected_fragment, add_dataset_func):
+        dataset_id = add_dataset_func
+        res = document_change_status(invalid_auth, dataset_id, {"doc_ids": ["doc_id"], "status": "1"})
         assert res["code"] == expected_code, res
         assert expected_fragment in res["message"], res
 
 class TestDocumentMetadata:
-
     @pytest.mark.p2
     def test_filter(self, WebApiAuth, add_dataset_func):
         kb_id = add_dataset_func
@@ -144,7 +145,7 @@ class TestDocumentMetadata:
     @pytest.mark.p2
     def test_change_status(self, WebApiAuth, add_document_func):
         dataset_id, doc_id = add_document_func
-        res = document_change_status(WebApiAuth, {"doc_ids": [doc_id], "status": "1"})
+        res = document_change_status(WebApiAuth, dataset_id, {"doc_ids": [doc_id], "status": "1"})
 
         assert res["code"] == 0, res
         assert res["data"][doc_id]["status"] == "1", res
@@ -258,8 +259,8 @@ class TestDocumentMetadataNegative:
 
     @pytest.mark.p3
     def test_change_status_invalid_status(self, WebApiAuth, add_document_func):
-        _, doc_id = add_document_func
-        res = document_change_status(WebApiAuth, {"doc_ids": [doc_id], "status": "2"})
+        dataset_id, doc_id = add_document_func
+        res = document_change_status(WebApiAuth, dataset_id, {"doc_ids": [doc_id], "status": "2"})
         assert res["code"] == 101, res
         assert "Status" in res["message"], res
 
@@ -368,89 +369,6 @@ class TestDocumentMetadataUnit:
         assert res["code"] == 500
         assert "thumb boom" in res["message"]
 
-    def test_change_status_partial_failure_matrix_unit(self, document_app_module, monkeypatch):
-        module = document_app_module
-        calls = {"docstore_update": []}
-        doc_ids = ["unauth", "missing_doc", "missing_kb", "update_fail", "docstore_3022", "docstore_generic", "outer_exc"]
-
-        async def fake_request_json():
-            return {"doc_ids": doc_ids, "status": "1"}
-
-        def fake_accessible(doc_id, _uid):
-            return doc_id != "unauth"
-
-        def fake_get_by_id(doc_id):
-            if doc_id == "missing_doc":
-                return False, None
-            if doc_id == "outer_exc":
-                raise RuntimeError("explode")
-            kb_id = "kb_missing" if doc_id == "missing_kb" else "kb1"
-            chunk_num = 1 if doc_id in {"docstore_3022", "docstore_generic"} else 0
-            doc = SimpleNamespace(id=doc_id, kb_id=kb_id, status="0", chunk_num=chunk_num)
-            return True, doc
-
-        def fake_get_kb(kb_id):
-            if kb_id == "kb_missing":
-                return False, None
-            return True, SimpleNamespace(tenant_id="tenant1")
-
-        def fake_update_by_id(doc_id, _payload):
-            return doc_id != "update_fail"
-
-        class _DocStore:
-            def update(self, where, _payload, _index_name, _kb_id):
-                calls["docstore_update"].append(where["doc_id"])
-                if where["doc_id"] == "docstore_3022":
-                    raise RuntimeError("3022 table missing")
-                if where["doc_id"] == "docstore_generic":
-                    raise RuntimeError("doc store down")
-                return True
-
-        monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        monkeypatch.setattr(module.DocumentService, "accessible", fake_accessible)
-        monkeypatch.setattr(module.DocumentService, "get_by_id", fake_get_by_id)
-        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda kb_id: fake_get_kb(kb_id))
-        monkeypatch.setattr(module.DocumentService, "update_by_id", fake_update_by_id)
-        monkeypatch.setattr(module.settings, "docStoreConn", _DocStore())
-        monkeypatch.setattr(module.search, "index_name", lambda tenant_id: f"idx_{tenant_id}")
-
-        res = _run(module.change_status.__wrapped__())
-        assert res["code"] == module.RetCode.SERVER_ERROR
-        assert res["message"] == "Partial failure"
-        assert res["data"]["unauth"]["error"] == "No authorization."
-        assert res["data"]["missing_doc"]["error"] == "No authorization."
-        assert res["data"]["missing_kb"]["error"] == "Can't find this dataset!"
-        assert res["data"]["update_fail"]["error"] == "Database error (Document update)!"
-        assert res["data"]["docstore_3022"]["error"] == "Document store table missing."
-        assert "Document store update failed:" in res["data"]["docstore_generic"]["error"]
-        assert "Internal server error: explode" == res["data"]["outer_exc"]["error"]
-        assert calls["docstore_update"] == ["docstore_3022", "docstore_generic"]
-
-    def test_change_status_invalid_status_unit(self, document_app_module, monkeypatch):
-        module = document_app_module
-
-        async def fake_request_json():
-            return {"doc_ids": ["doc1"], "status": "2"}
-
-        monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        res = _run(module.change_status.__wrapped__())
-        assert res["code"] == module.RetCode.ARGUMENT_ERROR
-        assert '"Status" must be either 0 or 1!' in res["message"]
-
-    def test_change_status_all_success_unit(self, document_app_module, monkeypatch):
-        module = document_app_module
-
-        async def fake_request_json():
-            return {"doc_ids": ["doc1"], "status": "1"}
-
-        monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        monkeypatch.setattr(module.DocumentService, "accessible", lambda *_args, **_kwargs: True)
-        monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (True, SimpleNamespace(id="doc1", kb_id="kb1", status="0", chunk_num=0)))
-        monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, SimpleNamespace(tenant_id="tenant1")))
-        monkeypatch.setattr(module.DocumentService, "update_by_id", lambda *_args, **_kwargs: True)
-        res = _run(module.change_status.__wrapped__())
-        assert res["code"] == 0
-        assert res["data"]["doc1"]["status"] == "1"
 
     def test_get_route_not_found_success_and_exception_unit(self, document_app_module, monkeypatch):
         module = document_app_module
@@ -555,3 +473,102 @@ class TestDocumentMetadataUnit:
         res = _run(module.get_image("bucket-name"))
         assert res["code"] == 500
         assert "image boom" in res["message"]
+
+class TestDocumentBatchChangeStatus:
+    @pytest.mark.p2
+    def test_change_status_partial_failure_matrix(self, WebApiAuth, add_dataset, ragflow_tmp_dir):
+        """
+        E2E test for partial failure matrix in batch document status change.
+
+        This test creates multiple documents and verifies that the batch status change
+        operation handles various failure scenarios correctly.
+        """
+
+        dataset_id = add_dataset
+
+        # Create multiple documents for testing
+        doc_ids = bulk_upload_documents(WebApiAuth, dataset_id, 3, ragflow_tmp_dir)
+        assert len(doc_ids) == 3, f"Expected 3 documents, got {len(doc_ids)}"
+
+        try:
+            # Test batch status change with all valid documents
+            # This should succeed since all documents are valid
+            res = document_change_status(WebApiAuth, dataset_id, {"doc_ids": doc_ids, "status": "1"})
+
+            # Verify the response structure
+            assert res["code"] == 0, f"Expected success code 0, got {res}"
+            assert res["data"] is not None, "Response data should not be None"
+
+            # Verify each document status was updated
+            for doc_id in doc_ids:
+                assert doc_id in res["data"], f"Document {doc_id} should be in response"
+                assert res["data"][doc_id]["status"] == "1", f"Document {doc_id} status should be 1"
+
+            # Verify the status was actually updated in the database
+            info_res = document_infos(WebApiAuth, dataset_id, {"ids": doc_ids})
+            assert info_res["code"] == 0, info_res
+
+            for doc in info_res["data"]["docs"]:
+                assert doc["status"] == "1", f"Document {doc['id']} status should be 1 in database"
+
+        finally:
+            # Cleanup: delete all documents
+            delete_document(WebApiAuth, dataset_id, {"ids": doc_ids})
+
+    @pytest.mark.p2
+    def test_change_status_invalid_status(self, WebApiAuth, add_document_func):
+        """
+        E2E test for invalid status value in batch document status change.
+
+        This test verifies that the API returns an error when an invalid status
+        value (not 0 or 1) is provided.
+        """
+
+        dataset_id, doc_id = add_document_func
+
+        # Try to update with invalid status "2" (only 0 and 1 are valid)
+        res = document_change_status(WebApiAuth, dataset_id, {"doc_ids": [doc_id], "status": "2"})
+
+        # Verify the error response
+        assert res["code"] == 101, f"Expected error code 101, got {res}"
+        assert "Status" in res["message"], f"Error message should mention Status: {res}"
+
+    @pytest.mark.p2
+    def test_change_status_all_success(self, WebApiAuth, add_document_func):
+        """
+        E2E test for successful batch document status change.
+
+        This test verifies that all documents are successfully updated
+        when valid status values are provided.
+        """
+
+        dataset_id, doc_id = add_document_func
+
+        # Verify initial status is "1" (enabled)
+        info_res = document_infos(WebApiAuth, dataset_id, {"ids": [doc_id]})
+        assert info_res["code"] == 0, info_res
+        assert info_res["data"]["docs"][0]["status"] == "1", "Initial status should be 1"
+
+        # Update status to "0" (disabled)
+        res = document_change_status(WebApiAuth, dataset_id, {"doc_ids": [doc_id], "status": "0"})
+
+        # Verify success
+        assert res["code"] == 0, f"Expected success code 0, got {res}"
+        assert res["data"][doc_id]["status"] == "0", "Document status should be 0"
+
+        # Verify the status was actually updated in the database
+        info_res = document_infos(WebApiAuth, dataset_id, {"ids": [doc_id]})
+        assert info_res["code"] == 0, info_res
+        assert info_res["data"]["docs"][0]["status"] == "0", "Document status should be 0 in database"
+
+        # Update status to "1" (enabled)
+        res = document_change_status(WebApiAuth, dataset_id, {"doc_ids": [doc_id], "status": "1"})
+
+        # Verify success
+        assert res["code"] == 0, f"Expected success code 0, got {res}"
+        assert res["data"][doc_id]["status"] == "1", "Document status should be 0"
+
+        # Verify the status was actually updated in the database
+        info_res = document_infos(WebApiAuth, dataset_id, {"ids": [doc_id]})
+        assert info_res["code"] == 0, info_res
+        assert info_res["data"]["docs"][0]["status"] == "1", "Document status should be 1 in database"

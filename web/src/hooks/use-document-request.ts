@@ -17,6 +17,7 @@ import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
 import kbService, {
   changeDocumentParser,
+  changeDocumentsStatus,
   createDocument,
   deleteDocument,
   documentFilter,
@@ -254,15 +255,19 @@ export const useSetDocumentStatus = () => {
     mutationFn: async ({
       status,
       documentId,
+      datasetId,
     }: {
       status: boolean;
       documentId: string | string[];
+      datasetId: string;
     }) => {
       const ids = Array.isArray(documentId) ? documentId : [documentId];
-      const { data } = await kbService.documentChangeStatus({
+      const { data } = await changeDocumentsStatus({
+        kb_id: datasetId,
         doc_ids: ids,
         status: Number(status),
       });
+
       if (data.code === 0) {
         message.success(i18n.t('message.modified'));
         queryClient.invalidateQueries({
