@@ -495,11 +495,11 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
             # Format as a structured text for better LLM comprehension
             # Format each field as "- Field Name: Value" on separate lines
             formatted_text = "\n".join([f"- {field}: {value}" for field, value in row_fields])
-            tokenize(d, formatted_text, eng)
+            tokenize(d, formatted_text, eng, language=lang)
             res.append(d)
         if tbls:
             doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
-            res.extend(tokenize_table(tbls, doc, is_english))
+            res.extend(tokenize_table(tbls, doc, is_english, language=lang))
     callback(0.35, "")
 
     return res
