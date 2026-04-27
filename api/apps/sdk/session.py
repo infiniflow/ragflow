@@ -314,7 +314,7 @@ async def retrieval_test_embedded():
     if not kb_ids:
         return get_json_result(data=False, message='Please specify dataset firstly.',
                                code=RetCode.DATA_ERROR)
-    doc_ids = req.get("doc_ids", [])
+    doc_ids = req.get("doc_ids")
     similarity_threshold = float(req.get("similarity_threshold", 0.0))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     use_kg = req.get("use_kg", False)
@@ -328,7 +328,7 @@ async def retrieval_test_embedded():
 
     async def _retrieval():
         nonlocal similarity_threshold, vector_similarity_weight, top, rerank_id
-        local_doc_ids = list(doc_ids) if doc_ids else []
+        local_doc_ids = [doc_id for doc_id in doc_ids if doc_id] if doc_ids else None
         tenant_ids = []
         _question = question
 

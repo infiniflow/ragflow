@@ -1411,6 +1411,21 @@ def test_searchbots_retrieval_test_embedded_matrix_unit(monkeypatch):
     assert retrieval_capture["rerank_mdl"] is not None
     assert any(call[1] == module.LLMType.EMBEDDING.value and call[2] == "embd-model" for call in llm_calls)
 
+    retrieval_capture.clear()
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue(
+            {
+                "kb_id": "kb-1",
+                "question": "plain-q",
+            }
+        ),
+    )
+    res = _run(handler())
+    assert res["code"] == 0
+    assert retrieval_capture["local_doc_ids"] is None
+
     llm_calls.clear()
 
     async def _fake_keyword_extraction(_chat_mdl, question):
