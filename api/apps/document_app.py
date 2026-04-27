@@ -19,6 +19,7 @@ import re
 from quart import make_response, request
 
 from api.apps import current_user, login_required
+from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType
 from api.db.db_models import Task
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
@@ -37,80 +38,6 @@ from common import settings
 from common.constants import RetCode, TaskStatus
 from common.misc_utils import thread_pool_exec
 from rag.nlp import search
-
-
-@manager.route("/change_status", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("doc_ids", "status")
-async def change_status():
-    req = await get_request_json()
-    doc_ids = req.get("doc_ids", [])
-    status = str(req.get("status", ""))
-
-    if status not in ["0", "1"]:
-        return get_json_result(data=False, message='"Status" must be either 0 or 1!', code=RetCode.ARGUMENT_ERROR)
-
-    result = {}
-    has_error = False
-    for doc_id in doc_ids:
-        if not DocumentService.accessible(doc_id, current_user.id):
-            result[doc_id] = {"error": "No authorization."}
-            has_error = True
-            continue
-
-        try:
-            e, doc = DocumentService.get_by_id(doc_id)
-            if not e:
-                result[doc_id] = {"error": "No authorization."}
-                has_error = True
-                continue
-            e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
-            if not e:
-                result[doc_id] = {"error": "Can't find this dataset!"}
-                has_error = True
-                continue
-            current_status = str(doc.status)
-            if current_status == status:
-                result[doc_id] = {"status": status}
-                continue
-            if not DocumentService.update_by_id(doc_id, {"status": str(status)}):
-                result[doc_id] = {"error": "Database error (Document update)!"}
-                has_error = True
-                continue
-
-            status_int = int(status)
-            if getattr(doc, "chunk_num", 0) > 0:
-                try:
-                    ok = settings.docStoreConn.update(
-                        {"doc_id": doc_id},
-                        {"available_int": status_int},
-                        search.index_name(kb.tenant_id),
-                        doc.kb_id,
-                    )
-                except Exception:
-                    logging.exception(
-                        "Document store update failed in change_status: doc_id=%s kb_id=%s status=%s",
-                        doc_id, doc.kb_id, status_int,
-                    )
-                    result[doc_id] = {"error": "Document store update failed."}
-                    has_error = True
-                    continue
-                if not ok:
-                    logging.warning(
-                        "Document store update returned False in change_status: doc_id=%s kb_id=%s status=%s",
-                        doc_id, doc.kb_id, status_int,
-                    )
-                    result[doc_id] = {"error": "Document store table missing or update failed."}
-                    has_error = True
-                    continue
-            result[doc_id] = {"status": status}
-        except Exception as e:
-            result[doc_id] = {"error": f"Internal server error: {str(e)}"}
-            has_error = True
-
-    if has_error:
-        return get_json_result(data=result, message="Partial failure", code=RetCode.SERVER_ERROR)
-    return get_json_result(data=result)
 
 
 @manager.route("/run", methods=["POST"])  # noqa: F821
@@ -174,7 +101,6 @@ async def run():
         return await thread_pool_exec(_run_sync)
     except Exception as e:
         return server_error_response(e)
-
 
 @manager.route("/get/<doc_id>", methods=["GET"])  # noqa: F821
 @login_required
@@ -268,21 +194,3 @@ async def change_parser():
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
-
-
-@manager.route("/upload_and_parse", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("conversation_id")
-async def upload_and_parse():
-    files = await request.files
-    if "file" not in files:
-        return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
-
-    file_objs = files.getlist("file")
-    for file_obj in file_objs:
-        if file_obj.filename == "":
-            return get_json_result(data=False, message="No file selected!", code=RetCode.ARGUMENT_ERROR)
-
-    form = await request.form
-    doc_ids = doc_upload_and_parse(form.get("conversation_id"), file_objs, current_user.id)
-    return get_json_result(data=doc_ids)
