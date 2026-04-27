@@ -372,6 +372,17 @@ export const updateDocumentMetaDataConfig = ({
     data: { ...data },
   });
 
+export const changeDocumentsStatus = ({
+  kb_id,
+  doc_ids,
+  status,
+}: {
+  kb_id: string;
+  doc_ids?: string[];
+  status: number;
+}) =>
+  request.post(api.documentChangeStatus(kb_id), { data: { doc_ids, status } });
+
 export const listDataPipelineLogDocument = (
   datasetId: string,
   params?: Record<string, any>,
