@@ -1,0 +1,46 @@
+{
+  "name": "Aliyun",
+  "url": {
+    "default": "https://dashscope.aliyuncs.com",
+    "singapore": "https://dashscope-intl.aliyuncs.com",
+    "us": "https://dashscope-us.aliyuncs.com"
+  },
+  "url_suffix": {
+    "chat": "compatible-mode/v1/chat/completions",
+    "embedding": "compatible-mode/v1/embeddings",
+    "models": "api/v1/deployments/models"
+  },
+  "series": "deepseek",
+  "models": [
+    {
+      "name": "deepseek-v4-flash",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v4-pro",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ]
+    }
+  ],
+  "features": {
+    "thinking": {
+      "default_value": true,
+      "supported_models": [
+        "deepseek-v4-pro",
+        "deepseek-v4-flash"
+      ]
+    },
+    "reasoning_effort": {
+      "default_value": "high",
+      "supported_modes": [
+        "deepseek-v4-pro",
+        "deepseek-v4-flash"
+      ]
+    }
+  }
+}
