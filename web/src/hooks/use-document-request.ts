@@ -17,11 +17,13 @@ import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
 import kbService, {
   changeDocumentParser,
+  createDocument,
   deleteDocument,
   documentFilter,
   listDocument,
   renameDocument,
   uploadDocument,
+  webCrawlDocument,
 } from '@/services/knowledge-service';
 import { restAPIv1, webAPI } from '@/utils/api';
 import { getSearchValue } from '@/utils/common-util';
@@ -474,10 +476,10 @@ export const useCreateDocument = () => {
   } = useMutation({
     mutationKey: [DocumentApiAction.CreateDocument],
     mutationFn: async (name: string) => {
-      const { data } = await kbService.documentCreate({
-        name,
-        kb_id: id,
-      });
+      if (!id) {
+        return 500;
+      }
+      const data = await createDocument(id, name);
       if (data.code === 0) {
         if (page === 1) {
           queryClient.invalidateQueries({
@@ -541,13 +543,15 @@ export const useNextWebCrawl = () => {
   } = useMutation({
     mutationKey: [DocumentApiAction.WebCrawl],
     mutationFn: async ({ name, url }: { name: string; url: string }) => {
+      if (!knowledgeId) {
+        return 500;
+      }
       const formData = new FormData();
       formData.append('name', name);
       formData.append('url', url);
-      formData.append('kb_id', knowledgeId);
 
-      const ret = await kbService.webCrawl(formData);
-      const code = get(ret, 'data.code');
+      const ret = await webCrawlDocument(knowledgeId, formData);
+      const code = get(ret, 'code');
       if (code === 0) {
         message.success(i18n.t('message.uploaded'));
       }
