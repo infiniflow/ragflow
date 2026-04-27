@@ -32,9 +32,30 @@ from rag.utils.redis_conn import REDIS_CONN
 @login_required
 async def cancel_task(task_id):
     """Cancel a running task.
+    """
+    return await _cancel_task(task_id)
 
+
+@manager.route("/tasks/<task_id>", methods=["PATCH"])  # noqa: F821
+@login_required
+@validate_request("action")
+async def patch_task(task_id):
+    req = await get_request_json()
+    action = req.get("action")
+
+    if action != "stop":
+        return get_json_result(
+            code=RetCode.ARGUMENT_ERROR,
+            message=f"Invalid action '{action}'. Only 'stop' is supported.",
+        )
+
+    return await _cancel_task(task_id)
+
+
+async def _cancel_task(task_id):
+    """
     Sets a Redis cancel flag, updates the task progress to -1 (cancelled),
-    and marks the associated document's run status as CANCEL if applicable.
+        and marks the associated document's run status as CANCEL if applicable.
     """
     exists, task = TaskService.get_by_id(task_id)
     if not exists:
@@ -61,18 +82,24 @@ async def cancel_task(task_id):
         logging.exception(f"Failed to set cancel flag for task {task_id}: %s", str(e))
         return get_json_result(
             code=RetCode.CONNECTION_ERROR,
-            message=f"Failed to stop task",
+            message="Failed to stop task",
         )
 
     # Append a cancellation message so the user can see it in progress_msg.
     try:
         cancel_msg = f"\n{datetime.now().strftime('%H:%M:%S')} Task stopped by user."
+        # Only transition to -1 if the task is still in a non-terminal state,
+        # mirroring TaskService.update_progress semantics.
         TaskService.model.update(
             progress_msg=TaskService.model.progress_msg + cancel_msg,
             progress=-1,
-        ).where(TaskService.model.id == task_id).execute()
+        ).where(
+            (TaskService.model.id == task_id)
+            & (TaskService.model.progress >= 0)
+            & (TaskService.model.progress < 1)
+        ).execute()
     except Exception as e:
-        logging.exception(f"Failed to update task {task_id} progress after cancellation, %s", str(e))
+        logging.exception("Failed to update task %s progress after cancellation: %s", task_id, e)
 
     # If the task belongs to a document, also mark the document's run status as
     # cancelled so that the UI reflects the state correctly.
@@ -86,20 +113,5 @@ async def cancel_task(task_id):
     except Exception as e:
         logging.exception(f"Failed to update document run status for task {task_id}: %s", str(e))
 
+    logging.info("Cancel task succeeded: task_id=%s doc_id=%s", task_id, task.doc_id)
     return get_json_result(data=True)
-
-
-@manager.route("/tasks/<task_id>", methods=["PATCH"])  # noqa: F821
-@login_required
-@validate_request("action")
-async def patch_task(task_id):
-    req = await get_request_json()
-    action = req.get("action")
-
-    if action != "stop":
-        return get_json_result(
-            code=RetCode.ARGUMENT_ERROR,
-            message=f"Invalid action '{action}'. Only 'stop' is supported.",
-        )
-
-    return await cancel_task(task_id)
