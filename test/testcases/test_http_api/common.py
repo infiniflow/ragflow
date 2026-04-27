@@ -298,7 +298,7 @@ def batch_add_sessions_with_chat_assistant(auth, chat_assistant_id, num):
 
 # DATASET GRAPH AND TASKS
 def knowledge_graph(auth, dataset_id, params=None):
-    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/graph/search"
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/graph"
     res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
     return res.json()
 
@@ -516,4 +516,25 @@ def rename_tag(auth, dataset_id, from_tag, to_tag, *, headers=HEADERS):
 def get_flattened_metadata(auth, dataset_ids, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}{DATASETS_API_URL}/metadata/flattened"
     res = requests.get(url=url, headers=headers, auth=auth, params={"dataset_ids": ",".join(dataset_ids)})
+    return res.json()
+
+
+def search_dataset(auth, dataset_id, payload=None, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/search"
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
+    return res.json()
+
+
+def get_knowledge_graph(auth, dataset_id, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/graph"
+    res = requests.get(url=url, headers=headers, auth=auth)
+    return res.json()
+
+
+def delete_knowledge_graph(auth, dataset_id, payload=None, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/graph"
+    if payload is None:
+        res = requests.delete(url=url, headers=headers, auth=auth)
+    else:
+        res = requests.delete(url=url, headers=headers, auth=auth, json=payload)
     return res.json()

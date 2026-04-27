@@ -244,22 +244,6 @@ def kb_pipeline_log_detail(auth, dataset_id, log_id, *, headers=HEADERS):
     return res.json()
 
 
-# DATASET GRAPH AND TASKS
-def knowledge_graph(auth, dataset_id, params=None):
-    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/knowledge_graph"
-    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
-    return res.json()
-
-
-def delete_knowledge_graph(auth, dataset_id, payload=None):
-    url = f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/knowledge_graph"
-    if payload is None:
-        res = requests.delete(url=url, headers=HEADERS, auth=auth)
-    else:
-        res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
-    return res.json()
-
-
 def list_tags_from_kbs(auth, dataset_ids, *, headers=HEADERS):
     params = {"dataset_ids": dataset_ids}
     res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_URL}/tags/aggregation", headers=headers, auth=auth, params=params)
@@ -490,11 +474,6 @@ def switch_chunks(auth, dataset_id, document_id, payload=None, *, headers=HEADER
 def delete_chunks(auth, dataset_id, document_id, payload=None, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
     res = requests.delete(url=url, headers=headers, auth=auth, json=payload)
-    return res.json()
-
-
-def retrieval_chunks(auth, payload=None, *, headers=HEADERS):
-    res = requests.post(url=f"{HOST_ADDRESS}{CHUNK_APP_URL}/retrieval_test", headers=headers, auth=auth, json=payload)
     return res.json()
 
 

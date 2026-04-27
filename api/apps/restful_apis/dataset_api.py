@@ -19,7 +19,7 @@ from peewee import OperationalError
 from quart import request
 from common.constants import RetCode
 from api.apps import login_required, current_user
-from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_result, add_tenant_id_to_kwargs
+from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_request_json, get_result, add_tenant_id_to_kwargs
 from api.utils.validation_utils import (
     CreateDatasetReq,
     DeleteDatasetReq,
@@ -476,10 +476,30 @@ async def rename_tag(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route('/datasets/<dataset_id>/graph/search', methods=['GET'])  # noqa: F821
+@manager.route('/datasets/<dataset_id>/search', methods=['POST'])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def knowledge_graph(tenant_id, dataset_id):
+async def search(tenant_id, dataset_id):
+    req = await get_request_json()
+    if not req.get("question"):
+        return get_error_argument_result("`question` is required")
+    try:
+        success, result = await dataset_api_service.search(dataset_id, tenant_id, req)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        if "not_found" in str(e):
+            return get_error_data_result(message="No chunk found! Check the chunk status please!")
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route('/datasets/<dataset_id>/graph', methods=['GET'])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def get_knowledge_graph(tenant_id, dataset_id):
     try:
         success, result = await dataset_api_service.get_knowledge_graph(dataset_id, tenant_id)
         if success:
