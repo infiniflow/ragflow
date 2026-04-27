@@ -292,7 +292,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, message *string, apiCon
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/chat/completions", z.BaseURL[region])
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(z.BaseURL[region], "/"), z.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
@@ -440,7 +440,7 @@ func (z *ZhipuAIModel) EncodeToEmbedding(modelName *string, texts []string, apiC
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/embedding", z.BaseURL[region])
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(z.BaseURL[region], "/"), z.URLSuffix.Embedding)
 
 	embeddings := make([][]float64, len(texts))
 
@@ -518,6 +518,23 @@ func (z *ZhipuAIModel) EncodeToEmbedding(modelName *string, texts []string, apiC
 	return embeddings, nil
 }
 
+// Encode encodes a list of texts into embeddings (convenience method)
+func (z *ZhipuAIModel) Encode(modelName *string, texts []string, apiConfig *APIConfig) ([][]float64, error) {
+	return z.EncodeToEmbedding(modelName, texts, apiConfig, nil)
+}
+
+// EncodeQuery encodes a single query string into embedding (convenience method)
+func (z *ZhipuAIModel) EncodeQuery(modelName *string, query string, apiConfig *APIConfig) ([]float64, error) {
+	embeddings, err := z.Encode(modelName, []string{query}, apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	if len(embeddings) == 0 {
+		return nil, fmt.Errorf("no embedding returned")
+	}
+	return embeddings[0], nil
+}
+
 func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
@@ -558,4 +575,9 @@ func (z *ZhipuAIModel) CheckConnection(apiConfig *APIConfig) error {
 	}
 
 	return nil
+}
+
+// Rerank calculates similarity scores between query and texts
+func (z *ZhipuAIModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }

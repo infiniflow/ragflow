@@ -17,44 +17,16 @@
 package service
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"strings"
 	"time"
-
-	"ragflow/internal/service/models"
 )
-
-// ModelProvider provides model instances based on tenant and model type
-type ModelProvider interface {
-	// GetEmbeddingModel returns an embedding model for the given tenant
-	GetEmbeddingModel(ctx context.Context, tenantID string, modelName string) (entity.EmbeddingModel, error)
-	// GetChatModel returns a chat model for the given tenant
-	GetChatModel(ctx context.Context, tenantID string, modelName string) (entity.ChatModel, error)
-	// GetRerankModel returns a rerank model for the given tenant
-	GetRerankModel(ctx context.Context, tenantID string, modelName string) (entity.RerankModel, error)
-}
-
-// ModelProviderImpl implements ModelProvider
-type ModelProviderImpl struct {
-	httpClient *http.Client
-}
-
-// NewModelProvider creates a new ModelProvider
-func NewModelProvider() *ModelProviderImpl {
-	return &ModelProviderImpl{
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-	}
-}
 
 // parseModelName parses a composite model name in format "model_name@provider"
 // Returns modelName and provider separately
@@ -67,111 +39,6 @@ func parseModelName(compositeName string) (modelName, provider string, err error
 	} else {
 		return "", "", fmt.Errorf("invalid model name format: %s", compositeName)
 	}
-}
-
-// GetEmbeddingModel returns an embedding model for the given tenant
-func (p *ModelProviderImpl) GetEmbeddingModel(ctx context.Context, tenantID string, compositeModelName string) (entity.EmbeddingModel, error) {
-	// Parse composite model name to extract model name and provider
-	modelName, provider, err := parseModelName(compositeModelName)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get API key and configuration
-	embeddingModel, err := dao.NewTenantLLMDAO().GetByTenantFactoryAndModelName(tenantID, provider, modelName)
-	if err != nil {
-		return nil, err
-	}
-
-	apiKey := embeddingModel.APIKey
-	if apiKey == nil || *apiKey == "" {
-		return nil, fmt.Errorf("no API key found for tenant %s and model %s", tenantID, compositeModelName)
-	}
-
-	// Get API base from TenantLLM if set, otherwise from model provider configuration
-	apiBase := ""
-	if embeddingModel.APIBase != nil && *embeddingModel.APIBase != "" {
-		apiBase = *embeddingModel.APIBase
-	} else {
-		providerDAO := dao.NewModelProviderDAO()
-		providerConfig := providerDAO.GetProviderByName(provider)
-		if providerConfig == nil || providerConfig.DefaultURL == "" {
-			return nil, fmt.Errorf("no API base found for provider %s", provider)
-		}
-		apiBase = providerConfig.DefaultURL
-	}
-
-	return models.CreateEmbeddingModel(provider, *apiKey, apiBase, modelName, p.httpClient)
-}
-
-// GetChatModel returns a chat model for the given tenant
-func (p *ModelProviderImpl) GetChatModel(ctx context.Context, tenantID string, compositeModelName string) (entity.ChatModel, error) {
-	// Parse composite model name to extract model name and provider
-	modelName, provider, err := parseModelName(compositeModelName)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get chat model from database
-	chatModel, err := dao.NewTenantLLMDAO().GetByTenantFactoryAndModelName(tenantID, provider, modelName)
-	if err != nil {
-		return nil, fmt.Errorf("no chat model found for tenant %s and model %s: %w", tenantID, compositeModelName, err)
-	}
-
-	apiKey := chatModel.APIKey
-	if apiKey == nil || *apiKey == "" {
-		return nil, fmt.Errorf("no API key found for tenant %s and model %s", tenantID, compositeModelName)
-	}
-
-	// Get API base from TenantLLM if set, otherwise from model provider configuration
-	apiBase := ""
-	if chatModel.APIBase != nil && *chatModel.APIBase != "" {
-		apiBase = *chatModel.APIBase
-	} else {
-		providerDAO := dao.NewModelProviderDAO()
-		providerConfig := providerDAO.GetProviderByName(provider)
-		if providerConfig == nil || providerConfig.DefaultURL == "" {
-			return nil, fmt.Errorf("no API base found for provider %s", provider)
-		}
-		apiBase = providerConfig.DefaultURL
-	}
-
-	return models.CreateChatModel(provider, *apiKey, apiBase, modelName, p.httpClient)
-}
-
-// GetRerankModel returns a rerank model for the given tenant
-func (p *ModelProviderImpl) GetRerankModel(ctx context.Context, tenantID string, compositeModelName string) (entity.RerankModel, error) {
-	// Parse composite model name to extract model name and provider
-	modelName, provider, err := parseModelName(compositeModelName)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get rerank model from database
-	rerankModel, err := dao.NewTenantLLMDAO().GetByTenantFactoryAndModelName(tenantID, provider, modelName)
-	if err != nil {
-		return nil, fmt.Errorf("no rerank model found for tenant %s and model %s: %w", tenantID, compositeModelName, err)
-	}
-
-	apiKey := rerankModel.APIKey
-	if apiKey == nil || *apiKey == "" {
-		return nil, fmt.Errorf("no API key found for tenant %s and model %s", tenantID, compositeModelName)
-	}
-
-	// Get API base from TenantLLM if set, otherwise from model provider configuration
-	apiBase := ""
-	if rerankModel.APIBase != nil && *rerankModel.APIBase != "" {
-		apiBase = *rerankModel.APIBase
-	} else {
-		providerDAO := dao.NewModelProviderDAO()
-		providerConfig := providerDAO.GetProviderByName(provider)
-		if providerConfig == nil || providerConfig.DefaultURL == "" {
-			return nil, fmt.Errorf("no API base found for provider %s", provider)
-		}
-		apiBase = providerConfig.DefaultURL
-	}
-
-	return models.CreateRerankModel(provider, *apiKey, apiBase, modelName, p.httpClient)
 }
 
 func NewModelProviderService() *ModelProviderService {
@@ -972,4 +839,79 @@ func (m *ModelProviderService) GetModelByName(modelName string, tenantID string)
 		ModelName:    *tenantLLM.LLMName,
 		APIKey:       *tenantLLM.APIKey,
 	}, nil
+}
+
+// GetEmbeddingModel returns an EmbeddingModel wrapper for the given tenant
+func (m *ModelProviderService) GetEmbeddingModel(tenantID, compositeModelName string) (*modelModule.EmbeddingModel, error) {
+	driver, modelName, apiConfig, err := m.getModelInfo(tenantID, compositeModelName)
+	if err != nil {
+		return nil, err
+	}
+	return modelModule.NewEmbeddingModel(driver, modelName, apiConfig), nil
+}
+
+// GetRerankModel returns a RerankModel wrapper for the given tenant
+func (m *ModelProviderService) GetRerankModel(tenantID, compositeModelName string) (*modelModule.RerankModel, error) {
+	driver, modelName, apiConfig, err := m.getModelInfo(tenantID, compositeModelName)
+	if err != nil {
+		return nil, err
+	}
+	return modelModule.NewRerankModel(driver, modelName, apiConfig), nil
+}
+
+// GetChatModel returns a ChatModel wrapper for the given tenant
+func (m *ModelProviderService) GetChatModel(tenantID, compositeModelName string) (*modelModule.ChatModel, error) {
+	driver, modelName, apiConfig, err := m.getModelInfo(tenantID, compositeModelName)
+	if err != nil {
+		return nil, err
+	}
+	return modelModule.NewChatModel(driver, modelName, apiConfig), nil
+}
+
+// getModelInfo returns the common components needed to construct any model type
+func (m *ModelProviderService) getModelInfo(tenantID, compositeModelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+	modelName, provider, err := parseModelName(compositeModelName)
+	if err != nil {
+		return nil, "", nil, err
+	}
+
+	tenantLLM, err := dao.NewTenantLLMDAO().GetByTenantFactoryAndModelName(tenantID, provider, modelName)
+	if err != nil {
+		return nil, "", nil, err
+	}
+
+	apiKey := tenantLLM.APIKey
+	if apiKey == nil || *apiKey == "" {
+		return nil, "", nil, fmt.Errorf("no API key found for tenant %s and model %s", tenantID, compositeModelName)
+	}
+
+	apiBase := ""
+	if tenantLLM.APIBase != nil && *tenantLLM.APIBase != "" {
+		apiBase = *tenantLLM.APIBase
+	} else {
+		providerDAO := dao.NewModelProviderDAO()
+		providerConfig := providerDAO.GetProviderByName(provider)
+		if providerConfig == nil || providerConfig.DefaultURL == "" {
+			return nil, "", nil, fmt.Errorf("no API base found for provider %s", provider)
+		}
+		apiBase = providerConfig.DefaultURL
+	}
+
+	factory := modelModule.NewModelFactory()
+	baseURLMap := map[string]string{"default": apiBase}
+
+	providerManager, _ := entity.NewProviderManager("conf/models")
+	providerEntity := providerManager.FindProvider(strings.ToLower(provider))
+	if providerEntity == nil {
+		return nil, "", nil, fmt.Errorf("provider %s not found in conf/models", provider)
+	}
+	baseURLMap = providerEntity.URL
+	urlSuffix := providerEntity.URLSuffix
+	modelDriver, err := factory.CreateModelDriver(provider, baseURLMap, urlSuffix)
+	if err != nil {
+		return nil, "", nil, err
+	}
+
+	apiConfig := &modelModule.APIConfig{ApiKey: apiKey}
+	return modelDriver, modelName, apiConfig, nil
 }

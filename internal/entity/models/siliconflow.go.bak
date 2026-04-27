@@ -28,6 +28,7 @@ import (
 	"time"
 )
 
+<<<<<<< Updated upstream
 // SiliconflowModel implements ModelDriver for Siliconflow
 type SiliconflowModel struct {
 	BaseURL    map[string]string
@@ -40,6 +41,22 @@ func NewSiliconflowModel(baseURL map[string]string, urlSuffix URLSuffix) *Silico
 	return &SiliconflowModel{
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
+=======
+// SiliconflowModel implements ModelDriver for SILICONFLOW API
+type SiliconflowModel struct {
+	BaseURL    map[string]string
+	URLSuffix  URLSuffix
+	ModelName  string
+	httpClient *http.Client
+}
+
+// NewSiliconflowModel creates a new SILICONFLOW model instance
+func NewSiliconflowModel(baseURL map[string]string, urlSuffix URLSuffix, modelName string) *SiliconflowModel {
+	return &SiliconflowModel{
+		BaseURL:   baseURL,
+		URLSuffix: urlSuffix,
+		ModelName: modelName,
+>>>>>>> Stashed changes
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 			Transport: &http.Transport{
@@ -52,10 +69,54 @@ func NewSiliconflowModel(baseURL map[string]string, urlSuffix URLSuffix) *Silico
 	}
 }
 
+<<<<<<< Updated upstream
 func (z *SiliconflowModel) Name() string {
 	return "siliconflow"
 }
 
+// Chat sends a message and returns response
+func (z *SiliconflowModel) Chat(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+=======
+func (s *SiliconflowModel) Name() string {
+	return "siliconflow"
+}
+
+// SiliconflowEmbeddingRequest represents SILICONFLOW embedding request
+type SiliconflowEmbeddingRequest struct {
+	Model string   `json:"model"`
+	Input []string `json:"input"`
+}
+
+// SiliconflowEmbeddingResponse represents SILICONFLOW embedding response
+type SiliconflowEmbeddingResponse struct {
+	Data []struct {
+		Embedding []float64 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
+}
+
+// SiliconflowChatRequest represents SILICONFLOW chat request
+type SiliconflowChatRequest struct {
+	Model       string        `json:"model"`
+	Messages    []ChatMessage `json:"messages"`
+	Temperature float64       `json:"temperature,omitempty"`
+	MaxTokens   int           `json:"max_tokens,omitempty"`
+	Stream      bool          `json:"stream,omitempty"`
+}
+
+// SiliconflowChatResponse represents SILICONFLOW chat response
+type SiliconflowChatResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	Error struct {
+		Message string `json:"message"`
+		Code    string `json:"code"`
+	} `json:"error,omitempty"`
+}
 
 // SiliconflowRerankRequest represents SILICONFLOW rerank request
 type SiliconflowRerankRequest struct {
@@ -76,13 +137,21 @@ type SiliconflowRerankResponse struct {
 	} `json:"results"`
 }
 
+// ChatMessage represents a chat message
+type ChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
 // Chat sends a message and returns response
-func (z *SiliconflowModel) Chat(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (s *SiliconflowModel) Chat(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig) (*ChatResponse, error) {
+>>>>>>> Stashed changes
 	if message == nil {
 		return nil, fmt.Errorf("message is nil")
 	}
 
 	var region = "default"
+<<<<<<< Updated upstream
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
@@ -97,11 +166,20 @@ func (z *SiliconflowModel) Chat(modelName, message *string, apiConfig *APIConfig
 	}
 
 	// Build request body
+=======
+	if apiConfig != nil && apiConfig.Region != nil {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", s.BaseURL[region], s.URLSuffix.Chat)
+
+>>>>>>> Stashed changes
 	reqBody := map[string]interface{}{
 		"model": modelName,
 		"messages": []map[string]string{
 			{"role": "user", "content": *message},
 		},
+<<<<<<< Updated upstream
 		"stream":      false,
 		"temperature": 1,
 	}
@@ -135,6 +213,17 @@ func (z *SiliconflowModel) Chat(modelName, message *string, apiConfig *APIConfig
 			reqBody["thinking"] = map[string]interface{}{
 				"type": "disabled",
 			}
+=======
+		"stream": false,
+	}
+
+	if modelConfig != nil {
+		if modelConfig.Temperature != nil {
+			reqBody["temperature"] = *modelConfig.Temperature
+		}
+		if modelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *modelConfig.MaxTokens
+>>>>>>> Stashed changes
 		}
 	}
 
@@ -149,9 +238,17 @@ func (z *SiliconflowModel) Chat(modelName, message *string, apiConfig *APIConfig
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+<<<<<<< Updated upstream
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := z.httpClient.Do(req)
+=======
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
+
+	resp, err := s.httpClient.Do(req)
+>>>>>>> Stashed changes
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -163,6 +260,7 @@ func (z *SiliconflowModel) Chat(modelName, message *string, apiConfig *APIConfig
 	}
 
 	if resp.StatusCode != http.StatusOK {
+<<<<<<< Updated upstream
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -217,11 +315,119 @@ func (z *SiliconflowModel) ChatStreamlyWithSender(modelName, message *string, ap
 	url := fmt.Sprintf("%s/chat/completions", z.BaseURL[region])
 
 	// Build request body with streaming enabled
+=======
+		return nil, fmt.Errorf("SILICONFLOW API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var chatResp SiliconflowChatResponse
+	if err := json.Unmarshal(body, &chatResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if chatResp.Error.Message != "" {
+		return nil, fmt.Errorf("chat error: %s", chatResp.Error.Message)
+	}
+
+	if len(chatResp.Choices) == 0 {
+		return nil, fmt.Errorf("no response choices returned")
+	}
+
+	content := chatResp.Choices[0].Message.Content
+	return &ChatResponse{Answer: &content}, nil
+}
+
+// ChatWithMessages sends multiple messages with roles and returns response
+func (s *SiliconflowModel) ChatWithMessages(modelName string, apiKey *string, messages []Message, modelConfig *ChatConfig) (string, error) {
+	if apiKey == nil || *apiKey == "" {
+		return "", fmt.Errorf("api key is nil or empty")
+	}
+
+	if len(messages) == 0 {
+		return "", fmt.Errorf("messages is empty")
+	}
+
+	var region = "default"
+	if modelConfig != nil && modelConfig.Temperature != nil {
+		region = "default"
+	}
+
+	url := fmt.Sprintf("%s/%s", s.BaseURL[region], s.URLSuffix.Chat)
+
+	apiMessages := make([]map[string]string, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]string{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
+	reqBody := map[string]interface{}{
+		"model":       modelName,
+		"messages":    apiMessages,
+		"stream":      false,
+		"temperature": 1.0,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var chatResp SiliconflowChatResponse
+	if err := json.Unmarshal(body, &chatResp); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if chatResp.Error.Message != "" {
+		return "", fmt.Errorf("chat error: %s", chatResp.Error.Message)
+	}
+
+	if len(chatResp.Choices) == 0 {
+		return "", fmt.Errorf("no response choices returned")
+	}
+
+	return chatResp.Choices[0].Message.Content, nil
+}
+
+// ChatStreamlyWithSender sends a message and streams response via sender function
+func (s *SiliconflowModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	var region = "default"
+	if apiConfig != nil && apiConfig.Region != nil {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", s.BaseURL[region], s.URLSuffix.Chat)
+
+>>>>>>> Stashed changes
 	reqBody := map[string]interface{}{
 		"model": modelName,
 		"messages": []map[string]string{
 			{"role": "user", "content": *message},
 		},
+<<<<<<< Updated upstream
 		"stream":      false,
 		"temperature": 1,
 	}
@@ -259,6 +465,17 @@ func (z *SiliconflowModel) ChatStreamlyWithSender(modelName, message *string, ap
 			reqBody["thinking"] = map[string]interface{}{
 				"type": "disabled",
 			}
+=======
+		"stream": true,
+	}
+
+	if modelConfig != nil {
+		if modelConfig.Temperature != nil {
+			reqBody["temperature"] = *modelConfig.Temperature
+		}
+		if modelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *modelConfig.MaxTokens
+>>>>>>> Stashed changes
 		}
 	}
 
@@ -273,9 +490,18 @@ func (z *SiliconflowModel) ChatStreamlyWithSender(modelName, message *string, ap
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+<<<<<<< Updated upstream
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := z.httpClient.Do(req)
+=======
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := s.httpClient.Do(req)
+>>>>>>> Stashed changes
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -283,6 +509,7 @@ func (z *SiliconflowModel) ChatStreamlyWithSender(modelName, message *string, ap
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+<<<<<<< Updated upstream
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -297,21 +524,39 @@ func (z *SiliconflowModel) ChatStreamlyWithSender(modelName, message *string, ap
 		logger.Info(line)
 
 		// SSE data line starts with "data:"
+=======
+		return fmt.Errorf("SILICONFLOW API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+
+>>>>>>> Stashed changes
 		if !strings.HasPrefix(line, "data:") {
 			continue
 		}
 
+<<<<<<< Updated upstream
 		// Extract JSON after "data:"
 		data := strings.TrimSpace(line[5:])
 
 		// [DONE] marks the end of stream
+=======
+		data := strings.TrimSpace(line[5:])
+>>>>>>> Stashed changes
 		if data == "[DONE]" {
 			break
 		}
 
+<<<<<<< Updated upstream
 		// Parse the JSON event
 		var event map[string]interface{}
 		if err = json.Unmarshal([]byte(data), &event); err != nil {
+=======
+		var event map[string]interface{}
+		if err := json.Unmarshal([]byte(data), &event); err != nil {
+>>>>>>> Stashed changes
 			continue
 		}
 
@@ -332,6 +577,7 @@ func (z *SiliconflowModel) ChatStreamlyWithSender(modelName, message *string, ap
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
+<<<<<<< Updated upstream
 			if content == "<think>" {
 				thinkingPhase = true
 				continue
@@ -383,6 +629,32 @@ func (z *SiliconflowModel) ChatStreamlyWithSender(modelName, message *string, ap
 }
 
 // EncodeToEmbedding encodes a list of texts into embeddings
+func (z *SiliconflowModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+	var region = "default"
+	if apiConfig.Region != nil {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Models)
+
+	// Build request body
+	reqBody := map[string]interface{}{}
+=======
+			if err := sender(&content, nil); err != nil {
+				return err
+			}
+		}
+	}
+
+	endOfStream := "[DONE]"
+	return sender(&endOfStream, nil)
+}
+
+// EncodeToEmbedding encodes a list of texts into embeddings
 func (s *SiliconflowModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
 	if len(texts) == 0 {
 		return [][]float64{}, nil
@@ -400,131 +672,46 @@ func (s *SiliconflowModel) EncodeToEmbedding(modelName *string, texts []string, 
 		apiKey = *apiConfig.ApiKey
 	}
 
-	embeddings := make([][]float64, len(texts))
-
-	for i, text := range texts {
-		reqBody := map[string]interface{}{
-			"model": modelName,
-			"input": text,
-		}
-
-		jsonData, err := json.Marshal(reqBody)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request: %w", err)
-		}
-
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %w", err)
-		}
-
-		req.Header.Set("Content-Type", "application/json")
-		if apiKey != "" {
-			req.Header.Set("Authorization", "Bearer "+apiKey)
-		}
-
-		resp, err := s.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("failed to send request: %w", err)
-		}
-
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to read response: %w", err)
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("SILICONFLOW API error: %s, body: %s", resp.Status, string(body))
-		}
-
-		// Parse response
-		var result map[string]interface{}
-		if err = json.Unmarshal(body, &result); err != nil {
-			return nil, fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		data, ok := result["data"].([]interface{})
-		if !ok || len(data) == 0 {
-			return nil, fmt.Errorf("no data in response")
-		}
-
-		firstData, ok := data[0].(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("invalid data format")
-		}
-
-		embeddingSlice, ok := firstData["embedding"].([]interface{})
-		if !ok {
-			return nil, fmt.Errorf("invalid embedding format")
-		}
-
-		embedding := make([]float64, len(embeddingSlice))
-		for j, v := range embeddingSlice {
-			switch val := v.(type) {
-			case float64:
-				embedding[j] = val
-			case float32:
-				embedding[j] = float64(val)
-			default:
-				return nil, fmt.Errorf("unexpected embedding value type")
-			}
-		}
-
-		embeddings[i] = embedding
+	reqBody := SiliconflowEmbeddingRequest{
+		Model: s.ModelName,
+		Input: texts,
 	}
 
-	return embeddings, nil
-}
-
-// Encode encodes a list of texts into embeddings (convenience method)
-func (s *SiliconflowModel) Encode(modelName *string, texts []string, apiConfig *APIConfig) ([][]float64, error) {
-	return s.EncodeToEmbedding(modelName, texts, apiConfig, nil)
-}
-
-// EncodeQuery encodes a single query string into embedding (convenience method)
-func (s *SiliconflowModel) EncodeQuery(modelName *string, query string, apiConfig *APIConfig) ([]float64, error) {
-	embeddings, err := s.Encode(modelName, []string{query}, apiConfig)
-	if err != nil {
-		return nil, err
-	}
-	if len(embeddings) == 0 {
-		return nil, fmt.Errorf("no embedding returned")
-	}
-	return embeddings[0], nil
-}
-
-func (z *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig.Region != nil {
-		region = *apiConfig.Region
-	}
-
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Models)
-
-	// Build request body
-	reqBody := map[string]interface{}{}
+	fmt.Printf("[DEBUG] SILICONFLOW EncodeToEmbedding: url=%s, apiKey=%s, model=%s\n", url, apiKey, s.ModelName)
+>>>>>>> Stashed changes
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+<<<<<<< Updated upstream
 	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+=======
+	req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
+>>>>>>> Stashed changes
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+<<<<<<< Updated upstream
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := z.httpClient.Do(req)
+=======
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	resp, err := s.httpClient.Do(req)
+>>>>>>> Stashed changes
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
+<<<<<<< Updated upstream
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
@@ -562,18 +749,51 @@ func (z *SiliconflowModel) CheckConnection(apiConfig *APIConfig) error {
 		return err
 	}
 	return nil
+=======
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("SILICONFLOW API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var embeddingResp SiliconflowEmbeddingResponse
+	if err := json.NewDecoder(resp.Body).Decode(&embeddingResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	embeddings := make([][]float64, len(texts))
+	for _, data := range embeddingResp.Data {
+		if data.Index < len(embeddings) {
+			embeddings[data.Index] = data.Embedding
+		}
+	}
+
+	return embeddings, nil
+}
+
+// Encode encodes a list of texts into embeddings (convenience method)
+func (s *SiliconflowModel) Encode(texts []string, apiConfig *APIConfig) ([][]float64, error) {
+	return s.EncodeToEmbedding(nil, texts, apiConfig, nil)
+}
+
+// EncodeQuery encodes a single query string into embedding (convenience method)
+func (s *SiliconflowModel) EncodeQuery(query string, apiConfig *APIConfig) ([]float64, error) {
+	embeddings, err := s.Encode([]string{query}, apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	if len(embeddings) == 0 {
+		return nil, fmt.Errorf("no embedding returned")
+	}
+	return embeddings[0], nil
 }
 
 // Rerank calculates similarity scores between query and texts
-func (s *SiliconflowModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+func (s *SiliconflowModel) Rerank(query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
 	if len(texts) == 0 {
 		return []float64{}, nil
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil {
-		region = *apiConfig.Region
-	}
+	model := s.ModelName
 
 	apiKey := ""
 	if apiConfig != nil && apiConfig.ApiKey != nil {
@@ -581,7 +801,7 @@ func (s *SiliconflowModel) Rerank(modelName *string, query string, texts []strin
 	}
 
 	reqBody := SiliconflowRerankRequest{
-		Model:           *modelName,
+		Model:           model,
 		Query:           query,
 		Documents:       texts,
 		TopN:            len(texts),
@@ -595,9 +815,12 @@ func (s *SiliconflowModel) Rerank(modelName *string, query string, texts []strin
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(s.BaseURL[region], "/"), s.URLSuffix.Rerank)
+	reqURL := s.BaseURL["default"]
+	if !strings.Contains(reqURL, "/rerank") {
+		reqURL = strings.TrimSuffix(reqURL, "/") + "/rerank"
+	}
 
-	req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
+	req, err := http.NewRequest("POST", reqURL, strings.NewReader(string(jsonData)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -633,4 +856,17 @@ func (s *SiliconflowModel) Rerank(modelName *string, query string, texts []strin
 	}
 
 	return scores, nil
+}
+
+func (s *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+	return nil, fmt.Errorf("%s, no such method", s.Name())
+}
+
+func (s *SiliconflowModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("%s, no such method", s.Name())
+}
+
+func (s *SiliconflowModel) CheckConnection(apiConfig *APIConfig) error {
+	return fmt.Errorf("%s, no such method", s.Name())
+>>>>>>> Stashed changes
 }
