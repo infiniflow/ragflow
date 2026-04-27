@@ -37,6 +37,7 @@ from pypdf import PdfReader as pdf2_read
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
+from common.constants import MAXIMUM_PAGE_NUMBER
 from common.file_utils import get_project_base_directory
 from deepdoc.vision import OCR, AscendLayoutRecognizer, LayoutRecognizer, Recognizer, TableStructureRecognizer
 from rag.nlp import rag_tokenizer
@@ -1523,7 +1524,7 @@ class RAGFlowPdfParser:
         except Exception:
             logging.exception("total_page_number")
 
-    def __images__(self, fnm, zoomin=3, page_from=0, page_to=299, callback=None):
+    def __images__(self, fnm, zoomin=3, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         self.lefted_chars = []
         self.mean_height = []
         self.mean_width = []
@@ -1543,7 +1544,7 @@ class RAGFlowPdfParser:
                         self.page_chars = [[c for c in page.dedupe_chars().chars if self._has_color(c)] for page in self.pdf.pages[page_from:page_to]]
                     except Exception as e:
                         logging.warning(f"Failed to extract characters for pages {page_from}-{page_to}: {str(e)}")
-                        self.page_chars = [[] for _ in range(page_to - page_from)]  # If failed to extract, using empty list instead.
+                        self.page_chars = [[] for _ in range(len(self.page_images))]  # If failed to extract, using empty list instead.
 
                     # Detect garbled pages and clear their chars so the OCR
                     # path will be used instead. Two detection strategies:
@@ -1696,7 +1697,7 @@ class RAGFlowPdfParser:
         tbls = self._extract_table_figure(need_image, zoomin, return_html, False)
         return self.__filterout_scraps(deepcopy(self.boxes), zoomin), tbls
 
-    def parse_into_bboxes(self, fnm, callback=None, zoomin=3):
+    def parse_into_bboxes(self, fnm, callback=None, zoomin=3, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
         self.outlines = extract_pdf_outlines(fnm)
         batch_size = max(1, int(os.getenv("PDF_PARSER_PAGE_BATCH_SIZE", "50")))
         if isinstance(fnm, str):
@@ -1704,24 +1705,28 @@ class RAGFlowPdfParser:
         else:
             total_pages = self.total_page_number(fnm, binary=fnm)
 
-        if total_pages is None or total_pages <= batch_size:
-            self.__images__(fnm, zoomin, page_to=total_pages, callback=callback)
+        if total_pages is None:
+            total_pages = to_page
+
+        if to_page - from_page <= batch_size:
+            self.__images__(fnm, zoomin, from_page=from_page, page_to=to_page, callback=callback)
             return self._parse_loaded_window_into_bboxes(zoomin, callback=callback)
 
         logging.info(
-            "parse_into_bboxes uses chunk mode: total_pages=%s, batch_size=%s",
-            total_pages,
+            "parse_into_bboxes uses chunk mode: from_page=%s, to_page=%s, batch_size=%s",
+            from_page,
+            to_page,
             batch_size,
         )
         all_boxes = []
         start = timer()
-        for page_from in range(0, total_pages, batch_size):
-            page_to = min(page_from + batch_size, total_pages)
+        for page_from in range(from_page, to_page, batch_size):
+            page_to = min(page_from + batch_size, to_page)
             self.__images__(fnm, zoomin, page_from=page_from, page_to=page_to, callback=None)
             chunk_boxes = self._parse_loaded_window_into_bboxes(zoomin)
             all_boxes.extend(self._to_global_boxes(chunk_boxes))
             if callback:
-                callback(page_to / total_pages, f"Structured: {page_to}/{total_pages} pages")
+                callback((page_to - from_page) / (to_page - from_page), f"Structured: {page_to}/{total_pages} pages")
 
         logging.info("parse_into_bboxes chunk mode cost %.2fs", timer() - start)
         return all_boxes
@@ -1992,7 +1997,7 @@ class RAGFlowPdfParser:
 
 
 class PlainParser:
-    def __call__(self, filename, from_page=0, to_page=100000, **kwargs):
+    def __call__(self, filename, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, **kwargs):
         lines = []
         try:
             self.pdf = pdf2_read(filename if isinstance(filename, str) else BytesIO(filename))
@@ -2018,7 +2023,7 @@ class VisionParser(RAGFlowPdfParser):
         self.vision_model = vision_model
         self.outlines = []
 
-    def __images__(self, fnm, zoomin=3, page_from=0, page_to=299, callback=None):
+    def __images__(self, fnm, zoomin=3, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         try:
             with sys.modules[LOCK_KEY_pdfplumber]:
                 self.pdf = pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm))
@@ -2029,7 +2034,7 @@ class VisionParser(RAGFlowPdfParser):
             self.total_page = 0
             logging.exception("VisionParser __images__")
 
-    def __call__(self, filename, from_page=0, to_page=100000, **kwargs):
+    def __call__(self, filename, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, **kwargs):
         callback = kwargs.get("callback", lambda prog, msg: None)
         zoomin = kwargs.get("zoomin", 3)
         self.__images__(fnm=filename, zoomin=zoomin, page_from=from_page, page_to=to_page, callback=callback)

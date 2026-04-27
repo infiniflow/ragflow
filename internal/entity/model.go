@@ -159,7 +159,7 @@ type Model struct {
 	MaxTokens    int            `json:"max_tokens"`
 	ModelTypes   []string       `json:"model_types"`
 	Thinking     *ModelThinking `json:"thinking"`
-	Series       *string        `json:"series"`
+	Type         *string        `json:"type"`
 	ModelTypeMap map[string]bool
 }
 
@@ -170,7 +170,7 @@ type Provider struct {
 	URLSuffix   models.URLSuffix  `json:"url_suffix"`
 	Models      []*Model          `json:"models"`
 	Features    Features          `json:"features"`
-	Series      string            `json:"series"`
+	Type        string            `json:"type"`
 	ModelDriver models.ModelDriver
 }
 
@@ -257,12 +257,12 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 				}
 			}
 
-			if provider.Series == "" {
+			if provider.Type == "" {
 				pos := strings.Index(model.Name, "-")
-				modelSeries := model.Name[0:pos]
-				model.Series = &modelSeries
+				modelType := model.Name[0:pos]
+				model.Type = &modelType
 			} else {
-				model.Series = &provider.Name
+				model.Type = &provider.Name
 			}
 
 			model.ModelTypeMap = make(map[string]bool)
