@@ -1542,7 +1542,7 @@ class RAGFlowPdfParser:
                         self.page_chars = [[c for c in page.dedupe_chars().chars if self._has_color(c)] for page in self.pdf.pages[page_from:page_to]]
                     except Exception as e:
                         logging.warning(f"Failed to extract characters for pages {page_from}-{page_to}: {str(e)}")
-                        self.page_chars = [[] for _ in range(page_to - page_from)]  # If failed to extract, using empty list instead.
+                        self.page_chars = [[] for _ in range(len(self.page_images))]  # If failed to extract, using empty list instead.
 
                     # Detect garbled pages and clear their chars so the OCR
                     # path will be used instead. Two detection strategies:

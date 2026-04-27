@@ -35,7 +35,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.doc_metadata_service import DocMetadataService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, get_format_time
-from common.constants import LLMType, ParserType, StatusEnum, TaskStatus, SVR_CONSUMER_GROUP_NAME, MAXIMUM_TASK_PAGE_NUMBER
+from common.constants import LLMType, ParserType, StatusEnum, TaskStatus, SVR_CONSUMER_GROUP_NAME, MAXIMUM_PAGE_NUMBER, MAXIMUM_TASK_PAGE_NUMBER
 from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import REDIS_CONN
 from common.doc_store.doc_store_base import OrderByExpr

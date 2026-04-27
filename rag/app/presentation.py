@@ -140,7 +140,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     if re.search(r"\.pptx?$", filename, re.IGNORECASE):
         try:
             ppt_parser = RAGFlowPptParser()
-            for pn, txt in enumerate(ppt_parser(filename if not binary else binary, from_page, 1000000, callback)):
+            for pn, txt in enumerate(ppt_parser(filename if not binary else binary, from_page, MAXIMUM_PAGE_NUMBER, callback)):
                 d = copy.deepcopy(doc)
                 pn += from_page
                 d["doc_type_kwd"] = "image"
