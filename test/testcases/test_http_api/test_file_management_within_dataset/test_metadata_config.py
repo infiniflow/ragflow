@@ -122,10 +122,10 @@ class TestDocumentMetadataConfigAuthorization:
 @pytest.mark.usefixtures("clear_datasets")
 class TestDocumentMetadataConfig:
     @pytest.mark.p2
-    def test_update_document_metadata_config_not_found(self, HttpApiAuth, add_document_func):
-        dataset_id, doc_id = add_document_func
-        res = update_document_metadata_config(HttpApiAuth, dataset_id, doc_id, {})
-        assert res["code"] in [0, 102], res
+    def test_update_document_metadata_config_not_found(self, HttpApiAuth, add_dataset_func):
+        dataset_id = add_dataset_func
+        res = update_document_metadata_config(HttpApiAuth, dataset_id, "nonexistent_doc_id", {})
+        assert res["code"] != 0, res
 
     @pytest.mark.p2
     def test_update_document_metadata_config_invalid_dataset(self, HttpApiAuth, add_document_func):

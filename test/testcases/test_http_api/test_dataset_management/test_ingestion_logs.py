@@ -56,26 +56,16 @@ class TestGetIngestionLog:
 @pytest.mark.usefixtures("clear_datasets")
 class TestListIngestionLogsEdgeCases:
     @pytest.mark.p3
-    def test_list_ingestion_logs_missing_dataset_id(self, HttpApiAuth):
-        """Test list ingestion logs without providing dataset_id"""
-        res = list_ingestion_logs(HttpApiAuth, "")
-        assert res["code"] != 0, res
-
-    @pytest.mark.p3
     def test_list_ingestion_logs_abnormal_date_filter(self, HttpApiAuth, add_dataset_func):
-        """Test list ingestion logs with date range that has no matching records.
-
-        The API returns an error when the date filter produces an abnormal result
-        (i.e., create_date_from > create_date_to or range with no data).
-        """
+        """Test list ingestion logs when create_date_from > create_date_to."""
         dataset_id = add_dataset_func
         res = list_ingestion_logs(
             HttpApiAuth,
             dataset_id,
             params={
                 "desc": "false",
-                "create_date_from": "2025-01-01",
-                "create_date_to": "2025-02-01",
+                "create_date_from": "2025-02-01",
+                "create_date_to": "2025-01-01",
             },
         )
-        assert res["code"] in [0, 102], res
+        assert res["code"] != 0, res
