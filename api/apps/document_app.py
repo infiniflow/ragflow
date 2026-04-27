@@ -18,7 +18,6 @@ import re
 from quart import make_response, request
 
 from api.apps import current_user, login_required
-from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
@@ -34,25 +33,6 @@ from common import settings
 from common.constants import RetCode, TaskStatus
 from common.misc_utils import thread_pool_exec
 from rag.nlp import search
-
-
-@manager.route("/thumbnails", methods=["GET"])  # noqa: F821
-# @login_required
-def thumbnails():
-    doc_ids = request.args.getlist("doc_ids")
-    if not doc_ids:
-        return get_json_result(data=False, message='Lack of "Document ID"', code=RetCode.ARGUMENT_ERROR)
-
-    try:
-        docs = DocumentService.get_thumbnails(doc_ids)
-
-        for doc_item in docs:
-            if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-                doc_item["thumbnail"] = f"/v1/document/image/{doc_item['kb_id']}-{doc_item['thumbnail']}"
-
-        return get_json_result(data={d["id"]: d["thumbnail"] for d in docs})
-    except Exception as e:
-        return server_error_response(e)
 
 
 @manager.route("/get/<doc_id>", methods=["GET"])  # noqa: F821
@@ -145,21 +125,5 @@ async def change_parser():
             DocumentService.update_parser_config(doc.id, req["parser_config"])
         reset_doc()
         return get_json_result(data=True)
-    except Exception as e:
-        return server_error_response(e)
-
-
-@manager.route("/image/<image_id>", methods=["GET"])  # noqa: F821
-# @login_required
-async def get_image(image_id):
-    try:
-        arr = image_id.split("-")
-        if len(arr) != 2:
-            return get_data_error_result(message="Image not found.")
-        bkt, nm = image_id.split("-")
-        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
-        response = await make_response(data)
-        response.headers.set("Content-Type", "image/JPEG")
-        return response
     except Exception as e:
         return server_error_response(e)

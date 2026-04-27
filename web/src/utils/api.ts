@@ -123,7 +123,7 @@ export default {
   documentCreate: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents?type=empty`,
   documentChangeParser: `${webAPI}/document/change_parser`,
-  documentThumbnails: `${webAPI}/document/thumbnails`,
+  documentThumbnails: `${restAPIv1}/thumbnails`,
   getDocumentFile: `${webAPI}/document/get`,
   getDocumentFileDownload: (docId: string) =>
     `${webAPI}/document/download/${docId}`,

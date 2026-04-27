@@ -451,6 +451,17 @@ def document_change_status(auth, dataset_id, payload=None, *, headers=HEADERS, d
     return res.json()
 
 
+def document_thumbnails(auth, params=None, *, headers=HEADERS, data=None):
+    """Get document thumbnails.
+
+    Args:
+        auth: Authentication object
+        params: Query parameters (e.g., {"doc_ids": ["doc1", "doc2"]})
+    """
+    res = requests.get(url=f"{HOST_ADDRESS}/api/v1/thumbnails", params=params, headers=headers, auth=auth, data=data)
+    return res.json()
+
+
 def bulk_upload_documents(auth, kb_id, num, tmp_path):
     fps = []
     for i in range(num):

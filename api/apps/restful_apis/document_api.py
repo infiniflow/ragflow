@@ -719,7 +719,7 @@ def list_docs(dataset_id, tenant_id):
         renamed_doc_list = [map_doc_keys(doc) for doc in docs]
         for doc_item in renamed_doc_list:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-                doc_item["thumbnail"] = f"/v1/document/image/{dataset_id}-{doc_item['thumbnail']}"
+                doc_item["thumbnail"] = f"/api/v1/documents/images/{dataset_id}-{doc_item['thumbnail']}"
             if doc_item.get("source_type"):
                 doc_item["source_type"] = doc_item["source_type"].split("/")[0]
             if doc_item["parser_config"].get("metadata"):
@@ -1168,6 +1168,44 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
     return get_result(data=doc.to_dict())
 
 
+@manager.route("/thumbnails", methods=["GET"])  # noqa: F821
+def list_thumbnails():
+    """
+    Get thumbnails for documents.
+    ---
+    tags:
+      - Documents
+    parameters:
+      - in: query
+        name: doc_ids
+        type: array
+        required: true
+        description: List of document IDs to get thumbnails for.
+    responses:
+      200:
+        description: Successfully retrieved thumbnails
+      400:
+        description: Missing document IDs
+    """
+    from api.constants import IMG_BASE64_PREFIX
+    from api.db.services.document_service import DocumentService
+
+    doc_ids = request.args.getlist("doc_ids")
+    if not doc_ids:
+        return get_json_result(data=False, message='Lack of "Document ID"', code=RetCode.ARGUMENT_ERROR)
+
+    try:
+        docs = DocumentService.get_thumbnails(doc_ids)
+
+        for doc_item in docs:
+            if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
+                doc_item["thumbnail"] = f"/api/v1/documents/images/{doc_item['kb_id']}-{doc_item['thumbnail']}"
+
+        return get_json_result(data={d["id"]: d["thumbnail"] for d in docs})
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route("/datasets/<dataset_id>/documents/metadatas", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -1579,6 +1617,42 @@ async def stop_parse_documents(tenant_id, dataset_id):
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/documents/images/<image_id>", methods=["GET"])  # noqa: F821
+async def get_document_image(image_id):
+    """
+    Get a document image by ID.
+    ---
+    tags:
+      - Documents
+    parameters:
+      - name: image_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The image ID (format: bucket-name-image-name)
+    responses:
+      200:
+        description: Image file
+        content:
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+    """
+    try:
+        arr = image_id.split("-")
+        if len(arr) != 2:
+            return get_data_error_result(message="Image not found.")
+        bkt, nm = image_id.split("-")
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
+        response = await make_response(data)
+        response.headers.set("Content-Type", "image/JPEG")
+        return response
+    except Exception as e:
+        return server_error_response(e)
 
 
 ARTIFACT_CONTENT_TYPES = {
