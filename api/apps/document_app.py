@@ -410,22 +410,6 @@ async def change_parser():
         return server_error_response(e)
 
 
-@manager.route("/image/<image_id>", methods=["GET"])  # noqa: F821
-# @login_required
-async def get_image(image_id):
-    try:
-        arr = image_id.split("-")
-        if len(arr) != 2:
-            return get_data_error_result(message="Image not found.")
-        bkt, nm = image_id.split("-")
-        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
-        response = await make_response(data)
-        response.headers.set("Content-Type", "image/JPEG")
-        return response
-    except Exception as e:
-        return server_error_response(e)
-
-
 ARTIFACT_CONTENT_TYPES = {
     ".png": "image/png",
     ".jpg": "image/jpeg",

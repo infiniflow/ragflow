@@ -16,7 +16,7 @@
 import logging
 import json
 
-from quart import request
+from quart import request, make_response
 from peewee import OperationalError
 from pydantic import ValidationError
 
@@ -1010,7 +1010,7 @@ def list_thumbnails():
 
         for doc_item in docs:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-                doc_item["thumbnail"] = f"/v1/document/image/{doc_item['kb_id']}-{doc_item['thumbnail']}"
+                doc_item["thumbnail"] = f"/api/v1/documents/image/{doc_item['kb_id']}-{doc_item['thumbnail']}"
 
         return get_json_result(data={d["id"]: d["thumbnail"] for d in docs})
     except Exception as e:
@@ -1383,12 +1383,6 @@ async def get_document_image(image_id):
               format: binary
     """
     try:
-        from quart import make_response
-
-        from common import settings
-        from common.misc_utils import thread_pool_exec
-        from api.utils.api_utils import get_data_error_result, server_error_response
-
         arr = image_id.split("-")
         if len(arr) != 2:
             return get_data_error_result(message="Image not found.")
