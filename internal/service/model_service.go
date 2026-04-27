@@ -844,15 +844,15 @@ func (m *ModelProviderService) ChatWithMessagesToModelByApiKey(providerName, mod
 }
 
 // ChatToModelStreamWithSender streams chat response directly via sender function (best performance, no channel)
-func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, message string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, sender func(*string, *string) error) common.ErrorCode {
+func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, message string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
-		return common.CodeServerError
+		return common.CodeServerError, err
 	}
 
 	if len(tenants) == 0 {
-		return common.CodeNotFound
+		return common.CodeNotFound, errors.New("user has no tenants")
 	}
 
 	tenantID := tenants[0].TenantID
@@ -860,30 +860,30 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 	// Check if provider exists
 	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
 	if err != nil {
-		return common.CodeServerError
+		return common.CodeServerError, err
 	}
 
 	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
 	if err != nil {
-		return common.CodeServerError
+		return common.CodeServerError, err
 	}
 
 	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
 	if err != nil {
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo == nil {
-			return common.CodeNotFound
+			return common.CodeNotFound, err
 		}
 
 		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
-			return common.CodeNotFound
+			return common.CodeNotFound, err
 		}
 
 		var extra map[string]string
 		err = json.Unmarshal([]byte(instance.Extra), &extra)
 		if err != nil {
-			return common.CodeServerError
+			return common.CodeServerError, err
 		}
 
 		region := extra["region"]
@@ -893,13 +893,13 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		// Direct call with sender function
 		err = providerInfo.ModelDriver.ChatStreamlyWithSender(&modelName, &message, apiConfig, modelConfig, sender)
 		if err != nil {
-			return common.CodeServerError
+			return common.CodeServerError, err
 		}
 
-		return common.CodeSuccess
+		return common.CodeSuccess, nil
 	}
 
-	return common.CodeServerError
+	return common.CodeServerError, errors.New("model is disabled")
 }
 
 func (m *ModelProviderService) GetDefaultModel(modelType entity.ModelType, tenantID string) (*entity.ModelCredentials, error) {
