@@ -19,7 +19,7 @@ import os
 import re
 from pathlib import Path
 
-from quart import request
+from quart import request, make_response
 from peewee import OperationalError
 from pydantic import ValidationError
 
@@ -42,16 +42,16 @@ from api.utils.validation_utils import (
     UpdateDocumentReq, format_validation_error_message, validate_and_parse_json_request, DeleteDocumentReq,
 )
 from common import settings
-from common.constants import ParserType, RetCode, TaskStatus
+from common.constants import ParserType, RetCode, TaskStatus, SANDBOX_ARTIFACT_BUCKET
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
 from common.misc_utils import get_uuid, thread_pool_exec
 from api.utils.file_utils import filename_type, thumbnail
-from api.utils.web_utils import html2pdf, is_valid_url
+from api.utils.web_utils import html2pdf, is_valid_url, apply_safe_file_response_headers
 from common.ssrf_guard import assert_url_is_safe
 from rag.nlp import search
 
 
-manager.route("/documents/upload", methods=["POST"])  # noqa: F821
+@manager.route("/documents/upload", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def upload_info(tenant_id: str):
