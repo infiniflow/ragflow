@@ -165,7 +165,7 @@ class DataSet(Base):
         """
         Retrieve auto-metadata configuration for a dataset via SDK.
         """
-        res = self.get(f"/datasets/{self.id}/auto_metadata")
+        res = self.get(f"/datasets/{self.id}/metadata/config")
         res = res.json()
         if res.get("code") == 0:
             return res["data"]
@@ -175,7 +175,7 @@ class DataSet(Base):
         """
         Update auto-metadata configuration for a dataset via SDK.
         """
-        res = self.put(f"/datasets/{self.id}/auto_metadata", config)
+        res = self.put(f"/datasets/{self.id}/metadata/config", config)
         res = res.json()
         if res.get("code") == 0:
             return res["data"]

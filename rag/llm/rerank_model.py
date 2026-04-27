@@ -297,7 +297,8 @@ class SILICONFLOWRerank(Base):
             "max_chunks_per_doc": 1024,
             "overlap_tokens": 80,
         }
-        response = requests.post(self.base_url, json=payload, headers=self.headers).json()
+        response_raw = requests.post(self.base_url, json=payload, headers=self.headers)
+        response = response_raw.json()
         rank = np.zeros(len(texts), dtype=float)
         try:
             for d in response["results"]:

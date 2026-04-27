@@ -39,7 +39,8 @@ from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_heade
 from common import settings
 from common.constants import SANDBOX_ARTIFACT_BUCKET, RetCode, TaskStatus
 from common.file_utils import get_project_base_directory
-from common.misc_utils import thread_pool_exec
+from common.misc_utils import get_uuid, thread_pool_exec
+from common.ssrf_guard import assert_url_is_safe
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search
 
@@ -207,6 +208,7 @@ async def run():
         return await thread_pool_exec(_run_sync)
     except Exception as e:
         return server_error_response(e)
+
 
 @manager.route("/get/<doc_id>", methods=["GET"])  # noqa: F821
 @login_required
@@ -456,6 +458,7 @@ async def upload_info():
 
     try:
         if url and not file_objs:
+            assert_url_is_safe(url)
             return get_json_result(data=FileService.upload_info(current_user.id, None, url))
 
         if len(file_objs) == 1:
