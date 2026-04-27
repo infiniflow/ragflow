@@ -118,8 +118,9 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/documents`,
   documentRename: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
-  documentCreate: `${webAPI}/document/create`,
   documentIngest: `${restAPIv1}/documents/ingest`,
+  documentCreate: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents?type=empty`,
   documentChangeParser: `${webAPI}/document/change_parser`,
   documentThumbnails: `${webAPI}/document/thumbnails`,
   getDocumentFile: `${webAPI}/document/get`,
@@ -127,7 +128,8 @@ export default {
     `${webAPI}/document/download/${docId}`,
   documentUpload: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents`,
-  webCrawl: `${webAPI}/document/web_crawl`,
+  webCrawl: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents?type=web`,
   uploadAndParse: `${webAPI}/document/upload_info`,
   setMeta: `${webAPI}/document/set_meta`,
   getDatasetFilter: (datasetId: string) =>

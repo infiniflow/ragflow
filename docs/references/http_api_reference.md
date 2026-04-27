@@ -1373,15 +1373,26 @@ Failure:
 
 Uploads documents to a specified dataset.
 
+This endpoint supports three creation modes via the optional `type` query parameter:
+
+- `type=local` or omitted: Upload one or more local files using `multipart/form-data`.
+- `type=web`: Crawl a web page and save it as a document.
+- `type=empty`: Create an empty virtual document by name.
+
 #### Request
 
 - Method: POST
 - URL: `/api/v1/datasets/{dataset_id}/documents`
+- Query:
+  - `type`: Optional. One of `local`, `web`, or `empty`. Defaults to `local`.
 - Headers:
-  - `'Content-Type: multipart/form-data'`
+  - `'Content-Type: multipart/form-data'` for `type=local` and `type=web`
+  - `'Content-Type: application/json'` for `type=empty`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
-- Form:
-  - `'file=@{FILE_PATH}'`
+- Body:
+  - For `type=local`: form field `'file=@{FILE_PATH}'`
+  - For `type=web`: form fields `'name'` and `'url'`
+  - For `type=empty`: JSON body with `'name'`
 
 ##### Request example
 
@@ -1394,12 +1405,38 @@ curl --request POST \
      --form 'file=@./test2.pdf'
 ```
 
+```bash
+curl --request POST \
+     --url 'http://{address}/api/v1/datasets/{dataset_id}/documents?type=web' \
+     --header 'Content-Type: multipart/form-data' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --form 'name=example-page' \
+     --form 'url=https://example.com'
+```
+
+```bash
+curl --request POST \
+     --url 'http://{address}/api/v1/datasets/{dataset_id}/documents?type=empty' \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{"name":"blank.txt"}'
+```
+
 ##### Request parameters
 
 - `dataset_id`: (*Path parameter*)
   The ID of the dataset to which the documents will be uploaded.
+- `type`: (*Query parameter*)
+  Controls how the document is created:
+  - `local`: Upload files.
+  - `web`: Crawl a URL into a document.
+  - `empty`: Create an empty document without file upload.
 - `'file'`: (*Body parameter*)
-  A document to upload.
+  A document to upload. Required when `type=local`.
+- `'name'`: (*Body parameter*)
+  The document name. Required when `type=web` or `type=empty`.
+- `'url'`: (*Body parameter*)
+  The source URL to crawl. Required when `type=web`.
 
 #### Response
 
