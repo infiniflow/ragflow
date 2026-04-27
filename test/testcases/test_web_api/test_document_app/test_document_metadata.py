@@ -29,6 +29,7 @@ from test_common import (
     document_update,
 )
 
+from common.constants import RetCode
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
@@ -344,7 +345,7 @@ class TestDocumentMetadataUnit:
         module = document_app_module
         monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (False, None))
         res = _run(module.get("doc1"))
-        assert res["code"] == module.RetCode.DATA_ERROR
+        assert res["code"] == RetCode.DATA_ERROR
         assert "Document not found!" in res["message"]
 
         async def fake_thread_pool_exec(*_args, **_kwargs):
