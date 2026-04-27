@@ -343,7 +343,9 @@ class Dealer:
     def rerank_by_model(self, rerank_mdl, sres, query, tkweight=0.3,
                         vtweight=0.7, cfield="content_ltks",
                         rank_feature: dict | None = None):
+        print(f"[DEBUG rerank_by_model] query={query}, tkweight={tkweight}, vtweight={vtweight}")
         _, keywords = self.qryr.question(query)
+        print(f"[DEBUG rerank_by_model] keywords={keywords}")
 
         for i in sres.ids:
             if isinstance(sres.field[i].get("important_kwd", []), str):
@@ -355,11 +357,29 @@ class Dealer:
             important_kwd = sres.field[i].get("important_kwd", [])
             tks = content_ltks + title_tks + important_kwd
             ins_tw.append(tks)
+            print(f"[DEBUG rerank_by_model] chunk id={i}, content_ltks={len(content_ltks)}, title_tks={len(title_tks)}, important_kwd={len(important_kwd)}")
+            doc_text = remove_redundant_spaces(" ".join(tks))
+            if len(doc_text) > 100:
+                print(f"[DEBUG rerank_by_model] chunk id={i}, doc_text (first 100)={doc_text[:100]}...")
+            else:
+                print(f"[DEBUG rerank_by_model] chunk id={i}, doc_text={doc_text}")
+
+        docs = [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw]
+        print(f"[DEBUG rerank_by_model] docs sent to reranker: {len(docs)} docs")
+        for idx, doc in enumerate(docs[:2]):  # Print first 2
+            print(f"[DEBUG rerank_by_model] doc[{idx}] len={len(doc)}, full={doc}")
+            if len(doc) > 100:
+                print(f"[DEBUG rerank_by_model] doc[{idx}] (first 100)={doc[:100]}...")
+            else:
+                print(f"[DEBUG rerank_by_model] doc[{idx}]={doc}")
 
         tksim = self.qryr.token_similarity(keywords, ins_tw)
-        vtsim, _ = rerank_mdl.similarity(query, [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw])
+        print(f"[DEBUG rerank_by_model] tksim={tksim}")
+        vtsim, _ = rerank_mdl.similarity(query, docs)
+        print(f"[DEBUG rerank_by_model] vtsim from reranker={vtsim}")
         ## For rank feature(tag_fea) scores.
         rank_fea = self._rank_feature_scores(rank_feature, sres)
+        print(f"[DEBUG rerank_by_model] rank_fea={rank_fea}")
 
         return tkweight * np.array(tksim) + vtweight * vtsim + rank_fea, tksim, vtsim
 
@@ -409,6 +429,7 @@ class Dealer:
             "similarity": similarity_threshold,
             "available_int": 1,
         }
+        logging.debug(f"[Search] global_offset={global_offset}, rerank_limit={RERANK_LIMIT}, page_size={page_size}, page={page}")
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
