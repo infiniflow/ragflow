@@ -1709,7 +1709,7 @@ class RAGFlowPdfParser:
             total_pages = to_page
 
         if to_page - from_page <= batch_size:
-            self.__images__(fnm, zoomin, from_page=from_page, page_to=to_page, callback=callback)
+            self.__images__(fnm, zoomin, page_from=from_page, page_to=to_page, callback=callback)
             return self._parse_loaded_window_into_bboxes(zoomin, callback=callback)
 
         logging.info(
@@ -1726,7 +1726,7 @@ class RAGFlowPdfParser:
             chunk_boxes = self._parse_loaded_window_into_bboxes(zoomin)
             all_boxes.extend(self._to_global_boxes(chunk_boxes))
             if callback:
-                callback((page_to - from_page) / (to_page - from_page), f"Structured: {page_to}/{total_pages} pages")
+                callback((page_to - from_page) / (to_page - from_page), f"Structured: {page_to}/{to_page} pages")
 
         logging.info("parse_into_bboxes chunk mode cost %.2fs", timer() - start)
         return all_boxes
