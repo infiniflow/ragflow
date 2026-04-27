@@ -210,8 +210,8 @@ class TestDocumentMetadataNegative:
     def test_filter_missing_kb_id(self, WebApiAuth, add_document_func):
         kb_id, doc_id = add_document_func
         res = document_filter(WebApiAuth, "", {"ids": [doc_id]})
-        assert res["code"] == 100, res
-        assert "<MethodNotAllowed '405: Method Not Allowed'>" == res["message"], res
+        assert res["code"] == 102, res
+        assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p3
     def test_metadata_summary_missing_kb_id(self, WebApiAuth, add_document_func):
@@ -304,8 +304,8 @@ class TestDocumentMetadataUnit:
         """Test the new unified update_metadata API - missing dataset_id."""
         # Call with empty dataset_id (should fail validation)
         res = document_metadata_update(WebApiAuth, "", {"dataset_id": "", "selector": {"document_ids": ["doc1"]}, "updates": []})
-        assert res["code"] == 404
-        assert res["message"] == "Not Found: /api/v1/datasets//documents/metadatas", res
+        assert res["code"] == 100
+        assert res["message"] == "<MethodNotAllowed '405: Method Not Allowed'>", res
 
     @pytest.mark.p3
     def test_update_metadata_success(self, WebApiAuth, add_document_func):

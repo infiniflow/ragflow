@@ -62,6 +62,7 @@ export enum LLMFactory {
   Builtin = 'Builtin',
   MinerU = 'MinerU',
   PaddleOCR = 'PaddleOCR',
+  OpenDataLoader = 'OpenDataLoader',
   N1n = 'n1n',
   Avian = 'Avian',
   RAGcon = 'RAGcon',

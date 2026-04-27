@@ -8,39 +8,25 @@ import { ProcessingType } from '@/pages/dataset/dataset-overview/dataset-common'
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import registerServer from '@/utils/register-server';
-import request, { post } from '@/utils/request';
+import request from '@/utils/request';
 import axios from 'axios';
 
 const {
   createKb,
   rmKb,
-  getKbDetail,
   kbList,
-  getDocumentList,
   documentChangeStatus,
   documentCreate,
   documentChangeParser,
   documentThumbnails,
-  chunkList,
-  createChunk,
-  setChunk,
-  getChunk,
-  switchChunk,
-  rmChunk,
   retrievalTest,
   documentRun,
-  documentUpload,
   webCrawl,
   knowledgeGraph,
   listTagByKnowledgeIds,
   setMeta,
   getMeta,
   retrievalTestShare,
-  getKnowledgeBasicInfo,
-  fetchDataPipelineLog,
-  fetchPipelineDatasetLogs,
-  checkEmbedding,
-  kbUpdateMetaData,
 } = api;
 
 const methods = {
@@ -52,19 +38,11 @@ const methods = {
     url: rmKb,
     method: 'delete',
   },
-  getKbDetail: {
-    url: getKbDetail,
-    method: 'get',
-  },
   getList: {
     url: kbList,
     method: 'get',
   },
   // document manager
-  getDocumentList: {
-    url: getDocumentList,
-    method: 'get',
-  },
   documentChangeStatus: {
     url: documentChangeStatus,
     method: 'post',
@@ -85,41 +63,12 @@ const methods = {
     url: documentThumbnails,
     method: 'get',
   },
-  documentUpload: {
-    url: documentUpload,
-    method: 'post',
-  },
   webCrawl: {
     url: webCrawl,
     method: 'post',
   },
   setMeta: {
     url: setMeta,
-    method: 'post',
-  },
-  // chunk管理
-  chunkList: {
-    url: chunkList,
-    method: 'post',
-  },
-  createChunk: {
-    url: createChunk,
-    method: 'post',
-  },
-  setChunk: {
-    url: setChunk,
-    method: 'post',
-  },
-  getChunk: {
-    url: getChunk,
-    method: 'get',
-  },
-  switchChunk: {
-    url: switchChunk,
-    method: 'post',
-  },
-  rmChunk: {
-    url: rmChunk,
     method: 'post',
   },
   retrievalTest: {
@@ -146,50 +95,159 @@ const methods = {
     url: retrievalTestShare,
     method: 'post',
   },
-  getKnowledgeBasicInfo: {
-    url: getKnowledgeBasicInfo,
-    method: 'get',
-  },
-  fetchDataPipelineLog: {
-    url: fetchDataPipelineLog,
-    method: 'post',
-  },
-  fetchPipelineDatasetLogs: {
-    url: fetchPipelineDatasetLogs,
-    method: 'post',
-  },
-  getPipelineDetail: {
-    url: api.getPipelineDetail,
-    method: 'get',
-  },
-
   pipelineRerun: {
     url: api.pipelineRerun,
     method: 'post',
   },
+};
 
-  checkEmbedding: {
-    url: checkEmbedding,
-    method: 'post',
+const baseKbService = registerServer<keyof typeof methods>(methods, request);
+
+const getDatasetId = (params: Record<string, any>) =>
+  params.dataset_id || params.kb_id || params.knowledge_id;
+
+const getDocumentId = (params: Record<string, any>) =>
+  params.document_id || params.doc_id;
+
+const mapChunkToLegacy = (chunk: Record<string, any>) => ({
+  ...chunk,
+  chunk_id: chunk.chunk_id || chunk.id,
+  content_with_weight: chunk.content_with_weight || chunk.content,
+  doc_id: chunk.doc_id || chunk.document_id,
+  doc_name: chunk.doc_name || chunk.docnm_kwd,
+  image_id: chunk.image_id || chunk.img_id,
+  important_kwd: chunk.important_kwd || chunk.important_keywords || [],
+  question_kwd: chunk.question_kwd || chunk.questions || [],
+  available_int: chunk.available_int ?? (chunk.available === false ? 0 : 1),
+  positions: chunk.positions || chunk.position_int || [],
+});
+
+const mapDocumentToLegacy = (doc: Record<string, any>) => ({
+  ...doc,
+  chunk_num: doc.chunk_num ?? doc.chunk_count,
+  kb_id: doc.kb_id || doc.dataset_id,
+});
+
+const mapChunkPayloadToRest = (payload: Record<string, any>) => ({
+  content: payload.content ?? payload.content_with_weight,
+  important_keywords: payload.important_keywords ?? payload.important_kwd,
+  questions: payload.questions ?? payload.question_kwd,
+  tag_kwd: payload.tag_kwd,
+  tag_feas: payload.tag_feas,
+  positions: payload.positions,
+  available:
+    payload.available ??
+    (payload.available_int === undefined
+      ? undefined
+      : payload.available_int === 1),
+  image_base64: payload.image_base64,
+});
+
+const getAvailableParam = (available?: number) => {
+  if (available === undefined) {
+    return undefined;
+  }
+  return available === 1 ? 'true' : 'false';
+};
+
+const chunkService = {
+  chunkList: async (params: Record<string, any>) => {
+    const datasetId = getDatasetId(params);
+    const documentId = getDocumentId(params);
+    const response = await request.get(api.chunkList(datasetId, documentId), {
+      params: {
+        page: params.page,
+        page_size: params.page_size || params.size,
+        keywords: params.keywords,
+        available: getAvailableParam(params.available_int),
+      },
+    });
+
+    if (response.data?.code === 0) {
+      response.data.data = {
+        ...response.data.data,
+        chunks: (response.data.data?.chunks || []).map(mapChunkToLegacy),
+        doc: mapDocumentToLegacy(response.data.data?.doc || {}),
+      };
+    }
+
+    return response;
   },
-  kbUpdateMetaData: {
-    url: kbUpdateMetaData,
-    method: 'post',
+  createChunk: async (payload: Record<string, any>) => {
+    const datasetId = getDatasetId(payload);
+    const documentId = getDocumentId(payload);
+    const response = await request.post(api.chunkList(datasetId, documentId), {
+      data: mapChunkPayloadToRest(payload),
+    });
+
+    if (response.data?.code === 0 && response.data.data?.chunk) {
+      response.data.data.chunk = mapChunkToLegacy(response.data.data.chunk);
+    }
+
+    return response;
+  },
+  setChunk: (payload: Record<string, any>) => {
+    const datasetId = getDatasetId(payload);
+    const documentId = getDocumentId(payload);
+    const chunkId = payload.chunk_id || payload.id;
+    return request.patch(api.chunkDetail(datasetId, documentId, chunkId), {
+      data: mapChunkPayloadToRest(payload),
+    });
+  },
+  getChunk: async (params: Record<string, any>) => {
+    const datasetId = getDatasetId(params);
+    const documentId = getDocumentId(params);
+    const chunkId = params.chunk_id || params.id;
+    const response = await request.get(
+      api.chunkDetail(datasetId, documentId, chunkId),
+    );
+
+    if (response.data?.code === 0) {
+      response.data.data = mapChunkToLegacy(response.data.data || {});
+    }
+
+    return response;
+  },
+  switchChunk: (params: Record<string, any>) => {
+    const datasetId = getDatasetId(params);
+    const documentId = getDocumentId(params);
+    return request.patch(api.chunkList(datasetId, documentId), {
+      data: {
+        chunk_ids: params.chunk_ids || params.chunkIds,
+        available_int: params.available_int,
+      },
+    });
+  },
+  rmChunk: (params: Record<string, any>) => {
+    const datasetId = getDatasetId(params);
+    const documentId = getDocumentId(params);
+    return request.delete(api.chunkList(datasetId, documentId), {
+      data: {
+        chunk_ids: params.chunk_ids || params.chunkIds,
+        delete_all: params.delete_all,
+      },
+    });
   },
 };
 
-const kbService = registerServer<keyof typeof methods>(methods, request);
+const kbService = {
+  ...baseKbService,
+  ...chunkService,
+};
+
+export const getKbDetail = (datasetId: string) =>
+  request.get(api.getKbDetail(datasetId));
 
 export const listTag = (knowledgeId: string) =>
   request.get(api.listTag(knowledgeId));
 
 export const removeTag = (knowledgeId: string, tags: string[]) =>
-  post(api.removeTag(knowledgeId), { tags });
+  request.delete(api.removeTag(knowledgeId), { data: { tags } });
 
 export const renameTag = (
   knowledgeId: string,
   { fromTag, toTag }: IRenameTag,
-) => post(api.renameTag(knowledgeId), { fromTag, toTag });
+) => request.put(api.renameTag(knowledgeId), { data: { fromTag, toTag } });
 
 export function getKnowledgeGraph(knowledgeId: string) {
   return request.get(api.getKnowledgeGraph(knowledgeId));
@@ -205,17 +263,11 @@ export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>
 export const updateKb = (datasetId: string, data: Record<string, any>) =>
   request.put(api.updateKb(datasetId), { data });
 
-export const runGraphRag = (datasetId: string) =>
-  request.post(api.runGraphRag(datasetId));
+export const runIndex = (datasetId: string, indexType: string) =>
+  request.post(api.runIndex(datasetId, indexType));
 
-export const traceGraphRag = (datasetId: string) =>
-  request.get(api.traceGraphRag(datasetId));
-
-export const runRaptor = (datasetId: string) =>
-  request.post(api.runRaptor(datasetId));
-
-export const traceRaptor = (datasetId: string) =>
-  request.get(api.traceRaptor(datasetId));
+export const traceIndex = (datasetId: string, indexType: string) =>
+  request.get(api.traceIndex(datasetId, indexType));
 
 // Using RESTful API: GET /api/v1/datasets/{dataset_id}/documents
 export const listDocument = (
@@ -308,16 +360,28 @@ export const updateDocumentMetaDataConfig = ({
   });
 
 export const listDataPipelineLogDocument = (
-  params?: IFetchKnowledgeListRequestParams,
-  body?: IFetchDocumentListRequestBody,
-) => request.post(api.fetchDataPipelineLog, { data: body || {}, params });
+  datasetId: string,
+  params?: Record<string, any>,
+) => request.get(api.fetchDataPipelineLog(datasetId), { params });
+
 export const listPipelineDatasetLogs = (
-  params?: IFetchKnowledgeListRequestParams & {
-    kb_id?: string;
-    keywords?: string;
-  },
-  body?: IFetchDocumentListRequestBody,
-) => request.post(api.fetchPipelineDatasetLogs, { data: body || {}, params });
+  datasetId: string,
+  params?: Record<string, any>,
+) => request.get(api.fetchPipelineDatasetLogs(datasetId), { params });
+
+export const getPipelineDetail = (datasetId: string, logId: string) =>
+  request.get(api.getPipelineDetail(datasetId, logId));
+
+export const getKnowledgeBasicInfo = (datasetId: string) =>
+  request.get(api.getKnowledgeBasicInfo(datasetId));
+
+export const checkEmbedding = (datasetId: string, data: Record<string, any>) =>
+  request.post(api.checkEmbedding(datasetId), { data });
+
+export const kbUpdateMetaData = (
+  datasetId: string,
+  data: Record<string, any>,
+) => request.put(api.kbUpdateMetaData(datasetId), { data });
 
 export function deletePipelineTask({
   kb_id,
@@ -326,7 +390,7 @@ export function deletePipelineTask({
   kb_id: string;
   type: ProcessingType;
 }) {
-  return request.delete(api.unbindPipelineTask({ kb_id, type }));
+  return request.delete(api.unbindPipelineTask(kb_id, type));
 }
 
 export default kbService;
