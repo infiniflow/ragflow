@@ -20,7 +20,6 @@ from quart import make_response, request
 from api.apps import current_user, login_required
 from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType
-from api.db.db_models import Task
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.utils.api_utils import (
