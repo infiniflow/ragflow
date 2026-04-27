@@ -38,7 +38,7 @@ class ListOperationsParam(ComponentParamBase):
         self.check_valid_value(
             self.operations,
             "Support operations",
-            ["nth", "topN", "head", "tail", "filter", "sort", "drop_duplicates"],
+            ["nth", "head", "tail", "filter", "sort", "drop_duplicates"],
         )
 
     def get_input_form(self) -> dict[str, dict]:
@@ -56,7 +56,7 @@ class ListOperations(ComponentBase,ABC):
         if not isinstance(self.inputs, list):
             raise TypeError("The input of List Operations should be an array.")
         self.set_input_value(inputs, self.inputs)
-        if self._param.operations in {"nth", "topN"}:
+        if self._param.operations == "nth":
             self._nth()
         elif self._param.operations == "head":
             self._head()
@@ -144,9 +144,6 @@ class ListOperations(ComponentBase,ABC):
             else:
                 outputs = self.inputs[-n:]
         self._set_outputs(outputs)
-
-    def _topN(self):
-        self._nth()
 
     def _filter(self):
         self._set_outputs([i for i in self.inputs if self._eval(self._norm(i),self._param.filter["operator"],self._param.filter["value"])])
