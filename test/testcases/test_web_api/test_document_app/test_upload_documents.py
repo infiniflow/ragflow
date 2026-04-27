@@ -448,54 +448,64 @@ class TestDocumentsUploadUnit:
 
 @pytest.mark.p2
 class TestWebCrawlUnit:
-    def test_missing_kb_id(self, document_app_module, monkeypatch):
-        module = document_app_module
-        monkeypatch.setattr(module, "request", _DummyRequest(form={"kb_id": "", "name": "doc", "url": "http://example.com"}))
-        res = _run(module.web_crawl.__wrapped__())
-        assert res["code"] == 101
-        assert res["message"] == 'Lack of "KB ID"'
-
-    def test_invalid_url(self, document_app_module, monkeypatch):
-        module = document_app_module
-        monkeypatch.setattr(module, "request", _DummyRequest(form={"kb_id": "kb1", "name": "doc", "url": "not-a-url"}))
-        res = _run(module.web_crawl.__wrapped__())
+    def test_invalid_url(self, document_rest_api_module, monkeypatch):
+        module = document_rest_api_module
+        monkeypatch.setattr(
+            module,
+            "request",
+            _DummyRequest(form={"name": "doc", "url": "not-a-url"}, args={"type": "web"}),
+        )
+        res = _run(module.upload_document(dataset_id="kb1"))
         assert res["code"] == 101
         assert res["message"] == "The URL format is invalid"
 
-    def test_invalid_kb_id_raises(self, document_app_module, monkeypatch):
-        module = document_app_module
+    def test_invalid_kb_id(self, document_rest_api_module, monkeypatch):
+        module = document_rest_api_module
         monkeypatch.setattr(module, "is_valid_url", lambda _url: True)
         monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
-        monkeypatch.setattr(module, "request", _DummyRequest(form={"kb_id": "missing", "name": "doc", "url": "http://example.com"}))
-        with pytest.raises(LookupError):
-            _run(module.web_crawl.__wrapped__())
+        monkeypatch.setattr(
+            module,
+            "request",
+            _DummyRequest(form={"name": "doc", "url": "http://example.com"}, args={"type": "web"}),
+        )
+        res = _run(module.upload_document(dataset_id="missing"))
+        assert res["code"] == 102
+        assert "Can't find the dataset" in res["message"]
 
-    def test_no_permission(self, document_app_module, monkeypatch):
-        module = document_app_module
-        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", parser_config={})
+    def test_no_permission(self, document_rest_api_module, monkeypatch):
+        module = document_rest_api_module
+        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
         monkeypatch.setattr(module, "is_valid_url", lambda _url: True)
         monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
         monkeypatch.setattr(module, "check_kb_team_permission", lambda *_args, **_kwargs: False)
-        monkeypatch.setattr(module, "request", _DummyRequest(form={"kb_id": "kb1", "name": "doc", "url": "http://example.com"}))
-        res = _run(module.web_crawl.__wrapped__())
+        monkeypatch.setattr(
+            module,
+            "request",
+            _DummyRequest(form={"name": "doc", "url": "http://example.com"}, args={"type": "web"}),
+        )
+        res = _run(module.upload_document(dataset_id="kb1"))
         assert res["code"] == 109
         assert res["message"] == "No authorization."
 
-    def test_download_failure(self, document_app_module, monkeypatch):
-        module = document_app_module
-        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", parser_config={})
+    def test_download_failure(self, document_rest_api_module, monkeypatch):
+        module = document_rest_api_module
+        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
         monkeypatch.setattr(module, "is_valid_url", lambda _url: True)
         monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
         monkeypatch.setattr(module, "check_kb_team_permission", lambda *_args, **_kwargs: True)
         monkeypatch.setattr(module, "html2pdf", lambda _url: None)
-        monkeypatch.setattr(module, "request", _DummyRequest(form={"kb_id": "kb1", "name": "doc", "url": "http://example.com"}))
-        res = _run(module.web_crawl.__wrapped__())
+        monkeypatch.setattr(
+            module,
+            "request",
+            _DummyRequest(form={"name": "doc", "url": "http://example.com"}, args={"type": "web"}),
+        )
+        res = _run(module.upload_document(dataset_id="kb1"))
         assert res["code"] == 100
         assert "Download failure" in res["message"]
 
-    def test_unsupported_type(self, document_app_module, monkeypatch):
-        module = document_app_module
-        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", parser_config={})
+    def test_unsupported_type(self, document_rest_api_module, monkeypatch):
+        module = document_rest_api_module
+        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
         monkeypatch.setattr(module, "is_valid_url", lambda _url: True)
         monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
         monkeypatch.setattr(module, "check_kb_team_permission", lambda *_args, **_kwargs: True)
@@ -505,8 +515,12 @@ class TestWebCrawlUnit:
         monkeypatch.setattr(module.FileService, "get_kb_folder", lambda *_args, **_kwargs: {"id": "kb_root"})
         monkeypatch.setattr(module.FileService, "new_a_file_from_kb", lambda *_args, **_kwargs: {"id": "kb_folder"})
         monkeypatch.setattr(module, "duplicate_name", lambda *_args, **_kwargs: "bad.exe")
-        monkeypatch.setattr(module, "request", _DummyRequest(form={"kb_id": "kb1", "name": "doc", "url": "http://example.com"}))
-        res = _run(module.web_crawl.__wrapped__())
+        monkeypatch.setattr(
+            module,
+            "request",
+            _DummyRequest(form={"name": "doc", "url": "http://example.com"}, args={"type": "web"}),
+        )
+        res = _run(module.upload_document(dataset_id="kb1"))
         assert res["code"] == 100
         assert "supported yet" in res["message"]
 
@@ -519,9 +533,9 @@ class TestWebCrawlUnit:
             ("mail.eml", "doc", "email"),
         ],
     )
-    def test_success_parser_overrides(self, document_app_module, monkeypatch, filename, filetype, expected_parser):
-        module = document_app_module
-        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", parser_config={})
+    def test_success_parser_overrides(self, document_rest_api_module, monkeypatch, filename, filetype, expected_parser):
+        module = document_rest_api_module
+        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
         captured = {}
 
         class _Storage:
@@ -549,16 +563,20 @@ class TestWebCrawlUnit:
         monkeypatch.setattr(module.settings, "STORAGE_IMPL", _Storage())
         monkeypatch.setattr(module.DocumentService, "insert", insert_doc)
         monkeypatch.setattr(module.FileService, "add_file_from_kb", lambda *_args, **_kwargs: None)
-        monkeypatch.setattr(module, "request", _DummyRequest(form={"kb_id": "kb1", "name": "doc", "url": "http://example.com"}))
+        monkeypatch.setattr(
+            module,
+            "request",
+            _DummyRequest(form={"name": "doc", "url": "http://example.com"}, args={"type": "web"}),
+        )
 
-        res = _run(module.web_crawl.__wrapped__())
+        res = _run(module.upload_document(dataset_id="kb1"))
         assert res["code"] == 0
         assert captured["doc"]["parser_id"] == expected_parser
         assert captured["put"] is True
 
-    def test_exception_path(self, document_app_module, monkeypatch):
-        module = document_app_module
-        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", parser_config={})
+    def test_exception_path(self, document_rest_api_module, monkeypatch):
+        module = document_rest_api_module
+        kb = SimpleNamespace(id="kb1", tenant_id="tenant1", name="kb", parser_id="parser", pipeline_id="pipe", parser_config={})
 
         class _Storage:
             def obj_exist(self, *_args, **_kwargs):
@@ -585,7 +603,11 @@ class TestWebCrawlUnit:
         monkeypatch.setattr(module.settings, "STORAGE_IMPL", _Storage())
         monkeypatch.setattr(module.DocumentService, "insert", insert_doc)
         monkeypatch.setattr(module.FileService, "add_file_from_kb", lambda *_args, **_kwargs: None)
-        monkeypatch.setattr(module, "request", _DummyRequest(form={"kb_id": "kb1", "name": "doc", "url": "http://example.com"}))
+        monkeypatch.setattr(
+            module,
+            "request",
+            _DummyRequest(form={"name": "doc", "url": "http://example.com"}, args={"type": "web"}),
+        )
 
-        res = _run(module.web_crawl.__wrapped__())
+        res = _run(module.upload_document(dataset_id="kb1"))
         assert res["code"] == 100
