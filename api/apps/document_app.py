@@ -98,6 +98,7 @@ async def change_status():
                 continue
 
             status_int = int(status)
+
             if getattr(doc, "chunk_num", 0) > 0:
                 try:
                     ok = settings.docStoreConn.update(

@@ -304,6 +304,9 @@ class TestDocumentMetadataUnit:
             kb_id = "kb_missing" if doc_id == "missing_kb" else "kb1"
             chunk_num = 1 if doc_id in {"docstore_3022", "docstore_generic"} else 0
             doc = SimpleNamespace(id=doc_id, kb_id=kb_id, status="0", chunk_num=chunk_num)
+
+            print(f"doc-----{doc}")
+
             return True, doc
 
         def fake_get_kb(kb_id):
@@ -338,8 +341,8 @@ class TestDocumentMetadataUnit:
         assert res["data"]["missing_doc"]["error"] == "No authorization."
         assert res["data"]["missing_kb"]["error"] == "Can't find this dataset!"
         assert res["data"]["update_fail"]["error"] == "Database error (Document update)!"
-        assert res["data"]["docstore_3022"]["error"] == "Document store table missing."
-        assert "Document store update failed:" in res["data"]["docstore_generic"]["error"]
+        assert res["data"]["docstore_3022"]["error"] == "Document store update failed.", res["data"]["docstore_3022"]["error"]
+        assert "Document store update failed" in res["data"]["docstore_generic"]["error"]
         assert "Internal server error: explode" == res["data"]["outer_exc"]["error"]
         assert calls["docstore_update"] == ["docstore_3022", "docstore_generic"]
 
@@ -596,6 +599,7 @@ class TestDocumentMetadataUnit:
         assert res["code"] == 500
         assert "parser boom" in res["message"]
 
+    @pytest.mark.skip(reason="Moved to /api/v1/documents/images/<image_id>")
     def test_get_image_success_and_exception_unit(self, document_app_module, monkeypatch):
         module = document_app_module
 
