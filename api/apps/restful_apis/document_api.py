@@ -35,13 +35,14 @@ from api.db.db_models import Task
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.common.check_team_permission import check_kb_team_permission
+from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.utils.api_utils import get_data_error_result, get_error_data_result, get_result, get_json_result, \
     server_error_response, add_tenant_id_to_kwargs, get_request_json, get_error_argument_result, check_duplicate_ids
 from api.utils.validation_utils import (
     UpdateDocumentReq, format_validation_error_message, validate_and_parse_json_request, DeleteDocumentReq,
 )
+
 from common import settings
 from common.constants import ParserType, RetCode, TaskStatus, SANDBOX_ARTIFACT_BUCKET
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
@@ -729,7 +730,7 @@ def list_docs(dataset_id, tenant_id):
         renamed_doc_list = [map_doc_keys(doc) for doc in docs]
         for doc_item in renamed_doc_list:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-                doc_item["thumbnail"] = f"/v1/document/image/{dataset_id}-{doc_item['thumbnail']}"
+                doc_item["thumbnail"] = f"/api/v1/documents/images/{dataset_id}-{doc_item['thumbnail']}"
             if doc_item.get("source_type"):
                 doc_item["source_type"] = doc_item["source_type"].split("/")[0]
             if doc_item["parser_config"].get("metadata"):
@@ -1178,6 +1179,44 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
     return get_result(data=doc.to_dict())
 
 
+@manager.route("/thumbnails", methods=["GET"])  # noqa: F821
+def list_thumbnails():
+    """
+    Get thumbnails for documents.
+    ---
+    tags:
+      - Documents
+    parameters:
+      - in: query
+        name: doc_ids
+        type: array
+        required: true
+        description: List of document IDs to get thumbnails for.
+    responses:
+      200:
+        description: Successfully retrieved thumbnails
+      400:
+        description: Missing document IDs
+    """
+    from api.constants import IMG_BASE64_PREFIX
+    from api.db.services.document_service import DocumentService
+
+    doc_ids = request.args.getlist("doc_ids")
+    if not doc_ids:
+        return get_json_result(data=False, message='Lack of "Document ID"', code=RetCode.ARGUMENT_ERROR)
+
+    try:
+        docs = DocumentService.get_thumbnails(doc_ids)
+
+        for doc_item in docs:
+            if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
+                doc_item["thumbnail"] = f"/api/v1/documents/images/{doc_item['kb_id']}-{doc_item['thumbnail']}"
+
+        return get_json_result(data={d["id"]: d["thumbnail"] for d in docs})
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route("/datasets/<dataset_id>/documents/metadatas", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -1304,6 +1343,77 @@ async def update_metadata(tenant_id, dataset_id):
     target_doc_ids = list(target_doc_ids)
     updated = DocMetadataService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
     return get_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
+
+
+@manager.route("/documents/ingest", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def ingest(tenant_id):
+    req = await get_request_json()
+    try:
+        user_id = tenant_id
+
+        error_code, error_message = await thread_pool_exec(_run_sync, user_id, req)
+
+        if error_code:
+            logging.error(f"error when ingest documents:{req}, error message:{error_message}")
+            return get_json_result(error_code, error_message)
+
+        return get_json_result(data=True)
+    except Exception as e:
+        logging.exception("document ingest/run failed")
+        return server_error_response(e)
+
+def _run_sync(user_id:str, req):
+    for doc_id in req["doc_ids"]:
+        if not DocumentService.accessible(doc_id, user_id):
+            return RetCode.AUTHENTICATION_ERROR, "No authorization."
+
+    kb_table_num_map = {}
+    for doc_id in req["doc_ids"]:
+        info = {"run": str(req["run"]), "progress": 0}
+        rerun_with_delete = str(req["run"]) == TaskStatus.RUNNING.value and req.get("delete", False)
+        if rerun_with_delete:
+            info["progress_msg"] = ""
+            info["chunk_num"] = 0
+            info["token_num"] = 0
+
+        doc_tenant_id = DocumentService.get_tenant_id(doc_id)
+        if not doc_tenant_id:
+            return RetCode.DATA_ERROR, "Tenant not found!"
+        e, doc = DocumentService.get_by_id(doc_id)
+        if not e:
+            return RetCode.DATA_ERROR, "Document not found!"
+
+        if str(req["run"]) == TaskStatus.CANCEL.value:
+            tasks = list(TaskService.query(doc_id=doc_id))
+            has_unfinished_task = any((task.progress or 0) < 1 for task in tasks)
+            if str(doc.run) in [TaskStatus.RUNNING.value, TaskStatus.CANCEL.value] or has_unfinished_task:
+                cancel_all_task_of(doc_id)
+            else:
+                return RetCode.DATA_ERROR, "Cannot cancel a task that is not in RUNNING status"
+        if all([rerun_with_delete, str(doc.run) == TaskStatus.DONE.value]):
+            DocumentService.clear_chunk_num_when_rerun(doc_id)
+
+        DocumentService.update_by_id(doc_id, info)
+        if req.get("delete", False):
+            TaskService.filter_delete([Task.doc_id == doc_id])
+            if settings.docStoreConn.index_exist(search.index_name(doc_tenant_id), doc.kb_id):
+                settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(doc_tenant_id), doc.kb_id)
+
+        if str(req["run"]) == TaskStatus.RUNNING.value:
+            if req.get("apply_kb"):
+                e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
+                if not e:
+                    raise LookupError("Can't find this dataset!")
+                doc.parser_config["llm_id"] = kb.parser_config.get("llm_id")
+                doc.parser_config["enable_metadata"] = kb.parser_config.get("enable_metadata", False)
+                doc.parser_config["metadata"] = kb.parser_config.get("metadata", {})
+                DocumentService.update_parser_config(doc.id, doc.parser_config)
+            doc_dict = doc.to_dict()
+            DocumentService.run(doc_tenant_id, doc_dict, kb_table_num_map)
+
+    return None, None
 
 
 @manager.route("/datasets/<dataset_id>/documents/parse", methods=["POST"])  # noqa: F821
@@ -1518,6 +1628,42 @@ async def stop_parse_documents(tenant_id, dataset_id):
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/documents/images/<image_id>", methods=["GET"])  # noqa: F821
+async def get_document_image(image_id):
+    """
+    Get a document image by ID.
+    ---
+    tags:
+      - Documents
+    parameters:
+      - name: image_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The image ID (format: bucket-name-image-name)
+    responses:
+      200:
+        description: Image file
+        content:
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+    """
+    try:
+        arr = image_id.split("-")
+        if len(arr) != 2:
+            return get_data_error_result(message="Image not found.")
+        bkt, nm = image_id.split("-")
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
+        response = await make_response(data)
+        response.headers.set("Content-Type", "image/JPEG")
+        return response
+    except Exception as e:
+        return server_error_response(e)
 
 
 ARTIFACT_CONTENT_TYPES = {

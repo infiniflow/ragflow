@@ -405,19 +405,12 @@ def delete_document(auth, dataset_id, payload=None, *, headers=HEADERS, data=Non
 
 
 def parse_documents(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/run", headers=headers, auth=auth, json=payload, data=data)
+    res = requests.post(url=f"{HOST_ADDRESS}/api/{VERSION}/documents/ingest", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
 def document_filter(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
-
-    print(f"dataset id:{dataset_id}")
-
     res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents?type=filter", params=payload, headers=headers, auth=auth, data=data)
-
-
-    print(f"res:{res}")
-
     return res.json()
 
 
@@ -461,6 +454,17 @@ def document_change_status(auth, dataset_id, payload=None, *, headers=HEADERS, d
 def document_update(auth, dataset_id, doc_id, payload=None, *, headers=HEADERS, data=None):
     """Update document via PATCH /api/v1/datasets/<dataset_id>/documents/<doc_id>"""
     res = requests.patch(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/documents/{doc_id}", headers=headers, auth=auth, json=payload, data=data)
+    return res.json()
+
+
+def document_thumbnails(auth, params=None, *, headers=HEADERS, data=None):
+    """Get document thumbnails.
+
+    Args:
+        auth: Authentication object
+        params: Query parameters (e.g., {"doc_ids": ["doc1", "doc2"]})
+    """
+    res = requests.get(url=f"{HOST_ADDRESS}/api/v1/thumbnails", params=params, headers=headers, auth=auth, data=data)
     return res.json()
 
 

@@ -303,7 +303,7 @@ export const useRunDocument = () => {
       queryClient.invalidateQueries({
         queryKey: [DocumentApiAction.FetchDocumentList],
       });
-      const ret = await kbService.documentRun({
+      const ret = await kbService.documentIngest({
         doc_ids: documentIds,
         run,
         ...(option || {}),
