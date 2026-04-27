@@ -773,9 +773,11 @@ class RAGFlowPdfParser:
         logging.info(f"__ocr sorting {len(chars)} chars cost {timer() - start}s")
         start = timer()
         boxes_to_reg = []
-        img_np = np.array(img)
+        img_np = None
         for b in bxs:
             if not b["text"]:
+                if img_np is None:
+                    img_np = np.asarray(img)
                 left, right, top, bott = b["x0"] * ZM, b["x1"] * ZM, b["top"] * ZM, b["bottom"] * ZM
                 b["box_image"] = self.ocr.get_rotate_crop_image(img_np, np.array([[left, top], [right, top], [right, bott], [left, bott]], dtype=np.float32))
                 boxes_to_reg.append(b)
@@ -1695,18 +1697,41 @@ class RAGFlowPdfParser:
         return self.__filterout_scraps(deepcopy(self.boxes), zoomin), tbls
 
     def parse_into_bboxes(self, fnm, callback=None, zoomin=3):
-        start = timer()
         self.outlines = extract_pdf_outlines(fnm)
-        self.__images__(fnm, zoomin, callback=callback)
-        if callback:
-            callback(0.40, "OCR finished ({:.2f}s)".format(timer() - start))
+        batch_size = max(1, int(os.getenv("PDF_PARSER_PAGE_BATCH_SIZE", "50")))
+        if isinstance(fnm, str):
+            total_pages = self.total_page_number(fnm)
+        else:
+            total_pages = self.total_page_number(fnm, binary=fnm)
 
+        if total_pages <= batch_size:
+            self.__images__(fnm, zoomin, callback=callback)
+            return self._parse_loaded_window_into_bboxes(zoomin, callback=callback)
+
+        logging.info(
+            "parse_into_bboxes uses chunk mode: total_pages=%s, batch_size=%s",
+            total_pages,
+            batch_size,
+        )
+        all_boxes = []
+        start = timer()
+        for page_from in range(0, total_pages, batch_size):
+            page_to = min(page_from + batch_size, total_pages)
+            self.__images__(fnm, zoomin, page_from=page_from, page_to=page_to, callback=None)
+            chunk_boxes = self._parse_loaded_window_into_bboxes(zoomin)
+            all_boxes.extend(self._to_global_boxes(chunk_boxes))
+            if callback:
+                callback(page_to / total_pages, f"Structured: {page_to}/{total_pages} pages")
+
+        logging.info("parse_into_bboxes chunk mode cost %.2fs", timer() - start)
+        return all_boxes
+
+    def _parse_loaded_window_into_bboxes(self, zoomin=3, callback=None):
         start = timer()
         self._layouts_rec(zoomin)
         if callback:
             callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
 
-        # Read table auto-rotation setting from environment variable
         auto_rotate_tables = os.getenv("TABLE_AUTO_ROTATE", "true").lower() in ("true", "1", "yes")
 
         start = timer()
@@ -1742,13 +1767,9 @@ class RAGFlowPdfParser:
                     dy = top1 - bottom2
                 else:
                     dy = 0
-                return math.sqrt(dx * dx + dy * dy)  # + (pn2-pn1)*10000
+                return math.sqrt(dx * dx + dy * dy)
 
             for (img, txt), poss in tbls_or_figs:
-                # Positions coming from _extract_table_figure carry absolute 0-based page
-                # indices (page_from offset). Convert back to chunk-local indices so we
-                # stay consistent with self.boxes/page_cum_height, which are all relative
-                # to the current parsing window.
                 local_poss = []
                 for pn, left, right, top, bott in poss:
                     local_pn = pn - self.page_from
@@ -1803,6 +1824,31 @@ class RAGFlowPdfParser:
         if callback:
             callback(1, "Structured ({:.2f}s)".format(timer() - start))
         return deepcopy(self.boxes)
+
+    @staticmethod
+    def _offset_position_tag(text, page_offset):
+        if not text or page_offset <= 0:
+            return text
+
+        def _replace(match):
+            pages = [str(int(p) + page_offset) for p in match.group(1).split("-")]
+            return f"@@{'-'.join(pages)}\t"
+
+        return re.sub(r"@@([0-9-]+)\t", _replace, text)
+
+    def _to_global_boxes(self, boxes):
+        if self.page_from <= 0:
+            return boxes
+
+        for box in boxes:
+            box["page_number"] = int(box.get("page_number", 1)) + self.page_from
+            if isinstance(box.get("position_tag"), str):
+                box["position_tag"] = self._offset_position_tag(box["position_tag"], self.page_from)
+            if isinstance(box.get("positions"), list):
+                box["positions"] = [
+                    [int(pos[0]) + self.page_from, *pos[1:]] if isinstance(pos, list) and pos else pos for pos in box["positions"]
+                ]
+        return boxes
 
     @staticmethod
     def remove_tag(txt):
