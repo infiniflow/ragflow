@@ -206,6 +206,7 @@ def document_rest_api_module(monkeypatch):
     document_api_service_mod.update_document_name_only = lambda *_args, **_kwargs: None
     document_api_service_mod.update_chunk_method = lambda *_args, **_kwargs: None
     document_api_service_mod.update_document_status_only = lambda *_args, **_kwargs: None
+    document_api_service_mod.reset_document_for_reparse = lambda *_args, **_kwargs: None
     monkeypatch.setitem(sys.modules, "api.apps.services.document_api_service", document_api_service_mod)
 
     module_path = repo_root / "api" / "apps" / "restful_apis" / "document_api.py"
