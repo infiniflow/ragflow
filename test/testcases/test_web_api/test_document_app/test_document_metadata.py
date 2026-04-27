@@ -26,6 +26,7 @@ from test_common import (
     document_update_metadata_setting,
     bulk_upload_documents,
     delete_document,
+    document_update,
 )
 
 from configs import INVALID_API_TOKEN
