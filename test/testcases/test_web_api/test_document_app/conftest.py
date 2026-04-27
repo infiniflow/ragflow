@@ -204,7 +204,7 @@ def document_rest_api_module(monkeypatch):
 
     document_api_service_mod.map_doc_keys_with_run_status = _map_doc_keys_with_run_status
     document_api_service_mod.update_document_name_only = lambda *_args, **_kwargs: None
-    document_api_service_mod.update_chunk_method_only = lambda *_args, **_kwargs: None
+    document_api_service_mod.update_chunk_method = lambda *_args, **_kwargs: None
     document_api_service_mod.update_document_status_only = lambda *_args, **_kwargs: None
     monkeypatch.setitem(sys.modules, "api.apps.services.document_api_service", document_api_service_mod)
 
