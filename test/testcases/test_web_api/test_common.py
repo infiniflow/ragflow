@@ -405,7 +405,7 @@ def delete_document(auth, dataset_id, payload=None, *, headers=HEADERS, data=Non
 
 
 def parse_documents(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/run", headers=headers, auth=auth, json=payload, data=data)
+    res = requests.post(url=f"{HOST_ADDRESS}/api/{VERSION}/documents/ingest", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
