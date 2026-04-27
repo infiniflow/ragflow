@@ -35,7 +35,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.doc_metadata_service import DocMetadataService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, get_format_time
-from common.constants import LLMType, ParserType, StatusEnum, TaskStatus, SVR_CONSUMER_GROUP_NAME
+from common.constants import LLMType, ParserType, StatusEnum, TaskStatus, SVR_CONSUMER_GROUP_NAME, MAXIMUM_TASK_PAGE_NUMBER
 from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import REDIS_CONN
 from common.doc_store.doc_store_base import OrderByExpr
@@ -1000,8 +1000,8 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
         return {
             "id": get_uuid(),
             "doc_id": fake_doc_id,
-            "from_page": 100000000,
-            "to_page": 100000000,
+            "from_page": MAXIMUM_TASK_PAGE_NUMBER,
+            "to_page": MAXIMUM_TASK_PAGE_NUMBER,
             "task_type": ty,
             "progress_msg": datetime.now().strftime("%H:%M:%S") + " created task " + ty,
             "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -1069,7 +1069,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
     for d, blob in files:
         doc_nm[d["id"]] = d["name"]
     for d, blob in files:
-        kwargs = {"callback": dummy, "parser_config": parser_config, "from_page": 0, "to_page": 100000, "tenant_id": kb.tenant_id, "lang": kb.language}
+        kwargs = {"callback": dummy, "parser_config": parser_config, "from_page": 0, "to_page": MAXIMUM_PAGE_NUMBER, "tenant_id": kb.tenant_id, "lang": kb.language}
         threads.append(exe.submit(FACTORY.get(d["parser_id"], naive).chunk, d["name"], blob, **kwargs))
 
     for (docinfo, _), th in zip(files, threads):

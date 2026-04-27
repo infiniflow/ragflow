@@ -37,6 +37,7 @@ from pypdf import PdfReader as pdf2_read
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
+from common.constants import MAXIMUM_PAGE_NUMBER
 from common.file_utils import get_project_base_directory
 from deepdoc.vision import OCR, AscendLayoutRecognizer, LayoutRecognizer, Recognizer, TableStructureRecognizer
 from rag.nlp import rag_tokenizer
@@ -1521,7 +1522,7 @@ class RAGFlowPdfParser:
         except Exception:
             logging.exception("total_page_number")
 
-    def __images__(self, fnm, zoomin=3, page_from=0, page_to=299, callback=None):
+    def __images__(self, fnm, zoomin=3, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         self.lefted_chars = []
         self.mean_height = []
         self.mean_width = []
@@ -1694,10 +1695,10 @@ class RAGFlowPdfParser:
         tbls = self._extract_table_figure(need_image, zoomin, return_html, False)
         return self.__filterout_scraps(deepcopy(self.boxes), zoomin), tbls
 
-    def parse_into_bboxes(self, fnm, callback=None, zoomin=3):
+    def parse_into_bboxes(self, fnm, callback=None, zoomin=3, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
         start = timer()
         self.outlines = extract_pdf_outlines(fnm)
-        self.__images__(fnm, zoomin, callback=callback)
+        self.__images__(fnm, zoomin, from_page, to_page, callback=callback)
         if callback:
             callback(0.40, "OCR finished ({:.2f}s)".format(timer() - start))
 
@@ -1943,7 +1944,7 @@ class RAGFlowPdfParser:
 
 
 class PlainParser:
-    def __call__(self, filename, from_page=0, to_page=100000, **kwargs):
+    def __call__(self, filename, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, **kwargs):
         lines = []
         try:
             self.pdf = pdf2_read(filename if isinstance(filename, str) else BytesIO(filename))
@@ -1969,7 +1970,7 @@ class VisionParser(RAGFlowPdfParser):
         self.vision_model = vision_model
         self.outlines = []
 
-    def __images__(self, fnm, zoomin=3, page_from=0, page_to=299, callback=None):
+    def __images__(self, fnm, zoomin=3, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         try:
             with sys.modules[LOCK_KEY_pdfplumber]:
                 self.pdf = pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm))
@@ -1980,7 +1981,7 @@ class VisionParser(RAGFlowPdfParser):
             self.total_page = 0
             logging.exception("VisionParser __images__")
 
-    def __call__(self, filename, from_page=0, to_page=100000, **kwargs):
+    def __call__(self, filename, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, **kwargs):
         callback = kwargs.get("callback", lambda prog, msg: None)
         zoomin = kwargs.get("zoomin", 3)
         self.__images__(fnm=filename, zoomin=zoomin, page_from=from_page, page_to=to_page, callback=callback)

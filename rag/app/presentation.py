@@ -25,6 +25,7 @@ from pypdf import PdfReader as pdf2_read
 from deepdoc.parser import PdfParser, PlainParser
 from deepdoc.parser.ppt_parser import RAGFlowPptParser
 from rag.app.naive import by_plaintext, PARSERS
+from common.constants import MAXIMUM_PAGE_NUMBER
 from common.parser_config_utils import normalize_layout_recognizer
 from rag.nlp import rag_tokenizer
 from rag.nlp import tokenize
@@ -35,7 +36,7 @@ class Pdf(PdfParser):
     def __init__(self):
         super().__init__()
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None, **kwargs):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None, **kwargs):
         # 1. OCR
         callback(msg="OCR started")
         self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
@@ -115,7 +116,7 @@ class Pdf(PdfParser):
 
 
 class PlainPdf(PlainParser):
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None, **kwargs):
         self.pdf = pdf2_read(filename if not binary else BytesIO(binary))
         page_txt = []
         for page in self.pdf.pages[from_page:to_page]:
@@ -124,7 +125,7 @@ class PlainPdf(PlainParser):
         return [(txt, None) for txt in page_txt], []
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, parser_config=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, parser_config=None, **kwargs):
     """
     The supported file formats are pdf, ppt, pptx.
     Every page will be treated as a chunk. And the thumbnail of every page will be stored.

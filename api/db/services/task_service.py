@@ -29,7 +29,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp
-from common.constants import StatusEnum, TaskStatus
+from common.constants import StatusEnum, TaskStatus, MAXIMUM_TASK_PAGE_NUMBER
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.utils.redis_conn import REDIS_CONN
 from common import settings
@@ -379,7 +379,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
             "doc_id": doc["id"],
             "progress": 0.0,
             "from_page": 0,
-            "to_page": 100000000,
+            "to_page": MAXIMUM_TASK_PAGE_NUMBER,
             "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
@@ -530,7 +530,7 @@ def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str=CANVAS_DE
         id=task_id,
         doc_id=doc_id,
         from_page=0,
-        to_page=100000000,
+        to_page=MAXIMUM_TASK_PAGE_NUMBER,
         task_type="dataflow" if not rerun else "dataflow_rerun",
         priority=priority,
         begin_at= datetime.now().strftime("%Y-%m-%d %H:%M:%S"),

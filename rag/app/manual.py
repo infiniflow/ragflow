@@ -18,7 +18,7 @@ import logging
 import copy
 import re
 
-from common.constants import ParserType
+from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
 from io import BytesIO
 from deepdoc.parser.utils import extract_pdf_outlines
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level, attach_media_context, concat_img
@@ -35,7 +35,7 @@ class Pdf(PdfParser):
         self.model_speciess = ParserType.MANUAL.value
         super().__init__()
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None):
         from timeit import default_timer as timer
 
         start = timer()
@@ -71,7 +71,7 @@ class Docx(DocxParser):
     def __init__(self):
         pass
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000, callback=None):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None):
         self.doc = Document(filename) if not binary else Document(BytesIO(binary))
         pn = 0
         last_answer, last_image = "", None
@@ -134,7 +134,7 @@ class Docx(DocxParser):
         return ti_list, tbls
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
     """
     Only pdf is supported.
     """
@@ -271,7 +271,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
     elif re.search(r"\.docx?$", filename, re.IGNORECASE):
         docx_parser = Docx()
-        ti_list, tbls = docx_parser(filename, binary, from_page=0, to_page=10000, callback=callback)
+        ti_list, tbls = docx_parser(filename, binary, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
         tbls = vision_figure_parser_docx_wrapper(sections=ti_list, tbls=tbls, callback=callback, **kwargs)
         res = tokenize_table(tbls, doc, eng)
         for text, image in ti_list:
