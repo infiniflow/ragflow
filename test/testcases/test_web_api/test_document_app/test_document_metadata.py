@@ -651,17 +651,29 @@ class TestDocumentBatchChangeStatus:
 
         dataset_id, doc_id = add_document_func
 
-        # Verify initial status is "0" (unprocessed)
+        # Verify initial status is "1" (enabled)
         info_res = document_infos(WebApiAuth, dataset_id, {"ids": [doc_id]})
         assert info_res["code"] == 0, info_res
         assert info_res["data"]["docs"][0]["status"] == "1", "Initial status should be 1"
 
-        # Update status to "1" (processed)
+        # Update status to "0" (disabled)
+        res = document_change_status(WebApiAuth, dataset_id, {"doc_ids": [doc_id], "status": "0"})
+
+        # Verify success
+        assert res["code"] == 0, f"Expected success code 0, got {res}"
+        assert res["data"][doc_id]["status"] == "0", "Document status should be 0"
+
+        # Verify the status was actually updated in the database
+        info_res = document_infos(WebApiAuth, dataset_id, {"ids": [doc_id]})
+        assert info_res["code"] == 0, info_res
+        assert info_res["data"]["docs"][0]["status"] == "0", "Document status should be 0 in database"
+
+        # Update status to "1" (enabled)
         res = document_change_status(WebApiAuth, dataset_id, {"doc_ids": [doc_id], "status": "1"})
 
         # Verify success
         assert res["code"] == 0, f"Expected success code 0, got {res}"
-        assert res["data"][doc_id]["status"] == "1", "Document status should be 1"
+        assert res["data"][doc_id]["status"] == "1", "Document status should be 0"
 
         # Verify the status was actually updated in the database
         info_res = document_infos(WebApiAuth, dataset_id, {"ids": [doc_id]})

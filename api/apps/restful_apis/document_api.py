@@ -649,7 +649,13 @@ def list_docs(dataset_id, tenant_id):
         docs_filter = _aggregate_filters(docs)
         return get_json_result(data={"total": total, "filter": docs_filter})
     else:
+
+        print(f"---------before map doc keys: {docs}")
+
         renamed_doc_list = [map_doc_keys(doc) for doc in docs]
+
+        print(f"------------after map doc keys: {renamed_doc_list}")
+
         for doc_item in renamed_doc_list:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
                 doc_item["thumbnail"] = f"/v1/document/image/{dataset_id}-{doc_item['thumbnail']}"
