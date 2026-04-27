@@ -416,7 +416,9 @@ async def build_chunks(task, progress_callback):
         async def gen_metadata_task(chat_mdl, d):
             metadata_conf = task["parser_config"].get("metadata", [])
             built_in_metadata = list(task["parser_config"].get("built_in_metadata") or [])
-            if isinstance(metadata_conf, dict) and isinstance(metadata_conf.get("properties"), dict):
+            if isinstance(metadata_conf, dict):
+                if not isinstance(metadata_conf.get("properties"), dict):
+                    metadata_conf = {"type": "object", "properties": {}}
                 if built_in_metadata:
                     metadata_conf = {
                         **metadata_conf,
@@ -425,8 +427,10 @@ async def build_chunks(task, progress_callback):
                             **turn2jsonschema(built_in_metadata).get("properties", {}),
                         },
                     }
+            elif isinstance(metadata_conf, list):
+                metadata_conf = metadata_conf + built_in_metadata
             else:
-                metadata_conf = list(metadata_conf) + built_in_metadata
+                metadata_conf = built_in_metadata
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "metadata",
                                    metadata_conf)
             if not cached:
