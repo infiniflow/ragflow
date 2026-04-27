@@ -149,7 +149,8 @@ class TestDocumentsParse:
 
         # Now try to cancel a completed task - should fail
         res = parse_documents(WebApiAuth, {"doc_ids": [doc_id], "run": "2"})
-        assert res["code"] == 0, res  # API returns success but message indicates the status
+        assert res["code"] == 102, res
+        assert res["message"] == "Cannot cancel a task that is not in RUNNING status", res
 
     @pytest.mark.p2
     def test_rerun_with_delete(self, WebApiAuth, add_documents_func):
@@ -169,7 +170,7 @@ class TestDocumentsParse:
         res = list_documents(WebApiAuth, {"kb_id": kb_id})
         doc = next((d for d in res["data"]["docs"] if d["id"] == doc_id), None)
         assert doc is not None
-        assert doc["chunk_num"] > 0, "Document should have chunks after parsing"
+        assert doc["chunk_count"] > 0, "Document should have chunks after parsing"
 
         # Now rerun with delete - this should clear chunks and re-parse
         res = parse_documents(WebApiAuth, {"doc_ids": [doc_id], "run": "1", "delete": True})
@@ -214,7 +215,7 @@ class TestDocumentsParse:
         doc = next((d for d in res["data"]["docs"] if d["id"] == doc_id), None)
         assert doc is not None
         assert doc["run"] == "DONE"
-        assert doc["chunk_num"] > 0
+        assert doc["chunk_count"] > 0
         assert len(doc["process_begin_at"]) > 0
         assert doc["process_duration"] > 0
 
