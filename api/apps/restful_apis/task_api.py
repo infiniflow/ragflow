@@ -79,7 +79,7 @@ async def _cancel_task(task_id):
     try:
         REDIS_CONN.set(f"{task_id}-cancel", "x")
     except Exception as e:
-        logging.exception(f"Failed to set cancel flag for task {task_id}: %s", str(e))
+        logging.exception("Failed to set cancel flag for task %s: %s", task_id, str(e))
         return get_json_result(
             code=RetCode.CONNECTION_ERROR,
             message="Failed to stop task",
@@ -99,7 +99,7 @@ async def _cancel_task(task_id):
             & (TaskService.model.progress < 1)
         ).execute()
     except Exception as e:
-        logging.exception("Failed to update task %s progress after cancellation: %s", task_id, e)
+        logging.warning("Failed to update task %s progress after cancellation: %s", task_id, str(e))
 
     # If the task belongs to a document, also mark the document's run status as
     # cancelled so that the UI reflects the state correctly.
@@ -111,7 +111,7 @@ async def _cancel_task(task_id):
             if doc and str(doc.run) in (TaskStatus.RUNNING.value, TaskStatus.SCHEDULE.value):
                 DocumentService.update_by_id(doc_id, {"run": TaskStatus.CANCEL.value, "progress": 0})
     except Exception as e:
-        logging.exception(f"Failed to update document run status for task {task_id}: %s", str(e))
+        logging.warning("Failed to update document run status for task %s: %s", task_id, str(e))
 
-    logging.info("Cancel task succeeded: task_id=%s doc_id=%s", task_id, task.doc_id)
+    logging.info(f"Cancel task succeeded: task_id={task_id} doc_id={task.doc_id}")
     return get_json_result(data=True)
