@@ -1289,6 +1289,7 @@ async def do_handle_task(task):
         )
 
     finally:
+        executor.shutdown(wait=False)
         if has_canceled(task_id):
             try:
                 exists = await thread_pool_exec(
