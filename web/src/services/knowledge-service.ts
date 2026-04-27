@@ -19,7 +19,7 @@ const {
   documentChangeParser,
   documentThumbnails,
   retrievalTest,
-  documentRun,
+  documentIngest,
   documentUpload,
   webCrawl,
   knowledgeGraph,
@@ -47,8 +47,8 @@ const methods = {
     url: documentChangeStatus,
     method: 'post',
   },
-  documentRun: {
-    url: documentRun,
+  documentIngest: {
+    url: documentIngest,
     method: 'post',
   },
   documentChangeParser: {
@@ -371,6 +371,17 @@ export const updateDocumentMetaDataConfig = ({
   request.put(api.documentUpdateMetaDataConfig(kb_id, doc_id), {
     data: { ...data },
   });
+
+export const changeDocumentsStatus = ({
+  kb_id,
+  doc_ids,
+  status,
+}: {
+  kb_id: string;
+  doc_ids?: string[];
+  status: number;
+}) =>
+  request.post(api.documentChangeStatus(kb_id), { data: { doc_ids, status } });
 
 export const listDataPipelineLogDocument = (
   datasetId: string,

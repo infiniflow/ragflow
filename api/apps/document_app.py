@@ -13,19 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
-import logging
 import re
 
 from quart import make_response, request
 
 from api.apps import current_user, login_required
-from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType
-from api.db.db_models import Task
-from api.db.services.document_service import DocumentService, doc_upload_and_parse
+from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
-from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
@@ -39,161 +34,6 @@ from common.constants import RetCode, TaskStatus
 from common.misc_utils import thread_pool_exec
 from rag.nlp import search
 
-
-@manager.route("/thumbnails", methods=["GET"])  # noqa: F821
-# @login_required
-def thumbnails():
-    doc_ids = request.args.getlist("doc_ids")
-    if not doc_ids:
-        return get_json_result(data=False, message='Lack of "Document ID"', code=RetCode.ARGUMENT_ERROR)
-
-    try:
-        docs = DocumentService.get_thumbnails(doc_ids)
-
-        for doc_item in docs:
-            if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-                doc_item["thumbnail"] = f"/v1/document/image/{doc_item['kb_id']}-{doc_item['thumbnail']}"
-
-        return get_json_result(data={d["id"]: d["thumbnail"] for d in docs})
-    except Exception as e:
-        return server_error_response(e)
-
-
-@manager.route("/change_status", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("doc_ids", "status")
-async def change_status():
-    req = await get_request_json()
-    doc_ids = req.get("doc_ids", [])
-    status = str(req.get("status", ""))
-
-    if status not in ["0", "1"]:
-        return get_json_result(data=False, message='"Status" must be either 0 or 1!', code=RetCode.ARGUMENT_ERROR)
-
-    result = {}
-    has_error = False
-    for doc_id in doc_ids:
-        if not DocumentService.accessible(doc_id, current_user.id):
-            result[doc_id] = {"error": "No authorization."}
-            has_error = True
-            continue
-
-        try:
-            e, doc = DocumentService.get_by_id(doc_id)
-            if not e:
-                result[doc_id] = {"error": "No authorization."}
-                has_error = True
-                continue
-            e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
-            if not e:
-                result[doc_id] = {"error": "Can't find this dataset!"}
-                has_error = True
-                continue
-            current_status = str(doc.status)
-            if current_status == status:
-                result[doc_id] = {"status": status}
-                continue
-            if not DocumentService.update_by_id(doc_id, {"status": str(status)}):
-                result[doc_id] = {"error": "Database error (Document update)!"}
-                has_error = True
-                continue
-
-            status_int = int(status)
-            if getattr(doc, "chunk_num", 0) > 0:
-                try:
-                    ok = settings.docStoreConn.update(
-                        {"doc_id": doc_id},
-                        {"available_int": status_int},
-                        search.index_name(kb.tenant_id),
-                        doc.kb_id,
-                    )
-                except Exception:
-                    logging.exception(
-                        "Document store update failed in change_status: doc_id=%s kb_id=%s status=%s",
-                        doc_id, doc.kb_id, status_int,
-                    )
-                    result[doc_id] = {"error": "Document store update failed."}
-                    has_error = True
-                    continue
-                if not ok:
-                    logging.warning(
-                        "Document store update returned False in change_status: doc_id=%s kb_id=%s status=%s",
-                        doc_id, doc.kb_id, status_int,
-                    )
-                    result[doc_id] = {"error": "Document store table missing or update failed."}
-                    has_error = True
-                    continue
-            result[doc_id] = {"status": status}
-        except Exception as e:
-            result[doc_id] = {"error": f"Internal server error: {str(e)}"}
-            has_error = True
-
-    if has_error:
-        return get_json_result(data=result, message="Partial failure", code=RetCode.SERVER_ERROR)
-    return get_json_result(data=result)
-
-
-@manager.route("/run", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("doc_ids", "run")
-async def run():
-    req = await get_request_json()
-    uid = current_user.id
-    try:
-
-        def _run_sync():
-            for doc_id in req["doc_ids"]:
-                if not DocumentService.accessible(doc_id, uid):
-                    return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-
-            kb_table_num_map = {}
-            for id in req["doc_ids"]:
-                info = {"run": str(req["run"]), "progress": 0}
-                if str(req["run"]) == TaskStatus.RUNNING.value and req.get("delete", False):
-                    info["progress_msg"] = ""
-                    info["chunk_num"] = 0
-                    info["token_num"] = 0
-
-                tenant_id = DocumentService.get_tenant_id(id)
-                if not tenant_id:
-                    return get_data_error_result(message="Tenant not found!")
-                e, doc = DocumentService.get_by_id(id)
-                if not e:
-                    return get_data_error_result(message="Document not found!")
-
-                if str(req["run"]) == TaskStatus.CANCEL.value:
-                    tasks = list(TaskService.query(doc_id=id))
-                    has_unfinished_task = any((task.progress or 0) < 1 for task in tasks)
-                    if str(doc.run) in [TaskStatus.RUNNING.value, TaskStatus.CANCEL.value] or has_unfinished_task:
-                        cancel_all_task_of(id)
-                    else:
-                        return get_data_error_result(message="Cannot cancel a task that is not in RUNNING status")
-                if all([("delete" not in req or req["delete"]), str(req["run"]) == TaskStatus.RUNNING.value, str(doc.run) == TaskStatus.DONE.value]):
-                    DocumentService.clear_chunk_num_when_rerun(doc.id)
-
-                DocumentService.update_by_id(id, info)
-                if req.get("delete", False):
-                    TaskService.filter_delete([Task.doc_id == id])
-                    if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
-                        settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
-
-                if str(req["run"]) == TaskStatus.RUNNING.value:
-                    if req.get("apply_kb"):
-                        e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
-                        if not e:
-                            raise LookupError("Can't find this dataset!")
-                        doc.parser_config["llm_id"] = kb.parser_config.get("llm_id")
-                        doc.parser_config["enable_metadata"] = kb.parser_config.get("enable_metadata", False)
-                        doc.parser_config["metadata"] = kb.parser_config.get("metadata", {})
-                        DocumentService.update_parser_config(doc.id, doc.parser_config)
-                    doc_dict = doc.to_dict()
-                    DocumentService.run(tenant_id, doc_dict, kb_table_num_map)
-
-            return get_json_result(data=True)
-
-        return await thread_pool_exec(_run_sync)
-    except Exception as e:
-        return server_error_response(e)
 
 @manager.route("/get/<doc_id>", methods=["GET"])  # noqa: F821
 @login_required
@@ -287,37 +127,3 @@ async def change_parser():
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
-
-
-@manager.route("/image/<image_id>", methods=["GET"])  # noqa: F821
-# @login_required
-async def get_image(image_id):
-    try:
-        arr = image_id.split("-")
-        if len(arr) != 2:
-            return get_data_error_result(message="Image not found.")
-        bkt, nm = image_id.split("-")
-        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
-        response = await make_response(data)
-        response.headers.set("Content-Type", "image/JPEG")
-        return response
-    except Exception as e:
-        return server_error_response(e)
-
-
-@manager.route("/upload_and_parse", methods=["POST"])  # noqa: F821
-@login_required
-@validate_request("conversation_id")
-async def upload_and_parse():
-    files = await request.files
-    if "file" not in files:
-        return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
-
-    file_objs = files.getlist("file")
-    for file_obj in file_objs:
-        if file_obj.filename == "":
-            return get_json_result(data=False, message="No file selected!", code=RetCode.ARGUMENT_ERROR)
-
-    form = await request.form
-    doc_ids = doc_upload_and_parse(form.get("conversation_id"), file_objs, current_user.id)
-    return get_json_result(data=doc_ids)
