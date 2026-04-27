@@ -13,7 +13,11 @@
       "max_tokens": 1048576,
       "model_types": [
         "chat"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     }
   ],
   "features": {
