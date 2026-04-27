@@ -1114,7 +1114,7 @@ class RAGconEmbed(OpenAIEmbed):
 
     def __init__(self, key, model_name="text-embedding-3-small", base_url=None):
         if not base_url:
-            base_url = "https://connect.ragcon.com/v1"
+            base_url = "https://connect.ragcon.ai/v1"
 
         super().__init__(key, model_name, base_url)
 
