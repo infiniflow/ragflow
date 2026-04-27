@@ -131,7 +131,7 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/documents`,
   webCrawl: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents?type=web`,
-  uploadAndParse: `${webAPI}/document/upload_info`,
+  documentInfoUpload: `${restAPIv1}/documents/upload`,
   setMeta: `${webAPI}/document/set_meta`,
   getDatasetFilter: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents?type=filter`,
@@ -197,7 +197,7 @@ export default {
     `${restAPIv1}/agents/${agentId}/components/${componentId}/debug`,
   trace: (agentId: string, messageId: string) =>
     `${restAPIv1}/agents/${agentId}/logs/${messageId}`,
-  cancelCanvas: (taskId: string) => `${webAPI}/canvas/cancel/${taskId}`, // cancel conversation
+  cancelCanvas: (taskId: string) => `${restAPIv1}/tasks/${taskId}/cancel`,
   // agent
   inputForm: (agentId: string, componentId: string) =>
     `${restAPIv1}/agents/${agentId}/components/${componentId}/input-form`,
@@ -216,7 +216,7 @@ export default {
   fetchExternalAgentInputs: (canvasId: string) =>
     `${restAPIv1}/agentbots/${canvasId}/inputs`,
   prompt: `${restAPIv1}/agents/prompts`,
-  cancelDataflow: (id: string) => `${webAPI}/canvas/cancel/${id}`,
+  cancelDataflow: (id: string) => `${restAPIv1}/tasks/${id}/cancel`,
   downloadFile: `${restAPIv1}/agents/download`,
   testWebhook: (id: string) => `${restAPIv1}/agents/${id}/webhook/test`,
   fetchWebhookTrace: (id: string) => `${restAPIv1}/agents/${id}/webhook/logs`,

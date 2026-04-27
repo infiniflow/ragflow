@@ -15,10 +15,11 @@
 #
 import logging
 import json
+import os.path
 import re
 from pathlib import Path
 
-from quart import request
+from quart import make_response, request
 from peewee import OperationalError
 from pydantic import ValidationError
 
@@ -42,12 +43,78 @@ from api.utils.validation_utils import (
     UpdateDocumentReq, format_validation_error_message, validate_and_parse_json_request, DeleteDocumentReq,
 )
 from common import settings
-from common.constants import ParserType, RetCode, TaskStatus
+from common.constants import ParserType, RetCode, SANDBOX_ARTIFACT_BUCKET, TaskStatus
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
 from common.misc_utils import get_uuid, thread_pool_exec
+from common.ssrf_guard import assert_url_is_safe
 from api.utils.file_utils import filename_type, thumbnail
 from api.utils.web_utils import html2pdf, is_valid_url
 from rag.nlp import search
+from api.utils.web_utils import apply_safe_file_response_headers
+
+
+@manager.route("/documents/upload", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def upload_info(tenant_id: str):
+    """
+    Upload a document and get its parsed info.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: formData
+        name: file
+        type: file
+        required: false
+        description: File to upload.
+      - in: query
+        name: url
+        type: string
+        required: false
+        description: URL to fetch file from.
+    responses:
+      200:
+        description: Successful operation.
+    """
+    files = await request.files
+    file_objs = files.getlist("file") if files and files.get("file") else []
+    url = request.args.get("url")
+
+    if file_objs and url:
+        return get_error_argument_result("Provide either multipart file(s) or ?url=..., not both.")
+
+    if not file_objs and not url:
+        return get_error_argument_result("Missing input: provide multipart file(s) or url")
+
+    try:
+        if url and not file_objs:
+            try:
+                assert_url_is_safe(url)
+            except ValueError as ve:
+                logging.warning("upload_info: rejected unsafe url: %s", ve)
+                return get_error_argument_result(str(ve))
+
+            data = await thread_pool_exec(FileService.upload_info, tenant_id, None, url)
+            return get_result(data=data)
+
+        if len(file_objs) == 1:
+            data = await thread_pool_exec(FileService.upload_info, tenant_id, file_objs[0], None)
+            return get_result(data=data)
+
+        results = [await thread_pool_exec(FileService.upload_info, tenant_id, f, None) for f in file_objs]
+        return get_result(data=results)
+    except Exception as e:
+        logging.exception("upload_info failed")
+        return server_error_response(e)
+
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PATCH"]) # noqa: F821
 @login_required
@@ -1452,3 +1519,65 @@ async def stop_parse_documents(tenant_id, dataset_id):
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
+
+
+ARTIFACT_CONTENT_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".svg": "image/svg+xml",
+    ".pdf": "application/pdf",
+    ".csv": "text/csv",
+    ".json": "application/json",
+    ".html": "text/html",
+}
+
+
+@manager.route("/documents/artifact/<filename>", methods=["GET"])  # noqa: F821
+@login_required
+async def get_artifact(filename):
+    """
+    Get an artifact file.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: filename
+        type: string
+        required: true
+        description: Name of the artifact file.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    responses:
+      200:
+        description: Artifact file returned successfully.
+    """
+    from common import settings
+
+    try:
+        bucket = SANDBOX_ARTIFACT_BUCKET
+        # Validate filename: must be uuid hex + allowed extension, nothing else
+        basename = os.path.basename(filename)
+        if basename != filename or "/" in filename or "\\" in filename:
+            return get_data_error_result(message="Invalid filename.")
+        ext = os.path.splitext(basename)[1].lower()
+        if ext not in ARTIFACT_CONTENT_TYPES:
+            return get_data_error_result(message="Invalid file type.")
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, basename)
+        if not data:
+            return get_data_error_result(message="Artifact not found.")
+        content_type = ARTIFACT_CONTENT_TYPES.get(ext, "application/octet-stream")
+        response = await make_response(data)
+        safe_filename = re.sub(r"[^\w.\-]", "_", basename)
+        apply_safe_file_response_headers(response, content_type, ext)
+        if not response.headers.get("Content-Disposition"):
+            response.headers.set("Content-Disposition", f'inline; filename="{safe_filename}"')
+        return response
+    except Exception as e:
+        return server_error_response(e)
