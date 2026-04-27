@@ -38,7 +38,7 @@ from api.utils.api_utils import (
 )
 from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers, is_valid_url
 from common import settings
-from common.constants import RetCode, ParserTyp, SANDBOX_ARTIFACT_BUCKET, TaskStatus
+from common.constants import RetCode, TaskStatus
 from common.file_utils import get_project_base_directory
 from common.misc_utils import thread_pool_exec
 from common.ssrf_guard import assert_url_is_safe
