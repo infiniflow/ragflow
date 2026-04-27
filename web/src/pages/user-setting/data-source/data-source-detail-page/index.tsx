@@ -144,7 +144,7 @@ const SourceDetailPage = () => {
     ];
   }, [detail, runSchedule]);
 
-  const { addLoading, handleAddOk } = useAddDataSource();
+  const { addLoading, handleAddOk } = useAddDataSource({ isEdit: true });
 
   const onSubmit = useCallback(() => {
     formRef?.current?.submit();

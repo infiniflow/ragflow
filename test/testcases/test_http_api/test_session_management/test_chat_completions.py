@@ -62,7 +62,11 @@ class TestChatCompletions:
         res = chat_completions(
             HttpApiAuth,
             chat_id,
-            {"question": "hello", "stream": False, "session_id": session_id},
+            {
+                "messages": [{"role": "user", "content": "hello"}],
+                "stream": False,
+                "session_id": session_id,
+            },
         )
         assert res["code"] == 0, res
         assert isinstance(res["data"], dict), res
@@ -75,10 +79,14 @@ class TestChatCompletions:
         res = chat_completions(
             HttpApiAuth,
             "invalid_chat_id",
-            {"question": "hello", "stream": False, "session_id": "invalid_session"},
+            {
+                "messages": [{"role": "user", "content": "hello"}],
+                "stream": False,
+                "session_id": "invalid_session",
+            },
         )
-        assert res["code"] == 102, res
-        assert "You don't own the chat" in res.get("message", ""), res
+        assert res["code"] == 109, res
+        assert "No authorization." in res.get("message", ""), res
 
     @pytest.mark.p2
     def test_chat_completion_invalid_session(self, HttpApiAuth, request):
@@ -91,32 +99,44 @@ class TestChatCompletions:
         res = chat_completions(
             HttpApiAuth,
             chat_id,
-            {"question": "hello", "stream": False, "session_id": "invalid_session"},
+            {
+                "messages": [{"role": "user", "content": "hello"}],
+                "stream": False,
+                "session_id": "invalid_session",
+            },
         )
         assert res["code"] == 102, res
-        assert "You don't own the session" in res.get("message", ""), res
+        assert "Session not found!" in res.get("message", ""), res
 
     @pytest.mark.p2
-    def test_chat_completion_invalid_metadata_condition(self, HttpApiAuth, request):
+    def test_chat_completion_stream_false_with_chat_without_session(self, HttpApiAuth, request):
         res = create_chat_assistant(HttpApiAuth, {"name": "chat_completion_invalid_meta", "dataset_ids": []})
         assert res["code"] == 0, res
         chat_id = res["data"]["id"]
         request.addfinalizer(lambda: delete_all_chat_assistants(HttpApiAuth))
         request.addfinalizer(lambda: delete_all_sessions_with_chat_assistant(HttpApiAuth, chat_id))
 
-        res = create_session_with_chat_assistant(HttpApiAuth, chat_id, {"name": "session_for_meta"})
-        assert res["code"] == 0, res
-        session_id = res["data"]["id"]
-
         res = chat_completions(
             HttpApiAuth,
             chat_id,
             {
-                "question": "hello",
+                "messages": [{"role": "user", "content": "hello"}],
                 "stream": False,
-                "session_id": session_id,
-                "metadata_condition": "invalid",
             },
         )
-        assert res["code"] == 102, res
-        assert "metadata_condition" in res.get("message", ""), res
+        assert res["code"] == 0, res
+        assert res["data"]["session_id"], res
+
+    @pytest.mark.p2
+    def test_chat_completion_stream_false_without_chat(self, HttpApiAuth):
+        res = chat_completions(
+            HttpApiAuth,
+            None,
+            {
+                "messages": [{"role": "user", "content": "hello"}],
+                "stream": False,
+            },
+        )
+        assert res["code"] == 0, res
+        assert isinstance(res["data"], dict), res
+        assert "answer" in res["data"], res

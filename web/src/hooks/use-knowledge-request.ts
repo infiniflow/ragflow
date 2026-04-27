@@ -14,6 +14,7 @@ import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
   deleteKnowledgeGraph,
+  getKbDetail,
   getKnowledgeGraph,
   listDataset,
   listTag,
@@ -322,15 +323,12 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
       filename_embd_weight,
       task_page_size,
       pages,
-      parent_child:
-        children_delimiter !== undefined ||
-        use_parent_child !== undefined ||
-        enable_children !== undefined
-          ? {
-              children_delimiter,
-              use_parent_child: use_parent_child ?? enable_children,
-            }
-          : undefined,
+      parent_child: enable_children
+        ? {
+            children_delimiter,
+            use_parent_child: use_parent_child ?? enable_children,
+          }
+        : undefined,
       ext: { ...ext, ...parserExt },
     };
   };
@@ -410,9 +408,7 @@ export const useFetchKnowledgeBaseConfiguration = (props?: {
     gcTime: 0,
     enabled: !!knowledgeBaseId && isEdit,
     queryFn: async () => {
-      const { data } = await kbService.getKbDetail({
-        kb_id: knowledgeBaseId,
-      });
+      const { data } = await getKbDetail(knowledgeBaseId || '');
       return data?.data ?? {};
     },
   });
@@ -446,7 +442,9 @@ export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
     enabled: kbIds.length > 0,
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await kbService.getMeta({ kb_ids: kbIds.join(',') });
+      const { data } = await kbService.getMeta({
+        dataset_ids: kbIds.join(','),
+      });
       return data?.data ?? {};
     },
   });
@@ -552,7 +550,7 @@ export const useFetchTagListByKnowledgeIds = () => {
     gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
     queryFn: async () => {
       const { data } = await kbService.listTagByKnowledgeIds({
-        kb_ids: knowledgeIds.join(','),
+        dataset_ids: knowledgeIds.join(','),
       });
       const list = data?.data || [];
       return list;

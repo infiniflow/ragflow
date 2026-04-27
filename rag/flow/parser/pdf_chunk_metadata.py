@@ -72,6 +72,7 @@ def extract_pdf_positions(item):
         return []
 
     positions = _extract_raw_positions(item)
+    uses_position_tag = isinstance(item.get("position_tag"), str) and bool(item.get("position_tag"))
     ref_page_number = item.get("page_number")
     ref_page_number = int(ref_page_number) if isinstance(ref_page_number, (int, float)) else None
     if ref_page_number is not None and ref_page_number <= 0:
@@ -85,7 +86,9 @@ def extract_pdf_positions(item):
         page_number = pos[0][-1] if isinstance(pos[0], list) else pos[0]
         try:
             page_number = int(page_number)
-            if ref_page_number is not None and page_number == ref_page_number - 1:
+            if uses_position_tag:
+                page_number += 1
+            elif ref_page_number is not None and page_number == ref_page_number - 1:
                 page_number = ref_page_number
             elif page_number <= 0:
                 page_number += 1

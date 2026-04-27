@@ -5,7 +5,6 @@ import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { useSyncThemeFromParams } from '@/components/theme-provider';
 import { MessageType, SharedFrom } from '@/constants/chat';
-import { useFetchFlowSSE } from '@/hooks/use-agent-request';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
 import i18n, { changeLanguageAsync } from '@/locales/config';
 import { buildMessageUuidWithRole } from '@/utils/chat';
@@ -46,14 +45,14 @@ const ChatContainer = () => {
 
   const isAgent = from === SharedFrom.Agent;
   const { data: flowData } = useFetchFlowSSE(isAgent);
+
   React.useEffect(() => {
     if (locale && i18n.language !== locale) {
       changeLanguageAsync(locale);
     }
   }, [locale, visibleAvatar]);
 
-  const avatarDialogSrc =
-    isAgent ? flowData?.avatar : chatInfo.avatar;
+  const avatarDialogSrc = isAgent ? flowData?.avatar : chatInfo.avatar;
 
   if (!conversationId) {
     return <div>empty</div>;

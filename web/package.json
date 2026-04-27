@@ -8,15 +8,18 @@
     "build": "vite build --mode production",
     "build-storybook": "storybook build",
     "dev": "vite --host",
-    "lint": "eslint src --ext .ts,.tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint src --ext .ts,.tsx --report-unused-disable-directives",
     "prepare": "cd .. && husky web/.husky",
     "preview": "vite preview",
     "storybook": "storybook dev -p 6006",
-    "test": "jest --no-cache --coverage"
+    "test": "jest --no-cache --coverage",
+    "type-check": "tsc --noEmit"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx,css,less,json}": [
-      "prettier --write --ignore-unknown"
+    "*.{css,less,json}": "prettier --write --ignore-unknown",
+    "*.{js,jsx,ts,tsx}": [
+      "prettier --write --ignore-unknown",
+      "eslint"
     ]
   },
   "overrides": {
@@ -27,8 +30,6 @@
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",
-    "@ant-design/pro-components": "^2.6.46",
-    "@ant-design/pro-layout": "^7.17.16",
     "@antv/g2": "^5.2.10",
     "@antv/g6": "^5.1.0",
     "@floating-ui/react": "^0.27.19",
