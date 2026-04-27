@@ -21,6 +21,7 @@ from collections import Counter
 from rag.nlp import rag_tokenizer
 from io import BytesIO
 import logging
+from common.constants import MAXIMUM_PAGE_NUMBER
 from docx.image.exceptions import (
     InvalidImageStreamError,
     UnexpectedEndOfFileError,
@@ -158,7 +159,7 @@ class RAGFlowDocxParser:
             return lines
         return ["\n".join(lines)]
 
-    def __call__(self, fnm, from_page=0, to_page=100000000):
+    def __call__(self, fnm, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
         self.doc = Document(fnm) if isinstance(
             fnm, str) else Document(BytesIO(fnm))
         pn = 0 # parsed page

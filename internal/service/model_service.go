@@ -776,7 +776,7 @@ func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName
 			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
 		}
 
-		modelConfig.ModelSeries = model.Series
+		modelConfig.ModelType = model.Type
 
 		var extra map[string]string
 		err = json.Unmarshal([]byte(instance.Extra), &extra)

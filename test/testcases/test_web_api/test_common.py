@@ -327,6 +327,53 @@ def upload_documents(auth, payload=None, files_path=None, *, filename_override=N
             f.close()
 
 
+def upload_info(auth, files_path=None, *, url=None):
+    """
+    Call the /api/v1/documents/upload endpoint to get upload info.
+    This is used to get file metadata before actually uploading to a dataset.
+
+    Args:
+        auth: Authentication object
+        files_path: List of file paths to upload (optional)
+        url: URL to fetch file from (optional, can be used alone or with files_path to test mixed input rejection)
+
+    Returns:
+        Response JSON with upload info
+    """
+    url_endpoint = f"{HOST_ADDRESS}/api/{VERSION}/documents/upload"
+
+    fields = []
+    file_objects = []
+    try:
+        if files_path:
+            for fp in files_path:
+                p = Path(fp)
+                f = p.open("rb")
+                fields.append(("file", (p.name, f)))
+                file_objects.append(f)
+
+        # Add url as query parameter if provided
+        if url:
+            url_endpoint = f"{url_endpoint}?url={url}"
+
+        # Handle empty fields (no files) - create empty MultipartEncoder
+        if not fields:
+            fields = [("empty", ("", ""))]
+
+        m = MultipartEncoder(fields=fields)
+
+        res = requests.post(
+            url=url_endpoint,
+            headers={"Content-Type": m.content_type},
+            auth=auth,
+            data=m,
+        )
+        return res.json()
+    finally:
+        for f in file_objects:
+            f.close()
+
+
 def create_document(auth, payload=None, *, headers=HEADERS, data=None):
     kb_id = payload.get("kb_id") if payload else None
     request_payload = dict(payload or {})
