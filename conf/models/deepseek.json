@@ -14,30 +14,22 @@
       "max_tokens": 1048576,
       "model_types": [
         "chat"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "deepseek-v4-pro",
       "max_tokens": 1048576,
       "model_types": [
         "chat"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     }
-  ],
-  "features": {
-    "thinking": {
-      "default_value": true,
-      "supported_models": [
-        "deepseek-v4-pro",
-        "deepseek-v4-flash"
-      ]
-    },
-    "reasoning_effort": {
-      "default_value": "high",
-      "supported_modes": [
-        "deepseek-v4-pro",
-        "deepseek-v4-flash"
-      ]
-    }
-  }
+  ]
 }
