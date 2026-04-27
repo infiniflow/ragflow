@@ -13,15 +13,8 @@
   "series": "deepseek",
   "models": [
     {
-      "name": "deepseek-v4-flash",
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-v4-pro",
-      "max_tokens": 1048576,
+      "name": "qwen-flash",
+      "max_tokens": 995904,
       "model_types": [
         "chat"
       ]
@@ -31,15 +24,7 @@
     "thinking": {
       "default_value": true,
       "supported_models": [
-        "deepseek-v4-pro",
-        "deepseek-v4-flash"
-      ]
-    },
-    "reasoning_effort": {
-      "default_value": "high",
-      "supported_modes": [
-        "deepseek-v4-pro",
-        "deepseek-v4-flash"
+        "qwen-flash"
       ]
     }
   }

@@ -69,13 +69,6 @@ func (z *AliyunModel) Chat(modelName, message *string, apiConfig *APIConfig, cha
 
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
 
-	// I need to get the model type, such as qwen3 is the prefix, the model type will be qwen. glm is the prefix, the model type will be glm. such as the model name: qwen3-0.6b, the model type will be qwen3
-	// the model name is glm-4.7, the model type will be glm
-	modelType := strings.Split(*modelName, "-")[0]
-	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.AsyncChat)
-	}
-
 	// Build request body
 	reqBody := map[string]interface{}{
 		"model": modelName,
@@ -108,13 +101,9 @@ func (z *AliyunModel) Chat(modelName, message *string, apiConfig *APIConfig, cha
 
 	if chatModelConfig.Thinking != nil {
 		if *chatModelConfig.Thinking {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "enabled",
-			}
+			reqBody["enable_thinking"] = true
 		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
-			}
+			reqBody["enable_thinking"] = false
 		}
 	}
 
@@ -167,16 +156,28 @@ func (z *AliyunModel) Chat(modelName, message *string, apiConfig *APIConfig, cha
 		return nil, fmt.Errorf("invalid message format")
 	}
 
-	content, ok := messageMap["content"].(string)
+	answer, ok := messageMap["content"].(string)
 	if !ok {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelType, &content)
+	var reasonContent string
+	if chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+		reasonContent, ok = messageMap["reasoning_content"].(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid content format")
+		}
+		// if first char of reasonContent is \n remove the '\n'
+		if reasonContent != "" && reasonContent[0] == '\n' {
+			reasonContent = reasonContent[1:]
+		}
+	}
+
+	//thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelType, &content)
 
 	chatResponse := &ChatResponse{
-		Answer:        answer,
-		ReasonContent: thinking,
+		Answer:        &answer,
+		ReasonContent: &reasonContent,
 	}
 
 	return chatResponse, nil
@@ -194,7 +195,7 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName, message *string, apiConf
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/chat/completions", z.BaseURL[region])
+	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
@@ -232,13 +233,9 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName, message *string, apiConf
 
 	if chatModelConfig.Thinking != nil {
 		if *chatModelConfig.Thinking {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "enabled",
-			}
+			reqBody["enable_thinking"] = true
 		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
-			}
+			reqBody["enable_thinking"] = false
 		}
 	}
 
@@ -265,10 +262,6 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName, message *string, apiConf
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
-
-	reserveText := ""
-	thinkingPhase := false
-	answerPhase := false
 
 	// SSE parsing: read line by line
 	scanner := bufio.NewScanner(resp.Body)
@@ -312,44 +305,21 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName, message *string, apiConf
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
-			if content == "<think>" {
-				thinkingPhase = true
-				continue
-
-			} else if content == "</think>" {
-				thinkingPhase = false
-				answerPhase = true
-				continue
+			if err := sender(&content, nil); err != nil {
+				return err
 			}
+		}
 
-			if thinkingPhase {
-				if err = sender(nil, &content); err != nil {
-					return err
-				}
-				reserveText = ""
-			} else if answerPhase {
-				if err = sender(&content, nil); err != nil {
-					return err
-				}
-				reserveText = ""
-			} else {
-				content = strings.Trim(content, "\n")
-				content = strings.Trim(content, " ")
-				if content != "" {
-					reserveText += content
-				}
+		reasoningContent, ok := delta["reasoning_content"].(string)
+		if ok && reasoningContent != "" {
+			if err := sender(nil, &reasoningContent); err != nil {
+				return err
 			}
 		}
 
 		finishReason, ok := firstChoice["finish_reason"].(string)
 		if ok && finishReason != "" {
 			break
-		}
-	}
-
-	if reserveText != "" {
-		if err = sender(&reserveText, nil); err != nil {
-			return err
 		}
 	}
 
