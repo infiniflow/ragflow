@@ -28,7 +28,6 @@ from api.apps.services.document_api_service import validate_document_update_fiel
     map_doc_keys_with_run_status, update_document_name_only, update_chunk_method, update_document_status_only, \
     reset_document_for_reparse
 from api.db import VALID_FILE_TYPES, FileType
-    map_doc_keys_with_run_status, update_document_name_only, update_chunk_method_only, update_document_status_only
 from api.db.services import duplicate_name
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.db_models import Task
