@@ -33,7 +33,7 @@ A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure
 
 ### Create chat completion
 
-**POST** `/api/v1/chats_openai/{chat_id}/chat/completions`
+**POST** `/api/v1/openai/{chat_id}/chat/completions`
 
 Creates a model response for a given chat conversation.
 
@@ -42,7 +42,7 @@ This API follows the same request and response format as OpenAI's API. It allows
 #### Request
 
 - Method: POST
-- URL: `/api/v1/chats_openai/{chat_id}/chat/completions`
+- URL: `/api/v1/openai/{chat_id}/chat/completions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -56,11 +56,11 @@ This API follows the same request and response format as OpenAI's API. It allows
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/chats_openai/{chat_id}/chat/completions \
+     --url http://{address}/api/v1/openai/{chat_id}/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
-        "model": "model",
+        "model": "glm-4-flash@ZHIPU-AI",
         "messages": [{"role": "user", "content": "Say this is a test!"}],
         "stream": true,
         "extra_body": {
@@ -85,8 +85,11 @@ curl --request POST \
 
 ##### Request Parameters
 
+- `chat_id` (*Path parameter*) `string`, *Required*
+  Existing chat assistant ID. The request will use that chat assistant's knowledge and settings.
+
 - `model` (*Body parameter*) `string`, *Required*
-  The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
+  The model used to generate the response. When `chat_id` is provided, you may also use the legacy placeholder value `"model"` to keep using the chat assistant's configured model.
 
 - `messages` (*Body parameter*) `list[object]`, *Required*
   A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
