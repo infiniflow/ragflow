@@ -15,7 +15,6 @@
 #
 import logging
 import re
-from pathlib import PurePosixPath, PureWindowsPath
 
 from quart import make_response, request
 
@@ -25,7 +24,6 @@ from api.db import FileType
 from api.db.db_models import Task
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from api.db.services.file2document_service import File2DocumentService
-from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.utils.api_utils import (
@@ -39,22 +37,7 @@ from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_heade
 from common import settings
 from common.constants import RetCode, TaskStatus
 from common.misc_utils import thread_pool_exec
-from common.ssrf_guard import assert_url_is_safe
-from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search
-
-
-def _is_safe_download_filename(name: str) -> bool:
-    if not name or name in {".", ".."}:
-        return False
-    if "\x00" in name or len(name) > 255:
-        return False
-    if name != PurePosixPath(name).name:
-        return False
-    if name != PureWindowsPath(name).name:
-        return False
-    return True
-
 
 
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
