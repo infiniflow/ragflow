@@ -47,10 +47,6 @@ const methods = {
     url: documentChangeStatus,
     method: 'post',
   },
-  documentCreate: {
-    url: documentCreate,
-    method: 'post',
-  },
   documentIngest: {
     url: documentIngest,
     method: 'post',
