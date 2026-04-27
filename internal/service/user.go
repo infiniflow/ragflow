@@ -30,6 +30,7 @@ import (
 	"hash"
 	"os"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/server"
 	"regexp"
 	"strconv"
@@ -40,7 +41,7 @@ import (
 	"golang.org/x/crypto/scrypt"
 
 	"ragflow/internal/dao"
-	"ragflow/internal/model"
+
 	"ragflow/internal/utility"
 )
 
@@ -59,7 +60,7 @@ func NewUserService() *UserService {
 // RegisterRequest registration request
 type RegisterRequest struct {
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
+	Password string `json:"password" binding:"required,min=1"`
 	Nickname string `json:"nickname"`
 }
 
@@ -101,7 +102,7 @@ type UserResponse struct {
 }
 
 // Register user registration
-func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorCode, error) {
+func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.ErrorCode, error) {
 	cfg := server.GetConfig()
 	if cfg.RegisterEnabled == 0 {
 		return nil, common.CodeOperatingError, fmt.Errorf("User registration is disabled!")
@@ -122,7 +123,8 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 		return nil, common.CodeServerError, fmt.Errorf("Fail to decrypt password")
 	}
 
-	hashedPassword, err := s.HashPassword(decryptedPassword)
+	var hashedPassword string
+	hashedPassword, err = s.HashPassword(decryptedPassword)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -133,7 +135,7 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	loginChannel := "password"
 	isSuperuser := false
 
-	user := &model.User{
+	user := &entity.User{
 		ID:              userID,
 		AccessToken:     &accessToken,
 		Email:           req.Email,
@@ -178,7 +180,7 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 		rerankID = ""
 	}
 
-	tenant := &model.Tenant{
+	tenant := &entity.Tenant{
 		ID:        userID,
 		Name:      &tenantName,
 		LLMID:     llmID,
@@ -195,7 +197,7 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	tenant.UpdateDate = &now_date
 
 	userTenantID := utility.GenerateToken()
-	userTenant := &model.UserTenant{
+	userTenant := &entity.UserTenant{
 		ID:        userTenantID,
 		UserID:    userID,
 		TenantID:  userID,
@@ -209,7 +211,7 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	userTenant.UpdateDate = &now_date
 
 	fileID := utility.GenerateToken()
-	rootFile := &model.File{
+	rootFile := &entity.File{
 		ID:        fileID,
 		ParentID:  fileID,
 		TenantID:  userID,
@@ -227,20 +229,20 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 	userTenantDAO := dao.NewUserTenantDAO()
 	fileDAO := dao.NewFileDAO()
 
-	if err := s.userDAO.Create(user); err != nil {
+	if err = s.userDAO.Create(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	if err := tenantDAO.Create(tenant); err != nil {
-		err := s.userDAO.DeleteByID(userID)
+	if err = tenantDAO.Create(tenant); err != nil {
+		err = s.userDAO.DeleteByID(userID)
 		if err != nil {
 			return nil, 0, err
 		}
 		return nil, common.CodeServerError, fmt.Errorf("failed to create tenant: %w", err)
 	}
 
-	if err := userTenantDAO.Create(userTenant); err != nil {
-		err := s.userDAO.DeleteByID(userID)
+	if err = userTenantDAO.Create(userTenant); err != nil {
+		err = s.userDAO.DeleteByID(userID)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -251,8 +253,8 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 		return nil, common.CodeServerError, fmt.Errorf("failed to create user tenant relation: %w", err)
 	}
 
-	if err := fileDAO.Create(rootFile); err != nil {
-		err := s.userDAO.DeleteByID(userID)
+	if err = fileDAO.Create(rootFile); err != nil {
+		err = s.userDAO.DeleteByID(userID)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -271,7 +273,7 @@ func (s *UserService) Register(req *RegisterRequest) (*model.User, common.ErrorC
 }
 
 // Login user login
-func (s *UserService) Login(req *LoginRequest) (*model.User, common.ErrorCode, error) {
+func (s *UserService) Login(req *LoginRequest) (*entity.User, common.ErrorCode, error) {
 	// Get user by email (using username field as email)
 	user, err := s.userDAO.GetByEmail(req.Username)
 	if err != nil {
@@ -314,11 +316,7 @@ func (s *UserService) Login(req *LoginRequest) (*model.User, common.ErrorCode, e
 // - CodeAuthenticationError (109): Email not registered or password mismatch
 // - CodeServerError (500): Password decryption failure
 // - CodeForbidden (403): Account disabled
-func (s *UserService) LoginByEmail(req *EmailLoginRequest, adminLogin bool) (*model.User, common.ErrorCode, error) {
-	if !adminLogin && req.Email == "admin@ragflow.io" {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("default admin account cannot be used to login normal services")
-	}
-
+func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*entity.User, common.ErrorCode, error) {
 	user, err := s.userDAO.GetByEmail(req.Email)
 	if err != nil {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("Email: %s is not registered!", req.Email)
@@ -642,7 +640,7 @@ func (s *UserService) decryptPassword(encryptedPassword string) (string, error) 
 // GetUserByToken gets user by authorization header
 // The token parameter is the authorization header value, which needs to be decrypted
 // using itsdangerous URLSafeTimedSerializer to get the actual access_token
-func (s *UserService) GetUserByToken(authorization string) (*model.User, common.ErrorCode, error) {
+func (s *UserService) GetUserByToken(authorization string) (*entity.User, common.ErrorCode, error) {
 	// Get secret key from config
 	variables := server.GetVariables()
 	secretKey := variables.SecretKey
@@ -669,12 +667,12 @@ func (s *UserService) GetUserByToken(authorization string) (*model.User, common.
 }
 
 // UpdateUserAccessToken updates user's access token
-func (s *UserService) UpdateUserAccessToken(user *model.User, token string) error {
+func (s *UserService) UpdateUserAccessToken(user *entity.User, token string) error {
 	return s.userDAO.UpdateAccessToken(user, token)
 }
 
 // Logout invalidates user's access token
-func (s *UserService) Logout(user *model.User) (common.ErrorCode, error) {
+func (s *UserService) Logout(user *entity.User) (common.ErrorCode, error) {
 	// Invalidate token by setting it to an invalid value
 	// Similar to Python implementation: "INVALID_" + secrets.token_hex(16)
 	invalidToken := "INVALID_" + utility.GenerateToken()
@@ -686,7 +684,7 @@ func (s *UserService) Logout(user *model.User) (common.ErrorCode, error) {
 }
 
 // GetUserProfile returns user profile information
-func (s *UserService) GetUserProfile(user *model.User) map[string]interface{} {
+func (s *UserService) GetUserProfile(user *entity.User) map[string]interface{} {
 	// Format create time and date (from database fields)
 	createTime := user.CreateTime
 	createDate := ""
@@ -791,7 +789,7 @@ func (s *UserService) GetUserProfile(user *model.User) map[string]interface{} {
 }
 
 // UpdateUserSettings updates user settings
-func (s *UserService) UpdateUserSettings(user *model.User, req *UpdateSettingsRequest) (common.ErrorCode, error) {
+func (s *UserService) UpdateUserSettings(user *entity.User, req *UpdateSettingsRequest) (common.ErrorCode, error) {
 	// Update fields if provided
 	if req.Nickname != nil {
 		user.Nickname = *req.Nickname
@@ -821,7 +819,7 @@ func (s *UserService) UpdateUserSettings(user *model.User, req *UpdateSettingsRe
 }
 
 // ChangePassword changes user password
-func (s *UserService) ChangePassword(user *model.User, req *ChangePasswordRequest) (common.ErrorCode, error) {
+func (s *UserService) ChangePassword(user *entity.User, req *ChangePasswordRequest) (common.ErrorCode, error) {
 	// If password is provided, verify current password
 	if req.Password != nil {
 		if user.Password == nil || !s.VerifyPassword(*user.Password, *req.Password) {
@@ -925,4 +923,135 @@ func (s *UserService) SetTenantInfo(userID string, req *SetTenantInfoRequest) er
 	}
 
 	return nil
+}
+
+// UserTenantService user tenant service
+// Provides business logic for user-tenant relationship management
+type UserTenantService struct {
+	userTenantDAO *dao.UserTenantDAO
+}
+
+// NewUserTenantService creates a new UserTenantService instance
+/**
+ * Returns:
+ *   - *UserTenantService: a new UserTenantService instance
+ *
+ * Example:
+ *
+ *	service := NewUserTenantService()
+ *	relations, err := service.GetUserTenantRelationByUserID("user123")
+ */
+func NewUserTenantService() *UserTenantService {
+	return &UserTenantService{
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+}
+
+// UserTenantRelation represents a user-tenant relationship response
+// This structure matches the Python implementation's return format
+type UserTenantRelation struct {
+	ID       string `json:"id"`
+	UserID   string `json:"user_id"`
+	TenantID string `json:"tenant_id"`
+	Role     string `json:"role"`
+}
+
+// GetUserTenantRelationByUserID retrieves all user-tenant relationships for a given user ID
+/**
+ * This method returns a list of user-tenant relationships with selected fields:
+ * - id: the relationship ID
+ * - user_id: the user ID
+ * - tenant_id: the tenant ID
+ * - role: the user's role in the tenant
+ *
+ * Parameters:
+ *   - userID: the unique identifier of the user
+ *
+ * Returns:
+ *   - []*UserTenantRelation: list of user-tenant relationships
+ *   - error: error if the operation fails, nil otherwise
+ *
+ * Example:
+ *
+ *	service := NewUserTenantService()
+ *	relations, err := service.GetUserTenantRelationByUserID("user123")
+ *	if err != nil {
+ *	    log.Printf("Failed to get user tenant relations: %v", err)
+ *	    return
+ *	}
+ *	for _, rel := range relations {
+ *	    fmt.Printf("User %s has role %s in tenant %s\n", rel.UserID, rel.Role, rel.TenantID)
+ *	}
+ */
+func (s *UserTenantService) GetUserTenantRelationByUserID(userID string) ([]*UserTenantRelation, error) {
+	relations, err := s.userTenantDAO.GetByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]*UserTenantRelation, len(relations))
+	for i, rel := range relations {
+		result[i] = convertToUserTenantRelation(rel)
+	}
+
+	return result, nil
+}
+
+// convertToUserTenantRelation converts model.UserTenant to UserTenantRelation
+/**
+ * Parameters:
+ *   - userTenant: the model.UserTenant to convert
+ *
+ * Returns:
+ *   - *UserTenantRelation: the converted UserTenantRelation
+ */
+func convertToUserTenantRelation(userTenant *entity.UserTenant) *UserTenantRelation {
+	return &UserTenantRelation{
+		ID:       userTenant.ID,
+		UserID:   userTenant.UserID,
+		TenantID: userTenant.TenantID,
+		Role:     userTenant.Role,
+	}
+}
+
+// GetUserByAPIToken gets user by access key from Authorization header
+// This is used for API token authentication
+// The authorization parameter should be in format: "Bearer <token>" or just "<token>"
+func (s *UserService) GetUserByAPIToken(authorization string) (*entity.User, common.ErrorCode, error) {
+	if authorization == "" {
+		return nil, common.CodeUnauthorized, fmt.Errorf("authorization header is empty")
+	}
+
+	// Split authorization header to get the token
+	// Expected format: "Bearer <token>" or "<token>"
+	parts := strings.Split(authorization, " ")
+	var token string
+	if len(parts) == 2 {
+		token = parts[1]
+	} else if len(parts) == 1 {
+		token = parts[0]
+	} else {
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
+	}
+
+	// Query API token from database
+	apiTokenDAO := dao.NewAPITokenDAO()
+	userToken, err := apiTokenDAO.GetUserByAPIToken(token)
+	if err != nil {
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid access token")
+	}
+
+	// Get user by tenant_id from API token
+	user, err := s.userDAO.GetByTenantID(userToken.TenantID)
+	if err != nil {
+		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for this access token")
+	}
+
+	// Check if user's access_token is empty
+	if user.AccessToken == nil || *user.AccessToken == "" {
+		return nil, common.CodeUnauthorized, fmt.Errorf("user has empty access_token in database")
+	}
+
+	return user, common.CodeSuccess, nil
+
 }

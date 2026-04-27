@@ -1,9 +1,10 @@
+import { ParseType } from '@/constants/knowledge';
 import { t } from 'i18next';
 import { z } from 'zod';
 
 export const formSchema = z
   .object({
-    parseType: z.number(),
+    parse_type: z.nativeEnum(ParseType),
     name: z.string().min(1, {
       message: 'Username must be at least 2 characters.',
     }),
@@ -12,11 +13,11 @@ export const formSchema = z
     avatar: z.any().nullish(),
     permission: z.string().optional(),
     language: z.string().optional(),
-    parser_id: z.string(),
+    chunk_method: z.string(),
     pipeline_id: z.string().optional(),
     pipeline_name: z.string().optional(),
     pipeline_avatar: z.string().optional(),
-    embd_id: z.string(),
+    embedding_model: z.string(),
     parser_config: z
       .object({
         layout_recognize: z.string(),
@@ -110,7 +111,7 @@ export const formSchema = z
     // icon: z.array(z.instanceof(File)),
   })
   .superRefine((data, ctx) => {
-    if (data.parseType === 2 && !data.pipeline_id) {
+    if (data.parse_type === ParseType.Pipeline && !data.pipeline_id) {
       ctx.addIssue({
         path: ['pipeline_id'],
         message: t('common.pleaseSelect'),

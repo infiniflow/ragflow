@@ -162,84 +162,282 @@ jobs:
           source .venv/bin/activate
           which pytest || echo "pytest not in PATH"
           echo "Start to run unit test"
-          python3 run_tests.py
+          python3 run_tests.py -i
 
-      - name: Start ragflow:nightly
+      - name: Prepare function test environment
         working-directory: docker
         run: |
           # Determine runner number (default to 1 if not found)
-          RUNNER_NUM=$(sudo docker inspect $(hostname) --format '{{index .Config.Labels "com.docker.compose.container-number"}}' 2>/dev/null || true)
-          RUNNER_NUM=${RUNNER_NUM:-1}
+               RUNNER_NUM=$(sudo docker inspect $(hostname) --format '{{index .Config.Labels "com.docker.compose.container-number"}}' 2>/dev/null || true)
+               RUNNER_NUM=${RUNNER_NUM:-1}
 
           # Compute port numbers using bash arithmetic
-          ES_PORT=$((1200 + RUNNER_NUM * 10))
-          OS_PORT=$((1201 + RUNNER_NUM * 10))
-          INFINITY_THRIFT_PORT=$((23817 + RUNNER_NUM * 10))
-          INFINITY_HTTP_PORT=$((23820 + RUNNER_NUM * 10))
-          INFINITY_PSQL_PORT=$((5432 + RUNNER_NUM * 10))
-          EXPOSE_MYSQL_PORT=$((5455 + RUNNER_NUM * 10))
-          MINIO_PORT=$((9000 + RUNNER_NUM * 10))
-          MINIO_CONSOLE_PORT=$((9001 + RUNNER_NUM * 10))
-          REDIS_PORT=$((6379 + RUNNER_NUM * 10))
-          TEI_PORT=$((6380 + RUNNER_NUM * 10))
-          KIBANA_PORT=$((6601 + RUNNER_NUM * 10))
-          SVR_HTTP_PORT=$((9380 + RUNNER_NUM * 10))
-          ADMIN_SVR_HTTP_PORT=$((9381 + RUNNER_NUM * 10))
-          SVR_MCP_PORT=$((9382 + RUNNER_NUM * 10))
-          GO_HTTP_PORT=$((9384 + RUNNER_NUM * 10))
-          GO_ADMIN_PORT=$((9385 + RUNNER_NUM * 10))
-          SANDBOX_EXECUTOR_MANAGER_PORT=$((9385 + RUNNER_NUM * 10))
-          SVR_WEB_HTTP_PORT=$((80 + RUNNER_NUM * 10))
-          SVR_WEB_HTTPS_PORT=$((443 + RUNNER_NUM * 10))
+               ES_PORT=$((1200 + RUNNER_NUM * 10))
+               OS_PORT=$((1201 + RUNNER_NUM * 10))
+               INFINITY_THRIFT_PORT=$((23817 + RUNNER_NUM * 10))
+               INFINITY_HTTP_PORT=$((23820 + RUNNER_NUM * 10))
+               INFINITY_PSQL_PORT=$((5432 + RUNNER_NUM * 10))
+               EXPOSE_MYSQL_PORT=$((5455 + RUNNER_NUM * 10))
+               MINIO_PORT=$((9000 + RUNNER_NUM * 10))
+               MINIO_CONSOLE_PORT=$((9001 + RUNNER_NUM * 10))
+               REDIS_PORT=$((6379 + RUNNER_NUM * 10))
+               TEI_PORT=$((6380 + RUNNER_NUM * 10))
+               KIBANA_PORT=$((6601 + RUNNER_NUM * 10))
+               SVR_HTTP_PORT=$((9380 + RUNNER_NUM * 10))
+               ADMIN_SVR_HTTP_PORT=$((9381 + RUNNER_NUM * 10))
+               SVR_MCP_PORT=$((9382 + RUNNER_NUM * 10))
+               GO_HTTP_PORT=$((9384 + RUNNER_NUM * 10))
+               GO_ADMIN_PORT=$((9383 + RUNNER_NUM * 10))
+               SANDBOX_EXECUTOR_MANAGER_PORT=$((9385 + RUNNER_NUM * 10))
+               SVR_WEB_HTTP_PORT=$((80 + RUNNER_NUM * 10))
+               SVR_WEB_HTTPS_PORT=$((443 + RUNNER_NUM * 10))
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings
-          echo "" >> .env
-          echo -e "ES_PORT=${ES_PORT}" >> .env
-          echo -e "OS_PORT=${OS_PORT}" >> .env
-          echo -e "INFINITY_THRIFT_PORT=${INFINITY_THRIFT_PORT}" >> .env
-          echo -e "INFINITY_HTTP_PORT=${INFINITY_HTTP_PORT}" >> .env
-          echo -e "INFINITY_PSQL_PORT=${INFINITY_PSQL_PORT}" >> .env
-          echo -e "EXPOSE_MYSQL_PORT=${EXPOSE_MYSQL_PORT}" >> .env
-          echo -e "MINIO_PORT=${MINIO_PORT}" >> .env
-          echo -e "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}" >> .env
-          echo -e "REDIS_PORT=${REDIS_PORT}" >> .env
-          echo -e "TEI_PORT=${TEI_PORT}" >> .env
-          echo -e "KIBANA_PORT=${KIBANA_PORT}" >> .env
-          echo -e "SVR_HTTP_PORT=${SVR_HTTP_PORT}" >> .env
-          echo -e "ADMIN_SVR_HTTP_PORT=${ADMIN_SVR_HTTP_PORT}" >> .env
-          echo -e "SVR_MCP_PORT=${SVR_MCP_PORT}" >> .env
-          echo -e "GO_HTTP_PORT=${GO_HTTP_PORT}" >> .env
-          echo -e "GO_ADMIN_PORT=${GO_ADMIN_PORT}" >> .env
-          echo -e "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}" >> .env
-          echo -e "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}" >> .env
-          echo -e "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}" >> .env
+               echo "" >> .env
+               echo -e "ES_PORT=${ES_PORT}" >> .env
+               echo -e "OS_PORT=${OS_PORT}" >> .env
+               echo -e "INFINITY_THRIFT_PORT=${INFINITY_THRIFT_PORT}" >> .env
+               echo -e "INFINITY_HTTP_PORT=${INFINITY_HTTP_PORT}" >> .env
+               echo -e "INFINITY_PSQL_PORT=${INFINITY_PSQL_PORT}" >> .env
+               echo -e "EXPOSE_MYSQL_PORT=${EXPOSE_MYSQL_PORT}" >> .env
+               echo -e "MINIO_PORT=${MINIO_PORT}" >> .env
+               echo -e "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}" >> .env
+               echo -e "REDIS_PORT=${REDIS_PORT}" >> .env
+               echo -e "TEI_PORT=${TEI_PORT}" >> .env
+               echo -e "KIBANA_PORT=${KIBANA_PORT}" >> .env
+               echo -e "SVR_HTTP_PORT=${SVR_HTTP_PORT}" >> .env
+               echo -e "ADMIN_SVR_HTTP_PORT=${ADMIN_SVR_HTTP_PORT}" >> .env
+               echo -e "SVR_MCP_PORT=${SVR_MCP_PORT}" >> .env
+               echo -e "GO_HTTP_PORT=${GO_HTTP_PORT}" >> .env
+               echo -e "GO_ADMIN_PORT=${GO_ADMIN_PORT}" >> .env
+               echo -e "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}" >> .env
+               echo -e "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}" >> .env
+               echo -e "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}" >> .env
+               
+               echo -e "COMPOSE_PROFILES=\${COMPOSE_PROFILES},tei-cpu" >> .env
+               echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> .env
+               echo -e "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> .env
+               echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
 
-          echo -e "COMPOSE_PROFILES=\${COMPOSE_PROFILES},tei-cpu" >> .env
-          echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> .env
-          echo -e "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> .env
-          echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
+               # Patch entrypoint.sh for coverage
+               sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage -i https://mirrors.aliyun.com/pypi/simple\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' ./entrypoint.sh
+               cd ..
+               uv sync --python 3.12 --group test --frozen && uv pip install -e sdk/python
 
-          # Patch entrypoint.sh for coverage
-          sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' ./entrypoint.sh
 
-          sudo docker compose -f docker-compose.yml -p ${GITHUB_RUN_ID} up -d
-          cd ..
-          uv sync --python 3.12 --group test --frozen && uv pip install -e sdk/python
+      - name: Start ragflow:nightly for Infinity
+        run: |
+          sed -i 's/^DOC_ENGINE=.*$/DOC_ENGINE=infinity/' docker/.env
+          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
+
+      - name: Run sdk tests against Infinity
+        run: |
+          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
+            echo "Waiting for service to be available... (last exit code: $?)"
+            sleep 5
+          done
+          echo "Start to run test sdk on Infinity"
+          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-infinity-sdk.xml test/testcases/test_sdk_api 2>&1 | tee infinity_sdk_test.log
+
+      - name: Run web api tests against Infinity
+        run: |
+          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
+            echo "Waiting for service to be available... (last exit code: $?)"
+            sleep 5
+          done
+          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api/test_chunk_feedback 2>&1 | tee infinity_web_api_test.log
+
+      - name: Run http api tests against Infinity
+        run: |
+          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
+            echo "Waiting for service to be available... (last exit code: $?)"
+            sleep 5
+          done
+          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api 2>&1 | tee infinity_http_api_test.log
+
+      - name: RAGFlow CLI retrieval test Infinity
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+
+          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
+
+          EMAIL="ci-${GITHUB_RUN_ID}@example.com"
+          PASS="ci-pass-${GITHUB_RUN_ID}"
+          DATASET="ci_dataset_${GITHUB_RUN_ID}"
+
+          CLI="python admin/client/ragflow_cli.py"
+
+          LOG_FILE="infinity_cli_test.log"
+          : > "${LOG_FILE}"
+
+          ERROR_RE='Traceback|ModuleNotFoundError|ImportError|Parse error|Bad response|Fail to|code:\\s*[1-9]'
+          run_cli() {
+            local logfile="$1"
+            shift
+            local allow_re=""
+            if [[ "${1:-}" == "--allow" ]]; then
+              allow_re="$2"
+              shift 2
+            fi
+            local cmd_display="$*"
+            echo "===== $(date -u +\"%Y-%m-%dT%H:%M:%SZ\") CMD: ${cmd_display} =====" | tee -a "${logfile}"
+            local tmp_log
+            tmp_log="$(mktemp)"
+            set +e
+            timeout 500s "$@" 2>&1 | tee "${tmp_log}"
+            local status=${PIPESTATUS[0]}
+            set -e
+            cat "${tmp_log}" >> "${logfile}"
+            if grep -qiE "${ERROR_RE}" "${tmp_log}"; then
+              if [[ -n "${allow_re}" ]] && grep -qiE "${allow_re}" "${tmp_log}"; then
+                echo "Allowed CLI error markers in ${logfile}"
+                rm -f "${tmp_log}"
+                return 0
+              fi
+              echo "Detected CLI error markers in ${logfile}"
+              rm -f "${tmp_log}"
+              exit 1
+            fi
+            rm -f "${tmp_log}"
+            return ${status}
+          }
+
+          set -a
+          source docker/.env
+          set +a
+
+          HOST_ADDRESS="http://host.docker.internal:${SVR_HTTP_PORT}"
+          USER_HOST="$(echo "${HOST_ADDRESS}" | sed -E 's#^https?://([^:/]+).*#\1#')"
+          USER_PORT="${SVR_HTTP_PORT}"
+          ADMIN_HOST="${USER_HOST}"
+          ADMIN_PORT="${ADMIN_SVR_HTTP_PORT}"
+
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
+            echo "Waiting for service to be available... (last exit code: $?)"
+            sleep 5
+          done
+
+          admin_ready=0
+          for i in $(seq 1 30); do
+            if run_cli "${LOG_FILE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "ping"; then
+              admin_ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [[ "${admin_ready}" -ne 1 ]]; then
+            echo "Admin service did not become ready"
+            exit 1
+          fi
+
+          run_cli "${LOG_FILE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "show version"
+          ALLOW_USER_EXISTS_RE='already exists|already exist|duplicate|already.*registered|exist(s)?'
+          run_cli "${LOG_FILE}" --allow "${ALLOW_USER_EXISTS_RE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "create user '$EMAIL' '$PASS'"
+
+          user_ready=0
+          for i in $(seq 1 30); do
+            if run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "ping"; then
+              user_ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [[ "${user_ready}" -ne 1 ]]; then
+            echo "User service did not become ready"
+            exit 1
+          fi
+
+          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "show version"
+          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "create dataset '$DATASET' with embedding 'BAAI/bge-small-en-v1.5@Builtin' parser 'auto'"
+          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "import 'test/benchmark/test_docs/Doc1.pdf,test/benchmark/test_docs/Doc2.pdf' into dataset '$DATASET'"
+          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "parse dataset '$DATASET' sync"
+          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "Benchmark 16 100 search 'what are these documents about' on datasets '$DATASET'"
+
+      - name: Stop ragflow to save coverage Infinity
+        if: ${{ !cancelled() }}
+        run: |
+          # Send SIGINT to ragflow_server.py to trigger coverage save
+          PID=$(sudo docker exec ${RAGFLOW_CONTAINER} ps aux | grep "ragflow_server.py" | grep -v grep | awk '{print $2}' | head -n 1)
+          if [ -n "$PID" ]; then
+            echo "Sending SIGINT to ragflow_server.py (PID: $PID)..."
+            sudo docker exec ${RAGFLOW_CONTAINER} kill -INT $PID
+            # Wait for process to exit and coverage file to be written
+            sleep 10
+          else
+            echo "ragflow_server.py not found!"
+          fi
+          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} stop
+
+      - name: Generate server coverage report Infinity
+        if: ${{ !cancelled() }}
+        run: |
+          # .coverage file should be in docker/ragflow-logs/.coverage
+          if [ -f docker/ragflow-logs/.coverage ]; then
+            echo "Found .coverage file"
+            cp docker/ragflow-logs/.coverage .coverage
+            source .venv/bin/activate
+            # Create .coveragerc to map container paths to host paths
+            echo "[paths]" > .coveragerc
+            echo "source =" >> .coveragerc
+            echo "    ." >> .coveragerc
+            echo "    /ragflow" >> .coveragerc
+            coverage xml -o coverage-infinity-server.xml
+            rm .coveragerc
+          else
+            echo ".coverage file not found!"
+          fi
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        if: ${{ !cancelled() }}
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+      - name: Collect ragflow log Infinity
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -d docker/ragflow-logs ]; then
+            cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-infinity
+            echo "ragflow log" && tail -n 200 docker/ragflow-logs/ragflow_server.log || true
+          else
+            echo "No docker/ragflow-logs directory found; skipping log collection"
+          fi
+          sudo rm -rf docker/ragflow-logs || true
+
+      - name: Stop ragflow:nightly for Infinity
+        if: always()  # always run this step even if previous steps failed
+        run: |
+          # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
+          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
+          sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
+
+      - name: Start ragflow:nightly for Elasticsearch
+        run: |
+          sed -i 's/^DOC_ENGINE=.*$/DOC_ENGINE=elasticsearch/' docker/.env
+          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
 
       - name: Run sdk tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
-            echo "Waiting for service to be available..."
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
+            echo "Waiting for service to be available... (last exit code: $?)"
             sleep 5
           done
+          echo "Start to run test sdk on Elasticsearch"
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-es-sdk.xml test/testcases/test_sdk_api 2>&1 | tee es_sdk_test.log
 
       - name: Run web api tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
-            echo "Waiting for service to be available..."
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
+            echo "Waiting for service to be available... (last exit code: $?)"
             sleep 5
           done
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api 2>&1 | tee es_web_api_test.log
@@ -247,8 +445,8 @@ jobs:
       - name: Run http api tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
-            echo "Waiting for service to be available..."
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
+            echo "Waiting for service to be available... (last exit code: $?)"
             sleep 5
           done
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api 2>&1 | tee es_http_api_test.log
@@ -313,8 +511,8 @@ jobs:
           ADMIN_HOST="${USER_HOST}"
           ADMIN_PORT="${ADMIN_SVR_HTTP_PORT}"
 
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
-            echo "Waiting for service to be available..."
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
+            echo "Waiting for service to be available... (last exit code: $?)"
             sleep 5
           done
 
@@ -401,203 +599,11 @@ jobs:
           fi
           sudo rm -rf docker/ragflow-logs || true
 
-      - name: Stop ragflow:nightly
+      - name: Stop ragflow:nightly for Elasticsearch
         if: always()  # always run this step even if previous steps failed
-        run: |
-          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
-          sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
-
-      - name: Start ragflow:nightly
-        run: |
-          sed -i '1i DOC_ENGINE=infinity' docker/.env
-          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
-
-      - name: Run sdk tests against Infinity
-        run: |
-          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
-            echo "Waiting for service to be available..."
-            sleep 5
-          done
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-infinity-sdk.xml test/testcases/test_sdk_api 2>&1 | tee infinity_sdk_test.log
-
-      - name: Run web api tests against Infinity
-        run: |
-          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
-            echo "Waiting for service to be available..."
-            sleep 5
-          done
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api/test_api_app 2>&1 | tee infinity_web_api_test.log
-
-      - name: Run http api tests against Infinity
-        run: |
-          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
-            echo "Waiting for service to be available..."
-            sleep 5
-          done
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api 2>&1 | tee infinity_http_api_test.log
-
-      - name: RAGFlow CLI retrieval test Infinity
-        env:
-          PYTHONPATH: ${{ github.workspace }}
-        run: |
-          set -euo pipefail
-          source .venv/bin/activate
-
-          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-
-          EMAIL="ci-${GITHUB_RUN_ID}@example.com"
-          PASS="ci-pass-${GITHUB_RUN_ID}"
-          DATASET="ci_dataset_${GITHUB_RUN_ID}"
-
-          CLI="python admin/client/ragflow_cli.py"
-
-          LOG_FILE="infinity_cli_test.log"
-          : > "${LOG_FILE}"
-
-          ERROR_RE='Traceback|ModuleNotFoundError|ImportError|Parse error|Bad response|Fail to|code:\\s*[1-9]'
-          run_cli() {
-            local logfile="$1"
-            shift
-            local allow_re=""
-            if [[ "${1:-}" == "--allow" ]]; then
-              allow_re="$2"
-              shift 2
-            fi
-            local cmd_display="$*"
-            echo "===== $(date -u +\"%Y-%m-%dT%H:%M:%SZ\") CMD: ${cmd_display} =====" | tee -a "${logfile}"
-            local tmp_log
-            tmp_log="$(mktemp)"
-            set +e
-            timeout 500s "$@" 2>&1 | tee "${tmp_log}"
-            local status=${PIPESTATUS[0]}
-            set -e
-            cat "${tmp_log}" >> "${logfile}"
-            if grep -qiE "${ERROR_RE}" "${tmp_log}"; then
-              if [[ -n "${allow_re}" ]] && grep -qiE "${allow_re}" "${tmp_log}"; then
-                echo "Allowed CLI error markers in ${logfile}"
-                rm -f "${tmp_log}"
-                return 0
-              fi
-              echo "Detected CLI error markers in ${logfile}"
-              rm -f "${tmp_log}"
-              exit 1
-            fi
-            rm -f "${tmp_log}"
-            return ${status}
-          }
-
-          set -a
-          source docker/.env
-          set +a
-
-          HOST_ADDRESS="http://host.docker.internal:${SVR_HTTP_PORT}"
-          USER_HOST="$(echo "${HOST_ADDRESS}" | sed -E 's#^https?://([^:/]+).*#\1#')"
-          USER_PORT="${SVR_HTTP_PORT}"
-          ADMIN_HOST="${USER_HOST}"
-          ADMIN_PORT="${ADMIN_SVR_HTTP_PORT}"
-
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
-            echo "Waiting for service to be available..."
-            sleep 5
-          done
-
-          admin_ready=0
-          for i in $(seq 1 30); do
-            if run_cli "${LOG_FILE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "ping"; then
-              admin_ready=1
-              break
-            fi
-            sleep 1
-          done
-          if [[ "${admin_ready}" -ne 1 ]]; then
-            echo "Admin service did not become ready"
-            exit 1
-          fi
-
-          run_cli "${LOG_FILE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "show version"
-          ALLOW_USER_EXISTS_RE='already exists|already exist|duplicate|already.*registered|exist(s)?'
-          run_cli "${LOG_FILE}" --allow "${ALLOW_USER_EXISTS_RE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "create user '$EMAIL' '$PASS'"
-
-          user_ready=0
-          for i in $(seq 1 30); do
-            if run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "ping"; then
-              user_ready=1
-              break
-            fi
-            sleep 1
-          done
-          if [[ "${user_ready}" -ne 1 ]]; then
-            echo "User service did not become ready"
-            exit 1
-          fi
-
-          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "show version"
-          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "create dataset '$DATASET' with embedding 'BAAI/bge-small-en-v1.5@Builtin' parser 'auto'"
-          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "import 'test/benchmark/test_docs/Doc1.pdf,test/benchmark/test_docs/Doc2.pdf' into dataset '$DATASET'"
-          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "parse dataset '$DATASET' sync"
-          run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "Benchmark 16 100 search 'what are these documents about' on datasets '$DATASET'"
-
-      - name: Stop ragflow to save coverage Infinity
-        if: ${{ !cancelled() }}
-        run: |
-          # Send SIGINT to ragflow_server.py to trigger coverage save
-          PID=$(sudo docker exec ${RAGFLOW_CONTAINER} ps aux | grep "ragflow_server.py" | grep -v grep | awk '{print $2}' | head -n 1)
-          if [ -n "$PID" ]; then
-            echo "Sending SIGINT to ragflow_server.py (PID: $PID)..."
-            sudo docker exec ${RAGFLOW_CONTAINER} kill -INT $PID
-            # Wait for process to exit and coverage file to be written
-            sleep 10
-          else
-            echo "ragflow_server.py not found!"
-          fi
-          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} stop
-
-      - name: Generate server coverage report Infinity
-        if: ${{ !cancelled() }}
-        run: |
-          # .coverage file should be in docker/ragflow-logs/.coverage
-          if [ -f docker/ragflow-logs/.coverage ]; then
-            echo "Found .coverage file"
-            cp docker/ragflow-logs/.coverage .coverage
-            source .venv/bin/activate
-            # Create .coveragerc to map container paths to host paths
-            echo "[paths]" > .coveragerc
-            echo "source =" >> .coveragerc
-            echo "    ." >> .coveragerc
-            echo "    /ragflow" >> .coveragerc
-            coverage xml -o coverage-infinity-server.xml
-            rm .coveragerc
-          else
-            echo ".coverage file not found!"
-          fi
-          
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
-        if: ${{ !cancelled() }}
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
-
-      - name: Collect ragflow log
-        if: ${{ !cancelled() }}
-        run: |
-          if [ -d docker/ragflow-logs ]; then
-            cp -r docker/ragflow-logs ${ARTIFACTS_DIR}/ragflow-logs-infinity
-            echo "ragflow log" && tail -n 200 docker/ragflow-logs/ragflow_server.log || true
-          else
-            echo "No docker/ragflow-logs directory found; skipping log collection"
-          fi
-          sudo rm -rf docker/ragflow-logs || true
-
-      - name: Stop ragflow:nightly
-        if: always()  # always run this step even if previous steps failed
-        working-directory: docker
         run: |
           # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
-          sudo docker compose -f docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
+          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
           if [[ -n ${RAGFLOW_IMAGE} ]]; then
             sudo docker rmi -f ${RAGFLOW_IMAGE}

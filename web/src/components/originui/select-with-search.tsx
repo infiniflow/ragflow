@@ -2,7 +2,6 @@
 
 import { CheckIcon, ChevronDownIcon, XIcon } from 'lucide-react';
 import {
-  Fragment,
   MouseEventHandler,
   ReactNode,
   forwardRef,
@@ -207,40 +206,43 @@ export const SelectWithSearch = forwardRef<
               <CommandEmpty>
                 <div dangerouslySetInnerHTML={{ __html: emptyData }}></div>
               </CommandEmpty>
-              {options.map((group) => {
+              {options.map((group, groupIndex) => {
                 if (group.options) {
                   return (
-                    <Fragment key={group.value}>
-                      <CommandGroup heading={group.label} className="mb-1">
-                        {group.options.map((option) => (
-                          <CommandItem
-                            key={option.value}
-                            value={option.value}
-                            disabled={option.disabled}
-                            onSelect={handleSelect}
-                            data-testid={
-                              optionTestIdPrefix && option.value
-                                ? `${optionTestIdPrefix}${option.value}`
-                                : 'combobox-option'
-                            }
-                            className={
-                              value === option.value ? 'bg-bg-card' : ''
-                            }
-                          >
-                            <span className="leading-none">{option.label}</span>
+                    <CommandGroup
+                      key={group.value || `group-${groupIndex}`}
+                      heading={group.label}
+                      className="mb-1"
+                    >
+                      {group.options.map((option, optionIndex) => (
+                        <CommandItem
+                          key={
+                            option.value ||
+                            `option-${groupIndex}-${optionIndex}`
+                          }
+                          value={option.value}
+                          disabled={option.disabled}
+                          onSelect={handleSelect}
+                          data-testid={
+                            optionTestIdPrefix && option.value
+                              ? `${optionTestIdPrefix}${option.value}`
+                              : 'combobox-option'
+                          }
+                          className={value === option.value ? 'bg-bg-card' : ''}
+                        >
+                          <span className="leading-none">{option.label}</span>
 
-                            {value === option.value && (
-                              <CheckIcon size={16} className="ml-auto" />
-                            )}
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </Fragment>
+                          {value === option.value && (
+                            <CheckIcon size={16} className="ml-auto" />
+                          )}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
                   );
                 } else {
                   return (
                     <CommandItem
-                      key={group.value}
+                      key={group.value || `item-${groupIndex}`}
                       value={group.value}
                       disabled={group.disabled}
                       onSelect={handleSelect}

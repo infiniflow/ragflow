@@ -454,19 +454,27 @@ class DocMetadataService:
                 # Index exists - check if document exists
                 try:
                     doc_exists = settings.docStoreConn.get(
-                        index_name=index_name,
-                        id=doc_id,
-                        kb_id=kb_id
+                        doc_id,
+                        index_name,
+                        [kb_id]
                     )
                     if doc_exists:
-                        # Document exists - use partial update
+                        # Document exists - replace meta_fields entirely
+                        # Use upsert to fully replace the meta_fields field
+                        # (ES update with doc parameter does deep merge on object fields,
+                        # which would retain old keys that should be removed)
                         settings.docStoreConn.es.update(
                             index=index_name,
                             id=doc_id,
                             refresh=True,
-                            doc={"meta_fields": processed_meta}
+                            body={
+                                "script": {
+                                    "source": "ctx._source.meta_fields = params.meta_fields",
+                                    "params": {"meta_fields": processed_meta}
+                                }
+                            }
                         )
-                        logging.debug(f"Successfully updated metadata for document {doc_id} using ES partial update")
+                        logging.debug(f"Successfully updated metadata for document {doc_id} using ES script update")
                         return True
                 except Exception as e:
                     logging.debug(f"Document {doc_id} not found in index, will insert: {e}")
@@ -733,9 +741,11 @@ class DocMetadataService:
 
             # Aggregate metadata
             meta = {}
+            doc_count = 0
 
             # Use helper to iterate over results in any format
             for doc_id, doc in cls._iter_search_results(results):
+                doc_count += 1
                 # Extract metadata fields (exclude system fields)
                 doc_meta = cls._extract_metadata(doc)
 
@@ -751,6 +761,9 @@ class DocMetadataService:
                         if sv not in meta[k]:
                             meta[k][sv] = []
                         meta[k][sv].append(doc_id)
+
+            if doc_count >= 10000:
+                logging.warning(f"[get_flatted_meta_by_kbs] Results hit the 10000 limit for KBs {kb_ids}.")
 
             logging.debug(f"[get_flatted_meta_by_kbs] KBs: {kb_ids}, Returning metadata: {meta}")
             return meta

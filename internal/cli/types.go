@@ -26,6 +26,7 @@ type Command struct {
 const (
 	// Keywords
 	TokenLogin = iota
+	TokenLogout
 	TokenRegister
 	TokenList
 	TokenServices
@@ -41,9 +42,12 @@ const (
 	TokenAlter
 	TokenActive
 	TokenAdmin
+	TokenAdd
+	TokenDelete
 	TokenPassword
 	TokenDataset
 	TokenDatasets
+	TokenDatasetTable
 	TokenOf
 	TokenAgents
 	TokenRole
@@ -68,6 +72,8 @@ const (
 	TokenKey
 	TokenKeys
 	TokenGenerate
+	TokenAvailable
+	TokenSupported
 	TokenModel
 	TokenModels
 	TokenProvider
@@ -75,6 +81,7 @@ const (
 	TokenDefault
 	TokenChats
 	TokenChat
+	TokenStream
 	TokenFiles
 	TokenAs
 	TokenParse
@@ -85,26 +92,71 @@ const (
 	TokenPipeline
 	TokenSearch
 	TokenCurrent
-	TokenLLM
-	TokenVLM
+	TokenVision
 	TokenEmbedding
-	TokenReranker
+	TokenRerank
 	TokenASR
 	TokenTTS
+	TokenOCR
 	TokenAsync
 	TokenSync
 	TokenBenchmark
 	TokenPing
-
+	TokenToken
+	TokenTokens
+	TokenUnset
+	TokenIndex
+	TokenVector
+	TokenSize
+	TokenName // For ALTER PROVIDER <name> NAME <new_name>
+	TokenBalance
+	TokenInstance
+	TokenInstances
+	TokenDisable
+	TokenEnable
+	TokenUse
+	TokenCheck
+	TokenThink
+	TokenEffort
+	TokenVerbosity
+	TokenNone
+	TokenMinimal
+	TokenLow
+	TokenMedium
+	TokenHigh
+	TokenMax
+	TokenLS
+	TokenCat
+	TokenInsert
+	TokenFile
+	TokenMetadata
+	TokenTable
+	TokenUpdate
+	TokenRemove
+	TokenChunk
+	TokenChunks
+	TokenDocument
+	TokenTag
+	TokenLog
+	TokenLevel
+	TokenDebug
+	TokenInfo
+	TokenWarn
+	TokenError
+	TokenFatal
+	TokenPanic
 	// Literals
 	TokenIdentifier
 	TokenQuotedString
-	TokenNumber
+	TokenInteger
+	TokenFloat
 
 	// Special
 	TokenSemicolon
 	TokenComma
+	TokenSlash
 	TokenEOF
+	TokenDash
 	TokenIllegal
 )
 

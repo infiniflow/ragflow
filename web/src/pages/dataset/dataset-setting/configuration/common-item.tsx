@@ -19,7 +19,7 @@ import {
 import { Radio } from '@/components/ui/radio';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
-import { LlmModelType } from '@/constants/knowledge';
+import { LlmModelType, ParseType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
@@ -60,7 +60,7 @@ interface IProps {
   name?: string;
 }
 export function ChunkMethodItem(props: IProps) {
-  const { line } = props;
+  const { line, name = 'parser_id' } = props;
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   // const handleChunkMethodSelectChange = useHandleChunkMethodSelectChange(form);
@@ -69,7 +69,7 @@ export function ChunkMethodItem(props: IProps) {
   return (
     <FormField
       control={form.control}
-      name={'parser_id'}
+      name={name}
       render={({ field }) => (
         <FormItem className=" items-center space-y-1">
           <div className={line === 1 ? 'flex items-center' : ''}>
@@ -121,7 +121,7 @@ export const EmbeddingSelect = ({
   const { handleChange } = useHandleKbEmbedding();
 
   const oldValue = useMemo(() => {
-    const embdStr = form.getValues(name || 'embd_id');
+    const embdStr = form.getValues(name || 'embedding_model');
     return embdStr || '';
   }, [form]);
   const [loading, setLoading] = useState(false);
@@ -165,7 +165,7 @@ export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
     <>
       <FormField
         control={form.control}
-        name={'embd_id'}
+        name={'embedding_model'}
         render={({ field }) => (
           <FormItem className={cn(' items-center space-y-0 ')}>
             <div
@@ -207,14 +207,20 @@ export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
   );
 }
 
-export function ParseTypeItem({ line = 2 }: { line?: number }) {
+export function ParseTypeItem({
+  line = 2,
+  name = 'parseType',
+}: {
+  line?: number;
+  name?: string;
+}) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
 
   return (
     <FormField
       control={form.control}
-      name={'parseType'}
+      name={name}
       render={({ field }) => (
         <FormItem className=" items-center space-y-0 ">
           <div
@@ -242,8 +248,8 @@ export function ParseTypeItem({ line = 2 }: { line?: number }) {
                       line === 1 ? 'w-1/2' : 'w-3/4',
                     )}
                   >
-                    <Radio value={1}>{t('builtIn')}</Radio>
-                    <Radio value={2}>{t('manualSetup')}</Radio>
+                    <Radio value={ParseType.BuiltIn}>{t('builtIn')}</Radio>
+                    <Radio value={ParseType.Pipeline}>{t('manualSetup')}</Radio>
                   </div>
                 </Radio.Group>
               </FormControl>

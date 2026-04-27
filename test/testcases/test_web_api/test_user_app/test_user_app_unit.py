@@ -230,7 +230,7 @@ def _load_user_app(monkeypatch):
             return True
 
         @staticmethod
-        def get_api_key(tenant_id, model_name):
+        def get_api_key(tenant_id, model_name, model_type=None):
             return _MockTableObject(
                 id=1,
                 tenant_id=tenant_id,
@@ -344,6 +344,10 @@ def _load_user_app(monkeypatch):
     api_utils_mod.validate_request = _validate_request
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
+    tenant_utils_mod = ModuleType("api.utils.tenant_utils")
+    tenant_utils_mod.ensure_tenant_model_id_for_params = lambda _tenant_id, params: params
+    monkeypatch.setitem(sys.modules, "api.utils.tenant_utils", tenant_utils_mod)
+
     crypt_mod = ModuleType("api.utils.crypt")
     crypt_mod.decrypt = lambda value: value
     monkeypatch.setitem(sys.modules, "api.utils.crypt", crypt_mod)
@@ -446,7 +450,7 @@ def _load_user_app(monkeypatch):
     monkeypatch.setitem(sys.modules, "rag.utils.redis_conn", redis_mod)
 
     module_name = "test_user_app_unit_module"
-    module_path = repo_root / "api" / "apps" / "user_app.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "user_api.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
@@ -683,236 +687,6 @@ def test_oauth_callback_matrix_unit(monkeypatch):
     assert existing_user.access_token == "existing-token"
     assert existing_user.save_calls == 1
     assert login_calls and login_calls[-1] is existing_user
-
-
-@pytest.mark.p2
-def test_github_callback_matrix_unit(monkeypatch):
-    module = _load_user_app(monkeypatch)
-
-    _set_request_args(monkeypatch, module, {"code": "code"})
-    module.session.clear()
-
-    async def _request_error(_method, _url, **_kwargs):
-        return _DummyHTTPResponse({"error": "bad", "error_description": "boom"})
-
-    monkeypatch.setattr(module, "async_request", _request_error)
-    res = _run(module.github_callback())
-    assert res["redirect"] == "/?error=boom"
-
-    async def _request_scope_missing(_method, _url, **_kwargs):
-        return _DummyHTTPResponse({"scope": "repo", "access_token": "token-gh"})
-
-    monkeypatch.setattr(module, "async_request", _request_scope_missing)
-    res = _run(module.github_callback())
-    assert res["redirect"] == "/?error=user:email not in scope"
-
-    async def _request_token(_method, _url, **_kwargs):
-        return _DummyHTTPResponse({"scope": "user:email,repo", "access_token": "token-gh"})
-
-    monkeypatch.setattr(module, "async_request", _request_token)
-    monkeypatch.setattr(
-        module,
-        "user_info_from_github",
-        lambda _token: _AwaitableValue({"email": "gh@example.com", "avatar_url": "http://img", "login": "gh-user"}),
-    )
-    monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [])
-    rollback_calls = []
-    monkeypatch.setattr(module, "rollback_user_registration", lambda user_id: rollback_calls.append(user_id))
-    monkeypatch.setattr(module, "get_uuid", lambda: "gh-user-id")
-
-    def _raise_download(_url):
-        raise RuntimeError("download explode")
-
-    monkeypatch.setattr(module, "download_img", _raise_download)
-    monkeypatch.setattr(module, "user_register", lambda _user_id, _user: None)
-    res = _run(module.github_callback())
-    assert "Fail to register gh@example.com." in res["redirect"]
-    assert rollback_calls == ["gh-user-id"]
-
-    monkeypatch.setattr(module, "download_img", lambda _url: "avatar")
-    monkeypatch.setattr(
-        module,
-        "user_register",
-        lambda _user_id, _user: [_DummyUser("dup-1", "gh@example.com"), _DummyUser("dup-2", "gh@example.com")],
-    )
-    rollback_calls.clear()
-    res = _run(module.github_callback())
-    assert "Same email: gh@example.com exists!" in res["redirect"]
-    assert rollback_calls == ["gh-user-id"]
-
-    new_user = _DummyUser("gh-new-user", "gh@example.com")
-    login_calls = []
-    monkeypatch.setattr(module, "login_user", lambda user: login_calls.append(user))
-    monkeypatch.setattr(module, "user_register", lambda _user_id, _user: [new_user])
-    res = _run(module.github_callback())
-    assert res["redirect"] == "/?auth=gh-new-user"
-    assert login_calls and login_calls[-1] is new_user
-
-    inactive_user = _DummyUser("gh-existing", "gh@example.com", is_active="0")
-    monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [inactive_user])
-    res = _run(module.github_callback())
-    assert res["redirect"] == "/?error=user_inactive"
-
-    existing_user = _DummyUser("gh-existing", "gh@example.com")
-    login_calls.clear()
-    monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [existing_user])
-    monkeypatch.setattr(module, "login_user", lambda user: login_calls.append(user))
-    monkeypatch.setattr(module, "get_uuid", lambda: "gh-existing-token")
-    res = _run(module.github_callback())
-    assert res["redirect"] == "/?auth=gh-existing"
-    assert existing_user.access_token == "gh-existing-token"
-    assert existing_user.save_calls == 1
-    assert login_calls and login_calls[-1] is existing_user
-
-
-@pytest.mark.p2
-def test_feishu_callback_matrix_unit(monkeypatch):
-    module = _load_user_app(monkeypatch)
-
-    _set_request_args(monkeypatch, module, {"code": "code"})
-    module.session.clear()
-
-    def _patch_async_queue(payloads):
-        queue = list(payloads)
-
-        async def _request(_method, _url, **_kwargs):
-            return _DummyHTTPResponse(queue.pop(0))
-
-        monkeypatch.setattr(module, "async_request", _request)
-
-    _patch_async_queue([{"code": 1}])
-    res = _run(module.feishu_callback())
-    assert "/?error=" in res["redirect"]
-
-    _patch_async_queue(
-        [
-            {"code": 0, "app_access_token": "app-token"},
-            {"code": 1, "message": "bad token"},
-        ]
-    )
-    res = _run(module.feishu_callback())
-    assert res["redirect"] == "/?error=bad token"
-
-    _patch_async_queue(
-        [
-            {"code": 0, "app_access_token": "app-token"},
-            {"code": 0, "data": {"scope": "other", "access_token": "feishu-access"}},
-        ]
-    )
-    res = _run(module.feishu_callback())
-    assert "contact:user.email:readonly not in scope" in res["redirect"]
-
-    _patch_async_queue(
-        [
-            {"code": 0, "app_access_token": "app-token"},
-            {"code": 0, "data": {"scope": "contact:user.email:readonly", "access_token": "feishu-access"}},
-        ]
-    )
-    monkeypatch.setattr(
-        module,
-        "user_info_from_feishu",
-        lambda _token: _AwaitableValue({"email": "fs@example.com", "avatar_url": "http://img", "en_name": "fs-user"}),
-    )
-    monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [])
-    rollback_calls = []
-    monkeypatch.setattr(module, "rollback_user_registration", lambda user_id: rollback_calls.append(user_id))
-    monkeypatch.setattr(module, "get_uuid", lambda: "fs-user-id")
-
-    def _raise_download(_url):
-        raise RuntimeError("download explode")
-
-    monkeypatch.setattr(module, "download_img", _raise_download)
-    monkeypatch.setattr(module, "user_register", lambda _user_id, _user: None)
-    res = _run(module.feishu_callback())
-    assert "Fail to register fs@example.com." in res["redirect"]
-    assert rollback_calls == ["fs-user-id"]
-
-    _patch_async_queue(
-        [
-            {"code": 0, "app_access_token": "app-token"},
-            {"code": 0, "data": {"scope": "contact:user.email:readonly", "access_token": "feishu-access"}},
-        ]
-    )
-    monkeypatch.setattr(module, "download_img", lambda _url: "avatar")
-    monkeypatch.setattr(
-        module,
-        "user_register",
-        lambda _user_id, _user: [_DummyUser("dup-1", "fs@example.com"), _DummyUser("dup-2", "fs@example.com")],
-    )
-    rollback_calls.clear()
-    res = _run(module.feishu_callback())
-    assert "Same email: fs@example.com exists!" in res["redirect"]
-    assert rollback_calls == ["fs-user-id"]
-
-    _patch_async_queue(
-        [
-            {"code": 0, "app_access_token": "app-token"},
-            {"code": 0, "data": {"scope": "contact:user.email:readonly", "access_token": "feishu-access"}},
-        ]
-    )
-    new_user = _DummyUser("fs-new-user", "fs@example.com")
-    login_calls = []
-    monkeypatch.setattr(module, "login_user", lambda user: login_calls.append(user))
-    monkeypatch.setattr(module, "user_register", lambda _user_id, _user: [new_user])
-    res = _run(module.feishu_callback())
-    assert res["redirect"] == "/?auth=fs-new-user"
-    assert login_calls and login_calls[-1] is new_user
-
-    _patch_async_queue(
-        [
-            {"code": 0, "app_access_token": "app-token"},
-            {"code": 0, "data": {"scope": "contact:user.email:readonly", "access_token": "feishu-access"}},
-        ]
-    )
-    inactive_user = _DummyUser("fs-existing", "fs@example.com", is_active="0")
-    monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [inactive_user])
-    res = _run(module.feishu_callback())
-    assert res["redirect"] == "/?error=user_inactive"
-
-    _patch_async_queue(
-        [
-            {"code": 0, "app_access_token": "app-token"},
-            {"code": 0, "data": {"scope": "contact:user.email:readonly", "access_token": "feishu-access"}},
-        ]
-    )
-    existing_user = _DummyUser("fs-existing", "fs@example.com")
-    login_calls.clear()
-    monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [existing_user])
-    monkeypatch.setattr(module, "login_user", lambda user: login_calls.append(user))
-    monkeypatch.setattr(module, "get_uuid", lambda: "fs-existing-token")
-    res = _run(module.feishu_callback())
-    assert res["redirect"] == "/?auth=fs-existing"
-    assert existing_user.access_token == "fs-existing-token"
-    assert existing_user.save_calls == 1
-    assert login_calls and login_calls[-1] is existing_user
-
-
-@pytest.mark.p2
-def test_oauth_user_info_helpers_unit(monkeypatch):
-    module = _load_user_app(monkeypatch)
-
-    async def _request_feishu(_method, _url, **_kwargs):
-        return _DummyHTTPResponse({"data": {"email": "", "en_name": "Feishu User"}})
-
-    monkeypatch.setattr(module, "async_request", _request_feishu)
-    feishu_user = _run(module.user_info_from_feishu("token-feishu"))
-    assert feishu_user["email"] is None
-    assert feishu_user["en_name"] == "Feishu User"
-
-    async def _request_github(_method, url, **_kwargs):
-        if "emails" in url:
-            return _DummyHTTPResponse(
-                [
-                    {"email": "secondary@example.com", "primary": False},
-                    {"email": "primary@example.com", "primary": True},
-                ]
-            )
-        return _DummyHTTPResponse({"login": "gh-user"})
-
-    monkeypatch.setattr(module, "async_request", _request_github)
-    github_user = _run(module.user_info_from_github("token-github"))
-    assert github_user["login"] == "gh-user"
-    assert github_user["email"] == "primary@example.com"
 
 
 @pytest.mark.p2

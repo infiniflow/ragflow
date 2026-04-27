@@ -28,7 +28,6 @@ from typing import Any
 
 import requests
 from quart import (
-    Response,
     jsonify,
     request,
     has_app_context,
@@ -234,6 +233,17 @@ def active_required(func):
     return wrapper
 
 
+def add_tenant_id_to_kwargs(func):
+    @wraps(func)
+    async def wrapper(**kwargs):
+        from api.apps import current_user
+        kwargs["tenant_id"] = current_user.id
+        if inspect.iscoroutinefunction(func):
+            return await func(**kwargs)
+        return func(**kwargs)
+    return wrapper
+
+
 def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=None):
     response = {"code": code, "message": message, "data": data}
     return _safe_jsonify(response)
@@ -242,7 +252,13 @@ def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=Non
 def apikey_required(func):
     @wraps(func)
     async def decorated_function(*args, **kwargs):
-        token = request.headers.get("Authorization").split()[1]
+        authorization = request.headers.get("Authorization")
+        if not authorization:
+            return build_error_result(message="Authorization header is missing!", code=RetCode.FORBIDDEN)
+        parts = authorization.split()
+        if len(parts) < 2:
+            return build_error_result(message="Please check your authorization format.", code=RetCode.FORBIDDEN)
+        token = parts[1]
         objs = APIToken.query(token=token)
         if not objs:
             return build_error_result(message="API-KEY is invalid!", code=RetCode.FORBIDDEN)
@@ -291,18 +307,43 @@ def token_required(func):
             raise err
 
         token = authorization_list[1]
-        objs = APIToken.query(token=token)
-        if not objs:
-            err = WerkzeugUnauthorized(description="Authentication error: API key is invalid!")
-            err.code = RetCode.AUTHENTICATION_ERROR
-            raise err
 
-        # On success, inject tenant_id into the route function's kwargs
-        kwargs["tenant_id"] = objs[0].tenant_id
-        result = func(*args, **kwargs)
-        if inspect.iscoroutine(result):
-            return await result
-        return result
+        # First try API token (explicit API token authentication)
+        objs = APIToken.query(token=token)
+        if objs:
+            # On success, inject tenant_id into the route function's kwargs
+            kwargs["tenant_id"] = objs[0].tenant_id
+            result = func(*args, **kwargs)
+            if inspect.iscoroutine(result):
+                return await result
+            return result
+
+        # Fallback: try login token (for clients that use login token as API token)
+        # Login tokens are JWT-encoded (URLSafeTimedSerializer), need to decode to get raw access_token
+        from api.db.services.user_service import UserService
+        from common.constants import StatusEnum
+        from common import settings
+        from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
+        try:
+            jwt = Serializer(secret_key=settings.SECRET_KEY)
+            raw_token = str(jwt.loads(token))
+            user = UserService.query(access_token=raw_token, status=StatusEnum.VALID.value)
+            if user:
+                # On success, inject tenant_id from user's tenant
+                from api.db.services.user_service import UserTenantService
+                tenants = UserTenantService.query(user_id=user[0].id)
+                if tenants:
+                    kwargs["tenant_id"] = tenants[0].tenant_id
+                    result = func(*args, **kwargs)
+                    if inspect.iscoroutine(result):
+                        return await result
+                    return result
+        except Exception:
+            pass
+
+        err = WerkzeugUnauthorized(description="Authentication error: API key is invalid!")
+        err.code = RetCode.AUTHENTICATION_ERROR
+        raise err
 
     return wrapper
 
@@ -399,6 +440,10 @@ def get_parser_config(chunk_method, parser_config):
                 ],
                 "method": "light",
             },
+            "parent_child": {
+                "use_parent_child": False,
+                "children_delimiter": "\n",
+            },
         },
         "qa": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
         "tag": None,
@@ -426,16 +471,23 @@ def get_parser_config(chunk_method, parser_config):
     # If no parser_config provided, return default merged with base defaults
     if not parser_config:
         if default_config is None:
-            return deep_merge(base_defaults, {})
-        return deep_merge(base_defaults, default_config)
+            merged_config = deep_merge(base_defaults, {})
+        else:
+            merged_config = deep_merge(base_defaults, default_config)
+    elif default_config is None:
+        # If parser_config is provided but no defaults for this method
+        merged_config = deep_merge(base_defaults, parser_config)
+    else:
+        # Ensure raptor and graph_rag fields have default values if not provided
+        merged_config = deep_merge(base_defaults, default_config)
+        merged_config = deep_merge(merged_config, parser_config)
 
-    # If parser_config is provided, merge with defaults to ensure required fields exist
-    if default_config is None:
-        return deep_merge(base_defaults, parser_config)
-
-    # Ensure raptor and graph_rag fields have default values if not provided
-    merged_config = deep_merge(base_defaults, default_config)
-    merged_config = deep_merge(merged_config, parser_config)
+    # Flatten parent_child config into children_delimiter for the execution layer
+    pc = merged_config.get("parent_child", {})
+    if pc.get("use_parent_child"):
+        merged_config["children_delimiter"] = pc.get("children_delimiter", "\n")
+    elif pc:
+        merged_config["children_delimiter"] = ""
 
     return merged_config
 
@@ -513,7 +565,7 @@ def check_duplicate_ids(ids, id_type="item"):
     return list(set(ids)), duplicate_messages
 
 
-def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, Response | None]:
+def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, str | None]:
     from api.db.services.llm_service import LLMService
     from api.db.services.tenant_llm_service import TenantLLMService
 
@@ -559,13 +611,16 @@ def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, R
 
         is_builtin_model = llm_factory == "Builtin"
         if not (is_builtin_model or is_tenant_model or in_llm_service):
-            return False, get_error_argument_result(f"Unsupported model: <{embd_id}>")
+            return False, f"Unsupported model: <{embd_id}>"
 
         if not (is_builtin_model or is_tenant_model):
-            return False, get_error_argument_result(f"Unauthorized model: <{embd_id}>")
+            return False, f"Unauthorized model: <{embd_id}>"
     except OperationalError as e:
         logging.exception(e)
-        return False, get_error_data_result(message="Database operation failed")
+        return False, "Database operation failed"
+    except Exception as e:
+        logging.exception(e)
+        return False, "Internal server error"
 
     return True, None
 

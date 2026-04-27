@@ -49,6 +49,10 @@ class RAGFlow:
         res = requests.put(url=self.api_url + path, json=json, headers=self.authorization_header)
         return res
 
+    def patch(self, path, json):
+        res = requests.patch(url=self.api_url + path, json=json, headers=self.authorization_header)
+        return res
+
     def create_dataset(
         self,
         name: str,
@@ -111,75 +115,25 @@ class RAGFlow:
             return result_list
         raise Exception(res["message"])
 
-    def get_auto_metadata(self, dataset_id: str) -> dict[str, Any]:
-        """
-        Retrieve auto-metadata configuration for a dataset via SDK.
-        """
-        res = self.get(f"/datasets/{dataset_id}/auto_metadata")
-        res = res.json()
-        if res.get("code") == 0:
-            return res["data"]
-        raise Exception(res["message"])
-
-    def update_auto_metadata(self, dataset_id: str, **config: Any) -> dict[str, Any]:
-        """
-        Update auto-metadata configuration for a dataset via SDK.
-        """
-        res = self.put(f"/datasets/{dataset_id}/auto_metadata", config)
-        res = res.json()
-        if res.get("code") == 0:
-            return res["data"]
-        raise Exception(res["message"])
-
-    def create_chat(self, name: str, avatar: str = "", dataset_ids=None, llm: Chat.LLM | None = None, prompt: Chat.Prompt | None = None) -> Chat:
-        if dataset_ids is None:
-            dataset_ids = []
-        dataset_list = []
-        for id in dataset_ids:
-            dataset_list.append(id)
-
-        if llm is None:
-            llm = Chat.LLM(
-                self,
-                {
-                    "model_name": None,
-                    "temperature": 0.1,
-                    "top_p": 0.3,
-                    "presence_penalty": 0.4,
-                    "frequency_penalty": 0.7,
-                    "max_tokens": 512,
-                },
-            )
-        if prompt is None:
-            prompt = Chat.Prompt(
-                self,
-                {
-                    "similarity_threshold": 0.2,
-                    "keywords_similarity_weight": 0.7,
-                    "top_n": 8,
-                    "top_k": 1024,
-                    "variables": [{"key": "knowledge", "optional": True}],
-                    "rerank_model": "",
-                    "empty_response": None,
-                    "opener": None,
-                    "show_quote": True,
-                    "prompt": None,
-                },
-            )
-            if prompt.opener is None:
-                prompt.opener = "Hi! I'm your assistant. What can I do for you?"
-            if prompt.prompt is None:
-                prompt.prompt = (
-                    "You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base."
-                    "**Essential Rules:**"
-                    "- Your answer must be derived **solely** from this knowledge base: `{knowledge}`."
-                    "- **When information is available**: Summarize the content to give a detailed answer."
-                    "- **When information is unavailable**: Your response must contain this exact sentence: 'The answer you are looking for is not found in the knowledge base!' "
-                    "- **Always consider** the entire conversation history."
-                )
-
-        temp_dict = {"name": name, "avatar": avatar, "dataset_ids": dataset_list if dataset_list else [], "llm": llm.to_json(), "prompt": prompt.to_json()}
-        res = self.post("/chats", temp_dict)
+    def create_chat(
+        self,
+        name: str,
+        icon: str = "",
+        dataset_ids: list[str] | None = None,
+        llm_id: str | None = None,
+        llm_setting: dict | None = None,
+        prompt_config: dict | None = None,
+        **kwargs,
+    ) -> Chat:
+        payload = {"name": name, "icon": icon, "dataset_ids": dataset_ids or []}
+        if llm_id is not None:
+            payload["llm_id"] = llm_id
+        if llm_setting is not None:
+            payload["llm_setting"] = llm_setting
+        if prompt_config is not None:
+            payload["prompt_config"] = prompt_config
+        payload.update(kwargs)
+        res = self.post("/chats", payload)
         res = res.json()
         if res.get("code") == 0:
             return Chat(self, res["data"])
@@ -191,7 +145,24 @@ class RAGFlow:
         if res.get("code") != 0:
             raise Exception(res["message"])
 
-    def list_chats(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None) -> list[Chat]:
+    def get_chat(self, chat_id: str) -> Chat:
+        res = self.get(f"/chats/{chat_id}")
+        res = res.json()
+        if res.get("code") == 0:
+            return Chat(self, res["data"])
+        raise Exception(res["message"])
+
+    def list_chats(
+        self,
+        page: int = 1,
+        page_size: int = 30,
+        orderby: str = "create_time",
+        desc: bool = True,
+        id: str | None = None,
+        name: str | None = None,
+        keywords: str | None = None,
+        owner_ids: str | list[str] | None = None,
+    ) -> list[Chat]:
         res = self.get(
             "/chats",
             {
@@ -201,12 +172,14 @@ class RAGFlow:
                 "desc": desc,
                 "id": id,
                 "name": name,
+                "keywords": keywords,
+                "owner_ids": owner_ids,
             },
         )
         res = res.json()
         result_list = []
         if res.get("code") == 0:
-            for data in res["data"]:
+            for data in res["data"]["chats"]:
                 result_list.append(Chat(self, data))
             return result_list
         raise Exception(res["message"])
@@ -257,7 +230,7 @@ class RAGFlow:
             return chunks
         raise Exception(res.get("message"))
 
-    def list_agents(self, page: int = 1, page_size: int = 30, orderby: str = "update_time", desc: bool = True, id: str | None = None, title: str | None = None) -> list[Agent]:
+    def list_agents(self, page: int = 1, page_size: int = 30, orderby: str = "update_time", desc: bool = True) -> list[Agent]:
         res = self.get(
             "/agents",
             {
@@ -265,16 +238,23 @@ class RAGFlow:
                 "page_size": page_size,
                 "orderby": orderby,
                 "desc": desc,
-                "id": id,
-                "title": title,
             },
         )
         res = res.json()
         result_list = []
         if res.get("code") == 0:
-            for data in res["data"]:
+            data = res.get("data") or {}
+            data_list = data.get("canvas", [])
+            for data in data_list:
                 result_list.append(Agent(self, data))
             return result_list
+        raise Exception(res["message"])
+
+    def get_agent(self, agent_id: str) -> Agent:
+        res = self.get(f"/agents/{agent_id}")
+        res = res.json()
+        if res.get("code") == 0:
+            return Agent(self, res["data"])
         raise Exception(res["message"])
 
     def create_agent(self, title: str, dsl: dict, description: str | None = None) -> None:
@@ -368,12 +348,13 @@ class RAGFlow:
             raise Exception(res["message"])
         return res["message"]
 
-    def search_message(self, query: str, memory_id: list[str], agent_id: str=None, session_id: str=None, similarity_threshold: float=0.2, keywords_similarity_weight: float=0.7, top_n: int=10) -> list[dict]:
+    def search_message(self, query: str, memory_id: list[str], agent_id: str=None, session_id: str=None, user_id: str=None, similarity_threshold: float=0.2, keywords_similarity_weight: float=0.7, top_n: int=10) -> list[dict]:
         params = {
             "query": query,
             "memory_id": memory_id,
             "agent_id": agent_id,
             "session_id": session_id,
+            "user_id": user_id,
             "similarity_threshold": similarity_threshold,
             "keywords_similarity_weight": keywords_similarity_weight,
             "top_n": top_n

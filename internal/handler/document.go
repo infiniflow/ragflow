@@ -17,9 +17,12 @@
 package handler
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"ragflow/internal/common"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -203,11 +206,21 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 // @Param page query int false "page number" default(1)
 // @Param page_size query int false "items per page" default(10)
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/documents [get]
+// @Router /api/v1/document/list [post]
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	kbID := c.Query("kb_id")
+	if kbID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    1,
+			"message": "Lack of KB ID",
+			"data":    false,
+		})
 		return
 	}
 
@@ -221,20 +234,41 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		pageSize = 10
 	}
 
-	documents, total, err := h.documentService.ListDocuments(page, pageSize)
+	// Use kbID to filter documents
+	documents, total, err := h.documentService.ListDocumentsByKBID(kbID, page, pageSize)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to get documents",
+		c.JSON(http.StatusOK, gin.H{
+			"code":    1,
+			"message": "failed to get documents",
+			"data":    map[string]interface{}{"total": 0, "docs": []interface{}{}},
 		})
 		return
 	}
 
+	docs := make([]map[string]interface{}, 0, len(documents))
+	for _, doc := range documents {
+		metaFields, err := h.documentService.GetDocumentMetadataByID(doc.ID)
+		if err != nil {
+			metaFields = make(map[string]interface{})
+		}
+
+		docs = append(docs, map[string]interface{}{
+			"id":          doc.ID,
+			"name":        doc.Name,
+			"size":        doc.Size,
+			"type":        doc.Type,
+			"status":      doc.Status,
+			"created_at":  doc.CreatedAt,
+			"meta_fields": metaFields,
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
 		"data": gin.H{
-			"items":     documents,
-			"total":     total,
-			"page":      page,
-			"page_size": pageSize,
+			"total": total,
+			"docs":  docs,
 		},
 	})
 }
@@ -291,5 +325,161 @@ func (h *DocumentHandler) GetDocumentsByAuthorID(c *gin.Context) {
 			"page":      page,
 			"page_size": pageSize,
 		},
+	})
+}
+
+// MetadataSummary handles the metadata summary request
+func (h *DocumentHandler) MetadataSummary(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var requestBody struct {
+		KBID   string   `json:"kb_id" binding:"required"`
+		DocIDs []string `json:"doc_ids"`
+	}
+
+	if err := c.ShouldBindJSON(&requestBody); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": "kb_id is required",
+		})
+		return
+	}
+
+	kbID := requestBody.KBID
+	if kbID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": "kb_id is required",
+		})
+		return
+	}
+
+	summary, err := h.documentService.GetMetadataSummary(kbID, requestBody.DocIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    1,
+			"message": "Failed to get metadata summary: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data": gin.H{
+			"summary": summary,
+		},
+	})
+}
+
+// SetMetaRequest represents the request for setting document metadata
+type SetMetaRequest struct {
+	DocID string `json:"doc_id" binding:"required"`
+	Meta  string `json:"meta" binding:"required"`
+}
+
+// SetMeta handles the set metadata request for a document
+// @Summary Set Document Metadata
+// @Description Set metadata for a specific document
+// @Tags documents
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body SetMetaRequest true "metadata info"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/document/set_meta [post]
+func (h *DocumentHandler) SetMeta(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req SetMetaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if req.DocID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": "doc_id is required",
+		})
+		return
+	}
+
+	// Parse meta JSON string
+	var meta map[string]interface{}
+	if err := json.Unmarshal([]byte(req.Meta), &meta); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": "Json syntax error: " + err.Error(),
+		})
+		return
+	}
+
+	if meta == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": "meta is required",
+		})
+		return
+	}
+
+	// Validate meta values - must be str, int, float, or list of those
+	for k, v := range meta {
+		switch val := v.(type) {
+		case string, int, float64:
+			// Valid
+		case []interface{}:
+			for _, item := range val {
+				if _, ok := item.(string); !ok {
+					if _, ok := item.(float64); !ok {
+						c.JSON(http.StatusBadRequest, gin.H{
+							"code":    1,
+							"message": fmt.Sprintf("Unsupported type in list for key %s: %T", k, item),
+						})
+						return
+					}
+				}
+			}
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    1,
+				"message": fmt.Sprintf("Unsupported type for key %s: %T", k, v),
+			})
+			return
+		}
+	}
+
+	err := h.documentService.SetDocumentMetadata(req.DocID, meta)
+	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "no such document") || strings.Contains(errMsg, "document not found") {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    1,
+				"message": errMsg,
+			})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    1,
+				"message": "Failed to set metadata: " + errMsg,
+			})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    true,
 	})
 }

@@ -17,7 +17,7 @@
 package dao
 
 import (
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
 )
 
 // File2DocumentDAO file to document mapping data access object
@@ -32,7 +32,7 @@ func NewFile2DocumentDAO() *File2DocumentDAO {
 func (dao *File2DocumentDAO) GetKBInfoByFileID(fileID string) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}
 
-	rows, err := DB.Model(&model.File{}).
+	rows, err := DB.Model(&entity.File{}).
 		Select("knowledgebase.id, knowledgebase.name, file2document.document_id").
 		Joins("JOIN file2document ON file2document.file_id = ?", fileID).
 		Joins("JOIN document ON document.id = file2document.document_id").
@@ -57,4 +57,16 @@ func (dao *File2DocumentDAO) GetKBInfoByFileID(fileID string) ([]map[string]inte
 	}
 
 	return results, nil
+}
+
+// GetByFileID gets file2document mappings by file ID
+func (dao *File2DocumentDAO) GetByFileID(fileID string) ([]*entity.File2Document, error) {
+	var mappings []*entity.File2Document
+	err := DB.Where("file_id = ?", fileID).Find(&mappings).Error
+	return mappings, err
+}
+
+// DeleteByFileID deletes file2document mappings by file ID
+func (dao *File2DocumentDAO) DeleteByFileID(fileID string) error {
+	return DB.Unscoped().Where("file_id = ?", fileID).Delete(&entity.File2Document{}).Error
 }

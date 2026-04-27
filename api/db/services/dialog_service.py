@@ -49,6 +49,27 @@ from common.string_utils import remove_redundant_spaces
 from common import settings
 
 
+def _normalize_internet_flag(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off", ""}:
+            return False
+    return None
+
+
+def _should_use_web_search(prompt_config, internet=None):
+    if not prompt_config.get("tavily_api_key"):
+        return False
+    normalized = _normalize_internet_flag(internet)
+    return normalized is True
+
+
 class DialogService(CommonService):
     model = Dialog
 
@@ -105,7 +126,18 @@ class DialogService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_tenant_ids(cls, joined_tenant_ids, user_id, page_number, items_per_page, orderby, desc, keywords, parser_id=None):
+    def get_by_tenant_ids(
+        cls,
+        joined_tenant_ids,
+        user_id,
+        page_number,
+        items_per_page,
+        orderby,
+        desc,
+        keywords,
+        id=None,
+        name=None,
+    ):
         from api.db.db_models import User
 
         fields = [
@@ -132,25 +164,20 @@ class DialogService(CommonService):
             cls.model.update_time,
             cls.model.create_time,
         ]
+        dialogs = (
+            cls.model.select(*fields)
+            .join(User, on=(cls.model.tenant_id == User.id))
+            .where(
+                (cls.model.tenant_id.in_(joined_tenant_ids) | (cls.model.tenant_id == user_id))
+                & (cls.model.status == StatusEnum.VALID.value),
+            )
+        )
+        if id:
+            dialogs = dialogs.where(cls.model.id == id)
+        if name:
+            dialogs = dialogs.where(cls.model.name == name)
         if keywords:
-            dialogs = (
-                cls.model.select(*fields)
-                .join(User, on=(cls.model.tenant_id == User.id))
-                .where(
-                    (cls.model.tenant_id.in_(joined_tenant_ids) | (cls.model.tenant_id == user_id)) & (cls.model.status == StatusEnum.VALID.value),
-                    (fn.LOWER(cls.model.name).contains(keywords.lower())),
-                )
-            )
-        else:
-            dialogs = (
-                cls.model.select(*fields)
-                .join(User, on=(cls.model.tenant_id == User.id))
-                .where(
-                    (cls.model.tenant_id.in_(joined_tenant_ids) | (cls.model.tenant_id == user_id)) & (cls.model.status == StatusEnum.VALID.value),
-                )
-            )
-        if parser_id:
-            dialogs = dialogs.where(cls.model.parser_id == parser_id)
+            dialogs = dialogs.where(fn.LOWER(cls.model.name).contains(keywords.lower()))
         if desc:
             dialogs = dialogs.order_by(cls.model.getter_by(orderby).desc())
         else:
@@ -214,7 +241,14 @@ async def async_chat_solo(dialog, messages, stream=True):
         else:
             text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
         attachments = "\n\n".join(text_attachments)
-    model_config = get_model_config_by_id(dialog.tenant_llm_id)
+    
+    if dialog.llm_id:
+        model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+    elif dialog.tenant_llm_id:
+        model_config = get_model_config_by_id(dialog.tenant_llm_id)
+    else:
+        model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
+
     chat_mdl = LLMBundle(dialog.tenant_id, model_config)
     factory = model_config.get("llm_factory", "") if model_config else ""
 
@@ -257,15 +291,16 @@ def get_models(dialog):
         raise Exception("**ERROR**: Knowledge bases use different embedding models.")
 
     if embedding_list:
-        embd_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.EMBEDDING, embedding_list[0])
-        embd_mdl = LLMBundle(dialog.tenant_id, embd_model_config)
+        embd_owner_tenant_id = kbs[0].tenant_id
+        embd_model_config = get_model_config_by_type_and_name(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
+        embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
         if not embd_mdl:
             raise LookupError("Embedding model(%s) not found" % embedding_list[0])
 
-    if dialog.tenant_llm_id:
-        chat_model_config = get_model_config_by_id(dialog.tenant_llm_id)
-    elif dialog.llm_id:
+    if dialog.llm_id:
         chat_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+    elif dialog.tenant_llm_id:
+        chat_model_config = get_model_config_by_id(dialog.tenant_llm_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
@@ -454,7 +489,9 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
 async def async_chat(dialog, messages, stream=True, **kwargs):
     logging.debug("Begin async_chat")
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
-    if not dialog.kb_ids and not dialog.prompt_config.get("tavily_api_key"):
+    use_web_search = _should_use_web_search(dialog.prompt_config, kwargs.get("internet"))
+    logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(dialog.prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
+    if not dialog.kb_ids and not use_web_search:
         async for ans in async_chat_solo(dialog, messages, stream):
             yield ans
         return
@@ -524,9 +561,13 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             logging.debug("SQL failed or returned no results, falling back to vector search")
 
     param_keys = [p["key"] for p in prompt_config.get("parameters", [])]
+    if dialog.kb_ids and "knowledge" not in param_keys and "{knowledge}" in prompt_config.get("system", ""):
+        logging.warning("prompt_config['parameters'] is missing 'knowledge' entry despite kb_ids being set; auto-fixing.")
+        prompt_config.setdefault("parameters", []).append({"key": "knowledge", "optional": False})
+        param_keys.append("knowledge")
     logging.debug(f"attachments={attachments}, param_keys={param_keys}, embd_mdl={embd_mdl}")
 
-    for p in prompt_config["parameters"]:
+    for p in prompt_config.get("parameters", []):
         if p["key"] == "knowledge":
             continue
         if p["key"] not in kwargs and not p["optional"]:
@@ -553,8 +594,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         )
 
     if prompt_config.get("keyword", False):
-        questions[-1] += await keyword_extraction(chat_mdl, questions[-1])
-
+        questions[-1] = questions[-1] + "," + await keyword_extraction(chat_mdl, questions[-1])
     refine_question_ts = timer()
 
     thought = ""
@@ -580,6 +620,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     vector_similarity_weight=0.3,
                     doc_ids=attachments,
                 ),
+                internet_enabled=use_web_search,
             )
             queue = asyncio.Queue()
             async def callback(msg:str):
@@ -622,7 +663,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     if cks:
                         kbinfos["chunks"] = cks
                 kbinfos["chunks"] = retriever.retrieval_by_children(kbinfos["chunks"], tenant_ids)
-            if prompt_config.get("tavily_api_key"):
+            if use_web_search:
                 tav = Tavily(prompt_config["tavily_api_key"])
                 tav_res = tav.retrieve_chunks(" ".join(questions))
                 kbinfos["chunks"].extend(tav_res["chunks"])
@@ -741,7 +782,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
 
     if langfuse_tracer:
-        langfuse_generation = langfuse_tracer.start_generation(
+        langfuse_generation = langfuse_tracer.start_observation(as_type="generation",
             trace_context=trace_context, name="chat", model=llm_model_config["llm_name"],
             input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg}
         )
@@ -761,10 +802,9 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
         full_answer = last_state.full_text if last_state else ""
         if full_answer:
-            final = decorate_answer(thought + full_answer)
+            final = decorate_answer(_extract_visible_answer(thought + full_answer))
             final["final"] = True
             final["audio_binary"] = None
-            final["answer"] = ""
             yield final
     else:
         if llm_type == "chat":
@@ -1288,6 +1328,19 @@ class _ThinkStreamState:
         self.buffer = ""
 
 
+def _extract_visible_answer(text: str) -> str:
+    text = text or ""
+    if "</think>" not in text:
+        return re.sub(r"</?think>", "", text)
+
+    thought, answer = text.rsplit("</think>", 1)
+    thought = re.sub(r"</?think>", "", thought).strip()
+    answer = re.sub(r"</?think>", "", answer)
+    if not thought:
+        return answer
+    return f"<think>{thought}</think>{answer}"
+
+
 def _next_think_delta(state: _ThinkStreamState) -> str:
     full_text = state.full_text
     if full_text == state.last_full:
@@ -1367,8 +1420,9 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
 
     is_knowledge_graph = all([kb.parser_id == ParserType.KG for kb in kbs])
     retriever = settings.retriever if not is_knowledge_graph else settings.kg_retriever
-    embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embedding_list[0])
-    embd_mdl = LLMBundle(tenant_id, embd_model_config)
+    embd_owner_tenant_id = kbs[0].tenant_id
+    embd_model_config = get_model_config_by_type_and_name(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
+    embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
     chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_llm_name)
     chat_mdl = LLMBundle(tenant_id, chat_model_config)
     if rerank_id:
@@ -1431,9 +1485,8 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
             continue
         yield {"answer": value, "reference": {}, "final": False}
     full_answer = last_state.full_text if last_state else ""
-    final = decorate_answer(full_answer)
+    final = decorate_answer(_extract_visible_answer(full_answer))
     final["final"] = True
-    final["answer"] = ""
     yield final
 
 
@@ -1449,9 +1502,11 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
     if tenant_embedding_list[0]:
         embd_model_config = get_model_config_by_id(tenant_embedding_list[0])
+        embd_owner_tenant_id = kbs[0].tenant_id
     else:
-        embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, kbs[0].embd_id)
-    embd_mdl = LLMBundle(tenant_id, embd_model_config)
+        embd_owner_tenant_id = kbs[0].tenant_id
+        embd_model_config = get_model_config_by_type_and_name(embd_owner_tenant_id, LLMType.EMBEDDING, kbs[0].embd_id)
+    embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
     chat_id = search_config.get("chat_id", "")
     if chat_id:
         chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_id)

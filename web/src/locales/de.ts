@@ -736,6 +736,9 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       delete: 'Löschen',
     },
     chat: {
+      chatSupport: 'Chat-Support',
+      replyInstantly: 'Wir antworten in der Regel sofort',
+      typeYourMessage: 'Nachricht eingeben...',
       messagePlaceholder: 'Geben Sie hier Ihre Nachricht ein...',
       exit: 'Verlassen',
       multipleModels: 'Mehrere Modelle',
@@ -1011,6 +1014,7 @@ Beispiel: Virtual Hosted Style`,
         'Kommagetrennte Repository-Slugs, z. B.: repo-one,repo-two',
       connectorNameTip:
         'Geben Sie einen aussagekräftigen Namen für den Connector an',
+      syncDeletedFiles: 'Gelöschte Dateien synchronisieren',
       boxDescription:
         'Verbinden Sie Ihr Box-Laufwerk, um Dateien und Ordner zu synchronisieren.',
       githubDescription:
@@ -1623,10 +1627,8 @@ Beispiel: Virtual Hosted Style`,
       searXNG: 'SearXNG',
       searXNGDescription:
         'Eine Komponente, die auf https://searxng.org/ sucht und Ihnen ermöglicht, die Anzahl der Suchergebnisse mit TopN anzugeben. Sie ergänzt die vorhandenen Wissensdatenbanken.',
-      pdfGenerator: 'Dokumentengenerator',
-      pDFGenerator: 'Dokumentengenerator',
-      pdfGeneratorDescription: `Eine Komponente, die Dokumente (PDF, DOCX, TXT) aus markdown-formatierten Inhalten mit anpassbarem Stil, Bildern und Tabellen generiert. Unterstützt: **fett**, *kursiv*, # Überschriften, - Listen, Tabellen mit | Syntax.`,
-      pDFGeneratorDescription: `Eine Komponente, die Dokumente (PDF, DOCX, TXT) aus markdown-formatierten Inhalten mit anpassbarem Stil, Bildern und Tabellen generiert. Unterstützt: **fett**, *kursiv*, # Überschriften, - Listen, Tabellen mit | Syntax.`,
+      docGenerator: 'Dokumentengenerator',
+      docGeneratorDescription: `Erzeugt eine Datei aus Markdown-Inhalten.`,
       subtitle: 'Untertitel',
       logoImage: 'Logo-Bild',
       logoPosition: 'Logo-Position',
@@ -2176,12 +2178,10 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
       tokenizerRequired: 'Bitte fügen Sie zuerst den Indexer-Knoten hinzu',
       tokenizerDescription:
         'Transformiert Text in die erforderliche Datenstruktur (z.B. Vektoreinbettungen für die Embedding-Suche) abhängig von der gewählten Suchmethode.',
-      splitter: 'Token',
-      splitterDescription:
+      tokenChunkerDescription:
         'Teilt Text in Chunks nach Token-Länge mit optionalen Trennzeichen und Überlappung.',
-      hierarchicalMergerDescription:
+      titleChunkerDescription:
         'Teilt Dokumente in Abschnitte nach Titelhierarchie mit Regex-Regeln für feinere Kontrolle.',
-      hierarchicalMerger: 'Titel',
       extractor: 'Transformer',
       extractorDescription:
         'Verwendet ein LLM, um strukturierte Erkenntnisse aus Dokument-Chunks zu extrahieren – wie Zusammenfassungen, Klassifizierungen usw.',
@@ -2193,6 +2193,8 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
         image: 'Bild',
         email: 'E-Mail',
         'text&markdown': 'Text & Markup',
+        code: 'Code',
+        html: 'HTML',
         word: 'Word',
         slides: 'PPTX',
         audio: 'Audio',
@@ -2441,6 +2443,7 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       russian: 'Russisch',
       bulgarian: 'Bulgarisch',
       arabic: 'Arabisch',
+      turkish: 'Türkisch',
     },
     pagination: {
       total: 'Gesamt {{total}}',

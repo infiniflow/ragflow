@@ -18,6 +18,7 @@ export default {
       name: 'Name',
       save: 'Save',
       namePlaceholder: 'Please input name',
+      descriptionPlaceholder: 'Enter description',
       next: 'Next',
       create: 'Create',
       edit: 'Edit',
@@ -37,11 +38,14 @@ export default {
       italian: 'Italian',
       bulgarian: 'Bulgarian',
       arabic: 'Arabic',
+      turkish: 'Turkish',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
       copy: 'Copy',
       copied: 'Copied',
+      viewMore: 'View more',
+      viewLess: 'View less',
       comingSoon: 'Coming soon',
       download: 'Download',
       close: 'Close',
@@ -207,6 +211,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       searchKnowledgePlaceholder: 'Search',
       noMoreData: `That's all. Nothing more.`,
       parserRequired: 'Chunk method is required',
+      dataFlowRequired: 'Data flow is required',
     },
     knowledgeDetails: {
       metadata: {
@@ -251,11 +256,11 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         deleteManageFieldAllWarn:
           'This field and all its corresponding values will be deleted from all associated files.',
         deleteManageValueAllWarn:
-          'This value will be deleted from from all associated files.',
+          'This value will be deleted from all associated files.',
         deleteManageFieldSingleWarn:
-          'This field and all its corresponding values will be deleted from this files.',
+          'This field and all its corresponding values will be deleted from this file.',
         deleteManageValueSingleWarn:
-          'This value will be deleted from this files.',
+          'This value will be deleted from this file.',
         deleteSettingFieldWarn: `This field will be deleted; existing metadata won't be affected.`,
         deleteSettingValueWarn: `This value will be deleted; existing metadata won't be affected.`,
       },
@@ -759,6 +764,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       delete: 'Delete',
     },
     chat: {
+      chatSupport: 'Chat Support',
+      replyInstantly: 'We typically reply instantly',
+      typeYourMessage: 'Type your message...',
       messagePlaceholder: 'Type your message here...',
       exit: 'Exit',
       multipleModels: 'Multiple models',
@@ -978,6 +986,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       selectModelPlaceholder: 'Select model',
       configureModelTitle: 'Configure model',
       connectorNameTip: 'A descriptive name for the connector',
+      syncDeletedFiles: 'Sync deleted files',
       confluenceIsCloudTip:
         'Check if this is a Confluence Cloud instance, uncheck for Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
@@ -999,6 +1008,8 @@ Example: Virtual Hosted Style`,
       newDocs: 'New docs',
       timeStarted: 'Time started',
       log: 'Log',
+      rssDescription:
+        'Connect to a public RSS or Atom feed and sync feed entries into your knowledge base.',
       confluenceDescription:
         'Integrate your Confluence workspace to search documentation.',
       s3Description:
@@ -1499,6 +1510,22 @@ Example: Virtual Hosted Style`,
         author: 'Author',
         sectionTitle: 'Section title',
       },
+      includeHeadingContent: 'Include heading content',
+      includeHeadingContentTip:
+        'When enabled, content directly under a heading is kept as its own chunk. Child chunks keep only the heading path.',
+      rootAsHeading: 'Set first chunk as global context',
+      rootAsHeadingTip:
+        'Treats the initial split as a global heading to maintain consistent context across the document hierarchy. Ideal for resumes where the first section identifies the subject.',
+      hierarchyTip: `Build a heading tree and produce self-contained chunks, each carrying its full ancestor heading path (e.g. Part 1 › Chapter 3 › Section 2 + body text).\n
+Best for: Documents with independent, structurally significant sections — such as legal statutes, regulations, contracts, and technical specifications — where each chunk must be identifiable by its structural position even without surrounding context.`,
+      groupTip: `Split the document flat at a chosen heading level and automatically merge adjacent small sections to preserve content continuity. No parent-heading path is injected.\n
+Best for: Documents with flowing, contextually connected content — such as books, manuals, reports, and articles — where adjacent paragraphs should stay together to maintain narrative coherence.`,
+      enableMultiColumn: 'Detect multi-column layout',
+      enableMultiColumnTip:
+        'Detect and parse multi-column page layouts to preserve the correct reading order. Turn this on for PDFs or documents with two-column or newspaper-style layouts.',
+      removeToc: 'Remove original table of contents',
+      removeTocTip:
+        'Remove the table of contents included in the original PDF, so it is not parsed as regular content or chunked for retrieval.',
       autoPlay: 'Auto play audio',
       downloadFileTypeTip: 'The file type to download',
       downloadFileType: 'Download file type',
@@ -1547,6 +1574,13 @@ Example: Virtual Hosted Style`,
       tab: 'Tab',
       space: 'Space',
       delimiters: 'Delimiters',
+      one: 'One',
+      oneChunkTitle: 'Note',
+      oneChunkDescription:
+        'All parsed sections will be merged in order into a single chunk.',
+      flattenMediaToText: 'Disable vision model',
+      flattenMediaToTextTip:
+        'Treat image and table sections as plain text and skip vision enhancement.',
       enableChildrenDelimiters: 'Child chunk are used for retrieval',
       merge: 'Merge',
       split: 'Split',
@@ -1667,10 +1701,8 @@ Example: Virtual Hosted Style`,
       searXNG: 'SearXNG',
       searXNGDescription:
         'A component that searches via your provided SearXNG instance URL. Specify TopN and the instance URL.',
-      pdfGenerator: 'Docs Generator',
-      pDFGenerator: 'Docs Generator',
-      pdfGeneratorDescription: `A component that generates documents (PDF, DOCX, TXT) from markdown-formatted content with customizable styling, images, and tables. Supports: **bold**, *italic*, # headings, - lists, tables with | syntax.`,
-      pDFGeneratorDescription: `A component that generates documents (PDF, DOCX, TXT) from markdown-formatted content with customizable styling, images, and tables. Supports: **bold**, *italic*, # headings, - lists, tables with | syntax.`,
+      docGenerator: 'Doc Generator',
+      docGeneratorDescription: `Generate a file from Markdown content.`,
       subtitle: 'Subtitle',
       logoImage: 'Logo Image',
       logoPosition: 'Logo Position',
@@ -2075,6 +2107,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       }`,
       datatype: 'MINE type of the HTTP request',
       insertVariableTip: `Enter / Insert variables`,
+      mergePath: 'Merge path',
+      mergePathTip:
+        'When enabled, a dot suffix immediately after a variable is merged into a path query, such as {node@result.name}.',
       historyVersion: 'Version history',
       version: {
         created: 'Created',
@@ -2215,7 +2250,7 @@ This process aggregates variables from multiple branches into a single variable 
       createFromBlank: 'Create from blank',
       createFromTemplate: 'Create from template',
       importJsonFile: 'Import JSON file',
-      ceateAgent: 'Agent flow',
+      ceateAgent: 'Workflow',
       createPipeline: 'Ingestion pipeline',
       chooseAgentType: 'Choose agent type',
       parser: 'Parser',
@@ -2225,12 +2260,12 @@ This process aggregates variables from multiple branches into a single variable 
       tokenizerRequired: 'Please add the Indexer node first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
-      splitter: 'Token',
-      splitterDescription:
+      tokenChunker: 'Token Chunker',
+      tokenChunkerDescription:
         'Split text into chunks by token length with optional delimiters and overlap.',
-      hierarchicalMergerDescription:
-        'Split documents into sections by title hierarchy with regex rules for finer control.',
-      hierarchicalMerger: 'Title',
+      titleChunkerDescription:
+        'Split documents into sections by title hierarchy. Define heading levels with regex rules, then choose Hierarchy or Group mode to control how chunks are structured.',
+      titleChunker: 'Title Chunker',
       extractor: 'Transformer',
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
@@ -2241,15 +2276,22 @@ This process aggregates variables from multiple branches into a single variable 
         spreadsheet: 'Spreadsheet',
         image: 'Image',
         email: 'Email',
-        'text&markdown': 'Text & Markup',
-        word: 'Word',
+        markdown: 'Markdown',
+        'text&code': 'Text & Code',
+        html: 'HTML',
+        doc: 'DOC',
+        docx: 'DOCX',
         slides: 'PPTX',
         audio: 'Audio',
         video: 'Video',
       },
       fields: 'Field',
       addParser: 'Add Parser',
+      rule: 'Rule',
+      addRule: 'Add rule',
+      group: 'Group',
       hierarchy: 'Hierarchy',
+      addRegularExpressions: 'Add regular expressions',
       regularExpressions: 'Regular Expressions',
       overlappedPercent: 'Overlapped percent (%)',
       searchMethod: 'Search method',
@@ -2500,6 +2542,7 @@ Important structured information may include: names, dates, locations, events, k
       russian: 'Russian',
       bulgarian: 'Bulgarian',
       arabic: 'Arabic',
+      turkish: 'Turkish',
     },
     pagination: {
       total: 'Total {{total}}',

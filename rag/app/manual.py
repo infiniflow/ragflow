@@ -20,6 +20,7 @@ import re
 
 from common.constants import ParserType
 from io import BytesIO
+from deepdoc.parser.utils import extract_pdf_outlines
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level, attach_media_context, concat_img
 from common.token_utils import num_tokens_from_string
 from deepdoc.parser import PdfParser, DocxParser
@@ -201,13 +202,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             parser_config["chunk_token_num"] = 0
 
         callback(0.8, "Finish parsing.")
+        outlines = extract_pdf_outlines(binary if binary is not None else filename)
 
-        if len(sections) > 0 and len(pdf_parser.outlines) / len(sections) > 0.03:
-            max_lvl = max([lvl for _, lvl in pdf_parser.outlines])
+        if len(sections) > 0 and len(outlines) / len(sections) > 0.03:
+            max_lvl = max([lvl for _, lvl, _ in outlines])
             most_level = max(0, max_lvl - 1)
             levels = []
             for txt, _, _ in sections:
-                for t, lvl in pdf_parser.outlines:
+                for t, lvl, _ in outlines:
                     tks = set([t[i] + t[i + 1] for i in range(len(t) - 1)])
                     tks_ = set([txt[i] + txt[i + 1] for i in range(min(len(t), len(txt) - 1))])
                     if len(set(tks & tks_)) / max([len(tks), len(tks_), 1]) > 0.8:
@@ -265,6 +267,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
         if table_ctx or image_ctx:
             attach_media_context(res, table_ctx, image_ctx)
+        if res and pdf_parser and getattr(pdf_parser, "outlines", None):
+            res[0]["__outline__"] = [
+                {"title": title, "depth": depth}
+                for title, depth in pdf_parser.outlines
+            ]
         return res
 
     elif re.search(r"\.docx?$", filename, re.IGNORECASE):

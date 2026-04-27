@@ -19,14 +19,17 @@ package logger
 import (
 	"fmt"
 	"runtime"
+	"sync"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
 var (
-	Logger *zap.Logger
-	Sugar  *zap.SugaredLogger
+	Logger      *zap.Logger
+	Sugar       *zap.SugaredLogger
+	levelMu     sync.RWMutex
+	atomicLevel zap.AtomicLevel
 )
 
 // Init initializes the global logger
@@ -47,6 +50,9 @@ func Init(level string) error {
 		zapLevel = zapcore.InfoLevel
 	}
 
+	// Create atomic level for dynamic updates
+	atomicLevel = zap.NewAtomicLevelAt(zapLevel)
+
 	// Custom encoder config to control output format
 	encoderConfig := zapcore.EncoderConfig{
 		TimeKey:        "timestamp",
@@ -65,7 +71,7 @@ func Init(level string) error {
 
 	// Configure zap
 	config := zap.Config{
-		Level:            zap.NewAtomicLevelAt(zapLevel),
+		Level:            atomicLevel,
 		Development:      false,
 		Encoding:         "console",
 		EncoderConfig:    encoderConfig,
@@ -135,4 +141,43 @@ func Warn(msg string, fields ...zap.Field) {
 		return
 	}
 	Logger.Warn(msg, fields...)
+}
+
+// IsDebugEnabled returns true if debug logging is enabled
+func IsDebugEnabled() bool {
+	return atomicLevel.Enabled(zapcore.DebugLevel)
+}
+
+// GetLevel returns the current log level
+func GetLevel() string {
+	levelMu.RLock()
+	defer levelMu.RUnlock()
+	return atomicLevel.String()
+}
+
+// SetLevel sets the log level at runtime
+func SetLevel(level string) error {
+	levelMu.Lock()
+	defer levelMu.Unlock()
+
+	var zapLevel zapcore.Level
+	switch level {
+	case "debug":
+		zapLevel = zapcore.DebugLevel
+	case "info":
+		zapLevel = zapcore.InfoLevel
+	case "warn", "warning":
+		zapLevel = zapcore.WarnLevel
+	case "error":
+		zapLevel = zapcore.ErrorLevel
+	case "fatal":
+		zapLevel = zapcore.FatalLevel
+	case "panic":
+		zapLevel = zapcore.PanicLevel
+	default:
+		return fmt.Errorf("unknown log level: %s", level)
+	}
+
+	atomicLevel.SetLevel(zapLevel)
+	return nil
 }

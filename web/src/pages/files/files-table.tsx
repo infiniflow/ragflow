@@ -260,7 +260,7 @@ export function FilesTable({
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
-
+    getRowId: (row) => row.id, // Use file ID instead of row index
     manualPagination: true, //we're doing manual "server-side" pagination
     enableRowSelection(row) {
       return !isKnowledgeBaseType(row.original.source_type);
@@ -278,7 +278,7 @@ export function FilesTable({
 
   return (
     <>
-      <div className="flex-1 h-0 size-full">
+      <div className="flex-1 min-h-0 size-full">
         <Table rootClassName="max-h-full overflow-auto">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (

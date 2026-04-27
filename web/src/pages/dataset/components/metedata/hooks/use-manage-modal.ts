@@ -2,9 +2,11 @@ import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useSelectedIds } from '@/hooks/logic-hooks/use-row-selection';
 import { DocumentApiAction } from '@/hooks/use-document-request';
-import kbService, {
+import {
   getMetaDataService,
-  updateMetaData,
+  kbUpdateMetaData,
+  updateDocumentMetaDataConfig,
+  updateDocumentsMetadata,
 } from '@/services/knowledge-service';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { RowSelectionState } from '@tanstack/react-table';
@@ -374,10 +376,11 @@ export const useManageMetaDataModal = (
   const handleSaveManage = useCallback(
     async (callback: () => void) => {
       console.log('handleSaveManage', tableData);
-      const { data: res } = await updateMetaData({
-        kb_id: id as string,
-        data: operations,
-        doc_ids: documentIds,
+      const { data: res } = await updateDocumentsMetadata({
+        dataset_id: id as string,
+        selector: { document_ids: documentIds },
+        updates: operations.updates,
+        deletes: operations.deletes,
       });
       if (res.code === 0) {
         queryClient.invalidateQueries({
@@ -411,8 +414,7 @@ export const useManageMetaDataModal = (
   const handleSaveSettings = useCallback(
     async (callback: () => void, builtInMetadata?: IBuiltInMetadataItem[]) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
-      const { data: res } = await kbService.kbUpdateMetaData({
-        kb_id: id,
+      const { data: res } = await kbUpdateMetaData(id || '', {
         metadata: data,
         builtInMetadata: builtInMetadata || [],
       });
@@ -433,9 +435,10 @@ export const useManageMetaDataModal = (
     async (callback: () => void) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
       if (otherData?.documentId) {
-        const { data: res } = await kbService.documentUpdateMetaData({
+        const { data: res } = await updateDocumentMetaDataConfig({
+          kb_id: id || '',
           doc_id: otherData.documentId,
-          metadata: data,
+          data: { metadata: data },
         });
         if (res.code === 0) {
           message.success(t('message.operated'));

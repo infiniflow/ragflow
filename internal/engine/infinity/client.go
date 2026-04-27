@@ -19,11 +19,14 @@ package infinity
 import (
 	"context"
 	"fmt"
-	"ragflow/internal/server"
+	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
+	"ragflow/internal/server"
+	"ragflow/internal/logger"
 )
 
 // infinityClient Infinity SDK client wrapper
@@ -48,21 +51,80 @@ func NewInfinityClient(cfg *server.InfinityConfig) (*infinityClient, error) {
 		}
 	}
 
-	conn, err := infinity.Connect(infinity.NetworkAddress{IP: host, Port: port})
+	// Retry connecting for up to 120 seconds (24 attempts * 5 seconds)
+	logger.Info("Connecting to Infinity")
+	var conn *infinity.InfinityConnection
+	var err error
+	for i := 0; i < 24; i++ {
+		conn, err = infinity.Connect(infinity.NetworkAddress{IP: host, Port: port})
+		if err == nil {
+			break
+		}
+		if i < 23 {
+			time.Sleep(5 * time.Second)
+		}
+	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Infinity: %w", err)
+		return nil, fmt.Errorf("Failed to connect to Infinity after 120s: %w", err)
 	}
 
-	return &infinityClient{
+	client := &infinityClient{
 		conn:   conn,
 		dbName: cfg.DBName,
-	}, nil
+	}
+
+	return client, nil
+}
+
+// WaitForHealthy blocks until Infinity is healthy or timeout
+func (c *infinityClient) WaitForHealthy(ctx context.Context, timeout time.Duration) error {
+	logger.Info("Waiting for Infinity to be healthy")
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		res, err := c.conn.ShowCurrentNode()
+		if err != nil {
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		// Use reflection to access ErrorCode and ServerStatus fields
+		// since ShowCurrentNodeResponse is in an internal package
+		v := reflect.ValueOf(res)
+		if v.Kind() != reflect.Ptr {
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		v = v.Elem()
+		errorCode := v.FieldByName("ErrorCode")
+		serverStatus := v.FieldByName("ServerStatus")
+		if !errorCode.IsValid() || !serverStatus.IsValid() {
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		// ErrorCode 0 means OK, ServerStatus "started" or "alive" means healthy
+		if errorCode.Int() == 0 {
+			status := serverStatus.String()
+			if status == "started" || status == "alive" {
+				logger.Info("Infinity is healthy")
+				return nil
+			}
+		}
+		time.Sleep(5 * time.Second)
+	}
+	return fmt.Errorf("Infinity not healthy after %v", timeout)
 }
 
 // Engine Infinity engine implementation using Go SDK
 type infinityEngine struct {
-	config *server.InfinityConfig
-	client *infinityClient
+	config                  *server.InfinityConfig
+	client                 *infinityClient
+	mappingFileName        string
+	docMetaMappingFileName string
 }
 
 // NewEngine creates an Infinity engine
@@ -77,9 +139,30 @@ func NewEngine(cfg interface{}) (*infinityEngine, error) {
 		return nil, err
 	}
 
+	mappingFileName := infConfig.MappingFileName
+	if mappingFileName == "" {
+		mappingFileName = "infinity_mapping.json"
+	}
+	docMetaMappingFileName := infConfig.DocMetaMappingFileName
+	if docMetaMappingFileName == "" {
+		docMetaMappingFileName = "doc_meta_infinity_mapping.json"
+	}
+
 	engine := &infinityEngine{
-		config: infConfig,
-		client: client,
+		config:              infConfig,
+		client:              client,
+		mappingFileName:     mappingFileName,
+		docMetaMappingFileName: docMetaMappingFileName,
+	}
+
+	// Wait for Infinity to be healthy
+	if err := client.WaitForHealthy(context.Background(), 120*time.Second); err != nil {
+		return nil, fmt.Errorf("Infinity not healthy: %w", err)
+	}
+
+	// MigrateDB creates the database if it doesn't exist
+	if err := engine.MigrateDB(context.Background()); err != nil {
+		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 
 	return engine, nil
@@ -106,6 +189,15 @@ func (e *infinityEngine) Close() error {
 	if e.client != nil && e.client.conn != nil {
 		_, err := e.client.conn.Disconnect()
 		return err
+	}
+	return nil
+}
+
+// MigrateDB creates the database if it doesn't exist
+func (e *infinityEngine) MigrateDB(ctx context.Context) error {
+	_, err := e.client.conn.CreateDatabase(e.client.dbName, infinity.ConflictTypeIgnore, "")
+	if err != nil {
+		return fmt.Errorf("failed to create database: %w", err)
 	}
 	return nil
 }

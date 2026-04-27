@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 import json
-import copy
 import re
 import time
 
@@ -29,7 +28,7 @@ from common.token_utils import num_tokens_from_string
 from agent.canvas import Canvas
 from api.db.db_models import APIToken
 from api.db.services.api_service import API4ConversationService
-from api.db.services.canvas_service import UserCanvasService, completion_openai
+from api.db.services.canvas_service import UserCanvasService
 from api.db.services.canvas_service import completion as agent_completion
 from api.db.services.conversation_service import ConversationService
 from api.db.services.user_canvas_version import UserCanvasVersionService
@@ -45,7 +44,7 @@ from api.db.services.user_service import UserTenantService
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_by_id, \
     get_model_config_by_type_and_name
 from common.misc_utils import get_uuid
-from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_json_result, \
+from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_json_result, \
     get_result, get_request_json, server_error_response, token_required, validate_request
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
@@ -54,36 +53,6 @@ from common.constants import RetCode, LLMType, StatusEnum
 from common import settings
 
 
-@manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
-@token_required
-async def create(tenant_id, chat_id):
-    req = await get_request_json()
-    req["dialog_id"] = chat_id
-    dia = DialogService.query(tenant_id=tenant_id, id=req["dialog_id"], status=StatusEnum.VALID.value)
-    if not dia:
-        return get_error_data_result(message="You do not own the assistant.")
-    conv = {
-        "id": get_uuid(),
-        "dialog_id": req["dialog_id"],
-        "name": req.get("name", "New session"),
-        "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue")}],
-        "user_id": req.get("user_id", ""),
-        "reference": [],
-    }
-    if not conv.get("name"):
-        return get_error_data_result(message="`name` can not be empty.")
-    ConversationService.save(**conv)
-    e, conv = ConversationService.get_by_id(conv["id"])
-    if not e:
-        return get_error_data_result(message="Fail to create a session!")
-    conv = conv.to_dict()
-    conv["messages"] = conv.pop("message")
-    conv["chat_id"] = conv.pop("dialog_id")
-    del conv["reference"]
-    return get_result(data=conv)
-
-
-@manager.route("/agents/<agent_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required
 async def create_agent_session(tenant_id, agent_id):
     req = await get_request_json()
@@ -119,28 +88,6 @@ async def create_agent_session(tenant_id, agent_id):
     API4ConversationService.save(**conv)
     conv["agent_id"] = conv.pop("dialog_id")
     return get_result(data=conv)
-
-
-@manager.route("/chats/<chat_id>/sessions/<session_id>", methods=["PUT"])  # noqa: F821
-@token_required
-async def update(tenant_id, chat_id, session_id):
-    req = await get_request_json()
-    req["dialog_id"] = chat_id
-    conv_id = session_id
-    conv = ConversationService.query(id=conv_id, dialog_id=chat_id)
-    if not conv:
-        return get_error_data_result(message="Session does not exist")
-    if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
-        return get_error_data_result(message="You do not own the session")
-    if "message" in req or "messages" in req:
-        return get_error_data_result(message="`message` can not be change")
-    if "reference" in req:
-        return get_error_data_result(message="`reference` can not be change")
-    if "name" in req and not req.get("name"):
-        return get_error_data_result(message="`name` can not be empty.")
-    if not ConversationService.update_by_id(conv_id, req):
-        return get_error_data_result(message="Session updates error")
-    return get_result()
 
 
 @manager.route("/chats/<chat_id>/completions", methods=["POST"])  # noqa: F821
@@ -484,321 +431,6 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             )
 
         return jsonify(response)
-
-
-@manager.route("/agents_openai/<agent_id>/chat/completions", methods=["POST"])  # noqa: F821
-@validate_request("model", "messages")  # noqa: F821
-@token_required
-async def agents_completion_openai_compatibility(tenant_id, agent_id):
-    req = await get_request_json()
-    messages = req.get("messages", [])
-    if not messages:
-        return get_error_data_result("You must provide at least one message.")
-    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
-        return get_error_data_result(f"You don't own the agent {agent_id}")
-
-    filtered_messages = [m for m in messages if m["role"] in ["user", "assistant"]]
-    prompt_tokens = sum(num_tokens_from_string(m["content"]) for m in filtered_messages)
-    if not filtered_messages:
-        return jsonify(
-            get_data_openai(
-                id=agent_id,
-                content="No valid messages found (user or assistant).",
-                finish_reason="stop",
-                model=req.get("model", ""),
-                completion_tokens=num_tokens_from_string("No valid messages found (user or assistant)."),
-                prompt_tokens=prompt_tokens,
-            )
-        )
-
-    question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-
-    stream = req.pop("stream", False)
-    if stream:
-        resp = Response(
-            completion_openai(
-                tenant_id,
-                agent_id,
-                question,
-                session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
-                stream=True,
-                **req,
-            ),
-            mimetype="text/event-stream",
-        )
-        resp.headers.add_header("Cache-control", "no-cache")
-        resp.headers.add_header("Connection", "keep-alive")
-        resp.headers.add_header("X-Accel-Buffering", "no")
-        resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
-        return resp
-    else:
-        # For non-streaming, just return the response directly
-        async for response in completion_openai(
-                tenant_id,
-                agent_id,
-                question,
-                session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
-                stream=False,
-                **req,
-            ):
-            return jsonify(response)
-
-        return None
-
-
-@manager.route("/agents/<agent_id>/completions", methods=["POST"])  # noqa: F821
-@token_required
-async def agent_completions(tenant_id, agent_id):
-    req = await get_request_json()
-    return_trace = bool(req.get("return_trace", False))
-
-    if req.get("stream", True):
-
-        async def generate():
-            trace_items = []
-            async for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
-                if isinstance(answer, str):
-                    try:
-                        ans = json.loads(answer[5:])  # remove "data:"
-                    except Exception:
-                        continue
-
-                event = ans.get("event")
-                if event == "node_finished":
-                    if return_trace:
-                        data = ans.get("data", {})
-                        trace_items.append(
-                            {
-                                "component_id": data.get("component_id"),
-                                "trace": [copy.deepcopy(data)],
-                            }
-                        )
-                        ans.setdefault("data", {})["trace"] = trace_items
-                        answer = "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
-                    yield answer
-
-                if event not in ["message", "message_end"]:
-                    continue
-
-                yield answer
-
-            yield "data:[DONE]\n\n"
-
-        resp = Response(generate(), mimetype="text/event-stream")
-        resp.headers.add_header("Cache-control", "no-cache")
-        resp.headers.add_header("Connection", "keep-alive")
-        resp.headers.add_header("X-Accel-Buffering", "no")
-        resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
-        return resp
-
-    full_content = ""
-    reference = {}
-    final_ans = ""
-    trace_items = []
-    structured_output = {}
-    async for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
-        try:
-            ans = json.loads(answer[5:])
-
-            if ans["event"] == "message":
-                full_content += ans["data"]["content"]
-
-            if ans.get("data", {}).get("reference", None):
-                reference.update(ans["data"]["reference"])
-
-            if ans.get("event") == "node_finished":
-                data = ans.get("data", {})
-                node_out = data.get("outputs", {})
-                component_id = data.get("component_id")
-                if component_id is not None and "structured" in node_out:
-                    structured_output[component_id] = copy.deepcopy(node_out["structured"])
-                if return_trace:
-                    trace_items.append(
-                        {
-                            "component_id": data.get("component_id"),
-                            "trace": [copy.deepcopy(data)],
-                        }
-                    )
-
-            final_ans = ans
-        except Exception as e:
-            return get_result(data=f"**ERROR**: {str(e)}")
-    final_ans["data"]["content"] = full_content
-    final_ans["data"]["reference"] = reference
-    if structured_output:
-        final_ans["data"]["structured"] = structured_output
-    if return_trace and final_ans:
-        final_ans["data"]["trace"] = trace_items
-    return get_result(data=final_ans)
-
-
-@manager.route("/chats/<chat_id>/sessions", methods=["GET"])  # noqa: F821
-@token_required
-async def list_session(tenant_id, chat_id):
-    if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
-        return get_error_data_result(message=f"You don't own the assistant {chat_id}.")
-    id = request.args.get("id")
-    name = request.args.get("name")
-    page_number = int(request.args.get("page", 1))
-    items_per_page = int(request.args.get("page_size", 30))
-    orderby = request.args.get("orderby", "create_time")
-    user_id = request.args.get("user_id")
-    if request.args.get("desc") == "False" or request.args.get("desc") == "false":
-        desc = False
-    else:
-        desc = True
-    convs = ConversationService.get_list(chat_id, page_number, items_per_page, orderby, desc, id, name, user_id)
-    if not convs:
-        return get_result(data=[])
-    for conv in convs:
-        conv["messages"] = conv.pop("message")
-        infos = conv["messages"]
-        for info in infos:
-            if "prompt" in info:
-                info.pop("prompt")
-        conv["chat_id"] = conv.pop("dialog_id")
-        ref_messages = conv["reference"]
-        if ref_messages:
-            messages = conv["messages"]
-            message_num = 0
-            ref_num = 0
-            while message_num < len(messages) and ref_num < len(ref_messages):
-                if messages[message_num]["role"] != "user":
-                    chunk_list = []
-                    if "chunks" in ref_messages[ref_num]:
-                        chunks = ref_messages[ref_num]["chunks"]
-                        for chunk in chunks:
-                            new_chunk = {
-                                "id": chunk.get("chunk_id", chunk.get("id")),
-                                "content": chunk.get("content_with_weight", chunk.get("content")),
-                                "document_id": chunk.get("doc_id", chunk.get("document_id")),
-                                "document_name": chunk.get("docnm_kwd", chunk.get("document_name")),
-                                "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
-                                "image_id": chunk.get("image_id", chunk.get("img_id")),
-                                "positions": chunk.get("positions", chunk.get("position_int")),
-                            }
-
-                            chunk_list.append(new_chunk)
-                    messages[message_num]["reference"] = chunk_list
-                    ref_num += 1
-                message_num += 1
-        del conv["reference"]
-    return get_result(data=convs)
-
-
-@manager.route("/agents/<agent_id>/sessions", methods=["GET"])  # noqa: F821
-@token_required
-async def list_agent_session(tenant_id, agent_id):
-    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
-        return get_error_data_result(message=f"You don't own the agent {agent_id}.")
-    id = request.args.get("id")
-    user_id = request.args.get("user_id")
-    page_number = int(request.args.get("page", 1))
-    items_per_page = int(request.args.get("page_size", 30))
-    orderby = request.args.get("orderby", "update_time")
-    if request.args.get("desc") == "False" or request.args.get("desc") == "false":
-        desc = False
-    else:
-        desc = True
-    # dsl defaults to True in all cases except for False and false
-    include_dsl = request.args.get("dsl") != "False" and request.args.get("dsl") != "false"
-    total, convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id,
-                                                    user_id, include_dsl)
-    if not convs:
-        return get_result(data=[])
-    for conv in convs:
-        conv["messages"] = conv.pop("message")
-        infos = conv["messages"]
-        for info in infos:
-            if "prompt" in info:
-                info.pop("prompt")
-        conv["agent_id"] = conv.pop("dialog_id")
-        # Fix for session listing endpoint
-        if conv["reference"]:
-            messages = conv["messages"]
-            message_num = 0
-            chunk_num = 0
-            # Ensure reference is a list type to prevent KeyError
-            if not isinstance(conv["reference"], list):
-                conv["reference"] = []
-            while message_num < len(messages):
-                if message_num != 0 and messages[message_num]["role"] != "user":
-                    chunk_list = []
-                    # Add boundary and type checks to prevent KeyError
-                    if chunk_num < len(conv["reference"]) and conv["reference"][chunk_num] is not None and isinstance(
-                            conv["reference"][chunk_num], dict) and "chunks" in conv["reference"][chunk_num]:
-                        chunks = conv["reference"][chunk_num]["chunks"]
-                        for chunk in chunks:
-                            # Ensure chunk is a dictionary before calling get method
-                            if not isinstance(chunk, dict):
-                                continue
-                            new_chunk = {
-                                "id": chunk.get("chunk_id", chunk.get("id")),
-                                "content": chunk.get("content_with_weight", chunk.get("content")),
-                                "document_id": chunk.get("doc_id", chunk.get("document_id")),
-                                "document_name": chunk.get("docnm_kwd", chunk.get("document_name")),
-                                "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
-                                "image_id": chunk.get("image_id", chunk.get("img_id")),
-                                "positions": chunk.get("positions", chunk.get("position_int")),
-                            }
-                            chunk_list.append(new_chunk)
-                    chunk_num += 1
-                    messages[message_num]["reference"] = chunk_list
-                message_num += 1
-        del conv["reference"]
-    return get_result(data=convs)
-
-
-@manager.route("/chats/<chat_id>/sessions", methods=["DELETE"])  # noqa: F821
-@token_required
-async def delete(tenant_id, chat_id):
-    if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
-        return get_error_data_result(message="You don't own the chat")
-
-    errors = []
-    success_count = 0
-    req = await get_request_json()
-    if not req:
-        return get_result()
-
-    ids = req.get("ids")
-    if not ids:
-        if req.get("delete_all") is True:
-            ids = [conv.id for conv in ConversationService.query(dialog_id=chat_id)]
-            if not ids:
-                return get_result()
-        else:
-            return get_result()
-
-    conv_list = ids
-
-    unique_conv_ids, duplicate_messages = check_duplicate_ids(conv_list, "session")
-    conv_list = unique_conv_ids
-
-    for id in conv_list:
-        conv = ConversationService.query(id=id, dialog_id=chat_id)
-        if not conv:
-            errors.append(f"The chat doesn't own the session {id}")
-            continue
-        ConversationService.delete_by_id(id)
-        success_count += 1
-
-    if errors:
-        if success_count > 0:
-            return get_result(data={"success_count": success_count, "errors": errors},
-                              message=f"Partially deleted {success_count} sessions with {len(errors)} errors")
-        else:
-            return get_error_data_result(message="; ".join(errors))
-
-    if duplicate_messages:
-        if success_count > 0:
-            return get_result(
-                message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors",
-                data={"success_count": success_count, "errors": duplicate_messages})
-        else:
-            return get_error_data_result(message=";".join(duplicate_messages))
-
-    return get_result()
 
 
 @manager.route("/agents/<agent_id>/sessions", methods=["DELETE"])  # noqa: F821

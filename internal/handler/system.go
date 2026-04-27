@@ -18,11 +18,11 @@ package handler
 
 import (
 	"net/http"
+	"ragflow/internal/logger"
 	"ragflow/internal/server"
+	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
-
-	"ragflow/internal/service"
 )
 
 // SystemHandler system handler
@@ -46,6 +46,13 @@ func NewSystemHandler(systemService *service.SystemService) *SystemHandler {
 // @Router /v1/system/ping [get]
 func (h *SystemHandler) Ping(c *gin.Context) {
 	c.String(http.StatusOK, "pong")
+}
+
+// Health check
+func (h *SystemHandler) Health(c *gin.Context) {
+	c.JSON(200, gin.H{
+		"status": "ok",
+	})
 }
 
 // GetConfig get system configuration
@@ -121,5 +128,49 @@ func (h *SystemHandler) GetVersion(c *gin.Context) {
 		"code":    0,
 		"message": "success",
 		"data":    version.Version,
+	})
+}
+
+// GetLogLevel returns the current log level
+func (h *SystemHandler) GetLogLevel(c *gin.Context) {
+	level := logger.GetLevel()
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    gin.H{"level": level},
+	})
+}
+
+// SetLogLevelRequest set log level request
+type SetLogLevelRequest struct {
+	Level string `json:"level" binding:"required"`
+}
+
+// SetLogLevel sets the log level at runtime
+func (h *SystemHandler) SetLogLevel(c *gin.Context) {
+	var req SetLogLevelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "level is required",
+		})
+		return
+	}
+
+	if err := logger.SetLevel(req.Level); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	config := server.GetConfig()
+	config.Log.Level = req.Level
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "Log level updated successfully",
+		"data":    gin.H{"level": req.Level},
 	})
 }

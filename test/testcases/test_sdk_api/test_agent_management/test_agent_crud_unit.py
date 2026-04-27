@@ -47,12 +47,12 @@ def test_list_agents_success_and_error(monkeypatch):
         captured["path"] = path
         captured["params"] = params
         captured["json"] = json
-        return _DummyResponse({"code": 0, "data": [{"id": "agent-1", "title": "Agent One"}]})
+        return _DummyResponse({"code": 0, "data": {"canvas": [{"id": "agent-1", "title": "Agent One"}], "total": 1}})
 
     monkeypatch.setattr(client, "get", _ok_get)
-    agents = client.list_agents(title="Agent One")
+    agents = client.list_agents()
     assert captured["path"] == "/agents"
-    assert captured["params"]["title"] == "Agent One"
+    assert captured["params"] == {"page": 1, "page_size": 30, "orderby": "update_time", "desc": True}
     assert isinstance(agents[0], Agent), str(agents)
     assert agents[0].id == "agent-1", str(agents[0])
     assert agents[0].title == "Agent One", str(agents[0])

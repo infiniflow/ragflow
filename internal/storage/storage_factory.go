@@ -18,45 +18,23 @@ package storage
 
 import (
 	"fmt"
-	"os"
+	"ragflow/internal/logger"
+	"ragflow/internal/server"
 	"sync"
+)
 
-	"github.com/spf13/viper"
-	"go.uber.org/zap"
+var (
+	globalFactory *StorageFactory
+	once          sync.Once
 )
 
 // StorageFactory creates storage instances based on configuration
 type StorageFactory struct {
 	storageType StorageType
 	storage     Storage
-	config      *StorageConfig
+	config      *server.StorageConfig
 	mu          sync.RWMutex
 }
-
-// StorageConfig holds all storage-related configurations
-type StorageConfig struct {
-	StorageType string       `mapstructure:"storage_type"`
-	Minio       *MinioConfig `mapstructure:"minio"`
-	S3          *S3Config    `mapstructure:"s3"`
-	OSS         *OSSConfig   `mapstructure:"oss"`
-}
-
-// AzureConfig holds Azure-specific configurations
-type AzureConfig struct {
-	ContainerURL  string `mapstructure:"container_url"`
-	SASToken      string `mapstructure:"sas_token"`
-	AccountURL    string `mapstructure:"account_url"`
-	ClientID      string `mapstructure:"client_id"`
-	Secret        string `mapstructure:"secret"`
-	TenantID      string `mapstructure:"tenant_id"`
-	ContainerName string `mapstructure:"container_name"`
-	AuthorityHost string `mapstructure:"authority_host"`
-}
-
-var (
-	globalFactory *StorageFactory
-	once          sync.Once
-)
 
 // GetStorageFactory returns the singleton storage factory instance
 func GetStorageFactory() *StorageFactory {
@@ -67,81 +45,37 @@ func GetStorageFactory() *StorageFactory {
 }
 
 // InitStorageFactory initializes the storage factory with configuration
-func InitStorageFactory(v *viper.Viper) error {
+func InitStorageFactory() error {
 	factory := GetStorageFactory()
 
-	// Get storage type from environment or config
-	storageType := os.Getenv("STORAGE_IMPL")
-	if storageType == "" {
-		storageType = v.GetString("storage_type")
-	}
-	if storageType == "" {
-		storageType = "MINIO" // Default storage type
-	}
-
-	storageConfig := &StorageConfig{}
-	if err := v.UnmarshalKey("storage", storageConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal storage config: %w", err)
-	}
-	storageConfig.StorageType = storageType
-
-	factory.config = storageConfig
-
+	globalConfig := server.GetConfig()
+	factory.config = &globalConfig.StorageEngine
 	// Initialize storage based on type
-	if err := factory.initStorage(storageType, v); err != nil {
+	if err := factory.initStorage(); err != nil {
 		return err
 	}
 
-	zap.L().Info("Storage factory initialized",
-		zap.String("storage_type", storageType),
-	)
+	logger.Info(fmt.Sprintf("Storage initialized: %s", factory.config.Type))
 
 	return nil
 }
 
 // initStorage initializes the specific storage implementation
-func (f *StorageFactory) initStorage(storageType string, v *viper.Viper) error {
-	switch storageType {
-	case "MINIO":
-		return f.initMinio(v)
-	case "AWS_S3":
-		return f.initS3(v)
-	case "OSS":
-		return f.initOSS(v)
+func (f *StorageFactory) initStorage() error {
+	switch f.config.Type {
+	case "minio":
+		return f.initMinio(f.config.Minio)
+	case "s3":
+		return f.initS3(f.config.S3)
+	case "oss":
+		return f.initOSS(f.config.OSS)
 	default:
-		return fmt.Errorf("unsupported storage type: %s", storageType)
+		return fmt.Errorf("unsupported storage type: %s", f.config.Type)
 	}
 }
 
-func (f *StorageFactory) initMinio(v *viper.Viper) error {
-	config := &MinioConfig{}
-
-	// Try to load from minio section first
-	if v.IsSet("minio") {
-		minioConfig := v.Sub("minio")
-		if minioConfig != nil {
-			config.Host = minioConfig.GetString("host")
-			config.User = minioConfig.GetString("user")
-			config.Password = minioConfig.GetString("password")
-			config.Secure = minioConfig.GetBool("secure")
-			config.Verify = minioConfig.GetBool("verify")
-			config.Bucket = minioConfig.GetString("bucket")
-			config.PrefixPath = minioConfig.GetString("prefix_path")
-		}
-	}
-
-	// Apply defaults
-	if config.Host == "" {
-		config.Host = "localhost:9000"
-	}
-	if config.User == "" {
-		config.User = "minioadmin"
-	}
-	if config.Password == "" {
-		config.Password = "minioadmin"
-	}
-
-	storage, err := NewMinioStorage(config)
+func (f *StorageFactory) initMinio(minioConfig *server.MinioConfig) error {
+	storage, err := NewMinioStorage(minioConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create MinIO storage: %w", err)
 	}
@@ -150,30 +84,13 @@ func (f *StorageFactory) initMinio(v *viper.Viper) error {
 	defer f.mu.Unlock()
 	f.storageType = StorageMinio
 	f.storage = storage
-	f.config.Minio = config
+	f.config.Minio = minioConfig
 
 	return nil
 }
 
-func (f *StorageFactory) initS3(v *viper.Viper) error {
-	config := &S3Config{}
-
-	if v.IsSet("s3") {
-		s3Config := v.Sub("s3")
-		if s3Config != nil {
-			config.AccessKeyID = s3Config.GetString("access_key")
-			config.SecretAccessKey = s3Config.GetString("secret_key")
-			config.SessionToken = s3Config.GetString("session_token")
-			config.Region = s3Config.GetString("region_name")
-			config.EndpointURL = s3Config.GetString("endpoint_url")
-			config.SignatureVersion = s3Config.GetString("signature_version")
-			config.AddressingStyle = s3Config.GetString("addressing_style")
-			config.Bucket = s3Config.GetString("bucket")
-			config.PrefixPath = s3Config.GetString("prefix_path")
-		}
-	}
-
-	storage, err := NewS3Storage(config)
+func (f *StorageFactory) initS3(s3Config *server.S3Config) error {
+	storage, err := NewS3Storage(s3Config)
 	if err != nil {
 		return fmt.Errorf("failed to create S3 storage: %w", err)
 	}
@@ -182,29 +99,14 @@ func (f *StorageFactory) initS3(v *viper.Viper) error {
 	defer f.mu.Unlock()
 	f.storageType = StorageAWSS3
 	f.storage = storage
-	f.config.S3 = config
+	f.config.S3 = s3Config
 
 	return nil
 }
 
-func (f *StorageFactory) initOSS(v *viper.Viper) error {
-	config := &OSSConfig{}
+func (f *StorageFactory) initOSS(ossConfig *server.OSSConfig) error {
 
-	if v.IsSet("oss") {
-		ossConfig := v.Sub("oss")
-		if ossConfig != nil {
-			config.AccessKeyID = ossConfig.GetString("access_key")
-			config.SecretAccessKey = ossConfig.GetString("secret_key")
-			config.EndpointURL = ossConfig.GetString("endpoint_url")
-			config.Region = ossConfig.GetString("region")
-			config.Bucket = ossConfig.GetString("bucket")
-			config.PrefixPath = ossConfig.GetString("prefix_path")
-			config.SignatureVersion = ossConfig.GetString("signature_version")
-			config.AddressingStyle = ossConfig.GetString("addressing_style")
-		}
-	}
-
-	storage, err := NewOSSStorage(config)
+	storage, err := NewOSSStorage(ossConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create OSS storage: %w", err)
 	}
@@ -213,7 +115,7 @@ func (f *StorageFactory) initOSS(v *viper.Viper) error {
 	defer f.mu.Unlock()
 	f.storageType = StorageOSS
 	f.storage = storage
-	f.config.OSS = config
+	f.config.OSS = ossConfig
 
 	return nil
 }
@@ -276,20 +178,20 @@ func (f *StorageFactory) SetStorage(storage Storage) {
 }
 
 // StorageTypeMapping returns the storage type mapping (equivalent to Python's storage_mapping)
-var StorageTypeMapping = map[StorageType]func(*StorageConfig) (Storage, error){
-	StorageMinio: func(config *StorageConfig) (Storage, error) {
+var StorageTypeMapping = map[StorageType]func(*server.StorageConfig) (Storage, error){
+	StorageMinio: func(config *server.StorageConfig) (Storage, error) {
 		if config.Minio == nil {
 			return nil, fmt.Errorf("MinIO config not available")
 		}
 		return NewMinioStorage(config.Minio)
 	},
-	StorageAWSS3: func(config *StorageConfig) (Storage, error) {
+	StorageAWSS3: func(config *server.StorageConfig) (Storage, error) {
 		if config.S3 == nil {
 			return nil, fmt.Errorf("S3 config not available")
 		}
 		return NewS3Storage(config.S3)
 	},
-	StorageOSS: func(config *StorageConfig) (Storage, error) {
+	StorageOSS: func(config *server.StorageConfig) (Storage, error) {
 		if config.OSS == nil {
 			return nil, fmt.Errorf("OSS config not available")
 		}

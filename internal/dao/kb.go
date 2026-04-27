@@ -17,7 +17,10 @@
 package dao
 
 import (
-	"ragflow/internal/model"
+	"path"
+	"ragflow/internal/entity"
+
+	"strconv"
 	"strings"
 	"time"
 )
@@ -31,29 +34,29 @@ func NewKnowledgebaseDAO() *KnowledgebaseDAO {
 }
 
 // Create creates a new knowledge base record
-func (dao *KnowledgebaseDAO) Create(kb *model.Knowledgebase) error {
+func (dao *KnowledgebaseDAO) Create(kb *entity.Knowledgebase) error {
 	return DB.Create(kb).Error
 }
 
 // Update updates a knowledge base record
-func (dao *KnowledgebaseDAO) Update(kb *model.Knowledgebase) error {
+func (dao *KnowledgebaseDAO) Update(kb *entity.Knowledgebase) error {
 	return DB.Save(kb).Error
 }
 
 // UpdateByID updates a knowledge base by ID with the given fields
 func (dao *KnowledgebaseDAO) UpdateByID(id string, updates map[string]interface{}) error {
-	return DB.Model(&model.Knowledgebase{}).Where("id = ?", id).Updates(updates).Error
+	return DB.Model(&entity.Knowledgebase{}).Where("id = ?", id).Updates(updates).Error
 }
 
 // Delete soft deletes a knowledge base by setting status to invalid
 func (dao *KnowledgebaseDAO) Delete(id string) error {
-	return DB.Model(&model.Knowledgebase{}).Where("id = ?", id).Update("status", string(model.StatusInvalid)).Error
+	return DB.Model(&entity.Knowledgebase{}).Where("id = ?", id).Update("status", string(entity.StatusInvalid)).Error
 }
 
 // GetByID retrieves a knowledge base by ID
-func (dao *KnowledgebaseDAO) GetByID(id string) (*model.Knowledgebase, error) {
-	var kb model.Knowledgebase
-	err := DB.Where("id = ? AND status = ?", id, string(model.StatusValid)).First(&kb).Error
+func (dao *KnowledgebaseDAO) GetByID(id string) (*entity.Knowledgebase, error) {
+	var kb entity.Knowledgebase
+	err := DB.Where("id = ? AND status = ?", id, string(entity.StatusValid)).First(&kb).Error
 	if err != nil {
 		return nil, err
 	}
@@ -61,9 +64,9 @@ func (dao *KnowledgebaseDAO) GetByID(id string) (*model.Knowledgebase, error) {
 }
 
 // GetByIDAndTenantID retrieves a knowledge base by ID and tenant ID
-func (dao *KnowledgebaseDAO) GetByIDAndTenantID(id, tenantID string) (*model.Knowledgebase, error) {
-	var kb model.Knowledgebase
-	err := DB.Where("id = ? AND tenant_id = ? AND status = ?", id, tenantID, string(model.StatusValid)).First(&kb).Error
+func (dao *KnowledgebaseDAO) GetByIDAndTenantID(id, tenantID string) (*entity.Knowledgebase, error) {
+	var kb entity.Knowledgebase
+	err := DB.Where("id = ? AND tenant_id = ? AND status = ?", id, tenantID, string(entity.StatusValid)).First(&kb).Error
 	if err != nil {
 		return nil, err
 	}
@@ -71,16 +74,16 @@ func (dao *KnowledgebaseDAO) GetByIDAndTenantID(id, tenantID string) (*model.Kno
 }
 
 // GetByIDs retrieves multiple knowledge bases by IDs
-func (dao *KnowledgebaseDAO) GetByIDs(ids []string) ([]*model.Knowledgebase, error) {
-	var kbs []*model.Knowledgebase
-	err := DB.Where("id IN ? AND status = ?", ids, string(model.StatusValid)).Find(&kbs).Error
+func (dao *KnowledgebaseDAO) GetByIDs(ids []string) ([]*entity.Knowledgebase, error) {
+	var kbs []*entity.Knowledgebase
+	err := DB.Where("id IN ? AND status = ?", ids, string(entity.StatusValid)).Find(&kbs).Error
 	return kbs, err
 }
 
 // GetByName retrieves a knowledge base by name and tenant ID
-func (dao *KnowledgebaseDAO) GetByName(name, tenantID string) (*model.Knowledgebase, error) {
-	var kb model.Knowledgebase
-	err := DB.Where("name = ? AND tenant_id = ? AND status = ?", name, tenantID, string(model.StatusValid)).First(&kb).Error
+func (dao *KnowledgebaseDAO) GetByName(name, tenantID string) (*entity.Knowledgebase, error) {
+	var kb entity.Knowledgebase
+	err := DB.Where("name = ? AND tenant_id = ? AND status = ?", name, tenantID, string(entity.StatusValid)).First(&kb).Error
 	if err != nil {
 		return nil, err
 	}
@@ -88,16 +91,16 @@ func (dao *KnowledgebaseDAO) GetByName(name, tenantID string) (*model.Knowledgeb
 }
 
 // GetByCreatedBy retrieves knowledge bases created by a specific user
-func (dao *KnowledgebaseDAO) GetByCreatedBy(createdBy string) ([]*model.Knowledgebase, error) {
-	var kbs []*model.Knowledgebase
-	err := DB.Where("created_by = ? AND status = ?", createdBy, string(model.StatusValid)).Find(&kbs).Error
+func (dao *KnowledgebaseDAO) GetByCreatedBy(createdBy string) ([]*entity.Knowledgebase, error) {
+	var kbs []*entity.Knowledgebase
+	err := DB.Where("created_by = ? AND status = ?", createdBy, string(entity.StatusValid)).Find(&kbs).Error
 	return kbs, err
 }
 
 // Query retrieves knowledge bases with filters
-func (dao *KnowledgebaseDAO) Query(filters map[string]interface{}) ([]*model.Knowledgebase, error) {
-	var kbs []*model.Knowledgebase
-	query := DB.Where("status = ?", string(model.StatusValid))
+func (dao *KnowledgebaseDAO) Query(filters map[string]interface{}) ([]*entity.Knowledgebase, error) {
+	var kbs []*entity.Knowledgebase
+	query := DB.Where("status = ?", string(entity.StatusValid))
 
 	for key, value := range filters {
 		if value != nil && value != "" {
@@ -110,9 +113,9 @@ func (dao *KnowledgebaseDAO) Query(filters map[string]interface{}) ([]*model.Kno
 }
 
 // QueryOne retrieves a single knowledge base with filters
-func (dao *KnowledgebaseDAO) QueryOne(filters map[string]interface{}) (*model.Knowledgebase, error) {
-	var kb model.Knowledgebase
-	query := DB.Where("status = ?", string(model.StatusValid))
+func (dao *KnowledgebaseDAO) QueryOne(filters map[string]interface{}) (*entity.Knowledgebase, error) {
+	var kb entity.Knowledgebase
+	query := DB.Where("status = ?", string(entity.StatusValid))
 
 	for key, value := range filters {
 		if value != nil && value != "" {
@@ -130,7 +133,7 @@ func (dao *KnowledgebaseDAO) QueryOne(filters map[string]interface{}) (*model.Kn
 // Count returns the count of knowledge bases matching the filters
 func (dao *KnowledgebaseDAO) Count(filters map[string]interface{}) (int64, error) {
 	var count int64
-	query := DB.Model(&model.Knowledgebase{}).Where("status = ?", string(model.StatusValid))
+	query := DB.Model(&entity.Knowledgebase{}).Where("status = ?", string(entity.StatusValid))
 
 	for key, value := range filters {
 		if value != nil && value != "" {
@@ -144,11 +147,11 @@ func (dao *KnowledgebaseDAO) Count(filters map[string]interface{}) (int64, error
 
 // GetByTenantIDs retrieves knowledge bases by tenant IDs with pagination
 // This matches the Python get_by_tenant_ids method
-func (dao *KnowledgebaseDAO) GetByTenantIDs(tenantIDs []string, userID string, pageNumber, itemsPerPage int, orderby string, desc bool, keywords, parserID string) ([]*model.KnowledgebaseListItem, int64, error) {
-	var kbs []*model.KnowledgebaseListItem
+func (dao *KnowledgebaseDAO) GetByTenantIDs(tenantIDs []string, userID string, pageNumber, itemsPerPage int, orderby string, desc bool, keywords, parserID string) ([]*entity.KnowledgebaseListItem, int64, error) {
+	var kbs []*entity.KnowledgebaseListItem
 	var total int64
 
-	query := DB.Model(&model.Knowledgebase{}).
+	query := DB.Model(&entity.Knowledgebase{}).
 		Select(`knowledgebase.id, knowledgebase.avatar, knowledgebase.name,
 			knowledgebase.language, knowledgebase.description, knowledgebase.tenant_id,
 			knowledgebase.permission, knowledgebase.doc_num, knowledgebase.token_num,
@@ -156,7 +159,7 @@ func (dao *KnowledgebaseDAO) GetByTenantIDs(tenantIDs []string, userID string, p
 			user.nickname, user.avatar as tenant_avatar, knowledgebase.update_time`).
 		Joins("LEFT JOIN user ON knowledgebase.tenant_id = user.id").
 		Where("((knowledgebase.tenant_id IN ? AND knowledgebase.permission = ?) OR knowledgebase.tenant_id = ?) AND knowledgebase.status = ?",
-			tenantIDs, string(model.TenantPermissionTeam), userID, string(model.StatusValid))
+			tenantIDs, string(entity.TenantPermissionTeam), userID, string(entity.StatusValid))
 
 	if keywords != "" {
 		query = query.Where("LOWER(knowledgebase.name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
@@ -192,12 +195,12 @@ func (dao *KnowledgebaseDAO) GetByTenantIDs(tenantIDs []string, userID string, p
 
 // GetAllByTenantIDs retrieves all permitted knowledge bases by tenant IDs
 // This matches the Python get_all_kb_by_tenant_ids method
-func (dao *KnowledgebaseDAO) GetAllByTenantIDs(tenantIDs []string, userID string) ([]*model.Knowledgebase, error) {
-	var kbs []*model.Knowledgebase
+func (dao *KnowledgebaseDAO) GetAllByTenantIDs(tenantIDs []string, userID string) ([]*entity.Knowledgebase, error) {
+	var kbs []*entity.Knowledgebase
 
 	err := DB.Where(
 		"(tenant_id IN ? AND permission = ?) OR tenant_id = ?",
-		tenantIDs, string(model.TenantPermissionTeam), userID,
+		tenantIDs, string(entity.TenantPermissionTeam), userID,
 	).Order("create_time ASC").Find(&kbs).Error
 
 	return kbs, err
@@ -205,8 +208,8 @@ func (dao *KnowledgebaseDAO) GetAllByTenantIDs(tenantIDs []string, userID string
 
 // GetDetail retrieves detailed knowledge base information with joined pipeline data
 // This matches the Python get_detail method
-func (dao *KnowledgebaseDAO) GetDetail(kbID string) (*model.KnowledgebaseDetail, error) {
-	var detail model.KnowledgebaseDetail
+func (dao *KnowledgebaseDAO) GetDetail(kbID string) (*entity.KnowledgebaseDetail, error) {
+	var detail entity.KnowledgebaseDetail
 
 	err := DB.Table("knowledgebase").
 		Select(`knowledgebase.id, knowledgebase.embd_id, knowledgebase.avatar, knowledgebase.name,
@@ -220,7 +223,7 @@ func (dao *KnowledgebaseDAO) GetDetail(kbID string) (*model.KnowledgebaseDetail,
 			knowledgebase.mindmap_task_id, knowledgebase.mindmap_task_finish_at,
 			knowledgebase.create_time, knowledgebase.update_time`).
 		Joins("LEFT JOIN user_canvas ON knowledgebase.pipeline_id = user_canvas.id").
-		Where("knowledgebase.id = ? AND knowledgebase.status = ?", kbID, string(model.StatusValid)).
+		Where("knowledgebase.id = ? AND knowledgebase.status = ?", kbID, string(entity.StatusValid)).
 		Scan(&detail).Error
 
 	if err != nil {
@@ -237,7 +240,7 @@ func (dao *KnowledgebaseDAO) Accessible(kbID, userID string) bool {
 	err := DB.Table("knowledgebase").
 		Joins("JOIN user_tenant ON user_tenant.tenant_id = knowledgebase.tenant_id").
 		Where("knowledgebase.id = ? AND user_tenant.user_id = ? AND knowledgebase.status = ?",
-			kbID, userID, string(model.StatusValid)).
+			kbID, userID, string(entity.StatusValid)).
 		Count(&count).Error
 
 	if err != nil {
@@ -250,8 +253,8 @@ func (dao *KnowledgebaseDAO) Accessible(kbID, userID string) bool {
 // This matches the Python accessible4deletion method
 func (dao *KnowledgebaseDAO) Accessible4Deletion(kbID, userID string) bool {
 	var count int64
-	err := DB.Model(&model.Knowledgebase{}).
-		Where("id = ? AND created_by = ? AND status = ?", kbID, userID, string(model.StatusValid)).
+	err := DB.Model(&entity.Knowledgebase{}).
+		Where("id = ? AND created_by = ? AND status = ?", kbID, userID, string(entity.StatusValid)).
 		Count(&count).Error
 
 	if err != nil {
@@ -263,30 +266,49 @@ func (dao *KnowledgebaseDAO) Accessible4Deletion(kbID, userID string) bool {
 // DuplicateName generates a unique name by appending parentheses if name already exists
 // This matches the Python duplicate_name function behavior
 func (dao *KnowledgebaseDAO) DuplicateName(name, tenantID string) string {
-	var existingNames []string
-	DB.Model(&model.Knowledgebase{}).
-		Where("name LIKE ? AND tenant_id = ? AND status = ?", name+"%", tenantID, string(model.StatusValid)).
-		Pluck("name", &existingNames)
+	const maxRetries = 1000
 
-	if len(existingNames) == 0 {
-		return name
-	}
-
-	nameSet := make(map[string]bool)
-	for _, n := range existingNames {
-		nameSet[strings.ToLower(n)] = true
-	}
-
-	if !nameSet[strings.ToLower(name)] {
-		return name
-	}
-
-	for i := 1; ; i++ {
-		newName := name + " " + strings.Repeat("(", i) + strings.Repeat(")", i)
-		if !nameSet[strings.ToLower(newName)] {
-			return newName
+	currentName := name
+	for retries := 0; retries < maxRetries; retries++ {
+		var count int64
+		err := DB.Model(&entity.Knowledgebase{}).
+			Where("LOWER(name) = ? AND tenant_id = ? AND status = ?", strings.ToLower(currentName), tenantID, string(entity.StatusValid)).
+			Count(&count).Error
+		if err != nil || count == 0 {
+			return currentName
 		}
+
+		suffix := path.Ext(currentName)
+		stem := strings.TrimSuffix(currentName, suffix)
+		mainPart, counter := splitNameCounter(stem)
+		nextCounter := 1
+		if counter > 0 {
+			nextCounter = counter + 1
+		}
+
+		currentName = mainPart + "(" + strconv.Itoa(nextCounter) + ")" + suffix
 	}
+
+	return currentName
+}
+
+func splitNameCounter(name string) (string, int) {
+	if !strings.HasSuffix(name, ")") {
+		return name, 0
+	}
+
+	leftBracketIndex := strings.LastIndex(name, "(")
+	if leftBracketIndex < 0 || leftBracketIndex >= len(name)-1 {
+		return name, 0
+	}
+
+	counterValue := name[leftBracketIndex+1 : len(name)-1]
+	counter, err := strconv.Atoi(counterValue)
+	if err != nil {
+		return name, 0
+	}
+
+	return strings.TrimRight(name[:leftBracketIndex], " "), counter
 }
 
 // AtomicIncreaseDocNumByID atomically increments the document count
@@ -294,7 +316,7 @@ func (dao *KnowledgebaseDAO) DuplicateName(name, tenantID string) string {
 func (dao *KnowledgebaseDAO) AtomicIncreaseDocNumByID(kbID string) error {
 	now := time.Now().Unix()
 	nowDate := time.Now().Truncate(time.Second)
-	return DB.Model(&model.Knowledgebase{}).
+	return DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", kbID).
 		Updates(map[string]interface{}{
 			"doc_num":     DB.Raw("doc_num + 1"),
@@ -308,7 +330,7 @@ func (dao *KnowledgebaseDAO) AtomicIncreaseDocNumByID(kbID string) error {
 func (dao *KnowledgebaseDAO) DecreaseDocumentNum(kbID string, docNum, chunkNum, tokenNum int64) error {
 	now := time.Now().Unix()
 	nowDate := time.Now().Truncate(time.Second)
-	return DB.Model(&model.Knowledgebase{}).
+	return DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", kbID).
 		Updates(map[string]interface{}{
 			"doc_num":     DB.Raw("doc_num - ?", docNum),
@@ -323,8 +345,8 @@ func (dao *KnowledgebaseDAO) DecreaseDocumentNum(kbID string, docNum, chunkNum, 
 // This matches the Python get_kb_ids method
 func (dao *KnowledgebaseDAO) GetKBIDsByTenantID(tenantID string) ([]string, error) {
 	var kbIDs []string
-	err := DB.Model(&model.Knowledgebase{}).
-		Where("tenant_id = ? AND status = ?", tenantID, string(model.StatusValid)).
+	err := DB.Model(&entity.Knowledgebase{}).
+		Where("tenant_id = ? AND status = ?", tenantID, string(entity.StatusValid)).
 		Pluck("id", &kbIDs).Error
 	return kbIDs, err
 }
@@ -333,8 +355,8 @@ func (dao *KnowledgebaseDAO) GetKBIDsByTenantID(tenantID string) ([]string, erro
 // This matches the Python get_all_ids method
 func (dao *KnowledgebaseDAO) GetAllIDs() ([]string, error) {
 	var kbIDs []string
-	err := DB.Model(&model.Knowledgebase{}).
-		Where("status = ?", string(model.StatusValid)).
+	err := DB.Model(&entity.Knowledgebase{}).
+		Where("status = ?", string(entity.StatusValid)).
 		Pluck("id", &kbIDs).Error
 	return kbIDs, err
 }
@@ -342,13 +364,13 @@ func (dao *KnowledgebaseDAO) GetAllIDs() ([]string, error) {
 // UpdateParserConfig updates the parser configuration with deep merge
 // This matches the Python update_parser_config method
 func (dao *KnowledgebaseDAO) UpdateParserConfig(id string, config map[string]interface{}) error {
-	var kb model.Knowledgebase
-	if err := DB.Where("id = ? AND status = ?", id, string(model.StatusValid)).First(&kb).Error; err != nil {
+	var kb entity.Knowledgebase
+	if err := DB.Where("id = ? AND status = ?", id, string(entity.StatusValid)).First(&kb).Error; err != nil {
 		return err
 	}
 
 	mergedConfig := mergeConfig(kb.ParserConfig, config)
-	return DB.Model(&model.Knowledgebase{}).
+	return DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", id).
 		Update("parser_config", mergedConfig).Error
 }
@@ -356,14 +378,14 @@ func (dao *KnowledgebaseDAO) UpdateParserConfig(id string, config map[string]int
 // DeleteFieldMap removes the field_map from parser_config
 // This matches the Python delete_field_map method
 func (dao *KnowledgebaseDAO) DeleteFieldMap(id string) error {
-	var kb model.Knowledgebase
-	if err := DB.Where("id = ? AND status = ?", id, string(model.StatusValid)).First(&kb).Error; err != nil {
+	var kb entity.Knowledgebase
+	if err := DB.Where("id = ? AND status = ?", id, string(entity.StatusValid)).First(&kb).Error; err != nil {
 		return err
 	}
 
 	if kb.ParserConfig != nil {
 		delete(kb.ParserConfig, "field_map")
-		return DB.Model(&model.Knowledgebase{}).
+		return DB.Model(&entity.Knowledgebase{}).
 			Where("id = ?", id).
 			Update("parser_config", kb.ParserConfig).Error
 	}
@@ -395,9 +417,9 @@ func (dao *KnowledgebaseDAO) GetFieldMap(ids []string) (map[string]interface{}, 
 
 // GetKBByIDAndUserID retrieves a knowledge base by ID and user ID with tenant join
 // This matches the Python get_kb_by_id method
-func (dao *KnowledgebaseDAO) GetKBByIDAndUserID(kbID, userID string) ([]*model.Knowledgebase, error) {
-	var kbs []*model.Knowledgebase
-	err := DB.Model(&model.Knowledgebase{}).
+func (dao *KnowledgebaseDAO) GetKBByIDAndUserID(kbID, userID string) ([]*entity.Knowledgebase, error) {
+	var kbs []*entity.Knowledgebase
+	err := DB.Model(&entity.Knowledgebase{}).
 		Joins("JOIN user_tenant ON user_tenant.tenant_id = knowledgebase.tenant_id").
 		Where("knowledgebase.id = ? AND user_tenant.user_id = ?", kbID, userID).
 		Limit(1).
@@ -407,9 +429,9 @@ func (dao *KnowledgebaseDAO) GetKBByIDAndUserID(kbID, userID string) ([]*model.K
 
 // GetKBByNameAndUserID retrieves a knowledge base by name and user ID with tenant join
 // This matches the Python get_kb_by_name method
-func (dao *KnowledgebaseDAO) GetKBByNameAndUserID(kbName, userID string) ([]*model.Knowledgebase, error) {
-	var kbs []*model.Knowledgebase
-	err := DB.Model(&model.Knowledgebase{}).
+func (dao *KnowledgebaseDAO) GetKBByNameAndUserID(kbName, userID string) ([]*entity.Knowledgebase, error) {
+	var kbs []*entity.Knowledgebase
+	err := DB.Model(&entity.Knowledgebase{}).
 		Joins("JOIN user_tenant ON user_tenant.tenant_id = knowledgebase.tenant_id").
 		Where("knowledgebase.name = ? AND user_tenant.user_id = ?", kbName, userID).
 		Limit(1).
@@ -419,13 +441,13 @@ func (dao *KnowledgebaseDAO) GetKBByNameAndUserID(kbName, userID string) ([]*mod
 
 // GetList retrieves knowledge bases with filtering by ID and name
 // This matches the Python get_list method
-func (dao *KnowledgebaseDAO) GetList(tenantIDs []string, userID string, pageNumber, itemsPerPage int, orderby string, desc bool, id, name string) ([]*model.Knowledgebase, int64, error) {
-	var kbs []*model.Knowledgebase
+func (dao *KnowledgebaseDAO) GetList(tenantIDs []string, userID string, pageNumber, itemsPerPage int, orderby string, desc bool, id, name string) ([]*entity.Knowledgebase, int64, error) {
+	var kbs []*entity.Knowledgebase
 	var total int64
 
-	query := DB.Model(&model.Knowledgebase{}).
+	query := DB.Model(&entity.Knowledgebase{}).
 		Where("((tenant_id IN ? AND permission = ?) OR tenant_id = ?) AND status = ?",
-			tenantIDs, string(model.TenantPermissionTeam), userID, string(model.StatusValid))
+			tenantIDs, string(entity.TenantPermissionTeam), userID, string(entity.StatusValid))
 
 	if id != "" {
 		query = query.Where("id = ?", id)
@@ -497,14 +519,14 @@ func mergeConfig(old, new map[string]interface{}) map[string]interface{} {
 
 // DeleteByTenantID deletes all knowledge bases by tenant ID (hard delete)
 func (dao *KnowledgebaseDAO) DeleteByTenantID(tenantID string) (int64, error) {
-	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&model.Knowledgebase{})
+	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.Knowledgebase{})
 	return result.RowsAffected, result.Error
 }
 
 // GetKBIDsByTenantID gets all knowledge base IDs by tenant ID
 func (dao *KnowledgebaseDAO) GetKBIDsByTenantIDSimple(tenantID string) ([]string, error) {
 	var kbIDs []string
-	err := DB.Model(&model.Knowledgebase{}).
+	err := DB.Model(&entity.Knowledgebase{}).
 		Where("tenant_id = ?", tenantID).
 		Pluck("id", &kbIDs).Error
 	return kbIDs, err

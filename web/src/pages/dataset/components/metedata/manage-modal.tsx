@@ -321,8 +321,29 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
       >
         <>
           <div className="flex flex-col gap-2">
-            <div className="flex gap-4 items-center justify-between text-truncate">
-              {secondTitle || t('knowledgeDetails.metadata.metadata')}
+            <div className="flex items-center justify-between">
+              <div className="w-1/2 text-truncate">
+                {secondTitle || t('knowledgeDetails.metadata.metadata')}
+              </div>
+              <div>
+                {isCanAdd &&
+                  activeTab !== 'built-in' &&
+                  !(
+                    metadataType === MetadataType.Setting ||
+                    metadataType === MetadataType.SingleFileSetting
+                  ) && (
+                    <Button
+                      variant={'ghost'}
+                      className="border border-border-button"
+                      type="button"
+                      onClick={handAddValueRow}
+                      data-testid={addButtonTestId}
+                    >
+                      <Plus />
+                      {t('common.add')}
+                    </Button>
+                  )}
+              </div>
             </div>
 
             {rowSelectionIsEmpty || (
@@ -576,6 +597,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
           addDeleteValue={addDeleteValue}
           isEditField={isEditField || isAddValueMode}
           isAddValue={isAddValue || isAddValueMode}
+          isAddValueMode={isAddValueMode}
           isShowDescription={isShowDescription}
           isShowValueSwitch={isShowValueSwitch}
           isShowType={true}
