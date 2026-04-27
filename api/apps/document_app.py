@@ -23,8 +23,6 @@ from quart import make_response, request
 from api.apps import current_user, login_required
 from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType
-from api.db.services import duplicate_name
-from api.db.db_models import Task
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
@@ -40,8 +38,7 @@ from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_heade
 from common import settings
 from common.constants import SANDBOX_ARTIFACT_BUCKET, RetCode, TaskStatus
 from common.file_utils import get_project_base_directory
-from common.misc_utils import get_uuid, thread_pool_exec
-from common.ssrf_guard import assert_url_is_safe
+from common.misc_utils import thread_pool_exec
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search
 
