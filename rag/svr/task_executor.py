@@ -427,7 +427,23 @@ async def build_chunks(task, progress_callback):
         chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
 
         async def gen_metadata_task(chat_mdl, d):
-            metadata_conf = list(task["parser_config"].get("metadata", [])) + list(task["parser_config"].get("built_in_metadata") or [])
+            metadata_conf = task["parser_config"].get("metadata", [])
+            built_in_metadata = list(task["parser_config"].get("built_in_metadata") or [])
+            if isinstance(metadata_conf, dict):
+                if not isinstance(metadata_conf.get("properties"), dict):
+                    metadata_conf = {"type": "object", "properties": {}}
+                if built_in_metadata:
+                    metadata_conf = {
+                        **metadata_conf,
+                        "properties": {
+                            **metadata_conf.get("properties", {}),
+                            **turn2jsonschema(built_in_metadata).get("properties", {}),
+                        },
+                    }
+            elif isinstance(metadata_conf, list):
+                metadata_conf = metadata_conf + built_in_metadata
+            else:
+                metadata_conf = built_in_metadata
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "metadata",
                                    metadata_conf)
             if not cached:
@@ -1273,6 +1289,7 @@ async def do_handle_task(task):
         )
 
     finally:
+        executor.shutdown(wait=False)
         if has_canceled(task_id):
             try:
                 exists = await thread_pool_exec(
