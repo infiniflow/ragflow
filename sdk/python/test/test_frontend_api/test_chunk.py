@@ -21,7 +21,7 @@ from timeit import default_timer as timer
 
 def test_parse_txt_document(get_auth):
     # create dataset
-    res = create_dataset(get_auth, "test_parse_txt_document")
+    res = create_dataset(get_auth, {"name": "test_parse_txt_document"})
     assert res.get("code") == 0, f"{res.get('message')}"
 
     # list dataset
@@ -29,8 +29,10 @@ def test_parse_txt_document(get_auth):
     dataset_list = []
     dataset_id = None
     while True:
-        res = list_dataset(get_auth, page_number)
-        data = res.get("data").get("kbs")
+        res = list_dataset(get_auth, {"page": page_number, "page_size": 150})
+        data = res.get("data")
+        if isinstance(data, dict):
+            data = data.get("kbs", [])
         for item in data:
             dataset_id = item.get("id")
             dataset_list.append(dataset_id)
@@ -66,7 +68,7 @@ def test_parse_txt_document(get_auth):
     print('time cost {:.1f}s'.format(timer() - start_ts))
 
     # delete dataset
-    for dataset_id in dataset_list:
-        res = rm_dataset(get_auth, dataset_id)
+    if dataset_list:
+        res = rm_dataset(get_auth, dataset_list)
         assert res.get("code") == 0, f"{res.get('message')}"
     print(f"{len(dataset_list)} datasets are deleted")

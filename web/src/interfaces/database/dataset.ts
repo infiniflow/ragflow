@@ -1,5 +1,5 @@
 // for the dataset list
-// The data structures returned by the `datasets` interface and `kb/detail` are inconsistent.
+// The data structures returned by the `datasets` interface and `/api/v1/datasets/{id}` are inconsistent.
 
 export interface IDataset {
   avatar?: string;

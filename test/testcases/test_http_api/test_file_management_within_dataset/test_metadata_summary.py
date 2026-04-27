@@ -28,16 +28,12 @@ def _summary_to_counts(summary):
 
 class TestMetadataSummary:
     @pytest.mark.p2
-    def test_metadata_summary_missing_kb_id(self, HttpApiAuth, add_document_func):
+    def test_metadata_summary_nonexistent_kb_id(self, HttpApiAuth, add_document_func):
         """
         Call with non-existent dataset
-        :param HttpApiAuth:
-        :param add_document_func:
-        :return:
         """
-        res = metadata_summary(HttpApiAuth, "")
-        assert res["code"] == 404, res
-        assert res["message"] == "Not Found: /api/v1/datasets//metadata/summary", res
+        res = metadata_summary(HttpApiAuth, "0" * 32)
+        assert res["code"] == 102, res
 
     @pytest.mark.p2
     def test_metadata_summary_invalid_kb_id(self, HttpApiAuth, add_document_func):

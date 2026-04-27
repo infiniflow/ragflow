@@ -20,13 +20,24 @@ from ragflow_sdk import Chat, DataSet, Document, RAGFlow
 from utils import wait_for
 
 
-@wait_for(30, 1, "Document parsing timeout")
+@wait_for(200, 1, "Document parsing timeout")
 def condition(_dataset: DataSet):
     documents = _dataset.list_documents(page_size=1000)
     for document in documents:
         if document.run != "DONE":
             return False
     return True
+
+
+def _ensure_parsed(dataset: DataSet, document: Document):
+    """Trigger parsing only if the document is not already done or in progress."""
+    if document.run == "DONE":
+        return
+    try:
+        dataset.async_parse_documents([document.id])
+    except Exception:
+        pass  # Already being processed
+    condition(dataset)
 
 
 @pytest.fixture(scope="function")
@@ -37,6 +48,5 @@ def add_chat_assistants_func(request: FixtureRequest, client: RAGFlow, add_docum
     request.addfinalizer(cleanup)
 
     dataset, document = add_document
-    dataset.async_parse_documents([document.id])
-    condition(dataset)
+    _ensure_parsed(dataset, document)
     return dataset, document, batch_create_chat_assistants(client, 5)

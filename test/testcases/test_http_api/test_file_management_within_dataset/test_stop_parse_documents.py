@@ -48,11 +48,11 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
+                401,
+                "<Unauthorized '401: Unauthorized'>",
             ),
         ],
     )
@@ -105,7 +105,7 @@ class TestDocumentsParseStop:
     @pytest.mark.parametrize(
         "invalid_dataset_id, expected_code, expected_message",
         [
-            ("", 100, "<MethodNotAllowed '405: Method Not Allowed'>"),
+            ("", 102, "You don't own the dataset ."),
             (
                 "invalid_dataset_id",
                 102,

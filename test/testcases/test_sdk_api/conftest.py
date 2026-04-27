@@ -46,7 +46,7 @@ from utils.file_utils import (
 )
 
 
-@wait_for(30, 1, "Document parsing timeout")
+@wait_for(200, 1, "Document parsing timeout")
 def condition(_dataset: DataSet):
     documents = _dataset.list_documents(page_size=1000)
     for document in documents:

@@ -203,7 +203,7 @@ def get_request_json_payload(response) -> dict:
             payload = None
 
     if not isinstance(payload, dict):
-        raise AssertionError(f"Expected JSON object payload for /v1/kb/update, got={payload!r}")
+        raise AssertionError(f"Expected JSON object payload for /api/v1/datasets update, got={payload!r}")
     return payload
 
 
@@ -334,7 +334,7 @@ def step_03_create_dataset(
         create_response = capture_response(
             page,
             trigger,
-            lambda resp: resp.request.method == "POST" and "/v1/kb/create" in resp.url,
+            lambda resp: resp.request.method == "POST" and "/api/v1/datasets" in resp.url,
             timeout_ms=RESULT_TIMEOUT_MS * 2,
         )
         try:
@@ -540,23 +540,20 @@ def step_04_set_dataset_settings(
         response = capture_response(
             page,
             trigger,
-            lambda resp: resp.request.method == "POST" and "/v1/kb/update" in resp.url,
+            lambda resp: resp.request.method == "PUT" and f"/api/v1/datasets/{dataset_id}" in resp.url,
             timeout_ms=RESULT_TIMEOUT_MS * 2,
         )
-        assert 200 <= response.status < 400, f"Unexpected /v1/kb/update status={response.status}"
+        assert 200 <= response.status < 400, f"Unexpected /api/v1/datasets update status={response.status}"
         response_payload = response.json()
         if isinstance(response_payload, dict):
             assert response_payload.get("code") == 0, (
-                f"/v1/kb/update response code={response_payload.get('code')} "
+                f"/api/v1/datasets update response code={response_payload.get('code')} "
                 f"message={response_payload.get('message')}"
             )
 
         payload = get_request_json_payload(response)
-        assert payload.get("kb_id") == dataset_id, (
-            f"Expected kb_id={dataset_id!r}, got {payload.get('kb_id')!r}"
-        )
         for key in ("name", "language", "parser_config"):
-            assert key in payload, f"Expected key {key!r} in /v1/kb/update payload"
+            assert key in payload, f"Expected key {key!r} in /api/v1/datasets update payload"
         parser_config = payload.get("parser_config") or {}
         assert (
             parser_config.get("image_table_context_window")
