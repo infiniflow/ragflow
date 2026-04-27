@@ -37,7 +37,7 @@ from api.utils.api_utils import (
 )
 from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers, is_valid_url
 from common import settings
-from common.constants import SANDBOX_ARTIFACT_BUCKET, RetCode, TaskStatus
+from common.constants import RetCode, TaskStatus
 from common.file_utils import get_project_base_directory
 from common.misc_utils import thread_pool_exec
 from common.ssrf_guard import assert_url_is_safe
@@ -286,44 +286,6 @@ async def change_parser():
             DocumentService.update_parser_config(doc.id, req["parser_config"])
         reset_doc()
         return get_json_result(data=True)
-    except Exception as e:
-        return server_error_response(e)
-
-
-ARTIFACT_CONTENT_TYPES = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".svg": "image/svg+xml",
-    ".pdf": "application/pdf",
-    ".csv": "text/csv",
-    ".json": "application/json",
-    ".html": "text/html",
-}
-
-
-@manager.route("/artifact/<filename>", methods=["GET"])  # noqa: F821
-@login_required
-async def get_artifact(filename):
-    try:
-        bucket = SANDBOX_ARTIFACT_BUCKET
-        # Validate filename: must be uuid hex + allowed extension, nothing else
-        basename = os.path.basename(filename)
-        if basename != filename or "/" in filename or "\\" in filename:
-            return get_data_error_result(message="Invalid filename.")
-        ext = os.path.splitext(basename)[1].lower()
-        if ext not in ARTIFACT_CONTENT_TYPES:
-            return get_data_error_result(message="Invalid file type.")
-        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, basename)
-        if not data:
-            return get_data_error_result(message="Artifact not found.")
-        content_type = ARTIFACT_CONTENT_TYPES.get(ext, "application/octet-stream")
-        response = await make_response(data)
-        safe_filename = re.sub(r"[^\w.\-]", "_", basename)
-        apply_safe_file_response_headers(response, content_type, ext)
-        if not response.headers.get("Content-Disposition"):
-            response.headers.set("Content-Disposition", f'inline; filename="{safe_filename}"')
-        return response
     except Exception as e:
         return server_error_response(e)
 
