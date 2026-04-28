@@ -29,7 +29,7 @@ from markdown import markdown
 from PIL import Image
 from common.token_utils import num_tokens_from_string
 
-from common.constants import LLMType
+from common.constants import LLMType, MAXIMUM_PAGE_NUMBER
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
@@ -83,7 +83,7 @@ def _normalize_section_text_for_rtl_presentation_forms(sections):
     return normalized_sections
 
 
-def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
+def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
     callback = callback
     binary = binary
     pdf_parser = pdf_cls() if pdf_cls else Pdf()
@@ -102,7 +102,7 @@ def by_mineru(
     filename,
     binary=None,
     from_page=0,
-    to_page=100000,
+    to_page=MAXIMUM_PAGE_NUMBER,
     lang="Chinese",
     callback=None,
     pdf_cls=None,
@@ -148,7 +148,7 @@ def by_mineru(
     return None, None, None
 
 
-def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
+def by_docling(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
     pdf_parser = DoclingParser()
     parse_method = kwargs.get("parse_method", "raw")
 
@@ -173,7 +173,7 @@ def by_opendataloader(
     filename,
     binary=None,
     from_page=0,
-    to_page=100000,
+    to_page=MAXIMUM_PAGE_NUMBER,
     lang="Chinese",
     callback=None,
     pdf_cls=None,
@@ -217,7 +217,7 @@ def by_opendataloader(
     return None, None, None
 
 
-def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
+def by_tcadp(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
     tcadp_parser = TCADPParser()
 
     if not tcadp_parser.check_installation():
@@ -232,7 +232,7 @@ def by_paddleocr(
     filename,
     binary=None,
     from_page=0,
-    to_page=100000,
+    to_page=MAXIMUM_PAGE_NUMBER,
     lang="Chinese",
     callback=None,
     pdf_cls=None,
@@ -279,7 +279,7 @@ def by_paddleocr(
     return None, None, None
 
 
-def by_plaintext(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None, **kwargs):
     layout_recognizer = (kwargs.get("layout_recognizer") or "").strip()
     if (not layout_recognizer) or (layout_recognizer == "Plain Text"):
         pdf_parser = PlainParser()
@@ -423,7 +423,7 @@ class Docx(DocxParser):
 
         return ""
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
         self.doc = Document(filename) if not binary else Document(BytesIO(binary))
         pn = 0
         lines = []
@@ -586,7 +586,7 @@ class Pdf(PdfParser):
     def __init__(self):
         super().__init__()
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None, separate_tables_figures=False):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None, separate_tables_figures=False):
         start = timer()
         first_start = start
         callback(msg="OCR started")
@@ -775,7 +775,7 @@ def load_from_xml_v2(baseURI, rels_item_xml):
     return srels
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
     """
     Supported file formats are docx, pdf, excel, txt.
     This method apply the naive ways to chunk files.
@@ -1127,6 +1127,15 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         res.extend(url_res)
     # if table_context_size or image_context_size:
     #    attach_media_context(res, table_context_size, image_context_size)
+
+    # Attach PDF outline as transient metadata on the first chunk.
+    # task_executor.py will extract and persist it as document metadata.
+    if res and pdf_parser and getattr(pdf_parser, "outlines", None):
+        res[0]["__outline__"] = [
+            {"title": title, "depth": depth}
+            for title, depth in pdf_parser.outlines
+        ]
+
     return res
 
 

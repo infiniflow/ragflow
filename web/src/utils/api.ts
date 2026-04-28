@@ -57,74 +57,84 @@ export default {
 
   // knowledge base
 
-  checkEmbedding: `${webAPI}/kb/check_embedding`,
+  checkEmbedding: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/embedding`,
   kbList: `${restAPIv1}/datasets`,
   createKb: `${restAPIv1}/datasets`,
   updateKb: (datasetId: string) => `${restAPIv1}/datasets/${datasetId}`,
   rmKb: `${restAPIv1}/datasets`,
-  getKbDetail: `${webAPI}/kb/detail`,
+  getKbDetail: (datasetId: string) => `${restAPIv1}/datasets/${datasetId}`,
   getKnowledgeGraph: (knowledgeId: string) =>
-    `${restAPIv1}/datasets/${knowledgeId}/knowledge_graph`,
+    `${restAPIv1}/datasets/${knowledgeId}/graph/search`,
+  knowledgeGraph: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/graph`,
   deleteKnowledgeGraph: (knowledgeId: string) =>
-    `${restAPIv1}/datasets/${knowledgeId}/knowledge_graph`,
-  getMeta: `${webAPI}/kb/get_meta`,
-  getKnowledgeBasicInfo: `${webAPI}/kb/basic_info`,
+    `${restAPIv1}/datasets/${knowledgeId}/graph`,
+  getMeta: `${restAPIv1}/datasets/metadata/flattened`,
+  getKnowledgeBasicInfo: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/ingestions/summary`,
   // data pipeline log
-  fetchDataPipelineLog: `${webAPI}/kb/list_pipeline_logs`,
-  getPipelineDetail: `${webAPI}/kb/pipeline_log_detail`,
-  fetchPipelineDatasetLogs: `${webAPI}/kb/list_pipeline_dataset_logs`,
-  runGraphRag: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/run_graphrag`,
-  traceGraphRag: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/trace_graphrag`,
-  runRaptor: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/run_raptor`,
-  traceRaptor: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/trace_raptor`,
-  unbindPipelineTask: ({ kb_id, type }: { kb_id: string; type: string }) =>
-    `${webAPI}/kb/unbind_task?kb_id=${kb_id}&pipeline_task_type=${type}`,
-  pipelineRerun: `${restAPIv1}/agents/rerun`,
+  fetchDataPipelineLog: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/ingestions`,
+  getPipelineDetail: (datasetId: string, logId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/ingestions/${logId}`,
+  fetchPipelineDatasetLogs: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/ingestions`,
+  runIndex: (datasetId: string, indexType: string) =>
+    `${restAPIv1}/datasets/${datasetId}/index?type=${indexType}`,
+  traceIndex: (datasetId: string, indexType: string) =>
+    `${restAPIv1}/datasets/${datasetId}/index?type=${indexType}`,
+  unbindPipelineTask: (datasetId: string, indexType: string) =>
+    `${restAPIv1}/datasets/${datasetId}/${indexType}`,
+  pipelineRerun: `${webAPI}/canvas/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
   updateDocumentsMetadata: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/metadatas`,
-  kbUpdateMetaData: `${webAPI}/kb/update_metadata_setting`,
+  kbUpdateMetaData: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/metadata/config`,
   documentUpdateMetaDataConfig: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/metadata/config`,
 
   // tags
-  listTag: (knowledgeId: string) => `${webAPI}/kb/${knowledgeId}/tags`,
-  listTagByKnowledgeIds: `${webAPI}/kb/tags`,
-  removeTag: (knowledgeId: string) => `${webAPI}/kb/${knowledgeId}/rm_tags`,
-  renameTag: (knowledgeId: string) => `${webAPI}/kb/${knowledgeId}/rename_tag`,
+  listTag: (knowledgeId: string) => `${restAPIv1}/datasets/${knowledgeId}/tags`,
+  listTagByKnowledgeIds: `${restAPIv1}/datasets/tags/aggregation`,
+  removeTag: (knowledgeId: string) =>
+    `${restAPIv1}/datasets/${knowledgeId}/tags`,
+  renameTag: (knowledgeId: string) =>
+    `${restAPIv1}/datasets/${knowledgeId}/tags`,
 
   // chunk
   chunkList: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks`,
   chunkDetail: (datasetId: string, documentId: string, chunkId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks/${chunkId}`,
-  retrievalTest: `${webAPI}/chunk/retrieval_test`,
-  knowledgeGraph: `${webAPI}/chunk/knowledge_graph`,
+  retrievalTest: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/search`,
 
   // document
   getDocumentList: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents`,
-  documentChangeStatus: `${webAPI}/document/change_status`,
+  documentChangeStatus: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/batch-update-status`,
   documentDelete: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents`,
   documentRename: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
-  documentCreate: `${webAPI}/document/create`,
-  documentRun: `${webAPI}/document/run`,
-  documentChangeParser: `${webAPI}/document/change_parser`,
-  documentThumbnails: `${webAPI}/document/thumbnails`,
+  documentIngest: `${restAPIv1}/documents/ingest`,
+  documentCreate: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents?type=empty`,
+  documentChangeParser: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
+  documentThumbnails: `${restAPIv1}/thumbnails`,
   getDocumentFile: `${webAPI}/document/get`,
   getDocumentFileDownload: (docId: string) =>
     `${webAPI}/document/download/${docId}`,
   documentUpload: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents`,
-  webCrawl: `${webAPI}/document/web_crawl`,
-  uploadAndParse: `${webAPI}/document/upload_info`,
+  webCrawl: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents?type=web`,
+  documentInfoUpload: `${restAPIv1}/documents/upload`,
   setMeta: `${webAPI}/document/set_meta`,
   getDatasetFilter: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents?type=filter`,
@@ -153,7 +163,7 @@ export default {
   searchCompletion: (searchId: string) =>
     `${restAPIv1}/searches/${searchId}/completion`,
   chatsMindmap: `${restAPIv1}/chat/mindmap`,
-  chatsRelatedQuestions: `${restAPIv1}/chat/recommandation`,
+  chatsRelatedQuestions: `${restAPIv1}/chat/recommendation`,
 
   // next chat
   fetchExternalChatInfo: (id: string) => `${restAPIv1}/chatbots/${id}/info`,
@@ -190,7 +200,7 @@ export default {
     `${restAPIv1}/agents/${agentId}/components/${componentId}/debug`,
   trace: (agentId: string, messageId: string) =>
     `${restAPIv1}/agents/${agentId}/logs/${messageId}`,
-  cancelCanvas: (taskId: string) => `${webAPI}/canvas/cancel/${taskId}`, // cancel conversation
+  cancelCanvas: (taskId: string) => `${restAPIv1}/tasks/${taskId}/cancel`,
   // agent
   inputForm: (agentId: string, componentId: string) =>
     `${restAPIv1}/agents/${agentId}/components/${componentId}/input-form`,
@@ -209,7 +219,7 @@ export default {
   fetchExternalAgentInputs: (canvasId: string) =>
     `${restAPIv1}/agentbots/${canvasId}/inputs`,
   prompt: `${restAPIv1}/agents/prompts`,
-  cancelDataflow: (id: string) => `${webAPI}/canvas/cancel/${id}`,
+  cancelDataflow: (id: string) => `${restAPIv1}/tasks/${id}/cancel`,
   downloadFile: `${restAPIv1}/agents/download`,
   testWebhook: (id: string) => `${restAPIv1}/agents/${id}/webhook/test`,
   fetchWebhookTrace: (id: string) => `${restAPIv1}/agents/${id}/webhook/logs`,
