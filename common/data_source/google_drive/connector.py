@@ -1087,8 +1087,6 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
 
     def retrieve_all_slim_docs_perm_sync(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
         callback: IndexingHeartbeatInterface | None = None,
     ) -> GenerateSlimDocumentOutput:
         try:
@@ -1096,8 +1094,6 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
             while checkpoint.completion_stage != DriveRetrievalStage.DONE:
                 yield from self._extract_slim_docs_from_google_drive(
                     checkpoint=checkpoint,
-                    start=start,
-                    end=end,
                 )
             self.logger.info("Drive perm sync: Slim doc retrieval complete")
 

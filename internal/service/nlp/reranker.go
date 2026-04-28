@@ -136,7 +136,7 @@ func RerankByModel(
 	tsim = TokenSimilarity(keywords, insTw, qb)
 
 	// Get similarity scores from reranker model
-	modelSim, err := rerankModel.ModelDriver.Rerank(&rerankModel.ModelName, query, docs, rerankModel.APIConfig)
+	modelSim, err := rerankModel.ModelDriver.Rerank(rerankModel.ModelName, query, docs, rerankModel.APIConfig)
 	if err != nil {
 		logger.Error("RerankByModel: rerankModel.Rerank failed; falling back to token-only similarity", err)
 		// If model fails, fall back to token similarity only
