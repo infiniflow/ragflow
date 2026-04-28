@@ -667,28 +667,6 @@ func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName
 	return nil, common.CodeServerError, errors.New("model is disabled")
 }
 
-func (m *ModelProviderService) ChatToModelByApiKey(providerName, modelName, apiKey, message string) (*string, common.ErrorCode, error) {
-	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
-	if providerInfo == nil {
-		return nil, common.CodeNotFound, errors.New("provider not found")
-	}
-
-	_, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
-	if err != nil {
-		return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
-	}
-
-	var apiConfig = &modelModule.APIConfig{}
-	apiConfig.ApiKey = &apiKey
-	var response *modelModule.ChatResponse
-	response, err = providerInfo.ModelDriver.Chat(&modelName, &message, apiConfig, nil)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-
-	return response.Answer, common.CodeSuccess, nil
-}
-
 // ChatWithMessagesToModelByApiKey sends multiple messages with roles and returns response
 func (m *ModelProviderService) ChatWithMessagesToModelByApiKey(providerName, modelName, apiKey string, messages []modelModule.Message) (*string, common.ErrorCode, error) {
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
@@ -847,7 +825,7 @@ func (m *ModelProviderService) GetEmbeddingModel(tenantID, compositeModelName st
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewEmbeddingModel(driver, modelName, apiConfig), nil
+	return modelModule.NewEmbeddingModel(driver, &modelName, apiConfig), nil
 }
 
 // GetRerankModel returns a RerankModel wrapper for the given tenant
@@ -856,7 +834,7 @@ func (m *ModelProviderService) GetRerankModel(tenantID, compositeModelName strin
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewRerankModel(driver, modelName, apiConfig), nil
+	return modelModule.NewRerankModel(driver, &modelName, apiConfig), nil
 }
 
 // GetChatModel returns a ChatModel wrapper for the given tenant
@@ -865,7 +843,7 @@ func (m *ModelProviderService) GetChatModel(tenantID, compositeModelName string)
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewChatModel(driver, modelName, apiConfig), nil
+	return modelModule.NewChatModel(driver, &modelName, apiConfig), nil
 }
 
 // getModelConfig returns the model driver, model name, and API config for a model
