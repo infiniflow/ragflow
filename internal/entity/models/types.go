@@ -76,12 +76,12 @@ type EmbeddingConfig struct {
 // EmbeddingModel wraps a ModelDriver with embedding-specific configuration
 type EmbeddingModel struct {
 	ModelDriver ModelDriver
-	ModelName   string
+	ModelName   *string
 	APIConfig   *APIConfig
 }
 
 // NewEmbeddingModel creates a new EmbeddingModel
-func NewEmbeddingModel(driver ModelDriver, modelName string, apiConfig *APIConfig) *EmbeddingModel {
+func NewEmbeddingModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *EmbeddingModel {
 	return &EmbeddingModel{
 		ModelDriver: driver,
 		ModelName:   modelName,
@@ -109,12 +109,12 @@ func (e *EmbeddingModel) EncodeQuery(modelName *string, query string, apiConfig 
 // RerankModel wraps a ModelDriver with rerank-specific configuration
 type RerankModel struct {
 	ModelDriver ModelDriver
-	ModelName   string
+	ModelName   *string
 	APIConfig   *APIConfig
 }
 
 // NewRerankModel creates a new RerankModel
-func NewRerankModel(driver ModelDriver, modelName string, apiConfig *APIConfig) *RerankModel {
+func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *RerankModel {
 	return &RerankModel{
 		ModelDriver: driver,
 		ModelName:   modelName,
@@ -124,18 +124,18 @@ func NewRerankModel(driver ModelDriver, modelName string, apiConfig *APIConfig) 
 
 // Rerank calculates similarity between query and texts
 func (r *RerankModel) Rerank(query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
-	return r.ModelDriver.Rerank(&r.ModelName, query, texts, apiConfig)
+	return r.ModelDriver.Rerank(r.ModelName, query, texts, apiConfig)
 }
 
 // ChatModel wraps a ModelDriver with chat-specific configuration
 type ChatModel struct {
 	ModelDriver ModelDriver
-	ModelName   string
+	ModelName   *string
 	APIConfig   *APIConfig
 }
 
 // NewChatModel creates a new ChatModel
-func NewChatModel(driver ModelDriver, modelName string, apiConfig *APIConfig) *ChatModel {
+func NewChatModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *ChatModel {
 	return &ChatModel{
 		ModelDriver: driver,
 		ModelName:   modelName,
