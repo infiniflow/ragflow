@@ -136,8 +136,8 @@ func (z *GoogleModel) ChatStreamlyWithSender(modelName, message *string, apiConf
 	return err
 }
 
-// EncodeToEmbedding encodes a list of texts into embeddings
-func (z *GoogleModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+// Encode encodes a list of texts into embeddings
+func (z *GoogleModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -170,23 +170,6 @@ func (z *GoogleModel) Balance(apiConfig *APIConfig) (map[string]interface{}, err
 
 func (z *GoogleModel) CheckConnection(apiConfig *APIConfig) error {
 	return fmt.Errorf("no such method")
-}
-
-// Encode encodes a list of texts into embeddings (convenience method)
-func (z *GoogleModel) Encode(modelName *string, texts []string, apiConfig *APIConfig) ([][]float64, error) {
-	return z.EncodeToEmbedding(modelName, texts, apiConfig, nil)
-}
-
-// EncodeQuery encodes a single query string into embedding (convenience method)
-func (z *GoogleModel) EncodeQuery(modelName *string, query string, apiConfig *APIConfig) ([]float64, error) {
-	embeddings, err := z.Encode(modelName, []string{query}, apiConfig)
-	if err != nil {
-		return nil, err
-	}
-	if len(embeddings) == 0 {
-		return nil, fmt.Errorf("no embedding returned")
-	}
-	return embeddings[0], nil
 }
 
 // Rerank calculates similarity scores between query and texts

@@ -43,9 +43,7 @@ const (
 // EmbeddingModel interface for embedding models
 type EmbeddingModel interface {
 	// Encode encodes a list of texts into embeddings
-	Encode(modelName *string, texts []string, apiConfig *models.APIConfig) ([][]float64, error)
-	// EncodeQuery encodes a single query string into embedding
-	EncodeQuery(modelName *string, query string, apiConfig *models.APIConfig) ([]float64, error)
+	Encode(modelName *string, texts []string, apiConfig *models.APIConfig, embeddingConfig *models.EmbeddingConfig) ([][]float64, error)
 }
 
 // ChatModel interface for chat models
