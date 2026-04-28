@@ -1,5 +1,5 @@
 import { FormContainer } from '@/components/form-container';
-import { TopNFormField } from '@/components/top-n-item';
+import { createTopNSchema, TopNFormField } from '@/components/top-n-item';
 import {
   Form,
   FormControl,
@@ -24,7 +24,7 @@ import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 
 export const PubMedFormPartialSchema = {
-  top_n: z.number(),
+  top_n: createTopNSchema().top_n.unwrap(),
   email: z.string().email(),
 };
 
