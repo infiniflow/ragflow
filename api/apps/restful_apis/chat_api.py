@@ -608,6 +608,15 @@ async def bulk_delete_chats():
             if not ids:
                 return get_json_result(data={})
         else:
+            # keep backward compatibility, DELETE with chat_id in request body
+            chat_id = req.get("chat_id")
+            if chat_id:
+                try:
+                    if not DialogService.update_by_id(chat_id, {"status": StatusEnum.INVALID.value}):
+                        return get_data_error_result(message=f"Failed to delete chat {chat_id}")
+                    return get_json_result(data=True)
+                except Exception as ex:
+                    return server_error_response(ex)
             return get_json_result(data={})
 
     errors = []

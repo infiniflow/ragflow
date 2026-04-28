@@ -104,31 +104,6 @@ async def deprecated_update_session(chat_id, session_id):
     return await chat_api.patch_session(chat_id, session_id)
 
 
-@manager.route("/chats", methods=["DELETE"])
-@login_required
-async def deprecated_delete_chats():
-    """
-    Deprecated: Use DELETE /api/v1/chats/{chat_id} instead.
-
-    Old path: DELETE /api/v1/chats (with chat_id in body)
-    New path: DELETE /api/v1/chats/{chat_id}
-    """
-    logging.warning(
-        "API endpoint DELETE /api/v1/chats is deprecated. "
-        "Please use DELETE /api/v1/chats/{chat_id} instead."
-    )
-    try:
-        req = await request.get_json()
-        chat_id = req.get("chat_id")
-        if not chat_id:
-            return get_data_error_result(message="`chat_id` is required for deprecated DELETE /api/v1/chats")
-        # Forward to the new API implementation
-        return await chat_api.delete_chat(chat_id)
-    except Exception as e:
-        logging.exception(e)
-        return get_data_error_result(message="Internal server error")
-
-
 # =============================================================================
 # File APIs (Old /api/v1/file/* -> New /api/v1/files*)
 # =============================================================================

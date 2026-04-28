@@ -3286,10 +3286,6 @@ Failure:
 
 Deletes a chat assistant by ID.
 
-:::caution DEPRECATED
-The previous endpoint `DELETE /api/v1/chats` (with `chat_id` in the request body) is deprecated. Please use this endpoint instead.
-:::
-
 #### Request
 
 - Method: DELETE
@@ -3337,6 +3333,10 @@ Failure:
 **DELETE** `/api/v1/chats`
 
 Deletes chat assistants by ID.
+
+:::caution DEPRECATED
+The `chat_id` in the request body is deprecated, please use `ids` list.
+:::
 
 #### Request
 
