@@ -401,6 +401,16 @@ func (z *DeepSeekModel) EncodeToEmbedding(modelName *string, texts []string, api
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
+// Encode encodes a list of texts into embeddings (convenience method)
+func (z *DeepSeekModel) Encode(modelName *string, texts []string, apiConfig *APIConfig) ([][]float64, error) {
+	return nil, fmt.Errorf("%s, Encode not implemented", z.Name())
+}
+
+// EncodeQuery encodes a single query string into embedding (convenience method)
+func (z *DeepSeekModel) EncodeQuery(modelName *string, query string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, EncodeQuery not implemented", z.Name())
+}
+
 type DSModel struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
@@ -475,4 +485,9 @@ func (z *DeepSeekModel) CheckConnection(apiConfig *APIConfig) error {
 		return err
 	}
 	return nil
+}
+
+// Rerank calculates similarity scores between query and texts
+func (z *DeepSeekModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }

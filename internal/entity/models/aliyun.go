@@ -337,6 +337,21 @@ func (z *AliyunModel) EncodeToEmbedding(modelName *string, texts []string, apiCo
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
+// Encode encodes a list of texts into embeddings (convenience method)
+func (z *AliyunModel) Encode(modelName *string, texts []string, apiConfig *APIConfig) ([][]float64, error) {
+	return nil, fmt.Errorf("%s, Encode not implemented", z.Name())
+}
+
+// EncodeQuery encodes a single query string into embedding (convenience method)
+func (z *AliyunModel) EncodeQuery(modelName *string, query string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, EncodeQuery not implemented", z.Name())
+}
+
+// Rerank calculates similarity scores between query and texts
+func (z *AliyunModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
+}
+
 type AliyunModelItem struct {
 	ModelName    string `json:"model_name"`
 	BaseCapacity int    `json:"base_capacity"`
