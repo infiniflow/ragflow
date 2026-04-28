@@ -245,6 +245,10 @@ def _load_session_module(monkeypatch):
     common_constants_mod.SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_task_broker"
     common_constants_mod.PAGERANK_FLD = "pagerank_fea"
     common_constants_mod.TAG_FLD = "tag_feas"
+    # Import pure-Python constants from the real module (no heavy deps)
+    from common.constants import MAXIMUM_PAGE_NUMBER as _MPN, MAXIMUM_TASK_PAGE_NUMBER as _MTPN
+    common_constants_mod.MAXIMUM_PAGE_NUMBER = _MPN
+    common_constants_mod.MAXIMUM_TASK_PAGE_NUMBER = _MTPN
     monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
 
     deepdoc_pkg = ModuleType("deepdoc")
@@ -498,6 +502,14 @@ def _load_session_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "agent.canvas", agent_canvas_mod)
     monkeypatch.setitem(sys.modules, "agent.dsl_migration", agent_dsl_migration_mod)
 
+    quart_mod = ModuleType("quart")
+    quart_mod.request = SimpleNamespace(args=_Args(), headers={}, files=_AwaitableValue({}), method="POST")
+    quart_mod.Response = _StubResponse
+    quart_mod.jsonify = lambda payload: payload
+    quart_mod.current_app = SimpleNamespace()
+    quart_mod.has_app_context = lambda: False
+    monkeypatch.setitem(sys.modules, "quart", quart_mod)
+
     module_path = repo_root / "api" / "apps" / "sdk" / "session.py"
     spec = importlib.util.spec_from_file_location("test_session_sdk_routes_unit_module", module_path)
     module = importlib.util.module_from_spec(spec)
@@ -530,6 +542,163 @@ def _load_session_module(monkeypatch):
     return module
 
 
+def _load_agent_api_module(monkeypatch):
+    _load_session_module(monkeypatch)
+    repo_root = Path(__file__).resolve().parents[4]
+
+    agent_component_mod = ModuleType("agent.component")
+
+    class _StubAgentLLM:
+        pass
+
+    agent_component_mod.LLM = _StubAgentLLM
+    monkeypatch.setitem(sys.modules, "agent.component", agent_component_mod)
+
+    api_apps_mod = ModuleType("api.apps")
+    api_apps_mod.__path__ = [str(repo_root / "api" / "apps")]
+    api_apps_mod.current_user = SimpleNamespace(id="tenant-1")
+    api_apps_mod.login_required = lambda func: func
+    monkeypatch.setitem(sys.modules, "api.apps", api_apps_mod)
+
+    api_apps_services_mod = ModuleType("api.apps.services")
+    api_apps_services_mod.__path__ = [str(repo_root / "api" / "apps" / "services")]
+    monkeypatch.setitem(sys.modules, "api.apps.services", api_apps_services_mod)
+
+    canvas_replica_mod = ModuleType("api.apps.services.canvas_replica_service")
+
+    class _StubCanvasReplicaService:
+        @staticmethod
+        def normalize_dsl(dsl):
+            return dsl
+
+        @staticmethod
+        def replace_for_set(**_kwargs):
+            return True
+
+        @staticmethod
+        def bootstrap(**_kwargs):
+            return True
+
+        @staticmethod
+        def load_for_run(**_kwargs):
+            return {"dsl": {}, "title": "agent", "canvas_category": "agent"}
+
+        @staticmethod
+        def commit_after_run(**_kwargs):
+            return True
+
+    canvas_replica_mod.CanvasReplicaService = _StubCanvasReplicaService
+    monkeypatch.setitem(sys.modules, "api.apps.services.canvas_replica_service", canvas_replica_mod)
+
+    file_service_mod = ModuleType("api.db.services.file_service")
+    file_service_mod.FileService = SimpleNamespace(upload_info=lambda *_args, **_kwargs: {})
+    monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
+
+    api_service_mod = ModuleType("api.db.services.api_service")
+    api_service_mod.API4ConversationService = SimpleNamespace(
+        get_names=lambda *_args, **_kwargs: [],
+        get_list=lambda *_args, **_kwargs: (0, []),
+        save=lambda **_kwargs: True,
+        get_by_id=lambda _session_id: (True, SimpleNamespace(to_dict=lambda: {"id": _session_id})),
+        delete_by_id=lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.api_service", api_service_mod)
+
+    document_service_mod = ModuleType("api.db.services.document_service")
+    document_service_mod.DocumentService = SimpleNamespace(
+        clear_chunk_num_when_rerun=lambda *_args, **_kwargs: True,
+        update_by_id=lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.document_service", document_service_mod)
+
+    knowledgebase_service_mod = ModuleType("api.db.services.knowledgebase_service")
+    knowledgebase_service_mod.KnowledgebaseService = SimpleNamespace(query=lambda **_kwargs: [])
+    monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", knowledgebase_service_mod)
+
+    task_service_mod = ModuleType("api.db.services.task_service")
+    task_service_mod.CANVAS_DEBUG_DOC_ID = "debug-doc"
+    task_service_mod.GRAPH_RAPTOR_FAKE_DOC_ID = "graph-raptor-fake-doc"
+    task_service_mod.TaskService = SimpleNamespace(filter_delete=lambda *_args, **_kwargs: True)
+    task_service_mod.queue_dataflow = lambda *_args, **_kwargs: (True, "")
+    monkeypatch.setitem(sys.modules, "api.db.services.task_service", task_service_mod)
+
+    pipeline_operation_log_service_mod = ModuleType("api.db.services.pipeline_operation_log_service")
+    pipeline_operation_log_service_mod.PipelineOperationLogService = SimpleNamespace(
+        get_documents_info=lambda *_args, **_kwargs: [],
+        update_by_id=lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "api.db.services.pipeline_operation_log_service",
+        pipeline_operation_log_service_mod,
+    )
+
+    user_service_mod = ModuleType("api.db.services.user_service")
+    user_service_mod.TenantService = SimpleNamespace(get_joined_tenants_by_user_id=lambda *_args, **_kwargs: [])
+    user_service_mod.UserService = SimpleNamespace(get_by_id=lambda *_args, **_kwargs: (False, None))
+    user_service_mod.UserTenantService = SimpleNamespace(query=lambda **_kwargs: [])
+    monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_service_mod)
+
+    user_canvas_version_mod = ModuleType("api.db.services.user_canvas_version")
+    user_canvas_version_mod.UserCanvasVersionService = SimpleNamespace(
+        list_by_canvas_id=lambda *_args, **_kwargs: [],
+        get_by_id=lambda *_args, **_kwargs: (False, None),
+        get_latest_version_title=lambda *_args, **_kwargs: "",
+        save_or_replace_latest=lambda **_kwargs: True,
+        build_version_title=lambda *_args, **_kwargs: "v1",
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.user_canvas_version", user_canvas_version_mod)
+
+    rag_flow_pipeline_mod = ModuleType("rag.flow.pipeline")
+
+    class _StubPipeline:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    rag_flow_pipeline_mod.Pipeline = _StubPipeline
+    monkeypatch.setitem(sys.modules, "rag.flow.pipeline", rag_flow_pipeline_mod)
+
+    rag_redis_mod = ModuleType("rag.utils.redis_conn")
+    rag_redis_mod.REDIS_CONN = SimpleNamespace(get=lambda *_args, **_kwargs: None)
+    monkeypatch.setitem(sys.modules, "rag.utils.redis_conn", rag_redis_mod)
+
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "agent_api.py"
+    spec = importlib.util.spec_from_file_location("test_agent_api_unit_module", module_path)
+    module = importlib.util.module_from_spec(spec)
+    module.manager = _DummyManager()
+    monkeypatch.setitem(sys.modules, "test_agent_api_unit_module", module)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_openai_api_module(monkeypatch):
+    _load_session_module(monkeypatch)
+    repo_root = Path(__file__).resolve().parents[4]
+
+    api_apps_mod = ModuleType("api.apps")
+    api_apps_mod.__path__ = [str(repo_root / "api" / "apps")]
+    api_apps_mod.login_required = lambda func: func
+    api_apps_mod.current_user = SimpleNamespace(id="tenant-1")
+    monkeypatch.setitem(sys.modules, "api.apps", api_apps_mod)
+
+    api_apps_restful_mod = ModuleType("api.apps.restful_apis")
+    api_apps_restful_mod.__path__ = [str(repo_root / "api" / "apps" / "restful_apis")]
+    monkeypatch.setitem(sys.modules, "api.apps.restful_apis", api_apps_restful_mod)
+
+    quart_mod = ModuleType("quart")
+    quart_mod.Response = _StubResponse
+    quart_mod.jsonify = lambda payload: payload
+    monkeypatch.setitem(sys.modules, "quart", quart_mod)
+
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "openai_api.py"
+    spec = importlib.util.spec_from_file_location("test_openai_api_unit_module", module_path)
+    module = importlib.util.module_from_spec(spec)
+    module.manager = _DummyManager()
+    monkeypatch.setitem(sys.modules, "test_openai_api_unit_module", module)
+    spec.loader.exec_module(module)
+    return module
+
+
 @pytest.mark.p2
 def test_create_and_update_guard_matrix(monkeypatch):
     module = _load_session_module(monkeypatch)
@@ -551,61 +720,15 @@ def test_create_and_update_guard_matrix(monkeypatch):
 
 
 @pytest.mark.p2
-def test_chat_completion_metadata_and_stream_paths(monkeypatch):
-    module = _load_session_module(monkeypatch)
-
-    monkeypatch.setattr(module, "Response", _StubResponse)
-    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(kb_ids=["kb-1"])])
-    monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kb_ids: [{"id": "doc-1"}])
-    monkeypatch.setattr(module, "convert_conditions", lambda cond: cond.get("conditions", []))
-    monkeypatch.setattr(module, "meta_filter", lambda *_args, **_kwargs: [])
-
-    captured_requests = []
-
-    async def fake_rag_completion(_tenant_id, _chat_id, **req):
-        captured_requests.append(req)
-        yield {"answer": "ok"}
-
-    monkeypatch.setattr(module, "rag_completion", fake_rag_completion)
-
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue(None))
-    resp = _run(inspect.unwrap(module.chat_completion)("tenant-1", "chat-1"))
-    assert isinstance(resp, _StubResponse)
-    assert resp.headers.get("Content-Type") == "text/event-stream; charset=utf-8"
-    _run(_collect_stream(resp.body))
-    assert captured_requests[-1].get("question") == ""
-
-    req_with_conditions = {
-        "question": "hello",
-        "session_id": "session-1",
-        "metadata_condition": {"logic": "and", "conditions": [{"name": "author", "value": "bob"}]},
-        "stream": True,
-    }
-    monkeypatch.setattr(module.ConversationService, "query", lambda **_kwargs: [SimpleNamespace(id="session-1")])
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue(req_with_conditions))
-    resp = _run(inspect.unwrap(module.chat_completion)("tenant-1", "chat-1"))
-    _run(_collect_stream(resp.body))
-    assert captured_requests[-1].get("doc_ids") == "-999"
-
-    req_without_conditions = {
-        "question": "hello",
-        "session_id": "session-1",
-        "metadata_condition": {"logic": "and", "conditions": []},
-        "stream": True,
-        "doc_ids": "legacy",
-    }
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue(req_without_conditions))
-    resp = _run(inspect.unwrap(module.chat_completion)("tenant-1", "chat-1"))
-    _run(_collect_stream(resp.body))
-    assert "doc_ids" not in captured_requests[-1]
-
-
-@pytest.mark.p2
 def test_openai_chat_validation_matrix_unit(monkeypatch):
-    module = _load_session_module(monkeypatch)
+    module = _load_openai_api_module(monkeypatch)
 
     monkeypatch.setattr(module, "num_tokens_from_string", lambda _text: 1)
-    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(kb_ids=["kb-1"])])
+    monkeypatch.setattr(
+        module.DialogService,
+        "query",
+        lambda **_kwargs: [SimpleNamespace(kb_ids=["kb-1"], llm_id="chat-model", tenant_id="tenant-1")],
+    )
 
     cases = [
         (
@@ -649,20 +772,23 @@ def test_openai_chat_validation_matrix_unit(monkeypatch):
 
     for payload, expected in cases:
         monkeypatch.setattr(module, "get_request_json", lambda p=payload: _AwaitableValue(p))
-        res = _run(inspect.unwrap(module.chat_completion_openai_like)("tenant-1", "chat-1"))
+        res = _run(inspect.unwrap(module.openai_chat_completions)("chat-1"))
         assert expected in res["message"]
 
 
 @pytest.mark.p2
 def test_openai_stream_generator_branches_unit(monkeypatch):
-    module = _load_session_module(monkeypatch)
+    module = _load_openai_api_module(monkeypatch)
 
-    monkeypatch.setattr(module, "Response", _StubResponse)
     monkeypatch.setattr(module, "num_tokens_from_string", lambda text: len(text or ""))
     monkeypatch.setattr(module, "convert_conditions", lambda cond: cond.get("conditions", []))
     monkeypatch.setattr(module, "meta_filter", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kb_ids: [{"id": "doc-1"}])
-    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(kb_ids=["kb-1"])])
+    monkeypatch.setattr(
+        module.DialogService,
+        "query",
+        lambda **_kwargs: [SimpleNamespace(kb_ids=["kb-1"], llm_id="chat-model", tenant_id="tenant-1")],
+    )
     monkeypatch.setattr(module, "_build_reference_chunks", lambda *_args, **_kwargs: [{"id": "ref-1"}])
 
     async def fake_async_chat(_dia, _msg, _stream, **_kwargs):
@@ -692,7 +818,7 @@ def test_openai_stream_generator_branches_unit(monkeypatch):
     }
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue(payload))
 
-    resp = _run(inspect.unwrap(module.chat_completion_openai_like)("tenant-1", "chat-1"))
+    resp = _run(inspect.unwrap(module.openai_chat_completions)("chat-1"))
     assert isinstance(resp, _StubResponse)
     assert resp.headers.get("Content-Type") == "text/event-stream; charset=utf-8"
 
@@ -706,11 +832,14 @@ def test_openai_stream_generator_branches_unit(monkeypatch):
 
 @pytest.mark.p2
 def test_openai_nonstream_branch_unit(monkeypatch):
-    module = _load_session_module(monkeypatch)
+    module = _load_openai_api_module(monkeypatch)
 
-    monkeypatch.setattr(module, "jsonify", lambda payload: payload)
     monkeypatch.setattr(module, "num_tokens_from_string", lambda text: len(text or ""))
-    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(kb_ids=[])])
+    monkeypatch.setattr(
+        module.DialogService,
+        "query",
+        lambda **_kwargs: [SimpleNamespace(kb_ids=[], llm_id="chat-model", tenant_id="tenant-1")],
+    )
 
     async def fake_async_chat(_dia, _msg, _stream, **_kwargs):
         yield {"answer": "world", "reference": {}}
@@ -728,39 +857,27 @@ def test_openai_nonstream_branch_unit(monkeypatch):
         ),
     )
 
-    res = _run(inspect.unwrap(module.chat_completion_openai_like)("tenant-1", "chat-1"))
+    res = _run(inspect.unwrap(module.openai_chat_completions)("chat-1"))
     assert res["choices"][0]["message"]["content"] == "world"
     
 
 @pytest.mark.p2
 def test_agents_openai_compatibility_unit(monkeypatch):
-    module = _load_session_module(monkeypatch)
+    module = _load_agent_api_module(monkeypatch)
 
     monkeypatch.setattr(module, "Response", _StubResponse)
     monkeypatch.setattr(module, "jsonify", lambda payload: payload)
-    monkeypatch.setattr(module, "num_tokens_from_string", lambda text: len(text or ""))
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"openai-compatible": True}))
+    res = _run(inspect.unwrap(module.agent_chat_completion)("tenant-1"))
+    assert "`agent_id` is required." in res["message"]
 
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"model": "model", "messages": []}))
-    res = _run(inspect.unwrap(module.agents_completion_openai_compatibility)("tenant-1", "agent-1"))
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"agent_id": "agent-1", "openai-compatible": True, "model": "model", "messages": []}),
+    )
+    res = _run(inspect.unwrap(module.agent_chat_completion)("tenant-1"))
     assert "at least one message" in res["message"]
-
-    monkeypatch.setattr(
-        module,
-        "get_request_json",
-        lambda: _AwaitableValue({"model": "model", "messages": [{"role": "user", "content": "hello"}]}),
-    )
-    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [])
-    res = _run(inspect.unwrap(module.agents_completion_openai_compatibility)("tenant-1", "agent-1"))
-    assert "don't own the agent" in res["message"]
-
-    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [SimpleNamespace(id="agent-1")])
-    monkeypatch.setattr(
-        module,
-        "get_request_json",
-        lambda: _AwaitableValue({"model": "model", "messages": [{"role": "system", "content": "system only"}]}),
-    )
-    res = _run(inspect.unwrap(module.agents_completion_openai_compatibility)("tenant-1", "agent-1"))
-    assert "No valid messages found" in json.dumps(res)
 
     captured_calls = []
 
@@ -774,6 +891,8 @@ def test_agents_openai_compatibility_unit(monkeypatch):
         "get_request_json",
         lambda: _AwaitableValue(
             {
+                "agent_id": "agent-1",
+                "openai-compatible": True,
                 "model": "model",
                 "messages": [
                     {"role": "assistant", "content": "preface"},
@@ -784,7 +903,7 @@ def test_agents_openai_compatibility_unit(monkeypatch):
             }
         ),
     )
-    resp = _run(inspect.unwrap(module.agents_completion_openai_compatibility)("tenant-1", "agent-1"))
+    resp = _run(inspect.unwrap(module.agent_chat_completion)("tenant-1"))
     assert isinstance(resp, _StubResponse)
     assert resp.headers.get("Content-Type") == "text/event-stream; charset=utf-8"
     _run(_collect_stream(resp.body))
@@ -795,11 +914,15 @@ def test_agents_openai_compatibility_unit(monkeypatch):
         yield {"id": "non-stream"}
 
     monkeypatch.setattr(module, "completion_openai", _completion_openai_nonstream)
+    monkeypatch.setattr(module.API4ConversationService, "get_by_id", lambda _session_id: (True, SimpleNamespace(dialog_id="agent-1")))
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(
         module,
         "get_request_json",
         lambda: _AwaitableValue(
             {
+                "agent_id": "agent-1",
+                "openai-compatible": True,
                 "model": "model",
                 "messages": [
                     {"role": "user", "content": "first"},
@@ -812,7 +935,7 @@ def test_agents_openai_compatibility_unit(monkeypatch):
             }
         ),
     )
-    res = _run(inspect.unwrap(module.agents_completion_openai_compatibility)("tenant-1", "agent-1"))
+    res = _run(inspect.unwrap(module.agent_chat_completion)("tenant-1"))
     assert res["id"] == "non-stream"
     assert captured_calls[-1][0][2] == "final user"
     assert captured_calls[-1][1]["stream"] is False
@@ -821,9 +944,11 @@ def test_agents_openai_compatibility_unit(monkeypatch):
 
 @pytest.mark.p2
 def test_agent_completions_stream_and_nonstream_unit(monkeypatch):
-    module = _load_session_module(monkeypatch)
+    module = _load_agent_api_module(monkeypatch)
 
     monkeypatch.setattr(module, "Response", _StubResponse)
+    monkeypatch.setattr(module.API4ConversationService, "get_by_id", lambda _session_id: (True, SimpleNamespace(dialog_id="agent-1")))
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_args, **_kwargs: True)
 
     async def _agent_stream(*_args, **_kwargs):
         yield "data:not-json"
@@ -843,9 +968,20 @@ def test_agent_completions_stream_and_nonstream_unit(monkeypatch):
         yield "data:" + json.dumps({"event": "message", "data": {"content": "hello"}})
 
     monkeypatch.setattr(module, "agent_completion", _agent_stream)
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"stream": True, "return_trace": True}))
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue(
+            {
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "stream": True,
+                "return_trace": True,
+            }
+        ),
+    )
 
-    resp = _run(inspect.unwrap(module.agent_completions)("tenant-1", "agent-1"))
+    resp = _run(inspect.unwrap(module.agent_chat_completion)("tenant-1"))
     chunks = _run(_collect_stream(resp.body))
     assert resp.headers.get("Content-Type") == "text/event-stream; charset=utf-8"
     assert any('"trace"' in chunk for chunk in chunks)
@@ -874,8 +1010,19 @@ def test_agent_completions_stream_and_nonstream_unit(monkeypatch):
         )
 
     monkeypatch.setattr(module, "agent_completion", _agent_nonstream)
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"stream": False, "return_trace": True}))
-    res = _run(inspect.unwrap(module.agent_completions)("tenant-1", "agent-1"))
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue(
+            {
+                "agent_id": "agent-1",
+                "session_id": "session-1",
+                "stream": False,
+                "return_trace": True,
+            }
+        ),
+    )
+    res = _run(inspect.unwrap(module.agent_chat_completion)("tenant-1"))
     assert res["data"]["data"]["content"] == "A"
     assert res["data"]["data"]["reference"] == {"doc": "r"}
     assert res["data"]["data"]["structured"] == {
@@ -884,64 +1031,7 @@ def test_agent_completions_stream_and_nonstream_unit(monkeypatch):
         "c4": {},
     }
     assert [item["component_id"] for item in res["data"]["data"]["trace"]] == ["c2", "c3", "c4"]
-
-    async def _agent_nonstream_broken(*_args, **_kwargs):
-        yield "data:{"
-
-    monkeypatch.setattr(module, "agent_completion", _agent_nonstream_broken)
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"stream": False, "return_trace": False}))
-    res = _run(inspect.unwrap(module.agent_completions)("tenant-1", "agent-1"))
-    assert res["data"].startswith("**ERROR**")
-
-
-@pytest.mark.p2
-def test_list_agent_session_projection_unit(monkeypatch):
-    module = _load_session_module(monkeypatch)
-
-    monkeypatch.setattr(module, "request", SimpleNamespace(args=_Args({})))
-    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [SimpleNamespace(id="agent-1")])
-
-    conv_non_list_reference = {
-        "id": "session-1",
-        "dialog_id": "agent-1",
-        "message": [{"role": "assistant", "content": "hello", "prompt": "internal"}],
-        "reference": {"unexpected": "shape"},
-    }
-    monkeypatch.setattr(module.API4ConversationService, "get_list", lambda *_args, **_kwargs: (1, [conv_non_list_reference]))
-    res = _run(inspect.unwrap(module.list_agent_session)("tenant-1", "agent-1"))
-    assert res["data"][0]["agent_id"] == "agent-1"
-    assert "prompt" not in res["data"][0]["messages"][0]
-
-    conv_with_chunks = {
-        "id": "session-2",
-        "dialog_id": "agent-1",
-        "message": [
-            {"role": "user", "content": "question"},
-            {"role": "assistant", "content": "answer", "prompt": "internal"},
-        ],
-        "reference": [
-            {
-                "chunks": [
-                    "not-a-dict",
-                    {
-                        "chunk_id": "chunk-2",
-                        "content_with_weight": "weighted",
-                        "doc_id": "doc-2",
-                        "docnm_kwd": "doc-name-2",
-                        "kb_id": "kb-2",
-                        "image_id": "img-2",
-                        "positions": [9],
-                    },
-                ]
-            }
-        ],
-    }
-    monkeypatch.setattr(module.API4ConversationService, "get_list", lambda *_args, **_kwargs: (1, [conv_with_chunks]))
-    res = _run(inspect.unwrap(module.list_agent_session)("tenant-1", "agent-1"))
-    projected_chunk = res["data"][0]["messages"][1]["reference"][0]
-    assert projected_chunk["image_id"] == "img-2"
-    assert projected_chunk["positions"] == [9]
-
+    
 
 @pytest.mark.p2
 def test_delete_routes_partial_duplicate_unit(monkeypatch):
@@ -1015,92 +1105,6 @@ def test_delete_agent_session_error_matrix_unit(monkeypatch):
     res = _run(inspect.unwrap(module.delete_agent_session)("tenant-1", "agent-1"))
     assert res["data"]["success_count"] == 1
     assert res["data"]["errors"] == ["Duplicate session ids: ok"]
-
-
-@pytest.mark.p2
-def test_sessions_ask_route_validation_and_stream_unit(monkeypatch):
-    module = _load_session_module(monkeypatch)
-    monkeypatch.setattr(module, "Response", _StubResponse)
-
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"dataset_ids": ["kb-1"]}))
-    res = _run(inspect.unwrap(module.ask_about)("tenant-1"))
-    assert res["message"] == "`question` is required."
-
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"question": "q"}))
-    res = _run(inspect.unwrap(module.ask_about)("tenant-1"))
-    assert res["message"] == "`dataset_ids` is required."
-
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"question": "q", "dataset_ids": "kb-1"}))
-    res = _run(inspect.unwrap(module.ask_about)("tenant-1"))
-    assert res["message"] == "`dataset_ids` should be a list."
-
-    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: False)
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"question": "q", "dataset_ids": ["kb-1"]}))
-    res = _run(inspect.unwrap(module.ask_about)("tenant-1"))
-    assert res["message"] == "You don't own the dataset kb-1."
-
-    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [SimpleNamespace(chunk_num=0)])
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"question": "q", "dataset_ids": ["kb-1"]}))
-    res = _run(inspect.unwrap(module.ask_about)("tenant-1"))
-    assert res["message"] == "The dataset kb-1 doesn't own parsed file"
-
-    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [SimpleNamespace(chunk_num=1)])
-    captured = {}
-
-    async def _streaming_async_ask(question, kb_ids, uid):
-        captured["question"] = question
-        captured["kb_ids"] = kb_ids
-        captured["uid"] = uid
-        yield {"answer": "first"}
-        raise RuntimeError("ask stream boom")
-
-    monkeypatch.setattr(module, "async_ask", _streaming_async_ask)
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"question": "q", "dataset_ids": ["kb-1"]}))
-    resp = _run(inspect.unwrap(module.ask_about)("tenant-1"))
-    assert isinstance(resp, _StubResponse)
-    assert resp.headers.get("Content-Type") == "text/event-stream; charset=utf-8"
-    chunks = _run(_collect_stream(resp.body))
-    assert any('"answer": "first"' in chunk for chunk in chunks)
-    assert any('"code": 500' in chunk and "**ERROR**: ask stream boom" in chunk for chunk in chunks)
-    assert '"data": true' in chunks[-1].lower()
-    assert captured == {"question": "q", "kb_ids": ["kb-1"], "uid": "tenant-1"}
-
-
-@pytest.mark.p2
-def test_sessions_related_questions_prompt_build_unit(monkeypatch):
-    module = _load_session_module(monkeypatch)
-
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({}))
-    res = _run(inspect.unwrap(module.related_questions)("tenant-1"))
-    assert res["message"] == "`question` is required."
-
-    captured = {}
-
-    class _FakeLLMBundle:
-        def __init__(self, *args, **kwargs):
-            captured["bundle_args"] = args
-            captured["bundle_kwargs"] = kwargs
-
-        async def async_chat(self, prompt, messages, options):
-            captured["prompt"] = prompt
-            captured["messages"] = messages
-            captured["options"] = options
-            return "1. First related\n2. Second related\nplain text"
-
-    monkeypatch.setattr(module, "LLMBundle", _FakeLLMBundle)
-    monkeypatch.setattr(
-        module,
-        "get_request_json",
-        lambda: _AwaitableValue({"question": "solar energy", "industry": "renewables"}),
-    )
-    res = _run(inspect.unwrap(module.related_questions)("tenant-1"))
-    assert res["data"] == ["First related", "Second related"]
-    assert "Keep the term length between 2-4 words" in captured["prompt"]
-    assert "related terms can also help search engines" in captured["prompt"]
-    assert "Ensure all search terms are relevant to the industry: renewables." in captured["prompt"]
-    assert "Keywords: solar energy" in captured["messages"][0]["content"]
-    assert captured["options"] == {"temperature": 0.9}
 
 
 @pytest.mark.p2
@@ -1604,132 +1608,8 @@ def test_searchbots_mindmap_embedded_matrix_unit(monkeypatch):
 
 
 @pytest.mark.p2
-def test_sequence2txt_embedded_validation_and_stream_matrix_unit(monkeypatch):
-    module = _load_session_module(monkeypatch)
-    handler = inspect.unwrap(module.sequence2txt)
-    monkeypatch.setattr(module, "Response", _StubResponse)
-    monkeypatch.setattr(module.tempfile, "mkstemp", lambda suffix: (11, f"/tmp/audio{suffix}"))
-    monkeypatch.setattr(module.os, "close", lambda _fd: None)
-
-    def _set_request(form, files):
-        monkeypatch.setattr(
-            module,
-            "request",
-            SimpleNamespace(form=_AwaitableValue(form), files=_AwaitableValue(files)),
-        )
-
-    _set_request({"stream": "false"}, {})
-    res = _run(handler("tenant-1"))
-    assert "Missing 'file' in multipart form-data" in res["message"]
-
-    _set_request({"stream": "false"}, {"file": _DummyUploadFile("bad.txt")})
-    res = _run(handler("tenant-1"))
-    assert "Unsupported audio format: .txt" in res["message"]
-
-    _set_request({"stream": "false"}, {"file": _DummyUploadFile("audio.wav")})
-    tenant_llm_service = sys.modules["api.db.services.tenant_llm_service"]
-    monkeypatch.setattr(tenant_llm_service.TenantService, "get_by_id", lambda _tid: (False, None))
-    res = _run(handler("tenant-1"))
-    assert res["message"] == "Tenant not found!"
-
-    _set_request({"stream": "false"}, {"file": _DummyUploadFile("audio.wav")})
-    tenant_llm_service = sys.modules["api.db.services.tenant_llm_service"]
-    monkeypatch.setattr(tenant_llm_service.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(asr_id="", tts_id="", llm_id="", embd_id="", img2txt_id="", rerank_id="")))
-    res = _run(handler("tenant-1"))
-    assert res["message"] == "No default ASR model is set"
-
-    class _SyncASR:
-        def transcription(self, _path):
-            return "transcribed text"
-
-        def stream_transcription(self, _path):
-            return []
-
-    _set_request({"stream": "false"}, {"file": _DummyUploadFile("audio.wav")})
-    monkeypatch.setattr(tenant_llm_service.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(asr_id="asr-x", tts_id="", llm_id="", embd_id="", img2txt_id="", rerank_id="")))
-    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _SyncASR())
-    monkeypatch.setattr(module.os, "remove", lambda _path: (_ for _ in ()).throw(RuntimeError("cleanup fail")))
-    res = _run(handler("tenant-1"))
-    assert res["code"] == 0
-    assert res["data"]["text"] == "transcribed text"
-
-    class _StreamASR:
-        def transcription(self, _path):
-            return ""
-
-        def stream_transcription(self, _path):
-            yield {"event": "partial", "text": "hello"}
-
-    _set_request({"stream": "true"}, {"file": _DummyUploadFile("audio.wav")})
-    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _StreamASR())
-    monkeypatch.setattr(module.os, "remove", lambda _path: None)
-    resp = _run(handler("tenant-1"))
-    assert isinstance(resp, _StubResponse)
-    assert resp.content_type == "text/event-stream"
-    chunks = _run(_collect_stream(resp.body))
-    assert any('"event": "partial"' in chunk for chunk in chunks)
-
-    class _ErrorASR:
-        def transcription(self, _path):
-            return ""
-
-        def stream_transcription(self, _path):
-            raise RuntimeError("stream asr boom")
-
-    _set_request({"stream": "true"}, {"file": _DummyUploadFile("audio.wav")})
-    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _ErrorASR())
-    monkeypatch.setattr(module.os, "remove", lambda _path: (_ for _ in ()).throw(RuntimeError("cleanup boom")))
-    resp = _run(handler("tenant-1"))
-    chunks = _run(_collect_stream(resp.body))
-    assert any("stream asr boom" in chunk for chunk in chunks)
-
-
-@pytest.mark.p2
-def test_tts_embedded_stream_and_error_matrix_unit(monkeypatch):
-    module = _load_session_module(monkeypatch)
-    handler = inspect.unwrap(module.tts)
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"text": "A。B"}))
-    monkeypatch.setattr(module, "Response", _StubResponse)
-
-    tenant_llm_service = sys.modules["api.db.services.tenant_llm_service"]
-    monkeypatch.setattr(tenant_llm_service.TenantService, "get_by_id", lambda _tid: (False, None))
-    res = _run(handler("tenant-1"))
-    assert res["message"] == "Tenant not found!"
-
-    monkeypatch.setattr(tenant_llm_service.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(asr_id="", tts_id="", llm_id="", embd_id="", img2txt_id="", rerank_id="")))
-    res = _run(handler("tenant-1"))
-    assert res["message"] == "No default TTS model is set"
-
-    class _TTSOk:
-        def tts(self, txt):
-            if not txt:
-                return []
-            yield f"chunk-{txt}".encode("utf-8")
-
-    monkeypatch.setattr(tenant_llm_service.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(asr_id="", tts_id="tts-x", llm_id="", embd_id="", img2txt_id="", rerank_id="")))
-    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _TTSOk())
-    resp = _run(handler("tenant-1"))
-    assert resp.mimetype == "audio/mpeg"
-    assert resp.headers.get("Cache-Control") == "no-cache"
-    assert resp.headers.get("Connection") == "keep-alive"
-    assert resp.headers.get("X-Accel-Buffering") == "no"
-    chunks = _run(_collect_stream(resp.body))
-    assert any("chunk-A" in chunk for chunk in chunks)
-    assert any("chunk-B" in chunk for chunk in chunks)
-
-    class _TTSErr:
-        def tts(self, _txt):
-            raise RuntimeError("tts boom")
-
-    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _TTSErr())
-    resp = _run(handler("tenant-1"))
-    chunks = _run(_collect_stream(resp.body))
-    assert any('"code": 500' in chunk and "**ERROR**: tts boom" in chunk for chunk in chunks)
-
-
-@pytest.mark.p2
 def test_build_reference_chunks_metadata_matrix_unit(monkeypatch):
-    module = _load_session_module(monkeypatch)
+    module = _load_openai_api_module(monkeypatch)
 
     monkeypatch.setattr(module, "chunks_format", lambda _reference: [{"dataset_id": "kb-1", "document_id": "doc-1"}])
     res = module._build_reference_chunks([], include_metadata=False)

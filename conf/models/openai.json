@@ -6,6 +6,7 @@
   "url_suffix": {
     "chat": "chat/completions"
   },
+  "class": "gpt",
   "models": [
     {
       "name": "gpt-5.2-pro",
@@ -100,30 +101,6 @@
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
-    },
-    {
-      "name": "o3",
-      "max_tokens": 200000,
-      "model_types": [
-        "chat",
-        "vision"
-      ]
-    },
-    {
-      "name": "o4-mini",
-      "max_tokens": 200000,
-      "model_types": [
-        "chat",
-        "vision"
-      ]
-    },
-    {
-      "name": "o4-mini-high",
-      "max_tokens": 200000,
-      "model_types": [
-        "chat",
-        "vision"
       ]
     },
     {

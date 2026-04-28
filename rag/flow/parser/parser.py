@@ -38,6 +38,7 @@ from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.pdf_chunk_metadata import (
+    extract_pdf_positions,
     normalize_pdf_items_metadata,
     reorder_multi_column_bboxes,
 )
@@ -239,7 +240,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "tcadp parser", "paddleocr"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -433,6 +434,70 @@ class Parser(ProcessBase):
                         box["image"] = image
                 bboxes.append(box)
 
+        elif parse_method.lower() == "opendataloader":
+
+            def resolve_opendataloader_llm_name():
+                configured = parser_model_name or conf.get("opendataloader_llm_name")
+                if configured:
+                    return configured
+                tenant_id = self._canvas._tenant_id
+                if not tenant_id:
+                    return None
+                from api.db.services.tenant_llm_service import TenantLLMService
+                env_name = TenantLLMService.ensure_opendataloader_from_env(tenant_id)
+                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="OpenDataLoader", model_type=LLMType.OCR.value)
+                if candidates:
+                    return candidates[0].llm_name
+                return env_name
+
+            parser_model_name = resolve_opendataloader_llm_name()
+            if not parser_model_name:
+                raise RuntimeError("OpenDataLoader model not configured. Please add OpenDataLoader in Model Providers.")
+
+            tenant_id = self._canvas._tenant_id
+            ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, parser_model_name)
+            ocr_model = LLMBundle(tenant_id, ocr_model_config)
+            pdf_parser = ocr_model.mdl
+
+            lines, odl_tables = pdf_parser.parse_pdf(
+                filepath=name,
+                binary=blob,
+                callback=self.callback,
+                parse_method="pipeline",
+            )
+            bboxes = []
+            for item in lines or []:
+                if not isinstance(item, tuple) or len(item) < 3:
+                    continue
+                text, layout_type, poss = item[0], item[1], item[2]
+                box = {
+                    "text": text,
+                    "layout_type": layout_type or "text",
+                }
+                if isinstance(poss, str) and poss:
+                    positions = [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
+                    if positions:
+                        box["positions"] = positions
+                    image = pdf_parser.crop(poss, 1)
+                    if image is not None:
+                        box["image"] = image
+                bboxes.append(box)
+            # Merge tables and images from the second return value.
+            for (img, html_or_caption), positions in odl_tables or []:
+                box = {"layout_type": "table" if not isinstance(html_or_caption, list) else "figure"}
+                if isinstance(html_or_caption, str):
+                    box["text"] = html_or_caption
+                elif isinstance(html_or_caption, list):
+                    box["text"] = html_or_caption[0] if html_or_caption else ""
+                if img is not None:
+                    box["image"] = img
+                if positions:
+                    try:
+                        box["positions"] = [[p[0] + 1, p[1], p[2], p[3], p[4]] for p in positions]
+                    except Exception:
+                        pass
+                bboxes.append(box)
+
         elif parse_method.lower() == "tcadp parser":
             # ADP is a document parsing tool using Tencent Cloud API
             table_result_type = conf.get("table_result_type", "1")
@@ -558,7 +623,12 @@ class Parser(ProcessBase):
                 first_outline_page = pdf_parser.outlines[0][2]
                 split_at = len(bboxes)
                 for i, item in enumerate(bboxes):
-                    if item["page_number"] >= first_outline_page:
+                    page_number = item.get("page_number")
+                    if page_number is None:
+                        positions = extract_pdf_positions(item)
+                        if positions:
+                            page_number = positions[0][0]
+                    if page_number is not None and page_number >= first_outline_page:
                         split_at = i
                         break
                 toc_bboxes, _ = remove_toc(bboxes[:split_at])

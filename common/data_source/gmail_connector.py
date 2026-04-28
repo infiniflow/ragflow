@@ -270,12 +270,10 @@ class GmailConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
     def retrieve_all_slim_docs_perm_sync(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
         callback=None,
     ) -> GenerateSlimDocumentOutput:
         """Retrieve slim documents for permission synchronization."""
-        query = build_time_range_query(start, end)
+        query = build_time_range_query()
         doc_batch = []
 
         for user_email in self._get_all_user_emails():

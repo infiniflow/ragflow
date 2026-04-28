@@ -9,6 +9,7 @@
     "tts": "v1/t2a_v2",
     "files": "v1/files/list"
   },
+  "class": "minimax",
   "models": [
     {
       "name": "minimax-m2.7",
@@ -66,13 +67,5 @@
         "chat"
       ]
     }
-  ],
-  "features": {
-    "thinking": {
-      "default_value": true,
-      "supported_models": [
-        "deepseek-chat"
-      ]
-    }
-  }
+  ]
 }
