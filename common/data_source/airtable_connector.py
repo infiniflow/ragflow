@@ -67,7 +67,6 @@ class AirtableConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
                     continue
 
                 for attachment in field_value:
-                    url = attachment.get("url")
                     filename = attachment.get("filename")
                     attachment_id = attachment.get("id")
 
