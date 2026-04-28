@@ -105,7 +105,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 		outputColumns = []string{"id", "kb_id", "meta_fields"}
 	} else if isSkillIndex {
 		outputColumns = []string{
-			"skill_id", "name", "tags", "description", "content",
+			"skill_id", "space_id", "folder_id", "name", "tags", "description", "content",
 			"version", "status", "create_time", "update_time",
 		}
 		outputColumns = convertSelectFields(outputColumns, true)
