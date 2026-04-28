@@ -635,26 +635,7 @@ class GoogleDrive(SyncBase):
     SOURCE_NAME: str = FileSource.GOOGLE_DRIVE
 
     async def _generate(self, task: dict):
-        """
-        Generates document batches from Google Drive based on the given task configuration.
-
-        Initializes the GoogleDriveConnector, handles OAuth credential rotation, and determines 
-        whether to perform a full re-index or an incremental sync based on the task parameters.
-        If 'sync_deleted_files' is enabled, it also captures a lightweight snapshot of the 
-        current drive state for stale document reconciliation.
-
-        Args:
-            task (dict): The synchronization task configuration dictionary containing 
-                         connector IDs, polling ranges, and user credentials.
-
-        Returns:
-            tuple or generator: Returns a tuple of `(document_batches_generator, current_file_list)` 
-                                if deleted file syncing is enabled and a snapshot is taken. 
-                                Otherwise, returns just the `document_batches_generator`.
-        
-        Raises:
-            ValueError: If the required credentials are not present in the task configuration.
-        """
+        """Generates document batches from Google Drive, handling both full and incremental syncs."""
         connector_kwargs = {
             "include_shared_drives": self.conf.get("include_shared_drives", False),
             "include_my_drives": self.conf.get("include_my_drives", False),
@@ -710,20 +691,7 @@ class GoogleDrive(SyncBase):
             batch_size = INDEX_BATCH_SIZE
 
         def document_batches():
-            """
-            Yields batches of documents retrieved from the Google Drive API.
-
-            Utilizes a checkpointing system to handle pagination and large document sets 
-            without overwhelming memory. Accumulates pending documents until the specified 
-            `batch_size` is reached before yielding.
-
-            Yields:
-                list: A list of parsed document objects ready for ingestion into the Knowledge Base.
-
-            Raises:
-                RuntimeError: If the internal iteration limit (100,000) is exceeded, preventing 
-                              infinite loops during pagination failures.
-            """
+            """Yields paginated batches of parsed Google Drive documents using checkpoints."""
             checkpoint = self.connector.build_dummy_checkpoint()
             pending_docs = []
             iterations = 0
@@ -761,17 +729,7 @@ class GoogleDrive(SyncBase):
         return document_batches(), file_list
 
     def _persist_rotated_credentials(self, connector_id: str, credentials: dict[str, Any]) -> None:
-        """
-        Saves refreshed OAuth credentials back to the database configuration.
-
-        Ensures that when the Google Drive API issues a new access/refresh token pair, 
-        the updated credentials are permanently stored to prevent authentication failures 
-        on subsequent synchronization tasks.
-
-        Args:
-            connector_id (str): The unique identifier for the current database connector.
-            credentials (dict[str, Any]): The updated OAuth credential dictionary to persist.
-        """
+        """Saves refreshed OAuth credentials back to the database configuration."""
         try:
             updated_conf = copy.deepcopy(self.conf)
             updated_conf["credentials"] = credentials
@@ -1608,6 +1566,7 @@ func_factory = {
 
 
 async def dispatch_tasks():
+    """Polls the database for pending synchronization tasks and dispatches them concurrently."""
     while True:
         try:
             list(SyncLogsService.list_sync_tasks()[0])
@@ -1640,6 +1599,7 @@ stop_event = threading.Event()
 
 
 def signal_handler(sig, frame):
+    """Handles system interruption signals to ensure a graceful worker shutdown."""
     logging.info("Received interrupt signal, shutting down...")
     stop_event.set()
     time.sleep(1)
@@ -1651,6 +1611,7 @@ CONSUMER_NAME = "data_sync_" + CONSUMER_NO
 
 
 async def main():
+    """Entry point for the RAGFlow data synchronization worker process."""
     logging.info(r"""
   _____        _           _____
  |  __ \      | |         / ____|
