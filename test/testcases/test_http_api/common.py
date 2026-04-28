@@ -517,3 +517,12 @@ def get_flattened_metadata(auth, dataset_ids, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}{DATASETS_API_URL}/metadata/flattened"
     res = requests.get(url=url, headers=headers, auth=auth, params={"dataset_ids": ",".join(dataset_ids)})
     return res.json()
+
+
+def search_dataset(auth, dataset_id, payload=None, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/search"
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
+    return res.json()
+
+
+

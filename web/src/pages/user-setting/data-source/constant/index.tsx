@@ -82,6 +82,9 @@ export const DataSourceFeatureVisibilityMap = {
   [DataSourceKey.JIRA]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.AIRTABLE]: {
+    syncDeletedFiles: true,
+  },
 };
 
 const isDataSourceFeatureVisible = (

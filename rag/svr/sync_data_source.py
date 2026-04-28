@@ -943,11 +943,16 @@ class Airtable(SyncBase):
         )
 
         poll_start = task.get("poll_range_start")
+        file_list = None
 
         if task.get("reindex") == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
                 datetime.now(timezone.utc).timestamp(),
@@ -960,6 +965,8 @@ class Airtable(SyncBase):
             task,
         )
 
+        if file_list is not None:
+            return document_generator, file_list
         return document_generator
 
 class Asana(SyncBase):
