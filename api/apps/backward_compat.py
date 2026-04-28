@@ -27,7 +27,6 @@ Deprecated APIs and their replacements:
 - DELETE /api/v1/chats -> DELETE /api/v1/chats/{chat_id} (with body)
 - GET /api/v1/file/* -> GET /api/v1/files*
 - POST /api/v1/file/* -> POST /api/v1/files*
-- GET /v1/system/healthz -> GET /api/v1/system/healthz
 - POST /api/v1/sessions/related_questions -> POST /api/v1/chat/recommandation
 - PUT (chunk update) -> PATCH (chunk update)
 """
@@ -153,7 +152,7 @@ async def deprecated_file_get(file_id):
 
 @manager.route("/file/list", methods=["GET"])
 @login_required
-def deprecated_file_list():
+async def deprecated_file_list():
     """
     Deprecated: Use GET /api/v1/files instead.
 
@@ -165,12 +164,12 @@ def deprecated_file_list():
         "Please use /api/v1/files instead."
     )
     # Forward to the new API implementation
-    return file_api.list_files()
+    return await file_api.list_files()
 
 
 @manager.route("/file/all_parent_folder", methods=["GET"])
 @login_required
-def deprecated_file_all_parent_folder():
+async def deprecated_file_all_parent_folder():
     """
     Deprecated: Use GET /api/v1/files/{file_id}/ancestors instead.
 
@@ -186,12 +185,12 @@ def deprecated_file_all_parent_folder():
         file_id,
     )
     # Forward to the new API implementation
-    return file_api.ancestors(file_id=file_id)
+    return await file_api.ancestors(file_id=file_id)
 
 
 @manager.route("/file/parent_folder", methods=["GET"])
 @login_required
-def deprecated_file_parent_folder():
+async def deprecated_file_parent_folder():
     """
     Deprecated: Use GET /api/v1/files/{file_id}/parent instead.
 
@@ -207,12 +206,12 @@ def deprecated_file_parent_folder():
         file_id,
     )
     # Forward to the new API implementation
-    return file_api.parent_folder(file_id=file_id)
+    return await file_api.parent_folder(file_id=file_id)
 
 
 @manager.route("/file/root_folder", methods=["GET"])
 @login_required
-def deprecated_file_root_folder():
+async def deprecated_file_root_folder():
     """
     Deprecated: Root folder is now accessible via GET /api/v1/files with parent_id=...
 
@@ -224,7 +223,7 @@ def deprecated_file_root_folder():
         "Please use /api/v1/files with appropriate parent_id instead."
     )
     # Forward to the new API implementation with empty parent_id to get root
-    return file_api.list_files()
+    return await file_api.list_files()
 
 
 @manager.route("/file/create", methods=["POST"])
@@ -324,26 +323,6 @@ async def deprecated_file_rm(tenant_id=None):
 
 
 # =============================================================================
-# System Health API
-# =============================================================================
-
-@manager.route("/v1/system/healthz", methods=["GET"])
-async def deprecated_healthz():
-    """
-    Deprecated: Use GET /api/v1/system/healthz instead.
-
-    Old path: GET /v1/system/healthz
-    New path: GET /api/v1/system/healthz
-    """
-    logging.warning(
-        "API endpoint /v1/system/healthz is deprecated. "
-        "Please use /api/v1/system/healthz instead."
-    )
-    # Forward to the new API implementation
-    return await system_api.healthz()
-
-
-# =============================================================================
 # Related Questions API
 # =============================================================================
 
@@ -416,10 +395,4 @@ def register_backward_compat_routes(app_instance):
     Register all backward compatibility routes with the app.
     """
     app_instance.register_blueprint(manager, url_prefix="/api/v1")
-    # Also register the healthz endpoint without /api/v1 prefix
-    app_instance.add_url_rule(
-        "/v1/system/healthz",
-        view_func=deprecated_healthz,
-        methods=["GET"],
-    )
     logging.info("Backward compatibility routes registered successfully.")
