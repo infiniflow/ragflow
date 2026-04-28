@@ -659,11 +659,6 @@ class GoogleDrive(SyncBase):
                     
                 logging.info("Slim snapshot fetched %d files in %.2f seconds", len(file_list), time.time() - snapshot_start)
                 
-                # The Blast Radius Guard
-                if len(file_list) == 0:
-                    logging.warning("Slim retrieval returned 0 files. Nullifying file_list to prevent mass KB deletion.")
-                    file_list = None
-
         raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
         try:
             batch_size = int(raw_batch_size)
