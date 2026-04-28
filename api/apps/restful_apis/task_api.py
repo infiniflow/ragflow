@@ -19,7 +19,6 @@ from datetime import datetime
 from api.apps import login_required
 from api.db.services.task_service import TaskService, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.utils.api_utils import (
-    get_data_error_result,
     get_json_result,
     get_request_json,
     validate_request,
