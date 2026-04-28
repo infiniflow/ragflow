@@ -290,10 +290,8 @@ class ExeSQL(ToolBase, ABC):
                 if self._param.db_type == 'mssql':
                     single_res = pd.DataFrame.from_records(cursor.fetchmany(self._param.max_records),
                                                            columns=[desc[0] for desc in cursor.description])
-                else:
+                elif self._param.db_type == 'BigQuery':
                     rows = cursor.fetchmany(self._param.max_records)
-                if rows:
-                     # Convert different types of row objects to dictionaries
                     converted_rows = []
                     for row in rows:
                         if hasattr(row, '_asdict'):  # NamedTuple-like objects
@@ -304,7 +302,6 @@ class ExeSQL(ToolBase, ABC):
                             converted_rows.append(list(row))
                     single_res = pd.DataFrame(converted_rows)
                 else:
-                    single_res = pd.DataFrame()
                     single_res.columns = [i[0] for i in cursor.description]
 
                 for col in single_res.columns:
