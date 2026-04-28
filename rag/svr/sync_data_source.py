@@ -637,8 +637,23 @@ class GoogleDrive(SyncBase):
     async def _generate(self, task: dict):
         """
         Generates document batches from Google Drive based on the given task configuration.
-        Returns a tuple of (document_batches_generator, current_file_list) if deleted file
-        syncing is enabled, otherwise (document_batches_generator, None).
+
+        Initializes the GoogleDriveConnector, handles OAuth credential rotation, and determines 
+        whether to perform a full re-index or an incremental sync based on the task parameters.
+        If 'sync_deleted_files' is enabled, it also captures a lightweight snapshot of the 
+        current drive state for stale document reconciliation.
+
+        Args:
+            task (dict): The synchronization task configuration dictionary containing 
+                         connector IDs, polling ranges, and user credentials.
+
+        Returns:
+            tuple or generator: Returns a tuple of `(document_batches_generator, current_file_list)` 
+                                if deleted file syncing is enabled and a snapshot is taken. 
+                                Otherwise, returns just the `document_batches_generator`.
+        
+        Raises:
+            ValueError: If the required credentials are not present in the task configuration.
         """
         connector_kwargs = {
             "include_shared_drives": self.conf.get("include_shared_drives", False),
@@ -679,13 +694,12 @@ class GoogleDrive(SyncBase):
                 SlimDoc = namedtuple('SlimDoc', ['id'])
                 
                 # Add observability timing so operators can track the O(N) cost
-                import time
-                snapshot_start = time.time()
+                snapshot_start = time.perf_counter()
                 
                 for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
                     file_list.extend(SlimDoc(doc.id) for doc in slim_batch)
                     
-                logging.info("Slim snapshot fetched %d files in %.2f seconds", len(file_list), time.time() - snapshot_start)
+                logging.info("Slim snapshot fetched %d files in %.2f seconds", len(file_list), time.perf_counter() - snapshot_start)
                 
         raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
         try:
@@ -696,6 +710,20 @@ class GoogleDrive(SyncBase):
             batch_size = INDEX_BATCH_SIZE
 
         def document_batches():
+            """
+            Yields batches of documents retrieved from the Google Drive API.
+
+            Utilizes a checkpointing system to handle pagination and large document sets 
+            without overwhelming memory. Accumulates pending documents until the specified 
+            `batch_size` is reached before yielding.
+
+            Yields:
+                list: A list of parsed document objects ready for ingestion into the Knowledge Base.
+
+            Raises:
+                RuntimeError: If the internal iteration limit (100,000) is exceeded, preventing 
+                              infinite loops during pagination failures.
+            """
             checkpoint = self.connector.build_dummy_checkpoint()
             pending_docs = []
             iterations = 0
@@ -733,7 +761,17 @@ class GoogleDrive(SyncBase):
         return document_batches(), file_list
 
     def _persist_rotated_credentials(self, connector_id: str, credentials: dict[str, Any]) -> None:
-        """Saves refreshed OAuth credentials back to the database configuration."""
+        """
+        Saves refreshed OAuth credentials back to the database configuration.
+
+        Ensures that when the Google Drive API issues a new access/refresh token pair, 
+        the updated credentials are permanently stored to prevent authentication failures 
+        on subsequent synchronization tasks.
+
+        Args:
+            connector_id (str): The unique identifier for the current database connector.
+            credentials (dict[str, Any]): The updated OAuth credential dictionary to persist.
+        """
         try:
             updated_conf = copy.deepcopy(self.conf)
             updated_conf["credentials"] = credentials
