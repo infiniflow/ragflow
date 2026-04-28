@@ -175,7 +175,9 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
 # Pre-install docling at build time (runtime install impossible in airgapped environments)
 ARG DOCLING_VERSION=2.71.0
 RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
-    uv pip install --no-cache-dir "docling==${DOCLING_VERSION}"
+    uv pip install --no-cache-dir "docling==${DOCLING_VERSION}" easyocr
+
+RUN .venv/bin/docling-tools models download --all -o /ragflow/docling_models
 
 COPY web web
 COPY docs docs
@@ -199,6 +201,8 @@ WORKDIR /ragflow
 # Copy Python environment and packages
 ENV VIRTUAL_ENV=/ragflow/.venv
 COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+COPY --from=builder /ragflow/docling_models /ragflow/docling_models
+ENV DOCLING_ARTIFACTS_PATH="/ragflow/docling_models"
 ENV PATH="${VIRTUAL_ENV}/bin:/usr/local/bin:/usr/bin:/bin"
 
 ENV PYTHONPATH=/ragflow/
