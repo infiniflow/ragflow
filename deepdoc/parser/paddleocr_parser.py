@@ -41,7 +41,7 @@ except Exception:
 from deepdoc.parser.utils import extract_pdf_outlines
 
 
-AlgorithmType = Literal["PaddleOCR-VL"]
+AlgorithmType = Literal["PaddleOCR-VL", "PP-OCRv5", "PP-StructureV3", "PaddleOCR-VL-1.5"]
 SectionTuple = tuple[str, ...]
 TableTuple = tuple[str, ...]
 ParseResult = tuple[list[SectionTuple], list[TableTuple]]
