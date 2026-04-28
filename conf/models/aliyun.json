@@ -10,7 +10,6 @@
     "embedding": "compatible-mode/v1/embeddings",
     "models": "api/v1/deployments/models"
   },
-  "series": "deepseek",
   "models": [
     {
       "name": "qwen-flash",

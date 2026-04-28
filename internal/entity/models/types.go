@@ -1,7 +1,5 @@
 package models
 
-import "fmt"
-
 // Message represents a chat message with role
 type Message struct {
 	Role    string
@@ -18,12 +16,8 @@ type ModelDriver interface {
 	ChatWithMessages(modelName string, apiKey *string, messages []Message, modelConfig *ChatConfig) (string, error)
 	// ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
 	ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error
-	// EncodeToEmbedding encodes a list of texts into embeddings
-	EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error)
-	// Encode encodes a list of texts into embeddings (convenience method)
-	Encode(modelName *string, texts []string, apiConfig *APIConfig) ([][]float64, error)
-	// EncodeQuery encodes a single query string into embedding (convenience method)
-	EncodeQuery(modelName *string, query string, apiConfig *APIConfig) ([]float64, error)
+	// Encode encodes a list of texts into embeddings
+	Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error)
 	// Rerank calculates similarity scores between query and texts
 	Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error)
 	// List suppported models
@@ -60,7 +54,7 @@ type ChatConfig struct {
 	TopP        *float64
 	DoSample    *bool
 	Stop        *[]string
-	ModelType   *string
+	ModelClass  *string
 	Effort      *string
 	Verbosity   *string
 }
@@ -87,23 +81,6 @@ func NewEmbeddingModel(driver ModelDriver, modelName *string, apiConfig *APIConf
 		ModelName:   modelName,
 		APIConfig:   apiConfig,
 	}
-}
-
-// Encode encodes a list of texts into embeddings
-func (e *EmbeddingModel) Encode(modelName *string, texts []string, apiConfig *APIConfig) ([][]float64, error) {
-	return e.ModelDriver.EncodeToEmbedding(modelName, texts, apiConfig, nil)
-}
-
-// EncodeQuery encodes a single query string into embedding
-func (e *EmbeddingModel) EncodeQuery(modelName *string, query string, apiConfig *APIConfig) ([]float64, error) {
-	embeddings, err := e.ModelDriver.Encode(modelName, []string{query}, apiConfig)
-	if err != nil {
-		return nil, err
-	}
-	if len(embeddings) == 0 {
-		return nil, fmt.Errorf("no embedding returned")
-	}
-	return embeddings[0], nil
 }
 
 // RerankModel wraps a ModelDriver with rerank-specific configuration

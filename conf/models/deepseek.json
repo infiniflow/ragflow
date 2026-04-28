@@ -7,7 +7,7 @@
     "chat": "chat/completions",
     "models": "models"
   },
-  "series": "deepseek",
+  "class": "deepseek",
   "models": [
     {
       "name": "deepseek-v4-flash",

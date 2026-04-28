@@ -56,7 +56,6 @@ func (z *SiliconflowModel) Name() string {
 	return "siliconflow"
 }
 
-
 // SiliconflowRerankRequest represents SILICONFLOW rerank request
 type SiliconflowRerankRequest struct {
 	Model           string   `json:"model"`
@@ -192,7 +191,7 @@ func (z *SiliconflowModel) Chat(modelName, message *string, apiConfig *APIConfig
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelType, &content)
+	thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelClass, &content)
 
 	chatResponse := &ChatResponse{
 		Answer:        answer,
@@ -382,8 +381,8 @@ func (z *SiliconflowModel) ChatStreamlyWithSender(modelName, message *string, ap
 	return scanner.Err()
 }
 
-// EncodeToEmbedding encodes a list of texts into embeddings
-func (s *SiliconflowModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+// Encode encodes a list of texts into embeddings
+func (s *SiliconflowModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
 	if len(texts) == 0 {
 		return [][]float64{}, nil
 	}
@@ -476,23 +475,6 @@ func (s *SiliconflowModel) EncodeToEmbedding(modelName *string, texts []string, 
 	}
 
 	return embeddings, nil
-}
-
-// Encode encodes a list of texts into embeddings (convenience method)
-func (s *SiliconflowModel) Encode(modelName *string, texts []string, apiConfig *APIConfig) ([][]float64, error) {
-	return s.EncodeToEmbedding(modelName, texts, apiConfig, nil)
-}
-
-// EncodeQuery encodes a single query string into embedding (convenience method)
-func (s *SiliconflowModel) EncodeQuery(modelName *string, query string, apiConfig *APIConfig) ([]float64, error) {
-	embeddings, err := s.Encode(modelName, []string{query}, apiConfig)
-	if err != nil {
-		return nil, err
-	}
-	if len(embeddings) == 0 {
-		return nil, fmt.Errorf("no embedding returned")
-	}
-	return embeddings[0], nil
 }
 
 func (z *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {

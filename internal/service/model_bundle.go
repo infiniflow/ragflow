@@ -90,7 +90,7 @@ func (b *ModelBundle) Encode(texts []string) ([][]float64, int64, error) {
 		return nil, 0, fmt.Errorf("model is not an embedding model")
 	}
 
-	embeddings, err := embeddingModel.Encode(&b.modelName, texts, b.apiConfig)
+	embeddings, err := embeddingModel.Encode(&b.modelName, texts, b.apiConfig, b.embeddingConfig)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -117,15 +117,18 @@ func (b *ModelBundle) EncodeQuery(query string) ([]float64, int64, error) {
 		return nil, 0, fmt.Errorf("model is not an embedding model")
 	}
 
-	embedding, err := embeddingModel.EncodeQuery(&b.modelName, query, b.apiConfig)
+	embeddings, err := embeddingModel.Encode(&b.modelName, []string{query}, b.apiConfig, b.embeddingConfig)
 	if err != nil {
 		return nil, 0, err
+	}
+	if len(embeddings) == 0 {
+		return nil, 0, fmt.Errorf("no embedding returned")
 	}
 
 	// TODO: Calculate actual token count
 	tokenCount := int64(len(query) / 4)
 
-	return embedding, tokenCount, nil
+	return embeddings[0], tokenCount, nil
 }
 
 // Chat sends a chat message and returns response
