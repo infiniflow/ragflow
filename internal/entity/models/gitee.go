@@ -367,6 +367,21 @@ func (z *GiteeModel) EncodeToEmbedding(modelName *string, texts []string, apiCon
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
+// Encode encodes a list of texts into embeddings (convenience method)
+func (z *GiteeModel) Encode(modelName *string, texts []string, apiConfig *APIConfig) ([][]float64, error) {
+	return nil, fmt.Errorf("%s, Encode not implemented", z.Name())
+}
+
+// EncodeQuery encodes a single query string into embedding (convenience method)
+func (z *GiteeModel) EncodeQuery(modelName *string, query string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, EncodeQuery not implemented", z.Name())
+}
+
+// Rerank calculates similarity scores between query and texts
+func (z *GiteeModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
+}
+
 func (z *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
 	if apiConfig.Region != nil {

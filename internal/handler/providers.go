@@ -607,6 +607,9 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 	}
 
 	modelName := c.Param("model_name")
+	if modelName != "" {
+		modelName = strings.TrimPrefix(modelName, "/")
+	}
 	if modelName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,

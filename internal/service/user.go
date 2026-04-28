@@ -152,10 +152,10 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 	now := time.Now().Unix()
 	user.CreateTime = &now
 	user.UpdateTime = &now
-	now_date := time.Now().Truncate(time.Second)
-	user.CreateDate = &now_date
-	user.UpdateDate = &now_date
-	user.LastLoginTime = &now_date
+	nowDate := time.Now().Truncate(time.Second)
+	user.CreateDate = &nowDate
+	user.UpdateDate = &nowDate
+	user.LastLoginTime = &nowDate
 
 	tenantName := req.Nickname + "'s Kingdom"
 
@@ -193,8 +193,8 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 	}
 	tenant.CreateTime = &now
 	tenant.UpdateTime = &now
-	tenant.CreateDate = &now_date
-	tenant.UpdateDate = &now_date
+	tenant.CreateDate = &nowDate
+	tenant.UpdateDate = &nowDate
 
 	userTenantID := utility.GenerateToken()
 	userTenant := &entity.UserTenant{
@@ -207,8 +207,8 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 	}
 	userTenant.CreateTime = &now
 	userTenant.UpdateTime = &now
-	userTenant.CreateDate = &now_date
-	userTenant.UpdateDate = &now_date
+	userTenant.CreateDate = &nowDate
+	userTenant.UpdateDate = &nowDate
 
 	fileID := utility.GenerateToken()
 	rootFile := &entity.File{
@@ -222,8 +222,8 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 	}
 	rootFile.CreateTime = &now
 	rootFile.UpdateTime = &now
-	rootFile.CreateDate = &now_date
-	rootFile.UpdateDate = &now_date
+	rootFile.CreateDate = &nowDate
+	rootFile.UpdateDate = &nowDate
 
 	tenantDAO := dao.NewTenantDAO()
 	userTenantDAO := dao.NewUserTenantDAO()
@@ -567,7 +567,7 @@ func (s *UserService) constantTimeCompare(a, b []byte) bool {
 }
 
 // loadPrivateKey loads and decrypts the RSA private key from conf/private.pem
-// nolint:staticcheck // DecryptPEMBlock is deprecated but still works for traditional PEM encryption
+// nolint:static check // DecryptPEMBlock is deprecated but still works for traditional PEM encryption
 func (s *UserService) loadPrivateKey() (*rsa.PrivateKey, error) {
 	// Read private key file
 	keyData, err := os.ReadFile("conf/private.pem")
