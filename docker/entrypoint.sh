@@ -280,7 +280,7 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
         while true; do
             echo "Attempt to start RAGFlow go server..."
-            wait_for_server "http://127.0.0.1:9380/healthz" "ragflow_server"
+            wait_for_server "http://127.0.0.1:9380/api/v1/system/healthz" "ragflow_server"
             echo "Starting RAGFlow go server..."
             bin/server_main
             sleep 1;

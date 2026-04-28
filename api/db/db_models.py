@@ -749,6 +749,7 @@ class Tenant(DataBaseModel):
     tenant_rerank_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
     tts_id = CharField(max_length=256, null=True, help_text="default tts model ID", index=True)
     tenant_tts_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
+    ocr_id = CharField(max_length=256, null=True, help_text="default OCR model ID", index=True)
     parser_ids = CharField(max_length=256, null=False, help_text="document processors", index=True)
     credit = IntegerField(default=512, index=True)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
@@ -1334,6 +1335,66 @@ class SystemSettings(DataBaseModel):
     class Meta:
         db_table = "system_settings"
 
+class TenantModelProvider(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    provider_name = CharField(max_length=128, null=False, index=False, help_text="LLM provider name")
+    tenant_id = CharField(max_length=32, null=False, index=True)
+
+    class Meta:
+        db_table = "tenant_model_provider"
+        indexes = (
+            (("tenant_id", "provider_name"), True),
+        )
+
+class TenantModelInstance(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    instance_name = CharField(max_length=128, null=False, index=False, help_text="Model instance name")
+    provider_id = CharField(max_length=32, null=False, index=False)
+    api_key = CharField(max_length=512, null=False, index=False, help_text="API key")
+    status = CharField(max_length=32, default="active", index=False)
+    extra = CharField(max_length=512, default="active", index=False)
+
+    class Meta:
+        db_table = "tenant_model_instance"
+        indexes = (
+            (("api_key", "provider_id"), True),
+        )
+
+
+class TenantModel(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    model_name = CharField(max_length=128, null=True, index=False, help_text="Model name")
+    provider_id = CharField(max_length=32, null=False, index=False)
+    instance_id = CharField(max_length=32, null=False, index=True)
+    model_type = CharField(max_length=32, null=False, index=False, help_text="Model type")
+    status = CharField(max_length=32, default="active", index=False)
+
+    class Meta:
+        db_table = "tenant_model"
+
+
+class TenantModelGroup(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    group_type = CharField(max_length=32, null=False, index=False, help_text="Group type")
+    model_name = CharField(max_length=128, null=True, index=False, help_text="Model name")
+    strategy = CharField(max_length=32, default="weighted", index=False, help_text="Routing strategy")
+
+    class Meta:
+        db_table = "tenant_model_group"
+
+class TenantModelGroupMapping(DataBaseModel):
+    group_id = CharField(max_length=32, null=False, index=True, help_text="Group ID")
+    provider_id = CharField(max_length=32, null=False, index=False)
+    instance_id = CharField(max_length=32, null=False, index=False)
+    model_id = CharField(max_length=32, null=False, index=True)
+    weight = IntegerField(default=100, index=False, help_text="Routing weight")
+    status = CharField(max_length=32, default="active", index=False)
+
+    class Meta:
+        db_table = "tenant_model_group_mapping"
+        primary_key = CompositeKey("group_id", "provider_id", "instance_id", "model_id")
+
+
 def alter_db_add_column(migrator, table_name, column_name, column_type):
     try:
         migrate(migrator.add_column(table_name, column_name, column_type))
@@ -1650,6 +1711,7 @@ def migrate_db():
     alter_db_add_column(migrator, "api_4_conversation", "version_title", CharField(max_length=255, null=True, help_text="canvas version title when session created", index=False))
     alter_db_column_type(migrator, "document", "size", BigIntegerField(default=0, index=True))
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
+    alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
     logging.disable(logging.NOTSET)
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)

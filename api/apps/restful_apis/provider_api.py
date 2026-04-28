@@ -34,10 +34,6 @@ def list_providers(tenant_id: str = None):
     """
     List providers.
     ---
-    tags:
-      - Providers
-    security:
-      - ApiKeyAuth: []
     parameters:
       - in: query
         name: available
@@ -101,12 +97,6 @@ async def add_provider(tenant_id: str = None):
             provider_name:
               type: string
               description: Provider/factory name.
-            api_key:
-              type: string
-              description: API key for the provider.
-            api_base:
-              type: string
-              description: API base URL (optional).
     responses:
       200:
         description: Provider added successfully.
@@ -118,11 +108,9 @@ async def add_provider(tenant_id: str = None):
         return get_error_argument_result(message="provider_name is required")
 
     provider_name = data["provider_name"]
-    api_key = data.get("api_key", "")
-    api_base = data.get("api_base", "")
 
     try:
-        success, err = provider_api_service.add_provider(tenant_id, provider_name, api_key, api_base)
+        success, err = provider_api_service.add_provider(tenant_id, provider_name)
         if success:
             return get_result()
         else:

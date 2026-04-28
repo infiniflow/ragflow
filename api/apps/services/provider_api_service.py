@@ -16,13 +16,15 @@
 import logging
 
 from common.constants import LLMType, StatusEnum
+from common.settings import FACTORY_LLM_INFOS
 from api.db.db_models import TenantLLM
 from api.db.services.llm_service import LLMService
-from api.db.services.tenant_llm_service import LLMFactoriesService, TenantLLMService
+from api.db.services.tenant_llm_service import TenantLLMService
+from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.utils.api_utils import get_allowed_llm_factories
 
 
-def list_providers(tenant_id: str, available_only: bool = False):
+def list_providers(tenant_id: str, all_available: bool = False):
     """
     List providers for a tenant.
 
@@ -30,80 +32,81 @@ def list_providers(tenant_id: str, available_only: bool = False):
     Otherwise, list providers that the tenant has configured.
 
     :param tenant_id: tenant ID
-    :param available_only: whether to list all available providers
+    :param all_available: whether to list all available providers
     :return: (success, result)
     """
-    if available_only:
-        factories = get_allowed_llm_factories()
+    if not FACTORY_LLM_INFOS:
+        return False, []
+
+    if all_available:
         providers = []
-        for f in factories:
-            f_dict = f.to_dict()
-            f_dict.pop("url_suffix", None)
-            f_dict.pop("tags", None)
-            providers.append(f_dict)
+        for factory_info in FACTORY_LLM_INFOS:
+            model_types = sorted(set(
+                llm["model_type"]
+                for llm in factory_info.get("llm", [])
+                if llm.get("model_type")
+            ))
+            providers.append({
+                "model_types": model_types,
+                "name": factory_info["name"],
+                "url": {
+                    "default": factory_info.get("url", "")
+                }
+            })
         return True, providers
 
     # List tenant-configured providers
-    objs = TenantLLMService.query(tenant_id=tenant_id)
-    factory_names = set()
-    for o in objs:
-        if o.api_key:
-            factory_names.add(o.llm_factory)
+    factory_names = TenantModelProviderService.list_provider_names_by_tenant_id(tenant_id)
 
     providers = []
+    factory_info_mapping = {f["name"]: f for f in FACTORY_LLM_INFOS}
     for name in factory_names:
-        fac = LLMFactoriesService.query(name=name)
-        if fac:
-            f_dict = fac[0].to_dict()
-            providers.append(f_dict)
-        else:
-            providers.append({"name": name})
+        if factory_info_mapping.get(name):
+            factory_info = factory_info_mapping["name"]
+            model_types = sorted(set(
+                llm["model_type"]
+                for llm in factory_info.get("llm", [])
+                if llm.get("model_type")
+            ))
+            providers.append({
+                "model_types": model_types,
+                "name": factory_info["name"],
+                "url": {
+                    "default": factory_info.get("url", "")
+                }
+            })
 
     return True, providers
 
 
-def add_provider(tenant_id: str, provider_name: str, api_key: str, api_base: str = ""):
+def add_provider(tenant_id: str, provider_name: str):
     """
     Add a provider (factory) for a tenant by creating TenantLLM entries
-    for all models under the given factory with the provided api_key.
 
     :param tenant_id: tenant ID
     :param provider_name: provider/factory name
-    :param api_key: API key
-    :param api_base: API base URL
     :return: (success, result_or_error_message)
     """
+    if not FACTORY_LLM_INFOS:
+        return False, "No providers found"
     # Check if factory is allowed
-    allowed_factories = [f.name for f in get_allowed_llm_factories()]
+    allowed_factories = [f["name"] for f in FACTORY_LLM_INFOS]
     if provider_name not in allowed_factories:
         return False, f"Provider '{provider_name}' is not allowed"
 
-    # Get all models for this factory
-    llms = LLMService.query(fid=provider_name)
-    if not llms:
-        return False, f"No models found for provider '{provider_name}'"
+    existing = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    if existing:
+        return False, f"Provider {provider_name} already exists"
 
-    for llm in llms:
-        llm_config = {
-            "api_key": api_key,
-            "api_base": api_base,
-            "max_tokens": llm.max_tokens,
-        }
-        if not TenantLLMService.filter_update(
-            [TenantLLM.tenant_id == tenant_id, TenantLLM.llm_factory == provider_name, TenantLLM.llm_name == llm.llm_name],
-            llm_config,
-        ):
-            TenantLLMService.save(
-                tenant_id=tenant_id,
-                llm_factory=provider_name,
-                llm_name=llm.llm_name,
-                model_type=llm.model_type,
-                api_key=api_key,
-                api_base=api_base,
-                max_tokens=llm.max_tokens,
-            )
-
-    return True, None
+    try:
+        TenantModelProviderService.insert(
+            tenant_id=tenant_id,
+            provider_name=provider_name
+        )
+        return True, "success"
+    except Exception as e:
+        logging.exception(str(e))
+        return False, "Failed to add provider"
 
 
 def delete_provider(tenant_id: str, provider_name: str):
@@ -127,10 +130,17 @@ def show_provider(provider_name: str):
     :param provider_name: provider/factory name
     :return: (success, result_or_error_message)
     """
-    fac = LLMFactoriesService.query(name=provider_name)
-    if not fac:
+    fac_list = [f for f in FACTORY_LLM_INFOS if f["name"]==provider_name]
+    if not fac_list:
         return False, f"Provider '{provider_name}' not found"
-    return True, fac[0].to_dict()
+    factory_info = fac_list[0]
+    return True, {
+        "base_url": {
+            "default": factory_info.get("url", "")
+        },
+        "name": factory_info["name"],
+        "total_models": len(factory_info.get("llm", []))
+    }
 
 
 def list_provider_models(provider_name: str):
