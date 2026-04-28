@@ -68,6 +68,15 @@ class StepFunSeq2txt(GPTSeq2txt):
         super().__init__(key, model_name=model_name, base_url=base_url, **kwargs)
 
 
+class FuturMixSeq2txt(GPTSeq2txt):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name="whisper-1", base_url="https://futurmix.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name=model_name, base_url=base_url, **kwargs)
+
+
 class QWenSeq2txt(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
 

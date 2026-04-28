@@ -1254,6 +1254,15 @@ class MoonshotCV(GptV4):
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
 
 
+class FuturMixCV(GptV4):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://futurmix.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+
+
 class RAGconCV(GptV4):
     """
     RAGcon CV Provider - routes through LiteLLM proxy

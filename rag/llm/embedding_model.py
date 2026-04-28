@@ -179,6 +179,15 @@ class AstraflowCNEmbed(OpenAIEmbed):
         super().__init__(key, model_name, base_url)
 
 
+class FuturMixEmbed(OpenAIEmbed):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name="text-embedding-3-small", base_url="https://futurmix.ai/v1"):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name, base_url)
+
+
 class BaiChuanEmbed(OpenAIEmbed):
     _FACTORY_NAME = "BaiChuan"
 
