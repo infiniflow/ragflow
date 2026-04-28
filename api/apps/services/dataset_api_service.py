@@ -936,7 +936,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     question = req.get("question", "")
     doc_ids = req.get("doc_ids", [])
     use_kg = req.get("use_kg", False)
-    top = int(req.get("top_k", 1024))
+    top = max(1, min(int(req.get("top_k", 1024)), 2048))
     langs = req.get("cross_languages", [])
 
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
