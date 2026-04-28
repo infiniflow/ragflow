@@ -131,17 +131,23 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 			}
 			switch e := expr.(type) {
 			case string:
-				hasTextMatch = true
-				matchText = &types.MatchTextExpr{
-					MatchingText: e,
-					TopN:         pageSize,
+				if e != "" {
+					hasTextMatch = true
+					matchText = &types.MatchTextExpr{
+						MatchingText: e,
+						TopN:         pageSize,
+					}
 				}
 			case *types.MatchTextExpr:
-				hasTextMatch = true
-				matchText = e
+				if e.MatchingText != "" {
+					hasTextMatch = true
+					matchText = e
+				}
 			case *types.MatchDenseExpr:
-				hasVectorMatch = true
-				matchDense = e
+				if len(e.EmbeddingData) > 0 {
+					hasVectorMatch = true
+					matchDense = e
+				}
 			}
 		}
 	}

@@ -676,7 +676,7 @@ func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, ten
 	// Truncate text to prevent exceeding model's max length (consistent with Python implementation)
 	truncatedText := truncate(text, defaultMaxLength-10)
 
-	vector, err := embeddingModel.EncodeQuery(nil, truncatedText, nil)
+	vector, err := embeddingModel.ModelDriver.EncodeQuery(embeddingModel.ModelName, truncatedText, embeddingModel.APIConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode query: %w", err)
 	}
