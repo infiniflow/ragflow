@@ -144,26 +144,12 @@ class BoxConnector(LoadConnector, PollConnector):
 
     def retrieve_all_slim_docs_perm_sync(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
         callback: Any = None,
     ) -> GenerateSlimDocumentOutput:
         del callback
 
         batch: list[SlimDocument] = []
         for file, _semantic_identifier in self._iter_files_recursive(folder_id=self.folder_id):
-            modified_time: SecondsSinceUnixEpoch | None = None
-            raw_time = (
-                getattr(file, "created_at", None)
-                or getattr(file, "content_created_at", None)
-            )
-            if raw_time:
-                modified_time = self._box_datetime_to_epoch_seconds(raw_time)
-                if start is not None and modified_time <= start:
-                    continue
-                if end is not None and modified_time > end:
-                    continue
-
             batch.append(SlimDocument(id=f"box:{file.id}"))
             if len(batch) >= self.batch_size:
                 yield batch

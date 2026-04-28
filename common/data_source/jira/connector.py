@@ -380,16 +380,14 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
 
     def retrieve_all_slim_docs_perm_sync(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
-        callback: Any = None,  # noqa: ARG002 - maintained for interface compatibility
+        callback: Any = None,  # noqa: ARG002 - callback interface hook
     ) -> Generator[list[SlimDocument], None, None]:
         """Return lightweight references to Jira issues (used for permission syncing)."""
         if not self.jira_client:
             raise ConnectorMissingCredentialError("Jira")
 
-        start_ts = start if start is not None else 0
-        end_ts = end if end is not None else datetime.now(timezone.utc).timestamp()
+        start_ts = 0
+        end_ts = datetime.now(timezone.utc).timestamp()
         jql = self._build_jql(start_ts, end_ts)
 
         checkpoint = self.build_dummy_checkpoint()
