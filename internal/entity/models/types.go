@@ -52,7 +52,7 @@ type ChatConfig struct {
 	TopP        *float64
 	DoSample    *bool
 	Stop        *[]string
-	ModelSeries *string
+	ModelType   *string
 	Effort      *string
 	Verbosity   *string
 }

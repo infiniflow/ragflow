@@ -19,7 +19,7 @@ import copy
 import re
 
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper
-from common.constants import ParserType
+from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, \
     tokenize_chunks, attach_media_context
 from deepdoc.parser import PdfParser
@@ -34,7 +34,7 @@ class Pdf(PdfParser):
         super().__init__()
 
     def __call__(self, filename, binary=None, from_page=0,
-                 to_page=100000, zoomin=3, callback=None):
+                 to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None):
         from timeit import default_timer as timer
         start = timer()
         callback(msg="OCR started")
@@ -146,7 +146,7 @@ class Pdf(PdfParser):
         }
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000,
+def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER,
           lang="Chinese", callback=None, **kwargs):
     """
         Only pdf is supported.

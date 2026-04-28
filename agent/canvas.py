@@ -354,23 +354,21 @@ class Canvas(Graph):
                 key = k[4:]
                 if key in self.variables:
                     variable = self.variables[key]
-                    if variable["type"] == "string":
-                        self.globals[k] = ""
-                        variable["value"] = ""
-                    elif variable["type"] == "number":
-                        self.globals[k] = 0
-                        variable["value"] = 0
-                    elif variable["type"] == "boolean":
-                        self.globals[k] = False
-                        variable["value"] = False
-                    elif variable["type"] == "object":
-                        self.globals[k] = {}
-                        variable["value"] = {}
-                    elif variable["type"].startswith("array"):
-                        self.globals[k] = []
-                        variable["value"] = []
+                    value = variable.get("value")
+                    if value is not None:
+                        self.globals[k] = value
                     else:
-                        self.globals[k] = ""
+                        var_type = variable.get("type", "")
+                        if var_type == "number":
+                            self.globals[k] = 0
+                        elif var_type == "boolean":
+                            self.globals[k] = False
+                        elif var_type == "object":
+                            self.globals[k] = {}
+                        elif var_type.startswith("array"):
+                            self.globals[k] = []
+                        else:  # "string" or unknown
+                            self.globals[k] = ""
                 else:
                     self.globals[k] = ""
 

@@ -16,7 +16,11 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "kimi-k2.5",
@@ -24,7 +28,11 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "moonshot-v1-8k",
@@ -72,20 +80,5 @@
         "vision"
       ]
     }
-  ],
-  "features": {
-    "thinking": {
-      "default_value": true,
-      "supported_models": [
-        "kimi-k2.6",
-        "kimi-k2.5"
-      ]
-    },
-    "clear_thinking": {
-      "default_value": true,
-      "supported_models": [
-        "kimi-k2.6"
-      ]
-    }
-  }
+  ]
 }

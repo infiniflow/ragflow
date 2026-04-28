@@ -29,11 +29,11 @@ class TestRelatedQuestions:
     @pytest.mark.p2
     def test_related_questions_missing_question(self, HttpApiAuth):
         res = related_questions(HttpApiAuth, {"industry": "search"})
-        assert res["code"] == 102, res
+        assert res["code"] == 101, res
         assert "question" in res.get("message", ""), res
 
     @pytest.mark.p2
     def test_related_questions_invalid_auth(self):
         res = related_questions(RAGFlowHttpApiAuth(INVALID_API_TOKEN), {"question": "ragflow", "industry": "search"})
-        assert res["code"] == 109, res
+        assert res["code"] == 102, res
         assert "API key is invalid" in res.get("message", ""), res

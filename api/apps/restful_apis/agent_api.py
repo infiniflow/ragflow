@@ -611,6 +611,7 @@ def delete_agent(agent_id, tenant_id):
 async def update_agent(agent_id, tenant_id):
     req = {k: v for k, v in (await get_request_json()).items() if v is not None}
     req["user_id"] = tenant_id
+    req["release"] = bool(req.get("release", ""))
 
     if req.get("dsl") is not None:
         try:
@@ -646,6 +647,7 @@ async def update_agent(agent_id, tenant_id):
             user_canvas_id=agent_id,
             title=UserCanvasVersionService.build_version_title(owner_nickname, agent_title_for_version),
             dsl=req["dsl"],
+            release=req.get("release"),
         )
         replica_ok = CanvasReplicaService.replace_for_set(
             canvas_id=agent_id,

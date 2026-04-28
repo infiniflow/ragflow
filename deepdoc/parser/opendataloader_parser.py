@@ -15,6 +15,8 @@ import pdfplumber
 import requests
 from PIL import Image
 
+from common.constants import MAXIMUM_PAGE_NUMBER
+
 try:
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 except Exception:
@@ -153,7 +155,7 @@ class OpenDataLoaderParser(RAGFlowPdfParser):
             self.logger.warning(f"[OpenDataLoader] Health check failed: {exc}")
             return False
 
-    def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=600, callback=None):
+    def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         self.page_from = page_from
         self.page_to = page_to
         bytes_io = None

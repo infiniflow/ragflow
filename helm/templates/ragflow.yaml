@@ -55,8 +55,8 @@ spec:
             name: admin
           {{- end }}
         volumeMounts:
-          - mountPath: /etc/nginx/conf.d/ragflow.conf
-            subPath: ragflow.conf
+          - mountPath: /etc/nginx/conf.d/ragflow.conf.python
+            subPath: ragflow.conf.python
             name: nginx-config-volume
           - mountPath: /etc/nginx/proxy.conf
             subPath: proxy.conf

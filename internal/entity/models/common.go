@@ -18,8 +18,8 @@ package models
 
 import "strings"
 
-func GetThinkingAndAnswer(modelSeries *string, content *string) (*string, *string) {
-	switch *modelSeries {
+func GetThinkingAndAnswer(modelType *string, content *string) (*string, *string) {
+	switch *modelType {
 	case "qwen3":
 		return extractThinkContent(content)
 	}

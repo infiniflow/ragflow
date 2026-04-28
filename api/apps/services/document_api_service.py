@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
@@ -58,7 +60,7 @@ def update_document_name_only(document_id, req_doc_name):
         )
     return None
 
-def update_chunk_method_only(req, doc, dataset_id, tenant_id):
+def update_chunk_method(req, doc, tenant_id):
     """
     Update chunk method only (without validation).
 
@@ -69,28 +71,56 @@ def update_chunk_method_only(req, doc, dataset_id, tenant_id):
     Args:
         req: The request dictionary containing chunk_method and parser_config.
         doc: The document model from the database.
-        dataset_id: The ID of the dataset containing the document.
         tenant_id: The tenant ID for the document store.
 
     Returns:
         None if successful, or an error result dictionary if failed.
     """
     if doc.parser_id.lower() != req["chunk_method"].lower():
-        # if chunk method changed
-        e = DocumentService.update_by_id(
-            doc.id,
-            {
-                "parser_id": req["chunk_method"],
-                "progress": 0,
-                "progress_msg": "",
-                "run": TaskStatus.UNSTART.value,
-            },
-        )
-        if not e:
-            return get_error_data_result(message="Document not found!")
+        # if chunk method changed, reset document for reparse
+        result = reset_document_for_reparse(doc, tenant_id, parser_id=req["chunk_method"])
+        if result:
+            return result
     if not req.get("parser_config"):
         req["parser_config"] = get_parser_config(req["chunk_method"], req.get("parser_config"))
         DocumentService.update_parser_config(doc.id, req["parser_config"])
+    return None
+
+
+def reset_document_for_reparse(doc, tenant_id, parser_id=None, pipeline_id=None):
+    """
+    Reset document for reparsing.
+
+    Updates the parser_id and/or pipeline_id for a document, resets its progress,
+    clears existing chunks from the document store, and removes chunk images.
+
+    Args:
+        doc: The document model from the database.
+        tenant_id: The tenant ID for the document store.
+        parser_id: Optional new parser_id (chunk method). If None, keeps existing.
+        pipeline_id: Optional new pipeline_id. If None, keeps existing.
+
+    Returns:
+        None if successful, or an error result dictionary if failed.
+    """
+
+    # Build update fields
+    update_fields = {
+        "progress": 0,
+        "progress_msg": "",
+        "run": TaskStatus.UNSTART.value,
+    }
+    if parser_id is not None:
+        update_fields["parser_id"] = parser_id
+    if pipeline_id is not None:
+        update_fields["pipeline_id"] = pipeline_id
+
+    # Update document
+    e = DocumentService.update_by_id(doc.id, update_fields)
+    if not e:
+        return get_error_data_result(message="Document not found!")
+
+    # Delete chunks from document store
     if doc.token_num > 0:
         e = DocumentService.increment_chunk_num(
             doc.id,
@@ -98,11 +128,19 @@ def update_chunk_method_only(req, doc, dataset_id, tenant_id):
             doc.token_num * -1,
             doc.chunk_num * -1,
             doc.process_duration * -1,
-            )
+        )
         if not e:
             return get_error_data_result(message="Document not found!")
-        settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), dataset_id)
+        settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+
+    # Delete chunk images
+    try:
+        DocumentService.delete_chunk_images(doc, tenant_id)
+    except Exception as e:
+        logging.error(f"error when delete chunk images:{e}")
+
     return None
+
 
 def update_document_status_only(status:int, doc, kb):
     """

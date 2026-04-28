@@ -411,6 +411,7 @@ class UpdateDocumentReq(Base):
     model_config = ConfigDict(extra='ignore')
     name: Annotated[str | None, Field(default=None, max_length=65535)]
     chunk_method: Annotated[str | None, Field(default=None, max_length=65535)]
+    pipeline_id: Annotated[str | None, Field(default=None, max_length=65535)]
     enabled: Annotated[int | None, Field(default=None, ge=0, le=1)]
     chunk_count: Annotated[int | None, Field(default=None, ge=0)]
     token_count: Annotated[int | None, Field(default=None, ge=0)]

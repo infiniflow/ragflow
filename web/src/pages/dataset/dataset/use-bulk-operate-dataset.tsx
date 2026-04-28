@@ -9,6 +9,7 @@ import {
   useSetDocumentStatus,
 } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
+import { useKnowledgeBaseContext } from '@/pages/dataset/contexts/knowledge-base-context';
 import {
   LucideCircleX,
   LucideCylinder,
@@ -34,6 +35,7 @@ export function useBulkOperateDataset({
     rowSelection,
     documents,
   );
+  const { knowledgeBase } = useKnowledgeBaseContext();
 
   const { runDocumentByIds } = useRunDocument();
   const { setDocumentStatus } = useSetDocumentStatus();
@@ -85,9 +87,13 @@ export function useBulkOperateDataset({
 
   const onChangeStatus = useCallback(
     (enabled: boolean) => {
-      setDocumentStatus({ status: enabled, documentId: selectedRowKeys });
+      setDocumentStatus({
+        status: enabled,
+        documentId: selectedRowKeys,
+        datasetId: knowledgeBase?.id,
+      });
     },
-    [selectedRowKeys, setDocumentStatus],
+    [selectedRowKeys, setDocumentStatus, knowledgeBase],
   );
 
   const handleEnableClick = useCallback(() => {

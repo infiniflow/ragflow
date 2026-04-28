@@ -19,7 +19,7 @@ const {
   chatsTts,
   chatsMindmap,
   chatsRelatedQuestions,
-  uploadAndParse,
+  documentInfoUpload,
   fetchExternalChatInfo,
 } = api;
 
@@ -92,9 +92,9 @@ const methods = {
     url: chatsRelatedQuestions,
     method: 'post',
   },
-  uploadAndParse: {
+  documentInfoUpload: {
     method: 'post',
-    url: uploadAndParse,
+    url: documentInfoUpload,
   },
   fetchExternalChatInfo: {
     url: fetchExternalChatInfo,

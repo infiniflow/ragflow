@@ -336,7 +336,7 @@ def update_documents_metadata(auth, dataset_id, payload=None):
 
 # CHAT COMPLETIONS AND RELATED QUESTIONS
 def related_questions(auth, payload=None, *, headers=HEADERS):
-    url = f"{HOST_ADDRESS}/api/{VERSION}/sessions/related_questions"
+    url = f"{HOST_ADDRESS}/api/{VERSION}/searchbots/related_questions"
     res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 
@@ -430,7 +430,8 @@ def chat_completions_openai(auth, chat_id, payload=None, *, headers=HEADERS):
     Returns:
         Response JSON in OpenAI chat completions format with usage information
     """
-    url = f"{HOST_ADDRESS}/api/{VERSION}/chats_openai/{chat_id}/chat/completions"
+    url = f"{HOST_ADDRESS}/api/{VERSION}/openai/{chat_id}/chat/completions"
+    payload = dict(payload or {})
     res = requests.post(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
 

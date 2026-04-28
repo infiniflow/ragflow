@@ -107,11 +107,11 @@ const methods = {
   },
   cancelDataflow: {
     url: cancelDataflow,
-    method: 'put',
+    method: 'post',
   },
   cancelCanvas: {
     url: cancelCanvas,
-    method: 'put',
+    method: 'post',
   },
   createAgentSession: {
     url: api.createAgentSession,

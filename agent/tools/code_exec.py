@@ -533,7 +533,7 @@ class CodeExec(ToolBase, ABC):
 
                 settings.STORAGE_IMPL.put(SANDBOX_ARTIFACT_BUCKET, storage_name, binary)
 
-                url = f"/v1/document/artifact/{storage_name}"
+                url = f"/api/v1/documents/artifact/{storage_name}"
                 uploaded.append(
                     {
                         "name": name,

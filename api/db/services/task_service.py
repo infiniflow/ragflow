@@ -29,7 +29,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp
-from common.constants import StatusEnum, TaskStatus
+from common.constants import StatusEnum, TaskStatus, MAXIMUM_PAGE_NUMBER, MAXIMUM_TASK_PAGE_NUMBER
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.utils.redis_conn import REDIS_CONN
 from common import settings
@@ -379,7 +379,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
             "doc_id": doc["id"],
             "progress": 0.0,
             "from_page": 0,
-            "to_page": 100000000,
+            "to_page": MAXIMUM_TASK_PAGE_NUMBER,
             "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
@@ -395,8 +395,8 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         if doc["parser_id"] == "paper":
             page_size = doc["parser_config"].get("task_page_size") or 22
         if doc["parser_id"] in ["one", "knowledge_graph"] or do_layout != "DeepDOC" or doc["parser_config"].get("toc_extraction", False):
-            page_size = 10 ** 9
-        page_ranges = doc["parser_config"].get("pages") or [(1, 10 ** 5)]
+            page_size = MAXIMUM_TASK_PAGE_NUMBER
+        page_ranges = doc["parser_config"].get("pages") or [(1, MAXIMUM_PAGE_NUMBER)]
         for s, e in page_ranges:
             s -= 1
             s = max(0, s)
@@ -495,7 +495,7 @@ def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: 
         return 0
     task["chunk_ids"] = prev_task["chunk_ids"]
     task["progress"] = 1.0
-    if "from_page" in task and "to_page" in task and int(task['to_page']) - int(task['from_page']) >= 10 ** 6:
+    if "from_page" in task and "to_page" in task and (int(task['to_page']) - int(task['from_page']) >= 10 ** 6 or (int(task['from_page']) == MAXIMUM_TASK_PAGE_NUMBER and int(task['to_page']) == MAXIMUM_TASK_PAGE_NUMBER)):
         task["progress_msg"] = f"Page({task['from_page']}~{task['to_page']}): "
     else:
         task["progress_msg"] = ""
@@ -530,7 +530,7 @@ def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str=CANVAS_DE
         id=task_id,
         doc_id=doc_id,
         from_page=0,
-        to_page=100000000,
+        to_page=MAXIMUM_TASK_PAGE_NUMBER,
         task_type="dataflow" if not rerun else "dataflow_rerun",
         priority=priority,
         begin_at= datetime.now().strftime("%Y-%m-%d %H:%M:%S"),

@@ -55,7 +55,7 @@ from api.utils.configs import deserialize_b64, serialize_b64
 
 from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp
 from common.decorator import singleton
-from common.constants import ParserType
+from common.constants import ParserType, MAXIMUM_TASK_PAGE_NUMBER
 from common import settings
 
 
@@ -945,7 +945,7 @@ class Task(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     doc_id = CharField(max_length=32, null=False, index=True)
     from_page = IntegerField(default=0)
-    to_page = IntegerField(default=100000000)
+    to_page = IntegerField(default=MAXIMUM_TASK_PAGE_NUMBER)
     task_type = CharField(max_length=32, null=False, default="")
     priority = IntegerField(default=0)
 

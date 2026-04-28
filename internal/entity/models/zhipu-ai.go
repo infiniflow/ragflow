@@ -208,9 +208,9 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, apiKey *string, messag
 
 	// Build request body
 	reqBody := map[string]interface{}{
-		"model":      modelName,
-		"messages":   apiMessages,
-		"stream":     false,
+		"model":       modelName,
+		"messages":    apiMessages,
+		"stream":      false,
 		"temperature": 1,
 	}
 
@@ -404,16 +404,16 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, message *string, apiCon
 			continue
 		}
 
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
+		reasoningContent, ok := delta["reasoning_content"].(string)
+		if ok && reasoningContent != "" {
+			if err := sender(nil, &reasoningContent); err != nil {
 				return err
 			}
 		}
 
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
+		content, ok := delta["content"].(string)
+		if ok && content != "" {
+			if err := sender(&content, nil); err != nil {
 				return err
 			}
 		}

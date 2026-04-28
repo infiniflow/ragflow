@@ -1,0 +1,37 @@
+{
+  "name": "Google",
+  "url": {
+    "default": "https://generativelanguage.googleapis.com"
+  },
+  "url_suffix": {
+    "models": "v1beta/models"
+  },
+  "series": "gemini",
+  "models": [
+    {
+      "name": "gemini-2.5-flash",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    }
+  ],
+  "features": {
+    "thinking": {
+      "default_value": true,
+      "supported_models": [
+        "gemini-2.5-flash"
+      ]
+    },
+    "reasoning_effort": {
+      "default_value": "high",
+      "supported_modes": [
+        "gemini-2.5-flash"
+      ]
+    }
+  }
+}

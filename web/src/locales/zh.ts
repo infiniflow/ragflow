@@ -1265,7 +1265,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       includeHeadingContentTip:
         '启用后，标题下的直接内容将作为一个独立的块保留。子块仅保留标题路径。',
       rootAsHeading: '将首个切片设为 H0 标题',
-      rootAsHeadingTip: '将首个切片设为全局标题，以确保整个文档层级结构中拥有一致的上下文信息。该功能尤其适用于首段包含关键信息的简历。',
+      rootAsHeadingTip:
+        '将首个切片设为全局标题，以确保整个文档层级结构中拥有一致的上下文信息。该功能尤其适用于首段包含关键信息的简历。',
       hierarchyTip: `构建标题树并生成独立的块，每个块携带其完整的祖先标题路径（例如 第1部分 › 第3章 › 第2节 + 正文）。\n
 适用场景：具有独立的、结构性重要章节的文档——如法律条款、法规、合同和技术规范——其中每个块即使没有上下文也能通过其结构位置来识别。`,
       groupTip: `在选定的标题级别将文档扁平分割，并自动合并相邻的小节以保持内容连续性。不注入父标题路径。\n
@@ -2079,14 +2080,17 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
         renameKeys: '重命名键',
       },
       ListOperationsOptions: {
-        topN: '取前N项',
-        head: '取前第N项',
-        tail: '取后第N项',
+        nth: '第N项',
+        head: '取前N项',
+        tail: '取后N项',
         sort: '排序',
         filter: '筛选',
         dropDuplicates: '去重',
       },
       sortMethod: '排序方式',
+      strictMode: '严格模式',
+      strictModeTip:
+        '关闭时使用宽松模式，非法 n 返回空结果；开启时使用严格模式，超出范围的 n 会直接报错。',
       SortMethodOptions: {
         asc: '升序',
         desc: '降序',

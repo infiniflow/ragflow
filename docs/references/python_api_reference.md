@@ -46,9 +46,13 @@ Creates a model response for the given historical chat conversation via OpenAI's
 
 #### Parameters
 
+##### chat_id: `string`, *Required*
+
+Existing chat assistant ID. This value is part of the request path: `/api/v1/openai/<chat_id>/chat/completions`.
+
 ##### model: `string`, *Required*
 
-The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
+The model used to generate the response. You may also use the legacy placeholder value `"model"` to keep using the chat assistant's configured model.
 
 ##### messages: `list[object]`, *Required*
 
@@ -65,20 +69,12 @@ Whether to receive the response as a stream. Set this to `false` explicitly if y
 
 #### Examples
 
-> **Note**
-> Streaming via `client.chat.completions.create(stream=True, ...)` does not
-> return `reference` currently because `reference` is only exposed in the
-> non-stream response payload. The only way to return `reference` is non-stream
-> mode with `with_raw_response`.
-:::caution NOTE
-Streaming via `client.chat.completions.create(stream=True, ...)` does not return `reference` because it is *only* included in the raw response payload in non-stream mode. To return `reference`, set `stream=False`.
-:::
 ```python
 from openai import OpenAI
 import json
 
-model = "model"
-client = OpenAI(api_key="ragflow-api-key", base_url=f"http://ragflow_address/api/v1/chats_openai/<chat_id>")
+model = "glm-4-flash@ZHIPU-AI"
+client = OpenAI(api_key="ragflow-api-key", base_url="http://ragflow_address/api/v1/openai/<chat_id>/chat")
 
 stream = True
 reference = True
@@ -92,13 +88,11 @@ request_kwargs = dict(
         {"role": "user", "content": "Can you tell me how to install neovim"},
     ],
     extra_body={
-        "extra_body": {
-            "reference": reference,
-            "reference_metadata": {
-                "include": True,
-                "fields": ["author", "year", "source"],
-            },
-        }
+        "reference": reference,
+        "reference_metadata": {
+            "include": True,
+            "fields": ["author", "year", "source"],
+        },
     },
 )
 
@@ -118,6 +112,8 @@ else:
     print("assistant:", data["choices"][0]["message"].get("content"))
     print("reference:", data["choices"][0]["message"].get("reference"))
 ```
+
+When `extra_body.reference` is `true`, the streamed final chunk may include `choices[0].delta.reference`, and the non-stream response may include `choices[0].message.reference`.
 
 When `extra_body.reference_metadata.include` is `true`, each reference chunk may include a `document_metadata` object in both streaming and non-streaming responses.
 

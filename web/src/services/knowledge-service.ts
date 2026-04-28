@@ -16,11 +16,11 @@ const {
   rmKb,
   kbList,
   documentChangeStatus,
-  documentCreate,
   documentChangeParser,
   documentThumbnails,
   retrievalTest,
-  documentRun,
+  documentIngest,
+  documentUpload,
   webCrawl,
   knowledgeGraph,
   listTagByKnowledgeIds,
@@ -47,12 +47,8 @@ const methods = {
     url: documentChangeStatus,
     method: 'post',
   },
-  documentCreate: {
-    url: documentCreate,
-    method: 'post',
-  },
-  documentRun: {
-    url: documentRun,
+  documentIngest: {
+    url: documentIngest,
     method: 'post',
   },
   documentChangeParser: {
@@ -62,6 +58,10 @@ const methods = {
   documentThumbnails: {
     url: documentThumbnails,
     method: 'get',
+  },
+  documentUpload: {
+    url: documentUpload,
+    method: 'post',
   },
   webCrawl: {
     url: webCrawl,
@@ -303,11 +303,36 @@ export const uploadDocument = async (datasetId: string, formData: FormData) => {
   return response.data;
 };
 
+export const createDocument = async (datasetId: string, name: string) => {
+  const response = await request.post(api.documentCreate(datasetId), {
+    data: { name },
+  });
+  return response.data;
+};
+
+export const webCrawlDocument = async (
+  datasetId: string,
+  formData: FormData,
+) => {
+  const response = await axios.post(api.webCrawl(datasetId), formData, {
+    headers: {
+      [Authorization]: getAuthorization(),
+    },
+  });
+  return response.data;
+};
+
 export const renameDocument = (
   datasetId: string,
   documentId: string,
   data: { name?: string },
 ) => request.patch(api.documentRename(datasetId, documentId), { data });
+
+export const changeDocumentParser = (
+  datasetId: string,
+  documentId: string,
+  data: { name?: string },
+) => request.patch(api.documentChangeParser(datasetId, documentId), { data });
 
 export const deleteDocument = (datasetId: string, documentIds: string[]) =>
   request.delete(api.documentDelete(datasetId), { data: { ids: documentIds } });
@@ -352,6 +377,17 @@ export const updateDocumentMetaDataConfig = ({
   request.put(api.documentUpdateMetaDataConfig(kb_id, doc_id), {
     data: { ...data },
   });
+
+export const changeDocumentsStatus = ({
+  kb_id,
+  doc_ids,
+  status,
+}: {
+  kb_id: string;
+  doc_ids?: string[];
+  status: number;
+}) =>
+  request.post(api.documentChangeStatus(kb_id), { data: { doc_ids, status } });
 
 export const listDataPipelineLogDocument = (
   datasetId: string,

@@ -37,10 +37,10 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
+import { extractParserConfigExt } from './parser-config-utils';
 import { useSetPaginationParams } from './route-hook';
 
 export const enum KnowledgeApiAction {
-  TestRetrieval = 'testRetrieval',
   FetchKnowledgeListByPage = 'fetchKnowledgeListByPage',
   CreateKnowledge = 'createKnowledge',
   DeleteKnowledge = 'deleteKnowledge',
@@ -258,81 +258,6 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const queryClient = useQueryClient();
 
-  const extractRaptorConfigExt = (
-    raptorConfig: Record<string, any> | undefined,
-  ) => {
-    if (!raptorConfig) return raptorConfig;
-    const {
-      use_raptor,
-      prompt,
-      max_token,
-      threshold,
-      max_cluster,
-      random_seed,
-      auto_disable_for_structured_data,
-      ext,
-      ...raptorExt
-    } = raptorConfig;
-    return {
-      use_raptor,
-      prompt,
-      max_token,
-      threshold,
-      max_cluster,
-      random_seed,
-      auto_disable_for_structured_data,
-      ext: { ...ext, ...raptorExt },
-    };
-  };
-
-  const extractParserConfigExt = (
-    parserConfig: Record<string, any> | undefined,
-  ) => {
-    if (!parserConfig) return parserConfig;
-    const {
-      auto_keywords,
-      auto_questions,
-      chunk_token_num,
-      delimiter,
-      graphrag,
-      html4excel,
-      layout_recognize,
-      raptor,
-      tag_kb_ids,
-      topn_tags,
-      filename_embd_weight,
-      task_page_size,
-      pages,
-      children_delimiter,
-      use_parent_child,
-      enable_children,
-      ext,
-      ...parserExt
-    } = parserConfig;
-    return {
-      auto_keywords,
-      auto_questions,
-      chunk_token_num,
-      delimiter,
-      graphrag,
-      html4excel,
-      layout_recognize,
-      raptor: extractRaptorConfigExt(raptor),
-      tag_kb_ids,
-      topn_tags,
-      filename_embd_weight,
-      task_page_size,
-      pages,
-      parent_child: enable_children
-        ? {
-            children_delimiter,
-            use_parent_child: use_parent_child ?? enable_children,
-          }
-        : undefined,
-      ext: { ...ext, ...parserExt },
-    };
-  };
-
   const {
     data,
     isPending: loading,
@@ -376,6 +301,7 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
         parser_config: extractParserConfigExt(parser_config),
         ...omit(ext, ['kb_id']),
       };
+
       const { data = {} } = await updateKb(kbId, requestBody);
       if (data.code === 0) {
         message.success(i18n.t(`message.updated`));

@@ -587,7 +587,7 @@ export enum SortMethod {
 }
 
 export enum ListOperations {
-  TopN = 'topN',
+  Nth = 'nth',
   Head = 'head',
   Tail = 'tail',
   Filter = 'filter',
@@ -597,7 +597,8 @@ export enum ListOperations {
 
 export const initialListOperationsValues = {
   query: '',
-  operations: ListOperations.TopN,
+  operations: ListOperations.Nth,
+  strict: false,
   outputs: {
     // result: {
     //   type: 'Array<?>',

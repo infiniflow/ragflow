@@ -69,10 +69,10 @@ func (z *GiteeModel) Chat(modelName, message *string, apiConfig *APIConfig, chat
 
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
 
-	// I need to get the model series, such as qwen3 is the prefix, the model series will be qwen. glm is the prefix, the model series will be glm. such as the model name: qwen3-0.6b, the model series will be qwen3
-	// the model name is glm-4.7, the model series will be glm
-	modelSeries := strings.Split(*modelName, "-")[0]
-	if modelSeries == "qwen" || modelSeries == "glm" {
+	// I need to get the model type, such as qwen3 is the prefix, the model type will be qwen. glm is the prefix, the model type will be glm. such as the model name: qwen3-0.6b, the model type will be qwen3
+	// the model name is glm-4.7, the model type will be glm
+	modelType := strings.Split(*modelName, "-")[0]
+	if modelType == "qwen" || modelType == "glm" {
 		url = fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.AsyncChat)
 	}
 
@@ -172,7 +172,7 @@ func (z *GiteeModel) Chat(modelName, message *string, apiConfig *APIConfig, chat
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelSeries, &content)
+	thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelType, &content)
 
 	chatResponse := &ChatResponse{
 		Answer:        answer,
