@@ -738,9 +738,25 @@ async def rerun_agent(tenant_id):
 @validate_request("db_type")
 @login_required
 async def test_db_connection():
+    """
+    Tests the database connection based on the provided request data. This function validates the request payload
+    and attempts to establish a connection to various types of databases including MySQL, PostgreSQL, MSSQL,
+    IBM DB2, Trino, and BigQuery, depending on the specified database type in the request.
+
+    Arguments:
+        db_type (str): Type of the database to connect to. Supported values include 'mysql', 'mariadb', 'oceanbase',
+                       'postgres', 'mssql', 'IBM DB2', 'trino', and 'BigQuery'.
+
+    Raises:
+        Exception: Raised if the connection to the specified database type fails, or any required argument is missing
+                   in the request payload.
+
+    Returns:
+        JSON: A JSON response indicating whether the database connection was successful or an error occurred.
+    """
     req = await get_request_json()
     if req["db_type"] == 'BigQuery' and req["google_application_credentials_source"] != "adc":
-        if not req.get("service_account_credentials_json"):
+        if not req.get("google_application_credentials_json"):
             return get_json_result(code=RetCode.ARGUMENT_ERROR, message="required argument are missing: service_account_credentials_json; ")
     else:
         missing = [k for k in ("database", "username", "host", "port", "password") if k not in req]

@@ -13,7 +13,7 @@ export const ExeSQLFormSchema = {
   host: z.string(),
   port: z.number(),
   password: z.string().optional().or(z.literal('')),
-  service_account_credentials_json: z.string().optional().or(z.literal('')),
+  google_application_credentials_json: z.string().optional().or(z.literal('')),
   max_records: z.number(),
 };
 

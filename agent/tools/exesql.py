@@ -55,6 +55,21 @@ class ExeSQLParam(ToolParamBase):
         self.google_application_credentials_json = ""
 
     def check(self):
+        """
+        Validates the configuration for connecting to a database or BigQuery.
+
+        Checks if the provided database details or BigQuery credentials are valid
+        and ensures appropriate values are set for each parameter. It applies
+        specific validation rules depending on the type of database or service chosen.
+
+        Raises:
+            ValueError: If certain conditions or validation rules are violated
+            (e.g., missing or invalid credential parameters, restricted database
+            configurations).
+
+        Parameters:
+            None
+        """
         self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgres', 'mariadb', 'mssql', 'IBM DB2', 'trino', 'oceanbase','BigQuery'])
         if self.db_type == "BigQuery":
             self.check_valid_value(self.google_application_credentials_source, "Google Application Credentials Source", ['adc', 'json'])
@@ -89,6 +104,34 @@ class ExeSQL(ToolBase, ABC):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60)))
     def _invoke(self, **kwargs):
+        """
+        Executes SQL commands on various databases and processes the results.
+
+        The `_invoke` method performs the execution of SQL queries on specified databases, handling different database types such as MySQL, PostgreSQL, Microsoft SQL Server, Trino, IBM DB2, and BigQuery. Executes commands in batches, handles JSON serialization, converts unsupported data types, and outputs results in specified formats.
+
+        Attributes:
+            None
+
+        Methods:
+            _invoke(**kwargs)
+                Executes SQL queries, processes the output, and provides formatted results.
+
+        Parameters:
+            kwargs: dict
+                A dictionary of keyword arguments containing SQL statements and other possible runtime parameters.
+
+        Raises:
+            Exception: Raised in the following scenarios:
+                - If the SQL string is empty or not provided.
+                - If the SQL execution is canceled at any stage.
+                - If the database connection fails.
+                - If required dependencies are missing for certain database types.
+                - For Trino, if the database is not correctly defined.
+            Other exceptions may be passed from database connection and execution errors.
+
+        Returns:
+            None
+        """
         if self.check_if_canceled("ExeSQL processing"):
             return
 
@@ -256,7 +299,7 @@ class ExeSQL(ToolBase, ABC):
             if self._param.google_application_credentials_source == "adc":
                 client = bigquery.Client()
             else:
-                service_account_info = json.loads(self._param.service_account_credentials_json)
+                service_account_info = json.loads(self._param.google_application_credentials_json)
                 credentials = service_account.Credentials.from_service_account_info(service_account_info)
                 client = bigquery.Client(credentials=credentials, project=credentials.project_id)
             db = dbapi.Connection(client)
