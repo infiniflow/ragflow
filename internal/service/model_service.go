@@ -843,7 +843,7 @@ func (m *ModelProviderService) GetModelByName(modelName string, tenantID string)
 
 // GetEmbeddingModel returns an EmbeddingModel wrapper for the given tenant
 func (m *ModelProviderService) GetEmbeddingModel(tenantID, compositeModelName string) (*modelModule.EmbeddingModel, error) {
-	driver, modelName, apiConfig, err := m.getModelInfo(tenantID, compositeModelName)
+	driver, modelName, apiConfig, err := m.getModelConfig(tenantID, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
@@ -852,7 +852,7 @@ func (m *ModelProviderService) GetEmbeddingModel(tenantID, compositeModelName st
 
 // GetRerankModel returns a RerankModel wrapper for the given tenant
 func (m *ModelProviderService) GetRerankModel(tenantID, compositeModelName string) (*modelModule.RerankModel, error) {
-	driver, modelName, apiConfig, err := m.getModelInfo(tenantID, compositeModelName)
+	driver, modelName, apiConfig, err := m.getModelConfig(tenantID, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
@@ -861,57 +861,73 @@ func (m *ModelProviderService) GetRerankModel(tenantID, compositeModelName strin
 
 // GetChatModel returns a ChatModel wrapper for the given tenant
 func (m *ModelProviderService) GetChatModel(tenantID, compositeModelName string) (*modelModule.ChatModel, error) {
-	driver, modelName, apiConfig, err := m.getModelInfo(tenantID, compositeModelName)
+	driver, modelName, apiConfig, err := m.getModelConfig(tenantID, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
 	return modelModule.NewChatModel(driver, modelName, apiConfig), nil
 }
 
-// getModelInfo returns the common components needed to construct any model type
-func (m *ModelProviderService) getModelInfo(tenantID, compositeModelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
-	modelName, provider, err := parseModelName(compositeModelName)
+// getModelConfig returns the model driver, model name, and API config for a model
+func (m *ModelProviderService) getModelConfig(tenantID, compositeModelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+	modelName, providerName, err := parseModelName(compositeModelName)
 	if err != nil {
 		return nil, "", nil, err
 	}
 
-	tenantLLM, err := dao.NewTenantLLMDAO().GetByTenantFactoryAndModelName(tenantID, provider, modelName)
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
 	if err != nil {
 		return nil, "", nil, err
 	}
-
-	apiKey := tenantLLM.APIKey
-	if apiKey == nil || *apiKey == "" {
-		return nil, "", nil, fmt.Errorf("no API key found for tenant %s and model %s", tenantID, compositeModelName)
+	if provider == nil {
+		return nil, "", nil, fmt.Errorf("provider %s not found", providerName)
 	}
 
-	apiBase := ""
-	if tenantLLM.APIBase != nil && *tenantLLM.APIBase != "" {
-		apiBase = *tenantLLM.APIBase
-	} else {
-		providerDAO := dao.NewModelProviderDAO()
-		providerConfig := providerDAO.GetProviderByName(provider)
-		if providerConfig == nil || providerConfig.DefaultURL == "" {
-			return nil, "", nil, fmt.Errorf("no API base found for provider %s", provider)
+	instanceName := "default_instance"
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	if instance == nil {
+		return nil, "", nil, fmt.Errorf("instance %s not found for provider %s", instanceName, providerName)
+	}
+
+	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+	if err != nil {
+		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+		if providerInfo == nil {
+			return nil, "", nil, fmt.Errorf("provider %s not found", providerName)
 		}
-		apiBase = providerConfig.DefaultURL
+
+		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		if err != nil {
+			return nil, "", nil, fmt.Errorf("provider %s model %s not found", providerName, modelName)
+		}
+
+		var extra map[string]string
+		err = json.Unmarshal([]byte(instance.Extra), &extra)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		region := extra["region"]
+
+		apiConfig := &modelModule.APIConfig{ApiKey: &instance.APIKey, Region: &region}
+		return providerInfo.ModelDriver, modelName, apiConfig, nil
 	}
 
-	factory := modelModule.NewModelFactory()
-	baseURLMap := map[string]string{"default": apiBase}
-
-	providerManager, _ := entity.NewProviderManager("conf/models")
-	providerEntity := providerManager.FindProvider(strings.ToLower(provider))
-	if providerEntity == nil {
-		return nil, "", nil, fmt.Errorf("provider %s not found in conf/models", provider)
-	}
-	baseURLMap = providerEntity.URL
-	urlSuffix := providerEntity.URLSuffix
-	modelDriver, err := factory.CreateModelDriver(provider, baseURLMap, urlSuffix)
+	var extra map[string]string
+	err = json.Unmarshal([]byte(instance.Extra), &extra)
 	if err != nil {
 		return nil, "", nil, err
 	}
+	region := extra["region"]
 
-	apiConfig := &modelModule.APIConfig{ApiKey: apiKey}
-	return modelDriver, modelName, apiConfig, nil
+	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+	if providerInfo == nil {
+		return nil, "", nil, fmt.Errorf("provider %s not found", providerName)
+	}
+
+	apiConfig := &modelModule.APIConfig{ApiKey: &instance.APIKey, Region: &region}
+	return providerInfo.ModelDriver, modelName, apiConfig, nil
 }
