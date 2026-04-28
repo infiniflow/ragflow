@@ -432,13 +432,13 @@ export const useManageMetaDataModal = (
   );
 
   const handleSaveSingleFileSettings = useCallback(
-    async (callback: () => void) => {
+    async (callback: () => void, builtInMetadata?: IBuiltInMetadataItem[]) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
       if (otherData?.documentId) {
         const { data: res } = await updateDocumentMetaDataConfig({
           kb_id: id || '',
           doc_id: otherData.documentId,
-          data: { metadata: data },
+          data: { metadata: data, builtInMetadata: builtInMetadata || [] },
         });
         if (res.code === 0) {
           message.success(t('message.operated'));
@@ -446,9 +446,12 @@ export const useManageMetaDataModal = (
         }
       }
 
-      return data;
+      return {
+        metadata: data,
+        builtInMetadata: builtInMetadata || [],
+      };
     },
-    [tableData, t, otherData],
+    [tableData, t, otherData, id],
   );
 
   const handleSave = useCallback(
