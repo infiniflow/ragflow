@@ -19,11 +19,12 @@ from peewee import OperationalError
 from quart import request
 from common.constants import RetCode
 from api.apps import login_required, current_user
-from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_request_json, get_result, add_tenant_id_to_kwargs
+from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_result, add_tenant_id_to_kwargs
 from api.utils.validation_utils import (
     CreateDatasetReq,
     DeleteDatasetReq,
     ListDatasetReq,
+    SearchDatasetReq,
     UpdateDatasetReq,
     validate_and_parse_json_request,
     validate_and_parse_request_args,
@@ -487,11 +488,11 @@ async def search(tenant_id, dataset_id):
                "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool,
                "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict}
     Success: {"code": 0, "data": {"chunks": [...], "total": int, "labels": [...]}}
-    Errors: DATA_ERROR (102) for missing question, access denied, or internal errors.
+    Errors: ARGUMENT_ERROR (101) for invalid payload; DATA_ERROR (102) for access denied or internal errors.
     """
-    req = await get_request_json()
-    if not req.get("question"):
-        return get_error_data_result("`question` is required")
+    req, err = await validate_and_parse_json_request(request, SearchDatasetReq)
+    if err is not None:
+        return get_error_argument_result(err)
     try:
         success, result = await dataset_api_service.search(dataset_id, tenant_id, req)
         if success:

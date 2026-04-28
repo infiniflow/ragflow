@@ -39,7 +39,7 @@ class TestDatasetSearch:
     def test_search_without_question(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
         res = search_dataset(HttpApiAuth, dataset_id, {})
-        assert res["code"] == 102, res
+        assert res["code"] == 101, res
 
     @pytest.mark.p2
     def test_search_basic(self, HttpApiAuth, add_chunks):
