@@ -23,16 +23,16 @@ import (
 	"time"
 )
 
-// MinimaxModel implements ModelDriver for Minimax
-type MinimaxModel struct {
+// VolcEngine implements ModelDriver for VolcEngine
+type VolcEngine struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
 	httpClient *http.Client // Reusable HTTP client with connection pool
 }
 
-// NewMinimaxModel creates a new Minimax model instance
-func NewMinimaxModel(baseURL map[string]string, urlSuffix URLSuffix) *MinimaxModel {
-	return &MinimaxModel{
+// NewVolcEngine creates a new VolcEngine model instance
+func NewVolcEngine(baseURL map[string]string, urlSuffix URLSuffix) *VolcEngine {
+	return &VolcEngine{
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
@@ -47,39 +47,39 @@ func NewMinimaxModel(baseURL map[string]string, urlSuffix URLSuffix) *MinimaxMod
 	}
 }
 
-func (z *MinimaxModel) Name() string {
-	return "minimax"
+func (z *VolcEngine) Name() string {
+	return "volcengine"
 }
 
 // Chat sends a message and returns response
-func (z *MinimaxModel) Chat(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig) (*ChatResponse, error) {
+func (z *VolcEngine) Chat(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig) (*ChatResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
-func (z *MinimaxModel) ChatWithMessages(modelName string, apiKey *string, messages []Message, chatModelConfig *ChatConfig) (string, error) {
+func (z *VolcEngine) ChatWithMessages(modelName string, apiKey *string, messages []Message, chatModelConfig *ChatConfig) (string, error) {
 	return "", fmt.Errorf("%s, ChatWithMessages not implemented", z.Name())
 }
 
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (z *MinimaxModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (z *VolcEngine) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
 // EncodeToEmbedding encodes a list of texts into embeddings
-func (z *MinimaxModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+func (z *VolcEngine) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (z *MinimaxModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (z *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
-func (z *MinimaxModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (z *VolcEngine) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
-func (z *MinimaxModel) CheckConnection(apiConfig *APIConfig) error {
+func (z *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
 	var region = "default"
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
