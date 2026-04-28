@@ -228,15 +228,7 @@ class SyncBase:
         prefix = self._get_source_prefix()
         prefix = f"{prefix} " if prefix else ""
         next_update_info = self._format_window_boundary(next_update)
-        if file_list == []:
-            logging.warning(
-                "%s deleted-file sync skipped because the snapshot was empty "
-                "(connector_id=%s, kb_id=%s)",
-                self.SOURCE_NAME,
-                task["connector_id"],
-                task["kb_id"],
-            )
-        elif file_list is not None:
+        if file_list is not None:
             removed_docs, _ = ConnectorService.cleanup_stale_documents_for_task(
                 task["id"],
                 task["connector_id"],
