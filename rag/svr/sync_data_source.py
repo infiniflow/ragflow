@@ -235,7 +235,15 @@ class SyncBase:
         prefix = self._get_source_prefix()
         prefix = f"{prefix} " if prefix else ""
         next_update_info = self._format_window_boundary(next_update)
-        if file_list is not None:
+        if file_list == []:
+            logging.warning(
+                "%s deleted-file sync skipped because the snapshot was empty "
+                "(connector_id=%s, kb_id=%s)",
+                self.SOURCE_NAME,
+                task["connector_id"],
+                task["kb_id"],
+            )
+        elif file_list is not None:
             logging.info(
                 "[%s] Starting stale document reconciliation. Snapshot size: %d "
                 "(connector_id=%s, kb_id=%s)",
@@ -662,7 +670,7 @@ class GoogleDrive(SyncBase):
                 snapshot_start = time.time()
                 
                 for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
-                    file_list.extend([SlimDoc(doc.id) for doc in slim_batch])
+                    file_list.extend(SlimDoc(doc.id) for doc in slim_batch)
                     
                 logging.info("Slim snapshot fetched %d files in %.2f seconds", len(file_list), time.time() - snapshot_start)
                 
