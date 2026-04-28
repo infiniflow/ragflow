@@ -49,6 +49,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewGoogleModel(baseURL, urlSuffix), nil
 	case "aliyun":
 		return NewAliyunModel(baseURL, urlSuffix), nil
+	case "volcengine":
+		return NewVolcEngine(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

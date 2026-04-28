@@ -105,7 +105,7 @@ func responseWithCode(c *gin.Context, message string, httpCode int, errorCode co
 	}
 }
 
-// Health health check
+// Health check
 func (h *Handler) Health(c *gin.Context) {
 	c.JSON(200, gin.H{"status": "ok"})
 }
@@ -135,7 +135,7 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	// Use userService.LoginByEmail with adminLogin=true
-	// This allows default admin account to login admin system
+	// This allows default admin account to log in admin system
 	user, code, err := h.userService.LoginByEmail(&req)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -1277,5 +1277,5 @@ func (h *Handler) Reports(c *gin.Context) {
 		return
 	}
 
-	responseWithCode(c, message, int(http.StatusOK), errCode)
+	responseWithCode(c, message, http.StatusOK, errCode)
 }
