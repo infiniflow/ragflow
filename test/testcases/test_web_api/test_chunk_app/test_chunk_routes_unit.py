@@ -490,13 +490,14 @@ def _load_chunk_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_service_mod)
     services_pkg.user_service = user_service_mod
 
-    module_name = "test_chunk_routes_unit_module"
     module_path = repo_root / "api" / "apps" / "chunk_app.py"
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    module = importlib.util.module_from_spec(spec)
-    module.manager = _DummyManager()
-    monkeypatch.setitem(sys.modules, module_name, module)
-    spec.loader.exec_module(module)
+    if module_path.exists():
+        module_name = "test_chunk_routes_unit_module"
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        module = importlib.util.module_from_spec(spec)
+        module.manager = _DummyManager()
+        monkeypatch.setitem(sys.modules, module_name, module)
+        spec.loader.exec_module(module)
     return module
 
 
