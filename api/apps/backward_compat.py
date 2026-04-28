@@ -34,7 +34,7 @@ import logging
 
 from quart import Blueprint, request
 
-from api.apps import app, login_required
+from api.apps import login_required
 from api.apps.restful_apis import chat_api, file_api, search_api, chunk_api, system_api, openai_api, document_api
 from api.utils.api_utils import get_json_result, get_data_error_result, add_tenant_id_to_kwargs
 
