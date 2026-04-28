@@ -19,7 +19,13 @@ from common.data_source.exceptions import (
     InsufficientPermissionsError
 )
 from common.data_source.interfaces import LoadConnector, PollConnector
-from common.data_source.models import Document, SecondsSinceUnixEpoch, GenerateDocumentsOutput, SlimDocument
+from common.data_source.models import (
+    Document,
+    SecondsSinceUnixEpoch,
+    GenerateDocumentsOutput,
+    GenerateSlimDocumentOutput,
+    SlimDocument,
+)
 
 
 class BlobStorageConnector(LoadConnector, PollConnector):
