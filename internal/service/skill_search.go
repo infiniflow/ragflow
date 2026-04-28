@@ -38,19 +38,19 @@ import (
 // SkillSearchService handles business logic for skill search operations
 type SkillSearchService struct {
 	configDAO     *dao.SkillSearchConfigDAO
-	modelProvider ModelProvider
+	modelProvider *ModelProviderService
 }
 
 // NewSkillSearchService creates a new SkillSearchService instance
 func NewSkillSearchService() *SkillSearchService {
 	return &SkillSearchService{
 		configDAO:     dao.NewSkillSearchConfigDAO(),
-		modelProvider: NewModelProvider(),
+		modelProvider: NewModelProviderService(),
 	}
 }
 
 // SetModelProvider sets the model provider for embedding generation
-func (s *SkillSearchService) SetModelProvider(provider ModelProvider) {
+func (s *SkillSearchService) SetModelProvider(provider *ModelProviderService) {
 	s.modelProvider = provider
 }
 
@@ -668,16 +668,15 @@ func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, ten
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
+	embeddingModel, err := s.modelProvider.GetEmbeddingModel(tenantID, embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
 
 	// Truncate text to prevent exceeding model's max length (consistent with Python implementation)
-	maxLength := embeddingModel.MaxLength()
-	truncatedText := truncate(text, maxLength-10)
+	truncatedText := truncate(text, defaultMaxLength-10)
 
-	vector, err := embeddingModel.EncodeQuery(truncatedText)
+	vector, err := embeddingModel.EncodeQuery(nil, truncatedText, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode query: %w", err)
 	}

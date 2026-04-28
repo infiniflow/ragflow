@@ -7,28 +7,29 @@
     "chat": "chat/completions",
     "models": "models"
   },
+  "series": "deepseek",
   "models": [
     {
-      "name": "deepseek-chat",
-      "max_tokens": 128000,
+      "name": "deepseek-v4-flash",
+      "max_tokens": 1048576,
       "model_types": [
         "chat"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
-      "name": "deepseek-reasoner",
-      "max_tokens": 128000,
+      "name": "deepseek-v4-pro",
+      "max_tokens": 1048576,
       "model_types": [
         "chat"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     }
-  ],
-  "features": {
-    "thinking": {
-      "default_value": true,
-      "supported_models": [
-        "deepseek-chat"
-      ]
-    }
-  }
+  ]
 }

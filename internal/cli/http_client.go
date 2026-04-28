@@ -381,7 +381,7 @@ func (c *HTTPClient) UploadMultipart(path string, contentType string, body io.Re
 }
 
 // RequestStream makes an HTTP request for SSE streaming and returns the response body reader
-func (c *HTTPClient) RequestStream(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}) (io.ReadCloser, float64, error) {
+func (c *HTTPClient) RequestStream(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}) (io.ReadCloser, error) {
 	url := c.BuildURL(path, useAPIBase)
 	mergedHeaders := c.Headers(authKind, headers)
 
@@ -389,7 +389,7 @@ func (c *HTTPClient) RequestStream(method, path string, useAPIBase bool, authKin
 	if jsonBody != nil {
 		jsonData, err := json.Marshal(jsonBody)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 		body = bytes.NewReader(jsonData)
 		if mergedHeaders == nil {
@@ -405,24 +405,22 @@ func (c *HTTPClient) RequestStream(method, path string, useAPIBase bool, authKin
 
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	for k, v := range mergedHeaders {
 		req.Header.Set(k, v)
 	}
 
-	startTime := time.Now()
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	duration := time.Since(startTime).Seconds()
 
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		return nil, duration, fmt.Errorf("HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	return resp.Body, duration, nil
+	return resp.Body, nil
 }

@@ -33,7 +33,7 @@ A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure
 
 ### Create chat completion
 
-**POST** `/api/v1/chats_openai/{chat_id}/chat/completions`
+**POST** `/api/v1/openai/{chat_id}/chat/completions`
 
 Creates a model response for a given chat conversation.
 
@@ -42,7 +42,7 @@ This API follows the same request and response format as OpenAI's API. It allows
 #### Request
 
 - Method: POST
-- URL: `/api/v1/chats_openai/{chat_id}/chat/completions`
+- URL: `/api/v1/openai/{chat_id}/chat/completions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -56,11 +56,11 @@ This API follows the same request and response format as OpenAI's API. It allows
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/chats_openai/{chat_id}/chat/completions \
+     --url http://{address}/api/v1/openai/{chat_id}/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
-        "model": "model",
+        "model": "glm-4-flash@ZHIPU-AI",
         "messages": [{"role": "user", "content": "Say this is a test!"}],
         "stream": true,
         "extra_body": {
@@ -85,8 +85,11 @@ curl --request POST \
 
 ##### Request Parameters
 
+- `chat_id` (*Path parameter*) `string`, *Required*
+  Existing chat assistant ID. The request will use that chat assistant's knowledge and settings.
+
 - `model` (*Body parameter*) `string`, *Required*
-  The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
+  The model used to generate the response. When `chat_id` is provided, you may also use the legacy placeholder value `"model"` to keep using the chat assistant's configured model.
 
 - `messages` (*Body parameter*) `list[object]`, *Required*
   A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
@@ -1373,15 +1376,26 @@ Failure:
 
 Uploads documents to a specified dataset.
 
+This endpoint supports three creation modes via the optional `type` query parameter:
+
+- `type=local` or omitted: Upload one or more local files using `multipart/form-data`.
+- `type=web`: Crawl a web page and save it as a document.
+- `type=empty`: Create an empty virtual document by name.
+
 #### Request
 
 - Method: POST
 - URL: `/api/v1/datasets/{dataset_id}/documents`
+- Query:
+  - `type`: Optional. One of `local`, `web`, or `empty`. Defaults to `local`.
 - Headers:
-  - `'Content-Type: multipart/form-data'`
+  - `'Content-Type: multipart/form-data'` for `type=local` and `type=web`
+  - `'Content-Type: application/json'` for `type=empty`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
-- Form:
-  - `'file=@{FILE_PATH}'`
+- Body:
+  - For `type=local`: form field `'file=@{FILE_PATH}'`
+  - For `type=web`: form fields `'name'` and `'url'`
+  - For `type=empty`: JSON body with `'name'`
 
 ##### Request example
 
@@ -1394,12 +1408,38 @@ curl --request POST \
      --form 'file=@./test2.pdf'
 ```
 
+```bash
+curl --request POST \
+     --url 'http://{address}/api/v1/datasets/{dataset_id}/documents?type=web' \
+     --header 'Content-Type: multipart/form-data' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --form 'name=example-page' \
+     --form 'url=https://example.com'
+```
+
+```bash
+curl --request POST \
+     --url 'http://{address}/api/v1/datasets/{dataset_id}/documents?type=empty' \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{"name":"blank.txt"}'
+```
+
 ##### Request parameters
 
 - `dataset_id`: (*Path parameter*)
   The ID of the dataset to which the documents will be uploaded.
+- `type`: (*Query parameter*)
+  Controls how the document is created:
+  - `local`: Upload files.
+  - `web`: Crawl a URL into a document.
+  - `empty`: Create an empty document without file upload.
 - `'file'`: (*Body parameter*)
-  A document to upload.
+  A document to upload. Required when `type=local`.
+- `'name'`: (*Body parameter*)
+  The document name. Required when `type=web` or `type=empty`.
+- `'url'`: (*Body parameter*)
+  The source URL to crawl. Required when `type=web`.
 
 #### Response
 
@@ -7323,16 +7363,16 @@ or
 
 ---
 
-### Convert files to documents and link them to datasets
+### Links files to datasets and convert to documents
 
-**POST** `/v1/file2document/convert`
+**POST** `/api/v1/files/link-to-datasets`
 
 Converts files to documents and links them to specified datasets.
 
 #### Request
 
 - Method: POST
-- URL: `/v1/file2document/convert`
+- URL: `/api/v1/files/link-to-datasets`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -7344,7 +7384,7 @@ Converts files to documents and links them to specified datasets.
 
 ```bash
 curl --request POST \
-     --url http://{address}/v1/file2document/convert \
+     --url http://{address}/api/v1/files/link-to-datasets \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{

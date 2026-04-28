@@ -6255,6 +6255,14 @@
             "llm": []
         },
         {
+            "name": "OpenDataLoader",
+            "logo": "",
+            "tags": "OCR",
+            "status": "1",
+            "rank": "920",
+            "llm": []
+        },
+        {
             "name": "n1n",
             "logo": "",
             "tags": "LLM",

@@ -48,12 +48,15 @@ type FileSystemClient interface {
 	GetSkillContent(ctx context.Context, tenantID, skillName string) (*SkillVersionInfo, error)
 }
 
+// defaultMaxLength is a safe default for embedding model max input length
+const defaultMaxLength = 8191
+
 // SkillIndexerService handles skill indexing operations
 type SkillIndexerService struct {
 	configDAO     *dao.SkillSearchConfigDAO
 	fileDAO       *dao.FileDAO
 	spaceDAO      *dao.SkillSpaceDAO
-	modelProvider ModelProvider
+	modelProvider *ModelProviderService
 }
 
 // NewSkillIndexerService creates a new SkillIndexerService instance
@@ -62,7 +65,7 @@ func NewSkillIndexerService() *SkillIndexerService {
 		configDAO:     dao.NewSkillSearchConfigDAO(),
 		fileDAO:       dao.NewFileDAO(),
 		spaceDAO:      dao.NewSkillSpaceDAO(),
-		modelProvider: NewModelProvider(),
+		modelProvider: NewModelProviderService(),
 	}
 }
 
@@ -917,16 +920,15 @@ func (s *SkillIndexerService) generateEmbedding(ctx context.Context, text, embdI
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
+	embeddingModel, err := s.modelProvider.GetEmbeddingModel(tenantID, embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
 
 	// Truncate text to prevent exceeding model's max length (consistent with Python implementation)
-	maxLength := embeddingModel.MaxLength()
-	truncatedText := truncate(text, maxLength-10)
+	truncatedText := truncate(text, defaultMaxLength-10)
 
-	vector, err := embeddingModel.EncodeQuery(truncatedText)
+	vector, err := embeddingModel.EncodeQuery(nil, truncatedText, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode text: %w", err)
 	}
@@ -948,23 +950,21 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 	}
 
 	logger.Info(fmt.Sprintf("Getting embedding model for %s", embdID))
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
+	embeddingModel, err := s.modelProvider.GetEmbeddingModel(tenantID, embdID)
 	if err != nil {
 		logger.Error(fmt.Sprintf("Failed to get embedding model: %v", err), err)
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
-	logger.Info(fmt.Sprintf("Got embedding model, maxLength=%d", embeddingModel.MaxLength()))
 
 	// Truncate texts to prevent exceeding model's max length
-	maxLength := embeddingModel.MaxLength()
 	truncatedTexts := make([]string, len(texts))
 	for i, text := range texts {
-		truncatedTexts[i] = truncate(text, maxLength-10)
+		truncatedTexts[i] = truncate(text, defaultMaxLength-10)
 	}
 
 	logger.Info(fmt.Sprintf("Encoding %d texts", len(truncatedTexts)))
 	// Use batch encode API (consistent with Python's encode(texts: list))
-	vectors, err := embeddingModel.Encode(truncatedTexts)
+	vectors, err := embeddingModel.Encode(nil, truncatedTexts, nil)
 	if err != nil {
 		logger.Error(fmt.Sprintf("Failed to encode texts: %v", err), err)
 		return nil, fmt.Errorf("failed to encode texts: %w", err)
@@ -1003,14 +1003,14 @@ func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantI
 		return 0, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
+	embeddingModel, err := s.modelProvider.GetEmbeddingModel(tenantID, embdID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get embedding model: %w", err)
 	}
 
 	// Use simple test text like Python does: embedding_model.encode(["ok"])
 	testText := "ok"
-	vector, err := embeddingModel.EncodeQuery(testText)
+	vector, err := embeddingModel.EncodeQuery(nil, testText, nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to encode test text: %w", err)
 	}

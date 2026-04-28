@@ -1,26 +1,49 @@
 {
-  "name": "SILICONFLOW",
-  "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,IMAGE2TEXT",
+  "name": "SiliconFlow",
   "url": {
     "default": "https://api.siliconflow.cn/v1"
   },
   "url_suffix": {
     "chat": "chat/completions",
-    "async_chat": "async/chat/completions",
-    "async_result": "async-result",
-    "embedding": "embedding",
+    "models": "models",
+    "embedding": "embeddings",
     "rerank": "rerank"
   },
   "models": [
+    {
+      "name": "qwen/qwen3-8b",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3.5-4b",
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "tencent/hunyuan-mt-7b",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
     {
       "name": "BAAI/bge-reranker-v2-m3",
       "max_tokens": 8192,
       "model_types": [
         "rerank"
-      ],
-      "features": {}
+      ]
+    },
+    {
+      "name": "Qwen/Qwen3-Embedding-0.6B",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
     }
   ]
 }
-
-
