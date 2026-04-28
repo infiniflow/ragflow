@@ -9,7 +9,7 @@
     "tts": "v1/t2a_v2",
     "files": "v1/files/list"
   },
-  "series": "minimax",
+  "class": "minimax",
   "models": [
     {
       "name": "minimax-m2.7",

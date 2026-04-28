@@ -56,7 +56,6 @@ func (z *SiliconflowModel) Name() string {
 	return "siliconflow"
 }
 
-
 // SiliconflowRerankRequest represents SILICONFLOW rerank request
 type SiliconflowRerankRequest struct {
 	Model           string   `json:"model"`
@@ -192,7 +191,7 @@ func (z *SiliconflowModel) Chat(modelName, message *string, apiConfig *APIConfig
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelType, &content)
+	thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelClass, &content)
 
 	chatResponse := &ChatResponse{
 		Answer:        answer,
