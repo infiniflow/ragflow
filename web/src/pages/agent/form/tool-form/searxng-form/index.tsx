@@ -9,7 +9,6 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { useTranslate } from '@/hooks/common-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo } from 'react';
 import { useForm } from 'react-hook-form';
@@ -19,11 +18,12 @@ import { useWatchFormChange } from '../use-watch-change';
 
 const FormSchema = z.object({
   searxng_url: z.string().min(1),
-  top_n: z.string(),
+  top_n: z.string().refine((value) => Number(value) <= DEFAULT_TOP_N_MAX, {
+    message: `Top N must be less than or equal to ${DEFAULT_TOP_N_MAX}`,
+  }),
 });
 
 function SearXNGForm() {
-  const { t } = useTranslate('flow');
   const values = useValues();
 
   const form = useForm<z.infer<typeof FormSchema>>({
