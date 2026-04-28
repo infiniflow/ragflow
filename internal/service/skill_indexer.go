@@ -925,15 +925,22 @@ func (s *SkillIndexerService) generateEmbedding(ctx context.Context, text, embdI
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
 
-	// Truncate text to prevent exceeding model's max length (consistent with Python implementation)
-	truncatedText := truncate(text, defaultMaxLength-10)
+	// Truncate text to prevent exceeding model's max input length
+	maxLen := embeddingModel.MaxTokens
+	if maxLen <= 0 {
+		maxLen = defaultMaxLength
+	}
+	truncatedText := truncate(text, maxLen-10)
 
-	vector, err := embeddingModel.ModelDriver.EncodeQuery(embeddingModel.ModelName, truncatedText, embeddingModel.APIConfig)
+	vectors, err := embeddingModel.ModelDriver.Encode(embeddingModel.ModelName, []string{truncatedText}, embeddingModel.APIConfig, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode text: %w", err)
 	}
+	if len(vectors) == 0 {
+		return nil, fmt.Errorf("embedding returned empty result")
+	}
 
-	return vector, nil
+	return vectors[0], nil
 }
 
 // generateEmbeddings generates embeddings for multiple texts in batch
@@ -956,15 +963,19 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
 
-	// Truncate texts to prevent exceeding model's max length
+	// Truncate texts to prevent exceeding model's max input length
+	maxLen := embeddingModel.MaxTokens
+	if maxLen <= 0 {
+		maxLen = defaultMaxLength
+	}
 	truncatedTexts := make([]string, len(texts))
 	for i, text := range texts {
-		truncatedTexts[i] = truncate(text, defaultMaxLength-10)
+		truncatedTexts[i] = truncate(text, maxLen-10)
 	}
 
 	logger.Info(fmt.Sprintf("Encoding %d texts", len(truncatedTexts)))
 	// Use batch encode API (consistent with Python's encode(texts: list))
-	vectors, err := embeddingModel.ModelDriver.EncodeToEmbedding(embeddingModel.ModelName, truncatedTexts, embeddingModel.APIConfig, nil)
+	vectors, err := embeddingModel.ModelDriver.Encode(embeddingModel.ModelName, truncatedTexts, embeddingModel.APIConfig, nil)
 	if err != nil {
 		logger.Error(fmt.Sprintf("Failed to encode texts: %v", err), err)
 		return nil, fmt.Errorf("failed to encode texts: %w", err)
@@ -1010,16 +1021,16 @@ func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantI
 
 	// Use simple test text like Python does: embedding_model.encode(["ok"])
 	testText := "ok"
-	vector, err := embeddingModel.ModelDriver.EncodeQuery(embeddingModel.ModelName, testText, embeddingModel.APIConfig)
+	vectors, err := embeddingModel.ModelDriver.Encode(embeddingModel.ModelName, []string{testText}, embeddingModel.APIConfig, nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to encode test text: %w", err)
 	}
 
-	if len(vector) == 0 {
+	if len(vectors) == 0 || len(vectors[0]) == 0 {
 		return 0, fmt.Errorf("embedding returned empty vector")
 	}
 
-	dimension := len(vector)
+	dimension := len(vectors[0])
 	logger.Info(fmt.Sprintf("Got embedding dimension from API: %d", dimension))
 	return dimension, nil
 }

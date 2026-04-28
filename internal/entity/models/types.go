@@ -72,14 +72,16 @@ type EmbeddingModel struct {
 	ModelDriver ModelDriver
 	ModelName   *string
 	APIConfig   *APIConfig
+	MaxTokens   int // Max input tokens for the embedding model, used for text truncation
 }
 
 // NewEmbeddingModel creates a new EmbeddingModel
-func NewEmbeddingModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *EmbeddingModel {
+func NewEmbeddingModel(driver ModelDriver, modelName *string, apiConfig *APIConfig, maxTokens int) *EmbeddingModel {
 	return &EmbeddingModel{
 		ModelDriver: driver,
 		ModelName:   modelName,
 		APIConfig:   apiConfig,
+		MaxTokens:   maxTokens,
 	}
 }
 

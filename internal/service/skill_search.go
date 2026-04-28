@@ -673,15 +673,22 @@ func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, ten
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
 
-	// Truncate text to prevent exceeding model's max length (consistent with Python implementation)
-	truncatedText := truncate(text, defaultMaxLength-10)
+	// Truncate text to prevent exceeding model's max input length
+	maxLen := embeddingModel.MaxTokens
+	if maxLen <= 0 {
+		maxLen = defaultMaxLength
+	}
+	truncatedText := truncate(text, maxLen-10)
 
-	vector, err := embeddingModel.ModelDriver.EncodeQuery(embeddingModel.ModelName, truncatedText, embeddingModel.APIConfig)
+	vectors, err := embeddingModel.ModelDriver.Encode(embeddingModel.ModelName, []string{truncatedText}, embeddingModel.APIConfig, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode query: %w", err)
 	}
+	if len(vectors) == 0 {
+		return nil, fmt.Errorf("embedding returned empty result")
+	}
 
-	return vector, nil
+	return vectors[0], nil
 }
 
 // Helper functions
