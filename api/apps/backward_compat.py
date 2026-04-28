@@ -36,7 +36,8 @@ from quart import Blueprint, request
 
 from api.apps import login_required
 from api.apps.restful_apis import chat_api, file_api, chunk_api, openai_api, document_api
-from api.utils.api_utils import get_data_error_result, add_tenant_id_to_kwargs
+from api.apps.services import file_api_service
+from api.utils.api_utils import get_data_error_result, get_json_result, add_tenant_id_to_kwargs
 
 manager = Blueprint("backward_compat", __name__)
 
@@ -297,10 +298,20 @@ async def deprecated_file_rename(tenant_id=None):
     # Transform the old API format to new format
     req = await request.get_json()
     # Old API used `file_id` and `name`, new API uses `src_file_ids` and `new_name`
-    req["src_file_ids"] = [req.pop("file_id")]
-    req["new_name"] = req.pop("name")
-    # Call the new API
-    return await file_api.move(tenant_id=tenant_id)
+    src_file_ids = [req.get("file_id")]
+    new_name = req.get("name")
+    # Call the underlying service directly with transformed data
+    try:
+        success, result = await file_api_service.move_files(
+            tenant_id, src_file_ids, None, new_name
+        )
+        if success:
+            return get_json_result(data=result)
+        else:
+            return get_data_error_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_data_error_result(message="Internal server error")
 
 
 @manager.route("/file/rm", methods=["POST"])
