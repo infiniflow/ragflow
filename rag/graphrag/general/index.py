@@ -23,7 +23,6 @@ import networkx as nx
 from api.db.services.document_service import DocumentService
 from api.db.services.task_service import has_canceled
 from common.exceptions import TaskCanceledException
-from common.misc_utils import get_uuid
 from common.connection_utils import timeout
 from rag.graphrag.entity_resolution import EntityResolution
 from rag.graphrag.general.community_reports_extractor import CommunityReportsExtractor
