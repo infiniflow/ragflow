@@ -166,7 +166,7 @@ func (k *MoonshotModel) Chat(modelName, message *string, apiConfig *APIConfig, c
 		if !ok {
 			return nil, fmt.Errorf("invalid content format")
 		}
-		// if first char of reasonContent is \n remove the '\n'
+		// if first char of reasonContent is \n remove the \n
 		if reasonContent != "" && reasonContent[0] == '\n' {
 			reasonContent = reasonContent[1:]
 		}
