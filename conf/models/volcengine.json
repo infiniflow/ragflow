@@ -7,7 +7,7 @@
     "chat": "chat/completions",
     "files": "files"
   },
-  "series": "volcengine",
+  "class": "volcengine",
   "models": [
     {
       "name": "doubao-seed-2-0-pro-260215",

@@ -11,7 +11,7 @@
     "rerank": "rerank",
     "files": "files"
   },
-  "series": "glm",
+  "class": "glm",
   "models": [
     {
       "name": "glm-5",

@@ -172,7 +172,7 @@ func (z *GiteeModel) Chat(modelName, message *string, apiConfig *APIConfig, chat
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelType, &content)
+	thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelClass, &content)
 
 	chatResponse := &ChatResponse{
 		Answer:        answer,
