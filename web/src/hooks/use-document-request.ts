@@ -16,6 +16,8 @@ import {
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
 import kbService, {
+  changeDocumentParser,
+  changeDocumentsStatus,
   createDocument,
   deleteDocument,
   documentFilter,
@@ -37,6 +39,7 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
+import { extractParserConfigExt } from './parser-config-utils';
 import {
   useGetKnowledgeSearchParams,
   useSetPaginationParams,
@@ -252,15 +255,19 @@ export const useSetDocumentStatus = () => {
     mutationFn: async ({
       status,
       documentId,
+      datasetId,
     }: {
       status: boolean;
       documentId: string | string[];
+      datasetId: string;
     }) => {
       const ids = Array.isArray(documentId) ? documentId : [documentId];
-      const { data } = await kbService.documentChangeStatus({
+      const { data } = await changeDocumentsStatus({
+        kb_id: datasetId,
         doc_ids: ids,
         status: Number(status),
       });
+
       if (data.code === 0) {
         message.success(i18n.t('message.modified'));
         queryClient.invalidateQueries({
@@ -296,7 +303,7 @@ export const useRunDocument = () => {
       queryClient.invalidateQueries({
         queryKey: [DocumentApiAction.FetchDocumentList],
       });
-      const ret = await kbService.documentRun({
+      const ret = await kbService.documentIngest({
         doc_ids: documentIds,
         run,
         ...(option || {}),
@@ -388,19 +395,33 @@ export const useSetDocumentParser = () => {
       parserId,
       pipelineId,
       documentId,
+      datasetId,
       parserConfig,
     }: {
       parserId: string;
       pipelineId: string;
       documentId: string;
-      parserConfig: IChangeParserConfigRequestBody;
+      datasetId: string;
+      parserConfig?: IChangeParserConfigRequestBody;
     }) => {
-      const { data } = await kbService.documentChangeParser({
-        parser_id: parserId,
-        pipeline_id: pipelineId,
-        doc_id: documentId,
-        parser_config: parserConfig,
-      });
+      // Build update payload
+      const updateData: Record<string, unknown> = {};
+      if (parserId) {
+        updateData.chunk_method = parserId;
+      }
+      if (pipelineId) {
+        updateData.pipeline_id = pipelineId;
+      }
+
+      if (parserConfig) {
+        updateData.parser_config = extractParserConfigExt(parserConfig);
+      }
+
+      const { data } = await changeDocumentParser(
+        datasetId,
+        documentId,
+        updateData,
+      );
       if (data.code === 0) {
         queryClient.invalidateQueries({
           queryKey: [DocumentApiAction.FetchDocumentList],

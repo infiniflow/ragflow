@@ -10,6 +10,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
 import { useBuildSwitchOperatorOptions } from '@/hooks/logic-hooks/use-build-operator-options';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -38,7 +39,8 @@ import { QueryVariable } from '../components/query-variable';
 export const RetrievalPartialSchema = {
   query: z.string(),
   operations: z.string(),
-  n: z.number().int().min(1).optional(),
+  n: z.number().int().optional(),
+  strict: z.boolean().optional(),
   sort_method: z.string().optional(),
   filter: z
     .object({
@@ -50,7 +52,7 @@ export const RetrievalPartialSchema = {
 };
 
 const NumFields = [
-  ListOperations.TopN,
+  ListOperations.Nth,
   ListOperations.Head,
   ListOperations.Tail,
 ];
@@ -69,6 +71,13 @@ function showField(operations: string) {
     showSortMethod,
     showFilter,
   };
+}
+
+function getMinValue(operations: string) {
+  if (operations === ListOperations.Nth) {
+    return Number.MIN_SAFE_INTEGER;
+  }
+  return 0;
 }
 
 export const FormSchema = z.object(RetrievalPartialSchema);
@@ -129,6 +138,7 @@ function ListOperationsForm({ node }: INextOperatorForm) {
   );
 
   const { showFilter, showNum, showSortMethod } = showField(operations);
+  const minValue = getMinValue(operations);
 
   const handleOperationsChange = useCallback(
     (operations: string) => {
@@ -180,23 +190,45 @@ function ListOperationsForm({ node }: INextOperatorForm) {
           )}
         </RAGFlowFormItem>
         {showNum && (
-          <FormField
-            control={form.control}
-            name="n"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('flow.flowNum')}</FormLabel>
-                <FormControl>
-                  <NumberInput
-                    {...field}
-                    className="w-full"
-                    min={1}
-                  ></NumberInput>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <>
+            <FormField
+              control={form.control}
+              name="n"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('flow.flowNum')}</FormLabel>
+                  <FormControl>
+                    <NumberInput
+                      {...field}
+                      className="w-full"
+                      min={minValue}
+                    ></NumberInput>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="strict"
+              render={({ field }) => (
+                <FormItem className="space-y-2">
+                  <FormLabel tooltip={t('flow.strictModeTip')}>
+                    {t('flow.strictMode')}
+                  </FormLabel>
+                  <FormControl>
+                    <div className="pt-1">
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      ></Switch>
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </>
         )}
         {showSortMethod && (
           <RAGFlowFormItem name="sort_method" label={t('flow.sortMethod')}>

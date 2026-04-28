@@ -33,13 +33,5 @@
         "chat"
       ]
     }
-  ],
-  "features": {
-    "thinking": {
-      "default_value": true,
-      "supported_models": [
-        "deepseek-chat"
-      ]
-    }
-  }
+  ]
 }
