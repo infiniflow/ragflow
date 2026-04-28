@@ -491,6 +491,7 @@ def _load_chunk_module(monkeypatch):
     services_pkg.user_service = user_service_mod
 
     module_path = repo_root / "api" / "apps" / "chunk_app.py"
+    module = None
     if module_path.exists():
         module_name = "test_chunk_routes_unit_module"
         spec = importlib.util.spec_from_file_location(module_name, module_path)

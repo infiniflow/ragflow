@@ -948,12 +948,18 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
         logging.warning("search dataset not found: dataset=%s", dataset_id)
         return False, "Dataset not found!"
 
+    if doc_ids is not None and not isinstance(doc_ids, list):
+        return False, "`doc_ids` should be a list"
     local_doc_ids = list(doc_ids) if doc_ids else []
 
     meta_data_filter = {}
     chat_mdl = None
     if req.get("search_id", ""):
-        search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
+        search_detail = SearchService.get_detail(req.get("search_id", ""))
+        if not search_detail:
+            logging.warning("search config not found: search_id=%s", req.get("search_id", ""))
+            return False, "Invalid search_id"
+        search_config = search_detail.get("search_config", {})
         meta_data_filter = search_config.get("meta_data_filter", {})
         if meta_data_filter.get("method") in ["auto", "semi_auto"]:
             chat_id = search_config.get("chat_id", "")
