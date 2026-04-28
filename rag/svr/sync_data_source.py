@@ -145,6 +145,13 @@ class SyncBase:
         SyncLogsService.schedule(task["connector_id"], task["kb_id"], task["poll_range_start"])
 
     async def _run_task_logic(self, task: dict):
+        """
+        Executes the core synchronization pipeline for a data source task.
+        
+        This method retrieves documents from the external source via the `_generate` method,
+        parses and upserts them into the Knowledge Base (KB), and handles stale document
+        reconciliation (sync deletion) if a remote snapshot (`file_list`) is provided.
+        """
         generate_output = await self._generate(task)
         # `_generate()` currently supports two outputs:
         # 1. `document_batch_generator`
@@ -229,6 +236,14 @@ class SyncBase:
         prefix = f"{prefix} " if prefix else ""
         next_update_info = self._format_window_boundary(next_update)
         if file_list is not None:
+            logging.info(
+                "[%s] Starting stale document reconciliation. Snapshot size: %d "
+                "(connector_id=%s, kb_id=%s)",
+                self.SOURCE_NAME,
+                len(file_list),
+                task["connector_id"],
+                task["kb_id"],
+            )
             removed_docs, _ = ConnectorService.cleanup_stale_documents_for_task(
                 task["id"],
                 task["connector_id"],
