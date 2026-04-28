@@ -143,6 +143,11 @@ const getAvailableParam = (available?: number) => {
 const chunkService = {
   retrievalTest: async (params: Record<string, any>) => {
     const datasetId = getDatasetId(params);
+    if (!datasetId) {
+      throw new Error(
+        'dataset_id (or kb_id/knowledge_id) is required for retrievalTest',
+      );
+    }
     return request.post(api.retrievalTest(datasetId), {
       data: params,
     });

@@ -480,6 +480,15 @@ async def rename_tag(tenant_id, dataset_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def search(tenant_id, dataset_id):
+    """Search (retrieval test) within a dataset.
+
+    POST /api/v1/datasets/<dataset_id>/search
+    JSON body: {"question": str (required), "doc_ids": list[str], "top_k": int, "page": int, "size": int,
+               "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool,
+               "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict}
+    Success: {"code": 0, "data": {"chunks": [...], "total": int, "labels": [...]}}
+    Errors: DATA_ERROR (102) for missing question, access denied, or internal errors.
+    """
     req = await get_request_json()
     if not req.get("question"):
         return get_error_data_result("`question` is required")
@@ -500,6 +509,13 @@ async def search(tenant_id, dataset_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def get_knowledge_graph(tenant_id, dataset_id):
+    """Get the knowledge graph of a dataset.
+
+    GET /api/v1/datasets/<dataset_id>/graph
+    Query params: optional filter params.
+    Success: {"code": 0, "data": {...}}
+    Errors: AUTHENTICATION_ERROR for access denied; DATA_ERROR for internal errors.
+    """
     try:
         success, result = await dataset_api_service.get_knowledge_graph(dataset_id, tenant_id)
         if success:

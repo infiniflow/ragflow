@@ -924,6 +924,8 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     from rag.app.tag import label_question
     from rag.prompts.generator import cross_languages, keyword_extraction
 
+    logging.debug("search(dataset=%s, tenant=%s, question=%s)", dataset_id, tenant_id, req.get("question", "")[:50])
+
     page = int(req.get("page", 1))
     size = int(req.get("size", 30))
     question = req.get("question", "")
@@ -933,10 +935,12 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     langs = req.get("cross_languages", [])
 
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        logging.warning("search access denied: dataset=%s tenant=%s", dataset_id, tenant_id)
         return False, "Only owner of dataset authorized for this operation."
 
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
+        logging.warning("search dataset not found: dataset=%s", dataset_id)
         return False, "Dataset not found!"
 
     local_doc_ids = list(doc_ids) if doc_ids else []
@@ -1013,14 +1017,17 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
                 )
 
     if use_kg:
-        default_chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-        ck = await settings.kg_retriever.retrieval(_question,
-                                               tenant_ids,
-                                               [dataset_id],
-                                               embd_mdl,
-                                               LLMBundle(kb.tenant_id, default_chat_model_config))
-        if ck["content_with_weight"]:
-            ranks["chunks"].insert(0, ck)
+        try:
+            default_chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+            ck = await settings.kg_retriever.retrieval(_question,
+                                                   tenant_ids,
+                                                   [dataset_id],
+                                                   embd_mdl,
+                                                   LLMBundle(kb.tenant_id, default_chat_model_config))
+            if ck["content_with_weight"]:
+                ranks["chunks"].insert(0, ck)
+        except Exception:
+            logging.warning("search KG retrieval failed: dataset=%s tenant=%s", dataset_id, tenant_id, exc_info=True)
     ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
     ranks["total"] = len(ranks["chunks"])
 

@@ -525,16 +525,4 @@ def search_dataset(auth, dataset_id, payload=None, *, headers=HEADERS):
     return res.json()
 
 
-def get_knowledge_graph(auth, dataset_id, *, headers=HEADERS):
-    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/graph"
-    res = requests.get(url=url, headers=headers, auth=auth)
-    return res.json()
 
-
-def delete_knowledge_graph(auth, dataset_id, payload=None, *, headers=HEADERS):
-    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/graph"
-    if payload is None:
-        res = requests.delete(url=url, headers=headers, auth=auth)
-    else:
-        res = requests.delete(url=url, headers=headers, auth=auth, json=payload)
-    return res.json()
