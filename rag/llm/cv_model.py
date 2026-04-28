@@ -1261,6 +1261,7 @@ class FuturMixCV(GptV4):
         if not base_url:
             base_url = "https://futurmix.ai/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+        logging.info("[FuturMix] CV initialized with model %s", model_name)
 
 
 class RAGconCV(GptV4):

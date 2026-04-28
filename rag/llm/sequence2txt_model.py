@@ -20,6 +20,7 @@ import os
 import re
 from abc import ABC
 import tempfile
+import logging
 
 import requests
 from openai import OpenAI
@@ -75,6 +76,7 @@ class FuturMixSeq2txt(GPTSeq2txt):
         if not base_url:
             base_url = "https://futurmix.ai/v1"
         super().__init__(key, model_name=model_name, base_url=base_url, **kwargs)
+        logging.info("[FuturMix] Speech2Text initialized with model %s", model_name)
 
 
 class QWenSeq2txt(Base):

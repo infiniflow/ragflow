@@ -6460,7 +6460,7 @@
         {
             "name": "FuturMix",
             "logo": "",
-            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT,SPEECH2TEXT,TTS,RERANK",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT,SPEECH2TEXT,TTS,TEXT RE-RANK",
             "status": "1",
             "rank": "248",
             "url": "https://futurmix.ai/v1",
@@ -6561,6 +6561,13 @@
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 25000000,
                     "model_type": "speech2text",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "jina-reranker-v2-base-multilingual",
+                    "tags": "RE-RANK,8k",
+                    "max_tokens": 8192,
+                    "model_type": "rerank",
                     "is_tools": false
                 }
             ]

@@ -186,6 +186,7 @@ class FuturMixEmbed(OpenAIEmbed):
         if not base_url:
             base_url = "https://futurmix.ai/v1"
         super().__init__(key, model_name, base_url)
+        logging.info("[FuturMix] Embedding initialized with model %s", model_name)
 
 
 class BaiChuanEmbed(OpenAIEmbed):

@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import logging
 from abc import ABC
 from urllib.parse import urljoin
 
@@ -528,6 +529,7 @@ class FuturMixRerank(OpenAI_APIRerank):
         if not base_url:
             base_url = "https://futurmix.ai/v1/rerank"
         super().__init__(key, model_name, base_url)
+        logging.info("[FuturMix] Rerank initialized with model %s", model_name)
 
 
 class RAGconRerank(Base):

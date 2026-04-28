@@ -28,6 +28,7 @@ from abc import ABC
 from datetime import datetime
 from time import mktime
 from typing import Annotated, Literal
+import logging
 from urllib.parse import urlencode
 from wsgiref.handlers import format_date_time
 
@@ -457,6 +458,7 @@ class FuturMixTTS(OpenAITTS):
         if not base_url:
             base_url = "https://futurmix.ai/v1"
         super().__init__(key, model_name, base_url, **kwargs)
+        logging.info("[FuturMix] TTS initialized with model %s", model_name)
 
 
 class StepFunTTS(OpenAITTS):

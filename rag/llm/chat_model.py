@@ -1234,6 +1234,7 @@ class FuturMixChat(Base):
         if not base_url:
             base_url = "https://futurmix.ai/v1"
         super().__init__(key, model_name, base_url, **kwargs)
+        logging.info("[FuturMix] Chat initialized with model %s", model_name)
 
 
 class LiteLLMBase(ABC):
