@@ -19,7 +19,7 @@ export const jiraConstant = (t: TFunction) => [
   },
   {
     label: 'Jira Username',
-    name: 'config.credentials.jira_user_email',
+    name: 'config.credentials.jira_username',
     type: FormFieldType.Text,
     required: true,
     tooltip: t('setting.jiraEmailTip'),

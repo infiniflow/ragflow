@@ -149,7 +149,10 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
             else:
                 logger.warning("[Jira] Scoped token requested but Jira base URL does not appear to be an Atlassian Cloud domain; scoped token ignored.")
 
-        user_email = credentials.get("jira_user_email") or credentials.get("username")
+        user_email = (
+            credentials.get("jira_user_email")
+            or credentials.get("jira_username")
+        )
         api_token = credentials.get("jira_api_token") or credentials.get("token") or credentials.get("api_token")
         password = credentials.get("jira_password") or credentials.get("password")
         rest_api_version = credentials.get("rest_api_version")
@@ -962,7 +965,16 @@ def main(config: dict[str, Any] | None = None) -> None:
 
     if not base_url:
         raise RuntimeError("Jira base URL must be provided via config or CLI arguments.")
-    if not (credentials.get("jira_api_token") or (credentials.get("jira_user_email") and credentials.get("jira_password"))):
+    if not (
+        credentials.get("jira_api_token")
+        or (
+            (
+                credentials.get("jira_user_email")
+                or credentials.get("jira_username")
+            )
+            and credentials.get("jira_password")
+        )
+    ):
         raise RuntimeError("Provide either an API token or both email/password for Jira authentication.")
 
     connector_options = {

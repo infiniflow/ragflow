@@ -1228,6 +1228,7 @@ export const DataSourceFormDefaultValues = {
       scoped_token: false,
       credentials: {
         jira_user_email: '',
+        jira_username: '',
         jira_api_token: '',
         jira_password: '',
       },
