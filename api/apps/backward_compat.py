@@ -35,8 +35,8 @@ import logging
 from quart import Blueprint, request
 
 from api.apps import login_required
-from api.apps.restful_apis import chat_api, file_api, search_api, chunk_api, system_api, openai_api, document_api
-from api.utils.api_utils import get_json_result, get_data_error_result, add_tenant_id_to_kwargs
+from api.apps.restful_apis import chat_api, file_api, chunk_api, openai_api, document_api
+from api.utils.api_utils import get_data_error_result, add_tenant_id_to_kwargs
 
 manager = Blueprint("backward_compat", __name__)
 
@@ -379,7 +379,7 @@ async def deprecated_file_upload_info():
     New path: POST /api/v1/documents/upload
     """
     from api.apps import current_user
-    
+
     logging.warning(
         "API endpoint /api/v1/file/upload_info is deprecated. "
         "Please use POST /api/v1/documents/upload instead."
