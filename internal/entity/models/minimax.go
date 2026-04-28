@@ -71,6 +71,16 @@ func (z *MinimaxModel) EncodeToEmbedding(modelName *string, texts []string, apiC
 	return nil, fmt.Errorf("not implemented")
 }
 
+// Encode encodes a list of texts into embeddings (convenience method)
+func (z *MinimaxModel) Encode(modelName *string, texts []string, apiConfig *APIConfig) ([][]float64, error) {
+	return nil, fmt.Errorf("%s, Encode not implemented", z.Name())
+}
+
+// EncodeQuery encodes a single query string into embedding (convenience method)
+func (z *MinimaxModel) EncodeQuery(modelName *string, query string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, EncodeQuery not implemented", z.Name())
+}
+
 func (z *MinimaxModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
@@ -111,4 +121,9 @@ func (z *MinimaxModel) CheckConnection(apiConfig *APIConfig) error {
 	}
 
 	return nil
+}
+
+// Rerank calculates similarity scores between query and texts
+func (z *MinimaxModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }
