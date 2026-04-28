@@ -634,15 +634,16 @@ class GoogleDrive(SyncBase):
             self._persist_rotated_credentials(task["connector_id"], new_credentials)
 
         file_list = None
+
+        # Capture end_time BEFORE the snapshot to prevent the ingestion race condition
+        end_time = datetime.now(timezone.utc).timestamp()
+
         if task["reindex"] == "1" or not task["poll_range_start"]:
             start_time = 0.0
             _begin_info = "totally"
         else:
             start_time = task["poll_range_start"].timestamp()
             _begin_info = f"from {task['poll_range_start']}"
-            
-            # Capture end_time BEFORE the snapshot to prevent the ingestion race condition
-            end_time = datetime.now(timezone.utc).timestamp()
             
             if self.conf.get("sync_deleted_files"):
                 file_list = []
