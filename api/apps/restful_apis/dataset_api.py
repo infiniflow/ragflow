@@ -506,6 +506,25 @@ async def search(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
+@manager.route('/datasets/<dataset_id>/graph/search', methods=['GET'])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def knowledge_graph(tenant_id, dataset_id):
+    try:
+        success, result = await dataset_api_service.get_knowledge_graph(dataset_id, tenant_id)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_result(
+                data=False,
+                message=result,
+                code=RetCode.AUTHENTICATION_ERROR
+            )
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route('/datasets/<dataset_id>/graph', methods=['GET'])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
