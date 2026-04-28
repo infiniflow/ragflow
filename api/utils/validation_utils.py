@@ -819,6 +819,25 @@ class DeleteReq(Base):
 class DeleteDatasetReq(DeleteReq): ...
 
 
+class SearchDatasetReq(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    question: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1), Field(...)]
+    doc_ids: Annotated[list[str], Field(default=[])]
+    page: Annotated[int, Field(default=1, ge=1)]
+    size: Annotated[int, Field(default=30, ge=1)]
+    top_k: Annotated[int, Field(default=1024, ge=1)]
+    similarity_threshold: Annotated[float, Field(default=0.0, ge=0.0, le=1.0)]
+    vector_similarity_weight: Annotated[float, Field(default=0.3, ge=0.0, le=1.0)]
+    use_kg: Annotated[bool, Field(default=False)]
+    cross_languages: Annotated[list[str], Field(default=[])]
+    keyword: Annotated[bool, Field(default=False)]
+    search_id: Annotated[str | None, Field(default=None)]
+    rerank_id: Annotated[str | None, Field(default=None)]
+    tenant_rerank_id: Annotated[str | None, Field(default=None)]
+    meta_data_filter: Annotated[dict | None, Field(default=None)]
+
+
 class DeleteDocumentReq(DeleteReq): ...
 
 
