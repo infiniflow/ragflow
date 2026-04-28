@@ -43,6 +43,7 @@ from rag.graphrag.utils import (
     does_graph_contains,
     get_graph,
     graph_merge,
+    insert_chunks_bounded,
     set_graph,
     tidy_graph,
 )
@@ -725,12 +726,7 @@ async def extract_community(
         await thread_pool_exec(settings.docStoreConn.delete, {"knowledge_graph_kwd": "community_report", "kb_id": kb_id}, search.index_name(tenant_id), kb_id)
         old_ids = []
 
-    es_bulk_size = 4
-    for b in range(0, len(chunks), es_bulk_size):
-        doc_store_result = await thread_pool_exec(settings.docStoreConn.insert,chunks[b : b + es_bulk_size],search.index_name(tenant_id),kb_id,)
-        if doc_store_result:
-            error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
-            raise Exception(error_message)
+    await insert_chunks_bounded(chunks, tenant_id, kb_id, callback=callback, label="Insert community reports")
 
     # Now that all new reports are persisted, prune stale rows.  Anything in
     # old_ids that is not also in new_ids is no longer current (community

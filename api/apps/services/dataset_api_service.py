@@ -789,13 +789,17 @@ def get_ingestion_log(dataset_id: str, tenant_id: str, log_id: str):
     return True, log.to_dict()
 
 
-def delete_index(dataset_id: str, tenant_id: str, index_type: str):
+def delete_index(dataset_id: str, tenant_id: str, index_type: str, wipe: bool = True):
     """
     Delete an indexing task (graph/raptor/mindmap) for a dataset.
 
     :param dataset_id: dataset ID
     :param tenant_id: tenant ID
     :param index_type: one of "graph", "raptor", "mindmap"
+    :param wipe: when True (default) the persisted artefacts (graph rows,
+        raptor summaries) are removed from the doc store and any GraphRAG
+        phase-completion markers are cleared.  Pass False to cancel the
+        running task while keeping prior progress so it can be resumed.
     :return: (success, result) or (success, error_message)
     """
     if index_type not in _VALID_INDEX_TYPES:
@@ -815,6 +819,8 @@ def delete_index(dataset_id: str, tenant_id: str, index_type: str):
     task_finish_at_field = f"{task_id_field.replace('_task_id', '_task_finish_at')}"
     task_id = getattr(kb, task_id_field, None)
 
+    logging.info("delete_index: dataset=%s index_type=%s wipe=%s", dataset_id, index_type, wipe)
+
     if task_id:
         from rag.utils.redis_conn import REDIS_CONN
         try:
@@ -823,11 +829,16 @@ def delete_index(dataset_id: str, tenant_id: str, index_type: str):
             logging.exception(e)
         TaskService.delete_by_id(task_id)
 
-    if index_type == "graph":
+    if wipe and index_type == "graph":
         from rag.nlp import search
+        from rag.graphrag.phase_markers import clear_phase_markers
         settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]},
                                      search.index_name(kb.tenant_id), dataset_id)
-    elif index_type == "raptor":
+        # Wiping the graph invalidates any phase-completion markers used to
+        # short-circuit resolution / community detection on resume.
+        clear_phase_markers(dataset_id)
+        logging.info("delete_index: cleared GraphRAG artefacts and phase markers for dataset=%s", dataset_id)
+    elif wipe and index_type == "raptor":
         from rag.nlp import search
         settings.docStoreConn.delete({"raptor_kwd": ["raptor"]},
                                      search.index_name(kb.tenant_id), dataset_id)
