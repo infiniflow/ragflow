@@ -1,5 +1,5 @@
 import { FormContainer } from '@/components/form-container';
-import { TopNFormField } from '@/components/top-n-item';
+import { DEFAULT_TOP_N_MAX, TopNFormField } from '@/components/top-n-item';
 import {
   Form,
   FormControl,
