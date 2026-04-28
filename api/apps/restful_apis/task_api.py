@@ -57,25 +57,6 @@ async def _cancel_task(task_id):
     Sets a Redis cancel flag, updates the task progress to -1 (cancelled),
         and marks the associated document's run status as CANCEL if applicable.
     """
-    exists, task = TaskService.get_by_id(task_id)
-    if not exists:
-        return get_data_error_result(
-            code=RetCode.NOT_FOUND,
-            message=f"Task '{task_id}' not found.",
-        )
-
-    # A task is stoppable if it hasn't completed (progress < 1) and isn't already
-    # in a failed/cancelled state (progress >= 0).  progress == -1 means the task
-    # previously failed or was cancelled.
-    if task.progress < 0:
-        return get_data_error_result(
-            message="Task is already in a cancelled or failed state.",
-        )
-    if task.progress >= 1:
-        return get_data_error_result(
-            message="Task has already completed and cannot be stopped.",
-        )
-
     try:
         REDIS_CONN.set(f"{task_id}-cancel", "x")
     except Exception as e:
@@ -84,6 +65,10 @@ async def _cancel_task(task_id):
             code=RetCode.CONNECTION_ERROR,
             message="Failed to stop task",
         )
+
+    exists, task = TaskService.get_by_id(task_id)
+    if not exists:
+        return get_json_result(data=True)
 
     # Append a cancellation message so the user can see it in progress_msg.
     try:
