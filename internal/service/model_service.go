@@ -198,7 +198,7 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 	return providerInfo.ModelDriver.ListModels(apiConfig)
 }
 
-func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName, apiKey, userID, region string) (common.ErrorCode, error) {
+func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName, apiKey, baseURL, region, userID string) (common.ErrorCode, error) {
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -224,6 +224,7 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 
 	extra := make(map[string]string)
 	extra["region"] = region
+	extra["base_url"] = baseURL
 	// convert extra to string
 	extraByte, err := json.Marshal(extra)
 	if err != nil {
@@ -248,7 +249,7 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 	err = m.modelInstanceDAO.Create(tenantModelProvider)
 
 	if err != nil {
-		return common.CodeServerError, errors.New("fail to create model provider")
+		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
 	}
 	return common.CodeSuccess, nil
 }
@@ -294,7 +295,7 @@ func (m *ModelProviderService) ListProviderInstances(providerName, userID string
 			"providerID":   instance.ProviderID,
 			"apiKey":       instance.APIKey,
 			"status":       instance.Status,
-			"region":       extra["region"],
+			"extra":        instance.Extra,
 		})
 	}
 

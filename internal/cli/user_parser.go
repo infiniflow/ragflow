@@ -531,6 +531,8 @@ func (p *Parser) parseAddCommand() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenProvider:
 		return p.parseAddProvider()
+	case TokenModel:
+		return p.parseAddModel()
 	default:
 		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
 	}
@@ -718,6 +720,139 @@ func (p *Parser) parseAddProvider() (*Command, error) {
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+	return cmd, nil
+}
+
+// syntax: add model 'xxx' to provider 'vllm' instance 'test' with tokens 1024 chat think vision;
+func (p *Parser) parseAddModel() (*Command, error) {
+	p.nextToken() // consume MODEL
+
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected model name")
+	}
+
+	modelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken() // consume model name
+
+	if p.curToken.Type != TokenTo {
+		return nil, fmt.Errorf("expected TO")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenProvider {
+		return nil, fmt.Errorf("expected PROVIDER")
+	}
+	p.nextToken()
+
+	// provider name
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected provider name")
+	}
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenInstance {
+		return nil, fmt.Errorf("expected INSTANCE")
+	}
+	p.nextToken()
+
+	// instance name
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected provider name")
+	}
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	modelType := ""
+	supportThink := false
+	supportVision := false
+	maxTokens := 0
+	if p.curToken.Type == TokenWith {
+		p.nextToken() // pass WITH
+		switch p.curToken.Type {
+		case TokenThink:
+			{
+				p.nextToken() // pass URL
+				supportThink = true
+			}
+		case TokenVision:
+			{
+				p.nextToken() // pass URL
+				supportVision = true
+			}
+		case TokenChat:
+			{
+				p.nextToken() // pass URL
+				modelType = "chat"
+			}
+		case TokenEmbedding:
+			{
+				p.nextToken() // pass URL
+				modelType = "embedding"
+			}
+		case TokenRerank:
+			{
+				p.nextToken() // pass URL
+				modelType = "rerank"
+			}
+		case TokenOCR:
+			{
+				p.nextToken() // pass URL
+				modelType = "ocr"
+			}
+		case TokenTTS:
+			{
+				p.nextToken() // pass URL
+				modelType = "tts"
+			}
+		case TokenASR:
+			{
+				p.nextToken() // pass URL
+				modelType = "asr"
+			}
+		case TokenTokens:
+			{
+				p.nextToken() // pass TOKENS
+
+				// model url
+				if p.curToken.Type != TokenInteger {
+					return nil, fmt.Errorf("expected integer")
+				}
+				maxTokens, err = p.parseNumber()
+				if err != nil {
+					return nil, err
+				}
+				p.nextToken() // consume
+				break
+			}
+		default:
+			return nil, fmt.Errorf("expected VERBOSITY or EFFORT")
+		}
+	}
+
+	cmd := NewCommand("add_custom_model")
+	cmd.Params["model_name"] = modelName
+	cmd.Params["model_type"] = modelType
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["support_think"] = supportThink
+	cmd.Params["support_vision"] = supportVision
+	cmd.Params["max_tokens"] = maxTokens
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
 	return cmd, nil
 }
 
@@ -1201,7 +1336,7 @@ func (p *Parser) parseAlterProvider() (*Command, error) {
 	return cmd, nil
 }
 
-// parseCreateProviderInstance parses CREATE PROVIDER <name> INSTANCE <instance_name> <api_key> command
+// parseCreateProviderInstance parses CREATE PROVIDER <name> INSTANCE <instance_name> KEY <api_key> URL <base_url> command
 // instance_name cannot be "default"
 func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 	p.nextToken() // consume PROVIDER
@@ -1226,17 +1361,49 @@ func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 	if instanceName == "default" {
 		return nil, fmt.Errorf("instance name cannot be 'default'")
 	}
-
 	p.nextToken()
+
+	if p.curToken.Type != TokenKey {
+		return nil, fmt.Errorf("expected KEY after instance name")
+	}
+	p.nextToken()
+
 	apiKey, err := p.parseQuotedString()
 	if err != nil {
 		return nil, fmt.Errorf("expected API key: %w", err)
+	}
+	p.nextToken()
+
+	baseURL := ""
+	if p.curToken.Type == TokenURL {
+		p.nextToken()
+		baseURL, err = p.parseQuotedString()
+		if err != nil {
+			return nil, fmt.Errorf("expected base URL: %w", err)
+		}
+		p.nextToken()
+	}
+
+	region := ""
+	if p.curToken.Type == TokenRegion {
+		p.nextToken()
+		region, err = p.parseQuotedString()
+		if err != nil {
+			return nil, fmt.Errorf("expected base URL: %w", err)
+		}
+		p.nextToken()
 	}
 
 	cmd := NewCommand("create_provider_instance")
 	cmd.Params["provider_name"] = providerName
 	cmd.Params["instance_name"] = instanceName
 	cmd.Params["api_key"] = apiKey
+	if baseURL != "" {
+		cmd.Params["base_url"] = baseURL
+	}
+	if region != "" {
+		cmd.Params["region"] = region
+	}
 
 	p.nextToken()
 	// Semicolon is optional

@@ -1129,11 +1129,23 @@ func (c *RAGFlowClient) CreateProviderInstance(cmd *Command) (ResponseIf, error)
 		return nil, fmt.Errorf("API key not provided")
 	}
 
+	baseUrl, ok := cmd.Params["base_url"].(string)
+	if !ok {
+		baseUrl = ""
+	}
+
+	region, ok := cmd.Params["region"].(string)
+	if !ok {
+		region = ""
+	}
+
 	url := fmt.Sprintf("/providers/%s/instances", providerName)
 
 	payload := map[string]interface{}{
 		"instance_name": instanceName,
 		"api_key":       apiKey,
+		"base_url":      baseUrl,
+		"region":        region,
 	}
 
 	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
@@ -1681,6 +1693,91 @@ func (c *RAGFlowClient) ShowCurrentModel(cmd *Command) (ResponseIf, error) {
 		},
 	}
 	return &result, nil
+}
+
+func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance name not provided")
+	}
+
+	//modelName, ok := cmd.Params["model_name"].(string)
+	//if !ok {
+	//	return nil, fmt.Errorf("model name not provided")
+	//}
+	//
+	//modelType, ok := cmd.Params["model_type"].(string)
+	//if !ok {
+	//	return nil, fmt.Errorf("model type not provided")
+	//}
+	//
+	//apiKey, ok := cmd.Params["api_key"].(string)
+	//if !ok {
+	//	return nil, fmt.Errorf("api key not provided")
+	//}
+	//
+	//baseUrl, ok := cmd.Params["base_url"].(string)
+	//if !ok {
+	//	return nil, fmt.Errorf("base url not provided")
+	//}
+	//
+	//supportThink, ok := cmd.Params["support_think"].(bool)
+	//if !ok {
+	//	return nil, fmt.Errorf("support think not provided")
+	//}
+	//
+	//supportVision, ok := cmd.Params["support_vision"].(bool)
+	//if !ok {
+	//	return nil, fmt.Errorf("support vision not provided")
+	//}
+	//
+	//maxTokens, ok := cmd.Params["max_tokens"].(int)
+	//if !ok {
+	//	return nil, fmt.Errorf("max tokens not provided")
+	//}
+
+	url := fmt.Sprintf("/providers/%s/instances/%s/connection", providerName, instanceName)
+
+	resp, err := c.HTTPClient.Request("GET", url, true, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check provider connection: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to check provider connection: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+
+	//cmd := NewCommand("add_custom_model")
+	//cmd.Params["model_name"] = modelName
+	//cmd.Params["model_type"] = modelType
+	//cmd.Params["provider_name"] = providerName
+	//cmd.Params["instance_name"] = instanceName
+	//cmd.Params["api_key"] = apiKey
+	//cmd.Params["base_url"] = baseUrl
+	//cmd.Params["support_think"] = supportThink
+	//cmd.Params["support_vision"] = supportVision
+	//cmd.Params["max_tokens"] = maxTokens
 }
 
 // Context related commands
