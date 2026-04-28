@@ -924,7 +924,12 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     from rag.app.tag import label_question
     from rag.prompts.generator import cross_languages, keyword_extraction
 
-    logging.debug("search(dataset=%s, tenant=%s, question=%s)", dataset_id, tenant_id, req.get("question", "")[:50])
+    logging.debug(
+        "search(dataset=%s, tenant=%s, question_len=%s)",
+        dataset_id,
+        tenant_id,
+        len(req.get("question", "")),
+    )
 
     page = int(req.get("page", 1))
     size = int(req.get("size", 30))
@@ -1028,8 +1033,11 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
                 ranks["chunks"].insert(0, ck)
         except Exception:
             logging.warning("search KG retrieval failed: dataset=%s tenant=%s", dataset_id, tenant_id, exc_info=True)
-    ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
-    ranks["total"] = len(ranks["chunks"])
+    total = ranks.get("total", 0)
+    ranks["chunks"] = settings.retriever.retrieval_by_children(
+        ranks["chunks"], tenant_ids
+    )
+    ranks["total"] = total
 
     for c in ranks["chunks"]:
         c.pop("vector", None)

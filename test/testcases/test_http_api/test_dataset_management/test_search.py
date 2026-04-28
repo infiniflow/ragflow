@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import search_dataset
+from common import search_dataset, knowledge_graph
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 
@@ -69,3 +69,15 @@ class TestDatasetSearch:
         dataset_id, _, _ = add_chunks
         res = search_dataset(HttpApiAuth, dataset_id, payload)
         assert res["code"] == expected_code, res
+
+
+@pytest.mark.p2
+class TestDatasetGraph:
+    def test_graph_requires_auth(self):
+        res = knowledge_graph(None, "dataset_id")
+        assert res["code"] == 401
+
+    def test_graph_basic(self, HttpApiAuth, add_dataset_func):
+        dataset_id = add_dataset_func
+        res = knowledge_graph(HttpApiAuth, dataset_id)
+        assert res["code"] == 0, res
