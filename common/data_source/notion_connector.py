@@ -596,18 +596,19 @@ class NotionConnector(LoadConnector, PollConnector):
     def _read_pages_for_slim_docs(
         self,
         pages: list[NotionPage],
+        slim_indexed_pages: set[str],
     ) -> Generator[SlimDocument, None, None]:
         all_child_page_ids: list[str] = []
 
         for page in pages:
             if isinstance(page, dict):
                 page = NotionPage(**page)
-            if page.id in self.indexed_pages:
+            if page.id in slim_indexed_pages:
                 continue
 
             child_page_ids, attachment_ids = self._read_slim_blocks(page.id)
             all_child_page_ids.extend(child_page_ids)
-            self.indexed_pages.add(page.id)
+            slim_indexed_pages.add(page.id)
 
             yield SlimDocument(id=page.id)
             for attachment_id in attachment_ids:
@@ -618,20 +619,23 @@ class NotionConnector(LoadConnector, PollConnector):
                 child_page_batch = [
                     self._fetch_page(page_id)
                     for page_id in child_page_batch_ids
-                    if page_id not in self.indexed_pages
+                    if page_id not in slim_indexed_pages
                 ]
-                yield from self._read_pages_for_slim_docs(child_page_batch)
+                yield from self._read_pages_for_slim_docs(
+                    child_page_batch,
+                    slim_indexed_pages,
+                )
 
     def retrieve_all_slim_docs_perm_sync(
         self,
         callback: Any = None,
     ) -> GenerateSlimDocumentOutput:
-        self.indexed_pages.clear()
+        slim_indexed_pages: set[str] = set()
 
         if self.recursive_index_enabled and self.root_page_id:
             root_pages = [self._fetch_page(page_id=self.root_page_id)]
             yield from batch_generator(
-                self._read_pages_for_slim_docs(root_pages),
+                self._read_pages_for_slim_docs(root_pages, slim_indexed_pages),
                 self.batch_size,
             )
             return
@@ -646,7 +650,7 @@ class NotionConnector(LoadConnector, PollConnector):
             db_res = self._search_notion(query_dict)
             pages = [NotionPage(**page) for page in db_res.results]
 
-            for doc in self._read_pages_for_slim_docs(pages):
+            for doc in self._read_pages_for_slim_docs(pages, slim_indexed_pages):
                 slim_batch.append(doc)
                 if len(slim_batch) >= self.batch_size:
                     yield slim_batch
