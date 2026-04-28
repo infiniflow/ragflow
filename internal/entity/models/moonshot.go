@@ -73,6 +73,16 @@ func (z *MoonshotModel) EncodeToEmbedding(modelName *string, texts []string, api
 	return nil, fmt.Errorf("not implemented")
 }
 
+// Encode encodes a list of texts into embeddings (convenience method)
+func (z *MoonshotModel) Encode(modelName *string, texts []string, apiConfig *APIConfig) ([][]float64, error) {
+	return nil, fmt.Errorf("%s, Encode not implemented", z.Name())
+}
+
+// EncodeQuery encodes a single query string into embedding (convenience method)
+func (z *MoonshotModel) EncodeQuery(modelName *string, query string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, EncodeQuery not implemented", z.Name())
+}
+
 func (z *MoonshotModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
 	if apiConfig.Region != nil {
@@ -192,4 +202,9 @@ func (z *MoonshotModel) CheckConnection(apiConfig *APIConfig) error {
 		return err
 	}
 	return nil
+}
+
+// Rerank calculates similarity scores between query and texts
+func (z *MoonshotModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }

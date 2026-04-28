@@ -8,7 +8,7 @@
     "models": "models",
     "balance": "users/me/balance"
   },
-  "series": "kimi",
+  "class": "kimi",
   "models": [
     {
       "name": "kimi-k2.6",

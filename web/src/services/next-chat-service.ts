@@ -78,7 +78,7 @@ const methods = {
   },
   thumbup: {
     url: thumbup,
-    method: 'patch',
+    method: 'put',
   },
   chatsTts: {
     url: chatsTts,

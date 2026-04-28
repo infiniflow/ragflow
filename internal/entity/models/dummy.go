@@ -58,6 +58,16 @@ func (z *DummyModel) EncodeToEmbedding(modelName *string, texts []string, apiCon
 	return nil, fmt.Errorf("not implemented")
 }
 
+// Encode encodes a list of texts into embeddings (convenience method)
+func (z *DummyModel) Encode(modelName *string, texts []string, apiConfig *APIConfig) ([][]float64, error) {
+	return nil, fmt.Errorf("%s, Encode not implemented", z.Name())
+}
+
+// EncodeQuery encodes a single query string into embedding (convenience method)
+func (z *DummyModel) EncodeQuery(modelName *string, query string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, EncodeQuery not implemented", z.Name())
+}
+
 func (z *DummyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return nil, fmt.Errorf("not implemented")
 }
@@ -68,4 +78,9 @@ func (z *DummyModel) Balance(apiConfig *APIConfig) (map[string]interface{}, erro
 
 func (z *DummyModel) CheckConnection(apiConfig *APIConfig) error {
 	return fmt.Errorf("no such method")
+}
+
+// Rerank calculates similarity scores between query and texts
+func (z *DummyModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }
