@@ -10,6 +10,7 @@ from common.data_source.utils import (
     download_object,
     extract_size_bytes,
     get_file_ext,
+    is_accepted_file_ext,
 )
 from common.data_source.config import BlobType, DocumentSource, BLOB_STORAGE_SIZE_THRESHOLD, INDEX_BATCH_SIZE
 from common.data_source.exceptions import (
@@ -18,14 +19,8 @@ from common.data_source.exceptions import (
     CredentialExpiredError,
     InsufficientPermissionsError
 )
-from common.data_source.interfaces import LoadConnector, PollConnector
-from common.data_source.models import (
-    Document,
-    SecondsSinceUnixEpoch,
-    GenerateDocumentsOutput,
-    GenerateSlimDocumentOutput,
-    SlimDocument,
-)
+from common.data_source.interfaces import LoadConnector, OnyxExtensionType, PollConnector
+from common.data_source.models import Document, SecondsSinceUnixEpoch, GenerateDocumentsOutput
 
 
 class BlobStorageConnector(LoadConnector, PollConnector):

@@ -6,6 +6,7 @@
   "url_suffix": {
     "chat": "chat/completions"
   },
+  "series": "grok",
   "models": [
     {
       "name": "grok-4",

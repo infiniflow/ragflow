@@ -46,9 +46,13 @@ Creates a model response for the given historical chat conversation via OpenAI's
 
 #### Parameters
 
+##### chat_id: `string`, *Required*
+
+Existing chat assistant ID. This value is part of the request path: `/api/v1/openai/<chat_id>/chat/completions`.
+
 ##### model: `string`, *Required*
 
-The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
+The model used to generate the response. You may also use the legacy placeholder value `"model"` to keep using the chat assistant's configured model.
 
 ##### messages: `list[object]`, *Required*
 
@@ -65,20 +69,12 @@ Whether to receive the response as a stream. Set this to `false` explicitly if y
 
 #### Examples
 
-> **Note**
-> Streaming via `client.chat.completions.create(stream=True, ...)` does not
-> return `reference` currently because `reference` is only exposed in the
-> non-stream response payload. The only way to return `reference` is non-stream
-> mode with `with_raw_response`.
-:::caution NOTE
-Streaming via `client.chat.completions.create(stream=True, ...)` does not return `reference` because it is *only* included in the raw response payload in non-stream mode. To return `reference`, set `stream=False`.
-:::
 ```python
 from openai import OpenAI
 import json
 
-model = "model"
-client = OpenAI(api_key="ragflow-api-key", base_url=f"http://ragflow_address/api/v1/chats_openai/<chat_id>")
+model = "glm-4-flash@ZHIPU-AI"
+client = OpenAI(api_key="ragflow-api-key", base_url="http://ragflow_address/api/v1/openai/<chat_id>/chat")
 
 stream = True
 reference = True
@@ -92,13 +88,11 @@ request_kwargs = dict(
         {"role": "user", "content": "Can you tell me how to install neovim"},
     ],
     extra_body={
-        "extra_body": {
-            "reference": reference,
-            "reference_metadata": {
-                "include": True,
-                "fields": ["author", "year", "source"],
-            },
-        }
+        "reference": reference,
+        "reference_metadata": {
+            "include": True,
+            "fields": ["author", "year", "source"],
+        },
     },
 )
 
@@ -118,6 +112,8 @@ else:
     print("assistant:", data["choices"][0]["message"].get("content"))
     print("reference:", data["choices"][0]["message"].get("reference"))
 ```
+
+When `extra_body.reference` is `true`, the streamed final chunk may include `choices[0].delta.reference`, and the non-stream response may include `choices[0].message.reference`.
 
 When `extra_body.reference_metadata.include` is `true`, each reference chunk may include a `document_metadata` object in both streaming and non-streaming responses.
 
@@ -1710,7 +1706,7 @@ from ragflow_sdk import RAGFlow, Agent
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 agent_id = "AGENT_ID"
-agent = rag_object.list_agents(id = agent_id)[0]
+agent = rag_object.get_agent(agent_id)
 session = agent.create_session()
 # Or create in release mode:
 # session = agent.create_session(release=True)
@@ -1721,10 +1717,10 @@ session = agent.create_session()
 ### Converse with agent
 
 ```python
-Session.ask(question: str="", stream: bool = False) -> Optional[Message, iter[Message]]
+Session.ask(question: str = "", stream: bool = False, **kwargs) -> Optional[Message | iter[Message]]
 ```
 
-Asks a specified agent a question to start an AI-powered conversation.
+Asks a specified agent through the unified completion endpoint.
 
 :::tip NOTE
 In streaming mode, not all responses include a reference, as this depends on the system's judgement.
@@ -1734,14 +1730,24 @@ In streaming mode, not all responses include a reference, as this depends on the
 
 ##### question: `string`
 
-The question to start an AI-powered conversation. If the **Begin** component takes parameters, a question is not required.
+The user message sent to the agent. If the **Begin** component takes parameters, `question` can be an empty string.
 
 ##### stream: `bool`
 
 Indicates whether to output responses in a streaming way:
 
-- `True`: Enable streaming (default).
+- `True`: Enable streaming.
 - `False`: Disable streaming.
+
+##### kwargs: `dict`
+
+Additional request parameters forwarded to the completion API. Common options:
+
+- `inputs`: Variables defined in the **Begin** component.
+- `session_id`: Continue an existing session instead of creating a new one.
+- `release`: Use the latest published version of the agent.
+- `return_trace`: Include execution trace information in the response.
+- Other custom Begin component parameters supported by the current workflow.
 
 #### Returns
 
@@ -1792,8 +1798,8 @@ from ragflow_sdk import RAGFlow, Agent
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_id = "AGENT_ID"
-agent = rag_object.list_agents(id = AGENT_id)[0]
-session = agent.create_session()    
+agent = rag_object.get_agent(AGENT_id)
+session = agent.create_session()
 
 print("\n===== Miss R ====\n")
 print("Hello. What can I do for you?")
@@ -1806,6 +1812,31 @@ while True:
     for ans in session.ask(question, stream=True):
         print(ans.content[len(cont):], end='', flush=True)
         cont = ans.content
+```
+
+Use Begin inputs and request trace output:
+
+```python
+from ragflow_sdk import RAGFlow, Agent
+
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+agent = rag_object.get_agent("AGENT_ID")
+session = agent.create_session()
+
+message = session.ask(
+    "",
+    stream=False,
+    inputs={
+        "line_var": {
+            "type": "line",
+            "value": "I am line_var",
+        }
+    },
+    return_trace=True,
+)
+
+print(message.content)
+print(message.reference)
 ```
 
 ---
@@ -1861,7 +1892,7 @@ from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_id = "AGENT_ID"
-agent = rag_object.list_agents(id = AGENT_id)[0]
+agent = rag_object.get_agent(AGENT_id)
 sessons = agent.list_sessions()
 for session in sessions:
     print(session)
@@ -1900,7 +1931,7 @@ from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_id = "AGENT_ID"
-agent = rag_object.list_agents(id = AGENT_id)[0]
+agent = rag_object.get_agent(AGENT_id)
 agent.delete_sessions(ids=["id_1","id_2"])
 agent.delete_sessions(delete_all=True)
 ```
@@ -1917,14 +1948,12 @@ agent.delete_sessions(delete_all=True)
 RAGFlow.list_agents(
     page: int = 1, 
     page_size: int = 30, 
-    orderby: str = "create_time", 
-    desc: bool = True,
-    id: str = None,
-    title: str = None
+    orderby: str = "update_time", 
+    desc: bool = True
 ) -> List[Agent]
 ```
 
-Lists agents.
+Lists agents. This is a collection API and always returns a list.
 
 #### Parameters
 
@@ -1940,20 +1969,12 @@ The number of agents on each page. Defaults to `30`.
 
 The attribute by which the results are sorted. Available options:
 
-- `"create_time"` (default)
-- `"update_time"`
+- `"create_time"`
+- `"update_time"` (default)
 
 ##### desc: `bool`
 
 Indicates whether the retrieved agents should be sorted in descending order. Defaults to `True`.
-
-##### id: `string`  
-
-The ID of the agent to retrieve. Defaults to `None`.
-
-##### name: `string`  
-
-The name of the agent to retrieve. Defaults to `None`.
 
 #### Returns
 
@@ -1967,6 +1988,37 @@ from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 for agent in rag_object.list_agents():
     print(agent)
+```
+
+---
+
+### Get agent
+
+```python
+RAGFlow.get_agent(agent_id: str) -> Agent
+```
+
+Gets a single agent by ID and returns the detailed agent payload.
+
+#### Parameters
+
+##### agent_id: `string`
+
+The ID of the agent to retrieve.
+
+#### Returns
+
+- Success: An `Agent` object.
+- Failure: `Exception`.
+
+#### Examples
+
+```python
+from ragflow_sdk import RAGFlow
+
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+agent = rag_object.get_agent("AGENT_ID")
+print(agent)
 ```
 
 ---

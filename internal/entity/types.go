@@ -16,6 +16,10 @@
 
 package entity
 
+import (
+	"ragflow/internal/entity/models"
+)
+
 // ModelType represents the type of model
 type ModelType string
 
@@ -39,9 +43,9 @@ const (
 // EmbeddingModel interface for embedding models
 type EmbeddingModel interface {
 	// Encode encodes a list of texts into embeddings
-	Encode(texts []string) ([][]float64, error)
+	Encode(modelName *string, texts []string, apiConfig *models.APIConfig) ([][]float64, error)
 	// EncodeQuery encodes a single query string into embedding
-	EncodeQuery(query string) ([]float64, error)
+	EncodeQuery(modelName *string, query string, apiConfig *models.APIConfig) ([]float64, error)
 }
 
 // ChatModel interface for chat models
@@ -54,8 +58,8 @@ type ChatModel interface {
 
 // RerankModel interface for rerank models
 type RerankModel interface {
-	// Similarity calculates similarity between query and texts
-	Similarity(query string, texts []string) ([]float64, error)
+	// Rerank calculates similarity between query and texts
+	Rerank(query string, texts []string, apiConfig *models.APIConfig) ([]float64, error)
 }
 
 // ModelConfig represents configuration for a model
@@ -68,4 +72,11 @@ type ModelConfig struct {
 	APIBase    string    `json:"api_base"`
 	MaxTokens  int64     `json:"max_tokens"`
 	IsTools    bool      `json:"is_tools"`
+}
+
+// ModelCredentials holds the credentials for a model
+type ModelCredentials struct {
+	ProviderName string
+	ModelName    string
+	APIKey       string
 }

@@ -185,6 +185,106 @@ func (z *ZhipuAIModel) Chat(modelName, message *string, apiConfig *APIConfig, ch
 	return chatResponse, nil
 }
 
+// ChatWithMessages sends multiple messages with roles and returns response
+func (z *ZhipuAIModel) ChatWithMessages(modelName string, apiKey *string, messages []Message, chatModelConfig *ChatConfig) (string, error) {
+	if apiKey == nil || *apiKey == "" {
+		return "", fmt.Errorf("api key is nil or empty")
+	}
+
+	if len(messages) == 0 {
+		return "", fmt.Errorf("messages is empty")
+	}
+
+	url := fmt.Sprintf("%s/%s", z.BaseURL["default"], z.URLSuffix.Chat)
+
+	// Convert messages to the format expected by API
+	apiMessages := make([]map[string]string, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]string{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
+	// Build request body
+	reqBody := map[string]interface{}{
+		"model":       modelName,
+		"messages":    apiMessages,
+		"stream":      false,
+		"temperature": 1,
+	}
+
+	if chatModelConfig != nil {
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		}
+
+		if chatModelConfig.Temperature != nil {
+			reqBody["temperature"] = *chatModelConfig.Temperature
+		}
+
+		if chatModelConfig.TopP != nil {
+			reqBody["top_p"] = *chatModelConfig.TopP
+		}
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	choices, ok := result["choices"].([]interface{})
+	if !ok || len(choices) == 0 {
+		return "", fmt.Errorf("no choices in response")
+	}
+
+	firstChoice, ok := choices[0].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("invalid choice format")
+	}
+
+	messageMap, ok := firstChoice["message"].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("invalid message format")
+	}
+
+	content, ok := messageMap["content"].(string)
+	if !ok {
+		return "", fmt.Errorf("invalid content format")
+	}
+
+	return content, nil
+}
+
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
 func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	var region = "default"
@@ -192,7 +292,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, message *string, apiCon
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/chat/completions", z.BaseURL[region])
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(z.BaseURL[region], "/"), z.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
@@ -304,16 +404,16 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, message *string, apiCon
 			continue
 		}
 
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
+		reasoningContent, ok := delta["reasoning_content"].(string)
+		if ok && reasoningContent != "" {
+			if err := sender(nil, &reasoningContent); err != nil {
 				return err
 			}
 		}
 
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
+		content, ok := delta["content"].(string)
+		if ok && content != "" {
+			if err := sender(&content, nil); err != nil {
 				return err
 			}
 		}
@@ -340,7 +440,7 @@ func (z *ZhipuAIModel) EncodeToEmbedding(modelName *string, texts []string, apiC
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/embedding", z.BaseURL[region])
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(z.BaseURL[region], "/"), z.URLSuffix.Embedding)
 
 	embeddings := make([][]float64, len(texts))
 
@@ -418,6 +518,23 @@ func (z *ZhipuAIModel) EncodeToEmbedding(modelName *string, texts []string, apiC
 	return embeddings, nil
 }
 
+// Encode encodes a list of texts into embeddings (convenience method)
+func (z *ZhipuAIModel) Encode(modelName *string, texts []string, apiConfig *APIConfig) ([][]float64, error) {
+	return z.EncodeToEmbedding(modelName, texts, apiConfig, nil)
+}
+
+// EncodeQuery encodes a single query string into embedding (convenience method)
+func (z *ZhipuAIModel) EncodeQuery(modelName *string, query string, apiConfig *APIConfig) ([]float64, error) {
+	embeddings, err := z.Encode(modelName, []string{query}, apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	if len(embeddings) == 0 {
+		return nil, fmt.Errorf("no embedding returned")
+	}
+	return embeddings[0], nil
+}
+
 func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
@@ -458,4 +575,9 @@ func (z *ZhipuAIModel) CheckConnection(apiConfig *APIConfig) error {
 	}
 
 	return nil
+}
+
+// Rerank calculates similarity scores between query and texts
+func (z *ZhipuAIModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }
