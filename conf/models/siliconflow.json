@@ -37,14 +37,13 @@
       "model_types": [
         "rerank"
       ]
-    }
-  ],
-  "features": {
-    "thinking": {
-      "default_value": true,
-      "supported_models": [
-        "deepseek-chat"
+    },
+    {
+      "name": "Qwen/Qwen3-Embedding-0.6B",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
       ]
     }
-  }
+  ]
 }

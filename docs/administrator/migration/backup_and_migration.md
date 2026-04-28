@@ -1,6 +1,6 @@
 ---
 sidebar_position: 2
-slug: /migration
+slug: /backup_and_migration
 sidebar_custom_props: {
   categoryIcon: LucideLocateFixed
 }
