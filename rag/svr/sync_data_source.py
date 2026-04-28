@@ -81,6 +81,12 @@ task_limiter = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
 
 
 class SyncBase:
+    """
+    Base class for all data source synchronization connectors.
+    
+    Defines the standard interface for connecting to external APIs, polling for 
+    new or updated documents, and managing synchronization state intervals.
+    """
     SOURCE_NAME: str = None
 
     def __init__(self, conf: dict) -> None:
@@ -119,6 +125,13 @@ class SyncBase:
         logging.info("Connect to %s: %s, %s", name, details, cls.window_info(task))
 
     async def __call__(self, task: dict):
+        """
+        Entry point for executing a synchronization task worker.
+        
+        Manages task execution boundaries including status logging, asynchronous 
+        timeouts, and top-level exception handling, while delegating the core 
+        ingestion logic to `_run_task_logic`.
+        """
         SyncLogsService.start(task["id"], task["connector_id"])
 
         async with task_limiter:
