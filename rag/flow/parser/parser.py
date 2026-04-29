@@ -645,7 +645,6 @@ class Parser(ProcessBase):
             b["layout_type"] = layout
             if conf.get("remove_header_footer") and re.search(r"(header|footer|number)", raw_layout, re.I):
                 continue 
-            print(f"\n {b}")
             if flatten_media_to_text:
                 b["doc_type_kwd"] = "text"
             elif layout == "table":
