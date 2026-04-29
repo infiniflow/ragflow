@@ -274,6 +274,9 @@ class ZhipuEmbed(Base):
             raise Exception(f"Error: {res}")
 
 
+
+
+
 class OllamaEmbed(Base):
     _FACTORY_NAME = "Ollama"
 
@@ -285,27 +288,32 @@ class OllamaEmbed(Base):
         self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
 
     def encode(self, texts: list):
-        arr = []
+        batch = []
         tks_num = 0
+        # Remove special tokens if they exist
         for txt in texts:
             # remove special tokens if they exist base on regex in one request
+            mod_txt = txt
             for token in OllamaEmbed._special_tokens:
-                txt = txt.replace(token, "")
-            res = self.client.embeddings(prompt=txt, model=self.model_name, options={"use_mmap": True}, keep_alive=self.keep_alive)
-            try:
-                arr.append(res["embedding"])
-            except Exception as _e:
-                log_exception(_e, res)
-                raise Exception(f"Error: {res}")
-            tks_num += 128
-        return np.array(arr), tks_num
+                mod_txt = mod_txt.replace(token, "")
+            batch.append(mod_txt)
+        embeddings = []
+            
+        try:
+            res = self.client.embed(input=batch, model=self.model_name, options={"use_mmap": True}, keep_alive=self.keep_alive)
+            embeddings.extend(res["embeddings"])
+        except Exception as _e:
+            log_exception(_e, res)
+            raise Exception(f"Error: {_e}")
+        tks_num += 128
+        return np.array(embeddings), 128
 
     def encode_queries(self, text):
         # remove special tokens if they exist
         for token in OllamaEmbed._special_tokens:
             text = text.replace(token, "")
-        res = self.client.embeddings(prompt=text, model=self.model_name, options={"use_mmap": True}, keep_alive=self.keep_alive)
         try:
+            res = self.client.embeddings(prompt=text, model=self.model_name, options={"use_mmap": True}, keep_alive=self.keep_alive)
             return np.array(res["embedding"]), 128
         except Exception as _e:
             log_exception(_e, res)
