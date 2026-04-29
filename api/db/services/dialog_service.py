@@ -18,6 +18,7 @@ import binascii
 import logging
 import re
 import time
+import uuid
 from copy import deepcopy
 
 logger = logging.getLogger(__name__)
@@ -26,9 +27,7 @@ from functools import partial
 from timeit import default_timer as timer
 from langfuse import Langfuse
 from peewee import fn
-from pydantic_core import PydanticCustomError
 from api.db.services.file_service import FileService
-from api.utils.validation_utils import validate_uuid1_hex
 from common.constants import LLMType, ParserType, StatusEnum
 from api.db.db_models import DB, Dialog
 from api.db.services.common_service import CommonService
@@ -547,7 +546,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 return
             else:
                 logging.debug("SQL failed or returned no results, falling back to vector search")
-        except (ValueError, PydanticCustomError) as e:
+        except ValueError as e:
             logging.warning(f"SQL validation failed: {e}, falling back to vector search")
 
     param_keys = [p["key"] for p in prompt_config.get("parameters", [])]
@@ -839,13 +838,21 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
     else:
         doc_engine = "es"
 
+    def _validate_uuid_hex(value: str, label: str = "id") -> str:
+        """Validate UUID and return its 32-char hex form (no hyphens) to match stored IDs."""
+        try:
+            return uuid.UUID(str(value)).hex
+        except (ValueError, AttributeError, TypeError):
+            logger.warning("SQL injection guard rejected invalid %s value (length=%d)", label, len(str(value)))
+            raise ValueError(f"Invalid {label} format: {value!r}")
+
     # Construct the full table name
     # For Elasticsearch: ragflow_{tenant_id} (kb_id is in WHERE clause)
     # For Infinity: ragflow_{tenant_id}_{kb_id} (each KB has its own table)
     base_table = index_name(tenant_id)
     if doc_engine == "infinity" and kb_ids and len(kb_ids) == 1:
         # Infinity: append kb_id to table name — validate before interpolating
-        table_name = f"{base_table}_{validate_uuid1_hex(kb_ids[0])}"
+        table_name = f"{base_table}_{_validate_uuid_hex(kb_ids[0], 'kb_id')}"
         logging.debug(f"use_sql: Using Infinity table name: {table_name}")
     else:
         # Elasticsearch/OpenSearch: use base index name
@@ -891,7 +898,7 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
             return sql
 
         # Validate all kb_ids are UUIDs before interpolating into SQL
-        safe_kb_ids = [validate_uuid1_hex(kid) for kid in kb_ids]
+        safe_kb_ids = [_validate_uuid_hex(kid, "kb_id") for kid in kb_ids]
 
         # Build kb_filter: single KB or multiple KBs with OR
         if len(safe_kb_ids) == 1:
