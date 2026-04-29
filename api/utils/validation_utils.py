@@ -364,18 +364,17 @@ class ParentChildConfig(Base):
 class AutoMetadataField(Base):
     """Schema for a single auto-metadata field configuration."""
 
-    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255), Field(...)]
-    type: Annotated[Literal["string", "list", "time"], Field(...)]
+    key: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255), Field(...)]
+    type: Annotated[Literal["string", "list", "time", "number"], Field(...)]
     description: Annotated[str | None, Field(default=None, max_length=65535)]
-    examples: Annotated[list[str] | None, Field(default=None)]
-    restrict_values: Annotated[bool, Field(default=False)]
+    enum: Annotated[list[str] | None, Field(default=None)]
 
 
 class AutoMetadataConfig(Base):
     """Top-level auto-metadata configuration attached to a dataset."""
 
-    enabled: Annotated[bool, Field(default=True)]
-    fields: Annotated[list[AutoMetadataField], Field(default_factory=list)]
+    metadata: Annotated[list[AutoMetadataField], Field(default_factory=list)]
+    built_in_metadata: Annotated[list[AutoMetadataField], Field(default_factory=list)]
 
 
 class ParserConfig(Base):

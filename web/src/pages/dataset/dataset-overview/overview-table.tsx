@@ -116,7 +116,9 @@ export const getFileLogsTableColumns = (
             <div className="bg-accent-primary-5 w-6 h-6 rounded-full flex items-center justify-center">
               <MonitorUp className="text-accent-primary" size={16} />
             </div>
-          ) : (
+          ) : dataSourceInfo[
+              row.original.source_from as keyof typeof dataSourceInfo
+            ] ? (
             <div className="w-6 h-6 flex items-center justify-center">
               {
                 dataSourceInfo[
@@ -124,13 +126,17 @@ export const getFileLogsTableColumns = (
                 ].icon
               }
             </div>
+          ) : (
+            <div className="w-6 h-6 flex items-center justify-center">
+              <MonitorUp className="text-accent-primary" size={16} />
+            </div>
           )}
         </div>
       ),
     },
     {
       accessorKey: 'pipeline_title',
-      header: t('dataPipeline'),
+      header: t('dataPipelineTitle'),
       cell: ({ row }) => {
         const title = row.original.pipeline_title;
         const pipelineTitle = title === 'naive' ? 'general' : title;
