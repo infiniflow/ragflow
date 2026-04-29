@@ -18,11 +18,9 @@ const {
   documentChangeStatus,
   documentChangeParser,
   documentThumbnails,
-  retrievalTest,
   documentIngest,
   documentUpload,
   webCrawl,
-  knowledgeGraph,
   listTagByKnowledgeIds,
   setMeta,
   getMeta,
@@ -70,14 +68,6 @@ const methods = {
   setMeta: {
     url: setMeta,
     method: 'post',
-  },
-  retrievalTest: {
-    url: retrievalTest,
-    method: 'post',
-  },
-  knowledgeGraph: {
-    url: knowledgeGraph,
-    method: 'get',
   },
   listTagByKnowledgeIds: {
     url: listTagByKnowledgeIds,
@@ -151,6 +141,17 @@ const getAvailableParam = (available?: number) => {
 };
 
 const chunkService = {
+  retrievalTest: async (params: Record<string, any>) => {
+    const datasetId = getDatasetId(params);
+    if (!datasetId) {
+      throw new Error(
+        'dataset_id (or kb_id/knowledge_id) is required for retrievalTest',
+      );
+    }
+    return request.post(api.retrievalTest(datasetId), {
+      data: params,
+    });
+  },
   chunkList: async (params: Record<string, any>) => {
     const datasetId = getDatasetId(params);
     const documentId = getDocumentId(params);
