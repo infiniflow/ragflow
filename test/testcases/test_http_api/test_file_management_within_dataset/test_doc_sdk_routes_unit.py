@@ -384,6 +384,10 @@ class TestDocRoutesUnit:
         res = _run(module.download_doc("doc-1"))
         assert "API key is invalid" in res["message"]
 
+        monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1"), SimpleNamespace(tenant_id="tenant-2")])
+        res = _run(module.download_doc("doc-1"))
+        assert "API key configuration is ambiguous" in res["message"]
+
         monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
         res = _run(module.download_doc(""))
         assert res["message"] == "Specify document_id please."
