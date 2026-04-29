@@ -251,10 +251,11 @@ async def test_dropbox_generate_skips_snapshot_for_full_reindex(monkeypatch):
         }
     )
 
-    document_generator = await sync._generate(task)
+    document_generator, file_list = await sync._generate(task)
     connector = _FakeDropboxConnector.instance
 
     assert list(document_generator) == [["full-sync"]]
+    assert file_list is None
     assert connector.load_from_state_called is True
     assert connector.retrieve_all_slim_docs_perm_sync_called is False
     assert connector.poll_source_called is False

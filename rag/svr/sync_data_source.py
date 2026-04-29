@@ -621,18 +621,13 @@ class Dropbox(SyncBase):
             end_time = datetime.now(timezone.utc).timestamp()
             if self.conf.get("sync_deleted_files"):
                 file_list = []
-                logging.info("Syncing Dropbox deleted files (connector_id=%s)", task["connector_id"])
-                snapshot_start = time.perf_counter()
                 for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
                     file_list.extend(slim_batch)
-                logging.info("Dropbox slim snapshot fetched %d files in %.2f seconds", len(file_list), time.perf_counter() - snapshot_start)
             document_generator = self.connector.poll_source(poll_start.timestamp(), end_time)
             _begin_info = f"from {poll_start}"
 
         self.log_connection("Dropbox", "workspace", task)
-        if file_list is not None:
-            return document_generator, file_list
-        return document_generator
+        return document_generator, file_list
 
 
 class GoogleDrive(SyncBase):
