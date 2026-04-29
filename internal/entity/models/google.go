@@ -136,8 +136,8 @@ func (z *GoogleModel) ChatStreamlyWithSender(modelName, message *string, apiConf
 	return err
 }
 
-// EncodeToEmbedding encodes a list of texts into embeddings
-func (z *GoogleModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+// Encode encodes a list of texts into embeddings
+func (z *GoogleModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -170,4 +170,9 @@ func (z *GoogleModel) Balance(apiConfig *APIConfig) (map[string]interface{}, err
 
 func (z *GoogleModel) CheckConnection(apiConfig *APIConfig) error {
 	return fmt.Errorf("no such method")
+}
+
+// Rerank calculates similarity scores between query and texts
+func (z *GoogleModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }

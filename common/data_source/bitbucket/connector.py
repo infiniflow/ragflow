@@ -269,17 +269,11 @@ class BitbucketConnector(
 
     def retrieve_all_slim_docs_perm_sync(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
         callback: IndexingHeartbeatInterface | None = None,
     ) -> Iterator[list[SlimDocument]]:
         """Return only document IDs for all existing pull requests."""
         batch: list[SlimDocument] = []
-        params = self._build_params(
-            fields=SLIM_PR_LIST_RESPONSE_FIELDS,
-            start=start,
-            end=end,
-        )
+        params = self._build_params(fields=SLIM_PR_LIST_RESPONSE_FIELDS)
         with self._client() as client:
             for slug in self._iter_target_repositories(client):
                 for pr in self._iter_pull_requests_for_repo(
@@ -361,10 +355,7 @@ if __name__ == "__main__":
     start_time = datetime.fromtimestamp(0, tz=timezone.utc)
     end_time = datetime.now(timezone.utc)
 
-    for doc_batch in bitbucket.retrieve_all_slim_docs_perm_sync(
-        start=start_time.timestamp(),
-        end=end_time.timestamp(),
-    ):
+    for doc_batch in bitbucket.retrieve_all_slim_docs_perm_sync():
         for doc in doc_batch:
             print(doc)
 

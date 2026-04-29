@@ -183,7 +183,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
             txt, layoutno, poss = section
             if isinstance(poss, str):
-                poss = pdf_parser.extract_positions(poss)
+                poss = (getattr(pdf_parser, "extract_positions", lambda _: [])(poss) or [[0, 0, 0, 0, 0]])
                 if poss:
                     first = poss[0]  # tuple: ([pn], x1, x2, y1, y2)
                     pn = first[0]

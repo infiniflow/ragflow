@@ -292,7 +292,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, message *string, apiCon
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/chat/completions", z.BaseURL[region])
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(z.BaseURL[region], "/"), z.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
@@ -433,14 +433,14 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, message *string, apiCon
 	return scanner.Err()
 }
 
-// EncodeToEmbedding encodes a list of texts into embeddings
-func (z *ZhipuAIModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+// Encode encodes a list of texts into embeddings
+func (z *ZhipuAIModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
 	var region = "default"
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/embedding", z.BaseURL[region])
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(z.BaseURL[region], "/"), z.URLSuffix.Embedding)
 
 	embeddings := make([][]float64, len(texts))
 
@@ -558,4 +558,9 @@ func (z *ZhipuAIModel) CheckConnection(apiConfig *APIConfig) error {
 	}
 
 	return nil
+}
+
+// Rerank calculates similarity scores between query and texts
+func (z *ZhipuAIModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }
