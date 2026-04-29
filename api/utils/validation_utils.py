@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import math
 import pathlib
 import re
@@ -167,7 +168,7 @@ def validate_and_parse_request_args(request: Request, validator: type[BaseModel]
         try:
             args["ext"] = json.loads(args["ext"])
         except json.JSONDecodeError:
-            pass  # Keep the string and let validation handle the error
+            logging.debug("Failed to decode query arg 'ext' as JSON; passing raw value to validator")
 
     try:
         if extras is not None:
