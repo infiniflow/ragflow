@@ -109,6 +109,7 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
     kwlg_len = len(knowledges)
     used_token_count = 0
     chunks_num = 0
+    truncated_by_token = False
     for i, c in enumerate(knowledges):
         if not c:
             continue
@@ -116,8 +117,26 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
         chunks_num += 1
         if max_tokens * 0.97 < used_token_count:
             knowledges = knowledges[:i]
+            truncated_by_token = True
+            chunks_num = i
             logging.warning(f"Not all the retrieval into prompt: {len(knowledges)}/{kwlg_len}")
             break
+
+    if truncated_by_token and "debug_trace" in kbinfos:
+        debug_trace = kbinfos["debug_trace"]
+        if "prompt_truncation" not in debug_trace:
+            debug_trace["prompt_truncation"] = {}
+        debug_trace["prompt_truncation"]["max_tokens"] = max_tokens
+        debug_trace["prompt_truncation"]["prompt_token_limit"] = int(max_tokens * 0.97)
+        debug_trace["prompt_truncation"]["used_tokens"] = used_token_count
+        debug_trace["prompt_truncation"]["available_chunks"] = kwlg_len
+        debug_trace["prompt_truncation"]["selected_chunks"] = chunks_num
+        debug_trace["prompt_truncation"]["truncated_chunks"] = kwlg_len - chunks_num
+        logging.info(
+            f"[Retrieval Debug] Prompt truncated: used_tokens={used_token_count}, "
+            f"limit={int(max_tokens * 0.97)}, "
+            f"selected={chunks_num}/{kwlg_len} chunks"
+        )
 
     docs = DocumentService.get_by_ids([get_value(ck, "doc_id", "document_id") for ck in kbinfos["chunks"][:chunks_num]])
 

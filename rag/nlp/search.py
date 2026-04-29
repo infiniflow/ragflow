@@ -31,7 +31,145 @@ from common import settings
 
 from common.misc_utils import thread_pool_exec
 
+RETRIEVAL_DEBUG_TRACE_ENABLED = False
+
 def index_name(uid): return f"ragflow_{uid}"
+
+
+@dataclass
+class ChunkDebugInfo:
+    chunk_id: str
+    doc_id: str
+    doc_name: str
+    kb_id: str
+    initial_score: float = 0.0
+    term_similarity: float = 0.0
+    vector_similarity: float = 0.0
+    rerank_score: float = 0.0
+    filter_reason: str | None = None
+    final_position: int | None = None
+    content_preview: str = ""
+    is_pruned: bool = False
+    rank_feature_score: float = 0.0
+
+    def to_dict(self) -> dict:
+        return {
+            "chunk_id": self.chunk_id,
+            "doc_id": self.doc_id,
+            "doc_name": self.doc_name,
+            "kb_id": self.kb_id,
+            "initial_score": self.initial_score,
+            "term_similarity": self.term_similarity,
+            "vector_similarity": self.vector_similarity,
+            "rerank_score": self.rerank_score,
+            "rank_feature_score": self.rank_feature_score,
+            "filter_reason": self.filter_reason,
+            "final_position": self.final_position,
+            "content_preview": self.content_preview[:100] if self.content_preview else "",
+            "is_pruned": self.is_pruned,
+        }
+
+
+@dataclass
+class RetrievalDebugTrace:
+    query: str
+    tenant_ids: list[str]
+    kb_ids: list[str]
+    top_k: int
+    top_n: int
+    similarity_threshold: float
+    vector_similarity_weight: float
+
+    initial_search_count: int = 0
+    pruned_count: int = 0
+    rerank_used: bool = False
+    rerank_model: str | None = None
+    filtered_by_threshold_count: int = 0
+    filtered_by_pagination_count: int = 0
+    final_chunks_count: int = 0
+    doc_engine_score_used: bool = False
+
+    all_chunks: list[ChunkDebugInfo] | None = None
+    final_chunks: list[ChunkDebugInfo] | None = None
+
+    def enable_detail(self):
+        self.all_chunks = []
+        self.final_chunks = []
+
+    def to_dict(self) -> dict:
+        result = {
+            "query": self.query,
+            "tenant_ids": self.tenant_ids,
+            "kb_ids": self.kb_ids,
+            "top_k": self.top_k,
+            "top_n": self.top_n,
+            "similarity_threshold": self.similarity_threshold,
+            "vector_similarity_weight": self.vector_similarity_weight,
+            "initial_search_count": self.initial_search_count,
+            "pruned_count": self.pruned_count,
+            "rerank_used": self.rerank_used,
+            "rerank_model": self.rerank_model,
+            "filtered_by_threshold_count": self.filtered_by_threshold_count,
+            "filtered_by_pagination_count": self.filtered_by_pagination_count,
+            "final_chunks_count": self.final_chunks_count,
+            "doc_engine_score_used": self.doc_engine_score_used,
+            "summary": {
+                "selected": self.final_chunks_count,
+                "pruned_deleted_docs": self.pruned_count,
+                "filtered_by_threshold": self.filtered_by_threshold_count,
+                "filtered_by_pagination": self.filtered_by_pagination_count,
+            }
+        }
+        if self.all_chunks is not None:
+            result["all_chunks"] = [c.to_dict() for c in self.all_chunks]
+        if self.final_chunks is not None:
+            result["final_chunks"] = [c.to_dict() for c in self.final_chunks]
+        return result
+
+    def log_summary(self):
+        summary_lines = [
+            "=" * 80,
+            "RETRIEVAL DEBUG TRACE SUMMARY",
+            "=" * 80,
+            f"Query: {self.query}",
+            f"Tenants: {self.tenant_ids}, KBs: {self.kb_ids}",
+            f"Params: top_k={self.top_k}, top_n={self.top_n}, threshold={self.similarity_threshold}, vs_weight={self.vector_similarity_weight}",
+            "-" * 80,
+            f"Initial search results: {self.initial_search_count} chunks",
+            f"Pruned (deleted docs): {self.pruned_count} chunks",
+            f"Rerank used: {self.rerank_used} (model: {self.rerank_model})",
+            f"Doc engine score used: {self.doc_engine_score_used}",
+            f"Filtered by threshold: {self.filtered_by_threshold_count} chunks",
+            f"Filtered by pagination: {self.filtered_by_pagination_count} chunks",
+            f"Final selected: {self.final_chunks_count} chunks",
+            "=" * 80,
+        ]
+        logging.info("\n".join(summary_lines))
+
+        if self.final_chunks:
+            logging.info("FINAL CHUNKS DETAIL:")
+            for i, chunk in enumerate(self.final_chunks):
+                logging.info(
+                    f"  [{i}] ID={chunk.chunk_id}, "
+                    f"doc={chunk.doc_name}, "
+                    f"term_sim={chunk.term_similarity:.4f}, "
+                    f"vec_sim={chunk.vector_similarity:.4f}, "
+                    f"rerank={chunk.rerank_score:.4f}"
+                )
+
+        if self.all_chunks:
+            filtered = [c for c in self.all_chunks if c.filter_reason]
+            if filtered:
+                logging.info("FILTERED CHUNKS:")
+                for chunk in filtered[:20]:
+                    logging.info(
+                        f"  ID={chunk.chunk_id}, "
+                        f"doc={chunk.doc_name}, "
+                        f"reason={chunk.filter_reason}, "
+                        f"scores: term={chunk.term_similarity:.4f}, vec={chunk.vector_similarity:.4f}, rerank={chunk.rerank_score:.4f}"
+                    )
+                if len(filtered) > 20:
+                    logging.info(f"  ... and {len(filtered) - 20} more filtered chunks")
 
 
 class Dealer:
@@ -462,10 +600,25 @@ class Dealer:
             rerank_mdl=None,
             highlight=False,
             rank_feature: dict | None = {PAGERANK_FLD: 10},
+            debug: bool = False,
     ):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
             return ranks
+
+        debug_trace = None
+        if debug or RETRIEVAL_DEBUG_TRACE_ENABLED:
+            debug_trace = RetrievalDebugTrace(
+                query=question,
+                tenant_ids=list(tenant_ids) if isinstance(tenant_ids, (list, str)) else [],
+                kb_ids=list(kb_ids) if isinstance(kb_ids, list) else [],
+                top_k=top,
+                top_n=page_size,
+                similarity_threshold=similarity_threshold,
+                vector_similarity_weight=vector_similarity_weight,
+            )
+            if debug:
+                debug_trace.enable_detail()
 
         # Keep the historical windowing strategy by default, but when an external
         # reranker is enabled cap candidate count by both top_k and provider-safe 64.
@@ -493,14 +646,30 @@ class Dealer:
 
         sres = await self.search(req, [index_name(tid) for tid in tenant_ids], kb_ids, embd_mdl, highlight,
                            rank_feature=rank_feature)
+        
+        if debug_trace:
+            debug_trace.initial_search_count = len(sres.ids) if sres.ids else 0
+        
         # Temporary retrieval-side guard: prune chunks whose parent document no
         # longer exists before reranking and returning results.
+        original_count = sres.total
         sres = await self._prune_deleted_chunks(sres)
+        
+        if debug_trace and original_count > sres.total:
+            debug_trace.pruned_count = original_count - sres.total
+        
         if sres.total == 0:
             ranks["doc_aggs"] = []
+            if debug_trace and debug:
+                if RETRIEVAL_DEBUG_TRACE_ENABLED or debug:
+                    debug_trace.log_summary()
+                ranks["debug_trace"] = debug_trace.to_dict()
             return ranks
 
         if rerank_mdl and sres.total > 0:
+            if debug_trace:
+                debug_trace.rerank_used = True
+                debug_trace.rerank_model = getattr(rerank_mdl, "llm_name", str(rerank_mdl))
             sim, tsim, vsim = self.rerank_by_model(
                 rerank_mdl,
                 sres,
@@ -511,6 +680,8 @@ class Dealer:
             )
         else:
             if settings.DOC_ENGINE_INFINITY:
+                if debug_trace:
+                    debug_trace.doc_engine_score_used = True
                 # Don't need rerank here since Infinity normalizes each way score before fusion.
                 sim = [sres.field[id].get("_score", 0.0) for id in sres.ids]
                 sim = [s if s is not None else 0.0 for s in sim]
@@ -529,6 +700,10 @@ class Dealer:
         sim_np = np.array(sim, dtype=np.float64)
         if sim_np.size == 0:
             ranks["doc_aggs"] = []
+            if debug_trace and debug:
+                if RETRIEVAL_DEBUG_TRACE_ENABLED or debug:
+                    debug_trace.log_summary()
+                ranks["debug_trace"] = debug_trace.to_dict()
             return ranks
 
         sorted_idx = np.argsort(sim_np * -1)
@@ -545,19 +720,30 @@ class Dealer:
         filtered_count = len(valid_idx)
         ranks["total"] = int(filtered_count)
 
+        if debug_trace:
+            debug_trace.filtered_by_threshold_count = len(sorted_idx) - len(valid_idx)
+
         if filtered_count == 0:
             ranks["doc_aggs"] = []
+            if debug_trace and debug:
+                if RETRIEVAL_DEBUG_TRACE_ENABLED or debug:
+                    debug_trace.log_summary()
+                ranks["debug_trace"] = debug_trace.to_dict()
             return ranks
 
         begin = global_offset % RERANK_LIMIT
         end = begin + page_size
         page_idx = valid_idx[begin:end]
 
+        if debug_trace:
+            debug_trace.filtered_by_pagination_count = len(valid_idx) - len(page_idx)
+            debug_trace.final_chunks_count = len(page_idx)
+
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"
         zero_vector = [0.0] * dim
 
-        for i in page_idx:
+        for pos_in_page, i in enumerate(page_idx):
             id = sres.ids[i]
             chunk = sres.field[id]
             dnm = chunk.get("docnm_kwd", "")
@@ -590,6 +776,55 @@ class Dealer:
                     d["highlight"] = d["content_with_weight"]
             ranks["chunks"].append(d)
 
+            if debug_trace and debug_trace.final_chunks is not None:
+                chunk_debug = ChunkDebugInfo(
+                    chunk_id=id,
+                    doc_id=did,
+                    doc_name=dnm,
+                    kb_id=chunk.get("kb_id", ""),
+                    initial_score=float(chunk.get("_score", 0.0)),
+                    term_similarity=float(tsim[i]),
+                    vector_similarity=float(vsim[i]),
+                    rerank_score=float(sim_np[i]),
+                    final_position=pos_in_page,
+                    content_preview=chunk.get("content_ltks", "")[:200],
+                    is_pruned=False,
+                )
+                debug_trace.final_chunks.append(chunk_debug)
+
+        if debug_trace and debug_trace.all_chunks is not None:
+            for sorted_pos, i in enumerate(sorted_idx):
+                id = sres.ids[i]
+                chunk = sres.field[id]
+                dnm = chunk.get("docnm_kwd", "")
+                did = chunk.get("doc_id", "")
+
+                filter_reason = None
+                final_pos = None
+
+                if i not in valid_idx:
+                    filter_reason = "threshold"
+                elif sorted_pos < begin or sorted_pos >= begin + page_size:
+                    filter_reason = "pagination"
+                else:
+                    final_pos = sorted_pos - begin
+
+                chunk_debug = ChunkDebugInfo(
+                    chunk_id=id,
+                    doc_id=did,
+                    doc_name=dnm,
+                    kb_id=chunk.get("kb_id", ""),
+                    initial_score=float(chunk.get("_score", 0.0)),
+                    term_similarity=float(tsim[i]),
+                    vector_similarity=float(vsim[i]),
+                    rerank_score=float(sim_np[i]),
+                    filter_reason=filter_reason,
+                    final_position=final_pos,
+                    content_preview=chunk.get("content_ltks", "")[:200],
+                    is_pruned=False,
+                )
+                debug_trace.all_chunks.append(chunk_debug)
+
         if aggs:
             for i in valid_idx:
                 id = sres.ids[i]
@@ -613,6 +848,12 @@ class Dealer:
             ]
         else:
             ranks["doc_aggs"] = []
+
+        if debug_trace:
+            if RETRIEVAL_DEBUG_TRACE_ENABLED or debug:
+                debug_trace.log_summary()
+            if debug:
+                ranks["debug_trace"] = debug_trace.to_dict()
 
         return ranks
 
