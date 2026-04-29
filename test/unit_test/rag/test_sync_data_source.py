@@ -186,7 +186,8 @@ class _FakeDropboxConnector:
     def load_credentials(self, credentials):
         self.credentials = credentials
 
-    def retrieve_all_slim_docs_perm_sync(self):
+    def retrieve_all_slim_docs_perm_sync(self, callback=None):
+        del callback
         self.retrieve_all_slim_docs_perm_sync_called = True
         self.snapshot_called_before_poll = not self.poll_source_called
         yield [types.SimpleNamespace(id="dropbox:id-1")]
