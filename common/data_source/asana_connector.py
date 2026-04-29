@@ -418,7 +418,7 @@ class AsanaConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def poll_source(
         self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch | None
     ) -> GenerateDocumentsOutput:
-        start_time = datetime.fromtimestamp(start).isoformat()
+        start_time = datetime.fromtimestamp(start, tz=timezone.utc).isoformat()
         end_time = datetime.fromtimestamp(end, tz=timezone.utc) if end is not None else None
         logging.info(f"Starting Asana poll from {start_time}")
         docs_batch: list[Document] = []
@@ -458,7 +458,7 @@ class AsanaConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     ) -> GenerateSlimDocumentOutput:
         del callback
 
-        start_time = datetime.fromtimestamp(0).isoformat()
+        start_time = datetime.fromtimestamp(0, tz=timezone.utc).isoformat()
         initial_error_count = self.asana_client.api_error_count
         docs_batch: list[SlimDocument] = []
 

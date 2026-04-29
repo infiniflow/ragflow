@@ -149,7 +149,7 @@ def test_retrieve_all_slim_docs_perm_sync_batches_matching_attachment_ids(monkey
         ["asana:task-2:att-3"],
     ]
     assert fake_client.task_ids_project_ids == ["project-1"]
-    assert fake_client.task_ids_start_time == datetime.fromtimestamp(0).isoformat()
+    assert fake_client.task_ids_start_time == datetime.fromtimestamp(0, tz=timezone.utc).isoformat()
     assert not fake_client.get_tasks_called
 
 
@@ -198,3 +198,4 @@ def test_poll_source_respects_end_boundary(monkeypatch):
     )
 
     assert [[doc.id for doc in batch] for batch in batches] == [["asana:task-1:att-1"]]
+    assert connector.asana_client.start_time == datetime(2026, 1, 1, tzinfo=timezone.utc).isoformat()
