@@ -1320,12 +1320,19 @@ async def do_handle_task(task):
                     f"Remove doc({task_doc_id}) from docStore failed when task({task_id}) canceled, exception: {e}")
 
 
-async def handle_task():
+async def handle_task() -> bool:
+    """Pull one task off the queue and process it.
+
+    Returns True if a real task was processed (success or failure), False if
+    the queue was empty and the call was an idle poll. The return value lets
+    the caller distinguish work from idle so e.g. recycle counters do not
+    advance during quiet periods.
+    """
     global DONE_TASKS, FAILED_TASKS
     redis_msg, task = await collect()
     if not task:
         await asyncio.sleep(5)
-        return
+        return False
 
     task_type = task["task_type"]
     pipeline_task_type = TASK_TYPE_TO_PIPELINE_TASK_TYPE.get(task_type,
@@ -1367,6 +1374,7 @@ async def handle_task():
                                                                   task_id=task_id, referred_document_id=referred_document_id)
 
     redis_msg.ack()
+    return True
 
 
 async def get_server_ip() -> str:
@@ -1460,16 +1468,18 @@ async def report_status():
 
 async def task_manager():
     global _completed_task_count
+    processed = False
     try:
-        await handle_task()
+        processed = await handle_task()
     finally:
-        _completed_task_count += 1
-        if MAX_TASKS_PER_WORKER > 0 and _completed_task_count >= MAX_TASKS_PER_WORKER:
-            logging.warning(
-                f"[recycle] reached MAX_TASKS_PER_WORKER={MAX_TASKS_PER_WORKER}; "
-                f"signalling clean exit so the supervisor can restart the worker."
-            )
-            stop_event.set()
+        if processed:
+            _completed_task_count += 1
+            if MAX_TASKS_PER_WORKER > 0 and _completed_task_count >= MAX_TASKS_PER_WORKER:
+                logging.warning(
+                    f"[recycle] reached MAX_TASKS_PER_WORKER={MAX_TASKS_PER_WORKER}; "
+                    f"signalling clean exit so the supervisor can restart the worker."
+                )
+                stop_event.set()
         task_limiter.release()
 
 
@@ -1522,13 +1532,18 @@ async def main():
                 # A previous task_manager may have signalled shutdown while
                 # we were blocked on the semaphore; bail out cleanly so the
                 # supervisor can restart the worker.
+                logging.info(
+                    "[recycle] stop_event observed after acquiring task_limiter; "
+                    "releasing semaphore and exiting main loop."
+                )
                 task_limiter.release()
                 break
             t = asyncio.create_task(task_manager())
             tasks.append(t)
     finally:
-        for t in tasks:
-            t.cancel()
+        # Wait for in-flight task_managers to finish so a recycle (or any
+        # other stop_event) preserves work already in progress. The supervisor
+        # / orchestrator can SIGKILL if a real forced shutdown is needed.
         await asyncio.gather(*tasks, return_exceptions=True)
         report_task.cancel()
         await asyncio.gather(report_task, return_exceptions=True)
