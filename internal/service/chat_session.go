@@ -797,8 +797,9 @@ func (s *ChatSessionService) buildChatConfig(dialog *entity.Chat, config map[str
 		if v, ok := dialog.LLMSetting["thinking"].(bool); ok {
 			cfg.Thinking = &v
 		}
-		if v, ok := dialog.LLMSetting["max_tokens"].(int); ok {
-			cfg.MaxTokens = &v
+		if v, ok := dialog.LLMSetting["max_tokens"].(float64); ok {
+			intVal := int(v)
+			cfg.MaxTokens = &intVal
 		}
 		if v, ok := dialog.LLMSetting["temperature"].(float64); ok {
 			cfg.Temperature = &v
@@ -809,8 +810,14 @@ func (s *ChatSessionService) buildChatConfig(dialog *entity.Chat, config map[str
 		if v, ok := dialog.LLMSetting["do_sample"].(bool); ok {
 			cfg.DoSample = &v
 		}
-		if v, ok := dialog.LLMSetting["stop"].([]string); ok {
-			cfg.Stop = &v
+		if v, ok := dialog.LLMSetting["stop"].([]interface{}); ok {
+			stopStrs := make([]string, 0, len(v))
+			for _, s := range v {
+				if str, ok := s.(string); ok {
+					stopStrs = append(stopStrs, str)
+				}
+			}
+			cfg.Stop = &stopStrs
 		}
 		if v, ok := dialog.LLMSetting["model_class"].(string); ok {
 			cfg.ModelClass = &v
@@ -831,8 +838,9 @@ func (s *ChatSessionService) buildChatConfig(dialog *entity.Chat, config map[str
 		if v, ok := config["thinking"].(bool); ok {
 			cfg.Thinking = &v
 		}
-		if v, ok := config["max_tokens"].(int); ok {
-			cfg.MaxTokens = &v
+		if v, ok := config["max_tokens"].(float64); ok {
+			intVal := int(v)
+			cfg.MaxTokens = &intVal
 		}
 		if v, ok := config["temperature"].(float64); ok {
 			cfg.Temperature = &v
@@ -843,8 +851,14 @@ func (s *ChatSessionService) buildChatConfig(dialog *entity.Chat, config map[str
 		if v, ok := config["do_sample"].(bool); ok {
 			cfg.DoSample = &v
 		}
-		if v, ok := config["stop"].([]string); ok {
-			cfg.Stop = &v
+		if v, ok := config["stop"].([]interface{}); ok {
+			stopStrs := make([]string, 0, len(v))
+			for _, s := range v {
+				if str, ok := s.(string); ok {
+					stopStrs = append(stopStrs, str)
+				}
+			}
+			cfg.Stop = &stopStrs
 		}
 		if v, ok := config["model_class"].(string); ok {
 			cfg.ModelClass = &v
