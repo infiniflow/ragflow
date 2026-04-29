@@ -301,6 +301,10 @@ client_urls_prefix = [
     register_page(path) for directory in pages_dir for path in search_pages_path(directory)
 ]
 
+# Register backward compatibility routes for deprecated APIs
+from api.apps.backward_compat import register_backward_compat_routes
+register_backward_compat_routes(app)
+
 
 @app.errorhandler(404)
 async def not_found(error):
