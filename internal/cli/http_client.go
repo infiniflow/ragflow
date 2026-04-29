@@ -54,7 +54,7 @@ func NewHTTPClient() *HTTPClient {
 		VerifySSL:      false,
 		client: &http.Client{
 			Transport: transport,
-			Timeout:   60 * time.Second,
+			Timeout:   300 * time.Second,
 		},
 	}
 }

@@ -38,6 +38,10 @@ func NewGoogleModel(baseURL map[string]string, urlSuffix URLSuffix) *GoogleModel
 	}
 }
 
+func (z *GoogleModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
+}
+
 func (z *GoogleModel) Name() string {
 	return "google"
 }

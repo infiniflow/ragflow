@@ -54,17 +54,28 @@ type DataSourceFeatureVisibility = {
 
 type DataSourceFormValues = Record<string, any>;
 
-export const DataSourceFeatureVisibilityMap = {
+export const DataSourceFeatureVisibilityMap: Partial<
+  Record<DataSourceKey, DataSourceFeatureVisibility>
+> = {
   [DataSourceKey.GITHUB]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.GITLAB]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.GOOGLE_DRIVE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.GMAIL]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.CONFLUENCE]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.BOX]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.DROPBOX]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.S3]: {
@@ -80,6 +91,9 @@ export const DataSourceFeatureVisibilityMap = {
     syncDeletedFiles: true,
   },
   [DataSourceKey.NOTION]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.DISCORD]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.JIRA]: {

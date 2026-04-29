@@ -81,11 +81,11 @@ export default {
   fetchPipelineDatasetLogs: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions`,
   runIndex: (datasetId: string, indexType: string) =>
-    `${restAPIv1}/datasets/${datasetId}/index?type=${indexType}`,
+    `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
   traceIndex: (datasetId: string, indexType: string) =>
-    `${restAPIv1}/datasets/${datasetId}/index?type=${indexType}`,
+    `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
   unbindPipelineTask: (datasetId: string, indexType: string) =>
-    `${restAPIv1}/datasets/${datasetId}/${indexType}`,
+    `${restAPIv1}/datasets/${datasetId}/${indexType.toLowerCase()}`,
   pipelineRerun: `${webAPI}/canvas/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
