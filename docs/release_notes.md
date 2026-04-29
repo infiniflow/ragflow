@@ -9,6 +9,29 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.25.1
+
+Released on April 29, 2026.
+
+### Improvements
+
+- API refactoring and unification: Migrated web apis to RESTful architecture across all endpoints. unified document creation and indexing flows while maintaining backward compatibility for legacy apis.
+- Parsing optimizations: Integrated opendataloader pdf backend and improved docling routing. implemented lazy loading and chunking for large pdfs to reduce memory usage.
+- Introduced lazy loading and chunked parsing for large pdfs to significantly lower the memory footprint.
+
+### Data source
+
+Added bitbucket, gmail, google drive, and airtable with automated file deletion synchronization.
+
+### model support
+
+- DeepSeek v4
+- UCloud
+
+### Bug fixes
+
+Resolved metadata visibility issues during v0.24.0 to v0.25.0 upgrades and fixed duplicate chat output.
+
 ## v0.25.0
 
 Released on April 21, 2026.
