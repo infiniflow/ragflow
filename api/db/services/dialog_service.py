@@ -47,6 +47,7 @@ from common.token_utils import num_tokens_from_string
 from rag.utils.tavily_conn import Tavily
 from common.string_utils import remove_redundant_spaces
 from common import settings
+from rag.utils.answer_quality_guard import AnswerQualityGuard
 
 
 def _normalize_internet_flag(value):
@@ -675,6 +676,35 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
 
+    guard = AnswerQualityGuard(
+        similarity_threshold=dialog.similarity_threshold * 0.8,
+        max_context_tokens=int(max_tokens * 0.4),
+    )
+    guard_result = guard.process_retrieval_results(
+        kbinfos, " ".join(questions), max_tokens=int(max_tokens * 0.4)
+    )
+
+    if guard_result.filtered_chunks:
+        kbinfos["chunks"] = guard_result.filtered_chunks
+        kbinfos["total"] = len(guard_result.filtered_chunks)
+
+    if not guard_result.is_sufficient and not guard_result.filtered_chunks:
+        if prompt_config.get("empty_response"):
+            empty_res = prompt_config["empty_response"]
+        else:
+            empty_res = guard.generate_insufficient_response(
+                " ".join(questions), guard_result.missing_info
+            )
+        yield {
+            "answer": empty_res,
+            "reference": kbinfos,
+            "prompt": "\n\n### Query:\n%s" % " ".join(questions),
+            "audio_binary": tts(tts_mdl, empty_res),
+            "final": True,
+            "_aqg_warnings": guard_result.warnings,
+        }
+        return
+
     knowledges = kb_prompt(kbinfos, max_tokens)
     logging.debug("{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
 
@@ -732,7 +762,15 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
             answer, idx = repair_bad_citation_formats(answer, kbinfos, idx)
 
-            idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
+            guard = AnswerQualityGuard()
+            citation_result = guard.validate_citations(answer, kbinfos["chunks"])
+            answer = citation_result.validated_answer
+            idx = citation_result.validated_citations
+
+            if citation_result.warnings:
+                logging.warning(f"Citation validation warnings: {citation_result.warnings}")
+
+            idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx if int(i) < len(kbinfos["chunks"])])
             recall_docs = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
             if not recall_docs:
                 recall_docs = kbinfos["doc_aggs"]
@@ -1451,6 +1489,28 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         rank_feature=label_question(question, kbs)
     )
 
+    guard = AnswerQualityGuard(
+        similarity_threshold=search_config.get("similarity_threshold", 0.1) * 0.8,
+        max_context_tokens=int(max_tokens * 0.4),
+    )
+    guard_result = guard.process_retrieval_results(
+        kbinfos, question, max_tokens=int(max_tokens * 0.4)
+    )
+
+    if guard_result.filtered_chunks:
+        kbinfos["chunks"] = guard_result.filtered_chunks
+        kbinfos["total"] = len(guard_result.filtered_chunks)
+
+    if not guard_result.is_sufficient and not guard_result.filtered_chunks:
+        insufficient_resp = guard.generate_insufficient_response(question, guard_result.missing_info)
+        yield {
+            "answer": insufficient_resp,
+            "reference": kbinfos,
+            "final": True,
+            "_aqg_warnings": guard_result.warnings,
+        }
+        return
+
     knowledges = kb_prompt(kbinfos, max_tokens)
     sys_prompt = PROMPT_JINJA_ENV.from_string(ASK_SUMMARY).render(knowledge="\n".join(knowledges))
 
@@ -1460,7 +1520,13 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         nonlocal knowledges, kbinfos, sys_prompt
         answer, idx = retriever.insert_citations(answer, [ck["content_ltks"] for ck in kbinfos["chunks"]], [ck["vector"] for ck in kbinfos["chunks"]],
                                                  embd_mdl, tkweight=0.7, vtweight=0.3)
-        idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
+        
+        guard = AnswerQualityGuard()
+        citation_result = guard.validate_citations(answer, kbinfos["chunks"])
+        answer = citation_result.validated_answer
+        idx = citation_result.validated_citations
+        
+        idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx if int(i) < len(kbinfos["chunks"])])
         recall_docs = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
         if not recall_docs:
             recall_docs = kbinfos["doc_aggs"]
