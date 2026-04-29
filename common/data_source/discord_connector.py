@@ -231,7 +231,6 @@ class DiscordConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.server_ids: list[int] = [int(server_id) for server_id in server_ids] if server_ids else []
         self._discord_bot_token: str | None = None
         self.requested_start_date_string: str = start_date or ""
-        self._cached_slim_doc_batches: list[list[SlimDocument]] = []
 
     @property
     def discord_bot_token(self) -> str:
@@ -244,16 +243,8 @@ class DiscordConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         start: datetime | None = None,
         end: datetime | None = None,
     ) -> GenerateDocumentsOutput:
-        """Scan Discord once and serve both document ingestion and slim-ID sync.
-
-        Every message contributes to the cached slim-document batches so deleted
-        file sync sees the full corpus. Only messages inside `[start, end)` are
-        converted into Documents and merged into ingestion batches.
-        """
-        self._cached_slim_doc_batches = []
+        """Build merged Discord documents for the requested polling window."""
         doc_batch: list[Document] = []
-        full_scan_batch_size = 0
-        full_scan_batch_first_id: str | None = None
 
         def _message_created_at(message: DiscordMessage) -> datetime:
             created_at = message.created_at
@@ -268,20 +259,6 @@ class DiscordConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             if end is not None and created_at >= end:
                 return False
             return True
-
-        def _record_slim_doc_id(message: DiscordMessage) -> None:
-            nonlocal full_scan_batch_size, full_scan_batch_first_id
-            # Slim sync must preserve the same merged-document ID semantics as
-            # ingestion, so each batch uses the first message ID as its stable ID.
-            if full_scan_batch_first_id is None:
-                full_scan_batch_first_id = f"{_DISCORD_DOC_ID_PREFIX}{message.id}"
-            full_scan_batch_size += 1
-            if full_scan_batch_size >= self.batch_size:
-                self._cached_slim_doc_batches.append(
-                    [SlimDocument(id=full_scan_batch_first_id)]
-                )
-                full_scan_batch_size = 0
-                full_scan_batch_first_id = None
 
         def merge_batch():
             nonlocal doc_batch
@@ -311,10 +288,8 @@ class DiscordConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             requested_start_date_string=self.requested_start_date_string,
             channel_names=self.channel_names,
             server_ids=self.server_ids,
-            start=None,
+            start=start,
         ):
-            _record_slim_doc_id(message)
-
             if not _is_in_window(message):
                 continue
 
@@ -330,44 +305,8 @@ class DiscordConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 yield [merge_batch()]
                 doc_batch = []
 
-        if full_scan_batch_first_id is not None:
-            self._cached_slim_doc_batches.append(
-                [SlimDocument(id=full_scan_batch_first_id)]
-            )
-
         if doc_batch:
             yield [merge_batch()]
-
-    def _populate_slim_doc_cache(self) -> None:
-        """Build slim-document batches without constructing full Documents.
-
-        This is the fallback path when deleted-file sync runs before poll/load.
-        """
-        self._cached_slim_doc_batches = []
-        full_scan_batch_size = 0
-        full_scan_batch_first_id: str | None = None
-
-        for message in _manage_async_retrieval(
-            token=self.discord_bot_token,
-            requested_start_date_string=self.requested_start_date_string,
-            channel_names=self.channel_names,
-            server_ids=self.server_ids,
-            start=None,
-        ):
-            if full_scan_batch_first_id is None:
-                full_scan_batch_first_id = f"{_DISCORD_DOC_ID_PREFIX}{message.id}"
-            full_scan_batch_size += 1
-            if full_scan_batch_size >= self.batch_size:
-                self._cached_slim_doc_batches.append(
-                    [SlimDocument(id=full_scan_batch_first_id)]
-                )
-                full_scan_batch_size = 0
-                full_scan_batch_first_id = None
-
-        if full_scan_batch_first_id is not None:
-            self._cached_slim_doc_batches.append(
-                [SlimDocument(id=full_scan_batch_first_id)]
-            )
 
     def _manage_doc_batching(
         self,
@@ -401,13 +340,34 @@ class DiscordConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         callback: Any = None,
     ) -> GenerateSlimDocumentOutput:
         del callback
+        slim_doc_batch: list[SlimDocument] = []
+        full_scan_batch_size = 0
+        full_scan_batch_first_id: str | None = None
 
-        # Reuse the last ingestion scan when available. If not, perform a
-        # lightweight full scan that only computes merged batch IDs.
-        if not self._cached_slim_doc_batches:
-            self._populate_slim_doc_cache()
+        for message in _manage_async_retrieval(
+            token=self.discord_bot_token,
+            requested_start_date_string=self.requested_start_date_string,
+            channel_names=self.channel_names,
+            server_ids=self.server_ids,
+            start=None,
+        ):
+            if full_scan_batch_first_id is None:
+                full_scan_batch_first_id = f"{_DISCORD_DOC_ID_PREFIX}{message.id}"
+            full_scan_batch_size += 1
 
-        for slim_doc_batch in self._cached_slim_doc_batches:
+            if full_scan_batch_size >= self.batch_size:
+                slim_doc_batch.append(SlimDocument(id=full_scan_batch_first_id))
+                full_scan_batch_size = 0
+                full_scan_batch_first_id = None
+
+                if len(slim_doc_batch) >= self.batch_size:
+                    yield slim_doc_batch
+                    slim_doc_batch = []
+
+        if full_scan_batch_first_id is not None:
+            slim_doc_batch.append(SlimDocument(id=full_scan_batch_first_id))
+
+        if slim_doc_batch:
             yield slim_doc_batch
 
 
