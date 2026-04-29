@@ -197,6 +197,8 @@ def get_dataset(dataset_id: str, tenant_id: str):
         return False, "Invalid Dataset ID"
 
     response_data = remap_dictionary_keys(kb.to_dict())
+    response_data["size"] = DocumentService.get_total_size_by_kb_id(dataset_id)
+    response_data["connectors"] = list(Connector2KbService.list_connectors(dataset_id))
     return True, response_data
 
 
