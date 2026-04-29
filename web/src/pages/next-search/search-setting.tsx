@@ -249,7 +249,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
   return (
     <div
       className={cn(
-        'text-text-primary border p-4 pb-12 rounded-lg ',
+        'text-text-primary border-l-0.5 p-4 pb-12',
         {
           'animate-fade-in-right': open,
           'animate-fade-out-right': !open,
@@ -257,7 +257,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         width0,
         className,
       )}
-      style={{ maxHeight: 'calc(100dvh - 170px)' }}
     >
       <div className="flex justify-between items-center text-base mb-8">
         <div className="text-text-primary">{t('search.searchSettings')}</div>

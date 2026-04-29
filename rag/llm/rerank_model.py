@@ -297,7 +297,8 @@ class SILICONFLOWRerank(Base):
             "max_chunks_per_doc": 1024,
             "overlap_tokens": 80,
         }
-        response = requests.post(self.base_url, json=payload, headers=self.headers).json()
+        response_raw = requests.post(self.base_url, json=payload, headers=self.headers)
+        response = response_raw.json()
         rank = np.zeros(len(texts), dtype=float)
         try:
             for d in response["results"]:
@@ -364,7 +365,7 @@ class VoyageRerank(Base):
 class QWenRerank(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
 
-    def __init__(self, key, model_name="gte-rerank", base_url=None, **kwargs):
+    def __init__(self, key, model_name="gte-rerank", **kwargs):
         import dashscope
 
         self.api_key = key
@@ -375,7 +376,20 @@ class QWenRerank(Base):
 
         import dashscope
 
-        resp = dashscope.TextReRank.call(api_key=self.api_key, model=self.model_name, query=query, documents=texts, top_n=len(texts), return_documents=False)
+        # Build call parameters
+        call_kwargs = {
+            "api_key": self.api_key,
+            "model": self.model_name,
+            "query": query,
+            "documents": texts,
+            "top_n": len(texts)
+        }
+        # qwen3-rerank does not support return_documents parameter
+        if not self.model_name.startswith("qwen3-rerank"):
+            call_kwargs["return_documents"] = False
+        
+        resp = dashscope.TextReRank.call(**call_kwargs)  
+
         rank = np.zeros(len(texts), dtype=float)
         if resp.status_code == HTTPStatus.OK:
             try:

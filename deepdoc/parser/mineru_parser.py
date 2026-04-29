@@ -37,6 +37,8 @@ from strenum import StrEnum
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from deepdoc.parser.utils import extract_pdf_outlines
 
+from common.constants import MAXIMUM_PAGE_NUMBER
+
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
@@ -303,29 +305,24 @@ class MinerUParser(RAGFlowPdfParser):
                 ) as response:
                     response.raise_for_status()
                     content_type = response.headers.get("Content-Type", "")
-                    if content_type.startswith("application/zip"):
-                        self.logger.info(f"[MinerU] zip file returned, saving to {output_zip_path}...")
-
-                        if callback:
-                            callback(0.30, f"[MinerU] zip file returned, saving to {output_zip_path}...")
-
-                        with open(output_zip_path, "wb") as f:
-                            response.raw.decode_content = True
-                            shutil.copyfileobj(response.raw, f)
-
-                        self.logger.info(f"[MinerU] Unzip to {output_path}...")
-                        self._extract_zip_no_root(output_zip_path, output_path, pdf_file_name + "/")
-
-                        if callback:
-                            callback(0.40, f"[MinerU] Unzip to {output_path}...")
-                    else:
-                        self.logger.warning(f"[MinerU] not zip returned from api: {content_type}")
-        except Exception as e:
+                    if not content_type.startswith("application/zip"):
+                        raise RuntimeError(f"[MinerU] not zip returned from api: {content_type}")
+                    self.logger.info(f"[MinerU] zip file returned, saving to {output_zip_path}...")
+                    if callback:
+                        callback(0.30, f"[MinerU] zip file returned, saving to {output_zip_path}...")
+                    with open(output_zip_path, "wb") as f:
+                        response.raw.decode_content = True
+                        shutil.copyfileobj(response.raw, f)
+                    self.logger.info(f"[MinerU] Unzip to {output_path}...")
+                    self._extract_zip_no_root(output_zip_path, output_path, pdf_file_name + "/")
+                    if callback:
+                        callback(0.40, f"[MinerU] Unzip to {output_path}...")
+            self.logger.info("[MinerU] Api completed successfully.")
+            return Path(output_path)
+        except requests.RequestException as e:
             raise RuntimeError(f"[MinerU] api failed with exception {e}")
-        self.logger.info("[MinerU] Api completed successfully.")
-        return Path(output_path)
 
-    def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=600, callback=None):
+    def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         self.page_from = page_from
         self.page_to = page_to
         try:
@@ -517,7 +514,8 @@ class MinerUParser(RAGFlowPdfParser):
             return sanitized or "unnamed"
 
         safe_stem = _sanitize_filename(file_stem)
-        allowed_names = {f"{file_stem}_content_list.json", f"{safe_stem}_content_list.json"}
+        content_names = (f"{file_stem}_content_list.json", f"{safe_stem}_content_list.json")
+        allowed_names = set(content_names)
         self.logger.info(f"[MinerU] Expected output files: {', '.join(sorted(allowed_names))}")
         self.logger.info(f"[MinerU] Searching output in: {output_dir}")
 
@@ -541,6 +539,27 @@ class MinerUParser(RAGFlowPdfParser):
                 if nested_alt.exists():
                     subdir = nested_alt.parent
                     json_file = nested_alt
+
+        if not json_file:
+            parse_subdir = None
+            if backend.startswith("pipeline"):
+                parse_subdir = method
+            elif backend.startswith("hybrid"):
+                parse_subdir = f"hybrid_{method}"
+            elif backend.startswith("vlm"):
+                parse_subdir = "vlm"
+
+            if parse_subdir:
+                for content_name in content_names:
+                    for candidate in output_dir.glob(f"**/{parse_subdir}/{content_name}"):
+                        self.logger.info(f"[MinerU] Trying parse-method path: {candidate}")
+                        attempted.append(candidate)
+                        if candidate.exists():
+                            subdir = candidate.parent
+                            json_file = candidate
+                            break
+                    if json_file:
+                        break
 
         if not json_file:
             raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(p) for p in attempted)}")

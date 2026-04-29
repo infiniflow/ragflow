@@ -1325,7 +1325,7 @@ class RAGFlowClient:
             print(f"Documents {document_names} not found in {dataset_name}")
 
         payload = {"doc_ids": document_ids, "run": 1}
-        response = self.http_client.request("POST", "/document/run", json_body=payload, use_api_base=False,
+        response = self.http_client.request("POST", "/documents/ingest", json_body=payload, use_api_base=True,
                                             auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json["code"] == 0:
@@ -1351,7 +1351,7 @@ class RAGFlowClient:
             document_ids.append(doc["id"])
 
         payload = {"doc_ids": document_ids, "run": 1}
-        response = self.http_client.request("POST", "/document/run", json_body=payload, use_api_base=False,
+        response = self.http_client.request("POST", "/documents/ingest", json_body=payload, use_api_base=True,
                                             auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json["code"] == 0:
@@ -1612,7 +1612,7 @@ class RAGFlowClient:
             print(f"no document found for {doc_id}")
             return
 
-        dataset_id = docs[0].get("kb_id")
+        dataset_id = docs[0].get("dataset_id")
         if not dataset_id:
             print(f"Dataset ID not found for document: {doc_id}")
             return
@@ -1753,7 +1753,7 @@ class RAGFlowClient:
                 return False
             all_done = True
             for doc in docs:
-                if doc.get("run") != "3":
+                if doc.get("run") != "DONE":
                     print(f"Document {doc["name"]} is not done, status: {doc.get("run")}")
                     all_done = False
                     break
@@ -1764,8 +1764,13 @@ class RAGFlowClient:
             time.sleep(0.5)
 
     def _list_documents(self, dataset_name: str, dataset_id: str):
-        response = self.http_client.request("POST", f"/document/list?id={dataset_id}", use_api_base=False,
-                                            auth_kind="web")
+        # Use the new RESTful API: GET /api/v1/datasets/<dataset_id>/documents
+        response = self.http_client.request(
+            "GET",
+            f"/datasets/{dataset_id}/documents",
+            use_api_base=True,
+            auth_kind="web"
+        )
         res_json = response.json()
         if response.status_code != 200:
             print(

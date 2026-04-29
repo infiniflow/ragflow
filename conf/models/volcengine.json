@@ -1,0 +1,24 @@
+{
+  "name": "VolcEngine",
+  "url": {
+    "default": "https://ark.cn-beijing.volces.com/api/v3"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "files": "files"
+  },
+  "class": "volcengine",
+  "models": [
+    {
+      "name": "doubao-seed-2-0-pro-260215",
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    }
+  ]
+}

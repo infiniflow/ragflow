@@ -235,7 +235,14 @@ async def async_chat_solo(dialog, messages, stream=True):
         else:
             text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
         attachments = "\n\n".join(text_attachments)
-    model_config = get_model_config_by_id(dialog.tenant_llm_id)
+    
+    if dialog.llm_id:
+        model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+    elif dialog.tenant_llm_id:
+        model_config = get_model_config_by_id(dialog.tenant_llm_id)
+    else:
+        model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
+
     chat_mdl = LLMBundle(dialog.tenant_id, model_config)
     factory = model_config.get("llm_factory", "") if model_config else ""
 
@@ -284,10 +291,10 @@ def get_models(dialog):
         if not embd_mdl:
             raise LookupError("Embedding model(%s) not found" % embedding_list[0])
 
-    if dialog.tenant_llm_id:
-        chat_model_config = get_model_config_by_id(dialog.tenant_llm_id)
-    elif dialog.llm_id:
+    if dialog.llm_id:
         chat_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+    elif dialog.tenant_llm_id:
+        chat_model_config = get_model_config_by_id(dialog.tenant_llm_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
@@ -584,8 +591,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         )
 
     if prompt_config.get("keyword", False):
-        questions[-1] += await keyword_extraction(chat_mdl, questions[-1])
-
+        questions[-1] = questions[-1] + "," + await keyword_extraction(chat_mdl, questions[-1])
     refine_question_ts = timer()
 
     thought = ""
@@ -791,7 +797,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
         full_answer = last_state.full_text if last_state else ""
         if full_answer:
-            final = decorate_answer(thought + full_answer)
+            final = decorate_answer(_extract_visible_answer(thought + full_answer))
             final["final"] = True
             final["audio_binary"] = None
             yield final
@@ -1310,6 +1316,19 @@ class _ThinkStreamState:
         self.buffer = ""
 
 
+def _extract_visible_answer(text: str) -> str:
+    text = text or ""
+    if "</think>" not in text:
+        return re.sub(r"</?think>", "", text)
+
+    thought, answer = text.rsplit("</think>", 1)
+    thought = re.sub(r"</?think>", "", thought).strip()
+    answer = re.sub(r"</?think>", "", answer)
+    if not thought:
+        return answer
+    return f"<think>{thought}</think>{answer}"
+
+
 def _next_think_delta(state: _ThinkStreamState) -> str:
     full_text = state.full_text
     if full_text == state.last_full:
@@ -1454,7 +1473,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
             continue
         yield {"answer": value, "reference": {}, "final": False}
     full_answer = last_state.full_text if last_state else ""
-    final = decorate_answer(full_answer)
+    final = decorate_answer(_extract_visible_answer(full_answer))
     final["final"] = True
     yield final
 

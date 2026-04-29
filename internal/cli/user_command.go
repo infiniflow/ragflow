@@ -24,6 +24,7 @@ import (
 	"os"
 	ce "ragflow/internal/cli/contextengine"
 	"strings"
+	"time"
 )
 
 // PingServer pings the server to check if it's alive
@@ -1014,7 +1015,7 @@ func (c *RAGFlowClient) AddProvider(cmd *Command) (ResponseIf, error) {
 		"provider_name": providerName,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/providers", true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("PUT", "/providers", true, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add provider: %w", err)
 	}
@@ -1128,11 +1129,23 @@ func (c *RAGFlowClient) CreateProviderInstance(cmd *Command) (ResponseIf, error)
 		return nil, fmt.Errorf("API key not provided")
 	}
 
+	baseUrl, ok := cmd.Params["base_url"].(string)
+	if !ok {
+		baseUrl = ""
+	}
+
+	region, ok := cmd.Params["region"].(string)
+	if !ok {
+		region = ""
+	}
+
 	url := fmt.Sprintf("/providers/%s/instances", providerName)
 
 	payload := map[string]interface{}{
 		"instance_name": instanceName,
 		"api_key":       apiKey,
+		"base_url":      baseUrl,
+		"region":        region,
 	}
 
 	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
@@ -1234,6 +1247,47 @@ func (c *RAGFlowClient) ShowProviderInstance(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+// ShowInstanceBalance shows balance of a specific instance
+// SHOW BALANCE FROM PROVIDER <provider_name> <instance_name>
+func (c *RAGFlowClient) ShowInstanceBalance(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance name not provided")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	url := fmt.Sprintf("/providers/%s/instances/%s/balance", providerName, instanceName)
+
+	resp, err := c.HTTPClient.Request("GET", url, true, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show instance: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("show instance failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // AlterProviderInstance renames a provider instance
 // ALTER INSTANCE <name> NAME <new_name> FROM PROVIDER <name>
 func (c *RAGFlowClient) AlterProviderInstance(cmd *Command) (ResponseIf, error) {
@@ -1301,9 +1355,13 @@ func (c *RAGFlowClient) DropProviderInstance(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("provider name not provided")
 	}
 
-	url := fmt.Sprintf("/providers/%s/instances/%s", providerName, instanceName)
+	payload := map[string]interface{}{
+		"instances": []string{instanceName},
+	}
 
-	resp, err := c.HTTPClient.Request("DELETE", url, true, "web", nil, nil)
+	url := fmt.Sprintf("/providers/%s/instances", providerName)
+
+	resp, err := c.HTTPClient.Request("DELETE", url, true, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop instance: %w", err)
 	}
@@ -1388,7 +1446,7 @@ func (c *RAGFlowClient) EnableOrDisableModel(cmd *Command, status string) (Respo
 		"status": status,
 	}
 
-	resp, err := c.HTTPClient.Request("PUT", url, true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("PATCH", url, true, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to enable/disable model: %w", err)
 	}
@@ -1413,15 +1471,15 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 
 	var providerName, instanceName, modelName string
 
-	// Check if model_name is provided in command
-	if compositeModelName, ok := cmd.Params["model_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "/")
+	// Check if composite_model_name is provided in command
+	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
+		names := strings.Split(compositeModelName, "@")
 		if len(names) != 3 {
-			return nil, fmt.Errorf("model name must be in format 'provider/instance/model'")
+			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
 		}
-		providerName = names[0]
+		providerName = names[2]
 		instanceName = names[1]
-		modelName = names[2]
+		modelName = names[0]
 	} else if c.CurrentModel != nil {
 		// Use current model if set
 		providerName = c.CurrentModel.Provider
@@ -1432,83 +1490,158 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	}
 
 	message := cmd.Params["message"].(string)
-	reasoning := cmd.Params["reasoning"].(bool)
+	thinking := cmd.Params["thinking"].(bool)
+	stream := cmd.Params["stream"].(bool)
+	effort := cmd.Params["effort"].(string)
+	verbosity := cmd.Params["verbosity"].(string)
 
-	url := fmt.Sprintf("/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
+	url := fmt.Sprintf("/chat/completions")
 
 	payload := map[string]interface{}{
-		"message":   message,
-		"stream":    true, // use stream API
-		"reasoning": reasoning,
+		"provider_name": providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+		"message":       message,
+		"stream":        stream, // use stream API
+		"thinking":      thinking,
 	}
 
-	// Call stream http api
-	reader, duration, err := c.HTTPClient.RequestStream("POST", url, true, "web", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to chat model: %w", err)
+	if thinking {
+		payload["effort"] = effort
+		payload["verbosity"] = verbosity
 	}
-	defer reader.Close()
 
-	// Parse SSE and output to console
-	scanner := bufio.NewScanner(reader)
-	var fullMessage strings.Builder
-
-	reasoningPrint := true
-	messagePrint := true
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "data:") {
-			data := strings.TrimPrefix(line, "data:")
-			data = strings.TrimSpace(data)
-
-			if strings.HasPrefix(data, "[REASONING]") {
-				data = strings.TrimPrefix(data, "[REASONING]")
-				if reasoningPrint {
-					fmt.Print("Thinking: ")
-					reasoningPrint = false
-				} else {
-					fmt.Print(data)
-				}
-				os.Stdout.Sync()
-			}
-			if strings.HasPrefix(data, "[MESSAGE]") {
-				data = strings.TrimPrefix(data, "[MESSAGE]")
-				if messagePrint {
-					if reasoning {
-						fmt.Println()
-					}
-					fmt.Print("Answer: ")
-					messagePrint = false
-				} else {
-					fmt.Print(data)
-					os.Stdout.Sync()
-					fullMessage.WriteString(data)
-				}
-			}
-		} else if strings.HasPrefix(line, "event:error") {
-			// error event
-			if scanner.Scan() {
-				errData := strings.TrimPrefix(scanner.Text(), "data:")
-				errData = strings.TrimSpace(errData)
-				return nil, fmt.Errorf("chat error: %s", errData)
-			}
-			// If there's an error, return a generic error
-			return nil, fmt.Errorf("chat error: received error event from server")
+	if stream {
+		// Call stream http api
+		startTime := time.Now()
+		reader, err := c.HTTPClient.RequestStream("POST", url, true, "web", nil, payload)
+		if err != nil {
+			return nil, fmt.Errorf("failed to chat model: %w", err)
 		}
+		defer reader.Close()
+
+		// Parse SSE and output to console
+		scanner := bufio.NewScanner(reader)
+		var fullMessage strings.Builder
+
+		reasoningPrint := true
+		messagePrint := true
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "data:") {
+				data := strings.TrimPrefix(line, "data:")
+				data = strings.TrimSpace(data)
+
+				if strings.HasPrefix(data, "[REASONING]") {
+					data = strings.TrimPrefix(data, "[REASONING]")
+					if reasoningPrint {
+						fmt.Print("Thinking: ")
+						reasoningPrint = false
+						thinking = true
+					} else {
+						fmt.Print(data)
+					}
+					os.Stdout.Sync()
+				}
+				if strings.HasPrefix(data, "[MESSAGE]") {
+					data = strings.TrimPrefix(data, "[MESSAGE]")
+					if messagePrint {
+						if thinking {
+							fmt.Println()
+						}
+						fmt.Print("Answer: ")
+						messagePrint = false
+					} else {
+						fmt.Print(data)
+						os.Stdout.Sync()
+						fullMessage.WriteString(data)
+					}
+				}
+			} else if strings.HasPrefix(line, "event:error") {
+				// error event
+				if scanner.Scan() {
+					errData := strings.TrimPrefix(scanner.Text(), "data:")
+					errData = strings.TrimSpace(errData)
+					return nil, fmt.Errorf("chat error: %s", errData)
+				}
+				// If there's an error, return a generic error
+				return nil, fmt.Errorf("chat error: received error event from server")
+			}
+		}
+		duration := time.Since(startTime).Seconds()
+		if err := scanner.Err(); err != nil {
+			return nil, fmt.Errorf("error reading stream: %w", err)
+		}
+
+		fmt.Println()
+
+		result := &StreamMessageResponse{
+			Code:     0,
+			Message:  fullMessage.String(),
+			Duration: duration,
+		}
+		return result, nil
 	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading stream: %w", err)
+	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list instance models: %w", err)
 	}
 
-	fmt.Println()
-
-	result := &StreamMessageResponse{
-		Code:     0,
-		Message:  fullMessage.String(),
-		Duration: duration,
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list instance models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
-	return result, nil
+
+	var result NonStreamResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to list instance models: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) CheckProviderConnection(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance name not provided")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	url := fmt.Sprintf("/providers/%s/instances/%s/connection", providerName, instanceName)
+
+	resp, err := c.HTTPClient.Request("GET", url, true, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check provider connection: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to check provider connection: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+
 }
 
 // UseModel sets the current model for chat
@@ -1520,20 +1653,20 @@ func (c *RAGFlowClient) UseModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	modelIdentifier, ok := cmd.Params["model_identifier"].(string)
-	if !ok || modelIdentifier == "" {
+	compositeModelName, ok := cmd.Params["composite_model_name"].(string)
+	if !ok || compositeModelName == "" {
 		return nil, fmt.Errorf("model identifier not provided")
 	}
 
-	names := strings.Split(modelIdentifier, "/")
+	names := strings.Split(compositeModelName, "@")
 	if len(names) != 3 {
-		return nil, fmt.Errorf("model identifier must be in format 'provider/instance/model'")
+		return nil, fmt.Errorf("model identifier must be in format 'model@instance@provider'")
 	}
 
 	c.CurrentModel = &CurrentModel{
-		Provider: names[0],
+		Provider: names[2],
 		Instance: names[1],
-		Model:    names[2],
+		Model:    names[0],
 	}
 
 	var result SimpleResponse
@@ -1562,6 +1695,75 @@ func (c *RAGFlowClient) ShowCurrentModel(cmd *Command) (ResponseIf, error) {
 		},
 	}
 	return &result, nil
+}
+
+func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance name not provided")
+	}
+
+	modelName, ok := cmd.Params["model_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model name not provided")
+	}
+
+	// chat, vision, embedding, rerank, tts, asr, ocr
+	modelType, ok := cmd.Params["model_type"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model type not provided")
+	}
+
+	maxTokens, ok := cmd.Params["max_tokens"].(int)
+	if !ok {
+		return nil, fmt.Errorf("max tokens not provided")
+	}
+
+	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
+
+	payload := map[string]interface{}{
+		"provider_name": providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+		"model_type":    modelType,
+		"max_tokens":    maxTokens,
+	}
+
+	supportThink, ok := cmd.Params["support_think"].(bool)
+	if ok {
+		payload["thinking"] = supportThink
+	}
+
+	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check provider connection: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to check provider connection: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+
 }
 
 // Context related commands

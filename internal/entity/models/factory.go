@@ -30,11 +30,29 @@ func NewModelFactory() *ModelFactory {
 }
 
 // CreateModelDriver creates a ModelDriver for the given provider and model
-func (f *ModelFactory) CreateModelDriver(providerName string, baseURL string, urlSuffix URLSuffix) (ModelDriver, error) {
+func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string]string, urlSuffix URLSuffix) (ModelDriver, error) {
 	providerLower := strings.ToLower(providerName)
 	switch providerLower {
 	case "zhipu-ai":
 		return NewZhipuAIModel(baseURL, urlSuffix), nil
+	case "deepseek":
+		return NewDeepSeekModel(baseURL, urlSuffix), nil
+	case "moonshot":
+		return NewMoonshotModel(baseURL, urlSuffix), nil
+	case "minimax":
+		return NewMinimaxModel(baseURL, urlSuffix), nil
+	case "gitee":
+		return NewGiteeModel(baseURL, urlSuffix), nil
+	case "siliconflow":
+		return NewSiliconflowModel(baseURL, urlSuffix), nil
+	case "google":
+		return NewGoogleModel(baseURL, urlSuffix), nil
+	case "aliyun":
+		return NewAliyunModel(baseURL, urlSuffix), nil
+	case "volcengine":
+		return NewVolcEngine(baseURL, urlSuffix), nil
+	case "vllm":
+		return NewVllmModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

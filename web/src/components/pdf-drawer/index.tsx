@@ -4,7 +4,7 @@ import {
 } from '@/hooks/use-document-request';
 import { IModalProps } from '@/interfaces/common';
 import { IReferenceChunk } from '@/interfaces/database/chat';
-import { IChunk } from '@/interfaces/database/knowledge';
+import { IChunk } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
 import PdfPreview from '../document-preview/pdf-preview';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../ui/sheet';
