@@ -243,7 +243,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.DELETE("/:provider_name/instances", r.providerHandler.DropProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
 				provider.PATCH("/:provider_name/instances/:instance_name/models/*model_name", r.providerHandler.EnableOrDisableModel)
-				provider.POST("/:provider_name/instances/:instance_name/models", r.providerHandler.ChatToModel)
+				v1.POST("/chat/completions", r.providerHandler.ChatToModel)
 			}
 
 			model := v1.Group("/models")

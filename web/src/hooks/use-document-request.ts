@@ -4,11 +4,11 @@ import message from '@/components/ui/message';
 import { RunningStatus } from '@/constants/knowledge';
 import { ResponseType } from '@/interfaces/database/base';
 import { IReferenceChunk } from '@/interfaces/database/chat';
+import { IChunk } from '@/interfaces/database/dataset';
 import {
   IDocumentInfo,
   IDocumentInfoFilter,
 } from '@/interfaces/database/document';
-import { IChunk } from '@/interfaces/database/knowledge';
 import {
   IChangeParserConfigRequestBody,
   IDocumentMetaRequestBody,

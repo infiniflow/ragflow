@@ -28,16 +28,20 @@ import (
 	"time"
 )
 
-// parseModelName parses a composite model name in format "model_name@provider"
-// Returns modelName and provider separately
-func parseModelName(compositeName string) (modelName, provider string, err error) {
+// parseModelName parses a composite model name in format "model@instance@provider" or "model@provider"
+// Returns modelName, instanceName, providerName separately
+func parseModelName(compositeName string) (modelName, instanceName, providerName string, err error) {
 	parts := strings.Split(compositeName, "@")
-	if len(parts) == 2 {
-		return parts[0], parts[1], nil
+	if len(parts) == 3 {
+		// Format: model@instance@provider
+		return parts[0], parts[1], parts[2], nil
+	} else if len(parts) == 2 {
+		// Format: model@provider (legacy)
+		return parts[0], "", parts[1], nil
 	} else if len(parts) == 1 {
-		return parts[0], "", fmt.Errorf("provider name missing in model name: %s", compositeName)
+		return parts[0], "", "", fmt.Errorf("provider name missing in model name: %s", compositeName)
 	} else {
-		return "", "", fmt.Errorf("invalid model name format: %s", compositeName)
+		return "", "", "", fmt.Errorf("invalid model name format: %s", compositeName)
 	}
 }
 
@@ -848,7 +852,7 @@ func (m *ModelProviderService) GetChatModel(tenantID, compositeModelName string)
 
 // getModelConfig returns the model driver, model name, API config, and max tokens for a model
 func (m *ModelProviderService) getModelConfig(tenantID, compositeModelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	modelName, providerName, err := parseModelName(compositeModelName)
+	modelName, instanceName, providerName, err := parseModelName(compositeModelName)
 	if err != nil {
 		return nil, "", nil, 0, err
 	}
@@ -862,7 +866,10 @@ func (m *ModelProviderService) getModelConfig(tenantID, compositeModelName strin
 		return nil, "", nil, 0, fmt.Errorf("provider %s not found", providerName)
 	}
 
-	instanceName := "default_instance"
+	if instanceName == "" {
+		instanceName = "default_instance"
+	}
+
 	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
 	if err != nil {
 		return nil, "", nil, 0, err

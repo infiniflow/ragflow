@@ -99,7 +99,7 @@ async def create_or_upload(tenant_id: str = None):
 @manager.route("/files", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-def list_files(tenant_id: str = None):
+async def list_files(tenant_id: str = None):
     """
     List files under a folder.
     ---
@@ -305,7 +305,7 @@ async def download(tenant_id: str = None, file_id: str = None):
 @manager.route("/files/<file_id>/parent", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-def parent_folder(tenant_id: str = None, file_id: str = None):
+async def parent_folder(tenant_id: str = None, file_id: str = None):
     """
     Get parent folder of a file.
     ---
@@ -336,7 +336,7 @@ def parent_folder(tenant_id: str = None, file_id: str = None):
 @manager.route("/files/<file_id>/ancestors", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-def ancestors(tenant_id: str = None, file_id: str = None):
+async def ancestors(tenant_id: str = None, file_id: str = None):
     """
     Get all ancestor folders of a file.
     ---
