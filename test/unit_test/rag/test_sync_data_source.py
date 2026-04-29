@@ -19,6 +19,7 @@ import os
 import sys
 import types
 import warnings
+from datetime import datetime, timezone
 
 import pytest
 
@@ -167,3 +168,93 @@ async def test_run_task_logic_cleans_up_for_non_empty_snapshot(monkeypatch):
             {},
         )
     ]
+
+
+class _FakeDropboxConnector:
+    instance = None
+
+    def __init__(self, batch_size):
+        self.batch_size = batch_size
+        self.credentials = None
+        self.retrieve_all_slim_docs_perm_sync_called = False
+        self.snapshot_called_before_poll = None
+        self.poll_source_call = None
+        self.load_from_state_called = False
+        self.poll_source_called = False
+        _FakeDropboxConnector.instance = self
+
+    def load_credentials(self, credentials):
+        self.credentials = credentials
+
+    def retrieve_all_slim_docs_perm_sync(self):
+        self.retrieve_all_slim_docs_perm_sync_called = True
+        self.snapshot_called_before_poll = not self.poll_source_called
+        yield [types.SimpleNamespace(id="dropbox:id-1")]
+        yield [types.SimpleNamespace(id="dropbox:id-2")]
+
+    def poll_source(self, start, end):
+        self.poll_source_called = True
+        self.poll_source_call = (start, end)
+        return iter((["poll-sync"],))
+
+    def load_from_state(self):
+        self.load_from_state_called = True
+        return iter((["full-sync"],))
+
+
+@pytest.mark.anyio
+@pytest.mark.p2
+async def test_dropbox_generate_returns_snapshot_when_sync_deleted_enabled(monkeypatch):
+    monkeypatch.setattr(sync_data_source, "DropboxConnector", _FakeDropboxConnector)
+    poll_start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    task = {
+        **_make_task(),
+        "reindex": "0",
+        "poll_range_start": poll_start,
+        "skip_connection_log": True,
+    }
+    sync = sync_data_source.Dropbox(
+        {
+            "batch_size": 2,
+            "sync_deleted_files": True,
+            "credentials": {"dropbox_access_token": "token-1"},
+        }
+    )
+
+    document_generator, file_list = await sync._generate(task)
+    connector = _FakeDropboxConnector.instance
+
+    assert list(document_generator) == [["poll-sync"]]
+    assert [doc.id for doc in file_list] == ["dropbox:id-1", "dropbox:id-2"]
+    assert connector.credentials == {"dropbox_access_token": "token-1"}
+    assert connector.retrieve_all_slim_docs_perm_sync_called is True
+    assert connector.snapshot_called_before_poll is True
+    assert connector.poll_source_call[0] == poll_start.timestamp()
+    assert connector.poll_source_call[1] >= poll_start.timestamp()
+
+
+@pytest.mark.anyio
+@pytest.mark.p2
+async def test_dropbox_generate_skips_snapshot_for_full_reindex(monkeypatch):
+    monkeypatch.setattr(sync_data_source, "DropboxConnector", _FakeDropboxConnector)
+    task = {
+        **_make_task(),
+        "reindex": "1",
+        "poll_range_start": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "skip_connection_log": True,
+    }
+    sync = sync_data_source.Dropbox(
+        {
+            "batch_size": 2,
+            "sync_deleted_files": True,
+            "credentials": {"dropbox_access_token": "token-1"},
+        }
+    )
+
+    document_generator = await sync._generate(task)
+    connector = _FakeDropboxConnector.instance
+
+    assert list(document_generator) == [["full-sync"]]
+    assert connector.load_from_state_called is True
+    assert connector.retrieve_all_slim_docs_perm_sync_called is False
+    assert connector.poll_source_called is False

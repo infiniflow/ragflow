@@ -67,6 +67,9 @@ export const DataSourceFeatureVisibilityMap = {
   [DataSourceKey.BOX]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.DROPBOX]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.S3]: {
     syncDeletedFiles: true,
   },
