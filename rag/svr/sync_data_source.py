@@ -617,19 +617,23 @@ class Dropbox(SyncBase):
     async def _generate(self, task: dict):
         self.connector = DropboxConnector(batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE))
         self.connector.load_credentials(self.conf["credentials"])
+        poll_start = task["poll_range_start"]
+        file_list = None
 
-        if task["reindex"] == "1" or not task["poll_range_start"]:
+        if task["reindex"] == "1" or not poll_start:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
-            poll_start = task["poll_range_start"]
-            document_generator = self.connector.poll_source(
-                poll_start.timestamp(), datetime.now(timezone.utc).timestamp()
-            )
+            end_time = datetime.now(timezone.utc).timestamp()
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
+            document_generator = self.connector.poll_source(poll_start.timestamp(), end_time)
             _begin_info = f"from {poll_start}"
 
         self.log_connection("Dropbox", "workspace", task)
-        return document_generator
+        return document_generator, file_list
 
 
 class GoogleDrive(SyncBase):
