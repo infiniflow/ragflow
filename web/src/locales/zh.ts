@@ -242,6 +242,7 @@ export default {
       raptor: 'RAPTOR',
       processingType: '处理类型',
       dataPipeline: '切换或配置 ingestion pipeline。',
+      dataPipelineTitle: '数据管道',
       operations: '操作',
       taskId: '任务ID',
       duration: '耗时',
