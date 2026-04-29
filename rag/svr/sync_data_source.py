@@ -1071,8 +1071,24 @@ class Asana(SyncBase):
             end_time = datetime.now(timezone.utc).timestamp()
             if self.conf.get("sync_deleted_files"):
                 file_list = []
-                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
-                    file_list.extend(slim_batch)
+                logging.info(
+                    "Asana sync_deleted_files snapshot started (connector_id=%s)",
+                    task["connector_id"],
+                )
+                try:
+                    for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                        file_list.extend(slim_batch)
+                except Exception:
+                    logging.exception(
+                        "Asana sync_deleted_files snapshot failed (connector_id=%s)",
+                        task["connector_id"],
+                    )
+                    raise
+                logging.info(
+                    "Asana sync_deleted_files snapshot completed with %d slim docs (connector_id=%s)",
+                    len(file_list),
+                    task["connector_id"],
+                )
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
                 end_time,

@@ -63,6 +63,34 @@ class AsanaAPI:
     ) -> Iterator[AsanaTask]:
         """Get all tasks from the projects with the given gids that were modified since the given date.
         If project_gids is None, get all tasks from all projects in the workspace."""
+        projects_list = self._get_project_gids_to_process(project_gids)
+        start_seconds = int(time.mktime(datetime.now().timetuple()))
+        for project_gid in projects_list:
+            for task in self._get_tasks_for_project(
+                project_gid, start_date, start_seconds
+            ):
+                yield task
+        logging.info(f"Completed fetching {self.task_count} tasks from Asana")
+        if self.api_error_count > 0:
+            logging.warning(
+                f"Encountered {self.api_error_count} API errors during task fetching"
+            )
+
+    def get_task_ids(
+        self, project_gids: list[str] | None, start_date: str
+    ) -> Iterator[str]:
+        """Get task gids without hydrating comments, users, or task text."""
+        task_count = 0
+        projects_list = self._get_project_gids_to_process(project_gids)
+        for project_gid in projects_list:
+            for task_id in self._get_task_ids_for_project(project_gid, start_date):
+                task_count += 1
+                yield task_id
+        logging.info(f"Completed fetching {task_count} task IDs from Asana")
+
+    def _get_project_gids_to_process(
+        self, project_gids: list[str] | None
+    ) -> list[str]:
         logging.info("Starting to fetch Asana projects")
         projects = self.project_api.get_projects(
             opts={
@@ -70,7 +98,6 @@ class AsanaAPI:
                 "opt_fields": "gid,name,archived,modified_at",
             }
         )
-        start_seconds = int(time.mktime(datetime.now().timetuple()))
         projects_list = []
         project_count = 0
         for project_info in projects:
@@ -85,20 +112,9 @@ class AsanaAPI:
             if project_count % 100 == 0:
                 logging.info(f"Processed {project_count} projects")
         logging.info(f"Found {len(projects_list)} projects to process")
-        for project_gid in projects_list:
-            for task in self._get_tasks_for_project(
-                project_gid, start_date, start_seconds
-            ):
-                yield task
-        logging.info(f"Completed fetching {self.task_count} tasks from Asana")
-        if self.api_error_count > 0:
-            logging.warning(
-                f"Encountered {self.api_error_count} API errors during task fetching"
-            )
+        return projects_list
 
-    def _get_tasks_for_project(
-        self, project_gid: str, start_date: str, start_seconds: int
-    ) -> Iterator[AsanaTask]:
+    def _get_project_to_process(self, project_gid: str) -> dict | None:
         project = self.project_api.get_project(project_gid, opts={})
         project_name = project.get("name", project_gid)
         team = project.get("team") or {}
@@ -122,6 +138,41 @@ class AsanaAPI:
                 f"Processing private project in configured team: {project_name} ({project_gid})"
             )
 
+        return project
+
+    def _get_task_ids_for_project(
+        self, project_gid: str, start_date: str
+    ) -> Iterator[str]:
+        project = self._get_project_to_process(project_gid)
+        if project is None:
+            return
+
+        project_name = project.get("name", project_gid)
+        simple_start_date = start_date.split(".")[0].split("+")[0]
+        logging.info(
+            f"Fetching task IDs modified since {simple_start_date} for project: {project_name} ({project_gid})"
+        )
+
+        tasks_from_api = self.tasks_api.get_tasks_for_project(
+            project_gid,
+            {
+                "opt_fields": "gid",
+                "modified_since": start_date,
+            },
+        )
+        for data in tasks_from_api:
+            task_id = data.get("gid")
+            if task_id:
+                yield task_id
+
+    def _get_tasks_for_project(
+        self, project_gid: str, start_date: str, start_seconds: int
+    ) -> Iterator[AsanaTask]:
+        project = self._get_project_to_process(project_gid)
+        if project is None:
+            return
+
+        project_name = project.get("name", project_gid)
         simple_start_date = start_date.split(".")[0].split("+")[0]
         logging.info(
             f"Fetching tasks modified since {simple_start_date} for project: {project_name} ({project_gid})"
@@ -416,9 +467,9 @@ class AsanaConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 raise RuntimeError("Asana slim document snapshot failed due to one or more API errors")
 
         logging.info("Starting Asana slim document snapshot")
-        for task in self.asana_client.get_tasks(self.project_ids_to_index, start_time):
+        for task_id in self.asana_client.get_task_ids(self.project_ids_to_index, start_time):
             _raise_on_snapshot_api_error()
-            attachments = self.asana_client.get_attachments(task.id)
+            attachments = self.asana_client.get_attachments(task_id)
             _raise_on_snapshot_api_error()
 
             for att in attachments:
@@ -426,7 +477,7 @@ class AsanaConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 if not attachment_gid:
                     continue
 
-                docs_batch.append(SlimDocument(id=f"asana:{task.id}:{attachment_gid}"))
+                docs_batch.append(SlimDocument(id=f"asana:{task_id}:{attachment_gid}"))
                 if len(docs_batch) >= self.batch_size:
                     yield docs_batch
                     docs_batch = []
