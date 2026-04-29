@@ -1026,7 +1026,7 @@ async def recommendation():
 @manager.route("/chat/completions", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("messages")
-async def session_completion():
+async def session_completion(chat_id_in_arg=""):
     req = await get_request_json()
     msg = []
     for m in req["messages"]:
@@ -1037,6 +1037,7 @@ async def session_completion():
         msg.append(m)
     message_id = msg[-1].get("id") if msg else None
     chat_id = req.pop("chat_id", "") or ""
+    chat_id = chat_id or chat_id_in_arg
     session_id = req.pop("session_id", "") or ""
     chat_model_id = req.pop("llm_id", "")
 

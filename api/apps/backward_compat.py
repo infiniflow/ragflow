@@ -61,7 +61,7 @@ async def deprecated_chat_completions(chat_id):
         chat_id,
     )
     # Forward to the new API implementation
-    return await chat_api.chat_completions()
+    return await chat_api.session_completion(chat_id)
 
 
 @manager.route("/chats_openai/<chat_id>/chat/completions", methods=["POST"])
