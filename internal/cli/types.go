@@ -73,6 +73,7 @@ const (
 	TokenKeys
 	TokenGenerate
 	TokenAvailable
+	TokenSupported
 	TokenModel
 	TokenModels
 	TokenProvider
@@ -80,6 +81,7 @@ const (
 	TokenDefault
 	TokenChats
 	TokenChat
+	TokenStream
 	TokenFiles
 	TokenAs
 	TokenParse
@@ -90,12 +92,12 @@ const (
 	TokenPipeline
 	TokenSearch
 	TokenCurrent
-	TokenLLM
-	TokenVLM
+	TokenVision
 	TokenEmbedding
-	TokenReranker
+	TokenRerank
 	TokenASR
 	TokenTTS
+	TokenOCR
 	TokenAsync
 	TokenSync
 	TokenBenchmark
@@ -106,14 +108,23 @@ const (
 	TokenIndex
 	TokenVector
 	TokenSize
-	TokenDocMeta
 	TokenName // For ALTER PROVIDER <name> NAME <new_name>
+	TokenBalance
 	TokenInstance
 	TokenInstances
 	TokenDisable
 	TokenEnable
 	TokenUse
+	TokenCheck
 	TokenThink
+	TokenEffort
+	TokenVerbosity
+	TokenNone
+	TokenMinimal
+	TokenLow
+	TokenMedium
+	TokenHigh
+	TokenMax
 	TokenLS
 	TokenCat
 	TokenInsert
@@ -126,6 +137,8 @@ const (
 	TokenChunks
 	TokenDocument
 	TokenTag
+	TokenRegion
+	TokenURL
 	TokenLog
 	TokenLevel
 	TokenDebug

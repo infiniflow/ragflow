@@ -2,18 +2,19 @@ import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-f
 import message from '@/components/ui/message';
 import { ParseType } from '@/constants/knowledge';
 import { ResponsePostType } from '@/interfaces/database/base';
-import { IDataset, IDatasetListResult } from '@/interfaces/database/dataset';
 import {
-  IKnowledge,
+  IDataset,
+  IDatasetListResult,
   IKnowledgeGraph,
   INextTestingResult,
   IRenameTag,
   ITestingResult,
-} from '@/interfaces/database/knowledge';
+} from '@/interfaces/database/dataset';
 import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
   deleteKnowledgeGraph,
+  getKbDetail,
   getKnowledgeGraph,
   listDataset,
   listTag,
@@ -36,10 +37,10 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
+import { extractParserConfigExt } from './parser-config-utils';
 import { useSetPaginationParams } from './route-hook';
 
 export const enum KnowledgeApiAction {
-  TestRetrieval = 'testRetrieval',
   FetchKnowledgeListByPage = 'fetchKnowledgeListByPage',
   CreateKnowledge = 'createKnowledge',
   DeleteKnowledge = 'deleteKnowledge',
@@ -257,72 +258,6 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const queryClient = useQueryClient();
 
-  const extractRaptorConfigExt = (
-    raptorConfig: Record<string, any> | undefined,
-  ) => {
-    if (!raptorConfig) return raptorConfig;
-    const {
-      use_raptor,
-      prompt,
-      max_token,
-      threshold,
-      max_cluster,
-      random_seed,
-      auto_disable_for_structured_data,
-      ext,
-      ...raptorExt
-    } = raptorConfig;
-    return {
-      use_raptor,
-      prompt,
-      max_token,
-      threshold,
-      max_cluster,
-      random_seed,
-      auto_disable_for_structured_data,
-      ext: { ...ext, ...raptorExt },
-    };
-  };
-
-  const extractParserConfigExt = (
-    parserConfig: Record<string, any> | undefined,
-  ) => {
-    if (!parserConfig) return parserConfig;
-    const {
-      auto_keywords,
-      auto_questions,
-      chunk_token_num,
-      delimiter,
-      graphrag,
-      html4excel,
-      layout_recognize,
-      raptor,
-      tag_kb_ids,
-      topn_tags,
-      filename_embd_weight,
-      task_page_size,
-      pages,
-      ext,
-      ...parserExt
-    } = parserConfig;
-    return {
-      auto_keywords,
-      auto_questions,
-      chunk_token_num,
-      delimiter,
-      graphrag,
-      html4excel,
-      layout_recognize,
-      raptor: extractRaptorConfigExt(raptor),
-      tag_kb_ids,
-      topn_tags,
-      filename_embd_weight,
-      task_page_size,
-      pages,
-      ext: { ...ext, ...parserExt },
-    };
-  };
-
   const {
     data,
     isPending: loading,
@@ -366,6 +301,7 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
         parser_config: extractParserConfigExt(parser_config),
         ...omit(ext, ['kb_id']),
       };
+
       const { data = {} } = await updateKb(kbId, requestBody);
       if (data.code === 0) {
         message.success(i18n.t(`message.updated`));
@@ -392,15 +328,13 @@ export const useFetchKnowledgeBaseConfiguration = (props?: {
   const [searchParams] = useSearchParams();
   const knowledgeBaseId = searchParams.get('id') || id;
 
-  const { data, isFetching: loading } = useQuery<IKnowledge>({
+  const { data, isFetching: loading } = useQuery<IDataset>({
     queryKey: [KnowledgeApiAction.FetchKnowledgeDetail, knowledgeBaseId],
-    initialData: {} as IKnowledge,
+    initialData: {} as IDataset,
     gcTime: 0,
     enabled: !!knowledgeBaseId && isEdit,
     queryFn: async () => {
-      const { data } = await kbService.getKbDetail({
-        kb_id: knowledgeBaseId,
-      });
+      const { data } = await getKbDetail(knowledgeBaseId || '');
       return data?.data ?? {};
     },
   });
@@ -434,7 +368,9 @@ export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
     enabled: kbIds.length > 0,
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await kbService.getMeta({ kb_ids: kbIds.join(',') });
+      const { data } = await kbService.getMeta({
+        dataset_ids: kbIds.join(','),
+      });
       return data?.data ?? {};
     },
   });
@@ -540,7 +476,7 @@ export const useFetchTagListByKnowledgeIds = () => {
     gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
     queryFn: async () => {
       const { data } = await kbService.listTagByKnowledgeIds({
-        kb_ids: knowledgeIds.join(','),
+        dataset_ids: knowledgeIds.join(','),
       });
       const list = data?.data || [];
       return list;

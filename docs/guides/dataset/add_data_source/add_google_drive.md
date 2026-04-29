@@ -6,7 +6,7 @@ sidebar_custom_props: {
 }
 ---
 
-# Add Google Drive as data source
+# Add Google Drive
 
 Add Google Drive as one of the data sources in RAGFlow.
 
@@ -44,7 +44,7 @@ You need to configure the OAuth Consent Screen because it is the step where you 
 2. Select **Web Application** as **Application type** for the created project:  
 ![](https://github.com/infiniflow/ragflow-docs/blob/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image7.png?raw=true)
 3. Enter a client name.
-4. Add `http://localhost:9380/v1/connector/google-drive/oauth/web/callback` as **Authorised redirect URIs**:
+4. Add `http://localhost:9380/api/v1/connectors/google-drive/oauth/web/callback` as **Authorised redirect URIs**:
 5. Add **Authorised JavaScript origins**:
    - If deploying RAGFlow from Docker, use `http://localhost:80`:  
      ![](https://github.com/infiniflow/ragflow-docs/blob/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image8.png?raw=true)

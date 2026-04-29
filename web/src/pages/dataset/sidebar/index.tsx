@@ -19,12 +19,12 @@ import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
 
-import { IKnowledge } from '@/interfaces/database/knowledge';
+import { IDataset } from '@/interfaces/database/dataset';
 import { useParams } from 'react-router';
 
 type PropType = {
   refreshCount?: number;
-  dataset: IKnowledge;
+  dataset: IDataset;
 };
 
 export function SideBar({ dataset: data }: PropType) {
@@ -96,9 +96,9 @@ export function SideBar({ dataset: data }: PropType) {
         >
           <div className="flex justify-between">
             <span>
-              {data.doc_num} {t('knowledgeDetails.files')}
+              {data.document_count} {t('knowledgeDetails.files')}
             </span>
-            <span>{formatBytes(data.size)}</span>
+            <span>{data.size ? formatBytes(data.size) : ''}</span>
           </div>
 
           <div className="mt-0.5">
