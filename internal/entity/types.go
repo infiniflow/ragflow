@@ -16,10 +16,6 @@
 
 package entity
 
-import (
-	"ragflow/internal/entity/models"
-)
-
 // ModelType represents the type of model
 type ModelType string
 
@@ -39,38 +35,6 @@ const (
 	// ModelTypeOCR optical character recognition model
 	ModelTypeOCR ModelType = "ocr"
 )
-
-// EmbeddingModel interface for embedding models
-type EmbeddingModel interface {
-	// Encode encodes a list of texts into embeddings
-	Encode(modelName *string, texts []string, apiConfig *models.APIConfig, embeddingConfig *models.EmbeddingConfig) ([][]float64, error)
-}
-
-// ChatModel interface for chat models
-type ChatModel interface {
-	// Chat sends a message and returns response
-	Chat(system string, history []map[string]string, genConf map[string]interface{}) (string, error)
-	// ChatStreamly sends a message and streams response
-	ChatStreamly(system string, history []map[string]string, genConf map[string]interface{}) (<-chan string, error)
-}
-
-// RerankModel interface for rerank models
-type RerankModel interface {
-	// Rerank calculates similarity between query and texts
-	Rerank(query string, texts []string, apiConfig *models.APIConfig) ([]float64, error)
-}
-
-// ModelConfig represents configuration for a model
-type ModelConfig struct {
-	TenantID   string    `json:"tenant_id"`
-	LLMFactory string    `json:"llm_factory"`
-	ModelType  ModelType `json:"model_type"`
-	LLMName    string    `json:"llm_name"`
-	APIKey     string    `json:"api_key"`
-	APIBase    string    `json:"api_base"`
-	MaxTokens  int64     `json:"max_tokens"`
-	IsTools    bool      `json:"is_tools"`
-}
 
 // ModelCredentials holds the credentials for a model
 type ModelCredentials struct {
