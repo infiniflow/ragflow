@@ -259,7 +259,7 @@ def test_list_files_validation_error(monkeypatch):
     module = _load_file_api_module(monkeypatch)
     monkeypatch.setattr(module, "validate_and_parse_request_args", lambda _request, _schema: (None, "bad args"))
 
-    res = module.list_files("tenant1")
+    res = _run(module.list_files("tenant1"))
     assert res["code"] == 400
     assert res["message"] == "bad args"
 
@@ -330,8 +330,8 @@ def test_download_falls_back_to_document_storage(monkeypatch):
 def test_parent_and_ancestors_use_new_routes(monkeypatch):
     module = _load_file_api_module(monkeypatch)
 
-    parent_res = module.parent_folder("tenant1", "file1")
-    ancestors_res = module.ancestors("tenant1", "file1")
+    parent_res = _run(module.parent_folder("tenant1", "file1"))
+    ancestors_res = _run(module.ancestors("tenant1", "file1"))
 
     assert parent_res["code"] == 0
     assert parent_res["data"]["parent_folder"]["id"] == "parent1"
