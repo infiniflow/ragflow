@@ -646,3 +646,227 @@ class TestKbPromptDebugTraceIntegration:
                 assert fc["prompt_filter_reason"] is None
             else:
                 assert fc["prompt_filter_reason"] == "token_truncation"
+
+
+class TestFullRetrievalDebugChain:
+    """
+    测试完整的检索调试链路：
+    retrieval -> kb_prompt -> decorate_answer/reference
+    """
+
+    def _make_mock_doc(self, doc_id, name):
+        doc = type("MockDoc", (), {})()
+        doc.id = doc_id
+        return doc
+
+    def _mock_document_service(self, monkeypatch):
+        def mock_get_by_ids(ids):
+            return [self._make_mock_doc(doc_id, f"doc_{doc_id}") for doc_id in ids]
+
+        fake_doc_service = types.ModuleType("api.db.services.document_service")
+        fake_doc_service.DocumentService = type("MockDocumentService", (), {
+            "get_by_ids": staticmethod(mock_get_by_ids)
+        })()
+        sys.modules.setdefault("api.db.services.document_service", fake_doc_service)
+
+        def mock_get_document_metadata(doc_id):
+            return {}
+
+        fake_meta_service = types.ModuleType("api.db.services.doc_metadata_service")
+        fake_meta_service.DocMetadataService = type("MockDocMetadataService", (), {
+            "get_document_metadata": staticmethod(mock_get_document_metadata)
+        })()
+        sys.modules.setdefault("api.db.services.doc_metadata_service", fake_meta_service)
+
+    def _simulate_decorate_answer(self, kbinfos, quote_enabled, knowledges_non_empty=True):
+        """
+        模拟 decorate_answer 的核心逻辑：
+        1. 当 quote=False 时，reference 保持为 []
+        2. 当 quote=True 时，reference 是 deepcopy(kbinfos)
+        3. debug_trace 始终放在顶级 dict 里
+        """
+        from copy import deepcopy
+
+        refs = []
+        if knowledges_non_empty and quote_enabled:
+            refs = deepcopy(kbinfos)
+            for c in refs.get("chunks", []):
+                if c.get("vector"):
+                    del c["vector"]
+
+        result = {
+            "answer": "test answer",
+            "reference": refs,
+            "prompt": "test prompt",
+            "created_at": 1234567890.0
+        }
+        if "debug_trace" in kbinfos:
+            result["debug_trace"] = kbinfos["debug_trace"]
+
+        return result
+
+    def test_full_chain_quote_false_reference_unchanged(self, monkeypatch):
+        """
+        测试：当 quote=False 时，reference 保持为 []，debug_trace 在顶级 dict 里
+        """
+        self._mock_document_service(monkeypatch)
+
+        from rag.prompts.generator import kb_prompt
+
+        kbinfos = {
+            "total": 2,
+            "chunks": [
+                {
+                    "chunk_id": "chunk_001",
+                    "doc_id": "doc_001",
+                    "docnm_kwd": "doc1.pdf",
+                    "kb_id": "kb_001",
+                    "content": "Short content 1.",
+                    "content_ltks": "Short content 1.",
+                    "content_with_weight": "Short content 1.",
+                },
+                {
+                    "chunk_id": "chunk_002",
+                    "doc_id": "doc_002",
+                    "docnm_kwd": "doc2.pdf",
+                    "kb_id": "kb_001",
+                    "content": "Short content 2.",
+                    "content_ltks": "Short content 2.",
+                    "content_with_weight": "Short content 2.",
+                },
+            ],
+            "doc_aggs": [
+                {"doc_name": "doc1.pdf", "doc_id": "doc_001", "count": 1},
+                {"doc_name": "doc2.pdf", "doc_id": "doc_002", "count": 1},
+            ],
+            "debug_trace": {
+                "query": "test query",
+                "initial_search_count": 100,
+                "pruned_count": 0,
+                "rerank_used": True,
+                "rerank_model": "bge-reranker",
+                "filtered_by_threshold_count": 50,
+                "filtered_by_pagination_count": 48,
+                "final_chunks_count": 2,
+                "final_chunks": [
+                    {
+                        "chunk_id": "chunk_001",
+                        "doc_id": "doc_001",
+                        "doc_name": "doc1.pdf",
+                        "kb_id": "kb_001",
+                        "in_prompt": False,
+                        "prompt_filter_reason": None,
+                    },
+                    {
+                        "chunk_id": "chunk_002",
+                        "doc_id": "doc_002",
+                        "doc_name": "doc2.pdf",
+                        "kb_id": "kb_001",
+                        "in_prompt": False,
+                        "prompt_filter_reason": None,
+                    },
+                ],
+                "all_chunks": [
+                    {
+                        "chunk_id": "chunk_low",
+                        "doc_id": "doc_low",
+                        "doc_name": "low_score.pdf",
+                        "filter_reason": "threshold",
+                        "in_prompt": False,
+                        "prompt_filter_reason": None,
+                    },
+                ],
+            },
+        }
+
+        knowledges = kb_prompt(kbinfos, max_tokens=1000, hash_id=False)
+
+        assert len(knowledges) == 2
+
+        debug_trace = kbinfos["debug_trace"]
+        for fc in debug_trace["final_chunks"]:
+            assert fc["in_prompt"] is True
+            assert fc["prompt_filter_reason"] is None
+
+        for ac in debug_trace["all_chunks"]:
+            if ac.get("filter_reason"):
+                assert ac["in_prompt"] is False
+                assert ac["prompt_filter_reason"] == f"pre_filter:{ac['filter_reason']}"
+
+        quote_enabled = False
+        result = self._simulate_decorate_answer(kbinfos, quote_enabled=quote_enabled, knowledges_non_empty=True)
+
+        assert "debug_trace" in result
+        assert result["debug_trace"] == kbinfos["debug_trace"]
+
+        assert result["reference"] == []
+
+        assert result["answer"] == "test answer"
+        assert result["prompt"] == "test prompt"
+
+    def test_full_chain_quote_true_reference_unchanged(self, monkeypatch):
+        """
+        测试：当 quote=True 时，reference 是原来的 dict 结构，debug_trace 在顶级 dict 里
+        """
+        self._mock_document_service(monkeypatch)
+
+        from rag.prompts.generator import kb_prompt
+
+        kbinfos = {
+            "total": 2,
+            "chunks": [
+                {
+                    "chunk_id": "chunk_001",
+                    "doc_id": "doc_001",
+                    "docnm_kwd": "doc1.pdf",
+                    "kb_id": "kb_001",
+                    "content": "Short content 1.",
+                    "content_ltks": "Short content 1.",
+                    "content_with_weight": "Short content 1.",
+                    "vector": [0.1, 0.2, 0.3],
+                },
+                {
+                    "chunk_id": "chunk_002",
+                    "doc_id": "doc_002",
+                    "docnm_kwd": "doc2.pdf",
+                    "kb_id": "kb_001",
+                    "content": "Short content 2.",
+                    "content_ltks": "Short content 2.",
+                    "content_with_weight": "Short content 2.",
+                    "vector": [0.4, 0.5, 0.6],
+                },
+            ],
+            "doc_aggs": [
+                {"doc_name": "doc1.pdf", "doc_id": "doc_001", "count": 1},
+                {"doc_name": "doc2.pdf", "doc_id": "doc_002", "count": 1},
+            ],
+            "debug_trace": {
+                "query": "test query",
+                "initial_search_count": 100,
+                "final_chunks_count": 2,
+                "final_chunks": [
+                    {"chunk_id": "chunk_001", "doc_id": "doc_001", "doc_name": "doc1.pdf"},
+                    {"chunk_id": "chunk_002", "doc_id": "doc_002", "doc_name": "doc2.pdf"},
+                ],
+            },
+        }
+
+        knowledges = kb_prompt(kbinfos, max_tokens=1000, hash_id=False)
+
+        assert len(knowledges) == 2
+
+        quote_enabled = True
+        result = self._simulate_decorate_answer(kbinfos, quote_enabled=quote_enabled, knowledges_non_empty=True)
+
+        assert "debug_trace" in result
+        assert result["debug_trace"] == kbinfos["debug_trace"]
+
+        assert isinstance(result["reference"], dict)
+        assert "chunks" in result["reference"]
+        assert "doc_aggs" in result["reference"]
+        assert "total" in result["reference"]
+
+        for chunk in result["reference"]["chunks"]:
+            assert "vector" not in chunk
+
+        assert result["answer"] == "test answer"

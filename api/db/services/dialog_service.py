@@ -707,10 +707,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     def decorate_answer(answer):
         nonlocal embd_mdl, prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_tracer
 
-        refs = {}
-        if "debug_trace" in kbinfos:
-            refs["debug_trace"] = kbinfos["debug_trace"]
-
+        refs = []
         ans = answer.split("</think>")
         think = ""
         if len(ans) == 2:
@@ -784,7 +781,10 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             langfuse_generation.update(output=langfuse_output)
             langfuse_generation.end()
 
-        return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
+        result = {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
+        if "debug_trace" in kbinfos:
+            result["debug_trace"] = kbinfos["debug_trace"]
+        return result
 
     if langfuse_tracer:
         langfuse_generation = langfuse_tracer.start_observation(as_type="generation",
