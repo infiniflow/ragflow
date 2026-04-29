@@ -362,7 +362,7 @@ func (z *VolcEngine) ChatStreamlyWithSender(modelName, message *string, apiConfi
 		}
 
 		content, ok := delta["content"].(string)
-		if ok || content != "" {
+		if ok && content != "" {
 			if err := sender(&content, nil); err != nil {
 				return err
 			}
