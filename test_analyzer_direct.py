@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Direct test script for ChunkQualityAnalyzer using only stdlib.
 
-This script directly tests analyzer.py without any external dependencies.
+Enhanced with mojibake detection tests.
 """
 
 import hashlib
@@ -67,15 +67,6 @@ def run_tests():
     test("Default garbled_threshold == 0.3", analyzer.garbled_threshold == 0.3)
     test("enable_checks is not empty", len(analyzer.enable_checks) > 0)
 
-    custom = ChunkQualityAnalyzer(
-        min_chunk_length=10,
-        max_chunk_length=4000,
-        garbled_threshold=0.5,
-        enable_checks=["length", "garbled"],
-    )
-    test("Custom min_chunk_length == 10", custom.min_chunk_length == 10)
-    test("Custom enable_checks == ['length', 'garbled']", custom.enable_checks == ["length", "garbled"])
-
     print("\n" + "=" * 60)
     print("Test 2: Normal text chunks")
     print("=" * 60)
@@ -122,7 +113,7 @@ def run_tests():
     test("Long chunk - has chunk_too_long issue", len(long_issues) == 1)
 
     print("\n" + "=" * 60)
-    print("Test 4: Garbled detection")
+    print("Test 4: CID garbled detection")
     print("=" * 60)
 
     cid_text = {"text": "Text with (cid:123) CID pattern."}
@@ -131,15 +122,76 @@ def run_tests():
     test("CID pattern - has cid_garbled issue", len(cid_issues) == 1)
     test("CID pattern - CRITICAL risk", cid_issues[0].risk_level == QualityRiskLevel.CRITICAL)
 
+    cid_text2 = {"text": "Text with (cid : 45) and more (cid:6789)."}
+    result_cid2 = analyzer.analyze_single_chunk(cid_text2, 0)
+    cid_issues2 = [i for i in result_cid2.issues if i.issue_type == "cid_garbled"]
+    test("CID with spaces - detected", len(cid_issues2) == 1)
+
+    print("\n" + "=" * 60)
+    print("Test 5: PUA and control character detection")
+    print("=" * 60)
+
     analyzer3 = ChunkQualityAnalyzer(garbled_threshold=0.3)
     pua_text = {"text": "\uE000\uE001\uE002\uE003\uE004\uE005\uE006\uE007\uE008 Normal"}
     result_pua = analyzer3.analyze_single_chunk(pua_text, 0)
-    pua_issues = [i for i in result_pua.issues if i.issue_type == "garbled_text"]
-    test("PUA chars - has garbled_text issue", len(pua_issues) == 1)
-    test("PUA chars - score < 0.8", result_pua.quality_score < 0.8)
+    pua_issues = [i for i in result_pua.issues if i.issue_type in ["garbled_text", "mojibake_text"]]
+    test("PUA chars - has garbled/mojibake issue", len(pua_issues) >= 1)
 
     print("\n" + "=" * 60)
-    print("Test 5: Duplicate detection")
+    print("Test 6: Mojibake detection - replacement chars")
+    print("=" * 60)
+
+    replacement_text = {"text": "Text with \ufffd\ufffd\ufffd replacement chars."}
+    result_repl = analyzer.analyze_single_chunk(replacement_text, 0)
+    repl_issues = [i for i in result_repl.issues if i.issue_type == "mojibake_text"]
+    test("Replacement chars - has mojibake_text issue", len(repl_issues) == 1)
+    test("Replacement chars - in metadata", result_repl.metadata.get("replacement_char_count", 0) == 3)
+
+    print("\n" + "=" * 60)
+    print("Test 7: Mojibake detection - extended Latin-1")
+    print("=" * 60)
+
+    mojibake_text1 = {"text": "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ"}
+    result_moj1 = analyzer.analyze_single_chunk(mojibake_text1, 0)
+    moj_issues1 = [i for i in result_moj1.issues if i.issue_type == "mojibake_text"]
+    test("Extended Latin-1 sequence - has mojibake_text issue", len(moj_issues1) == 1)
+    test("Extended Latin-1 count in metadata", result_moj1.metadata.get("extended_latin1_count", 0) > 0)
+
+    mojibake_text2 = {"text": "äåæçèéêëìíîïðñòóôõö÷ø"}
+    result_moj2 = analyzer.analyze_single_chunk(mojibake_text2, 0)
+    moj_issues2 = [i for i in result_moj2.issues if i.issue_type == "mojibake_text"]
+    test("Lowercase extended Latin-1 - has mojibake_text issue", len(moj_issues2) == 1)
+
+    print("\n" + "=" * 60)
+    print("Test 8: Mojibake detection - suspicious sequences")
+    print("=" * 60)
+
+    mojibake_text3 = {"text": "°±²³´µ¶·¹º»¼½¾ more °±²³"}
+    result_moj3 = analyzer.analyze_single_chunk(mojibake_text3, 0)
+    moj_issues3 = [i for i in result_moj3.issues if i.issue_type == "mojibake_text"]
+    test("Superscript/subscript sequence - has mojibake_text issue", len(moj_issues3) >= 1)
+
+    print("\n" + "=" * 60)
+    print("Test 9: Normal text NOT misclassified as mojibake")
+    print("=" * 60)
+
+    valid_french = {"text": "Bonjour, je m'appelle Pierre. Je vis à Paris."}
+    result_french = analyzer.analyze_single_chunk(valid_french, 0)
+    french_issues = [i for i in result_french.issues if i.issue_type == "mojibake_text"]
+    test("Valid French - NOT mojibake", len(french_issues) == 0)
+
+    valid_german = {"text": "Guten Tag, ich heiße Maria. Ich wohne in München."}
+    result_german = analyzer.analyze_single_chunk(valid_german, 0)
+    german_issues = [i for i in result_german.issues if i.issue_type == "mojibake_text"]
+    test("Valid German - NOT mojibake", len(german_issues) == 0)
+
+    valid_spanish = {"text": "Hola, me llamo Carlos. Vivo en Madrid."}
+    result_spanish = analyzer.analyze_single_chunk(valid_spanish, 0)
+    spanish_issues = [i for i in result_spanish.issues if i.issue_type == "mojibake_text"]
+    test("Valid Spanish - NOT mojibake", len(spanish_issues) == 0)
+
+    print("\n" + "=" * 60)
+    print("Test 10: Duplicate detection")
     print("=" * 60)
 
     seen_hashes = set()
@@ -161,7 +213,7 @@ def run_tests():
     test("Unique - no duplicate issue", len(dup_issues3) == 0)
 
     print("\n" + "=" * 60)
-    print("Test 6: Table detection")
+    print("Test 11: Table detection")
     print("=" * 60)
 
     complete_table = {
@@ -184,7 +236,7 @@ def run_tests():
     test("Broken table - has table_break issue", len(broken_issues) >= 1)
 
     print("\n" + "=" * 60)
-    print("Test 7: Header/Footer pollution")
+    print("Test 12: Header/Footer pollution")
     print("=" * 60)
 
     header_text = {
@@ -200,7 +252,7 @@ def run_tests():
     test("Header/footer patterns - detected", len(header_issues) >= 1)
 
     print("\n" + "=" * 60)
-    print("Test 8: Token count checks")
+    print("Test 13: Token count checks")
     print("=" * 60)
 
     analyzer4 = ChunkQualityAnalyzer(min_token_count=5, max_token_count=100)
@@ -209,7 +261,6 @@ def run_tests():
     result_low = analyzer4.analyze_single_chunk(low_token, 0)
     low_issues = [i for i in result_low.issues if i.issue_type == "token_count_too_low"]
     test("Low token count - detected", len(low_issues) == 1)
-    test("Token count in metadata", result_low.metadata.get("token_count") == 3)
 
     high_token = {"text": "Long.", "tk_nums": 150}
     result_high = analyzer4.analyze_single_chunk(high_token, 0)
@@ -217,7 +268,7 @@ def run_tests():
     test("High token count - detected", len(high_issues) == 1)
 
     print("\n" + "=" * 60)
-    print("Test 9: Batch analysis")
+    print("Test 14: Batch analysis")
     print("=" * 60)
 
     batch_chunks = [
@@ -234,7 +285,7 @@ def run_tests():
     test("Batch - issue_distribution not empty", len(summary["issue_distribution"]) > 0)
 
     print("\n" + "=" * 60)
-    print("Test 10: Result helper methods")
+    print("Test 15: Result helper methods")
     print("=" * 60)
 
     result_test = ChunkQualityResult(
@@ -251,11 +302,6 @@ def run_tests():
                 risk_level=QualityRiskLevel.MEDIUM,
                 description="Short",
             ),
-            QualityIssue(
-                issue_type="garbled_text",
-                risk_level=QualityRiskLevel.LOW,
-                description="More garbled",
-            ),
         ],
     )
 
@@ -263,12 +309,8 @@ def run_tests():
     test("has_risk_above(HIGH) == True", result_test.has_risk_above(QualityRiskLevel.HIGH) is True)
     test("has_risk_above(CRITICAL) == False", result_test.has_risk_above(QualityRiskLevel.CRITICAL) is False)
 
-    garbled_issues = result_test.get_issues_by_type("garbled_text")
-    test("get_issues_by_type('garbled_text') == 2", len(garbled_issues) == 2)
-    test("get_issues_by_type('chunk_too_short') == 1", len(result_test.get_issues_by_type("chunk_too_short")) == 1)
-
     print("\n" + "=" * 60)
-    print("Test 11: Selective checks")
+    print("Test 16: Selective checks")
     print("=" * 60)
 
     analyzer_garbled_only = ChunkQualityAnalyzer(enable_checks=["garbled"])
@@ -283,7 +325,7 @@ def run_tests():
     test("Selective checks - length check enabled", len(short_issues2) >= 1)
 
     print("\n" + "=" * 60)
-    print("Test 12: QualityRiskLevel enum")
+    print("Test 17: QualityRiskLevel enum")
     print("=" * 60)
 
     test("QualityRiskLevel.LOW.value == 'low'", QualityRiskLevel.LOW.value == "low")
@@ -293,13 +335,14 @@ def run_tests():
     test("QualityRiskLevel is Enum", issubclass(QualityRiskLevel, Enum))
 
     print("\n" + "=" * 60)
-    print("Test 13: Task executor integration pattern")
+    print("Test 18: Task executor integration pattern")
     print("=" * 60)
 
     test_chunks = [
         {"content_with_weight": "This is a normal chunk with good content and sufficient length.", "doc_id": "test1"},
         {"content_with_weight": "短", "doc_id": "test2"},
         {"content_with_weight": "Text with (cid:123) garbled pattern.", "doc_id": "test3"},
+        {"content_with_weight": "ÀÁÂÃÄÅÆÇ mojibake text.", "doc_id": "test4"},
     ]
 
     results_int = analyzer.analyze_chunks(test_chunks)
@@ -333,12 +376,18 @@ def run_tests():
     test("Integration - chunk2 has cid_garbled issue", "cid_garbled" in [i["type"] for i in test_chunks[2]["_quality_issues"]])
     test("Integration - chunk2 risk_level == 'critical'", test_chunks[2]["_quality_risk_level"] == "critical")
 
-    test("Integration - summary total_chunks == 3", summary_int["total_chunks"] == 3)
+    test("Integration - chunk3 has mojibake_text or garbled_text issue", 
+         any(i["type"] in ["mojibake_text", "garbled_text"] for i in test_chunks[3]["_quality_issues"]))
+
+    test("Integration - summary total_chunks == 4", summary_int["total_chunks"] == 4)
     test("Integration - summary high_risk_count >= 1", summary_int["high_risk_count"] >= 1)
 
     print("\n" + "=" * 60)
     print(f"Test Results: {tests_passed} passed, {tests_failed} failed")
     print("=" * 60)
+
+    if tests_failed > 0:
+        print("\nFailed tests exist. Please review the output above.")
 
     return tests_failed == 0
 

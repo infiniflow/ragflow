@@ -326,6 +326,39 @@ class ChunkQualityAnalyzer:
             ))
             return
 
+        mojibake_detection = self._detect_mojibake_pattern(text)
+        result.metadata["mojibake_ratio"] = mojibake_detection.get("mojibake_ratio", 0.0)
+        result.metadata["replacement_char_count"] = mojibake_detection.get("replacement_char_count", 0)
+        result.metadata["extended_latin1_count"] = mojibake_detection.get("extended_latin1_count", 0)
+        result.metadata["suspicious_sequences"] = mojibake_detection.get("suspicious_sequences", 0)
+
+        if mojibake_detection["detected"]:
+            reason = mojibake_detection.get("reason", "unknown")
+            mojibake_ratio = mojibake_detection.get("mojibake_ratio", 0.0)
+
+            if mojibake_ratio >= 0.5 or reason in ["replacement_chars", "suspicious_sequences"]:
+                risk_level = QualityRiskLevel.HIGH
+                score_penalty = 0.4
+            else:
+                risk_level = QualityRiskLevel.MEDIUM
+                score_penalty = 0.3
+
+            result.quality_score = max(0.1, result.quality_score - score_penalty)
+            result.issues.append(QualityIssue(
+                issue_type="mojibake_text",
+                risk_level=risk_level,
+                description=f"Detected possible encoding error/mojibake (reason: {reason})",
+                details={
+                    "reason": reason,
+                    "mojibake_ratio": mojibake_ratio,
+                    "replacement_char_count": mojibake_detection.get("replacement_char_count", 0),
+                    "extended_latin1_count": mojibake_detection.get("extended_latin1_count", 0),
+                    "suspicious_sequences": mojibake_detection.get("suspicious_sequences", 0),
+                },
+                suggestion="Check document encoding. UTF-8/GBK encoding mismatch is common cause of Chinese mojibake.",
+            ))
+            return
+
         for ch in text:
             if not ch.isspace():
                 total_chars += 1
@@ -334,6 +367,7 @@ class ChunkQualityAnalyzer:
 
         if total_chars > 0:
             garbled_ratio = garbled_chars / total_chars
+            result.metadata["garbled_ratio"] = garbled_ratio
 
             if garbled_ratio >= self.garbled_threshold:
                 risk_level = QualityRiskLevel.HIGH if garbled_ratio >= 0.5 else QualityRiskLevel.MEDIUM
@@ -349,8 +383,6 @@ class ChunkQualityAnalyzer:
                     },
                     suggestion="Check document encoding or use OCR-based parsing",
                 ))
-
-            result.metadata["garbled_ratio"] = garbled_ratio
 
     def _is_garbled_char(self, ch: str) -> bool:
         if not ch:
@@ -374,6 +406,108 @@ class ChunkQualityAnalyzer:
             return True
 
         return False
+
+    def _is_mojibake_char(self, ch: str) -> bool:
+        if not ch:
+            return False
+
+        code = ord(ch)
+
+        if 0xC0 <= code <= 0xFF:
+            return True
+
+        if code == 0xB0:
+            return True
+
+        if 0x2000 <= code <= 0x206F:
+            return True
+
+        if 0x2100 <= code <= 0x214F:
+            return True
+
+        if code in [0x00A0, 0x00AD]:
+            return True
+
+        return False
+
+    def _detect_mojibake_pattern(self, text: str) -> Dict[str, Any]:
+        if not text:
+            return {"detected": False}
+
+        mojibake_chars = 0
+        total_chars = 0
+        extended_latin1_count = 0
+        replacement_char_count = 0
+        control_char_count = 0
+        suspicious_sequences = 0
+
+        mojibake_sequences = [
+            r"[ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞß]{2,}",
+            r"[äåæçèéêëìíîïðñòóôõö÷øùúûüýþÿ]{2,}",
+            r"[°±²³´µ¶·¹º»¼½¾]{2,}",
+            r"[\u2018\u2019\u201C\u201D\u2013\u2014\u2026]{2,}",
+            r"�+",
+        ]
+
+        long_mojibake_sequences = 0
+        for pattern in mojibake_sequences:
+            matches = re.findall(pattern, text)
+            for match in matches:
+                suspicious_sequences += 1
+                if len(match) >= 5:
+                    long_mojibake_sequences += 1
+
+        for ch in text:
+            if ch.isspace():
+                continue
+            total_chars += 1
+
+            if self._is_mojibake_char(ch):
+                mojibake_chars += 1
+
+            code = ord(ch)
+            if 0xC0 <= code <= 0xFF:
+                extended_latin1_count += 1
+
+            if code == 0xFFFD:
+                replacement_char_count += 1
+
+            if self._is_garbled_char(ch):
+                control_char_count += 1
+
+        result = {
+            "detected": False,
+            "mojibake_ratio": 0.0,
+            "extended_latin1_count": extended_latin1_count,
+            "replacement_char_count": replacement_char_count,
+            "control_char_count": control_char_count,
+            "suspicious_sequences": suspicious_sequences,
+            "long_mojibake_sequences": long_mojibake_sequences,
+        }
+
+        if total_chars == 0:
+            return result
+
+        mojibake_ratio = mojibake_chars / total_chars
+        result["mojibake_ratio"] = mojibake_ratio
+
+        if replacement_char_count >= 1 and replacement_char_count / max(total_chars, 1) > 0.1:
+            result["detected"] = True
+            result["reason"] = "replacement_chars"
+
+        if long_mojibake_sequences >= 1 or suspicious_sequences >= 2:
+            result["detected"] = True
+            result["reason"] = "suspicious_sequences"
+
+        if mojibake_ratio >= 0.25 and extended_latin1_count >= 3:
+            result["detected"] = True
+            result["reason"] = "high_mojibake_ratio"
+
+        if mojibake_ratio >= 0.5:
+            result["detected"] = True
+            result["reason"] = "very_high_mojibake_ratio"
+
+        return result
 
     def _check_missing_title(
         self,
