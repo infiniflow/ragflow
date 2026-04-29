@@ -390,10 +390,30 @@ class RSS(SyncBase):
         if task["reindex"] == "1" or not task["poll_range_start"]:
             return self.connector.load_from_state()
 
-        return self.connector.poll_source(
+        end_time = datetime.now(timezone.utc).timestamp()
+        file_list = None
+        if self.conf.get("sync_deleted_files"):
+            logging.info(
+                "[RSS] Syncing deleted files via slim snapshot (connector_id=%s)",
+                task["connector_id"],
+            )
+            snapshot_start = time.perf_counter()
+            file_list = []
+            for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                file_list.extend(slim_batch)
+            logging.info(
+                "[RSS] Slim snapshot fetched %d docs in %.2f seconds",
+                len(file_list),
+                time.perf_counter() - snapshot_start,
+            )
+
+        document_generator = self.connector.poll_source(
             task["poll_range_start"].timestamp(),
-            datetime.now(timezone.utc).timestamp(),
+            end_time,
         )
+        if file_list is not None:
+            return document_generator, file_list
+        return document_generator
 
 
 class Confluence(SyncBase):
