@@ -61,6 +61,9 @@ export const DataSourceFeatureVisibilityMap = {
   [DataSourceKey.GOOGLE_DRIVE]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.GMAIL]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.CONFLUENCE]: {
     syncDeletedFiles: true,
   },

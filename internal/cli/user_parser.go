@@ -531,6 +531,8 @@ func (p *Parser) parseAddCommand() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenProvider:
 		return p.parseAddProvider()
+	case TokenModel:
+		return p.parseAddModel()
 	default:
 		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
 	}
@@ -718,6 +720,154 @@ func (p *Parser) parseAddProvider() (*Command, error) {
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+	return cmd, nil
+}
+
+// syntax: add model 'xxx' to provider 'vllm' instance 'test' with tokens 1024 chat think vision;
+func (p *Parser) parseAddModel() (*Command, error) {
+	p.nextToken() // consume MODEL
+
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected model name")
+	}
+
+	modelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken() // consume model name
+
+	if p.curToken.Type != TokenTo {
+		return nil, fmt.Errorf("expected TO")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenProvider {
+		return nil, fmt.Errorf("expected PROVIDER")
+	}
+	p.nextToken()
+
+	// provider name
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected provider name")
+	}
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenInstance {
+		return nil, fmt.Errorf("expected INSTANCE")
+	}
+	p.nextToken()
+
+	// instance name
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected provider name")
+	}
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	modelType := ""
+	var supportThink *bool = nil
+	maxTokens := 0
+	if p.curToken.Type == TokenWith {
+		p.nextToken() // pass WITH
+	optionsLoop:
+		for {
+			switch p.curToken.Type {
+			case TokenThink:
+				if supportThink != nil {
+					return nil, fmt.Errorf("think model is already set")
+				}
+				supportThink = new(bool)
+				p.nextToken()
+				*supportThink = true
+			case TokenVision:
+				p.nextToken()
+				if modelType != "" {
+					return nil, fmt.Errorf("model type is %s, attempt to change to vision", modelType)
+				}
+				modelType = "vision"
+			case TokenChat:
+				p.nextToken()
+				if modelType != "" {
+					return nil, fmt.Errorf("model type is %s, attempt to change to chat", modelType)
+				}
+				modelType = "chat"
+			case TokenEmbedding:
+				if modelType != "" {
+					return nil, fmt.Errorf("model type is %s, attempt to change to embedding", modelType)
+				}
+				p.nextToken()
+				modelType = "embedding"
+			case TokenRerank:
+				if modelType != "" {
+					return nil, fmt.Errorf("model type is %s, attempt to change to rerank", modelType)
+				}
+				p.nextToken()
+				modelType = "rerank"
+			case TokenOCR:
+				if modelType != "" {
+					return nil, fmt.Errorf("model type is %s, attempt to change to OCR", modelType)
+				}
+				p.nextToken()
+				modelType = "ocr"
+			case TokenTTS:
+				if modelType != "" {
+					return nil, fmt.Errorf("model type is %s, attempt to change to TTS", modelType)
+				}
+				p.nextToken()
+				modelType = "tts"
+			case TokenASR:
+				if modelType != "" {
+					return nil, fmt.Errorf("model type is %s, attempt to change to ASR", modelType)
+				}
+				p.nextToken()
+				modelType = "asr"
+			case TokenTokens:
+				p.nextToken() // pass TOKENS
+				if maxTokens != 0 {
+					return nil, fmt.Errorf("max tokens is already given %d", maxTokens)
+				}
+				if p.curToken.Type != TokenInteger {
+					return nil, fmt.Errorf("expected integer")
+				}
+				maxTokens, err = p.parseNumber()
+				if err != nil {
+					return nil, err
+				}
+				p.nextToken() // consume
+			case TokenSemicolon:
+				p.nextToken()
+				break optionsLoop // done
+			default:
+				// No more options to process
+				break optionsLoop
+			}
+		}
+	}
+
+	cmd := NewCommand("add_custom_model")
+	cmd.Params["model_name"] = modelName
+	cmd.Params["model_type"] = modelType
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["instance_name"] = instanceName
+	if supportThink != nil {
+		cmd.Params["support_think"] = *supportThink
+	}
+	cmd.Params["max_tokens"] = maxTokens
+
+	if modelType != "chat" && modelType != "vision" {
+		if supportThink != nil && *supportThink {
+			return nil, fmt.Errorf("think not supported for model type %s", modelType)
+		}
+	}
+
 	return cmd, nil
 }
 
@@ -1201,7 +1351,7 @@ func (p *Parser) parseAlterProvider() (*Command, error) {
 	return cmd, nil
 }
 
-// parseCreateProviderInstance parses CREATE PROVIDER <name> INSTANCE <instance_name> <api_key> command
+// parseCreateProviderInstance parses CREATE PROVIDER <name> INSTANCE <instance_name> KEY <api_key> URL <base_url> command
 // instance_name cannot be "default"
 func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 	p.nextToken() // consume PROVIDER
@@ -1226,17 +1376,54 @@ func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 	if instanceName == "default" {
 		return nil, fmt.Errorf("instance name cannot be 'default'")
 	}
-
 	p.nextToken()
+
+	if p.curToken.Type != TokenKey {
+		return nil, fmt.Errorf("expected KEY after instance name")
+	}
+	p.nextToken()
+
 	apiKey, err := p.parseQuotedString()
 	if err != nil {
 		return nil, fmt.Errorf("expected API key: %w", err)
+	}
+	p.nextToken()
+
+	baseURL := ""
+	if p.curToken.Type == TokenURL {
+		p.nextToken()
+		baseURL, err = p.parseQuotedString()
+		if err != nil {
+			return nil, fmt.Errorf("expected base URL: %w", err)
+		}
+		p.nextToken()
+	}
+
+	region := ""
+	if p.curToken.Type == TokenRegion {
+		p.nextToken()
+		region, err = p.parseQuotedString()
+		if err != nil {
+			return nil, fmt.Errorf("expected base URL: %w", err)
+		}
+		p.nextToken()
 	}
 
 	cmd := NewCommand("create_provider_instance")
 	cmd.Params["provider_name"] = providerName
 	cmd.Params["instance_name"] = instanceName
 	cmd.Params["api_key"] = apiKey
+	if baseURL != "" {
+		// Only local model provider need to set URL
+		cmd.Params["base_url"] = baseURL
+		if region == "" {
+			region = instanceName
+		}
+	}
+
+	if region != "" {
+		cmd.Params["region"] = region
+	}
 
 	p.nextToken()
 	// Semicolon is optional
@@ -2280,7 +2467,7 @@ func (p *Parser) parseChatCommand() (*Command, error) {
 		switch p.curToken.Type {
 		case TokenEffort:
 			{
-				p.nextToken() // pass VERBOSITY
+				p.nextToken() // pass Effort
 				switch p.curToken.Type {
 				case TokenNone:
 					effort = "none"

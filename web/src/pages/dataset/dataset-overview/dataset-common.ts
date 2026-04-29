@@ -4,7 +4,7 @@ export enum LogTabs {
 }
 
 export enum ProcessingType {
-  knowledgeGraph = 'GraphRAG',
+  knowledgeGraph = 'Graph',
   raptor = 'RAPTOR',
 }
 
