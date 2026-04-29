@@ -79,6 +79,11 @@ from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.exceptions import TaskCanceledException
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
+from rag.utils.incremental_index import (
+    analyze_incremental_changes,
+    merge_chunks_for_insert,
+    delete_orphan_chunks_async,
+)
 
 BATCH_SIZE = 64
 
@@ -1225,9 +1230,52 @@ async def do_handle_task(task):
             progress_callback(1., msg=f"No chunk built from {task_document_name}")
             return
         progress_callback(msg="Generate {} chunks".format(len(chunks)))
+
+        incremental_result = None
+        try:
+            incremental_result = await thread_pool_exec(
+                analyze_incremental_changes,
+                task_doc_id,
+                task_tenant_id,
+                task_dataset_id,
+                chunks,
+                vector_size,
+            )
+            if incremental_result.chunks_to_reuse:
+                progress_callback(
+                    msg=f"Incremental index: {incremental_result.total_reused_chunks} chunks reused, "
+                        f"{incremental_result.total_new_chunks} need embedding, "
+                        f"{incremental_result.total_deleted_chunks} to delete"
+                )
+                logging.info(
+                    f"Incremental index analysis for doc={task_doc_id}: "
+                    f"reused={incremental_result.total_reused_chunks}, "
+                    f"to_embed={incremental_result.total_new_chunks}, "
+                    f"to_delete={incremental_result.total_deleted_chunks}"
+                )
+        except Exception as e:
+            logging.warning(
+                f"Incremental index analysis failed for doc={task_doc_id}: {e}. "
+                "Falling back to full re-indexing."
+            )
+            incremental_result = None
+
         start_ts = timer()
         try:
-            token_count, vector_size = await embedding(chunks, embedding_model, task_parser_config, progress_callback)
+            if incremental_result and incremental_result.chunks_to_reuse:
+                chunks_to_embed = incremental_result.chunks_to_embed
+                if chunks_to_embed:
+                    token_count, _ = await embedding(
+                        chunks_to_embed, embedding_model, task_parser_config, progress_callback
+                    )
+                else:
+                    token_count = 0
+                chunks = merge_chunks_for_insert(
+                    incremental_result.chunks_to_embed,
+                    incremental_result.chunks_to_reuse,
+                )
+            else:
+                token_count, vector_size = await embedding(chunks, embedding_model, task_parser_config, progress_callback)
         except TaskCanceledException:
             raise
         except Exception as e:
@@ -1258,6 +1306,22 @@ async def do_handle_task(task):
         if has_canceled(task_id):
             progress_callback(-1, msg="Task has been canceled.")
             return
+
+        if incremental_result and incremental_result.chunk_ids_to_delete:
+            try:
+                deleted_count = await delete_orphan_chunks_async(
+                    task_doc_id,
+                    task_tenant_id,
+                    task_dataset_id,
+                    incremental_result.chunk_ids_to_delete,
+                )
+                progress_callback(
+                    msg=f"Deleted {deleted_count} orphan chunks"
+                )
+            except Exception as e:
+                logging.warning(
+                    f"Failed to delete orphan chunks for doc={task_doc_id}: {e}"
+                )
 
         logging.info(
             "Indexing doc({}), page({}-{}), chunks({}), elapsed: {:.2f}".format(
