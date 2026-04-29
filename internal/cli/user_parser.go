@@ -774,7 +774,6 @@ func (p *Parser) parseAddModel() (*Command, error) {
 
 	modelType := ""
 	supportThink := false
-	supportVision := false
 	maxTokens := 0
 	if p.curToken.Type == TokenWith {
 		p.nextToken() // pass WITH
@@ -787,7 +786,7 @@ func (p *Parser) parseAddModel() (*Command, error) {
 		case TokenVision:
 			{
 				p.nextToken() // pass URL
-				supportVision = true
+				modelType = "vision"
 			}
 		case TokenChat:
 			{
@@ -845,8 +844,11 @@ func (p *Parser) parseAddModel() (*Command, error) {
 	cmd.Params["provider_name"] = providerName
 	cmd.Params["instance_name"] = instanceName
 	cmd.Params["support_think"] = supportThink
-	cmd.Params["support_vision"] = supportVision
 	cmd.Params["max_tokens"] = maxTokens
+
+	if modelType == "chat" && supportThink {
+		return nil, fmt.Errorf("model type not provided")
+	}
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
@@ -2447,7 +2449,7 @@ func (p *Parser) parseChatCommand() (*Command, error) {
 		switch p.curToken.Type {
 		case TokenEffort:
 			{
-				p.nextToken() // pass VERBOSITY
+				p.nextToken() // pass Effort
 				switch p.curToken.Type {
 				case TokenNone:
 					effort = "none"
