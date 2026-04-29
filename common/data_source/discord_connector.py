@@ -100,8 +100,12 @@ async def _fetch_filtered_channels(
 async def _fetch_documents_from_channel(
     channel: TextChannel,
     start_time: datetime | None,
-    end_time: datetime | None,
-) -> AsyncIterable[Document]:
+) -> AsyncIterable[DiscordMessage]:
+    """Yield raw Discord messages for one channel and its threads.
+
+    This stays at the message layer so callers can decide whether they need
+    full Document construction or only lightweight ID accounting.
+    """
     # Discord's epoch starts at 2015-01-01
     discord_epoch = datetime(2015, 1, 1, tzinfo=timezone.utc)
     if start_time and start_time < discord_epoch:
@@ -115,39 +119,23 @@ async def _fetch_documents_from_channel(
     async for channel_message in channel.history(
         limit=None,
         after=start_time,
-        before=end_time,
     ):
         # Skip messages that are not the default type
         if channel_message.type != MessageType.default:
             continue
 
-        sections: list[TextSection] = [
-            TextSection(
-                text=channel_message.content,
-                link=channel_message.jump_url,
-            )
-        ]
-
-        yield _convert_message_to_document(channel_message, sections)
+        yield channel_message
 
     for active_thread in channel.threads:
         async for thread_message in active_thread.history(
             limit=None,
             after=start_time,
-            before=end_time,
         ):
             # Skip messages that are not the default type
             if thread_message.type != MessageType.default:
                 continue
 
-            sections = [
-                TextSection(
-                    text=thread_message.content,
-                    link=thread_message.jump_url,
-                )
-            ]
-
-            yield _convert_message_to_document(thread_message, sections)
+            yield thread_message
 
     async for archived_thread in channel.archived_threads(
         limit=None,
@@ -155,20 +143,12 @@ async def _fetch_documents_from_channel(
         async for thread_message in archived_thread.history(
             limit=None,
             after=start_time,
-            before=end_time,
         ):
             # Skip messages that are not the default type
             if thread_message.type != MessageType.default:
                 continue
 
-            sections = [
-                TextSection(
-                    text=thread_message.content,
-                    link=thread_message.jump_url,
-                )
-            ]
-
-            yield _convert_message_to_document(thread_message, sections)
+            yield thread_message
 
 
 def _manage_async_retrieval(
@@ -177,20 +157,23 @@ def _manage_async_retrieval(
     channel_names: list[str],
     server_ids: list[int],
     start: datetime | None = None,
-    end: datetime | None = None,
-) -> Iterable[Document]:
+) -> Iterable[DiscordMessage]:
+    """Bridge the async Discord client into a synchronous iterator.
+
+    `start` is only used as a lower bound for the underlying fetch. Callers
+    that need a narrower time window should apply their own filtering while
+    iterating so the same full scan can also support deleted-file sync.
+    """
     # parse requested_start_date_string to datetime
     pull_date: datetime | None = datetime.strptime(requested_start_date_string, "%Y-%m-%d").replace(tzinfo=timezone.utc) if requested_start_date_string else None
 
-    # Set start_time to the most recent of start and pull_date, or whichever is provided
+    # Keep the configured start date as the full-scan lower bound.
     start_time = max(filter(None, [start, pull_date])) if start or pull_date else None
-
-    end_time: datetime | None = end
     proxy_url: str | None = os.environ.get("https_proxy") or os.environ.get("http_proxy")
     if proxy_url:
         logging.info(f"Using proxy for Discord: {proxy_url}")
 
-    async def _async_fetch() -> AsyncIterable[Document]:
+    async def _async_fetch() -> AsyncIterable[DiscordMessage]:
         intents = Intents.default()
         intents.message_content = True
         async with Client(intents=intents, proxy=proxy_url) as cli:
@@ -204,15 +187,13 @@ def _manage_async_retrieval(
             )
 
             for channel in filtered_channels:
-                async for doc in _fetch_documents_from_channel(
+                async for message in _fetch_documents_from_channel(
                     channel=channel,
                     start_time=start_time,
-                    end_time=end_time,
                 ):
-                    print(doc)
-                    yield doc
+                    yield message
 
-    def run_and_yield() -> Iterable[Document]:
+    def run_and_yield() -> Iterable[DiscordMessage]:
         loop = asyncio.new_event_loop()
         try:
             # Get the async generator
@@ -250,6 +231,7 @@ class DiscordConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.server_ids: list[int] = [int(server_id) for server_id in server_ids] if server_ids else []
         self._discord_bot_token: str | None = None
         self.requested_start_date_string: str = start_date or ""
+        self._cached_slim_doc_batches: list[list[SlimDocument]] = []
 
     @property
     def discord_bot_token(self) -> str:
@@ -262,7 +244,45 @@ class DiscordConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         start: datetime | None = None,
         end: datetime | None = None,
     ) -> GenerateDocumentsOutput:
-        doc_batch = []
+        """Scan Discord once and serve both document ingestion and slim-ID sync.
+
+        Every message contributes to the cached slim-document batches so deleted
+        file sync sees the full corpus. Only messages inside `[start, end)` are
+        converted into Documents and merged into ingestion batches.
+        """
+        self._cached_slim_doc_batches = []
+        doc_batch: list[Document] = []
+        full_scan_batch_size = 0
+        full_scan_batch_first_id: str | None = None
+
+        def _message_created_at(message: DiscordMessage) -> datetime:
+            created_at = message.created_at
+            if created_at.tzinfo is None:
+                return created_at.replace(tzinfo=timezone.utc)
+            return created_at.astimezone(timezone.utc)
+
+        def _is_in_window(message: DiscordMessage) -> bool:
+            created_at = _message_created_at(message)
+            if start is not None and created_at <= start:
+                return False
+            if end is not None and created_at >= end:
+                return False
+            return True
+
+        def _record_slim_doc_id(message: DiscordMessage) -> None:
+            nonlocal full_scan_batch_size, full_scan_batch_first_id
+            # Slim sync must preserve the same merged-document ID semantics as
+            # ingestion, so each batch uses the first message ID as its stable ID.
+            if full_scan_batch_first_id is None:
+                full_scan_batch_first_id = f"{_DISCORD_DOC_ID_PREFIX}{message.id}"
+            full_scan_batch_size += 1
+            if full_scan_batch_size >= self.batch_size:
+                self._cached_slim_doc_batches.append(
+                    [SlimDocument(id=full_scan_batch_first_id)]
+                )
+                full_scan_batch_size = 0
+                full_scan_batch_first_id = None
+
         def merge_batch():
             nonlocal doc_batch
             id = doc_batch[0].id
@@ -286,21 +306,68 @@ class DiscordConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 size_bytes=size_bytes,
             )
 
-        for doc in _manage_async_retrieval(
+        for message in _manage_async_retrieval(
             token=self.discord_bot_token,
             requested_start_date_string=self.requested_start_date_string,
             channel_names=self.channel_names,
             server_ids=self.server_ids,
-            start=start,
-            end=end,
+            start=None,
         ):
+            _record_slim_doc_id(message)
+
+            if not _is_in_window(message):
+                continue
+
+            sections = [
+                TextSection(
+                    text=message.content,
+                    link=message.jump_url,
+                )
+            ]
+            doc = _convert_message_to_document(message, sections)
             doc_batch.append(doc)
             if len(doc_batch) >= self.batch_size:
                 yield [merge_batch()]
                 doc_batch = []
 
+        if full_scan_batch_first_id is not None:
+            self._cached_slim_doc_batches.append(
+                [SlimDocument(id=full_scan_batch_first_id)]
+            )
+
         if doc_batch:
             yield [merge_batch()]
+
+    def _populate_slim_doc_cache(self) -> None:
+        """Build slim-document batches without constructing full Documents.
+
+        This is the fallback path when deleted-file sync runs before poll/load.
+        """
+        self._cached_slim_doc_batches = []
+        full_scan_batch_size = 0
+        full_scan_batch_first_id: str | None = None
+
+        for message in _manage_async_retrieval(
+            token=self.discord_bot_token,
+            requested_start_date_string=self.requested_start_date_string,
+            channel_names=self.channel_names,
+            server_ids=self.server_ids,
+            start=None,
+        ):
+            if full_scan_batch_first_id is None:
+                full_scan_batch_first_id = f"{_DISCORD_DOC_ID_PREFIX}{message.id}"
+            full_scan_batch_size += 1
+            if full_scan_batch_size >= self.batch_size:
+                self._cached_slim_doc_batches.append(
+                    [SlimDocument(id=full_scan_batch_first_id)]
+                )
+                full_scan_batch_size = 0
+                full_scan_batch_first_id = None
+
+        if full_scan_batch_first_id is not None:
+            self._cached_slim_doc_batches.append(
+                [SlimDocument(id=full_scan_batch_first_id)]
+            )
 
     def _manage_doc_batching(
         self,
@@ -335,8 +402,13 @@ class DiscordConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     ) -> GenerateSlimDocumentOutput:
         del callback
 
-        for document_batch in self._iter_merged_documents(None, None):
-            yield [SlimDocument(id=doc.id) for doc in document_batch]
+        # Reuse the last ingestion scan when available. If not, perform a
+        # lightweight full scan that only computes merged batch IDs.
+        if not self._cached_slim_doc_batches:
+            self._populate_slim_doc_cache()
+
+        for slim_doc_batch in self._cached_slim_doc_batches:
+            yield slim_doc_batch
 
 
 if __name__ == "__main__":
