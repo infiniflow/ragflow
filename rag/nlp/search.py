@@ -74,6 +74,181 @@ class Dealer:
 
         return await thread_pool_exec(_load)
 
+    def _merge_search_results(self, results: list[SearchResult]) -> SearchResult:
+        if not results:
+            return self.SearchResult(total=0, ids=[], query_vector=None)
+        
+        if len(results) == 1:
+            return results[0]
+        
+        all_ids = []
+        all_fields = {}
+        all_highlights = {}
+        query_vector = results[0].query_vector
+        keywords = set()
+        
+        for result in results:
+            if result.query_vector and not query_vector:
+                query_vector = result.query_vector
+            if result.keywords:
+                keywords.update(result.keywords)
+            for chunk_id in result.ids:
+                if chunk_id not in all_fields:
+                    all_ids.append(chunk_id)
+                    all_fields[chunk_id] = result.field.get(chunk_id, {})
+                    if result.highlight and chunk_id in result.highlight:
+                        all_highlights[chunk_id] = result.highlight[chunk_id]
+        
+        return self.SearchResult(
+            total=len(all_ids),
+            ids=all_ids,
+            query_vector=query_vector,
+            field=all_fields,
+            highlight=all_highlights if all_highlights else None,
+            keywords=list(keywords) if keywords else None,
+        )
+    
+    def _build_ranks_from_sres(
+        self,
+        sres: SearchResult,
+        question: str,
+        rerank_mdl,
+        vector_similarity_weight: float,
+        similarity_threshold: float,
+        page: int,
+        page_size: int,
+        RERANK_LIMIT: int,
+        rank_feature: dict | None,
+        doc_ids: list | None,
+        aggs: bool,
+        highlight: bool,
+        query_intent_type: str = "unknown",
+        preserve_original_chunks: bool = False,
+    ) -> dict:
+        ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
+        
+        if sres.total == 0:
+            ranks["doc_aggs"] = []
+            return ranks
+        
+        if rerank_mdl and sres.total > 0:
+            sim, tsim, vsim = self.rerank_by_model(
+                rerank_mdl,
+                sres,
+                question,
+                1 - vector_similarity_weight,
+                vector_similarity_weight,
+                rank_feature=rank_feature,
+            )
+        else:
+            if settings.DOC_ENGINE_INFINITY:
+                sim = [sres.field[id].get("_score", 0.0) for id in sres.ids]
+                sim = [s if s is not None else 0.0 for s in sim]
+                tsim = sim
+                vsim = sim
+            else:
+                sim, tsim, vsim = self.rerank(
+                    sres,
+                    question,
+                    1 - vector_similarity_weight,
+                    vector_similarity_weight,
+                    rank_feature=rank_feature,
+                )
+        
+        sim_np = np.array(sim, dtype=np.float64)
+        if sim_np.size == 0:
+            ranks["doc_aggs"] = []
+            return ranks
+        
+        sorted_idx = np.argsort(sim_np * -1)
+        
+        post_threshold = 0.0 if vector_similarity_weight <= 0 else similarity_threshold
+        if doc_ids:
+            post_threshold = 0.0
+        
+        valid_idx = [int(i) for i in sorted_idx if sim_np[i] >= post_threshold]
+        filtered_count = len(valid_idx)
+        ranks["total"] = int(filtered_count)
+        
+        if filtered_count == 0:
+            ranks["doc_aggs"] = []
+            return ranks
+        
+        global_offset = (page - 1) * page_size
+        begin = global_offset % RERANK_LIMIT
+        end = begin + page_size
+        page_idx = valid_idx[begin:end]
+        
+        dim = len(sres.query_vector) if sres.query_vector else 0
+        vector_column = f"q_{dim}_vec"
+        zero_vector = [0.0] * dim if dim > 0 else []
+        
+        for i in page_idx:
+            id = sres.ids[i]
+            chunk = sres.field[id]
+            dnm = chunk.get("docnm_kwd", "")
+            did = chunk.get("doc_id", "")
+            
+            position_int = chunk.get("position_int", [])
+            d = {
+                "chunk_id": id,
+                "content_ltks": chunk["content_ltks"],
+                "content_with_weight": chunk["content_with_weight"],
+                "doc_id": did,
+                "docnm_kwd": dnm,
+                "kb_id": chunk["kb_id"],
+                "important_kwd": chunk.get("important_kwd", []),
+                "tag_kwd": chunk.get("tag_kwd", []),
+                "image_id": chunk.get("img_id", ""),
+                "similarity": float(sim_np[i]),
+                "vector_similarity": float(vsim[i]),
+                "term_similarity": float(tsim[i]),
+                "vector": chunk.get(vector_column, zero_vector),
+                "positions": position_int,
+                "doc_type_kwd": chunk.get("doc_type_kwd", ""),
+                "mom_id": chunk.get("mom_id", ""),
+                "row_id": chunk.get("row_id()"),
+                "query_intent_type": query_intent_type,
+            }
+            
+            if preserve_original_chunks:
+                d["preserve_original_content"] = True
+                d["original_content_ltks"] = chunk["content_ltks"]
+                d["original_content_with_weight"] = chunk["content_with_weight"]
+            
+            if highlight and sres.highlight:
+                if id in sres.highlight:
+                    d["highlight"] = remove_redundant_spaces(sres.highlight[id])
+                else:
+                    d["highlight"] = d["content_with_weight"]
+            ranks["chunks"].append(d)
+        
+        if aggs:
+            for i in valid_idx:
+                id = sres.ids[i]
+                chunk = sres.field[id]
+                dnm = chunk.get("docnm_kwd", "")
+                did = chunk.get("doc_id", "")
+                if dnm not in ranks["doc_aggs"]:
+                    ranks["doc_aggs"][dnm] = {"doc_id": did, "count": 0}
+                ranks["doc_aggs"][dnm]["count"] += 1
+            
+            ranks["doc_aggs"] = [
+                {
+                    "doc_name": k,
+                    "doc_id": v["doc_id"],
+                    "count": v["count"],
+                }
+                for k, v in sorted(
+                    ranks["doc_aggs"].items(),
+                    key=lambda x: x[1]["count"] * -1,
+                )
+            ]
+        else:
+            ranks["doc_aggs"] = []
+        
+        return ranks
+    
     async def _prune_deleted_chunks(self, sres: SearchResult) -> SearchResult:
         # Temporary safety net:
         # Some delete paths can leave stale chunks in the doc store if the DB row
@@ -474,42 +649,174 @@ class Dealer:
         query_intent = None
         retrieval_params = {}
         processed_question = question
+        query_intent_type = "unknown"
+        preserve_original_chunks = False
+        sub_queries = None
 
         if use_query_router:
             try:
                 query_intent = self.query_router.route(question)
                 retrieval_params = self.query_router.get_retrieval_params(query_intent)
                 processed_question = query_intent.processed_query
+                query_intent_type = query_intent.query_type.value
                 
-                logging.debug(f"[QueryRouter] Query type: {query_intent.query_type.value}, "
+                logging.debug(f"[QueryRouter] Query type: {query_intent_type}, "
                              f"retrieval strategy: {query_intent.retrieval_strategy}")
                 
                 if retrieval_params.get("vector_weight") is not None:
                     vector_similarity_weight = retrieval_params["vector_weight"]
                 
                 if retrieval_params.get("sub_queries"):
-                    logging.debug(f"[QueryRouter] Multi-condition query decomposed into {len(retrieval_params['sub_queries'])} sub-queries")
+                    sub_queries = retrieval_params["sub_queries"]
+                    logging.debug(f"[QueryRouter] Multi-condition query decomposed into {len(sub_queries)} sub-queries")
+                
+                if retrieval_params.get("preserve_original_chunks"):
+                    preserve_original_chunks = True
+                    logging.debug(f"[QueryRouter] Preserve original chunks enabled")
                 
             except Exception as e:
                 logging.warning(f"[QueryRouter] Query routing failed: {e}, using default strategy")
 
-        # Keep the historical windowing strategy by default, but when an external
-        # reranker is enabled cap candidate count by both top_k and provider-safe 64.
         RERANK_LIMIT = math.ceil(64 / page_size) * page_size if page_size > 1 else 1
         RERANK_LIMIT = max(30, RERANK_LIMIT)
         if rerank_mdl and top > 0:
             RERANK_LIMIT = min(RERANK_LIMIT, top, 64)
         page = max(page, 1)
-        global_offset = (page - 1) * page_size
         
-        min_match = retrieval_params.get("min_match", 0.3)
+        if isinstance(tenant_ids, str):
+            tenant_ids = tenant_ids.split(",")
+        
+        idx_names = [index_name(tid) for tid in tenant_ids]
+        
+        sres = None
+        fallback_used = False
+        
+        if query_intent_type == "multi_condition" and sub_queries and len(sub_queries) > 1:
+            logging.debug(f"[QueryRouter] Executing multi-condition retrieval with {len(sub_queries)} sub-queries")
+            sres = await self._retrieve_multi_condition(
+                sub_queries=sub_queries,
+                original_question=question,
+                embd_mdl=embd_mdl,
+                idx_names=idx_names,
+                kb_ids=kb_ids,
+                doc_ids=doc_ids,
+                page=page,
+                page_size=page_size,
+                RERANK_LIMIT=RERANK_LIMIT,
+                top=top,
+                similarity_threshold=similarity_threshold,
+                min_match=retrieval_params.get("min_match", 0.4),
+                highlight=highlight,
+                rank_feature=rank_feature,
+            )
+        
+        elif query_intent_type == "long_query":
+            logging.debug(f"[QueryRouter] Executing long query retrieval with compression")
+            sres, fallback_used = await self._retrieve_long_query(
+                original_question=question,
+                compressed_question=processed_question,
+                embd_mdl=embd_mdl,
+                idx_names=idx_names,
+                kb_ids=kb_ids,
+                doc_ids=doc_ids,
+                page=page,
+                page_size=page_size,
+                RERANK_LIMIT=RERANK_LIMIT,
+                top=top,
+                similarity_threshold=similarity_threshold,
+                min_match=retrieval_params.get("min_match", 0.4),
+                highlight=highlight,
+                rank_feature=rank_feature,
+            )
+            if fallback_used:
+                logging.debug(f"[QueryRouter] Long query fallback to original query")
+        
+        elif query_intent_type == "open_ended":
+            topk_multiplier = retrieval_params.get("topk_multiplier", 1.5)
+            expanded_top = int(top * topk_multiplier)
+            logging.debug(f"[QueryRouter] Executing open-ended retrieval with topk_multiplier={topk_multiplier}, expanded_top={expanded_top}")
+            sres = await self._retrieve_single(
+                question=processed_question,
+                embd_mdl=embd_mdl,
+                idx_names=idx_names,
+                kb_ids=kb_ids,
+                doc_ids=doc_ids,
+                page=page,
+                page_size=page_size,
+                RERANK_LIMIT=RERANK_LIMIT,
+                top=expanded_top,
+                similarity_threshold=similarity_threshold,
+                min_match=retrieval_params.get("min_match", 0.3),
+                highlight=highlight,
+                rank_feature=rank_feature,
+            )
+        
+        else:
+            logging.debug(f"[QueryRouter] Executing standard retrieval for query_type={query_intent_type}")
+            sres = await self._retrieve_single(
+                question=processed_question,
+                embd_mdl=embd_mdl,
+                idx_names=idx_names,
+                kb_ids=kb_ids,
+                doc_ids=doc_ids,
+                page=page,
+                page_size=page_size,
+                RERANK_LIMIT=RERANK_LIMIT,
+                top=top,
+                similarity_threshold=similarity_threshold,
+                min_match=retrieval_params.get("min_match", 0.3),
+                highlight=highlight,
+                rank_feature=rank_feature,
+            )
+        
+        if not sres or sres.total == 0:
+            ranks["doc_aggs"] = []
+            return ranks
+        
+        if fallback_used:
+            query_intent_type = "long_query_with_fallback"
+        
+        return self._build_ranks_from_sres(
+            sres=sres,
+            question=question,
+            rerank_mdl=rerank_mdl,
+            vector_similarity_weight=vector_similarity_weight,
+            similarity_threshold=similarity_threshold,
+            page=page,
+            page_size=page_size,
+            RERANK_LIMIT=RERANK_LIMIT,
+            rank_feature=rank_feature,
+            doc_ids=doc_ids,
+            aggs=aggs,
+            highlight=highlight,
+            query_intent_type=query_intent_type,
+            preserve_original_chunks=preserve_original_chunks,
+        )
+    
+    async def _retrieve_single(
+        self,
+        question: str,
+        embd_mdl,
+        idx_names: list[str],
+        kb_ids: list[str],
+        doc_ids: list | None,
+        page: int,
+        page_size: int,
+        RERANK_LIMIT: int,
+        top: int,
+        similarity_threshold: float,
+        min_match: float,
+        highlight: bool,
+        rank_feature: dict | None,
+    ) -> SearchResult:
+        global_offset = (page - 1) * page_size
         
         req = {
             "kb_ids": kb_ids,
             "doc_ids": doc_ids,
             "page": global_offset // RERANK_LIMIT + 1,
             "size": RERANK_LIMIT,
-            "question": processed_question,
+            "question": question,
             "vector": True,
             "topk": top,
             "similarity": similarity_threshold,
@@ -517,146 +824,151 @@ class Dealer:
             "min_match": min_match,
         }
         
-        if query_intent:
-            req["query_intent"] = {
-                "type": query_intent.query_type.value,
-                "original_query": query_intent.original_query,
-                "retrieval_strategy": query_intent.retrieval_strategy,
-            }
-            if query_intent.sub_queries:
-                req["query_intent"]["sub_queries"] = query_intent.sub_queries
-            if query_intent.metadata:
-                req["query_intent"]["metadata"] = query_intent.metadata
+        logging.debug(f"[_retrieve_single] question={question[:50]}..., min_match={min_match}, top={top}")
         
-        logging.debug(f"[Search] global_offset={global_offset}, rerank_limit={RERANK_LIMIT}, page_size={page_size}, page={page}")
-
-        if isinstance(tenant_ids, str):
-            tenant_ids = tenant_ids.split(",")
-
-        sres = await self.search(req, [index_name(tid) for tid in tenant_ids], kb_ids, embd_mdl, highlight,
-                           rank_feature=rank_feature)
-        # Temporary retrieval-side guard: prune chunks whose parent document no
-        # longer exists before reranking and returning results.
+        sres = await self.search(req, idx_names, kb_ids, embd_mdl, highlight, rank_feature=rank_feature)
         sres = await self._prune_deleted_chunks(sres)
-        if sres.total == 0:
-            ranks["doc_aggs"] = []
-            return ranks
-
-        if rerank_mdl and sres.total > 0:
-            sim, tsim, vsim = self.rerank_by_model(
-                rerank_mdl,
-                sres,
-                question,
-                1 - vector_similarity_weight,
-                vector_similarity_weight,
-                rank_feature=rank_feature,
-            )
-        else:
-            if settings.DOC_ENGINE_INFINITY:
-                # Don't need rerank here since Infinity normalizes each way score before fusion.
-                sim = [sres.field[id].get("_score", 0.0) for id in sres.ids]
-                sim = [s if s is not None else 0.0 for s in sim]
-                tsim = sim
-                vsim = sim
-            else:
-                # ElasticSearch doesn't normalize each way score before fusion.
-                sim, tsim, vsim = self.rerank(
-                    sres,
-                    question,
-                    1 - vector_similarity_weight,
-                    vector_similarity_weight,
+        
+        logging.debug(f"[_retrieve_single] found {sres.total} results")
+        return sres
+    
+    async def _retrieve_multi_condition(
+        self,
+        sub_queries: list[str],
+        original_question: str,
+        embd_mdl,
+        idx_names: list[str],
+        kb_ids: list[str],
+        doc_ids: list | None,
+        page: int,
+        page_size: int,
+        RERANK_LIMIT: int,
+        top: int,
+        similarity_threshold: float,
+        min_match: float,
+        highlight: bool,
+        rank_feature: dict | None,
+    ) -> SearchResult:
+        all_results = []
+        
+        for i, sub_query in enumerate(sub_queries):
+            logging.debug(f"[_retrieve_multi_condition] Executing sub-query {i+1}/{len(sub_queries)}: {sub_query[:50]}...")
+            
+            try:
+                sres = await self._retrieve_single(
+                    question=sub_query,
+                    embd_mdl=embd_mdl,
+                    idx_names=idx_names,
+                    kb_ids=kb_ids,
+                    doc_ids=doc_ids,
+                    page=page,
+                    page_size=page_size,
+                    RERANK_LIMIT=RERANK_LIMIT,
+                    top=top,
+                    similarity_threshold=similarity_threshold,
+                    min_match=min_match,
+                    highlight=highlight,
                     rank_feature=rank_feature,
                 )
-
-        sim_np = np.array(sim, dtype=np.float64)
-        if sim_np.size == 0:
-            ranks["doc_aggs"] = []
-            return ranks
-
-        sorted_idx = np.argsort(sim_np * -1)
-
-        # When vector_similarity_weight is 0, similarity_threshold is not meaningful for term-only scores.
-        post_threshold = 0.0 if vector_similarity_weight <= 0 else similarity_threshold
-
-        # When doc_ids is explicitly provided (metadata or document filtering), bypass threshold
-        # User wants those specific documents regardless of their relevance score
-        if doc_ids:
-            post_threshold = 0.0
-
-        valid_idx = [int(i) for i in sorted_idx if sim_np[i] >= post_threshold]
-        filtered_count = len(valid_idx)
-        ranks["total"] = int(filtered_count)
-
-        if filtered_count == 0:
-            ranks["doc_aggs"] = []
-            return ranks
-
-        begin = global_offset % RERANK_LIMIT
-        end = begin + page_size
-        page_idx = valid_idx[begin:end]
-
-        dim = len(sres.query_vector)
-        vector_column = f"q_{dim}_vec"
-        zero_vector = [0.0] * dim
-
-        for i in page_idx:
-            id = sres.ids[i]
-            chunk = sres.field[id]
-            dnm = chunk.get("docnm_kwd", "")
-            did = chunk.get("doc_id", "")
-
-            position_int = chunk.get("position_int", [])
-            d = {
-                "chunk_id": id,
-                "content_ltks": chunk["content_ltks"],
-                "content_with_weight": chunk["content_with_weight"],
-                "doc_id": did,
-                "docnm_kwd": dnm,
-                "kb_id": chunk["kb_id"],
-                "important_kwd": chunk.get("important_kwd", []),
-                "tag_kwd": chunk.get("tag_kwd", []),
-                "image_id": chunk.get("img_id", ""),
-                "similarity": float(sim_np[i]),
-                "vector_similarity": float(vsim[i]),
-                "term_similarity": float(tsim[i]),
-                "vector": chunk.get(vector_column, zero_vector),
-                "positions": position_int,
-                "doc_type_kwd": chunk.get("doc_type_kwd", ""),
-                "mom_id": chunk.get("mom_id", ""),
-                "row_id": chunk.get("row_id()"),
-            }
-            if highlight and sres.highlight:
-                if id in sres.highlight:
-                    d["highlight"] = remove_redundant_spaces(sres.highlight[id])
-                else:
-                    d["highlight"] = d["content_with_weight"]
-            ranks["chunks"].append(d)
-
-        if aggs:
-            for i in valid_idx:
-                id = sres.ids[i]
-                chunk = sres.field[id]
-                dnm = chunk.get("docnm_kwd", "")
-                did = chunk.get("doc_id", "")
-                if dnm not in ranks["doc_aggs"]:
-                    ranks["doc_aggs"][dnm] = {"doc_id": did, "count": 0}
-                ranks["doc_aggs"][dnm]["count"] += 1
-
-            ranks["doc_aggs"] = [
-                {
-                    "doc_name": k,
-                    "doc_id": v["doc_id"],
-                    "count": v["count"],
-                }
-                for k, v in sorted(
-                    ranks["doc_aggs"].items(),
-                    key=lambda x: x[1]["count"] * -1,
-                )
-            ]
-        else:
-            ranks["doc_aggs"] = []
-
-        return ranks
+                
+                if sres.total > 0:
+                    all_results.append(sres)
+                    logging.debug(f"[_retrieve_multi_condition] Sub-query {i+1} found {sres.total} results")
+                    
+            except Exception as e:
+                logging.warning(f"[_retrieve_multi_condition] Sub-query {i+1} failed: {e}")
+                continue
+        
+        if not all_results:
+            logging.debug(f"[_retrieve_multi_condition] All sub-queries returned empty, trying original question")
+            return await self._retrieve_single(
+                question=original_question,
+                embd_mdl=embd_mdl,
+                idx_names=idx_names,
+                kb_ids=kb_ids,
+                doc_ids=doc_ids,
+                page=page,
+                page_size=page_size,
+                RERANK_LIMIT=RERANK_LIMIT,
+                top=top,
+                similarity_threshold=similarity_threshold,
+                min_match=min_match,
+                highlight=highlight,
+                rank_feature=rank_feature,
+            )
+        
+        merged_sres = self._merge_search_results(all_results)
+        logging.debug(f"[_retrieve_multi_condition] Merged {len(all_results)} result sets, total {merged_sres.total} unique chunks")
+        
+        return merged_sres
+    
+    async def _retrieve_long_query(
+        self,
+        original_question: str,
+        compressed_question: str,
+        embd_mdl,
+        idx_names: list[str],
+        kb_ids: list[str],
+        doc_ids: list | None,
+        page: int,
+        page_size: int,
+        RERANK_LIMIT: int,
+        top: int,
+        similarity_threshold: float,
+        min_match: float,
+        highlight: bool,
+        rank_feature: dict | None,
+    ) -> tuple[SearchResult, bool]:
+        fallback_used = False
+        min_results_threshold = 3
+        
+        logging.debug(f"[_retrieve_long_query] Trying compressed query first: {compressed_question[:100]}...")
+        
+        try:
+            sres = await self._retrieve_single(
+                question=compressed_question,
+                embd_mdl=embd_mdl,
+                idx_names=idx_names,
+                kb_ids=kb_ids,
+                doc_ids=doc_ids,
+                page=page,
+                page_size=page_size,
+                RERANK_LIMIT=RERANK_LIMIT,
+                top=top,
+                similarity_threshold=similarity_threshold,
+                min_match=min_match,
+                highlight=highlight,
+                rank_feature=rank_feature,
+            )
+            
+            if sres.total >= min_results_threshold:
+                logging.debug(f"[_retrieve_long_query] Compressed query returned {sres.total} results (>= {min_results_threshold}), using it")
+                return sres, False
+            
+            logging.debug(f"[_retrieve_long_query] Compressed query only returned {sres.total} results (< {min_results_threshold}), falling back to original")
+            
+        except Exception as e:
+            logging.warning(f"[_retrieve_long_query] Compressed query retrieval failed: {e}, falling back to original")
+        
+        fallback_used = True
+        sres = await self._retrieve_single(
+            question=original_question,
+            embd_mdl=embd_mdl,
+            idx_names=idx_names,
+            kb_ids=kb_ids,
+            doc_ids=doc_ids,
+            page=page,
+            page_size=page_size,
+            RERANK_LIMIT=RERANK_LIMIT,
+            top=top,
+            similarity_threshold=similarity_threshold,
+            min_match=0.3,
+            highlight=highlight,
+            rank_feature=rank_feature,
+        )
+        
+        logging.debug(f"[_retrieve_long_query] Fallback query returned {sres.total} results")
+        return sres, fallback_used
 
     def sql_retrieval(self, sql, fetch_size=128, format="json"):
         tbl = self.dataStore.sql(sql, fetch_size, format)

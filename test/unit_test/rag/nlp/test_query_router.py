@@ -246,3 +246,77 @@ class TestQueryIntentRouter:
         assert len(intent.sub_queries) == 2
         assert intent.sub_queries[0] == "test1"
         assert intent.sub_queries[1] == "test2"
+    
+    def test_multi_condition_decomposition_accuracy(self):
+        test_cases = [
+            {
+                "query": "分析机器学习和深度学习的区别，以及它们各自的应用场景。",
+                "expected_subquery_count": 2,
+                "description": "Two conditions with '和' and '以及'"
+            },
+            {
+                "query": "不仅要说明数据库的类型，还要解释每种类型的优缺点。",
+                "expected_subquery_count": 2,
+                "description": "Two conditions with '不仅...还要'"
+            },
+        ]
+        
+        for case in test_cases:
+            intent = self.router.route(case["query"])
+            assert intent.query_type == QueryType.MULTI_CONDITION, \
+                f"Query should be MULTI_CONDITION: {case['query']}"
+            assert intent.sub_queries is not None
+            assert len(intent.sub_queries) >= 1, \
+                f"Should have at least 1 sub-query for: {case['query']}"
+    
+    def test_retrieval_params_topk_multiplier(self):
+        intent = self.router.route("谈谈你对人工智能未来发展的看法。")
+        params = self.router.get_retrieval_params(intent)
+        
+        assert params["query_type"] == "open_ended"
+        assert params["topk_multiplier"] == 1.5
+        
+        original_topk = 1024
+        expected_expanded_topk = int(original_topk * params["topk_multiplier"])
+        assert expected_expanded_topk == 1536
+    
+    def test_long_query_fallback_threshold(self):
+        min_results_threshold = 3
+        
+        intent = self.router.route("我想了解人工智能的发展历史，从早期的专家系统到现代的深度学习，包括各个阶段的关键技术和代表人物。")
+        params = self.router.get_retrieval_params(intent)
+        
+        assert params["query_type"] == "long_query"
+        assert params["compressed_query"] is not None
+        assert params["original_query"] is not None
+        assert len(params["compressed_query"]) <= len(params["original_query"])
+    
+    def test_numeric_tabular_preserve_original_chunks(self):
+        intent = self.router.route("2023年公司的总营收是多少？与2022年相比增长了多少？")
+        params = self.router.get_retrieval_params(intent)
+        
+        assert params["query_type"] == "numeric_tabular"
+        assert params["preserve_original_chunks"] == True
+        assert params["highlight_numerics"] == True
+    
+    def test_query_routing_priority(self):
+        long_multi_condition_query = """
+        我想了解人工智能和机器学习的发展历史，从早期的专家系统到现代的深度学习，
+        包括各个阶段的关键技术和代表人物。另外，我还想知道神经网络的工作原理，
+        以及如何选择合适的激活函数。
+        """
+        
+        intent = self.router.route(long_multi_condition_query)
+        
+        assert intent.query_type == QueryType.LONG_QUERY, \
+            "Long query should take priority over multi-condition"
+    
+    def test_exact_retrieval_for_factual(self):
+        intent = self.router.route("什么是Python中的列表推导式？")
+        params = self.router.get_retrieval_params(intent)
+        
+        assert params["query_type"] == "factual"
+        assert params["retrieval_strategy"] == "exact"
+        assert params["min_match"] == 0.7
+        assert params["vector_weight"] == 0.3
+        assert params["term_weight"] == 0.7
