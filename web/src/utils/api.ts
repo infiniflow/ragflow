@@ -85,7 +85,7 @@ export default {
   traceIndex: (datasetId: string, indexType: string) =>
     `${restAPIv1}/datasets/${datasetId}/index?type=${indexType}`,
   unbindPipelineTask: (datasetId: string, indexType: string) =>
-    `${restAPIv1}/datasets/${datasetId}/${indexType}`,
+    `${restAPIv1}/datasets/${datasetId}/${indexType.toLowerCase()}`,
   pipelineRerun: `${webAPI}/canvas/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
