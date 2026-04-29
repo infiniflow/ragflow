@@ -628,25 +628,8 @@ def get_auto_metadata(dataset_id: str, tenant_id: str):
     kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
     if kb is None:
         return False, f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
-
     parser_cfg = kb.parser_config or {}
-    metadata = parser_cfg.get("metadata") or []
-    enabled = parser_cfg.get("enable_metadata", bool(metadata))
-    # Normalize to AutoMetadataConfig-like JSON
-    fields = []
-    for f in metadata:
-        if not isinstance(f, dict):
-            continue
-        fields.append(
-            {
-                "name": f.get("name", ""),
-                "type": f.get("type", ""),
-                "description": f.get("description"),
-                "examples": f.get("examples"),
-                "restrict_values": f.get("restrict_values", False),
-            }
-        )
-    return True, {"enabled": enabled, "fields": fields}
+    return True, {"metadata": parser_cfg.get("metadata") or [], "built_in_metadata": parser_cfg.get("built_in_metadata") or []}
 
 
 async def update_auto_metadata(dataset_id: str, tenant_id: str, cfg: dict):
@@ -663,24 +646,13 @@ async def update_auto_metadata(dataset_id: str, tenant_id: str, cfg: dict):
         return False, f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
 
     parser_cfg = kb.parser_config or {}
-    fields = []
-    for f in cfg.get("fields", []):
-        fields.append(
-            {
-                "name": f.get("name", ""),
-                "type": f.get("type", ""),
-                "description": f.get("description"),
-                "examples": f.get("examples"),
-                "restrict_values": f.get("restrict_values", False),
-            }
-        )
-    parser_cfg["metadata"] = fields
-    parser_cfg["enable_metadata"] = cfg.get("enabled", True)
+    parser_cfg["metadata"] = cfg.get("metadata")
+    parser_cfg["built_in_metadata"] = cfg.get("built_in_metadata")
 
     if not KnowledgebaseService.update_by_id(kb.id, {"parser_config": parser_cfg}):
         return False, "Update auto-metadata error.(Database error)"
 
-    return True, {"enabled": parser_cfg["enable_metadata"], "fields": fields}
+    return True, cfg
 
 
 def delete_tags(dataset_id: str, tenant_id: str, tags: list[str]):

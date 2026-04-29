@@ -248,7 +248,20 @@ class SyncBase:
         prefix = self._get_source_prefix()
         prefix = f"{prefix} " if prefix else ""
         next_update_info = self._format_window_boundary(next_update)
-        if file_list == []:
+        expects_deleted_file_snapshot = (
+            task.get("reindex") != "1"
+            and task.get("poll_range_start")
+            and self.conf.get("sync_deleted_files")
+        )
+        if expects_deleted_file_snapshot and file_list is None:
+            logging.warning(
+                "%s deleted-file snapshot retrieval failed "
+                "(connector_id=%s, kb_id=%s)",
+                self.SOURCE_NAME,
+                task["connector_id"],
+                task["kb_id"],
+            )
+        elif file_list == []:
             logging.warning(
                 "%s deleted-file sync skipped because the snapshot was empty "
                 "(connector_id=%s, kb_id=%s)",
@@ -340,9 +353,7 @@ class _BlobLikeBase(SyncBase):
                 _begin_info,
             )
         )
-        if file_list is not None:
-            return document_batch_generator, file_list
-        return document_batch_generator
+        return document_batch_generator, file_list
 
 
 class S3(_BlobLikeBase):
@@ -508,9 +519,7 @@ class Notion(SyncBase):
         _begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(
             task["poll_range_start"])
         self.log_connection("Notion", f"root({self.conf['root_page_id']})", task)
-        if file_list is not None:
-            return document_generator, file_list
-        return document_generator
+        return document_generator, file_list
 
 
 class Discord(SyncBase):
@@ -528,17 +537,26 @@ class Discord(SyncBase):
             batch_size=self.conf.get("batch_size", 1024),
         )
         self.connector.load_credentials(self.conf["credentials"])
+        file_list = None
         document_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
             else self.connector.poll_source(task["poll_range_start"].timestamp(),
                                             datetime.now(timezone.utc).timestamp())
         )
+        if (
+            task["reindex"] != "1"
+            and task["poll_range_start"]
+            and self.conf.get("sync_deleted_files")
+        ):
+            file_list = []
+            for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                file_list.extend(slim_batch)
 
         _begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(
             task["poll_range_start"])
         self.log_connection("Discord", f"servers({server_ids}), channel({channel_names})", task)
-        return document_generator
+        return document_generator, file_list
 
 
 class Gmail(SyncBase):
@@ -617,19 +635,23 @@ class Dropbox(SyncBase):
     async def _generate(self, task: dict):
         self.connector = DropboxConnector(batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE))
         self.connector.load_credentials(self.conf["credentials"])
+        poll_start = task["poll_range_start"]
+        file_list = None
 
-        if task["reindex"] == "1" or not task["poll_range_start"]:
+        if task["reindex"] == "1" or not poll_start:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
-            poll_start = task["poll_range_start"]
-            document_generator = self.connector.poll_source(
-                poll_start.timestamp(), datetime.now(timezone.utc).timestamp()
-            )
+            end_time = datetime.now(timezone.utc).timestamp()
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
+            document_generator = self.connector.poll_source(poll_start.timestamp(), end_time)
             _begin_info = f"from {poll_start}"
 
         self.log_connection("Dropbox", "workspace", task)
-        return document_generator
+        return document_generator, file_list
 
 
 class GoogleDrive(SyncBase):
@@ -843,9 +865,7 @@ class Jira(SyncBase):
                 f"overlap_buffer_s={getattr(self.connector, 'time_buffer_seconds', connector_kwargs.get('time_buffer_seconds'))}"
             ),
         )
-        if file_list is not None:
-            return document_batches(), file_list
-        return document_batches()
+        return document_batches(), file_list
 
     @staticmethod
     def _normalize_list(values: Any) -> list[str] | None:
@@ -975,9 +995,7 @@ class BOX(SyncBase):
             )
             _begin_info = f"from {poll_start}"
         self.log_connection("Box", f"folder_id({self.conf['folder_id']})", task)
-        if file_list is not None:
-            return document_generator, file_list
-        return document_generator
+        return document_generator, file_list
 
 
 class Airtable(SyncBase):
@@ -1024,9 +1042,7 @@ class Airtable(SyncBase):
             task,
         )
 
-        if file_list is not None:
-            return document_generator, file_list
-        return document_generator
+        return document_generator, file_list
 
 class Asana(SyncBase):
     SOURCE_NAME: str = FileSource.ASANA
@@ -1305,6 +1321,7 @@ class Gitlab(SyncBase):
             }
         )
 
+        file_list = None
         if task["reindex"] == "1" or not task["poll_range_start"]:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
@@ -1318,9 +1335,13 @@ class Gitlab(SyncBase):
                     poll_start.timestamp(),
                     datetime.now(timezone.utc).timestamp()
                 )
+                if self.conf.get("sync_deleted_files"):
+                    file_list = []
+                    for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                        file_list.extend(slim_batch)
                 _begin_info = "from {}".format(poll_start)
         self.log_connection("Gitlab", f"({self.conf['project_name']})", task)
-        return document_generator
+        return document_generator, file_list
 
 
 class Bitbucket(SyncBase):
