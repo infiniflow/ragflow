@@ -124,6 +124,17 @@ CURRENT_TASKS = {}
 MAX_CONCURRENT_TASKS = int(os.environ.get('MAX_CONCURRENT_TASKS', "5"))
 MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get('MAX_CONCURRENT_CHUNK_BUILDERS', "1"))
 MAX_CONCURRENT_MINIO = int(os.environ.get('MAX_CONCURRENT_MINIO', '10'))
+# Recycle the worker process after this many completed tasks to release
+# unreclaimed memory held by long-lived libraries (notably ONNX Runtime's
+# BFCArena, which keeps allocated chunks until the InferenceSession is
+# destroyed). The supervisor loop in `docker/entrypoint.sh`
+# (`while true; do ... task_executor.py & wait; sleep 1; done`) restarts the
+# process automatically after a clean exit.
+# 0 disables recycling (legacy behaviour). A small value such as 20 is helpful
+# on lower-VRAM consumer GPUs where cumulative arena fragmentation eventually
+# manifests as "Available memory of 0" allocation failures.
+MAX_TASKS_PER_WORKER = int(os.environ.get('MAX_TASKS_PER_WORKER', '0'))
+_completed_task_count = 0
 task_limiter = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
 chunk_limiter = asyncio.Semaphore(MAX_CONCURRENT_CHUNK_BUILDERS)
 embed_limiter = asyncio.Semaphore(MAX_CONCURRENT_CHUNK_BUILDERS)
@@ -1448,9 +1459,17 @@ async def report_status():
 
 
 async def task_manager():
+    global _completed_task_count
     try:
         await handle_task()
     finally:
+        _completed_task_count += 1
+        if MAX_TASKS_PER_WORKER > 0 and _completed_task_count >= MAX_TASKS_PER_WORKER:
+            logging.warning(
+                f"[recycle] reached MAX_TASKS_PER_WORKER={MAX_TASKS_PER_WORKER}; "
+                f"signalling clean exit so the supervisor can restart the worker."
+            )
+            stop_event.set()
         task_limiter.release()
 
 
@@ -1499,6 +1518,12 @@ async def main():
     try:
         while not stop_event.is_set():
             await task_limiter.acquire()
+            if stop_event.is_set():
+                # A previous task_manager may have signalled shutdown while
+                # we were blocked on the semaphore; bail out cleanly so the
+                # supervisor can restart the worker.
+                task_limiter.release()
+                break
             t = asyncio.create_task(task_manager())
             tasks.append(t)
     finally:
