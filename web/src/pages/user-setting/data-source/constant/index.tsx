@@ -105,6 +105,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.AIRTABLE]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.ZENDESK]: {
+    syncDeletedFiles: true,
+  },
 };
 
 const isDataSourceFeatureVisible = (
