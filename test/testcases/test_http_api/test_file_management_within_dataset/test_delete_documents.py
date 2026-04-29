@@ -145,6 +145,24 @@ class TestDocumentsDeletion:
         assert len(res["data"]["docs"]) == 3
         assert res["data"]["total"] == 3
 
+    @pytest.mark.p2
+    def test_cross_dataset_deletion_is_blocked(self, HttpApiAuth, add_dataset, add_documents_func, tmp_path):
+        dataset_id, _document_ids = add_documents_func
+        other_dataset_id = add_dataset
+        other_document_id = bulk_upload_documents(HttpApiAuth, other_dataset_id, 1, tmp_path)[0]
+
+        res = delete_documents(HttpApiAuth, dataset_id, {"ids": [other_document_id]})
+        assert res["code"] == 102
+        assert f"These documents do not belong to dataset {dataset_id}" in res["message"]
+
+        res = list_documents(HttpApiAuth, dataset_id)
+        assert len(res["data"]["docs"]) == 3
+        assert res["data"]["total"] == 3
+
+        res = list_documents(HttpApiAuth, other_dataset_id)
+        assert len(res["data"]["docs"]) == 1
+        assert res["data"]["total"] == 1
+
 
 @pytest.mark.p3
 def test_concurrent_deletion(HttpApiAuth, add_dataset, tmp_path):
