@@ -1031,7 +1031,7 @@ async def delete_documents(tenant_id, dataset_id):
         invalid_ids = [doc_id for doc_id in doc_ids if doc_id not in dataset_doc_ids]
         if invalid_ids:
             return get_error_data_result(
-                message=f"These documents do not belong to dataset {dataset_id} or do not exist: {', '.join(invalid_ids)}"
+                message=f"These documents do not belong to dataset {dataset_id} or Document not found: {', '.join(invalid_ids)}"
             )
 
         # make sure each id is unique

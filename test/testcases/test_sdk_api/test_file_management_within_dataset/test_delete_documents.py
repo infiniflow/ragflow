@@ -81,7 +81,7 @@ class TestDocumentsDeletion:
         dataset.delete_documents(ids=document_ids)
         with pytest.raises(Exception) as exception_info:
             dataset.delete_documents(ids=document_ids)
-        assert "These documents do not belong to dataset" in str(exception_info.value), str(exception_info.value)
+        assert "Document not found" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_duplicate_deletion(self, add_documents_func):

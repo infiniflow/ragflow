@@ -132,7 +132,7 @@ class TestDocumentsDeletion:
 
         res = delete_documents(HttpApiAuth, dataset_id, {"ids": document_ids})
         assert res["code"] == 102
-        assert "Document not found" in res["message"]
+        assert "or Document not found" in res["message"]
 
     @pytest.mark.p2
     def test_duplicate_deletion(self, HttpApiAuth, add_documents_func):
