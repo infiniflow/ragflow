@@ -33,3 +33,8 @@ class TenantModelService(CommonService):
     @DB.connection_context()
     def get_models_by_instance_id(cls, instance_id):
         return list(cls.model.select().where(cls.model.instance_id == instance_id))
+
+    @classmethod
+    @DB.connection_context()
+    def delete_by_id(cls, model_id):
+        return cls.model.delete().where(cls.model.id == model_id).execute()

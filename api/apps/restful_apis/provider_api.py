@@ -321,9 +321,6 @@ async def create_provider_instance(tenant_id: str = None, provider_name: str = N
             api_key:
               type: string
               description: API key.
-            api_base:
-              type: string
-              description: API base URL (optional).
     responses:
       200:
         description: Instance created successfully.
@@ -336,12 +333,9 @@ async def create_provider_instance(tenant_id: str = None, provider_name: str = N
 
     instance_name = data["instance_name"]
     api_key = data["api_key"]
-    api_base = data.get("api_base", "")
 
     try:
-        success, err = provider_api_service.create_provider_instance(
-            tenant_id, provider_name, instance_name, api_key, api_base
-        )
+        success, err = provider_api_service.create_provider_instance(tenant_id, provider_name, instance_name, api_key)
         if success:
             return get_result()
         else:
@@ -439,164 +433,6 @@ def show_provider_instance(tenant_id: str = None, provider_name: str = None, ins
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>/instances/<instance_name>/balance", methods=["GET"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-def show_instance_balance(tenant_id: str = None, provider_name: str = None, instance_name: str = None):
-    """
-    Show instance balance.
-    ---
-    tags:
-      - Providers
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: provider_name
-        type: string
-        required: true
-        description: Provider name.
-      - in: path
-        name: instance_name
-        type: string
-        required: true
-        description: Instance name.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: Instance balance info.
-        schema:
-          type: object
-    """
-    try:
-        success, result = provider_api_service.show_instance_balance(tenant_id, provider_name, instance_name)
-        if success:
-            return get_result(data=result)
-        else:
-            return get_error_data_result(message=result)
-    except Exception as e:
-        logging.exception(e)
-        return get_error_data_result(message="Internal server error")
-
-
-@manager.route("/providers/<provider_name>/instances/<instance_name>/connection", methods=["GET"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-def check_provider_connection(tenant_id: str = None, provider_name: str = None, instance_name: str = None):
-    """
-    Check provider connection.
-    ---
-    tags:
-      - Providers
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: provider_name
-        type: string
-        required: true
-        description: Provider name.
-      - in: path
-        name: instance_name
-        type: string
-        required: true
-        description: Instance name.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-    responses:
-      200:
-        description: Connection check result.
-        schema:
-          type: object
-    """
-    try:
-        success, err = provider_api_service.check_provider_connection(tenant_id, provider_name, instance_name)
-        if success:
-            return get_result()
-        else:
-            return get_error_data_result(message=err)
-    except Exception as e:
-        logging.exception(e)
-        return get_error_data_result(message="Internal server error")
-
-
-@manager.route("/providers/<provider_name>/instances/<instance_name>", methods=["PUT"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-async def alter_provider_instance(tenant_id: str = None, provider_name: str = None, instance_name: str = None):
-    """
-    Alter a provider instance.
-    ---
-    tags:
-      - Providers
-    security:
-      - ApiKeyAuth: []
-    parameters:
-      - in: path
-        name: provider_name
-        type: string
-        required: true
-        description: Provider name.
-      - in: path
-        name: instance_name
-        type: string
-        required: true
-        description: Instance name.
-      - in: header
-        name: Authorization
-        type: string
-        required: true
-        description: Bearer token for authentication.
-      - in: body
-        name: body
-        description: Instance update parameters.
-        required: true
-        schema:
-          type: object
-          properties:
-            llm_name:
-              type: string
-              description: New model name (optional).
-            api_key:
-              type: string
-              description: New API key (optional).
-            api_base:
-              type: string
-              description: New API base URL (optional).
-    responses:
-      200:
-        description: Instance updated successfully.
-        schema:
-          type: object
-    """
-    data = await request.get_json()
-    if not data:
-        return get_error_argument_result(message="Request body is required")
-
-    llm_name = data.get("llm_name")
-    api_key = data.get("api_key")
-    api_base = data.get("api_base")
-
-    try:
-        success, err = provider_api_service.alter_provider_instance(
-            tenant_id, provider_name, instance_name, llm_name, api_key, api_base
-        )
-        if success:
-            return get_result()
-        else:
-            return get_error_data_result(message=err)
-    except Exception as e:
-        logging.exception(e)
-        return get_error_data_result(message="Internal server error")
-
-
 @manager.route("/providers/<provider_name>/instances", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -644,6 +480,8 @@ async def drop_provider_instances(tenant_id: str = None, provider_name: str = No
         return get_error_argument_result(message="instances is required")
 
     instances = data["instances"]
+    if not instances:
+        return get_error_argument_result(message="instances is required")
 
     try:
         success, err = provider_api_service.drop_provider_instances(tenant_id, provider_name, instances)
@@ -756,7 +594,7 @@ async def enable_or_disable_model(tenant_id: str = None, provider_name: str = No
           properties:
             status:
               type: string
-              enum: ["enabled", "disabled"]
+              enum: ["active", "inactive"]
               description: Model status.
     responses:
       200:
@@ -769,11 +607,11 @@ async def enable_or_disable_model(tenant_id: str = None, provider_name: str = No
         return get_error_argument_result(message="status is required")
 
     status = data["status"]
-    if status not in ("enabled", "disabled"):
-        return get_error_argument_result(message="status must be 'enabled' or 'disabled'")
+    if status not in ("active", "inactive"):
+        return get_error_argument_result(message="status must be 'active' or 'inactive'")
 
     try:
-        success, err = provider_api_service.update_model_status(tenant_id, provider_name, model_name, status)
+        success, err = provider_api_service.update_model_status(tenant_id, provider_name, instance_name, model_name, status)
         if success:
             return get_result()
         else:

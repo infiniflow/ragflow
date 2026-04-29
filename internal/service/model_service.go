@@ -317,7 +317,7 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 		InstanceName: instanceName,
 		ProviderID:   provider.ID,
 		APIKey:       apiKey,
-		Status:       "enable",
+		Status:       "active",
 		Extra:        extraStr,
 	}
 	tenantModelProvider.CreateTime = &now
