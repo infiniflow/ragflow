@@ -254,7 +254,7 @@ class DiscordConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
         def _is_in_window(message: DiscordMessage) -> bool:
             created_at = _message_created_at(message)
-            if start is not None and created_at <= start:
+            if start is not None and created_at < start:
                 return False
             if end is not None and created_at >= end:
                 return False
