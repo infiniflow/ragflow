@@ -1412,9 +1412,17 @@ class SeaFile(SyncBase):
 
     async def _generate(self, task: dict):
         conf = self.conf
+        raw_batch_size = conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
         self.connector = SeaFileConnector(
             seafile_url=conf["seafile_url"],
-            batch_size=conf.get("batch_size", INDEX_BATCH_SIZE),
+            batch_size=batch_size,
             include_shared=conf.get("include_shared", True),
             sync_scope=conf.get("sync_scope", SeafileSyncScope.ACCOUNT),
             repo_id=conf.get("repo_id") or None,
@@ -1422,14 +1430,37 @@ class SeaFile(SyncBase):
         )
         self.connector.load_credentials(conf["credentials"])
 
+        file_list = None
         poll_start = task.get("poll_range_start")
         if task["reindex"] == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
+            end_ts = datetime.now(timezone.utc).timestamp()
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                logging.info(
+                    "SeaFile: fetching slim snapshot for stale-document reconciliation "
+                    "(connector_id=%s, kb_id=%s, scope=%s)",
+                    task["connector_id"],
+                    task["kb_id"],
+                    conf.get("sync_scope")
+                    or SeafileSyncScope.ACCOUNT.value,
+                )
+                try:
+                    for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                        file_list.extend(slim_batch)
+                except Exception:
+                    logging.exception(
+                        "SeaFile slim snapshot failed; continuing without stale-document cleanup "
+                        "(connector_id=%s, kb_id=%s)",
+                        task["connector_id"],
+                        task["kb_id"],
+                    )
+                    file_list = None
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp(),
+                end_ts,
             )
             _begin_info = f"from {poll_start}"
 
@@ -1441,7 +1472,7 @@ class SeaFile(SyncBase):
             extra += f" path={conf.get('sync_path')}"
 
         self.log_connection("SeaFile", f"{conf['seafile_url']} (scope={scope}{extra})", task)
-        return document_generator
+        return document_generator, file_list
 
 
 class DingTalkAITable(SyncBase):
