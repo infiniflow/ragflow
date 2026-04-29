@@ -81,12 +81,7 @@ async def create_dataset(tenant_id: str, req: dict):
         req["parser_config"] = parser_cfg
     req.update(ext_fields)
 
-    e, create_dict = KnowledgebaseService.create_with_name(
-        name=req.pop("name", None),
-        tenant_id=tenant_id,
-        parser_id=req.pop("parser_id", None),
-        **req
-    )
+    e, create_dict = KnowledgebaseService.create_with_name(name=req.pop("name", None), tenant_id=tenant_id, parser_id=req.pop("parser_id", None), **req)
 
     if not e:
         return False, create_dict
@@ -152,12 +147,12 @@ async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = F
                 ]
             )
             File2DocumentService.delete_by_document_id(doc.id)
-        FileService.filter_delete(
-            [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kb.name])
+        FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kb.name])
 
         # Drop index for this dataset
         try:
             from rag.nlp import search
+
             idxnm = search.index_name(kb.tenant_id)
             settings.docStoreConn.delete_idx(idxnm, kb_id)
         except Exception as e:
@@ -266,7 +261,7 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
         parser_cfg["metadata"] = fields
         parser_cfg["enable_metadata"] = auto_meta.get("enabled", True)
         req["parser_config"] = parser_cfg
-    
+
     # Merge ext fields with req
     req.update(ext_fields)
 
@@ -303,8 +298,7 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
         req["pipeline_id"] = ""
 
     if "name" in req and req["name"].lower() != kb.name.lower():
-        exists = KnowledgebaseService.get_or_none(name=req["name"], tenant_id=tenant_id,
-                                                  status=StatusEnum.VALID.value)
+        exists = KnowledgebaseService.get_or_none(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)
         if exists:
             return False, f"Dataset name '{req['name']}' already exists"
 
@@ -323,13 +317,13 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
 
         if req["pagerank"] > 0:
             from rag.nlp import search
-            settings.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]},
-                                         search.index_name(kb.tenant_id), kb.id)
+
+            settings.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]}, search.index_name(kb.tenant_id), kb.id)
         else:
             # Elasticsearch requires PAGERANK_FLD be non-zero!
             from rag.nlp import search
-            settings.docStoreConn.update({"exists": PAGERANK_FLD}, {"remove": PAGERANK_FLD},
-                                         search.index_name(kb.tenant_id), kb.id)
+
+            settings.docStoreConn.update({"exists": PAGERANK_FLD}, {"remove": PAGERANK_FLD}, search.index_name(kb.tenant_id), kb.id)
     if "parse_type" in req:
         del req["parse_type"]
 
@@ -388,27 +382,13 @@ def list_datasets(tenant_id: str, args: dict):
     else:
         tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
         tenant_ids = [m["tenant_id"] for m in tenants]
-    kbs, total = KnowledgebaseService.get_list(
-        tenant_ids,
-        tenant_id,
-        page,
-        page_size,
-        orderby,
-        desc,
-        kb_id,
-        name,
-        keywords,
-        parser_id
-    )
+    kbs, total = KnowledgebaseService.get_list(tenant_ids, tenant_id, page, page_size, orderby, desc, kb_id, name, keywords, parser_id)
     users = UserService.get_by_ids([m["tenant_id"] for m in kbs])
     user_map = {m.id: m.to_dict() for m in users}
     response_data_list = []
     for kb in kbs:
         user_dict = user_map.get(kb["tenant_id"], {})
-        kb.update({
-            "nickname": user_dict.get("nickname", ""),
-            "tenant_avatar": user_dict.get("avatar", "")
-        })
+        kb.update({"nickname": user_dict.get("nickname", ""), "tenant_avatar": user_dict.get("avatar", "")})
         response_data_list.append(remap_dictionary_keys(kb))
     return True, {"data": response_data_list, "total": total}
 
@@ -425,13 +405,11 @@ async def get_knowledge_graph(dataset_id: str, tenant_id: str):
         return False, "No authorization."
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
-    req = {
-        "kb_id": [dataset_id],
-        "knowledge_graph_kwd": ["graph"]
-    }
+    req = {"kb_id": [dataset_id], "knowledge_graph_kwd": ["graph"]}
 
     obj = {"graph": {}, "mind_map": {}}
     from rag.nlp import search
+
     if not settings.docStoreConn.index_exist(search.index_name(kb.tenant_id), dataset_id):
         return True, obj
     sres = await settings.retriever.search(req, search.index_name(kb.tenant_id), [dataset_id])
@@ -451,8 +429,7 @@ async def get_knowledge_graph(dataset_id: str, tenant_id: str):
         obj["graph"]["nodes"] = sorted(obj["graph"]["nodes"], key=lambda x: x.get("pagerank", 0), reverse=True)[:256]
         if "edges" in obj["graph"]:
             node_id_set = {o["id"] for o in obj["graph"]["nodes"]}
-            filtered_edges = [o for o in obj["graph"]["edges"] if
-                              o["source"] != o["target"] and o["source"] in node_id_set and o["target"] in node_id_set]
+            filtered_edges = [o for o in obj["graph"]["edges"] if o["source"] != o["target"] and o["source"] in node_id_set and o["target"] in node_id_set]
             obj["graph"]["edges"] = sorted(filtered_edges, key=lambda x: x.get("weight", 0), reverse=True)[:128]
     return True, obj
 
@@ -469,8 +446,8 @@ def delete_knowledge_graph(dataset_id: str, tenant_id: str):
         return False, "No authorization."
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
     from rag.nlp import search
-    settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]},
-                                 search.index_name(kb.tenant_id), dataset_id)
+
+    settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), dataset_id)
 
     return True, True
 
@@ -636,6 +613,7 @@ def get_flattened_metadata(dataset_ids: list[str], tenant_id: str):
             return False, f"No authorization for dataset '{dataset_id}'"
 
     from api.db.services.doc_metadata_service import DocMetadataService
+
     return True, DocMetadataService.get_flatted_meta_by_kbs(dataset_ids)
 
 
@@ -725,15 +703,26 @@ def delete_tags(dataset_id: str, tenant_id: str, tags: list[str]):
         return False, "Invalid Dataset ID"
 
     from rag.nlp import search
+
     for t in tags:
-        settings.docStoreConn.update({"tag_kwd": t, "kb_id": [dataset_id]},
-                                     {"remove": {"tag_kwd": t}},
-                                     search.index_name(kb.tenant_id),
-                                     dataset_id)
+        settings.docStoreConn.update({"tag_kwd": t, "kb_id": [dataset_id]}, {"remove": {"tag_kwd": t}}, search.index_name(kb.tenant_id), dataset_id)
 
     return True, {}
 
-def list_ingestion_logs(dataset_id: str, tenant_id: str, page: int, page_size: int, orderby: str, desc: bool, operation_status: list = None, create_date_from: str = None, create_date_to: str = None):
+
+def list_ingestion_logs(
+    dataset_id: str,
+    tenant_id: str,
+    page: int,
+    page_size: int,
+    orderby: str,
+    desc: bool,
+    operation_status: list = None,
+    create_date_from: str = None,
+    create_date_to: str = None,
+    log_type: str = "dataset",
+    keywords: str = None,
+):
     """
     List ingestion logs for a dataset.
 
@@ -746,6 +735,8 @@ def list_ingestion_logs(dataset_id: str, tenant_id: str, page: int, page_size: i
     :param operation_status: filter by operation status
     :param create_date_from: filter start date
     :param create_date_to: filter end date
+    :param log_type: "dataset" or "file"
+    :param keywords: search keywords for file logs
     :return: (success, result) or (success, error_message)
     """
     if not dataset_id:
@@ -755,9 +746,11 @@ def list_ingestion_logs(dataset_id: str, tenant_id: str, page: int, page_size: i
         return False, "No authorization."
 
     from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-    logs, total = PipelineOperationLogService.get_dataset_logs_by_kb_id(
-        dataset_id, page, page_size, orderby, desc, operation_status or [], create_date_from, create_date_to
-    )
+
+    if log_type == "file":
+        logs, total = PipelineOperationLogService.get_file_logs_by_kb_id(dataset_id, page, page_size, orderby, desc, keywords, operation_status or [], None, None, create_date_from, create_date_to)
+    else:
+        logs, total = PipelineOperationLogService.get_dataset_logs_by_kb_id(dataset_id, page, page_size, orderby, desc, operation_status or [], create_date_from, create_date_to, keywords)
     return True, {"total": total, "logs": logs}
 
 
@@ -777,10 +770,9 @@ def get_ingestion_log(dataset_id: str, tenant_id: str, log_id: str):
         return False, "No authorization."
 
     from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
+
     fields = PipelineOperationLogService.get_dataset_logs_fields()
-    log = PipelineOperationLogService.model.select(*fields).where(
-        (PipelineOperationLogService.model.id == log_id) & (PipelineOperationLogService.model.kb_id == dataset_id)
-    ).first()
+    log = PipelineOperationLogService.model.select(*fields).where((PipelineOperationLogService.model.id == log_id) & (PipelineOperationLogService.model.kb_id == dataset_id)).first()
     if not log:
         return False, "Log not found"
 
@@ -815,6 +807,7 @@ def delete_index(dataset_id: str, tenant_id: str, index_type: str):
 
     if task_id:
         from rag.utils.redis_conn import REDIS_CONN
+
         try:
             REDIS_CONN.set(f"{task_id}-cancel", "x")
         except Exception as e:
@@ -823,12 +816,12 @@ def delete_index(dataset_id: str, tenant_id: str, index_type: str):
 
     if index_type == "graph":
         from rag.nlp import search
-        settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]},
-                                     search.index_name(kb.tenant_id), dataset_id)
+
+        settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), dataset_id)
     elif index_type == "raptor":
         from rag.nlp import search
-        settings.docStoreConn.delete({"raptor_kwd": ["raptor"]},
-                                     search.index_name(kb.tenant_id), dataset_id)
+
+        settings.docStoreConn.delete({"raptor_kwd": ["raptor"]}, search.index_name(kb.tenant_id), dataset_id)
 
     KnowledgebaseService.update_by_id(kb.id, {task_id_field: "", task_finish_at_field: None})
     return True, {}
@@ -895,10 +888,8 @@ def rename_tag(dataset_id: str, tenant_id: str, from_tag: str, to_tag: str):
         return False, "Invalid Dataset ID"
 
     from rag.nlp import search
-    settings.docStoreConn.update({"tag_kwd": from_tag, "kb_id": [dataset_id]},
-                                 {"remove": {"tag_kwd": from_tag.strip()}, "add": {"tag_kwd": to_tag}},
-                                 search.index_name(kb.tenant_id),
-                                 dataset_id)
+
+    settings.docStoreConn.update({"tag_kwd": from_tag, "kb_id": [dataset_id]}, {"remove": {"tag_kwd": from_tag.strip()}, "add": {"tag_kwd": to_tag}}, search.index_name(kb.tenant_id), dataset_id)
 
     return True, {"from": from_tag, "to": to_tag}
 
@@ -1015,36 +1006,30 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
 
     labels = label_question(_question, [kb])
     ranks = await settings.retriever.retrieval(
-                    _question,
-                    embd_mdl,
-                    tenant_ids,
-                    [dataset_id],
-                    page,
-                    size,
-                    float(req.get("similarity_threshold", 0.0)),
-                    float(req.get("vector_similarity_weight", 0.3)),
-                    doc_ids=local_doc_ids,
-                    top=top,
-                    rerank_mdl=rerank_mdl,
-                    rank_feature=labels
-                )
+        _question,
+        embd_mdl,
+        tenant_ids,
+        [dataset_id],
+        page,
+        size,
+        float(req.get("similarity_threshold", 0.0)),
+        float(req.get("vector_similarity_weight", 0.3)),
+        doc_ids=local_doc_ids,
+        top=top,
+        rerank_mdl=rerank_mdl,
+        rank_feature=labels,
+    )
 
     if use_kg:
         try:
             default_chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-            ck = await settings.kg_retriever.retrieval(_question,
-                                                   tenant_ids,
-                                                   [dataset_id],
-                                                   embd_mdl,
-                                                   LLMBundle(kb.tenant_id, default_chat_model_config))
+            ck = await settings.kg_retriever.retrieval(_question, tenant_ids, [dataset_id], embd_mdl, LLMBundle(kb.tenant_id, default_chat_model_config))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
         except Exception:
             logging.warning("search KG retrieval failed: dataset=%s tenant=%s", dataset_id, tenant_id, exc_info=True)
     total = ranks.get("total", 0)
-    ranks["chunks"] = settings.retriever.retrieval_by_children(
-        ranks["chunks"], tenant_ids
-    )
+    ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
     ranks["total"] = total
 
     for c in ranks["chunks"]:

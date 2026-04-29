@@ -79,7 +79,7 @@ def get_flattened_metadata(tenant_id):
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def create(tenant_id: str=None):
+async def create(tenant_id: str = None):
     """
     Create a new dataset.
     ---
@@ -477,7 +477,7 @@ async def rename_tag(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route('/datasets/<dataset_id>/search', methods=['POST'])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/search", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def search(tenant_id, dataset_id):
@@ -506,7 +506,7 @@ async def search(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route('/datasets/<dataset_id>/graph/search', methods=['GET'])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/graph/search", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def knowledge_graph(tenant_id, dataset_id):
@@ -515,17 +515,13 @@ async def knowledge_graph(tenant_id, dataset_id):
         if success:
             return get_result(data=result)
         else:
-            return get_result(
-                data=False,
-                message=result,
-                code=RetCode.AUTHENTICATION_ERROR
-            )
+            return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route('/datasets/<dataset_id>/graph', methods=['GET'])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/graph", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def get_knowledge_graph(tenant_id, dataset_id):
@@ -541,17 +537,13 @@ async def get_knowledge_graph(tenant_id, dataset_id):
         if success:
             return get_result(data=result)
         else:
-            return get_result(
-                data=False,
-                message=result,
-                code=RetCode.AUTHENTICATION_ERROR
-            )
+            return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route('/datasets/<dataset_id>/graph', methods=['DELETE'])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/graph", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 def delete_knowledge_graph(tenant_id, dataset_id):
@@ -560,11 +552,7 @@ def delete_knowledge_graph(tenant_id, dataset_id):
         if success:
             return get_result(data=result)
         else:
-            return get_result(
-                data=False,
-                message=result,
-                code=RetCode.AUTHENTICATION_ERROR
-            )
+            return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -652,9 +640,9 @@ def list_ingestion_logs(tenant_id, dataset_id):
         operation_status = request.args.getlist("operation_status")
         create_date_from = request.args.get("create_date_from", None)
         create_date_to = request.args.get("create_date_to", None)
-        success, result = dataset_api_service.list_ingestion_logs(
-            dataset_id, tenant_id, page, page_size, orderby, desc, operation_status, create_date_from, create_date_to
-        )
+        log_type = request.args.get("log_type", "dataset")
+        keywords = request.args.get("keywords", None)
+        success, result = dataset_api_service.list_ingestion_logs(dataset_id, tenant_id, page, page_size, orderby, desc, operation_status, create_date_from, create_date_to, log_type, keywords)
         if success:
             return get_result(data=result)
         else:
@@ -759,6 +747,7 @@ async def update_auto_metadata(tenant_id, dataset_id):
           type: object
     """
     from api.utils.validation_utils import AutoMetadataConfig
+
     cfg, err = await validate_and_parse_json_request(request, AutoMetadataConfig)
     if err is not None:
         return get_error_argument_result(err)
