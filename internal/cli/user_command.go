@@ -1495,13 +1495,15 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	effort := cmd.Params["effort"].(string)
 	verbosity := cmd.Params["verbosity"].(string)
 
-	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
+	url := fmt.Sprintf("/chat/completions")
 
 	payload := map[string]interface{}{
-		"model_name": modelName,
-		"message":    message,
-		"stream":     stream, // use stream API
-		"thinking":   thinking,
+		"provider_name": providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+		"message":       message,
+		"stream":        stream, // use stream API
+		"thinking":      thinking,
 	}
 
 	if thinking {

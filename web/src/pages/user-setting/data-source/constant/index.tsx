@@ -58,6 +58,9 @@ export const DataSourceFeatureVisibilityMap = {
   [DataSourceKey.GITHUB]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.GOOGLE_DRIVE]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.CONFLUENCE]: {
     syncDeletedFiles: true,
   },
@@ -80,6 +83,9 @@ export const DataSourceFeatureVisibilityMap = {
     syncDeletedFiles: true,
   },
   [DataSourceKey.JIRA]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.BITBUCKET]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.AIRTABLE]: {

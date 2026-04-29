@@ -355,10 +355,7 @@ if __name__ == "__main__":
     start_time = datetime.fromtimestamp(0, tz=timezone.utc)
     end_time = datetime.now(timezone.utc)
 
-    for doc_batch in bitbucket.retrieve_all_slim_docs_perm_sync(
-        start=start_time.timestamp(),
-        end=end_time.timestamp(),
-    ):
+    for doc_batch in bitbucket.retrieve_all_slim_docs_perm_sync():
         for doc in doc_batch:
             print(doc)
 
