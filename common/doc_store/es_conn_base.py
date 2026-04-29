@@ -34,6 +34,26 @@ from common import settings
 ATTEMPT_TIME = 2
 
 
+def _escape_sql_string_literal(value: str) -> str:
+    return value.replace("'", "''")
+
+
+def _rewrite_match_predicates(sql: str) -> str:
+    def replace(match: re.Match) -> str:
+        fld = match.group("field")
+        raw_value = match.group("value").replace("''", "'")
+        tokenized_value = rag_tokenizer.fine_grained_tokenize(rag_tokenizer.tokenize(raw_value))
+        tokenized_value = _escape_sql_string_literal(tokenized_value)
+        return " MATCH({}, '{}', 'operator=OR;minimum_should_match=30%') ".format(fld, tokenized_value)
+
+    return re.sub(
+        r" (?P<field>[a-z_]+_l?tks)(?P<operator> like | ?= ?)'(?P<value>(?:''|[^'])+)'",
+        replace,
+        sql,
+        flags=re.IGNORECASE,
+    )
+
+
 class ESConnectionBase(DocStoreConnection):
     def __init__(self, mapping_file_name: str="mapping.json", logger_name: str='ragflow.es_conn'):
         from common.doc_store.es_conn_pool import ES_CONN
@@ -299,20 +319,7 @@ class ESConnectionBase(DocStoreConnection):
         self.logger.debug(f"ESConnection.sql get sql: {sql}")
         sql = re.sub(r"[ `]+", " ", sql)
         sql = sql.replace("%", "")
-        replaces = []
-        for r in re.finditer(r" ([a-z_]+_l?tks)( like | ?= ?)'([^']+)'", sql):
-            fld, v = r.group(1), r.group(3)
-            match = " MATCH({}, '{}', 'operator=OR;minimum_should_match=30%') ".format(
-                fld, rag_tokenizer.fine_grained_tokenize(rag_tokenizer.tokenize(v)))
-            replaces.append(
-                ("{}{}'{}'".format(
-                    r.group(1),
-                    r.group(2),
-                    r.group(3)),
-                 match))
-
-        for p, r in replaces:
-            sql = sql.replace(p, r, 1)
+        sql = _rewrite_match_predicates(sql)
         self.logger.debug(f"ESConnection.sql to es: {sql}")
 
         for i in range(ATTEMPT_TIME):
