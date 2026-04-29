@@ -359,8 +359,18 @@ class SeaFileConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         return self._get_repo_info_via_account(self.repo_id)
 
     @retry(tries=3, delay=1, backoff=2)
-    def _get_directory_entries(self, repo_id: str, path: str = "/") -> list[dict]:
-        """List directory contents using the appropriate endpoint."""
+    def _get_directory_entries(
+        self,
+        repo_id: str,
+        path: str = "/",
+        *,
+        raise_on_failure: bool = False,
+    ) -> list[dict]:
+        """List directory contents using the appropriate endpoint.
+
+        When ``raise_on_failure`` is True (used for slim snapshots), HTTP/API errors
+        propagate so callers do not treat a failed listing as an empty directory.
+        """
         try:
             if self._use_repo_token:
                 # GET /api/v2.1/via-repo-token/dir/?path=/foo
@@ -382,6 +392,8 @@ class SeaFileConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             logger.warning(
                 "Error fetching directory %s in repo %s: %s", path, repo_id, e,
             )
+            if raise_on_failure:
+                raise
             return []
 
     @retry(tries=3, delay=1, backoff=2)
@@ -416,9 +428,12 @@ class SeaFileConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         end: datetime,
         *,
         filter_by_mtime: bool = True,
+        strict_listing: bool = False,
     ) -> list[tuple[str, dict, dict]]:
         files = []
-        entries = self._get_directory_entries(repo_id, path)
+        entries = self._get_directory_entries(
+            repo_id, path, raise_on_failure=strict_listing,
+        )
 
         for entry in entries:
             entry_type = entry.get("type")
@@ -434,6 +449,7 @@ class SeaFileConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                         start,
                         end,
                         filter_by_mtime=filter_by_mtime,
+                        strict_listing=strict_listing,
                     )
                 )
             elif entry_type == "file":
@@ -495,6 +511,7 @@ class SeaFileConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 files = self._list_files_recursive(
                     lib["id"], lib["name"], root, start, end,
                     filter_by_mtime=True,
+                    strict_listing=False,
                 )
                 all_files.extend(files)
             except Exception as e:
@@ -568,6 +585,8 @@ class SeaFileConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         """Full snapshot of file IDs eligible for indexing (no downloads).
 
         Uses ``seafile:{repo_id}:{file_id}`` matching :meth:`_yield_seafile_documents`.
+        Listing uses strict directory reads (errors propagate) so partial snapshots
+        are never treated as authoritative for stale-document cleanup.
         """
         del callback
         logger.info(
@@ -582,22 +601,16 @@ class SeaFileConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             root = self._root_path_for_repo(lib["id"])
             span_start = datetime(1970, 1, 1, tzinfo=timezone.utc)
             span_end = datetime.now(timezone.utc)
-            try:
-                listed = self._list_files_recursive(
-                    lib["id"],
-                    lib["name"],
-                    root,
-                    span_start,
-                    span_end,
-                    filter_by_mtime=False,
-                )
-                all_files.extend(listed)
-            except Exception as e:
-                logger.error(
-                    "SeaFile slim snapshot error in library %s: %s",
-                    lib.get("name", lib.get("id")),
-                    e,
-                )
+            listed = self._list_files_recursive(
+                lib["id"],
+                lib["name"],
+                root,
+                span_start,
+                span_end,
+                filter_by_mtime=False,
+                strict_listing=True,
+            )
+            all_files.extend(listed)
 
         batch: list[SlimDocument] = []
         total = 0
