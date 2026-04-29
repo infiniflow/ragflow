@@ -47,6 +47,10 @@ func NewMinimaxModel(baseURL map[string]string, urlSuffix URLSuffix) *MinimaxMod
 	}
 }
 
+func (z *MinimaxModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
+}
+
 func (z *MinimaxModel) Name() string {
 	return "minimax"
 }
