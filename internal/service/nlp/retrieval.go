@@ -790,6 +790,9 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 
 // PruneDeletedChunks removes chunks whose documents no longer exist
 func (s *RetrievalService) PruneDeletedChunks(result *RetrievalSearchResult) (*RetrievalSearchResult, error) {
+	if s.documentDAO == nil {
+		return nil, fmt.Errorf("documentDAO is not initialized")
+	}
 	// Collect all doc_ids from chunks
 	chunkDocIDs := make([]string, 0, len(result.Field))
 	for _, chunk := range result.Field {
@@ -830,6 +833,7 @@ func (s *RetrievalService) PruneDeletedChunks(result *RetrievalSearchResult) (*R
 
 	// Filter out chunks with deleted documents
 	filteredIDs := make([]string, 0, len(result.IDs))
+	filteredChunks := make([]map[string]interface{}, 0, len(result.IDs))
 	filteredField := make(map[string]map[string]interface{}, len(result.IDs))
 	filteredHighlight := make(map[string]string)
 	removed := 0
@@ -843,6 +847,7 @@ func (s *RetrievalService) PruneDeletedChunks(result *RetrievalSearchResult) (*R
 		if !ok || docID == "" {
 			// Keep chunks without doc_id
 			filteredIDs = append(filteredIDs, chunkID)
+			filteredChunks = append(filteredChunks, chunk)
 			filteredField[chunkID] = chunk
 			if result.Highlight != nil {
 				if hl, ok := result.Highlight[chunkID]; ok {
@@ -856,6 +861,7 @@ func (s *RetrievalService) PruneDeletedChunks(result *RetrievalSearchResult) (*R
 			continue
 		}
 		filteredIDs = append(filteredIDs, chunkID)
+		filteredChunks = append(filteredChunks, chunk)
 		filteredField[chunkID] = chunk
 		if result.Highlight != nil {
 			if hl, ok := result.Highlight[chunkID]; ok {
@@ -869,7 +875,7 @@ func (s *RetrievalService) PruneDeletedChunks(result *RetrievalSearchResult) (*R
 	}
 
 	return &RetrievalSearchResult{
-		Chunks:      result.Chunks,
+		Chunks:      filteredChunks,
 		Total:       int64(len(filteredIDs)),
 		QueryVector: result.QueryVector,
 		Highlight:   filteredHighlight,
