@@ -37,6 +37,14 @@ def get_value(d, k1, k2):
     return d.get(k1, d.get(k2))
 
 
+def get_chunk_content(chunk: dict) -> str:
+    if chunk.get("preserve_original_content"):
+        original = chunk.get("original_content_with_weight")
+        if original:
+            return original
+    return get_value(chunk, "content", "content_with_weight")
+
+
 def chunks_format(reference):
     if not reference or not isinstance(reference, dict):
         return []
@@ -46,7 +54,7 @@ def chunks_format(reference):
     return [
         {
             "id": get_value(chunk, "chunk_id", "id"),
-            "content": get_value(chunk, "content", "content_with_weight"),
+            "content": get_chunk_content(chunk),
             "document_id": get_value(chunk, "doc_id", "document_id"),
             "document_name": get_value(chunk, "docnm_kwd", "document_name"),
             "dataset_id": get_value(chunk, "kb_id", "dataset_id"),
@@ -105,7 +113,7 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
     from api.db.services.document_service import DocumentService
     from api.db.services.doc_metadata_service import DocMetadataService
 
-    knowledges = [get_value(ck, "content", "content_with_weight") for ck in kbinfos["chunks"]]
+    knowledges = [get_chunk_content(ck) for ck in kbinfos["chunks"]]
     kwlg_len = len(knowledges)
     used_token_count = 0
     chunks_num = 0
@@ -142,7 +150,7 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
         for k, v in docs.get(get_value(ck, "doc_id", "document_id"), {}).items():
             cnt += draw_node(k, v)
         cnt += "\n└── Content:\n"
-        cnt += get_value(ck, "content", "content_with_weight")
+        cnt += get_chunk_content(ck)
         knowledges.append(cnt)
 
     return knowledges
