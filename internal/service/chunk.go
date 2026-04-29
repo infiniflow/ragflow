@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/server"
 	"strconv"
 	"strings"
@@ -40,7 +41,6 @@ import (
 type ChunkService struct {
 	docEngine      engine.DocEngine
 	engineType     server.EngineType
-	modelProvider  ModelProvider
 	embeddingCache *utility.EmbeddingLRU
 	kbDAO          *dao.KnowledgebaseDAO
 	userTenantDAO  *dao.UserTenantDAO
@@ -53,7 +53,6 @@ func NewChunkService() *ChunkService {
 	return &ChunkService{
 		docEngine:      engine.Get(),
 		engineType:     cfg.DocEngine.Type,
-		modelProvider:  NewModelProvider(),
 		embeddingCache: utility.NewEmbeddingLRU(1000), // default capacity
 		kbDAO:          dao.NewKnowledgebaseDAO(),
 		userTenantDAO:  dao.NewUserTenantDAO(),
@@ -340,8 +339,8 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	}
 
 	// Get embedding model for the tenant
-	var embeddingModel entity.EmbeddingModel
-	embeddingModel, err = s.modelProvider.GetEmbeddingModel(ctx, tenantIDs[0], embdID)
+	modelProviderSvc := NewModelProviderService()
+	embeddingModel, err := modelProviderSvc.GetEmbeddingModel(tenantIDs[0], embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
@@ -350,7 +349,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		zap.String("embdID", embdID))
 
 	// Get rerank model if RerankID is specified
-	var rerankModel nlp.RerankModel
+	var rerankModel *models.RerankModel
 	var rerankCompositeName string
 	if req.TenantRerankID != nil && *req.TenantRerankID != "" {
 		tenantRerankIDInt, parseErr := strconv.ParseInt(*req.TenantRerankID, 10, 64)
@@ -361,19 +360,16 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		if err != nil {
 			return nil, fmt.Errorf("failed to get rerank model by tenant_rerank_id: %w", err)
 		}
-		rerankModel, err = s.modelProvider.GetRerankModel(ctx, tenantIDs[0], rerankCompositeName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get rerank model by tenant_rerank_id: %w", err)
-		}
 	} else if req.RerankID != nil && *req.RerankID != "" {
-		var err error
 		_, rerankCompositeName, err = dao.LookupTenantLLMByName(dao.NewTenantLLMDAO(), tenantIDs[0], *req.RerankID, entity.ModelTypeRerank)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", err)
 		}
-		rerankModel, err = s.modelProvider.GetRerankModel(ctx, tenantIDs[0], rerankCompositeName)
+	}
+	if rerankCompositeName != "" {
+		rerankModel, err = modelProviderSvc.GetRerankModel(tenantIDs[0], rerankCompositeName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", err)
+			return nil, fmt.Errorf("failed to get rerank model: %w", err)
 		}
 	}
 

@@ -227,7 +227,15 @@ class SyncBase:
         prefix = self._get_source_prefix()
         prefix = f"{prefix} " if prefix else ""
         next_update_info = self._format_window_boundary(next_update)
-        if file_list is not None:
+        if file_list == []:
+            logging.warning(
+                "%s deleted-file sync skipped because the snapshot was empty "
+                "(connector_id=%s, kb_id=%s)",
+                self.SOURCE_NAME,
+                task["connector_id"],
+                task["kb_id"],
+            )
+        elif file_list is not None:
             removed_docs, _ = ConnectorService.cleanup_stale_documents_for_task(
                 task["id"],
                 task["connector_id"],
@@ -270,6 +278,7 @@ class _BlobLikeBase(SyncBase):
         self.connector.set_allow_images(self.conf.get("allow_images", False))
         self.connector.load_credentials(self.conf["credentials"])
 
+        file_list = None
         document_batch_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
@@ -278,6 +287,15 @@ class _BlobLikeBase(SyncBase):
                 datetime.now(timezone.utc).timestamp(),
             )
         )
+
+        if (
+            task["reindex"] != "1"
+            and task["poll_range_start"]
+            and self.conf.get("sync_deleted_files")
+        ):
+            file_list = []
+            for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                file_list.extend(slim_batch)
 
         _begin_info = (
             "totally"
@@ -293,6 +311,8 @@ class _BlobLikeBase(SyncBase):
                 _begin_info,
             )
         )
+        if file_list is not None:
+            return document_batch_generator, file_list
         return document_batch_generator
 
 
@@ -375,14 +395,17 @@ class Confluence(SyncBase):
                                                          credential_json=self.conf["credentials"])
         self.connector.set_credentials_provider(credentials_provider)
 
+        file_list = None
         # Determine the time range for synchronization based on reindex or poll_range_start
         if task["reindex"] == "1" or not task["poll_range_start"]:
             start_time = 0.0
-            _begin_info = "totally"
         else:
             start_time = task["poll_range_start"].timestamp()
-            _begin_info = f"from {task['poll_range_start']}"
-
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
+            
         end_time = datetime.now(timezone.utc).timestamp()
 
         raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
@@ -427,7 +450,7 @@ class Confluence(SyncBase):
                 yield batch
 
         self.log_connection("Confluence", self.conf["wiki_base"], task)
-        return wrapper()
+        return wrapper(), file_list
 
 
 class Notion(SyncBase):
@@ -436,6 +459,7 @@ class Notion(SyncBase):
     async def _generate(self, task: dict):
         self.connector = NotionConnector(root_page_id=self.conf["root_page_id"])
         self.connector.load_credentials(self.conf["credentials"])
+        file_list = None
         document_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
@@ -443,9 +467,20 @@ class Notion(SyncBase):
                                             datetime.now(timezone.utc).timestamp())
         )
 
+        if (
+            task["reindex"] != "1"
+            and task["poll_range_start"]
+            and self.conf.get("sync_deleted_files")
+        ):
+            file_list = []
+            for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                file_list.extend(slim_batch)
+
         _begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(
             task["poll_range_start"])
         self.log_connection("Notion", f"root({self.conf['root_page_id']})", task)
+        if file_list is not None:
+            return document_generator, file_list
         return document_generator
 
 
@@ -680,12 +715,17 @@ class Jira(SyncBase):
 
         self.connector.load_credentials(credentials)
         self.connector.validate_connector_settings()
+        file_list = None
 
         if task["reindex"] == "1" or not task["poll_range_start"]:
             start_time = 0.0
             _begin_info = "totally"
         else:
             start_time = task["poll_range_start"].timestamp()
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
             _begin_info = f"from {task['poll_range_start']}"
 
         end_time = datetime.now(timezone.utc).timestamp()
@@ -744,6 +784,8 @@ class Jira(SyncBase):
                 f"overlap_buffer_s={getattr(self.connector, 'time_buffer_seconds', connector_kwargs.get('time_buffer_seconds'))}"
             ),
         )
+        if file_list is not None:
+            return document_batches(), file_list
         return document_batches()
 
     @staticmethod
@@ -858,17 +900,24 @@ class BOX(SyncBase):
 
         self.connector.load_credentials(auth)
         poll_start = task["poll_range_start"]
+        file_list = None
 
         if task["reindex"] == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
                 datetime.now(timezone.utc).timestamp(),
             )
             _begin_info = f"from {poll_start}"
         self.log_connection("Box", f"folder_id({self.conf['folder_id']})", task)
+        if file_list is not None:
+            return document_generator, file_list
         return document_generator
 
 
@@ -894,11 +943,16 @@ class Airtable(SyncBase):
         )
 
         poll_start = task.get("poll_range_start")
+        file_list = None
 
         if task.get("reindex") == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
                 datetime.now(timezone.utc).timestamp(),
@@ -911,6 +965,8 @@ class Airtable(SyncBase):
             task,
         )
 
+        if file_list is not None:
+            return document_generator, file_list
         return document_generator
 
 class Asana(SyncBase):
@@ -980,10 +1036,8 @@ class Github(SyncBase):
         file_list = None
         if task.get("reindex") == "1" or not task.get("poll_range_start"):
             start_time = datetime.fromtimestamp(0, tz=timezone.utc)
-            _begin_info = "totally"
         else:
             start_time = task.get("poll_range_start")
-            _begin_info = f"from {start_time}"
             if self.conf.get("sync_deleted_files"):
                 file_list = []
                 for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():

@@ -172,7 +172,7 @@ func (z *GiteeModel) Chat(modelName, message *string, apiConfig *APIConfig, chat
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelType, &content)
+	thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelClass, &content)
 
 	chatResponse := &ChatResponse{
 		Answer:        answer,
@@ -362,9 +362,14 @@ func (z *GiteeModel) ChatStreamlyWithSender(modelName, message *string, apiConfi
 	return scanner.Err()
 }
 
-// EncodeToEmbedding encodes a list of texts into embeddings
-func (z *GiteeModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+// Encode encodes a list of texts into embeddings
+func (z *GiteeModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+// Rerank calculates similarity scores between query and texts
+func (z *GiteeModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }
 
 func (z *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {

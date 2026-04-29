@@ -1904,8 +1904,6 @@ class ConfluenceConnector(
 
     def retrieve_all_slim_docs_perm_sync(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
         callback: IndexingHeartbeatInterface | None = None,
     ) -> GenerateSlimDocumentOutput:
         """
@@ -1913,16 +1911,12 @@ class ConfluenceConnector(
         Does not fetch actual text. Used primarily for incremental permission sync.
         """
         return self._retrieve_all_slim_docs(
-            start=start,
-            end=end,
             callback=callback,
             include_permissions=True,
         )
 
     def _retrieve_all_slim_docs(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
         callback: IndexingHeartbeatInterface | None = None,
         include_permissions: bool = True,
     ) -> GenerateSlimDocumentOutput:

@@ -7,11 +7,11 @@
     "chat": "chat/completions",
     "async_chat": "async/chat/completions",
     "async_result": "async-result",
-    "embedding": "embedding",
+    "embedding": "embeddings",
     "rerank": "rerank",
     "files": "files"
   },
-  "series": "glm",
+  "class": "glm",
   "models": [
     {
       "name": "glm-5",

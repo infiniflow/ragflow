@@ -6,7 +6,7 @@
   "url_suffix": {
     "chat": "chat/completions"
   },
-  "series": "gpt",
+  "class": "gpt",
   "models": [
     {
       "name": "gpt-5.2-pro",

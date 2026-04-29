@@ -900,3 +900,153 @@ def rename_tag(dataset_id: str, tenant_id: str, from_tag: str, to_tag: str):
 
     return True, {"from": from_tag, "to": to_tag}
 
+
+async def search(dataset_id: str, tenant_id: str, req: dict):
+    """
+    Search (retrieval test) within a dataset.
+
+    :param dataset_id: dataset ID
+    :param tenant_id: tenant ID
+    :param req: search request
+    :return: (success, result) or (success, error_message)
+    """
+    from api.db.joint_services.tenant_model_service import (
+        get_model_config_by_id,
+        get_model_config_by_type_and_name,
+        get_tenant_default_model_by_type,
+    )
+    from api.db.services.doc_metadata_service import DocMetadataService
+    from api.db.services.llm_service import LLMBundle
+    from api.db.services.search_service import SearchService
+    from api.db.services.user_service import UserTenantService
+    from common.constants import LLMType
+    from common.metadata_utils import apply_meta_data_filter
+    from rag.app.tag import label_question
+    from rag.prompts.generator import cross_languages, keyword_extraction
+
+    logging.debug(
+        "search(dataset=%s, tenant=%s, question_len=%s)",
+        dataset_id,
+        tenant_id,
+        len(req.get("question", "")),
+    )
+
+    page = int(req.get("page", 1))
+    size = int(req.get("size", 30))
+    question = req.get("question", "")
+    doc_ids = req.get("doc_ids", [])
+    use_kg = req.get("use_kg", False)
+    top = max(1, min(int(req.get("top_k", 1024)), 2048))
+    langs = req.get("cross_languages", [])
+
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        logging.warning("search access denied: dataset=%s tenant=%s", dataset_id, tenant_id)
+        return False, "Only owner of dataset authorized for this operation."
+
+    e, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not e:
+        logging.warning("search dataset not found: dataset=%s", dataset_id)
+        return False, "Dataset not found!"
+
+    if doc_ids is not None and not isinstance(doc_ids, list):
+        return False, "`doc_ids` should be a list"
+    local_doc_ids = list(doc_ids) if doc_ids else []
+
+    meta_data_filter = {}
+    chat_mdl = None
+    if req.get("search_id", ""):
+        search_detail = SearchService.get_detail(req.get("search_id", ""))
+        if not search_detail:
+            logging.warning("search config not found: search_id=%s", req.get("search_id", ""))
+            return False, "Invalid search_id"
+        search_config = search_detail.get("search_config", {})
+        meta_data_filter = search_config.get("meta_data_filter", {})
+        if meta_data_filter.get("method") in ["auto", "semi_auto"]:
+            chat_id = search_config.get("chat_id", "")
+            if chat_id:
+                chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, search_config["chat_id"])
+            else:
+                chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+            chat_mdl = LLMBundle(tenant_id, chat_model_config)
+    else:
+        meta_data_filter = req.get("meta_data_filter") or {}
+        if meta_data_filter.get("method") in ["auto", "semi_auto"]:
+            chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+            chat_mdl = LLMBundle(tenant_id, chat_model_config)
+
+    if meta_data_filter:
+        metas = DocMetadataService.get_flatted_meta_by_kbs([dataset_id])
+        local_doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, local_doc_ids)
+
+    tenant_ids = []
+    tenants = UserTenantService.query(user_id=tenant_id)
+    for tenant in tenants:
+        if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=dataset_id):
+            tenant_ids.append(tenant.tenant_id)
+            break
+    else:
+        return False, "Only owner of dataset authorized for this operation."
+
+    _question = question
+    if langs:
+        _question = await cross_languages(kb.tenant_id, None, _question, langs)
+    if kb.tenant_embd_id:
+        embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+    elif kb.embd_id:
+        embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+    else:
+        embd_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.EMBEDDING)
+    embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
+
+    rerank_mdl = None
+    if req.get("tenant_rerank_id"):
+        rerank_model_config = get_model_config_by_id(req["tenant_rerank_id"])
+        rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
+    elif req.get("rerank_id"):
+        rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK.value, req["rerank_id"])
+        rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
+
+    if req.get("keyword", False):
+        default_chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
+        chat_mdl = LLMBundle(kb.tenant_id, default_chat_model_config)
+        _question += await keyword_extraction(chat_mdl, _question)
+
+    labels = label_question(_question, [kb])
+    ranks = await settings.retriever.retrieval(
+                    _question,
+                    embd_mdl,
+                    tenant_ids,
+                    [dataset_id],
+                    page,
+                    size,
+                    float(req.get("similarity_threshold", 0.0)),
+                    float(req.get("vector_similarity_weight", 0.3)),
+                    doc_ids=local_doc_ids,
+                    top=top,
+                    rerank_mdl=rerank_mdl,
+                    rank_feature=labels
+                )
+
+    if use_kg:
+        try:
+            default_chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+            ck = await settings.kg_retriever.retrieval(_question,
+                                                   tenant_ids,
+                                                   [dataset_id],
+                                                   embd_mdl,
+                                                   LLMBundle(kb.tenant_id, default_chat_model_config))
+            if ck["content_with_weight"]:
+                ranks["chunks"].insert(0, ck)
+        except Exception:
+            logging.warning("search KG retrieval failed: dataset=%s tenant=%s", dataset_id, tenant_id, exc_info=True)
+    total = ranks.get("total", 0)
+    ranks["chunks"] = settings.retriever.retrieval_by_children(
+        ranks["chunks"], tenant_ids
+    )
+    ranks["total"] = total
+
+    for c in ranks["chunks"]:
+        c.pop("vector", None)
+    ranks["labels"] = labels
+
+    return True, ranks

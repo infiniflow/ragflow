@@ -23,17 +23,11 @@ import (
 	"strings"
 
 	"ragflow/internal/common"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/logger"
 
 	"go.uber.org/zap"
 )
-
-// RerankModel defines the interface for reranker models
-// This matches model.RerankModel interface
-type RerankModel interface {
-	// Similarity calculates similarity between query and texts
-	Similarity(query string, texts []string) ([]float64, error)
-}
 
 // SearchResult represents the result of a search operation
 type SearchResult struct {
@@ -60,7 +54,7 @@ type SearchResult struct {
 //   - tsim: token similarity scores
 //   - vsim: vector similarity scores
 func Rerank(
-	rerankModel RerankModel,
+	rerankModel *models.RerankModel,
 	chunks []map[string]interface{},
 	total int,
 	keywords []string,
@@ -94,7 +88,7 @@ func Rerank(
 
 // RerankByModel performs reranking using a reranker model
 func RerankByModel(
-	rerankModel RerankModel,
+	rerankModel *models.RerankModel,
 	chunks []map[string]interface{},
 	query string,
 	tkWeight, vtWeight float64,
@@ -142,9 +136,9 @@ func RerankByModel(
 	tsim = TokenSimilarity(keywords, insTw, qb)
 
 	// Get similarity scores from reranker model
-	modelSim, err := rerankModel.Similarity(query, docs)
+	modelSim, err := rerankModel.ModelDriver.Rerank(rerankModel.ModelName, query, docs, rerankModel.APIConfig)
 	if err != nil {
-		logger.Error("RerankByModel: rerankModel.Similarity failed; falling back to token-only similarity", err)
+		logger.Error("RerankByModel: rerankModel.Rerank failed; falling back to token-only similarity", err)
 		// If model fails, fall back to token similarity only
 		modelSim = make([]float64, len(tsim))
 	}

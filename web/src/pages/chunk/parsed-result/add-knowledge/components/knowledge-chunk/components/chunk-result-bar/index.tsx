@@ -42,7 +42,7 @@ export default function ChunkResultBar({
   };
   const filterContent = (
     <div className="w-[200px]">
-      <Radio.Group onChange={handleFilterChange} value={available}>
+      <Radio.Group onChange={handleFilterChange} value={available ?? -1}>
         <div className="flex flex-col gap-2 p-4">
           <Radio value={-1}>{t('all')}</Radio>
           <Radio value={1}>{t('enabled')}</Radio>

@@ -17,26 +17,29 @@
 package service
 
 import (
-	"context"
 	"fmt"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 )
 
 // ModelBundle provides a unified interface for various model operations
 // Similar to Python's LLMBundle but with a more generic name
 type ModelBundle struct {
-	tenantID  string
-	modelType entity.ModelType
-	modelName string
-	model     interface{} // underlying model instance
+	tenantID        string
+	modelType       entity.ModelType
+	modelName       string
+	model           interface{} // underlying model instance
+	apiConfig       *modelModule.APIConfig
+	embeddingConfig *modelModule.EmbeddingConfig
 }
 
 // NewModelBundle creates a new ModelBundle for the given tenant and model type
 // If modelName is empty, uses the default model for the tenant and type
 func NewModelBundle(tenantID string, modelType entity.ModelType, modelName ...string) (*ModelBundle, error) {
 	bundle := &ModelBundle{
-		tenantID:  tenantID,
-		modelType: modelType,
+		tenantID:        tenantID,
+		modelType:       modelType,
+		embeddingConfig: &modelModule.EmbeddingConfig{},
 	}
 
 	// Use provided model name if available
@@ -45,26 +48,29 @@ func NewModelBundle(tenantID string, modelType entity.ModelType, modelName ...st
 	}
 
 	// Get model instance based on type
-	provider := NewModelProvider()
+	modelProviderSvc := NewModelProviderService()
 	switch modelType {
 	case entity.ModelTypeEmbedding:
-		embeddingModel, err := provider.GetEmbeddingModel(context.Background(), tenantID, bundle.modelName)
+		embd, err := modelProviderSvc.GetEmbeddingModel(tenantID, bundle.modelName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get embedding model: %w", err)
 		}
-		bundle.model = embeddingModel
+		bundle.model = embd.ModelDriver
+		bundle.apiConfig = embd.APIConfig
 	case entity.ModelTypeChat:
-		chatModel, err := provider.GetChatModel(context.Background(), tenantID, bundle.modelName)
+		chatMdl, err := modelProviderSvc.GetChatModel(tenantID, bundle.modelName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get chat model: %w", err)
 		}
-		bundle.model = chatModel
+		bundle.model = chatMdl.ModelDriver
+		bundle.apiConfig = chatMdl.APIConfig
 	case entity.ModelTypeRerank:
-		rerankModel, err := provider.GetRerankModel(context.Background(), tenantID, bundle.modelName)
+		rerankMdl, err := modelProviderSvc.GetRerankModel(tenantID, bundle.modelName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get rerank model: %w", err)
 		}
-		bundle.model = rerankModel
+		bundle.model = rerankMdl.ModelDriver
+		bundle.apiConfig = rerankMdl.APIConfig
 	default:
 		return nil, fmt.Errorf("unsupported model type: %s", modelType)
 	}
@@ -84,7 +90,7 @@ func (b *ModelBundle) Encode(texts []string) ([][]float64, int64, error) {
 		return nil, 0, fmt.Errorf("model is not an embedding model")
 	}
 
-	embeddings, err := embeddingModel.Encode(texts)
+	embeddings, err := embeddingModel.Encode(&b.modelName, texts, b.apiConfig, b.embeddingConfig)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -111,15 +117,18 @@ func (b *ModelBundle) EncodeQuery(query string) ([]float64, int64, error) {
 		return nil, 0, fmt.Errorf("model is not an embedding model")
 	}
 
-	embedding, err := embeddingModel.EncodeQuery(query)
+	embeddings, err := embeddingModel.Encode(&b.modelName, []string{query}, b.apiConfig, b.embeddingConfig)
 	if err != nil {
 		return nil, 0, err
+	}
+	if len(embeddings) == 0 {
+		return nil, 0, fmt.Errorf("no embedding returned")
 	}
 
 	// TODO: Calculate actual token count
 	tokenCount := int64(len(query) / 4)
 
-	return embedding, tokenCount, nil
+	return embeddings[0], tokenCount, nil
 }
 
 // Chat sends a chat message and returns response
@@ -144,10 +153,10 @@ func (b *ModelBundle) Chat(system string, history []map[string]string, genConf m
 	return response, tokenCount, nil
 }
 
-// Similarity calculates similarity between query and texts
-func (b *ModelBundle) Similarity(query string, texts []string) ([]float64, int64, error) {
+// Rerank calculates similarity between query and texts
+func (b *ModelBundle) Rerank(query string, texts []string) ([]float64, int64, error) {
 	if b.modelType != entity.ModelTypeRerank {
-		return nil, 0, fmt.Errorf("model type %s does not support similarity", b.modelType)
+		return nil, 0, fmt.Errorf("model type %s does not support rerank", b.modelType)
 	}
 
 	rerankModel, ok := b.model.(entity.RerankModel)
@@ -155,7 +164,7 @@ func (b *ModelBundle) Similarity(query string, texts []string) ([]float64, int64
 		return nil, 0, fmt.Errorf("model is not a rerank model")
 	}
 
-	similarities, err := rerankModel.Similarity(query, texts)
+	similarities, err := rerankModel.Rerank(query, texts, b.apiConfig)
 	if err != nil {
 		return nil, 0, err
 	}
