@@ -14,7 +14,7 @@ import { Form } from '@/components/ui/form';
 import { FormLayout } from '@/constants/form';
 import { DocumentParserType, ParseType } from '@/constants/knowledge';
 import { PermissionRole } from '@/constants/permission';
-import { IConnector, IKnowledge } from '@/interfaces/database/knowledge';
+import { IConnector, IDataset } from '@/interfaces/database/dataset';
 import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { IDataSourceBase } from '@/pages/user-setting/data-source/interface';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -43,8 +43,8 @@ const enum DocumentType {
 }
 export const DataSetContext = createContext<{
   loading: boolean;
-  knowledgeDetails: IKnowledge;
-}>({ loading: false, knowledgeDetails: {} as IKnowledge });
+  knowledgeDetails: IDataset;
+}>({ loading: false, knowledgeDetails: {} as IDataset });
 
 const initialEntityTypes = [
   'organization',
@@ -127,7 +127,6 @@ export default function DatasetSettings() {
     useState<IGenerateLogButtonProps>();
 
   useEffect(() => {
-    console.log('🚀 ~ DatasetSettings ~ knowledgeDetails:', knowledgeDetails);
     if (knowledgeDetails) {
       // const data: IDataPipelineNodeProps = {
       //   id: knowledgeDetails.pipeline_id,
@@ -137,15 +136,16 @@ export default function DatasetSettings() {
       // };
       // setPipelineData(data);
 
-      const source_data: IDataSourceNodeProps[] =
-        knowledgeDetails?.connectors?.map((connector) => {
-          return {
-            ...connector,
-            icon:
-              dataSourceInfo[connector.source as keyof typeof dataSourceInfo]
-                ?.icon || '',
-          };
-        });
+      const source_data: IDataSourceNodeProps[] = (
+        knowledgeDetails?.connectors ?? []
+      ).map((connector: IConnector) => {
+        return {
+          ...connector,
+          icon:
+            dataSourceInfo[connector.source as keyof typeof dataSourceInfo]
+              ?.icon || '',
+        };
+      });
 
       setSourceData(source_data);
 

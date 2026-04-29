@@ -246,6 +246,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.EnableOrDisableModel(cmd, "enable")
 	case "disable_model":
 		return c.EnableOrDisableModel(cmd, "disable")
+	case "add_custom_model":
+		return c.AddCustomModel(cmd)
 	case "chat_to_model":
 		return c.ChatToModel(cmd)
 	case "think_chat_to_model":

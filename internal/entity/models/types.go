@@ -8,6 +8,8 @@ type Message struct {
 
 // EmbeddingModel interface for embedding models
 type ModelDriver interface {
+	NewInstance(baseURL map[string]string) ModelDriver
+
 	Name() string
 
 	// Chat sends a message and returns response
@@ -20,7 +22,7 @@ type ModelDriver interface {
 	Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error)
 	// Rerank calculates similarity scores between query and texts
 	Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error)
-	// List suppported models
+	// ListModels List supported models
 	ListModels(apiConfig *APIConfig) ([]string, error)
 
 	Balance(apiConfig *APIConfig) (map[string]interface{}, error)

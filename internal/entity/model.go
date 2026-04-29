@@ -319,22 +319,21 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 		return nil, fmt.Errorf("provider '%s' not found", providerName)
 	}
 
-	models := []map[string]interface{}{}
+	modelList := []map[string]interface{}{}
 	for _, model := range provider.Models {
 		modelData := map[string]interface{}{
 			"name":        model.Name,
 			"max_tokens":  model.MaxTokens,
 			"model_types": model.ModelTypes,
-			"features":    GetFeatures(model),
 		}
-		models = append(models, modelData)
+		modelList = append(modelList, modelData)
 	}
 
-	if len(models) == 0 {
+	if len(modelList) == 0 {
 		return nil, fmt.Errorf("no models found")
 	}
 
-	return models, nil
+	return modelList, nil
 }
 
 func (pm *ProviderManager) GetModelByName(providerName, modelName string) (*Model, error) {

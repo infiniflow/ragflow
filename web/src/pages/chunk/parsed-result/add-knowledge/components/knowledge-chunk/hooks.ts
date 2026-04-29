@@ -5,7 +5,7 @@ import {
   useDeleteChunk,
   useSelectChunkList,
 } from '@/hooks/use-chunk-request';
-import { IChunk } from '@/interfaces/database/knowledge';
+import { IChunk } from '@/interfaces/database/dataset';
 import { buildChunkHighlights } from '@/utils/document-util';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';

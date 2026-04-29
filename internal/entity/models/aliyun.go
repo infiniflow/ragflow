@@ -52,6 +52,10 @@ func NewAliyunModel(baseURL map[string]string, urlSuffix URLSuffix) *AliyunModel
 	}
 }
 
+func (z *AliyunModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
+}
+
 func (z *AliyunModel) Name() string {
 	return "siliconflow"
 }

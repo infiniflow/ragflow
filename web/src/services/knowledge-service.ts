@@ -1,5 +1,5 @@
 import { Authorization } from '@/constants/authorization';
-import { IRenameTag } from '@/interfaces/database/knowledge';
+import { IRenameTag } from '@/interfaces/database/dataset';
 import {
   IFetchDocumentListRequestBody,
   IFetchKnowledgeListRequestParams,

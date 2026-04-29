@@ -63,6 +63,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.GOOGLE_DRIVE]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.GMAIL]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.CONFLUENCE]: {
     syncDeletedFiles: true,
   },
@@ -88,6 +91,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.JIRA]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.BITBUCKET]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.AIRTABLE]: {
