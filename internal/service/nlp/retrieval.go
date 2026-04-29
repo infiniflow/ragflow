@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity/models"
@@ -34,12 +35,13 @@ import (
 
 // RetrievalService provides retrieval search functionality
 type RetrievalService struct {
-	docEngine engine.DocEngine
+	docEngine   engine.DocEngine
+	documentDAO *dao.DocumentDAO
 }
 
 // NewRetrievalService creates a new RetrievalService with the given doc engine
-func NewRetrievalService(docEngine engine.DocEngine) *RetrievalService {
-	return &RetrievalService{docEngine: docEngine}
+func NewRetrievalService(docEngine engine.DocEngine, documentDAO *dao.DocumentDAO) *RetrievalService {
+	return &RetrievalService{docEngine: docEngine, documentDAO: documentDAO}
 }
 
 // RetrievalRequest request for retrieval search
@@ -146,7 +148,15 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		return nil, fmt.Errorf("Search failed: %w", err)
 	}
 
-	// Perform reranking
+	// Prune deleted chunks
+	searchResult, err = s.PruneDeletedChunks(searchResult)
+	if err != nil {
+		return nil, fmt.Errorf("PruneDeletedChunks failed: %w", err)
+	}
+	if searchResult.Total == 0 {
+		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}}, nil
+	}
+
 	vtWeight := *req.VectorSimilarityWeight
 	tkWeight := 1.0 - vtWeight
 	qb := GetQueryBuilder()
@@ -776,6 +786,105 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 
 	logger.Info("RetrievalByChildren finished", zap.Int("momChunks", len(momChunks)), zap.Int("resultChunks", len(remainingChunks)))
 	return remainingChunks
+}
+
+// PruneDeletedChunks removes chunks whose documents no longer exist
+func (s *RetrievalService) PruneDeletedChunks(result *RetrievalSearchResult) (*RetrievalSearchResult, error) {
+	if s.documentDAO == nil {
+		return nil, fmt.Errorf("documentDAO is not initialized")
+	}
+	// Collect all doc_ids from chunks
+	chunkDocIDs := make([]string, 0, len(result.Field))
+	for _, chunk := range result.Field {
+		if docID, ok := chunk["doc_id"].(string); ok && docID != "" {
+			chunkDocIDs = append(chunkDocIDs, docID)
+		}
+	}
+
+	if len(chunkDocIDs) == 0 {
+		return result, nil
+	}
+
+	// Deduplicate chunkDocIDs for correct comparison with existingDocIDs
+	uniqueDocIDs := make([]string, 0, len(chunkDocIDs))
+	seen := make(map[string]struct{}, len(chunkDocIDs))
+	for _, id := range chunkDocIDs {
+		if _, exists := seen[id]; !exists {
+			seen[id] = struct{}{}
+			uniqueDocIDs = append(uniqueDocIDs, id)
+		}
+	}
+
+	// Get existing document IDs
+	docs, err := s.documentDAO.GetByIDs(uniqueDocIDs)
+	if err != nil {
+		return nil, fmt.Errorf("GetByIDs failed: %w", err)
+	}
+
+	existingDocIDs := make(map[string]struct{}, len(docs))
+	for _, doc := range docs {
+		existingDocIDs[doc.ID] = struct{}{}
+	}
+
+	// Early return if all docs exist
+	if len(existingDocIDs) == len(uniqueDocIDs) {
+		return result, nil
+	}
+
+	// Filter out chunks with deleted documents
+	filteredIDs := make([]string, 0, len(result.IDs))
+	filteredChunks := make([]map[string]interface{}, 0, len(result.IDs))
+	filteredField := make(map[string]map[string]interface{}, len(result.IDs))
+	filteredHighlight := make(map[string]string)
+	removed := 0
+
+	for _, chunkID := range result.IDs {
+		chunk, exists := result.Field[chunkID]
+		if !exists {
+			continue
+		}
+		docID, ok := chunk["doc_id"].(string)
+		if !ok || docID == "" {
+			// Keep chunks without doc_id
+			filteredIDs = append(filteredIDs, chunkID)
+			filteredChunks = append(filteredChunks, chunk)
+			filteredField[chunkID] = chunk
+			if result.Highlight != nil {
+				if hl, ok := result.Highlight[chunkID]; ok {
+					filteredHighlight[chunkID] = hl
+				}
+			}
+			continue
+		}
+		if _, docExists := existingDocIDs[docID]; !docExists {
+			removed++
+			continue
+		}
+		filteredIDs = append(filteredIDs, chunkID)
+		filteredChunks = append(filteredChunks, chunk)
+		filteredField[chunkID] = chunk
+		if result.Highlight != nil {
+			if hl, ok := result.Highlight[chunkID]; ok {
+				filteredHighlight[chunkID] = hl
+			}
+		}
+	}
+
+	if removed > 0 {
+		logger.Warn("Pruned stale chunks whose documents no longer exist", zap.Int("removed", removed))
+	}
+
+	return &RetrievalSearchResult{
+		Chunks:      filteredChunks,
+		Total:       int64(len(filteredIDs)),
+		QueryVector: result.QueryVector,
+		Highlight:   filteredHighlight,
+		Field:       filteredField,
+		IDs:         filteredIDs,
+		Keywords:    result.Keywords,
+		Aggregation: result.Aggregation,
+		Options:     result.Options,
+	}, nil
 }
 
 // buildIndexNames creates index names for the given tenant IDs

@@ -563,6 +563,7 @@ def delete_knowledge_graph(tenant_id, dataset_id):
 @add_tenant_id_to_kwargs
 async def run_index(tenant_id, dataset_id):
     index_type = request.args.get("type", "")
+    index_type = index_type.lower()
     try:
         success, result = dataset_api_service.run_index(dataset_id, tenant_id, index_type)
         if success:
@@ -581,6 +582,7 @@ async def run_index(tenant_id, dataset_id):
 @add_tenant_id_to_kwargs
 def trace_index(tenant_id, dataset_id):
     index_type = request.args.get("type", "")
+    index_type = index_type.lower()
     try:
         success, result = dataset_api_service.trace_index(dataset_id, tenant_id, index_type)
         if success:
@@ -598,6 +600,7 @@ def trace_index(tenant_id, dataset_id):
 @login_required
 @add_tenant_id_to_kwargs
 def delete_index(tenant_id, dataset_id, index_type):
+    index_type = index_type.lower()
     if index_type not in dataset_api_service._VALID_INDEX_TYPES:
         return get_error_argument_result(f"Invalid index type '{index_type}'")
     try:

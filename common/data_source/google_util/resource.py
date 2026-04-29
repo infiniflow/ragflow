@@ -85,9 +85,19 @@ def _get_google_service(
     if isinstance(creds, ServiceAccountCredentials):
         # NOTE: https://developers.google.com/identity/protocols/oauth2/service-account#error-codes
         creds = creds.with_subject(user_email)
-        service = build(service_name, service_version, credentials=creds)
+        service = build(
+            service_name,
+            service_version,
+            credentials=creds,
+            cache_discovery=False,
+        )
     elif isinstance(creds, OAuthCredentials):
-        service = build(service_name, service_version, credentials=creds)
+        service = build(
+            service_name,
+            service_version,
+            credentials=creds,
+            cache_discovery=False,
+        )
 
     return service
 
