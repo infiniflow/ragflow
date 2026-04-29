@@ -1334,12 +1334,17 @@ class Bitbucket(SyncBase):
             "bitbucket_api_token": self.conf["credentials"].get("bitbucket_api_token"),
             }
         )
+        file_list = None
 
         if task["reindex"] == "1" or not task["poll_range_start"]:
             start_time = datetime.fromtimestamp(0, tz=timezone.utc)
             _begin_info = "totally"
         else:
             start_time = task.get("poll_range_start")
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
             _begin_info = f"from {start_time}"
         
         end_time = datetime.now(timezone.utc)
@@ -1371,7 +1376,8 @@ class Bitbucket(SyncBase):
                 yield batch
 
         self.log_connection("Bitbucket", f"workspace({self.conf.get('workspace')})", task)
-
+        if file_list is not None:
+            return wrapper(), file_list
         return wrapper()
 
 
