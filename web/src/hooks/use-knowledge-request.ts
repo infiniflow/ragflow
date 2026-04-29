@@ -2,14 +2,14 @@ import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-f
 import message from '@/components/ui/message';
 import { ParseType } from '@/constants/knowledge';
 import { ResponsePostType } from '@/interfaces/database/base';
-import { IDataset, IDatasetListResult } from '@/interfaces/database/dataset';
 import {
-  IKnowledge,
+  IDataset,
+  IDatasetListResult,
   IKnowledgeGraph,
   INextTestingResult,
   IRenameTag,
   ITestingResult,
-} from '@/interfaces/database/knowledge';
+} from '@/interfaces/database/dataset';
 import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
@@ -328,9 +328,9 @@ export const useFetchKnowledgeBaseConfiguration = (props?: {
   const [searchParams] = useSearchParams();
   const knowledgeBaseId = searchParams.get('id') || id;
 
-  const { data, isFetching: loading } = useQuery<IKnowledge>({
+  const { data, isFetching: loading } = useQuery<IDataset>({
     queryKey: [KnowledgeApiAction.FetchKnowledgeDetail, knowledgeBaseId],
-    initialData: {} as IKnowledge,
+    initialData: {} as IDataset,
     gcTime: 0,
     enabled: !!knowledgeBaseId && isEdit,
     queryFn: async () => {
