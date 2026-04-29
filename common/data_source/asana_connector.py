@@ -1,13 +1,13 @@
 from collections.abc import Iterator
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 from typing import Any, Dict
 import asana
 import requests
 from common.data_source.config import CONTINUE_ON_CONNECTOR_FAILURE, INDEX_BATCH_SIZE, DocumentSource
-from common.data_source.interfaces import LoadConnector, PollConnector
-from common.data_source.models import Document, GenerateDocumentsOutput, SecondsSinceUnixEpoch
+from common.data_source.interfaces import LoadConnector, PollConnector, SlimConnectorWithPermSync
+from common.data_source.models import Document, GenerateDocumentsOutput, GenerateSlimDocumentOutput, SecondsSinceUnixEpoch, SlimDocument
 from common.data_source.utils import extract_size_bytes, get_file_ext
 
 
@@ -242,7 +242,7 @@ class AsanaAPI:
                     full = self.attachments_api.get_attachment(
                         attachment_gid=gid,
                         opts={
-                            "opt_fields": "name,download_url,size,created_at"
+                            "opt_fields": "gid,name,download_url,size,created_at"
                         }
                     )
 
@@ -330,7 +330,7 @@ class AsanaAPI:
         return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
 
-class AsanaConnector(LoadConnector, PollConnector):
+class AsanaConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def __init__(
         self,
         asana_workspace_id: str,
@@ -368,10 +368,21 @@ class AsanaConnector(LoadConnector, PollConnector):
         self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch | None
     ) -> GenerateDocumentsOutput:
         start_time = datetime.fromtimestamp(start).isoformat()
+        end_time = datetime.fromtimestamp(end, tz=timezone.utc) if end is not None else None
         logging.info(f"Starting Asana poll from {start_time}")
         docs_batch: list[Document] = []
         tasks = self.asana_client.get_tasks(self.project_ids_to_index, start_time)
         for task in tasks:
+            if end_time:
+                task_last_modified = task.last_modified
+                if task_last_modified.tzinfo is None:
+                    task_last_modified = task_last_modified.replace(tzinfo=timezone.utc)
+                else:
+                    task_last_modified = task_last_modified.astimezone(timezone.utc)
+
+                if task_last_modified >= end_time:
+                    continue
+
             docs = self._task_to_documents(task)
             docs_batch.extend(docs)
 
@@ -389,6 +400,43 @@ class AsanaConnector(LoadConnector, PollConnector):
     def load_from_state(self) -> GenerateDocumentsOutput:
         logging.info("Starting full index of all Asana tasks")
         return self.poll_source(start=0, end=None)
+
+    def retrieve_all_slim_docs_perm_sync(
+        self,
+        callback: Any = None,
+    ) -> GenerateSlimDocumentOutput:
+        del callback
+
+        start_time = datetime.fromtimestamp(0).isoformat()
+        initial_error_count = self.asana_client.api_error_count
+        docs_batch: list[SlimDocument] = []
+
+        def _raise_on_snapshot_api_error() -> None:
+            if self.asana_client.api_error_count > initial_error_count:
+                raise RuntimeError("Asana slim document snapshot failed due to one or more API errors")
+
+        logging.info("Starting Asana slim document snapshot")
+        for task in self.asana_client.get_tasks(self.project_ids_to_index, start_time):
+            _raise_on_snapshot_api_error()
+            attachments = self.asana_client.get_attachments(task.id)
+            _raise_on_snapshot_api_error()
+
+            for att in attachments:
+                attachment_gid = att.get("gid")
+                if not attachment_gid:
+                    continue
+
+                docs_batch.append(SlimDocument(id=f"asana:{task.id}:{attachment_gid}"))
+                if len(docs_batch) >= self.batch_size:
+                    yield docs_batch
+                    docs_batch = []
+
+        _raise_on_snapshot_api_error()
+
+        if docs_batch:
+            yield docs_batch
+
+        logging.info("Asana slim document snapshot completed")
 
     def _task_to_documents(self, task: AsanaTask) -> list[Document]:
         docs: list[Document] = []

@@ -108,6 +108,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.SEAFILE]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.ASANA]: {
+    syncDeletedFiles: true,
+  },
 };
 
 const isDataSourceFeatureVisible = (
