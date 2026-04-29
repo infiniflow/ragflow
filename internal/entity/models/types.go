@@ -8,6 +8,8 @@ type Message struct {
 
 // EmbeddingModel interface for embedding models
 type ModelDriver interface {
+	NewInstance(baseURL map[string]string) ModelDriver
+
 	Name() string
 
 	// Chat sends a message and returns response

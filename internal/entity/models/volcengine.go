@@ -47,6 +47,10 @@ func NewVolcEngine(baseURL map[string]string, urlSuffix URLSuffix) *VolcEngine {
 	}
 }
 
+func (z *VolcEngine) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
+}
+
 func (z *VolcEngine) Name() string {
 	return "volcengine"
 }

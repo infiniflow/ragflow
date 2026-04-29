@@ -773,56 +773,67 @@ func (p *Parser) parseAddModel() (*Command, error) {
 	p.nextToken()
 
 	modelType := ""
-	supportThink := false
+	var supportThink *bool = nil
 	maxTokens := 0
 	if p.curToken.Type == TokenWith {
 		p.nextToken() // pass WITH
-		switch p.curToken.Type {
-		case TokenThink:
-			{
-				p.nextToken() // pass URL
-				supportThink = true
-			}
-		case TokenVision:
-			{
-				p.nextToken() // pass URL
+	optionsLoop:
+		for {
+			switch p.curToken.Type {
+			case TokenThink:
+				if supportThink != nil {
+					return nil, fmt.Errorf("think model is already set")
+				}
+				supportThink = new(bool)
+				p.nextToken()
+				*supportThink = true
+			case TokenVision:
+				p.nextToken()
+				if modelType != "" {
+					return nil, fmt.Errorf("model type is %s, attempt to change to vision", modelType)
+				}
 				modelType = "vision"
-			}
-		case TokenChat:
-			{
-				p.nextToken() // pass URL
+			case TokenChat:
+				p.nextToken()
+				if modelType != "" {
+					return nil, fmt.Errorf("model type is %s, attempt to change to chat", modelType)
+				}
 				modelType = "chat"
-			}
-		case TokenEmbedding:
-			{
-				p.nextToken() // pass URL
+			case TokenEmbedding:
+				if modelType != "" {
+					return nil, fmt.Errorf("model type is %s, attempt to change to embedding", modelType)
+				}
+				p.nextToken()
 				modelType = "embedding"
-			}
-		case TokenRerank:
-			{
-				p.nextToken() // pass URL
+			case TokenRerank:
+				if modelType != "" {
+					return nil, fmt.Errorf("model type is %s, attempt to change to rerank", modelType)
+				}
+				p.nextToken()
 				modelType = "rerank"
-			}
-		case TokenOCR:
-			{
-				p.nextToken() // pass URL
+			case TokenOCR:
+				if modelType != "" {
+					return nil, fmt.Errorf("model type is %s, attempt to change to OCR", modelType)
+				}
+				p.nextToken()
 				modelType = "ocr"
-			}
-		case TokenTTS:
-			{
-				p.nextToken() // pass URL
+			case TokenTTS:
+				if modelType != "" {
+					return nil, fmt.Errorf("model type is %s, attempt to change to TTS", modelType)
+				}
+				p.nextToken()
 				modelType = "tts"
-			}
-		case TokenASR:
-			{
-				p.nextToken() // pass URL
+			case TokenASR:
+				if modelType != "" {
+					return nil, fmt.Errorf("model type is %s, attempt to change to ASR", modelType)
+				}
+				p.nextToken()
 				modelType = "asr"
-			}
-		case TokenTokens:
-			{
+			case TokenTokens:
 				p.nextToken() // pass TOKENS
-
-				// model url
+				if maxTokens != 0 {
+					return nil, fmt.Errorf("max tokens is already given %d", maxTokens)
+				}
 				if p.curToken.Type != TokenInteger {
 					return nil, fmt.Errorf("expected integer")
 				}
@@ -831,10 +842,13 @@ func (p *Parser) parseAddModel() (*Command, error) {
 					return nil, err
 				}
 				p.nextToken() // consume
-				break
+			case TokenSemicolon:
+				p.nextToken()
+				break optionsLoop // done
+			default:
+				// No more options to process
+				break optionsLoop
 			}
-		default:
-			return nil, fmt.Errorf("expected VERBOSITY or EFFORT")
 		}
 	}
 
@@ -843,16 +857,15 @@ func (p *Parser) parseAddModel() (*Command, error) {
 	cmd.Params["model_type"] = modelType
 	cmd.Params["provider_name"] = providerName
 	cmd.Params["instance_name"] = instanceName
-	cmd.Params["support_think"] = supportThink
+	if supportThink != nil {
+		cmd.Params["support_think"] = *supportThink
+	}
 	cmd.Params["max_tokens"] = maxTokens
 
-	if modelType == "chat" && supportThink {
-		return nil, fmt.Errorf("model type not provided")
-	}
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
+	if modelType != "chat" && modelType != "vision" {
+		if supportThink != nil && *supportThink {
+			return nil, fmt.Errorf("think not supported for model type %s", modelType)
+		}
 	}
 
 	return cmd, nil
@@ -1401,8 +1414,13 @@ func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 	cmd.Params["instance_name"] = instanceName
 	cmd.Params["api_key"] = apiKey
 	if baseURL != "" {
+		// Only local model provider need to set URL
 		cmd.Params["base_url"] = baseURL
+		if region == "" {
+			region = instanceName
+		}
 	}
+
 	if region != "" {
 		cmd.Params["region"] = region
 	}

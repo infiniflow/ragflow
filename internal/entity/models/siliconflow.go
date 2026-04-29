@@ -52,6 +52,10 @@ func NewSiliconflowModel(baseURL map[string]string, urlSuffix URLSuffix) *Silico
 	}
 }
 
+func (z *SiliconflowModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
+}
+
 func (z *SiliconflowModel) Name() string {
 	return "siliconflow"
 }

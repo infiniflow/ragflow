@@ -1706,15 +1706,6 @@ func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	//cmd := NewCommand("add_custom_model")
-	//cmd.Params["model_name"] = modelName
-	//cmd.Params["model_type"] = modelType
-	//cmd.Params["provider_name"] = providerName
-	//cmd.Params["instance_name"] = instanceName
-	//cmd.Params["support_think"] = supportThink
-	//cmd.Params["support_vision"] = supportVision
-	//cmd.Params["max_tokens"] = maxTokens
-
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("provider name not provided")
@@ -1736,19 +1727,27 @@ func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("model type not provided")
 	}
 
-	supportThink, ok := cmd.Params["support_think"].(bool)
-	if !ok {
-		return nil, fmt.Errorf("support think not provided")
-	}
-
 	maxTokens, ok := cmd.Params["max_tokens"].(int)
 	if !ok {
 		return nil, fmt.Errorf("max tokens not provided")
 	}
 
-	url := fmt.Sprintf("/providers/%s/instances/%s", providerName, instanceName)
+	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
 
-	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, nil)
+	payload := map[string]interface{}{
+		"provider_name": providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+		"model_type":    modelType,
+		"max_tokens":    maxTokens,
+	}
+
+	supportThink, ok := cmd.Params["support_think"].(bool)
+	if ok {
+		payload["thinking"] = supportThink
+	}
+
+	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check provider connection: %w", err)
 	}

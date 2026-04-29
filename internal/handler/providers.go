@@ -647,6 +647,66 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 	})
 }
 
+func (h *ProviderHandler) AddCustomModel(c *gin.Context) {
+	var req service.AddCustomModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		println("JSON bind error: %v (type: %T)", err, err)
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if req.ProviderName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	if req.InstanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	if req.ModelName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Model name is required",
+		})
+		return
+	}
+
+	if req.ModelType == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Model type is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	errorCode, err := h.modelProviderService.AddCustomModel(&req, userID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    errorCode,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
+	})
+
+}
+
 type ChatToModelRequest struct {
 	ProviderName *string `json:"provider_name"`
 	InstanceName *string `json:"instance_name"`
