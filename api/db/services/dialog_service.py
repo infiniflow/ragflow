@@ -688,7 +688,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         kbinfos["chunks"] = guard_result.filtered_chunks
         kbinfos["total"] = len(guard_result.filtered_chunks)
 
-    if not guard_result.is_sufficient and not guard_result.filtered_chunks:
+    if not guard_result.is_sufficient:
         if prompt_config.get("empty_response"):
             empty_res = prompt_config["empty_response"]
         else:
@@ -1501,7 +1501,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         kbinfos["chunks"] = guard_result.filtered_chunks
         kbinfos["total"] = len(guard_result.filtered_chunks)
 
-    if not guard_result.is_sufficient and not guard_result.filtered_chunks:
+    if not guard_result.is_sufficient:
         insufficient_resp = guard.generate_insufficient_response(question, guard_result.missing_info)
         yield {
             "answer": insufficient_resp,

@@ -25,6 +25,7 @@ Answer Quality Guard - 轻量级的 RAG 回答质量保障模块
 
 import logging
 import re
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Set, Any
 from copy import deepcopy
@@ -387,7 +388,8 @@ class AnswerQualityGuard:
         self,
         answer: str,
         chunks: List[Dict],
-        strict_mode: bool = False,
+        strict_mode: bool = True,
+        content_overlap_threshold: float = 0.15,
     ) -> CitationValidationResult:
         """
         验证回答中的引用是否对应到原始 chunk
@@ -395,12 +397,13 @@ class AnswerQualityGuard:
         验证逻辑：
         1. 提取回答中的所有引用标记 [ID:i]
         2. 检查引用的索引是否在有效范围内
-        3. （可选）检查引用的内容是否真的支持回答中的相关陈述
+        3. （strict_mode=True）检查引用的内容是否真的支持回答中的相关陈述
 
         Args:
             answer: 包含引用的回答
             chunks: 原始 chunk 列表
             strict_mode: 是否启用严格模式（检查内容相关性）
+            content_overlap_threshold: 内容重叠率阈值（低于此值视为无效引用）
 
         Returns:
             CitationValidationResult: 包含验证结果
@@ -418,11 +421,39 @@ class AnswerQualityGuard:
         valid_indices = set()
         chunk_count = len(chunks)
 
+        sentence_citation_map = self._extract_sentences_with_citations(answer)
+
         for citation in citations:
             try:
                 idx = int(citation)
                 if 0 <= idx < chunk_count:
-                    valid_indices.add(idx)
+                    if strict_mode and idx in sentence_citation_map:
+                        sentences = sentence_citation_map[idx]
+                        chunk = chunks[idx]
+                        chunk_content = (
+                            chunk.get("content_with_weight", "")
+                            or chunk.get("content_ltks", "")
+                        ).lower()
+
+                        is_supported = False
+                        for sentence in sentences:
+                            overlap = self._calculate_content_overlap(
+                                sentence, chunk_content
+                            )
+                            if overlap >= content_overlap_threshold:
+                                is_supported = True
+                                break
+
+                        if not is_supported:
+                            invalid_indices.append(idx)
+                            result.warnings.append(
+                                f"Citation [ID:{idx}] has low content overlap with source chunk. "
+                                f"Sentences reference this chunk but may not be supported by its content."
+                            )
+                        else:
+                            valid_indices.add(idx)
+                    else:
+                        valid_indices.add(idx)
                 else:
                     invalid_indices.append(idx)
                     result.warnings.append(
@@ -439,6 +470,8 @@ class AnswerQualityGuard:
             result.warnings.append(
                 f"Found {len(invalid_indices)} invalid citations: {invalid_indices}"
             )
+        else:
+            result.is_valid = True
 
         def replace_citation(match):
             idx_str = match.group(1)
@@ -458,6 +491,83 @@ class AnswerQualityGuard:
         result.validated_answer = re.sub(r"\s+", " ", result.validated_answer).strip()
 
         return result
+
+    def _extract_sentences_with_citations(
+        self, answer: str
+    ) -> Dict[int, List[str]]:
+        """
+        提取包含引用标记的句子
+
+        Args:
+            answer: 包含引用的回答
+
+        Returns:
+            Dict[int, List[str]]: {引用索引: [引用该索引的句子列表]}
+        """
+        sentence_citation_map = defaultdict(list)
+
+        sentences = re.split(r"(?<=[。！？.!?])\s*", answer)
+
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+
+            citations = CITATION_PATTERN.findall(sentence)
+            for citation in citations:
+                try:
+                    idx = int(citation)
+                    sentence_citation_map[idx].append(sentence.lower())
+                except ValueError:
+                    continue
+
+        return dict(sentence_citation_map)
+
+    def _calculate_content_overlap(
+        self, sentence: str, chunk_content: str
+    ) -> float:
+        """
+        计算句子和 chunk 内容的关键词重叠率
+
+        Args:
+            sentence: 包含引用的句子
+            chunk_content: chunk 内容
+
+        Returns:
+            float: 重叠率 (0.0 - 1.0)
+        """
+        sentence = sentence.lower()
+        chunk_content = chunk_content.lower()
+
+        sentence_words = set(re.findall(r"\w+", sentence))
+        chunk_words = set(re.findall(r"\w+", chunk_content))
+
+        stopwords = {
+            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+            "have", "has", "had", "do", "does", "did", "will", "would", "could",
+            "should", "may", "might", "must", "shall", "can", "need", "dare",
+            "this", "that", "these", "those", "it", "its", "of", "in", "for",
+            "on", "with", "by", "at", "from", "to", "as", "but", "and", "or",
+            "if", "then", "else", "when", "where", "why", "how", "all", "each",
+            "every", "both", "few", "more", "most", "other", "some", "such",
+            "no", "nor", "not", "only", "own", "same", "so", "than", "too",
+            "very", "just", "also", "now", "here", "there", "我", "你", "他",
+            "她", "它", "们", "的", "是", "在", "了", "有", "和", "与", "或",
+            "这", "那", "个", "中", "为", "以", "于", "上", "下", "而", "也",
+            "都", "就", "被", "把", "让", "给", "向", "对", "跟", "同", "及",
+            "等", "等等", "什么", "怎么", "为什么", "哪", "谁", "多少", "几"
+        }
+
+        sentence_words = sentence_words - stopwords
+        chunk_words = chunk_words - stopwords
+
+        if not sentence_words:
+            return 0.0
+
+        overlap = len(sentence_words & chunk_words)
+        overlap_ratio = overlap / len(sentence_words)
+
+        return overlap_ratio
 
     def standardize_citations(
         self,
