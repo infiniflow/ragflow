@@ -242,6 +242,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.AlterProviderInstance(cmd)
 	case "drop_provider_instance":
 		return c.DropProviderInstance(cmd)
+	case "drop_instance_model":
+		return c.DropInstanceModel(cmd)
 	case "enable_model":
 		return c.EnableOrDisableModel(cmd, "enable")
 	case "disable_model":

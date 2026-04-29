@@ -682,7 +682,7 @@ func (h *ProviderHandler) AddCustomModel(c *gin.Context) {
 		return
 	}
 
-	if req.ModelType == "" {
+	if req.ModelTypes == nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "Model type is required",
@@ -705,6 +705,54 @@ func (h *ProviderHandler) AddCustomModel(c *gin.Context) {
 		"code": common.CodeSuccess,
 	})
 
+}
+
+type DropInstanceModelRequest struct {
+	Models []string `json:"models" binding:"required"`
+}
+
+func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	var req DropInstanceModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	_, err := h.modelProviderService.DropInstanceModels(providerName, instanceName, userID, req.Models)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+	})
 }
 
 type ChatToModelRequest struct {
@@ -768,6 +816,7 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	chatConfig := models.ChatConfig{
 		Thinking:    &req.Thinking,
 		Stream:      &req.Stream,
+		Vision:      nil,
 		Stop:        &[]string{},
 		DoSample:    nil,
 		MaxTokens:   nil,

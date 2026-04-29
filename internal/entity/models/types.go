@@ -50,6 +50,7 @@ type URLSuffix struct {
 
 type ChatConfig struct {
 	Stream      *bool
+	Vision      *bool
 	Thinking    *bool
 	MaxTokens   *int
 	Temperature *float64
