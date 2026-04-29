@@ -349,6 +349,12 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         if self.client is None:
             raise ConnectorMissingCredentialError("WebDAV client not initialized")
 
+        logging.info(
+            "Starting WebDAV slim snapshot: base_url=%s path=%s",
+            self.base_url,
+            self.remote_path,
+        )
+
         files = self._list_files_recursive(
             self.remote_path,
             datetime(1970, 1, 1, tzinfo=timezone.utc),
@@ -356,6 +362,7 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             filter_by_mtime=False,
         )
         batch: list[SlimDocument] = []
+        total = 0
         for file_path, file_info in files:
             file_name = os.path.basename(file_path)
             if not self._is_supported_file(file_name):
@@ -370,12 +377,19 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             batch.append(
                 SlimDocument(id=f"webdav:{self.base_url}:{file_path}")
             )
+            total += 1
             if len(batch) >= self.batch_size:
                 yield batch
                 batch = []
 
         if batch:
             yield batch
+
+        logging.info(
+            "Completed WebDAV slim snapshot: %d documents (listed_paths=%d)",
+            total,
+            len(files),
+        )
 
     def validate_connector_settings(self) -> None:
         """Validate WebDAV connector settings.
