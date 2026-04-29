@@ -13,8 +13,14 @@ from discord.message import Message as DiscordMessage
 
 from common.data_source.config import INDEX_BATCH_SIZE, DocumentSource
 from common.data_source.exceptions import ConnectorMissingCredentialError
-from common.data_source.interfaces import LoadConnector, PollConnector, SecondsSinceUnixEpoch
-from common.data_source.models import Document, GenerateDocumentsOutput, TextSection
+from common.data_source.interfaces import LoadConnector, PollConnector, SecondsSinceUnixEpoch, SlimConnectorWithPermSync
+from common.data_source.models import (
+    Document,
+    GenerateDocumentsOutput,
+    GenerateSlimDocumentOutput,
+    SlimDocument,
+    TextSection,
+)
 
 _DISCORD_DOC_ID_PREFIX = "DISCORD_"
 _SNIPPET_LENGTH = 30
@@ -228,7 +234,7 @@ def _manage_async_retrieval(
     return run_and_yield()
 
 
-class DiscordConnector(LoadConnector, PollConnector):
+class DiscordConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     """Discord connector for accessing Discord messages and channels"""
 
     def __init__(
@@ -251,7 +257,7 @@ class DiscordConnector(LoadConnector, PollConnector):
             raise ConnectorMissingCredentialError("Discord")
         return self._discord_bot_token
 
-    def _manage_doc_batching(
+    def _iter_merged_documents(
         self,
         start: datetime | None = None,
         end: datetime | None = None,
@@ -296,6 +302,13 @@ class DiscordConnector(LoadConnector, PollConnector):
         if doc_batch:
             yield [merge_batch()]
 
+    def _manage_doc_batching(
+        self,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> GenerateDocumentsOutput:
+        yield from self._iter_merged_documents(start=start, end=end)
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         self._discord_bot_token = credentials["discord_bot_token"]
         return None
@@ -315,6 +328,15 @@ class DiscordConnector(LoadConnector, PollConnector):
     def load_from_state(self) -> Any:
         """Load messages from Discord state"""
         return self._manage_doc_batching(None, None)
+
+    def retrieve_all_slim_docs_perm_sync(
+        self,
+        callback: Any = None,
+    ) -> GenerateSlimDocumentOutput:
+        del callback
+
+        for document_batch in self._iter_merged_documents(None, None):
+            yield [SlimDocument(id=doc.id) for doc in document_batch]
 
 
 if __name__ == "__main__":

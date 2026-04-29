@@ -528,16 +528,27 @@ class Discord(SyncBase):
             batch_size=self.conf.get("batch_size", 1024),
         )
         self.connector.load_credentials(self.conf["credentials"])
+        file_list = None
         document_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
             else self.connector.poll_source(task["poll_range_start"].timestamp(),
                                             datetime.now(timezone.utc).timestamp())
         )
+        if (
+            task["reindex"] != "1"
+            and task["poll_range_start"]
+            and self.conf.get("sync_deleted_files")
+        ):
+            file_list = []
+            for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                file_list.extend(slim_batch)
 
         _begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(
             task["poll_range_start"])
         self.log_connection("Discord", f"servers({server_ids}), channel({channel_names})", task)
+        if file_list is not None:
+            return document_generator, file_list
         return document_generator
 
 
