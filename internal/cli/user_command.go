@@ -1383,6 +1383,56 @@ func (c *RAGFlowClient) DropProviderInstance(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+// DropInstanceModel deletes a provider instance, only works for local deployed model
+// DROP MODEL <name> FROM <provider_name> <instance_name>
+func (c *RAGFlowClient) DropInstanceModel(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance name not provided")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	modelName, ok := cmd.Params["model_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model name not provided")
+	}
+
+	payload := map[string]interface{}{
+		"models": []string{modelName},
+	}
+
+	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
+
+	resp, err := c.HTTPClient.Request("DELETE", url, true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to drop instance: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to drop instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("drop instance failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 func (c *RAGFlowClient) ListInstanceModels(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
@@ -1722,7 +1772,7 @@ func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
 	}
 
 	// chat, vision, embedding, rerank, tts, asr, ocr
-	modelType, ok := cmd.Params["model_type"].(string)
+	modelTypes, ok := cmd.Params["model_types"].([]string)
 	if !ok {
 		return nil, fmt.Errorf("model type not provided")
 	}
@@ -1738,7 +1788,7 @@ func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
 		"provider_name": providerName,
 		"instance_name": instanceName,
 		"model_name":    modelName,
-		"model_type":    modelType,
+		"model_types":   modelTypes,
 		"max_tokens":    maxTokens,
 	}
 

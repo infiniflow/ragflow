@@ -478,13 +478,70 @@ func (m *ModelProviderService) DropProviderInstances(providerName, userID string
 	}
 
 	for _, instanceName := range instances {
-		count, err := m.modelInstanceDAO.DeleteByProviderIDAndInstanceName(provider.ID, instanceName)
+		// Get model instance
+		var tenantModelInstance *entity.TenantModelInstance
+		tenantModelInstance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+		if err != nil {
+			return common.CodeServerError, err
+		}
+
+		// Delete all models of this instance
+		var count int64 = 0
+		count, err = m.modelDAO.DeleteByProviderIDAndInstanceID(provider.ID, tenantModelInstance.ID)
+		if err != nil {
+			return common.CodeServerError, err
+		}
+
+		// Delete model instance
+		count, err = m.modelInstanceDAO.DeleteByProviderIDAndInstanceName(provider.ID, instanceName)
 		if err != nil {
 			return common.CodeServerError, err
 		}
 
 		if count == 0 {
 			return common.CodeNotFound, errors.New("provider instance not found")
+		}
+	}
+
+	return common.CodeSuccess, nil
+}
+
+func (m *ModelProviderService) DropInstanceModels(providerName, instanceName, userID string, models []string) (common.ErrorCode, error) {
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	var modelInstance *entity.TenantModelInstance
+	modelInstance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	for _, modelName := range models {
+		// Delete all models of this instance
+		var count int64 = 0
+		count, err = m.modelDAO.DeleteByProviderIDAndInstanceIDAndModelName(provider.ID, modelInstance.ID, modelName)
+		if err != nil {
+			return common.CodeServerError, err
+		}
+
+		if count == 0 {
+			return common.CodeNotFound, fmt.Errorf("model: %s not found", modelName)
 		}
 	}
 
@@ -693,6 +750,9 @@ func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
+		modelTypes := extra["model_types"]
+		println(modelTypes)
+
 		modelConfig.ModelClass = &providerInfo.Class
 
 		newURL := map[string]string{
@@ -891,12 +951,12 @@ func (m *ModelProviderService) GetChatModel(tenantID, compositeModelName string)
 }
 
 type AddCustomModelRequest struct {
-	ProviderName string `json:"provider_name"`
-	InstanceName string `json:"instance_name"`
-	ModelName    string `json:"model_name"`
-	ModelType    string `json:"model_type"`
-	MaxTokens    int    `json:"max_tokens"`
-	Thinking     *bool  `json:"thinking"`
+	ProviderName string   `json:"provider_name"`
+	InstanceName string   `json:"instance_name"`
+	ModelName    string   `json:"model_name"`
+	ModelTypes   []string `json:"model_types"`
+	MaxTokens    int      `json:"max_tokens"`
+	Thinking     *bool    `json:"thinking"`
 }
 
 func (m *ModelProviderService) AddCustomModel(request *AddCustomModelRequest, userID string) (common.ErrorCode, error) {
@@ -938,6 +998,7 @@ func (m *ModelProviderService) AddCustomModel(request *AddCustomModelRequest, us
 	if request.Thinking != nil {
 		extra["thinking"] = *request.Thinking
 	}
+	extra["model_types"] = request.ModelTypes
 	// convert extra to string
 	extraByte, err := json.Marshal(extra)
 	if err != nil {
@@ -948,7 +1009,7 @@ func (m *ModelProviderService) AddCustomModel(request *AddCustomModelRequest, us
 	model := &entity.TenantModel{
 		ID:         modelID,
 		ModelName:  request.ModelName,
-		ModelType:  request.ModelType,
+		ModelType:  request.ModelTypes[0],
 		ProviderID: provider.ID,
 		InstanceID: instance.ID,
 		Status:     "active",

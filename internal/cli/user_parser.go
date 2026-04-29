@@ -772,7 +772,7 @@ func (p *Parser) parseAddModel() (*Command, error) {
 	}
 	p.nextToken()
 
-	modelType := ""
+	var modelTypes []string
 	var supportThink *bool = nil
 	maxTokens := 0
 	if p.curToken.Type == TokenWith {
@@ -789,46 +789,25 @@ func (p *Parser) parseAddModel() (*Command, error) {
 				*supportThink = true
 			case TokenVision:
 				p.nextToken()
-				if modelType != "" {
-					return nil, fmt.Errorf("model type is %s, attempt to change to vision", modelType)
-				}
-				modelType = "vision"
+				modelTypes = append(modelTypes, "vision")
 			case TokenChat:
 				p.nextToken()
-				if modelType != "" {
-					return nil, fmt.Errorf("model type is %s, attempt to change to chat", modelType)
-				}
-				modelType = "chat"
+				modelTypes = append(modelTypes, "chat")
 			case TokenEmbedding:
-				if modelType != "" {
-					return nil, fmt.Errorf("model type is %s, attempt to change to embedding", modelType)
-				}
 				p.nextToken()
-				modelType = "embedding"
+				modelTypes = append(modelTypes, "embedding")
 			case TokenRerank:
-				if modelType != "" {
-					return nil, fmt.Errorf("model type is %s, attempt to change to rerank", modelType)
-				}
 				p.nextToken()
-				modelType = "rerank"
+				modelTypes = append(modelTypes, "rerank")
 			case TokenOCR:
-				if modelType != "" {
-					return nil, fmt.Errorf("model type is %s, attempt to change to OCR", modelType)
-				}
 				p.nextToken()
-				modelType = "ocr"
+				modelTypes = append(modelTypes, "ocr")
 			case TokenTTS:
-				if modelType != "" {
-					return nil, fmt.Errorf("model type is %s, attempt to change to TTS", modelType)
-				}
 				p.nextToken()
-				modelType = "tts"
+				modelTypes = append(modelTypes, "tts")
 			case TokenASR:
-				if modelType != "" {
-					return nil, fmt.Errorf("model type is %s, attempt to change to ASR", modelType)
-				}
 				p.nextToken()
-				modelType = "asr"
+				modelTypes = append(modelTypes, "asr")
 			case TokenTokens:
 				p.nextToken() // pass TOKENS
 				if maxTokens != 0 {
@@ -854,19 +833,13 @@ func (p *Parser) parseAddModel() (*Command, error) {
 
 	cmd := NewCommand("add_custom_model")
 	cmd.Params["model_name"] = modelName
-	cmd.Params["model_type"] = modelType
+	cmd.Params["model_types"] = modelTypes
 	cmd.Params["provider_name"] = providerName
 	cmd.Params["instance_name"] = instanceName
 	if supportThink != nil {
 		cmd.Params["support_think"] = *supportThink
 	}
 	cmd.Params["max_tokens"] = maxTokens
-
-	if modelType != "chat" && modelType != "vision" {
-		if supportThink != nil && *supportThink {
-			return nil, fmt.Errorf("think not supported for model type %s", modelType)
-		}
-	}
 
 	return cmd, nil
 }
@@ -951,8 +924,6 @@ func (p *Parser) parseDropCommand() (*Command, error) {
 		return p.parseDropUser()
 	case TokenRole:
 		return p.parseDropRole()
-	case TokenModel:
-		return p.parseDropModelProvider()
 	case TokenDataset:
 		return p.parseDropDataset()
 	case TokenChat:
@@ -965,6 +936,8 @@ func (p *Parser) parseDropCommand() (*Command, error) {
 		return p.parseDropMetadataTable()
 	case TokenInstance:
 		return p.parseDropInstance()
+	case TokenModel:
+		return p.parseDropInstanceModel()
 	default:
 		return nil, fmt.Errorf("unknown DROP target: %s", p.curToken.Value)
 	}
@@ -1090,29 +1063,6 @@ func (p *Parser) parseDropRole() (*Command, error) {
 
 	cmd := NewCommand("drop_role")
 	cmd.Params["role_name"] = roleName
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseDropModelProvider() (*Command, error) {
-	p.nextToken() // consume MODEL
-	if p.curToken.Type != TokenProvider {
-		return nil, fmt.Errorf("expected PROVIDER")
-	}
-	p.nextToken()
-
-	providerName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("drop_model_provider")
-	cmd.Params["provider_name"] = providerName
 
 	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
@@ -1601,6 +1551,47 @@ func (p *Parser) parseDropInstance() (*Command, error) {
 	cmd := NewCommand("drop_provider_instance")
 	cmd.Params["instance_name"] = instanceName
 	cmd.Params["provider_name"] = providerName
+
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// parseDropInstanceModel parses DROP MODEL <name> FROM <provider_name> <instance_name> command
+// Only works for local deployed model
+func (p *Parser) parseDropInstanceModel() (*Command, error) {
+	p.nextToken() // consume MODEL
+
+	modelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected instance name: %w", err)
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenFrom {
+		return nil, fmt.Errorf("expected FROM")
+	}
+	p.nextToken()
+
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected provider name after FROM PROVIDER: %w", err)
+	}
+	p.nextToken()
+
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected instance name after provider name: %w", err)
+	}
+	p.nextToken()
+
+	cmd := NewCommand("drop_instance_model")
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["model_name"] = modelName
 
 	p.nextToken()
 	// Semicolon is optional
