@@ -122,21 +122,46 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
             logging.warning(f"Not all the retrieval into prompt: {len(knowledges)}/{kwlg_len}")
             break
 
-    if truncated_by_token and "debug_trace" in kbinfos:
+    if "debug_trace" in kbinfos:
         debug_trace = kbinfos["debug_trace"]
-        if "prompt_truncation" not in debug_trace:
-            debug_trace["prompt_truncation"] = {}
-        debug_trace["prompt_truncation"]["max_tokens"] = max_tokens
-        debug_trace["prompt_truncation"]["prompt_token_limit"] = int(max_tokens * 0.97)
-        debug_trace["prompt_truncation"]["used_tokens"] = used_token_count
-        debug_trace["prompt_truncation"]["available_chunks"] = kwlg_len
-        debug_trace["prompt_truncation"]["selected_chunks"] = chunks_num
-        debug_trace["prompt_truncation"]["truncated_chunks"] = kwlg_len - chunks_num
-        logging.info(
-            f"[Retrieval Debug] Prompt truncated: used_tokens={used_token_count}, "
-            f"limit={int(max_tokens * 0.97)}, "
-            f"selected={chunks_num}/{kwlg_len} chunks"
-        )
+        if truncated_by_token:
+            if "prompt_truncation" not in debug_trace:
+                debug_trace["prompt_truncation"] = {}
+            debug_trace["prompt_truncation"]["max_tokens"] = max_tokens
+            debug_trace["prompt_truncation"]["prompt_token_limit"] = int(max_tokens * 0.97)
+            debug_trace["prompt_truncation"]["used_tokens"] = used_token_count
+            debug_trace["prompt_truncation"]["available_chunks"] = kwlg_len
+            debug_trace["prompt_truncation"]["selected_chunks"] = chunks_num
+            debug_trace["prompt_truncation"]["truncated_chunks"] = kwlg_len - chunks_num
+            logging.info(
+                f"[Retrieval Debug] Prompt truncated: used_tokens={used_token_count}, "
+                f"limit={int(max_tokens * 0.97)}, "
+                f"selected={chunks_num}/{kwlg_len} chunks"
+            )
+
+        if "final_chunks" in debug_trace and debug_trace["final_chunks"]:
+            chunk_id_map = {}
+            for i, ck in enumerate(kbinfos["chunks"]):
+                ck_id = get_value(ck, "chunk_id", "id")
+                chunk_id_map[ck_id] = i
+
+            for fc in debug_trace["final_chunks"]:
+                ck_id = fc.get("chunk_id")
+                if ck_id in chunk_id_map:
+                    idx = chunk_id_map[ck_id]
+                    if idx < chunks_num:
+                        fc["in_prompt"] = True
+                        fc["prompt_filter_reason"] = None
+                    else:
+                        fc["in_prompt"] = False
+                        fc["prompt_filter_reason"] = "token_truncation"
+
+        if "all_chunks" in debug_trace and debug_trace["all_chunks"]:
+            for ac in debug_trace["all_chunks"]:
+                if ac.get("filter_reason"):
+                    ac["in_prompt"] = False
+                    if ac.get("prompt_filter_reason") is None:
+                        ac["prompt_filter_reason"] = f"pre_filter:{ac['filter_reason']}"
 
     docs = DocumentService.get_by_ids([get_value(ck, "doc_id", "document_id") for ck in kbinfos["chunks"][:chunks_num]])
 

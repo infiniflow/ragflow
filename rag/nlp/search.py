@@ -51,6 +51,8 @@ class ChunkDebugInfo:
     content_preview: str = ""
     is_pruned: bool = False
     rank_feature_score: float = 0.0
+    in_prompt: bool = False
+    prompt_filter_reason: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -67,6 +69,8 @@ class ChunkDebugInfo:
             "final_position": self.final_position,
             "content_preview": self.content_preview[:100] if self.content_preview else "",
             "is_pruned": self.is_pruned,
+            "in_prompt": self.in_prompt,
+            "prompt_filter_reason": self.prompt_filter_reason,
         }
 
 

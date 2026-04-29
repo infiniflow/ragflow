@@ -429,3 +429,220 @@ class TestRetrievalDebugTrace:
 class TestRetrievalDebugTraceConstant:
     def test_retrieval_debug_trace_enabled_is_false_by_default(self):
         assert RETRIEVAL_DEBUG_TRACE_ENABLED is False
+
+
+class TestKbPromptDebugTraceIntegration:
+    def _make_mock_doc(self, doc_id, name):
+        doc = type("MockDoc", (), {})()
+        doc.id = doc_id
+        return doc
+
+    def _mock_document_service(self, monkeypatch):
+        def mock_get_by_ids(ids):
+            return [self._make_mock_doc(doc_id, f"doc_{doc_id}") for doc_id in ids]
+
+        fake_doc_service = types.ModuleType("api.db.services.document_service")
+        fake_doc_service.DocumentService = type("MockDocumentService", (), {
+            "get_by_ids": staticmethod(mock_get_by_ids)
+        })()
+        sys.modules.setdefault("api.db.services.document_service", fake_doc_service)
+
+        def mock_get_document_metadata(doc_id):
+            return {}
+
+        fake_meta_service = types.ModuleType("api.db.services.doc_metadata_service")
+        fake_meta_service.DocMetadataService = type("MockDocMetadataService", (), {
+            "get_document_metadata": staticmethod(mock_get_document_metadata)
+        })()
+        sys.modules.setdefault("api.db.services.doc_metadata_service", fake_meta_service)
+
+    def test_kb_prompt_marks_in_prompt_correctly(self, monkeypatch):
+        self._mock_document_service(monkeypatch)
+
+        from rag.prompts.generator import kb_prompt
+
+        kbinfos = {
+            "total": 2,
+            "chunks": [
+                {
+                    "chunk_id": "chunk_001",
+                    "doc_id": "doc_001",
+                    "docnm_kwd": "doc1.pdf",
+                    "kb_id": "kb_001",
+                    "content": "Short content.",
+                    "content_ltks": "Short content.",
+                    "content_with_weight": "Short content.",
+                    "similarity": 0.9,
+                    "vector_similarity": 0.85,
+                    "term_similarity": 0.92,
+                },
+                {
+                    "chunk_id": "chunk_002",
+                    "doc_id": "doc_002",
+                    "docnm_kwd": "doc2.pdf",
+                    "kb_id": "kb_001",
+                    "content": "Another short content.",
+                    "content_ltks": "Another short content.",
+                    "content_with_weight": "Another short content.",
+                    "similarity": 0.8,
+                    "vector_similarity": 0.75,
+                    "term_similarity": 0.82,
+                },
+            ],
+            "doc_aggs": [],
+            "debug_trace": {
+                "query": "test query",
+                "tenant_ids": ["t1"],
+                "kb_ids": ["kb1"],
+                "initial_search_count": 10,
+                "pruned_count": 0,
+                "rerank_used": True,
+                "rerank_model": "bge-reranker",
+                "filtered_by_threshold_count": 5,
+                "filtered_by_pagination_count": 3,
+                "final_chunks_count": 2,
+                "final_chunks": [
+                    {
+                        "chunk_id": "chunk_001",
+                        "doc_id": "doc_001",
+                        "doc_name": "doc1.pdf",
+                        "kb_id": "kb_001",
+                        "in_prompt": False,
+                        "prompt_filter_reason": None,
+                    },
+                    {
+                        "chunk_id": "chunk_002",
+                        "doc_id": "doc_002",
+                        "doc_name": "doc2.pdf",
+                        "kb_id": "kb_001",
+                        "in_prompt": False,
+                        "prompt_filter_reason": None,
+                    },
+                ],
+                "all_chunks": [
+                    {
+                        "chunk_id": "chunk_001",
+                        "doc_id": "doc_001",
+                        "doc_name": "doc1.pdf",
+                        "kb_id": "kb_001",
+                        "filter_reason": None,
+                    },
+                    {
+                        "chunk_id": "chunk_002",
+                        "doc_id": "doc_002",
+                        "doc_name": "doc2.pdf",
+                        "kb_id": "kb_001",
+                        "filter_reason": None,
+                    },
+                    {
+                        "chunk_id": "chunk_003",
+                        "doc_id": "doc_003",
+                        "doc_name": "doc3.pdf",
+                        "kb_id": "kb_001",
+                        "filter_reason": "threshold",
+                    },
+                ],
+            },
+        }
+
+        result = kb_prompt(kbinfos, max_tokens=1000, hash_id=False)
+
+        assert len(result) == 2
+
+        debug_trace = kbinfos["debug_trace"]
+        assert debug_trace["final_chunks"][0]["in_prompt"] is True
+        assert debug_trace["final_chunks"][0]["prompt_filter_reason"] is None
+        assert debug_trace["final_chunks"][1]["in_prompt"] is True
+        assert debug_trace["final_chunks"][1]["prompt_filter_reason"] is None
+
+        all_chunks = debug_trace["all_chunks"]
+        assert all_chunks[2]["in_prompt"] is False
+        assert "pre_filter:threshold" in all_chunks[2]["prompt_filter_reason"]
+
+    def test_kb_prompt_token_truncation_marks_prompt_filter_reason(self, monkeypatch):
+        self._mock_document_service(monkeypatch)
+
+        from rag.prompts.generator import kb_prompt
+
+        long_content = "A" * 500
+        kbinfos = {
+            "total": 3,
+            "chunks": [
+                {
+                    "chunk_id": "chunk_001",
+                    "doc_id": "doc_001",
+                    "docnm_kwd": "doc1.pdf",
+                    "kb_id": "kb_001",
+                    "content": long_content,
+                    "content_ltks": long_content,
+                    "content_with_weight": long_content,
+                },
+                {
+                    "chunk_id": "chunk_002",
+                    "doc_id": "doc_002",
+                    "docnm_kwd": "doc2.pdf",
+                    "kb_id": "kb_001",
+                    "content": long_content,
+                    "content_ltks": long_content,
+                    "content_with_weight": long_content,
+                },
+                {
+                    "chunk_id": "chunk_003",
+                    "doc_id": "doc_003",
+                    "docnm_kwd": "doc3.pdf",
+                    "kb_id": "kb_001",
+                    "content": long_content,
+                    "content_ltks": long_content,
+                    "content_with_weight": long_content,
+                },
+            ],
+            "doc_aggs": [],
+            "debug_trace": {
+                "query": "test query",
+                "tenant_ids": ["t1"],
+                "kb_ids": ["kb1"],
+                "initial_search_count": 10,
+                "final_chunks_count": 3,
+                "final_chunks": [
+                    {
+                        "chunk_id": "chunk_001",
+                        "doc_id": "doc_001",
+                        "doc_name": "doc1.pdf",
+                        "kb_id": "kb_001",
+                        "in_prompt": False,
+                        "prompt_filter_reason": None,
+                    },
+                    {
+                        "chunk_id": "chunk_002",
+                        "doc_id": "doc_002",
+                        "doc_name": "doc2.pdf",
+                        "kb_id": "kb_001",
+                        "in_prompt": False,
+                        "prompt_filter_reason": None,
+                    },
+                    {
+                        "chunk_id": "chunk_003",
+                        "doc_id": "doc_003",
+                        "doc_name": "doc3.pdf",
+                        "kb_id": "kb_001",
+                        "in_prompt": False,
+                        "prompt_filter_reason": None,
+                    },
+                ],
+            },
+        }
+
+        result = kb_prompt(kbinfos, max_tokens=200, hash_id=False)
+
+        debug_trace = kbinfos["debug_trace"]
+
+        assert "prompt_truncation" in debug_trace
+        assert debug_trace["prompt_truncation"]["available_chunks"] == 3
+        assert debug_trace["prompt_truncation"]["truncated_chunks"] > 0
+
+        final_chunks = debug_trace["final_chunks"]
+        for fc in final_chunks:
+            if fc["in_prompt"]:
+                assert fc["prompt_filter_reason"] is None
+            else:
+                assert fc["prompt_filter_reason"] == "token_truncation"

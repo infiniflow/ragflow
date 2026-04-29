@@ -642,6 +642,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             await task
 
         else:
+            debug = kwargs.get("debug", False)
             if embd_mdl:
                 kbinfos = await retriever.retrieval(
                     " ".join(questions),
@@ -657,6 +658,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     aggs=True,
                     rerank_mdl=rerank_mdl,
                     rank_feature=label_question(" ".join(questions), kbs),
+                    debug=debug,
                 )
                 if prompt_config.get("toc_enhance"):
                     cks = await retriever.retrieval_by_toc(" ".join(questions), kbinfos["chunks"], tenant_ids, chat_mdl, dialog.top_n)
@@ -705,7 +707,10 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     def decorate_answer(answer):
         nonlocal embd_mdl, prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_tracer
 
-        refs = []
+        refs = {}
+        if "debug_trace" in kbinfos:
+            refs["debug_trace"] = kbinfos["debug_trace"]
+
         ans = answer.split("</think>")
         think = ""
         if len(ans) == 2:
