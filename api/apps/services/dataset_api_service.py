@@ -747,6 +747,25 @@ def list_ingestion_logs(
 
     from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 
+    allowed_log_types = {"dataset", "file"}
+    if log_type not in allowed_log_types:
+        logging.warning(
+            "list_ingestion_logs invalid log_type: dataset_id=%s tenant_id=%s log_type=%s",
+            dataset_id,
+            tenant_id,
+            log_type,
+        )
+        return False, 'Invalid "log_type", expected "dataset" or "file"'
+
+    logging.info(
+        "list_ingestion_logs: dataset_id=%s tenant_id=%s log_type=%s page=%s page_size=%s",
+        dataset_id,
+        tenant_id,
+        log_type,
+        page,
+        page_size,
+    )
+
     if log_type == "file":
         logs, total = PipelineOperationLogService.get_file_logs_by_kb_id(dataset_id, page, page_size, orderby, desc, keywords, operation_status or [], None, None, create_date_from, create_date_to)
     else:
