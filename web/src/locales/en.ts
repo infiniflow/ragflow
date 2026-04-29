@@ -1510,16 +1510,16 @@ Example: Virtual Hosted Style`,
         author: 'Author',
         sectionTitle: 'Section title',
       },
-      includeHeadingContent: 'Include heading content',
+      includeHeadingContent: 'Separate parent-heading content',
       includeHeadingContentTip:
-        'When enabled, content directly under a heading is kept as its own chunk. Child chunks keep only the heading path.',
+        'When enabled, chunks include only their heading path and content; content immediately following a parent heading is kept as a separate chunk.',
       rootAsHeading: 'Set first chunk as global context',
       rootAsHeadingTip:
-        'Treats the initial split as a global heading to maintain consistent context across the document hierarchy. Ideal for resumes where the first section identifies the subject.',
-      hierarchyTip: `Build a heading tree and produce self-contained chunks, each carrying its full ancestor heading path (e.g. Part 1 › Chapter 3 › Section 2 + body text).\n
-Best for: Documents with independent, structurally significant sections — such as legal statutes, regulations, contracts, and technical specifications — where each chunk must be identifiable by its structural position even without surrounding context.`,
-      groupTip: `Split the document flat at a chosen heading level and automatically merge adjacent small sections to preserve content continuity. No parent-heading path is injected.\n
-Best for: Documents with flowing, contextually connected content — such as books, manuals, reports, and articles — where adjacent paragraphs should stay together to maintain narrative coherence.`,
+        'Treats the first split as a global heading to maintain consistent context across the document hierarchy. Ideal for resumes where the first section identifies the subject.',
+      hierarchyTip: `Construct a heading tree and produce self-contained chunks, each carrying its full ancestral path (e.g. Part 1 › Chapter 3 › Section 2 + body text).\n
+Best for: Highly structured texts — such as legal statutes, regulations, contracts, and technical specs — where each chunk must be identifiable by its position in the hierarchy.`,
+      groupTip: `Split the document flat at a chosen heading level, merging adjacent small sections to ensure semantic flow. Chunks exclude ancestral path.\n
+Best for: Documents with flowing, contextually connected content — such as books, manuals, reports, and articles — where narrative coherence depends on keeping adjacent paragraphs together.`,
       enableMultiColumn: 'Detect multi-column layout',
       enableMultiColumnTip:
         'Detect and parse multi-column page layouts to preserve the correct reading order. Turn this on for PDFs or documents with two-column or newspaper-style layouts.',
