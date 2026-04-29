@@ -20,7 +20,7 @@ import math
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 
-from rag.nlp import rag_tokenizer, query
+from rag.nlp import rag_tokenizer, query, query_router
 import numpy as np
 from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, OrderByExpr, DocStoreConnection
 from common.string_utils import remove_redundant_spaces
@@ -38,6 +38,7 @@ class Dealer:
     def __init__(self, dataStore: DocStoreConnection):
         self.qryr = query.FulltextQueryer()
         self.dataStore = dataStore
+        self.query_router = query_router.QueryIntentRouter()
 
     @dataclass
     class SearchResult:
@@ -170,7 +171,9 @@ class Dealer:
                 highlightFields = []
             elif isinstance(highlight, list):
                 highlightFields = highlight
-            matchText, keywords = self.qryr.question(qst, min_match=0.3)
+            
+            min_match = req.get("min_match", 0.3)
+            matchText, keywords = self.qryr.question(qst, min_match=min_match)
             if emb_mdl is None:
                 matchExprs = [matchText]
                 res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit,
@@ -462,10 +465,33 @@ class Dealer:
             rerank_mdl=None,
             highlight=False,
             rank_feature: dict | None = {PAGERANK_FLD: 10},
+            use_query_router: bool = True,
     ):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
             return ranks
+
+        query_intent = None
+        retrieval_params = {}
+        processed_question = question
+
+        if use_query_router:
+            try:
+                query_intent = self.query_router.route(question)
+                retrieval_params = self.query_router.get_retrieval_params(query_intent)
+                processed_question = query_intent.processed_query
+                
+                logging.debug(f"[QueryRouter] Query type: {query_intent.query_type.value}, "
+                             f"retrieval strategy: {query_intent.retrieval_strategy}")
+                
+                if retrieval_params.get("vector_weight") is not None:
+                    vector_similarity_weight = retrieval_params["vector_weight"]
+                
+                if retrieval_params.get("sub_queries"):
+                    logging.debug(f"[QueryRouter] Multi-condition query decomposed into {len(retrieval_params['sub_queries'])} sub-queries")
+                
+            except Exception as e:
+                logging.warning(f"[QueryRouter] Query routing failed: {e}, using default strategy")
 
         # Keep the historical windowing strategy by default, but when an external
         # reranker is enabled cap candidate count by both top_k and provider-safe 64.
@@ -475,17 +501,33 @@ class Dealer:
             RERANK_LIMIT = min(RERANK_LIMIT, top, 64)
         page = max(page, 1)
         global_offset = (page - 1) * page_size
+        
+        min_match = retrieval_params.get("min_match", 0.3)
+        
         req = {
             "kb_ids": kb_ids,
             "doc_ids": doc_ids,
             "page": global_offset // RERANK_LIMIT + 1,
             "size": RERANK_LIMIT,
-            "question": question,
+            "question": processed_question,
             "vector": True,
             "topk": top,
             "similarity": similarity_threshold,
             "available_int": 1,
+            "min_match": min_match,
         }
+        
+        if query_intent:
+            req["query_intent"] = {
+                "type": query_intent.query_type.value,
+                "original_query": query_intent.original_query,
+                "retrieval_strategy": query_intent.retrieval_strategy,
+            }
+            if query_intent.sub_queries:
+                req["query_intent"]["sub_queries"] = query_intent.sub_queries
+            if query_intent.metadata:
+                req["query_intent"]["metadata"] = query_intent.metadata
+        
         logging.debug(f"[Search] global_offset={global_offset}, rerank_limit={RERANK_LIMIT}, page_size={page_size}, page={page}")
 
         if isinstance(tenant_ids, str):
