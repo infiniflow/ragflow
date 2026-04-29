@@ -23,14 +23,14 @@ import (
 	"time"
 )
 
-// MinimaxModel implements ModelDriver for Zhipu AI
+// MinimaxModel implements ModelDriver for Minimax
 type MinimaxModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
 	httpClient *http.Client // Reusable HTTP client with connection pool
 }
 
-// NewMinimaxModel creates a new Zhipu AI model instance
+// NewMinimaxModel creates a new Minimax model instance
 func NewMinimaxModel(baseURL map[string]string, urlSuffix URLSuffix) *MinimaxModel {
 	return &MinimaxModel{
 		BaseURL:   baseURL,
@@ -66,8 +66,8 @@ func (z *MinimaxModel) ChatStreamlyWithSender(modelName, message *string, apiCon
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
-// EncodeToEmbedding encodes a list of texts into embeddings
-func (z *MinimaxModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+// Encode encodes a list of texts into embeddings
+func (z *MinimaxModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -111,4 +111,9 @@ func (z *MinimaxModel) CheckConnection(apiConfig *APIConfig) error {
 	}
 
 	return nil
+}
+
+// Rerank calculates similarity scores between query and texts
+func (z *MinimaxModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }

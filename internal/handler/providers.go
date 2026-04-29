@@ -607,6 +607,9 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 	}
 
 	modelName := c.Param("model_name")
+	if modelName != "" {
+		modelName = strings.TrimPrefix(modelName, "/")
+	}
 	if modelName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
@@ -643,17 +646,28 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 }
 
 type ChatToModelRequest struct {
-	ModelName string  `json:"model_name" binding:"required"`
-	Message   string  `json:"message" binding:"required"`
-	Stream    bool    `json:"stream"`
-	Thinking  bool    `json:"thinking"`
-	Effort    *string `json:"effort"`
-	Verbosity *string `json:"verbosity"`
+	ProviderName *string `json:"provider_name"`
+	InstanceName *string `json:"instance_name"`
+	ModelName    *string `json:"model_name"`
+	Message      string  `json:"message" binding:"required"`
+	Stream       bool    `json:"stream"`
+	Thinking     bool    `json:"thinking"`
+	Effort       *string `json:"effort"`
+	Verbosity    *string `json:"verbosity"`
 }
 
 func (h *ProviderHandler) ChatToModel(c *gin.Context) {
-	providerName := c.Param("provider_name")
-	if providerName == "" {
+	var req ChatToModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		println("JSON bind error: %v (type: %T)", err, err)
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if req.ProviderName == nil || *req.ProviderName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "Provider name is required",
@@ -661,8 +675,7 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		return
 	}
 
-	instanceName := c.Param("instance_name")
-	if instanceName == "" {
+	if req.InstanceName == nil || *req.InstanceName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "Instance name is required",
@@ -670,12 +683,10 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		return
 	}
 
-	var req ChatToModelRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		println("JSON bind error: %v (type: %T)", err, err)
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
+	if req.ModelName == nil || *req.ModelName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Model name is required",
 		})
 		return
 	}
@@ -737,16 +748,16 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		}
 
 		// Stream response using sender function (best performance, no channel)
-		errorCode := h.modelProviderService.ChatToModelStreamWithSender(providerName, instanceName, req.ModelName, userID, req.Message, &apiConfig, &chatConfig, sender)
+		errorCode, err := h.modelProviderService.ChatToModelStreamWithSender(*req.ProviderName, *req.InstanceName, *req.ModelName, userID, req.Message, &apiConfig, &chatConfig, sender)
 
 		if errorCode != common.CodeSuccess {
-			c.SSEvent("error", "stream failed")
+			c.SSEvent("error", err.Error())
 		}
 		return
 	}
 
 	// Non-stream response
-	response, errorCode, err := h.modelProviderService.ChatToModel(providerName, instanceName, req.ModelName, userID, req.Message, &apiConfig, &chatConfig)
+	response, errorCode, err := h.modelProviderService.ChatToModel(*req.ProviderName, *req.InstanceName, *req.ModelName, userID, req.Message, &apiConfig, &chatConfig)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    errorCode,

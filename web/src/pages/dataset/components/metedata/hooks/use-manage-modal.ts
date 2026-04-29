@@ -2,8 +2,9 @@ import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useSelectedIds } from '@/hooks/logic-hooks/use-row-selection';
 import { DocumentApiAction } from '@/hooks/use-document-request';
-import kbService, {
+import {
   getMetaDataService,
+  kbUpdateMetaData,
   updateDocumentMetaDataConfig,
   updateDocumentsMetadata,
 } from '@/services/knowledge-service';
@@ -413,8 +414,7 @@ export const useManageMetaDataModal = (
   const handleSaveSettings = useCallback(
     async (callback: () => void, builtInMetadata?: IBuiltInMetadataItem[]) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
-      const { data: res } = await kbService.kbUpdateMetaData({
-        kb_id: id,
+      const { data: res } = await kbUpdateMetaData(id || '', {
         metadata: data,
         builtInMetadata: builtInMetadata || [],
       });
@@ -432,16 +432,13 @@ export const useManageMetaDataModal = (
   );
 
   const handleSaveSingleFileSettings = useCallback(
-    async (callback: () => void) => {
+    async (callback: () => void, builtInMetadata?: IBuiltInMetadataItem[]) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
-      // otherData contains: documentId
-      if (otherData?.documentId && id) {
+      if (otherData?.documentId) {
         const { data: res } = await updateDocumentMetaDataConfig({
-          kb_id: id,
+          kb_id: id || '',
           doc_id: otherData.documentId,
-          data: {
-            metadata: data,
-          },
+          data: { metadata: data, builtInMetadata: builtInMetadata || [] },
         });
         if (res.code === 0) {
           message.success(t('message.operated'));
@@ -449,9 +446,12 @@ export const useManageMetaDataModal = (
         }
       }
 
-      return data;
+      return {
+        metadata: data,
+        builtInMetadata: builtInMetadata || [],
+      };
     },
-    [tableData, t, otherData],
+    [tableData, t, otherData, id],
   );
 
   const handleSave = useCallback(

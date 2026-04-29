@@ -2397,7 +2397,7 @@ Important structured information may include: names, dates, locations, events, k
         renameKeys: 'Rename keys',
       },
       ListOperationsOptions: {
-        topN: 'Top N',
+        nth: 'Nth',
         head: 'Head',
         tail: 'Tail',
         sort: 'Sort',
@@ -2405,6 +2405,9 @@ Important structured information may include: names, dates, locations, events, k
         dropDuplicates: 'Drop duplicates',
       },
       sortMethod: 'Sort method',
+      strictMode: 'Strict mode',
+      strictModeTip:
+        'Off uses lenient behavior and returns an empty result for invalid n. On uses strict behavior and raises an error for out-of-range n.',
       SortMethodOptions: {
         asc: 'Ascending',
         desc: 'Descending',

@@ -80,6 +80,15 @@ class _StubResponse:
         self.headers = _StubHeaders()
 
 
+class _DummyUploadFile:
+    def __init__(self, filename):
+        self.filename = filename
+        self.saved_path = None
+
+    async def save(self, path):
+        self.saved_path = path
+
+
 def _passthrough_login_required(func):
     @wraps(func)
     async def _wrapper(*args, **kwargs):
@@ -131,6 +140,21 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+async def _collect_stream(body):
+    items = []
+    if hasattr(body, "__aiter__"):
+        async for item in body:
+            if isinstance(item, bytes):
+                item = item.decode("utf-8")
+            items.append(item)
+    else:
+        for item in body:
+            if isinstance(item, bytes):
+                item = item.decode("utf-8")
+            items.append(item)
+    return items
+
+
 @pytest.fixture(scope="session")
 def auth():
     return "unit-auth"
@@ -172,6 +196,8 @@ def _load_chat_module(monkeypatch):
         CHAT = "chat"
         IMAGE2TEXT = "image2text"
         RERANK = "rerank"
+        SPEECH2TEXT = "speech2text"
+        TTS = "tts"
 
     class _StubRetCode(int, Enum):
         SUCCESS = 0
@@ -185,6 +211,10 @@ def _load_chat_module(monkeypatch):
     common_constants_mod.LLMType = _StubLLMType
     common_constants_mod.RetCode = _StubRetCode
     common_constants_mod.StatusEnum = _StubStatusEnum
+    # Import pure-Python constants from the real module (no heavy deps)
+    from common.constants import MAXIMUM_PAGE_NUMBER as _MPN, MAXIMUM_TASK_PAGE_NUMBER as _MTPN
+    common_constants_mod.MAXIMUM_PAGE_NUMBER = _MPN
+    common_constants_mod.MAXIMUM_TASK_PAGE_NUMBER = _MTPN
     monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
 
     misc_utils_mod = ModuleType("common.misc_utils")
@@ -1060,3 +1090,138 @@ def test_chat_session_delete_routes_partial_duplicate_unit(monkeypatch):
     assert res["code"] == 0
     assert res["data"]["success_count"] == 1
     assert res["data"]["errors"] == ["Duplicate session ids: ok"]
+
+
+@pytest.mark.p2
+def test_chat_audio_transcription_routes_unit(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+    monkeypatch.setattr(module, "Response", _StubResponse)
+    monkeypatch.setattr(module.tempfile, "mkstemp", lambda suffix: (11, f"/tmp/audio{suffix}"))
+    monkeypatch.setattr(module.os, "close", lambda _fd: None)
+
+    def _set_request(form, files):
+        monkeypatch.setattr(
+            module,
+            "request",
+            SimpleNamespace(form=_AwaitableValue(form), files=_AwaitableValue(files)),
+        )
+
+    _set_request({"stream": "false"}, {})
+    res = _run(module.transcription.__wrapped__())
+    assert "Missing 'file' in multipart form-data" in res["message"]
+
+    _set_request({"stream": "false"}, {"file": _DummyUploadFile("bad.txt")})
+    res = _run(module.transcription.__wrapped__())
+    assert "Unsupported audio format: .txt" in res["message"]
+
+    _set_request({"stream": "false"}, {"file": _DummyUploadFile("audio.wav")})
+    monkeypatch.setattr(
+        module,
+        "get_tenant_default_model_by_type",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(LookupError("Tenant not found!")),
+    )
+    res = _run(module.transcription.__wrapped__())
+    assert res["message"] == "Tenant not found!"
+
+    _set_request({"stream": "false"}, {"file": _DummyUploadFile("audio.wav")})
+    monkeypatch.setattr(
+        module,
+        "get_tenant_default_model_by_type",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(Exception("No default ASR model is set")),
+    )
+    res = _run(module.transcription.__wrapped__())
+    assert res["message"] == "No default ASR model is set"
+
+    class _SyncASR:
+        def transcription(self, _path):
+            return "transcribed text"
+
+        def stream_transcription(self, _path):
+            return []
+
+    _set_request({"stream": "false"}, {"file": _DummyUploadFile("audio.wav")})
+    monkeypatch.setattr(module, "get_tenant_default_model_by_type", lambda *_args, **_kwargs: {"llm_name": "asr-x"})
+    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _SyncASR())
+    monkeypatch.setattr(module.os, "remove", lambda _path: (_ for _ in ()).throw(RuntimeError("cleanup fail")))
+    res = _run(module.transcription.__wrapped__())
+    assert res["code"] == 0
+    assert res["data"]["text"] == "transcribed text"
+
+    class _StreamASR:
+        def transcription(self, _path):
+            return ""
+
+        def stream_transcription(self, _path):
+            yield {"event": "partial", "text": "hello"}
+
+    _set_request({"stream": "true"}, {"file": _DummyUploadFile("audio.wav")})
+    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _StreamASR())
+    monkeypatch.setattr(module.os, "remove", lambda _path: None)
+    resp = _run(module.transcription.__wrapped__())
+    assert isinstance(resp, _StubResponse)
+    assert resp.content_type == "text/event-stream"
+    chunks = _run(_collect_stream(resp.body))
+    assert any('"event": "partial"' in chunk for chunk in chunks)
+
+    class _ErrorASR:
+        def transcription(self, _path):
+            return ""
+
+        def stream_transcription(self, _path):
+            raise RuntimeError("stream asr boom")
+
+    _set_request({"stream": "true"}, {"file": _DummyUploadFile("audio.wav")})
+    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _ErrorASR())
+    monkeypatch.setattr(module.os, "remove", lambda _path: (_ for _ in ()).throw(RuntimeError("cleanup boom")))
+    resp = _run(module.transcription.__wrapped__())
+    chunks = _run(_collect_stream(resp.body))
+    assert any("stream asr boom" in chunk for chunk in chunks)
+
+
+@pytest.mark.p2
+def test_chat_audio_speech_routes_unit(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+    monkeypatch.setattr(module, "Response", _StubResponse)
+    _set_request_json(monkeypatch, module, {"text": "A。B"})
+
+    monkeypatch.setattr(
+        module,
+        "get_tenant_default_model_by_type",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(LookupError("Tenant not found!")),
+    )
+    res = _run(module.tts.__wrapped__())
+    assert res["message"] == "Tenant not found!"
+
+    monkeypatch.setattr(
+        module,
+        "get_tenant_default_model_by_type",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(Exception("No default TTS model is set")),
+    )
+    res = _run(module.tts.__wrapped__())
+    assert res["message"] == "No default TTS model is set"
+
+    class _TTSOk:
+        def tts(self, txt):
+            if not txt:
+                return []
+            yield f"chunk-{txt}".encode("utf-8")
+
+    monkeypatch.setattr(module, "get_tenant_default_model_by_type", lambda *_args, **_kwargs: {"llm_name": "tts-x"})
+    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _TTSOk())
+    resp = _run(module.tts.__wrapped__())
+    assert resp.mimetype == "audio/mpeg"
+    assert resp.headers.get("Cache-Control") == "no-cache"
+    assert resp.headers.get("Connection") == "keep-alive"
+    assert resp.headers.get("X-Accel-Buffering") == "no"
+    chunks = _run(_collect_stream(resp.body))
+    assert any("chunk-A" in chunk for chunk in chunks)
+    assert any("chunk-B" in chunk for chunk in chunks)
+
+    class _TTSErr:
+        def tts(self, _txt):
+            raise RuntimeError("tts boom")
+
+    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _TTSErr())
+    resp = _run(module.tts.__wrapped__())
+    chunks = _run(_collect_stream(resp.body))
+    assert any('"code": 500' in chunk and "**ERROR**: tts boom" in chunk for chunk in chunks)

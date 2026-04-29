@@ -106,8 +106,12 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
                 # Non-comparison operators: maintain original logic
                 if isinstance(input, str):
                     input = input.lower()
+                elif operator in ("in", "not in") and isinstance(input, list):
+                    input = [x.lower() if isinstance(x, str) else x for x in input]
                 if isinstance(value, str):
                     value = value.lower()
+                elif operator in ("in", "not in") and isinstance(value, list):
+                    value = [x.lower() if isinstance(x, str) else x for x in value]
 
             matched = False
             try:
