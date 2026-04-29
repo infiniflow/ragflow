@@ -23,9 +23,12 @@ Released on April 29, 2026.
 
 Added bitbucket, gmail, google drive, and airtable with automated file deletion synchronization.
 
-### model support
+### Model support
 
 - DeepSeek v4
+
+### Model provider
+
 - UCloud
 
 ### Bug fixes
