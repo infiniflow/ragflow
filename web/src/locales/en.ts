@@ -286,6 +286,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       raptor: 'RAPTOR',
       processingType: 'Processing type',
       dataPipeline: 'Switch or configure ingestion pipeline.',
+      dataPipelineTitle: 'Ingestion pipeline',
       operations: 'Operations',
       taskId: 'Task ID',
       duration: 'Duration',
@@ -1510,16 +1511,16 @@ Example: Virtual Hosted Style`,
         author: 'Author',
         sectionTitle: 'Section title',
       },
-      includeHeadingContent: 'Include heading content',
+      includeHeadingContent: 'Separate parent-heading content',
       includeHeadingContentTip:
-        'When enabled, content directly under a heading is kept as its own chunk. Child chunks keep only the heading path.',
-      rootAsHeading: 'Use root as H0 heading',
+        'When enabled, chunks include only their heading path and content; content immediately following a parent heading is kept as a separate chunk.',
+      rootAsHeading: 'Set first chunk as global context',
       rootAsHeadingTip:
-        'Treat the root node as a H0 heading when building the hierarchy',
-      hierarchyTip: `Build a heading tree and produce self-contained chunks, each carrying its full ancestor heading path (e.g. Part 1 › Chapter 3 › Section 2 + body text).\n
-Best for: Documents with independent, structurally significant sections — such as legal statutes, regulations, contracts, and technical specifications — where each chunk must be identifiable by its structural position even without surrounding context.`,
-      groupTip: `Split the document flat at a chosen heading level and automatically merge adjacent small sections to preserve content continuity. No parent-heading path is injected.\n
-Best for: Documents with flowing, contextually connected content — such as books, manuals, reports, and articles — where adjacent paragraphs should stay together to maintain narrative coherence.`,
+        'Treats the first split as a global heading to maintain consistent context across the document hierarchy. Ideal for resumes where the first section identifies the subject.',
+      hierarchyTip: `Construct a heading tree and produce self-contained chunks, each carrying its full ancestral path (e.g. Part 1 › Chapter 3 › Section 2 + body text).\n
+Best for: Highly structured texts — such as legal statutes, regulations, contracts, and technical specs — where each chunk must be identifiable by its position in the hierarchy.`,
+      groupTip: `Split the document flat at a chosen heading level, merging adjacent small sections to ensure semantic flow. Chunks exclude ancestral path.\n
+Best for: Documents with flowing, contextually connected content — such as books, manuals, reports, and articles — where narrative coherence depends on keeping adjacent paragraphs together.`,
       enableMultiColumn: 'Detect multi-column layout',
       enableMultiColumnTip:
         'Detect and parse multi-column page layouts to preserve the correct reading order. Turn this on for PDFs or documents with two-column or newspaper-style layouts.',
@@ -2394,7 +2395,7 @@ Important structured information may include: names, dates, locations, events, k
         renameKeys: 'Rename keys',
       },
       ListOperationsOptions: {
-        topN: 'Top N',
+        nth: 'Nth',
         head: 'Head',
         tail: 'Tail',
         sort: 'Sort',
@@ -2402,6 +2403,9 @@ Important structured information may include: names, dates, locations, events, k
         dropDuplicates: 'Drop duplicates',
       },
       sortMethod: 'Sort method',
+      strictMode: 'Strict mode',
+      strictModeTip:
+        'Off uses lenient behavior and returns an empty result for invalid n. On uses strict behavior and raises an error for out-of-range n.',
       SortMethodOptions: {
         asc: 'Ascending',
         desc: 'Descending',

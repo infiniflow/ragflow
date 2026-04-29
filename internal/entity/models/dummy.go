@@ -34,6 +34,10 @@ func NewDummyModel(baseURL map[string]string, urlSuffix URLSuffix) *DummyModel {
 	}
 }
 
+func (z *DummyModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
+}
+
 func (z *DummyModel) Name() string {
 	return "dummy"
 }
@@ -43,13 +47,18 @@ func (z *DummyModel) Chat(modelName, message *string, apiConfig *APIConfig, mode
 	return nil, fmt.Errorf("not implemented")
 }
 
+// ChatWithMessages sends multiple messages with roles and returns response
+func (z *DummyModel) ChatWithMessages(modelName string, apiKey *string, messages []Message, modelConfig *ChatConfig) (string, error) {
+	return "", fmt.Errorf("not implemented")
+}
+
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
 func (z *DummyModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("not implemented")
 }
 
-// EncodeToEmbedding encodes a list of texts into embeddings
-func (z *DummyModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+// Encode encodes a list of texts into embeddings
+func (z *DummyModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -63,4 +72,9 @@ func (z *DummyModel) Balance(apiConfig *APIConfig) (map[string]interface{}, erro
 
 func (z *DummyModel) CheckConnection(apiConfig *APIConfig) error {
 	return fmt.Errorf("no such method")
+}
+
+// Rerank calculates similarity scores between query and texts
+func (z *DummyModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }

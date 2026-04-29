@@ -68,7 +68,8 @@ class Tokenizer(ProcessBase):
             embd_model_config = get_tenant_default_model_by_type(self._canvas._tenant_id, LLMType.EMBEDDING)
         embedding_model = LLMBundle(self._canvas._tenant_id, embd_model_config)
         texts = []
-        for c in chunks:
+        valid_pairs = []
+        for i, c in enumerate(chunks):
             txt = ""
             if isinstance(self._param.fields, str):
                 self._param.fields=[self._param.fields]
@@ -78,7 +79,15 @@ class Tokenizer(ProcessBase):
                     txt += f
                 elif isinstance(f, list):
                     txt += "\n".join(f)
-            texts.append(re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt))
+            cleaned_txt = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt).strip()
+            if not cleaned_txt:
+                continue
+            texts.append(cleaned_txt)
+            valid_pairs.append((i, c))
+
+        if not texts:
+            return chunks, token_count
+
         vts, c = embedding_model.encode([name])
         token_count += c
         tts = np.concatenate([vts[0] for _ in range(len(texts))], axis=0)
@@ -104,8 +113,8 @@ class Tokenizer(ProcessBase):
         title_w = float(self._param.filename_embd_weight)
         vects = (title_w * tts + (1 - title_w) * cnts) if len(tts) == len(cnts) else cnts
 
-        assert len(vects) == len(chunks)
-        for i, ck in enumerate(chunks):
+        assert len(vects) == len(valid_pairs)
+        for i, (_, ck) in enumerate(valid_pairs):
             v = vects[i].tolist()
             ck["q_%d_vec" % len(v)] = v
         return chunks, token_count
