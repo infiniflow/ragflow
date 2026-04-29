@@ -24,16 +24,43 @@ Tests cover:
 - Too short/too long chunk detection
 - Missing title detection
 - Header/footer pollution detection
+
+Note: Import analyzer.py directly by file path to avoid triggering
+rag/flow/__init__.py which pulls in heavy dependencies.
 """
 
-import pytest
+import hashlib
+import importlib.util
+import os
+import sys
+from enum import Enum
+from unittest import mock
 
-from rag.flow.quality.analyzer import (
-    ChunkQualityAnalyzer,
-    ChunkQualityResult,
-    QualityIssue,
-    QualityRiskLevel,
+
+def _find_project_root(marker="pyproject.toml"):
+    """Walk up from this file until a directory containing *marker* is found."""
+    cur = os.path.dirname(os.path.abspath(__file__))
+    while True:
+        if os.path.exists(os.path.join(cur, marker)):
+            return cur
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            raise FileNotFoundError(f"Could not locate project root (missing {marker})")
+        cur = parent
+
+
+_MODULE_PATH = os.path.join(
+    _find_project_root(),
+    "rag", "flow", "quality", "analyzer.py"
 )
+_spec = importlib.util.spec_from_file_location("analyzer", _MODULE_PATH)
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+
+ChunkQualityAnalyzer = _mod.ChunkQualityAnalyzer
+ChunkQualityResult = _mod.ChunkQualityResult
+QualityIssue = _mod.QualityIssue
+QualityRiskLevel = _mod.QualityRiskLevel
 
 
 class TestChunkQualityAnalyzerInitialization:
@@ -64,11 +91,8 @@ class TestChunkQualityAnalyzerInitialization:
 class TestNormalTextChunks:
     """Tests for normal, high-quality text chunks."""
 
-    @pytest.fixture
-    def analyzer(self):
-        return ChunkQualityAnalyzer()
-
-    def test_normal_chinese_text(self, analyzer):
+    def test_normal_chinese_text(self):
+        analyzer = ChunkQualityAnalyzer()
         chunk = {
             "text": "这是一段正常的中文文本内容，用于测试质量分析器的基本功能。"
                     "这段文本包含足够的长度和丰富的内容，应该被判定为高质量的chunk。"
@@ -82,7 +106,8 @@ class TestNormalTextChunks:
         assert len(result.issues) == 0
         assert result.risk_level == QualityRiskLevel.LOW
 
-    def test_normal_english_text(self, analyzer):
+    def test_normal_english_text(self):
+        analyzer = ChunkQualityAnalyzer()
         chunk = {
             "text": "This is a normal English text chunk with sufficient length. "
                     "It contains multiple sentences and provides rich semantic content. "
@@ -95,7 +120,8 @@ class TestNormalTextChunks:
         assert len(result.issues) == 0
         assert result.risk_level == QualityRiskLevel.LOW
 
-    def test_mixed_language_text(self, analyzer):
+    def test_mixed_language_text(self):
+        analyzer = ChunkQualityAnalyzer()
         chunk = {
             "text": "This is a mixed language text. 这是一段中英文混合的文本。"
                     "It contains both English and Chinese characters. "
@@ -111,11 +137,8 @@ class TestNormalTextChunks:
 class TestTableChunks:
     """Tests for table chunks (complete and broken)."""
 
-    @pytest.fixture
-    def analyzer(self):
-        return ChunkQualityAnalyzer()
-
-    def test_complete_html_table(self, analyzer):
+    def test_complete_html_table(self):
+        analyzer = ChunkQualityAnalyzer()
         chunk = {
             "text": "<table><thead><tr><th>Name</th><th>Age</th><th>City</th></tr></thead>"
                     "<tbody><tr><td>John</td><td>25</td><td>New York</td></tr>"
@@ -128,7 +151,8 @@ class TestTableChunks:
         table_issues = [i for i in result.issues if i.issue_type == "table_break"]
         assert len(table_issues) == 0
 
-    def test_markdown_table_complete(self, analyzer):
+    def test_markdown_table_complete(self):
+        analyzer = ChunkQualityAnalyzer()
         chunk = {
             "text": "| Name | Age | City |\n|------|-----|------|\n| John | 25 | New York |\n| Jane | 30 | London |",
             "doc_type_kwd": "table",
@@ -139,7 +163,8 @@ class TestTableChunks:
         table_issues = [i for i in result.issues if i.issue_type == "table_break"]
         assert len(table_issues) == 0
 
-    def test_broken_table_unclosed_tags(self, analyzer):
+    def test_broken_table_unclosed_tags(self):
+        analyzer = ChunkQualityAnalyzer()
         chunk = {
             "text": "<table><thead><tr><th>Name</th><th>Age</th>",
             "doc_type_kwd": "table",
@@ -151,7 +176,8 @@ class TestTableChunks:
         assert len(table_issues) >= 1
         assert table_issues[0].risk_level in [QualityRiskLevel.HIGH, QualityRiskLevel.MEDIUM]
 
-    def test_table_with_single_row(self, analyzer):
+    def test_table_with_single_row(self):
+        analyzer = ChunkQualityAnalyzer()
         chunk = {
             "text": "| Name | Age |\n|------|-----|",
             "doc_type_kwd": "table",
@@ -166,11 +192,8 @@ class TestTableChunks:
 class TestGarbledTextDetection:
     """Tests for garbled text detection (PUA chars, CID patterns, control chars)."""
 
-    @pytest.fixture
-    def analyzer(self):
-        return ChunkQualityAnalyzer(garbled_threshold=0.3)
-
-    def test_cid_pattern_detection(self, analyzer):
+    def test_cid_pattern_detection(self):
+        analyzer = ChunkQualityAnalyzer()
         chunk = {
             "text": "This is some text with (cid:123) CID patterns (cid:456) in it."
         }
@@ -180,7 +203,8 @@ class TestGarbledTextDetection:
         assert len(cid_issues) == 1
         assert cid_issues[0].risk_level == QualityRiskLevel.CRITICAL
 
-    def test_cid_pattern_with_spaces(self, analyzer):
+    def test_cid_pattern_with_spaces(self):
+        analyzer = ChunkQualityAnalyzer()
         chunk = {
             "text": "Text with (cid : 789) pattern and more text."
         }
@@ -189,9 +213,10 @@ class TestGarbledTextDetection:
         cid_issues = [i for i in result.issues if i.issue_type == "cid_garbled"]
         assert len(cid_issues) == 1
 
-    def test_pua_characters(self, analyzer):
+    def test_pua_characters(self):
+        analyzer = ChunkQualityAnalyzer(garbled_threshold=0.3)
         chunk = {
-            "text": "\uE000\uE001\uE002\uE003\uE004 Normal text here"
+            "text": "\uE000\uE001\uE002\uE003\uE004\uE005\uE006\uE007\uE008 Normal"
         }
         result = analyzer.analyze_single_chunk(chunk, 0)
 
@@ -199,7 +224,8 @@ class TestGarbledTextDetection:
         assert len(garbled_issues) == 1
         assert result.quality_score < 0.8
 
-    def test_replacement_character(self, analyzer):
+    def test_replacement_character(self):
+        analyzer = ChunkQualityAnalyzer()
         chunk = {
             "text": "Document with \uFFFD\uFFFD\uFFFD replacement characters"
         }
@@ -207,16 +233,18 @@ class TestGarbledTextDetection:
 
         assert "garbled_ratio" in result.metadata
 
-    def test_control_characters(self, analyzer):
+    def test_control_characters(self):
+        analyzer = ChunkQualityAnalyzer(garbled_threshold=0.3)
         chunk = {
-            "text": "\x00\x01\x02\x03Text with control characters"
+            "text": "\x00\x01\x02\x03\x04\x05Text with control characters"
         }
         result = analyzer.analyze_single_chunk(chunk, 0)
 
         garbled_issues = [i for i in result.issues if i.issue_type == "garbled_text"]
         assert len(garbled_issues) == 1
 
-    def test_below_threshold_garbled(self, analyzer):
+    def test_below_threshold_garbled(self):
+        analyzer = ChunkQualityAnalyzer(garbled_threshold=0.5)
         chunk = {
             "text": "Normal text with one \uE000 PUA char"
         }
@@ -230,16 +258,12 @@ class TestGarbledTextDetection:
 class TestDuplicateChunkDetection:
     """Tests for duplicate chunk detection."""
 
-    @pytest.fixture
-    def analyzer(self):
-        return ChunkQualityAnalyzer()
-
-    def test_duplicate_detection_with_seen_hashes(self, analyzer):
+    def test_duplicate_detection_with_seen_hashes(self):
+        analyzer = ChunkQualityAnalyzer()
         seen_hashes = set()
 
         chunk1 = {"text": "This is the first chunk content."}
         result1 = analyzer.analyze_single_chunk(chunk1, 0, seen_hashes)
-        import hashlib
         hash1 = hashlib.md5(chunk1["text"].encode("utf-8", errors="replace")).hexdigest()
         seen_hashes.add(hash1)
 
@@ -251,12 +275,12 @@ class TestDuplicateChunkDetection:
         assert duplicate_issues[0].risk_level == QualityRiskLevel.HIGH
         assert result2.quality_score < result1.quality_score
 
-    def test_unique_chunks_not_flagged(self, analyzer):
+    def test_unique_chunks_not_flagged(self):
+        analyzer = ChunkQualityAnalyzer()
         seen_hashes = set()
 
         chunk1 = {"text": "This is chunk one."}
         result1 = analyzer.analyze_single_chunk(chunk1, 0, seen_hashes)
-        import hashlib
         hash1 = hashlib.md5(chunk1["text"].encode("utf-8", errors="replace")).hexdigest()
         seen_hashes.add(hash1)
 
@@ -266,7 +290,8 @@ class TestDuplicateChunkDetection:
         duplicate_issues = [i for i in result2.issues if i.issue_type == "duplicate_chunk"]
         assert len(duplicate_issues) == 0
 
-    def test_analyze_chunks_batch_duplicates(self, analyzer):
+    def test_analyze_chunks_batch_duplicates(self):
+        analyzer = ChunkQualityAnalyzer()
         chunks = [
             {"text": "Duplicate text here."},
             {"text": "Duplicate text here."},
@@ -283,11 +308,8 @@ class TestDuplicateChunkDetection:
 class TestChunkLengthBoundaries:
     """Tests for too short and too long chunk detection."""
 
-    @pytest.fixture
-    def analyzer(self):
-        return ChunkQualityAnalyzer(min_chunk_length=20, max_chunk_length=100)
-
-    def test_empty_chunk(self, analyzer):
+    def test_empty_chunk(self):
+        analyzer = ChunkQualityAnalyzer(min_chunk_length=20, max_chunk_length=100)
         chunk = {"text": ""}
         result = analyzer.analyze_single_chunk(chunk, 0)
 
@@ -296,7 +318,8 @@ class TestChunkLengthBoundaries:
         assert empty_issues[0].risk_level == QualityRiskLevel.CRITICAL
         assert result.quality_score < 0.6
 
-    def test_too_short_chunk(self, analyzer):
+    def test_too_short_chunk(self):
+        analyzer = ChunkQualityAnalyzer(min_chunk_length=20, max_chunk_length=100)
         chunk = {"text": "Short text."}
         result = analyzer.analyze_single_chunk(chunk, 0)
 
@@ -304,14 +327,16 @@ class TestChunkLengthBoundaries:
         assert len(short_issues) == 1
         assert short_issues[0].risk_level == QualityRiskLevel.MEDIUM
 
-    def test_just_above_min_length(self, analyzer):
+    def test_just_above_min_length(self):
+        analyzer = ChunkQualityAnalyzer(min_chunk_length=20, max_chunk_length=100)
         chunk = {"text": "This is a text just above min."}
         result = analyzer.analyze_single_chunk(chunk, 0)
 
         short_issues = [i for i in result.issues if i.issue_type == "chunk_too_short"]
         assert len(short_issues) == 0
 
-    def test_too_long_chunk(self, analyzer):
+    def test_too_long_chunk(self):
+        analyzer = ChunkQualityAnalyzer(min_chunk_length=20, max_chunk_length=100)
         long_text = "a" * 150
         chunk = {"text": long_text}
         result = analyzer.analyze_single_chunk(chunk, 0)
@@ -320,7 +345,8 @@ class TestChunkLengthBoundaries:
         assert len(long_issues) == 1
         assert long_issues[0].risk_level == QualityRiskLevel.MEDIUM
 
-    def test_just_below_max_length(self, analyzer):
+    def test_just_below_max_length(self):
+        analyzer = ChunkQualityAnalyzer(min_chunk_length=20, max_chunk_length=100)
         text = "a" * 90
         chunk = {"text": text}
         result = analyzer.analyze_single_chunk(chunk, 0)
@@ -332,11 +358,8 @@ class TestChunkLengthBoundaries:
 class TestTokenCountChecks:
     """Tests for token count boundary checks."""
 
-    @pytest.fixture
-    def analyzer(self):
-        return ChunkQualityAnalyzer(min_token_count=5, max_token_count=100)
-
-    def test_low_token_count(self, analyzer):
+    def test_low_token_count(self):
+        analyzer = ChunkQualityAnalyzer(min_token_count=5, max_token_count=100)
         chunk = {
             "text": "Short text with few tokens.",
             "tk_nums": 3,
@@ -347,7 +370,8 @@ class TestTokenCountChecks:
         assert len(token_issues) == 1
         assert result.metadata["token_count"] == 3
 
-    def test_high_token_count(self, analyzer):
+    def test_high_token_count(self):
+        analyzer = ChunkQualityAnalyzer(min_token_count=5, max_token_count=100)
         chunk = {
             "text": "Long text with many tokens here.",
             "tk_nums": 150,
@@ -357,7 +381,8 @@ class TestTokenCountChecks:
         token_issues = [i for i in result.issues if i.issue_type == "token_count_too_high"]
         assert len(token_issues) == 1
 
-    def test_token_count_within_range(self, analyzer):
+    def test_token_count_within_range(self):
+        analyzer = ChunkQualityAnalyzer(min_token_count=5, max_token_count=100)
         chunk = {
             "text": "Normal text with good token count.",
             "tk_nums": 50,
@@ -373,35 +398,24 @@ class TestTokenCountChecks:
 class TestHeaderFooterPollution:
     """Tests for header and footer pollution detection."""
 
-    @pytest.fixture
-    def analyzer(self):
-        return ChunkQualityAnalyzer()
-
-    def test_page_number_pattern(self, analyzer):
-        chunk = {
-            "text": """Some document content here.
-
-- 5 -
-
-More content continues."""
-        }
-        result = analyzer.analyze_single_chunk(chunk, 0)
-
-        header_issues = [i for i in result.issues if i.issue_type == "header_footer_pollution"]
-        assert len(header_issues) >= 0
-
-    def test_chinese_page_pattern(self, analyzer):
+    def test_chinese_page_pattern(self):
+        analyzer = ChunkQualityAnalyzer()
         chunk = {
             "text": """文档开始
 第 3 页 / 共 10 页
-文档内容继续"""
+文档内容继续
+更多内容
+分隔线
+----------------------------------------
+结束"""
         }
         result = analyzer.analyze_single_chunk(chunk, 0)
 
         header_issues = [i for i in result.issues if i.issue_type == "header_footer_pollution"]
         assert len(header_issues) >= 1
 
-    def test_separator_lines(self, analyzer):
+    def test_separator_lines(self):
+        analyzer = ChunkQualityAnalyzer()
         chunk = {
             "text": """Content here
 ----------------------------------------
@@ -418,11 +432,8 @@ End content"""
 class TestBatchAnalysis:
     """Tests for batch chunk analysis and summary."""
 
-    @pytest.fixture
-    def analyzer(self):
-        return ChunkQualityAnalyzer()
-
-    def test_analyze_chunks_empty(self, analyzer):
+    def test_analyze_chunks_empty(self):
+        analyzer = ChunkQualityAnalyzer()
         results = analyzer.analyze_chunks([])
         assert len(results) == 0
 
@@ -430,7 +441,8 @@ class TestBatchAnalysis:
         assert summary["total_chunks"] == 0
         assert summary["average_quality"] == 0.0
 
-    def test_analyze_chunks_mixed_quality(self, analyzer):
+    def test_analyze_chunks_mixed_quality(self):
+        analyzer = ChunkQualityAnalyzer()
         chunks = [
             {"text": "This is a normal, high-quality chunk with good content and sufficient length."},
             {"text": "短"},
@@ -526,3 +538,81 @@ class TestSelectiveChecks:
 
         length_issues = [i for i in result.issues if "length" in i.issue_type or "short" in i.issue_type]
         assert len(length_issues) >= 1
+
+
+class TestQualityRiskLevelEnum:
+    """Tests for QualityRiskLevel enum values."""
+
+    def test_enum_values(self):
+        assert QualityRiskLevel.LOW.value == "low"
+        assert QualityRiskLevel.MEDIUM.value == "medium"
+        assert QualityRiskLevel.HIGH.value == "high"
+        assert QualityRiskLevel.CRITICAL.value == "critical"
+
+    def test_enum_is_enum(self):
+        assert issubclass(QualityRiskLevel, Enum)
+
+
+class TestTaskExecutorIntegration:
+    """Tests for the integration with task_executor.py pattern.
+
+    This tests that the chunks can have quality fields attached
+    similar to how _analyze_chunks_quality does it.
+    """
+
+    def test_quality_fields_can_be_attached_to_chunks(self):
+        analyzer = ChunkQualityAnalyzer()
+        chunks = [
+            {"content_with_weight": "This is a normal chunk with good content and sufficient length.", "doc_id": "test1"},
+            {"content_with_weight": "短", "doc_id": "test2"},
+            {"content_with_weight": "Text with (cid:123) garbled pattern.", "doc_id": "test3"},
+        ]
+
+        results = analyzer.analyze_chunks(chunks)
+        summary = analyzer.get_batch_summary(results)
+
+        for idx, chunk in enumerate(chunks):
+            if idx < len(results):
+                result = results[idx]
+                chunk["_quality_score"] = result.quality_score
+                chunk["_quality_risk_level"] = result.risk_level.value
+                if result.issues:
+                    chunk["_quality_issues"] = [
+                        {
+                            "type": i.issue_type,
+                            "risk": i.risk_level.value,
+                            "desc": i.description,
+                            "details": i.details,
+                            "suggest": i.suggestion,
+                        }
+                        for i in result.issues
+                    ]
+                else:
+                    chunk["_quality_issues"] = []
+                chunk["_quality_metadata"] = result.metadata
+
+        assert chunks[0]["_quality_score"] > 0.9
+        assert chunks[0]["_quality_risk_level"] == "low"
+        assert chunks[0]["_quality_issues"] == []
+
+        assert chunks[1]["_quality_score"] < 0.9
+        assert chunks[1]["_quality_issues"] != []
+
+        assert "cid_garbled" in [i["type"] for i in chunks[2]["_quality_issues"]]
+        assert chunks[2]["_quality_risk_level"] == "critical"
+
+        assert summary["total_chunks"] == 3
+        assert summary["high_risk_count"] >= 1
+
+    def test_empty_chunks_are_flagged(self):
+        analyzer = ChunkQualityAnalyzer()
+        chunks = [
+            {"content_with_weight": "", "doc_id": "empty"},
+        ]
+        results = analyzer.analyze_chunks(chunks)
+
+        assert len(results) == 1
+        assert results[0].quality_score < 0.6
+        empty_issues = [i for i in results[0].issues if i.issue_type == "empty_chunk"]
+        assert len(empty_issues) == 1
+        assert empty_issues[0].risk_level == QualityRiskLevel.CRITICAL

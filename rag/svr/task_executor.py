@@ -80,6 +80,87 @@ from common.exceptions import TaskCanceledException
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
 
+try:
+    from rag.flow.quality.analyzer import ChunkQualityAnalyzer
+    _HAS_QUALITY_ANALYZER = True
+except ImportError:
+    _HAS_QUALITY_ANALYZER = False
+    logging.warning("ChunkQualityAnalyzer not available, skipping quality analysis")
+
+
+def _analyze_chunks_quality(chunks, task, progress_callback):
+    """
+    Analyze chunk quality and attach quality information to each chunk.
+    This is a non-critical operation - errors are logged but do not fail the task.
+
+    Args:
+        chunks: List of chunk dictionaries
+        task: Task dictionary with configuration
+        progress_callback: Progress callback function
+    """
+    if not _HAS_QUALITY_ANALYZER or not chunks:
+        return
+
+    progress_callback(msg="Analyzing chunk quality...")
+    start_ts = timer()
+
+    parser_config = task.get("parser_config") or {}
+    quality_config = parser_config.get("quality_analysis", {})
+
+    analyzer = ChunkQualityAnalyzer(
+        min_chunk_length=quality_config.get("min_chunk_length"),
+        max_chunk_length=quality_config.get("max_chunk_length"),
+        min_token_count=quality_config.get("min_token_count"),
+        max_token_count=quality_config.get("max_token_count"),
+        garbled_threshold=quality_config.get("garbled_threshold"),
+        header_footer_patterns=quality_config.get("header_footer_patterns"),
+        enable_checks=quality_config.get("enable_checks"),
+    )
+
+    results = analyzer.analyze_chunks(chunks)
+
+    for idx, chunk in enumerate(chunks):
+        if idx < len(results):
+            result = results[idx]
+            chunk["_quality_score"] = result.quality_score
+            chunk["_quality_risk_level"] = result.risk_level.value
+            if result.issues:
+                chunk["_quality_issues"] = [
+                    {
+                        "type": i.issue_type,
+                        "risk": i.risk_level.value,
+                        "desc": i.description,
+                        "details": i.details,
+                        "suggest": i.suggestion,
+                    }
+                    for i in result.issues
+                ]
+            else:
+                chunk["_quality_issues"] = []
+            chunk["_quality_metadata"] = result.metadata
+
+    summary = analyzer.get_batch_summary(results)
+    chunk_count = len(chunks)
+    high_risk_count = summary.get("high_risk_count", 0)
+    avg_quality = summary.get("average_quality", 0.0)
+
+    if high_risk_count > 0:
+        logging.warning(
+            f"Quality analysis: {high_risk_count}/{chunk_count} high-risk chunks detected. "
+            f"Average quality: {avg_quality:.2f}"
+        )
+    else:
+        logging.info(
+            f"Quality analysis completed: {chunk_count} chunks, "
+            f"average quality: {avg_quality:.2f}, high-risk: {high_risk_count}"
+        )
+
+    progress_callback(
+        prog=0.65,
+        msg=f"Quality analysis done ({timer() - start_ts:.2f}s). Avg quality: {avg_quality:.2f}"
+    )
+
+
 BATCH_SIZE = 64
 
 FACTORY = {
@@ -1225,6 +1306,13 @@ async def do_handle_task(task):
             progress_callback(1., msg=f"No chunk built from {task_document_name}")
             return
         progress_callback(msg="Generate {} chunks".format(len(chunks)))
+
+        if _HAS_QUALITY_ANALYZER:
+            try:
+                _analyze_chunks_quality(chunks, task, progress_callback)
+            except Exception as e:
+                logging.warning(f"Chunk quality analysis failed (non-critical): {e}")
+
         start_ts = timer()
         try:
             token_count, vector_size = await embedding(chunks, embedding_model, task_parser_config, progress_callback)
