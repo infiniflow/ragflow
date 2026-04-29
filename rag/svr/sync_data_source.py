@@ -1305,6 +1305,7 @@ class Gitlab(SyncBase):
             }
         )
 
+        file_list = None
         if task["reindex"] == "1" or not task["poll_range_start"]:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
@@ -1318,9 +1319,13 @@ class Gitlab(SyncBase):
                     poll_start.timestamp(),
                     datetime.now(timezone.utc).timestamp()
                 )
+                if self.conf.get("sync_deleted_files"):
+                    file_list = []
+                    for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                        file_list.extend(slim_batch)
                 _begin_info = "from {}".format(poll_start)
         self.log_connection("Gitlab", f"({self.conf['project_name']})", task)
-        return document_generator
+        return document_generator, file_list
 
 
 class Bitbucket(SyncBase):
