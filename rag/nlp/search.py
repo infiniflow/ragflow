@@ -74,6 +74,11 @@ class Dealer:
         return await thread_pool_exec(_load)
 
     async def _prune_deleted_chunks(self, sres: SearchResult) -> SearchResult:
+        # Temporary safety net:
+        # Some delete paths can leave stale chunks in the doc store if the DB row
+        # is removed but the vector record is not fully cleaned up. We filter those
+        # chunks here so chat/retrieval does not surface content from deleted docs.
+        # Keep this as a fallback, not as the primary delete mechanism.
         chunk_doc_ids = [chunk.get("doc_id") for chunk in sres.field.values() if chunk and chunk.get("doc_id")]
         if not chunk_doc_ids:
             return sres
@@ -488,6 +493,8 @@ class Dealer:
 
         sres = await self.search(req, [index_name(tid) for tid in tenant_ids], kb_ids, embd_mdl, highlight,
                            rank_feature=rank_feature)
+        # Temporary retrieval-side guard: prune chunks whose parent document no
+        # longer exists before reranking and returning results.
         sres = await self._prune_deleted_chunks(sres)
         if sres.total == 0:
             ranks["doc_aggs"] = []
