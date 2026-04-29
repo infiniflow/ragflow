@@ -160,6 +160,7 @@ export const FormSchema = z.object({
       markdown_image_response_type: z.string().optional(),
       enable_multi_column: z.boolean().optional(),
       remove_toc: z.boolean().optional(),
+      remove_header_footer: z.boolean().optional(),
     }),
   ),
 });
@@ -352,6 +353,7 @@ const ParserForm = ({ node }: INextOperatorForm) => {
       vlm: { llm_id: '' },
       table_result_type: '',
       markdown_image_response_type: '',
+      remove_header_footer: false,
       // preprocess: [],
     });
   }, [append]);

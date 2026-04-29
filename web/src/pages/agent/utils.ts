@@ -231,6 +231,7 @@ function transformParserParams(params: ParserFormSchemaType) {
             flatten_media_to_text: cur.flatten_media_to_text,
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,
+            remove_header_footer: cur.remove_header_footer || false,
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -280,6 +281,20 @@ function transformParserParams(params: ParserFormSchemaType) {
           };
           break;
         case FileType.Docx:
+          filteredSetup = {
+            ...filteredSetup,
+            vlm: { llm_id: cur.vlm?.llm_id },
+            flatten_media_to_text: cur.flatten_media_to_text,
+            remove_header_footer: cur.remove_header_footer || false,
+          };
+          break;
+        case FileType.Html:
+          filteredSetup = {
+            ...filteredSetup,
+            remove_toc: cur.remove_toc,
+            remove_header_footer: cur.remove_header_footer || false,
+          };
+          break;
         case FileType.TextMarkdown:
           filteredSetup = {
             ...filteredSetup,

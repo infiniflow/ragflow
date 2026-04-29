@@ -1277,6 +1277,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       removeToc: '移除原始目录',
       removeTocTip:
         '移除原始PDF中包含的目录，这样它就不会被解析为常规内容或作为检索块。',
+      removeHeaderFooter: '移除页眉页脚',
       autoPlay: '自动播放',
       downloadFileTypeTip: '文件下载的类型',
       downloadFileType: '文件类型',
