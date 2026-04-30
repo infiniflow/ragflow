@@ -79,6 +79,10 @@ def _load_apps_module(monkeypatch):
     api_utils_mod.server_error_response = _server_error_response
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
+    backward_compat_mod = ModuleType("api.apps.backward_compat")
+    backward_compat_mod.register_backward_compat_routes = lambda _app: None
+    monkeypatch.setitem(sys.modules, "api.apps.backward_compat", backward_compat_mod)
+
     module_name = "test_apps_init_unit_module"
     module_path = repo_root / "api" / "apps" / "__init__.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)

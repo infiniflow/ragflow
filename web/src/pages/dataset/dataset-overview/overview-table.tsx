@@ -130,7 +130,7 @@ export const getFileLogsTableColumns = (
     },
     {
       accessorKey: 'pipeline_title',
-      header: t('dataPipeline'),
+      header: t('dataPipelineTitle'),
       cell: ({ row }) => {
         const title = row.original.pipeline_title;
         const pipelineTitle = title === 'naive' ? 'general' : title;
