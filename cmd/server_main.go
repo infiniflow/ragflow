@@ -24,7 +24,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/handler"
-	"ragflow/internal/logger"
 	"ragflow/internal/router"
 	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
@@ -56,80 +55,80 @@ func main() {
 
 	// Initialize logger with default level
 	// logger.Init("info"); // set debug log level
-	if err := logger.Init("info"); err != nil {
+	if err := common.Init("info"); err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
 
 	// Initialize configuration
 	if err := server.Init(""); err != nil {
-		logger.Fatal("Failed to initialize config", zap.Error(err))
+		common.Fatal("Failed to initialize config", zap.Error(err))
 	}
 
 	// Override port with command line argument if provided
 	config := server.GetConfig()
 	if portFlag > 0 {
 		config.Server.Port = portFlag
-		logger.Info("Port overridden by command line argument", zap.Int("port", portFlag))
+		common.Info("Port overridden by command line argument", zap.Int("port", portFlag))
 	}
 
 	if config.Server.Port == 0 {
-		logger.Fatal("Server port is not configured. Please specify via --port flag or config file.")
+		common.Fatal("Server port is not configured. Please specify via --port flag or config file.")
 	}
 
 	// Load model providers configuration
 	if err := server.LoadModelProviders(""); err != nil {
-		logger.Fatal("Failed to load model providers", zap.Error(err))
+		common.Fatal("Failed to load model providers", zap.Error(err))
 	}
-	logger.Info("Model providers loaded", zap.Int("count", len(server.GetModelProviders())))
+	common.Info("Model providers loaded", zap.Int("count", len(server.GetModelProviders())))
 
 	// Reinitialize logger with configured level if different
 	if config.Log.Level != "" && config.Log.Level != "info" {
-		if err := logger.Init(config.Log.Level); err != nil {
-			logger.Error("Failed to reinitialize logger with configured level", err)
+		if err := common.Init(config.Log.Level); err != nil {
+			common.Error("Failed to reinitialize logger with configured level", err)
 		}
 	}
-	server.SetLogger(logger.Logger)
+	server.SetLogger(common.Logger)
 	if config.Log.Level == "" {
-		config.Log.Level = logger.GetLevel()
+		config.Log.Level = common.GetLevel()
 	}
 
-	logger.Info("Server mode", zap.String("mode", config.Server.Mode))
+	common.Info("Server mode", zap.String("mode", config.Server.Mode))
 
 	// Print all configuration settings
 	server.PrintAll()
 
 	// Initialize database
 	if err := dao.InitDB(); err != nil {
-		logger.Fatal("Failed to initialize database", zap.Error(err))
+		common.Fatal("Failed to initialize database", zap.Error(err))
 	}
 
 	// Initialize LLM factory data models from configuration file
 	if err := dao.InitLLMFactory(); err != nil {
-		logger.Error("Failed to initialize LLM factory", err)
+		common.Error("Failed to initialize LLM factory", err)
 	} else {
-		logger.Info("LLM factory initialized successfully")
+		common.Info("LLM factory initialized successfully")
 	}
 
 	// Initialize doc engine
 	if err := engine.Init(&config.DocEngine); err != nil {
-		logger.Fatal("Failed to initialize doc engine", zap.Error(err))
+		common.Fatal("Failed to initialize doc engine", zap.Error(err))
 	}
 	defer engine.Close()
 
 	// Initialize Redis cache
 	if err := cache.Init(&config.Redis); err != nil {
-		logger.Fatal("Failed to initialize Redis", zap.Error(err))
+		common.Fatal("Failed to initialize Redis", zap.Error(err))
 	}
 	defer cache.Close()
 
 	if err := storage.InitStorageFactory(); err != nil {
-		logger.Fatal("Failed to initialize storage factory", zap.Error(err))
+		common.Fatal("Failed to initialize storage factory", zap.Error(err))
 	}
 
 	// Initialize server variables (runtime variables that can change during operation)
 	// This must be done after Cache is initialized
 	if err := server.InitVariables(cache.Get()); err != nil {
-		logger.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
+		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
 	// Initialize admin status (default: unavailable=1)
@@ -140,19 +139,19 @@ func main() {
 		DictPath: "/usr/share/infinity/resource",
 	}
 	if err := tokenizer.Init(tokenizerCfg); err != nil {
-		logger.Fatal("Failed to initialize tokenizer", zap.Error(err))
+		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
 	}
 	defer tokenizer.Close()
 
 	// Initialize global QueryBuilder using tokenizer's DictPath
 	// This ensures the Synonym uses the same wordnet directory as tokenizer
 	if err := nlp.InitQueryBuilderFromTokenizer(tokenizerCfg.DictPath); err != nil {
-		logger.Fatal("Failed to initialize query builder", zap.Error(err))
+		common.Fatal("Failed to initialize query builder", zap.Error(err))
 	}
 
 	startServer(config)
 
-	logger.Info("Server exited")
+	common.Info("Server exited")
 }
 
 func startServer(config *server.Config) {
@@ -231,36 +230,36 @@ func startServer(config *server.Config) {
 
 	// Start server in a goroutine
 	go func() {
-		logger.Info(
+		common.Info(
 			"\n        ____   ___    ______ ______ __\n" +
 				"       / __ \\ /   |  / ____// ____// /____  _      __\n" +
 				"      / /_/ // /| | / / __ / /_   / // __ \\| | /| / /\n" +
 				"     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /\n" +
 				"    /_/ |_|/_/  |_|\\____//_/    /_/ \\____/ |__/|__/\n",
 		)
-		logger.Info(fmt.Sprintf("RAGFlow Go Version: %s", utility.GetRAGFlowVersion()))
-		logger.Info(fmt.Sprintf("Server starting on port: %d", config.Server.Port))
+		common.Info(fmt.Sprintf("RAGFlow Go Version: %s", utility.GetRAGFlowVersion()))
+		common.Info(fmt.Sprintf("Server starting on port: %d", config.Server.Port))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Fatal("Failed to start server", zap.Error(err))
+			common.Fatal("Failed to start server", zap.Error(err))
 		}
 	}()
 
 	// Get local IP address for heartbeat reporting
 	localIP, err := utility.GetLocalIP()
 	if err != nil {
-		logger.Fatal("fail to get local ip address")
+		common.Fatal("fail to get local ip address")
 	}
 
 	// Initialize and start heartbeat reporter to admin server
 	heartbeatService := service.NewHeartbeatSender(
-		logger.Logger,
+		common.Logger,
 		common.ServerTypeAPI,
 		fmt.Sprintf("ragflow-server-%d", config.Server.Port),
 		localIP,
 		config.Server.Port,
 	)
 	if err = heartbeatService.InitHTTPClient(); err != nil {
-		logger.Warn("Failed to initialize heartbeat service", zap.Error(err))
+		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
 	} else {
 		// Start heartbeat reporter with 30 seconds interval
 		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
@@ -280,8 +279,8 @@ func startServer(config *server.Config) {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
 	sig := <-quit
 
-	logger.Info(fmt.Sprintf("Receives %s signal to shutdown server", strings.ToUpper(sig.String())))
-	logger.Info("Shutting down server...")
+	common.Info(fmt.Sprintf("Receives %s signal to shutdown server", strings.ToUpper(sig.String())))
+	common.Info("Shutting down server...")
 
 	// Create context with timeout for graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -289,6 +288,6 @@ func startServer(config *server.Config) {
 
 	// Shutdown server
 	if err = srv.Shutdown(ctx); err != nil {
-		logger.Fatal("Server forced to shutdown", zap.Error(err))
+		common.Fatal("Server forced to shutdown", zap.Error(err))
 	}
 }

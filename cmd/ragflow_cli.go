@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"ragflow/internal/common"
 	"syscall"
 
 	"ragflow/internal/cli"
-	"ragflow/internal/logger"
 )
 
 func main() {
@@ -23,7 +23,7 @@ func main() {
 	if args.Verbose {
 		logLevel = "info"
 	}
-	if err := logger.Init(logLevel); err != nil {
+	if err = common.Init(logLevel); err != nil {
 		fmt.Printf("Warning: Failed to initialize logger: %v\n", err)
 	}
 

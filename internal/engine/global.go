@@ -18,6 +18,7 @@ package engine
 
 import (
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"sync"
 
@@ -25,7 +26,6 @@ import (
 
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/infinity"
-	"ragflow/internal/logger"
 )
 
 var (
@@ -53,7 +53,7 @@ func Init(cfg *server.DocEngineConfig) error {
 			initErr = fmt.Errorf("failed to create doc engine: %w", err)
 			return
 		}
-		logger.Info("Doc engine initialized", zap.String("type", string(cfg.Type)))
+		common.Info("Doc engine initialized", zap.String("type", string(cfg.Type)))
 	})
 	return initErr
 }

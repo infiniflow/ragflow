@@ -19,9 +19,9 @@ package infinity
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
 
-	"ragflow/internal/logger"
 	"ragflow/internal/utility"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
@@ -115,7 +115,7 @@ func (e *infinityEngine) GetChunk(ctx context.Context, tableName, chunkID string
 		return nil, nil
 	}
 
-	logger.Debug("infinity get chunk", zap.String("chunkID", chunkID), zap.Any("tables", tableNames))
+	common.Debug("infinity get chunk", zap.String("chunkID", chunkID), zap.Any("tables", tableNames))
 
 	// Apply field mappings (same as in GetFields)
 	// docnm -> docnm_kwd, title_tks, title_sm_tks

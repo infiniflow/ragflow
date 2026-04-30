@@ -19,13 +19,12 @@ package server
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/utility"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
-
-	"ragflow/internal/logger"
 )
 
 // Variables holds all runtime variables that can be changed during system operation
@@ -74,10 +73,10 @@ func InitVariables(store VariableStore) error {
 			initErr = fmt.Errorf("failed to initialize secret key: %w", err)
 		} else {
 			globalVariables.SecretKey = secretKey
-			logger.Info("Secret key initialized from store")
+			common.Info("Secret key initialized from store")
 		}
 
-		logger.Info("Server variables initialized successfully")
+		common.Info("Server variables initialized successfully")
 	})
 	return initErr
 }
@@ -105,7 +104,7 @@ func SetSecretKey(key string) {
 	defer variablesMu.Unlock()
 	if globalVariables != nil {
 		globalVariables.SecretKey = key
-		logger.Info("Secret key updated at runtime")
+		common.Info("Secret key updated at runtime")
 	}
 }
 
@@ -116,41 +115,41 @@ func SetSecretKey(key string) {
 func GetOrCreateKey(store VariableStore, key string, newValue string) (string, error) {
 	if store == nil {
 		err := fmt.Errorf("store is nil")
-		logger.Warn("VariableStore is nil, cannot get or create key", zap.String("key", key))
+		common.Warn("VariableStore is nil, cannot get or create key", zap.String("key", key))
 		return "store is nil", err
 	}
 
 	// Try to get existing value
 	value, err := store.Get(key)
 	if err != nil {
-		logger.Warn("Failed to get key from store", zap.String("key", key), zap.Error(err))
+		common.Warn("Failed to get key from store", zap.String("key", key), zap.Error(err))
 		return "", err
 	}
 
 	// Key exists, return the value
 	if value != "" {
-		logger.Debug("Key found in store", zap.String("key", key))
+		common.Debug("Key found in store", zap.String("key", key))
 		return value, nil
 	}
 
 	// Key doesn't exist, generate new value
-	logger.Info("Generating new value for key", zap.String("key", key))
+	common.Info("Generating new value for key", zap.String("key", key))
 
 	// Try to set with NX (only if not exists) - ensures atomicity
 	if store.SetNX(key, newValue, SecretKeyTTL) {
-		logger.Info("New value stored successfully", zap.String("key", key))
+		common.Info("New value stored successfully", zap.String("key", key))
 		return newValue, nil
 	}
 
 	// Another process might have set it, try to get again
 	value, err = store.Get(key)
 	if err != nil {
-		logger.Warn("Failed to get key after SetNX", zap.String("key", key), zap.Error(err))
+		common.Warn("Failed to get key after SetNX", zap.String("key", key), zap.Error(err))
 		return newValue, nil // Return our generated value as fallback
 	}
 
 	if value != "" {
-		logger.Info("Using value set by another process", zap.String("key", key))
+		common.Info("Using value set by another process", zap.String("key", key))
 		return value, nil
 	}
 
@@ -175,12 +174,12 @@ func RefreshVariables(store VariableStore) error {
 	// Refresh SecretKey
 	secretKey, err := store.Get(SecretKeyRedisKey)
 	if err != nil {
-		logger.Warn("Failed to refresh secret key from store", zap.Error(err))
+		common.Warn("Failed to refresh secret key from store", zap.Error(err))
 		return err
 	}
 	if secretKey != "" {
 		globalVariables.SecretKey = secretKey
-		logger.Info("Secret key refreshed from store")
+		common.Info("Secret key refreshed from store")
 	}
 
 	return nil
@@ -214,21 +213,21 @@ func (w *VariableWatcher) Start(interval time.Duration) {
 			select {
 			case <-ticker.C:
 				if err := RefreshVariables(w.store); err != nil {
-					logger.Debug("Failed to refresh variables", zap.Error(err))
+					common.Debug("Failed to refresh variables", zap.Error(err))
 				}
 			case <-w.stopChan:
 				return
 			}
 		}
 	}()
-	logger.Info("Variable watcher started", zap.Duration("interval", interval))
+	common.Info("Variable watcher started", zap.Duration("interval", interval))
 }
 
 // Stop stops the variable watcher
 func (w *VariableWatcher) Stop() {
 	close(w.stopChan)
 	w.wg.Wait()
-	logger.Info("Variable watcher stopped")
+	common.Info("Variable watcher stopped")
 }
 
 // SaveToStorage saves current variables to persistent storage
@@ -249,7 +248,7 @@ func SaveToStorage(store VariableStore) error {
 		return fmt.Errorf("failed to save secret key to store")
 	}
 
-	logger.Info("Variables saved to storage")
+	common.Info("Variables saved to storage")
 	return nil
 }
 

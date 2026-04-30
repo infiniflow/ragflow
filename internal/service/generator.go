@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/common"
 	"regexp"
 	"strings"
 
@@ -26,7 +27,6 @@ import (
 
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/logger"
 )
 
 // KeywordExtraction extracts keywords from content using LLM.
@@ -73,7 +73,7 @@ func KeywordExtraction(ctx context.Context, creds *entity.ModelCredentials, cont
 	}
 
 	response := *responsePtr
-	logger.Info("KeywordExtraction result", zap.String("response", response))
+	common.Info("KeywordExtraction result", zap.String("response", response))
 
 	// Clean up response - remove thinking tags if present
 	response = strings.TrimSpace(response)
