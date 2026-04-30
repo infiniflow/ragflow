@@ -147,6 +147,9 @@ def _load_doc_module(monkeypatch):
         def __or__(self, other):
             return self
 
+        def __and__(self, other):
+            return self
+
     class _FakeField:
         def __eq__(self, other):
             return _FakeExpr()
@@ -161,10 +164,13 @@ def _load_doc_module(monkeypatch):
         id = _FakeField()
         run = _FakeField()
 
+    class _StubTaskModel:
+        doc_id = _FakeField()
+
     db_models_mod = ModuleType("api.db.db_models")
     db_models_mod.APIToken = SimpleNamespace(query=lambda **_kwargs: [])
-    db_models_mod.Document = _StubDocumentModel()
-    db_models_mod.Task = SimpleNamespace()
+    db_models_mod.Document = _StubDocumentModel
+    db_models_mod.Task = _StubTaskModel
     monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
 
     services_pkg = ModuleType("api.db.services")
@@ -218,11 +224,10 @@ def _load_doc_module(monkeypatch):
     api_utils_mod.get_error_data_result = lambda message="Sorry! Data missing!", code=102: {"code": code, "message": message}
     api_utils_mod.get_request_json = lambda: _AwaitableValue({})
     api_utils_mod.get_result = lambda code=0, message="", data=None, total=None: {
-        key: value
-        for key, value in {"code": code, "message": message, "data": data, "total": total}.items()
-        if value is not None
+        key: value for key, value in {"code": code, "message": message, "data": data, "total": total}.items() if value is not None
     }
     api_utils_mod.server_error_response = lambda e: {"code": 500, "message": str(e)}
+
     def _token_required(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -282,7 +287,7 @@ def _load_doc_module(monkeypatch):
 
     # Mock tenant_llm_service for TenantLLMService and TenantService
     tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")
-    
+
     class _MockModelConfig:
         def __init__(self, tenant_id, model_name):
             self.tenant_id = tenant_id
@@ -295,7 +300,7 @@ def _load_doc_module(monkeypatch):
             self.used_tokens = 0
             self.status = 1
             self.id = 1
-        
+
         def to_dict(self):
             return {
                 "tenant_id": self.tenant_id,
@@ -307,46 +312,40 @@ def _load_doc_module(monkeypatch):
                 "max_tokens": self.max_tokens,
                 "used_tokens": self.used_tokens,
                 "status": self.status,
-                "id": self.id
+                "id": self.id,
             }
-    
+
     class _StubTenantService:
         @staticmethod
         def get_by_id(tenant_id):
-            return True, SimpleNamespace(
-                id=tenant_id,
-                llm_id="chat-model",
-                embd_id="embd-model",
-                asr_id="asr-model",
-                img2txt_id="img2txt-model",
-                rerank_id="rerank-model",
-                tts_id="tts-model"
-            )
-    
+            return True, SimpleNamespace(id=tenant_id, llm_id="chat-model", embd_id="embd-model", asr_id="asr-model", img2txt_id="img2txt-model", rerank_id="rerank-model", tts_id="tts-model")
+
     class _StubTenantLLMService:
         @staticmethod
         def get_api_key(tenant_id, model_name):
             return _MockModelConfig(tenant_id, model_name)
-        
+
         @staticmethod
         def split_model_name_and_factory(model_name):
             if "@" in model_name:
                 parts = model_name.split("@")
                 return parts[0], parts[1]
             return model_name, None
-        
+
         @staticmethod
         def get_by_id(tenant_model_id):
             return True, _MockModelConfig("tenant-1", "model-1")
-        
+
         @staticmethod
         def model_instance(model_config):
             class _EmbedModel:
                 def encode(self, texts):
                     import numpy as np
+
                     return [np.array([0.2, 0.8]), np.array([0.3, 0.7])], 1
+
             return _EmbedModel()
-    
+
     tenant_llm_service_mod.TenantService = _StubTenantService
     tenant_llm_service_mod.TenantLLMService = _StubTenantLLMService
 
@@ -358,32 +357,31 @@ def _load_doc_module(monkeypatch):
 
     # Mock LLMService
     llm_service_mod = ModuleType("api.db.services.llm_service")
-    
+
     class _StubLLM:
         def __init__(self, llm_name):
             self.llm_name = llm_name
             self.is_tools = False
-    
+
     class _StubLLMBundle:
         def __init__(self, tenant_id: str, model_config: dict, lang="Chinese", **kwargs):
             self.tenant_id = tenant_id
             self.model_config = model_config
             self.lang = lang
-        
+
         def encode(self, texts: list):
             import numpy as np
+
             # Return mock embeddings and token usage
             return [np.array([0.2, 0.8]), np.array([0.3, 0.7])], len(texts) * 10
-    
-    llm_service_mod.LLMService = SimpleNamespace(
-        query=lambda llm_name: [_StubLLM(llm_name)] if llm_name else []
-    )
+
+    llm_service_mod.LLMService = SimpleNamespace(query=lambda llm_name: [_StubLLM(llm_name)] if llm_name else [])
     llm_service_mod.LLMBundle = _StubLLMBundle
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
 
     # Mock tenant_model_service to ensure it uses mocked services
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
-    
+
     class _MockModelConfig2:
         def __init__(self, tenant_id, model_name):
             self.tenant_id = tenant_id
@@ -396,7 +394,7 @@ def _load_doc_module(monkeypatch):
             self.used_tokens = 0
             self.status = 1
             self.id = 1
-        
+
         def to_dict(self):
             return {
                 "tenant_id": self.tenant_id,
@@ -408,21 +406,21 @@ def _load_doc_module(monkeypatch):
                 "max_tokens": self.max_tokens,
                 "used_tokens": self.used_tokens,
                 "status": self.status,
-                "id": self.id
+                "id": self.id,
             }
-    
+
     def _get_model_config_by_id(tenant_model_id: int) -> dict:
         return _MockModelConfig2("tenant-1", "model-1").to_dict()
-    
+
     def _get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_name: str):
         if not model_name:
             raise Exception("Model Name is required")
         return _MockModelConfig2(tenant_id, model_name).to_dict()
-    
+
     def _get_tenant_default_model_by_type(tenant_id: str, model_type):
         # Return mock tenant with default model configurations
         return _MockModelConfig2(tenant_id, "chat-model").to_dict()
-    
+
     tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
     tenant_model_service_mod.get_model_config_by_type_and_name = _get_model_config_by_type_and_name
     tenant_model_service_mod.get_tenant_default_model_by_type = _get_tenant_default_model_by_type
@@ -527,7 +525,6 @@ class TestDocRoutesUnit:
         _patch_storage(monkeypatch, module, file_stream=b"abc")
         res = _run(module.download_doc("doc-1"))
         assert res["filename"] == "doc.txt"
-
 
     def test_parse_branches(self, monkeypatch):
         module = _load_doc_module(monkeypatch)
