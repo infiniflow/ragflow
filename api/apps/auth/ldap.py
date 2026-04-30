@@ -107,6 +107,13 @@ class LDAPClient:
         if not username or not password:
             raise LDAPAuthError("Username and password are required.")
 
+        logging.info(
+            "LDAP authenticate start channel=%s host=%s strategy=%s",
+            self.channel_id,
+            self.host,
+            "direct" if self.bind_dn_template else "search",
+        )
+
         server = self._server()
 
         try:
@@ -114,8 +121,14 @@ class LDAPClient:
         except LDAPAuthError:
             raise
         except LDAPException:
-            logging.exception("LDAP directory error")
+            logging.exception("LDAP directory error on channel=%s", self.channel_id)
             raise LDAPAuthError("LDAP directory error.")
+
+        logging.info(
+            "LDAP authenticate ok channel=%s host=%s",
+            self.channel_id,
+            self.host,
+        )
 
         email = self._first(attrs.get(self.email_attr))
         nickname = self._first(attrs.get(self.nickname_attr)) or username
@@ -162,6 +175,7 @@ class LDAPClient:
             user_dn = self.bind_dn_template.format(username=self._escape_rdn(username))
             conn = self._open(server, user_dn, password)
             if not self._bind(conn):
+                logging.info("LDAP direct bind rejected channel=%s", self.channel_id)
                 raise LDAPAuthError("Invalid credentials.")
             try:
                 if self.user_search_base:
@@ -171,6 +185,11 @@ class LDAPClient:
                         attributes=attrs_wanted,
                     )
                     entry = conn.entries[0] if conn.entries else None
+                    if entry is None:
+                        logging.info(
+                            "LDAP direct bind succeeded but post-bind search returned no entry channel=%s",
+                            self.channel_id,
+                        )
                     attrs = self._entry_attrs(entry, attrs_wanted)
                 else:
                     attrs = {}
@@ -181,6 +200,7 @@ class LDAPClient:
         # search-then-bind
         service_conn = self._open(server, self.bind_user_dn, self.bind_user_password)
         if not self._bind(service_conn):
+            logging.error("LDAP service account bind failed channel=%s", self.channel_id)
             raise LDAPAuthError("LDAP service account bind failed.")
         try:
             search_filter = self.user_search_filter.format(username=self._escape_filter(username))
@@ -190,6 +210,11 @@ class LDAPClient:
                 attributes=attrs_wanted,
             )
             if not service_conn.entries:
+                logging.info(
+                    "LDAP user not found channel=%s base=%s",
+                    self.channel_id,
+                    self.user_search_base,
+                )
                 raise LDAPAuthError("User not found in directory.")
             entry = service_conn.entries[0]
             user_dn = entry.entry_dn
@@ -199,6 +224,7 @@ class LDAPClient:
 
         user_conn = self._open(server, user_dn, password)
         if not self._bind(user_conn):
+            logging.info("LDAP user rebind rejected channel=%s", self.channel_id)
             raise LDAPAuthError("Invalid credentials.")
         user_conn.unbind()
         return user_dn, attrs
