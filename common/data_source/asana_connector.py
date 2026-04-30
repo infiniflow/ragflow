@@ -80,13 +80,10 @@ class AsanaAPI:
         self, project_gids: list[str] | None, start_date: str
     ) -> Iterator[str]:
         """Get task gids without hydrating comments, users, or task text."""
-        task_count = 0
         projects_list = self._get_project_gids_to_process(project_gids)
         for project_gid in projects_list:
             for task_id in self._get_task_ids_for_project(project_gid, start_date):
-                task_count += 1
                 yield task_id
-        logging.info(f"Completed fetching {task_count} task IDs from Asana")
 
     def _get_project_gids_to_process(
         self, project_gids: list[str] | None
@@ -146,12 +143,6 @@ class AsanaAPI:
         project = self._get_project_to_process(project_gid)
         if project is None:
             return
-
-        project_name = project.get("name", project_gid)
-        simple_start_date = start_date.split(".")[0].split("+")[0]
-        logging.info(
-            f"Fetching task IDs modified since {simple_start_date} for project: {project_name} ({project_gid})"
-        )
 
         tasks_from_api = self.tasks_api.get_tasks_for_project(
             project_gid,
@@ -459,18 +450,10 @@ class AsanaConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         del callback
 
         start_time = datetime.fromtimestamp(0, tz=timezone.utc).isoformat()
-        initial_error_count = self.asana_client.api_error_count
         docs_batch: list[SlimDocument] = []
 
-        def _raise_on_snapshot_api_error() -> None:
-            if self.asana_client.api_error_count > initial_error_count:
-                raise RuntimeError("Asana slim document snapshot failed due to one or more API errors")
-
-        logging.info("Starting Asana slim document snapshot")
         for task_id in self.asana_client.get_task_ids(self.project_ids_to_index, start_time):
-            _raise_on_snapshot_api_error()
             attachments = self.asana_client.get_attachments(task_id)
-            _raise_on_snapshot_api_error()
 
             for att in attachments:
                 attachment_gid = att.get("gid")
@@ -482,12 +465,8 @@ class AsanaConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                     yield docs_batch
                     docs_batch = []
 
-        _raise_on_snapshot_api_error()
-
         if docs_batch:
             yield docs_batch
-
-        logging.info("Asana slim document snapshot completed")
 
     def _task_to_documents(self, task: AsanaTask) -> list[Document]:
         docs: list[Document] = []
