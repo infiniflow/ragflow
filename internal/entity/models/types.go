@@ -18,9 +18,10 @@ type ModelDriver interface {
 	Name() string
 
 	// ChatWithMessages sends multiple messages with role and content
-	ChatWithMessages(modelName string, apiConfig *APIConfig, messages []Message, chatModelConfig *ChatConfig) (*ChatResponse, error)
-	// ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-	ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error
+	ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error)
+	// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
+	// messages accepts []Message which supports multimodal content (e.g., [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "..."}}])
+	ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error
 	// Encode encodes a list of texts into embeddings
 	Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error)
 	// Rerank calculates similarity scores between query and texts
