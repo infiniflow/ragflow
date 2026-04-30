@@ -589,6 +589,13 @@ class MinerUParser(RAGFlowPdfParser):
             for pattern in patterns:
                 for candidate in sorted(output_dir.glob(pattern)):
                     self.logger.info(f"[MinerU] Trying fallback path: {candidate}")
+                    if candidate.name.endswith("_content_list.json"):
+                        rel_parts = candidate.relative_to(output_dir).parts
+                        in_stem_dir = any(stem_dir in rel_parts for stem_dir in stem_dirs)
+                        stem_match = candidate.stem.startswith(file_stem) or candidate.stem.startswith(safe_stem)
+                        if not (stem_match or in_stem_dir):
+                            self.logger.info(f"[MinerU] Skip unrelated fallback candidate: {candidate}")
+                            continue
                     attempted.append(candidate)
                     subdir = candidate.parent
                     json_file = candidate
