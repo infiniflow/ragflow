@@ -20,6 +20,7 @@ import os
 import re
 from abc import ABC
 import tempfile
+import logging
 
 import requests
 from openai import OpenAI
@@ -66,6 +67,16 @@ class StepFunSeq2txt(GPTSeq2txt):
         if not base_url:
             base_url = "https://api.stepfun.com/v1"
         super().__init__(key, model_name=model_name, base_url=base_url, **kwargs)
+
+
+class FuturMixSeq2txt(GPTSeq2txt):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name="whisper-1", base_url="https://futurmix.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name=model_name, base_url=base_url, **kwargs)
+        logging.info("[FuturMix] Speech2Text initialized with model %s", model_name)
 
 
 class QWenSeq2txt(Base):
