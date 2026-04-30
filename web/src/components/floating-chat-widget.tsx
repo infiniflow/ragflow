@@ -3,10 +3,11 @@ import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import { useFetchExternalAgentInputs } from '@/hooks/use-agent-request';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
-import i18n from '@/locales/config';
+import i18n, { changeLanguageAsync } from '@/locales/config';
 import { useSendNextSharedMessage } from '@/pages/agent/hooks/use-send-shared-message';
 import { MessageCircle, Minimize2, Send, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   useGetSharedChatSearchParams,
   useSendSharedMessage,
@@ -14,6 +15,7 @@ import {
 import FloatingChatWidgetMarkdown from './floating-chat-widget-markdown';
 
 const FloatingChatWidget = () => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [inputValue, setInputValue] = useState('');
@@ -89,6 +91,7 @@ const FloatingChatWidget = () => {
       oscillator.start(audioContext.currentTime);
       oscillator.stop(audioContext.currentTime + 0.3);
     } catch (error) {
+      console.warn(error);
       // Silent fail if audio not supported
     }
   }, []);
@@ -117,6 +120,8 @@ const FloatingChatWidget = () => {
       oscillator.start(audioContext.currentTime);
       oscillator.stop(audioContext.currentTime + 0.2);
     } catch (error) {
+      console.warn(error);
+
       // Silent fail if audio not supported
     }
   }, []);
@@ -136,7 +141,7 @@ const FloatingChatWidget = () => {
     }, 50);
 
     if (locale && i18n.language !== locale) {
-      i18n.changeLanguage(locale);
+      changeLanguageAsync(locale);
     }
 
     return () => clearTimeout(timer);
@@ -178,9 +183,11 @@ const FloatingChatWidget = () => {
   // Master mode - handles everything and creates second iframe dynamically
   useEffect(() => {
     if (mode !== 'master') return;
-    // Create the chat window iframe dynamically when needed
-    const createChatWindow = () => {
-      // Check if iframe already exists in parent document
+
+    const isInIframe = window.self !== window.top;
+
+    if (isInIframe) {
+      // Embedded: tell parent to create chat window iframe
       window.parent.postMessage(
         {
           type: 'CREATE_CHAT_WINDOW',
@@ -188,19 +195,29 @@ const FloatingChatWidget = () => {
         },
         '*',
       );
-    };
+    } else {
+      // Standalone: create chat window iframe ourselves
+      if (!document.getElementById('chat-win')) {
+        const i = document.createElement('iframe');
+        i.id = 'chat-win';
+        i.src = window.location.href.replace('mode=master', 'mode=window');
+        i.style.cssText =
+          'position:fixed;bottom:104px;right:24px;width:380px;height:500px;border:none;background:transparent;z-index:9998;display:none';
+        i.frameBorder = '0';
+        i.allow = 'microphone;camera';
+        document.body.appendChild(i);
+      }
+    }
 
-    createChatWindow();
-
-    // Listen for our own toggle events to show/hide the dynamic iframe
+    // Listen for toggle messages to show/hide the chat window iframe
     const handleToggle = (e: MessageEvent) => {
-      if (e.source === window) return; // Ignore our own messages
-
-      const chatWindow = document.getElementById(
-        'dynamic-chat-window',
-      ) as HTMLIFrameElement;
-      if (chatWindow && e.data.type === 'TOGGLE_CHAT') {
-        chatWindow.style.display = e.data.isOpen ? 'block' : 'none';
+      if (e.data.type === 'TOGGLE_CHAT') {
+        const chatWindow = document.getElementById(
+          'chat-win',
+        ) as HTMLIFrameElement;
+        if (chatWindow) {
+          chatWindow.style.display = e.data.isOpen ? 'block' : 'none';
+        }
       }
     };
 
@@ -311,8 +328,9 @@ const FloatingChatWidget = () => {
             setIsOpen(newIsOpen);
             if (newIsOpen) playNotificationSound();
 
-            // Tell the parent to show/hide the dynamic iframe
-            window.parent.postMessage(
+            // Send toggle message to parent (if embedded) or self (if standalone)
+            const target = window.self !== window.top ? window.parent : window;
+            target.postMessage(
               {
                 type: 'TOGGLE_CHAT',
                 isOpen: newIsOpen,
@@ -386,10 +404,10 @@ const FloatingChatWidget = () => {
               </div>
               <div>
                 <h3 className="font-semibold text-sm">
-                  {title || 'Chat Support'}
+                  {title || t('chat.chatSupport')}
                 </h3>
                 <p className="text-xs text-blue-100">
-                  We typically reply instantly
+                  {t('chat.replyInstantly')}
                 </p>
               </div>
             </div>
@@ -489,7 +507,7 @@ const FloatingChatWidget = () => {
                       handleInputChange(e);
                     }}
                     onKeyPress={handleKeyPress}
-                    placeholder="Type your message..."
+                    placeholder={t('chat.typeYourMessage')}
                     rows={1}
                     className="w-full resize-none border border-gray-300 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
                     style={{ minHeight: '44px', maxHeight: '120px' }}
@@ -540,10 +558,10 @@ const FloatingChatWidget = () => {
               </div>
               <div>
                 <h3 className="font-semibold text-sm">
-                  {title || 'Chat Support'}
+                  {title || t('chat.chatSupport')}
                 </h3>
                 <p className="text-xs text-blue-100">
-                  We typically reply instantly
+                  {t('chat.replyInstantly')}
                 </p>
               </div>
             </div>
@@ -666,7 +684,7 @@ const FloatingChatWidget = () => {
                         handleInputChange(e);
                       }}
                       onKeyPress={handleKeyPress}
-                      placeholder="Type your message..."
+                      placeholder={t('chat.typeYourMessage')}
                       rows={1}
                       className="w-full resize-none border border-gray-300 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
                       style={{ minHeight: '44px', maxHeight: '120px' }}

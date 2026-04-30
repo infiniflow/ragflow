@@ -1,4 +1,5 @@
 import message from '@/components/ui/message';
+import { PaginationProps } from '@/interfaces/antd-compat';
 import {
   IFetchFileListResult,
   IFolder,
@@ -8,7 +9,6 @@ import fileManagerService from '@/services/file-manager-service';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
-import { PaginationProps } from 'antd';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
@@ -69,7 +69,9 @@ export const useUploadFile = () => {
           });
         }
         return ret?.data?.code;
-      } catch (error) {}
+      } catch {
+        return;
+      }
     },
   });
 
@@ -78,7 +80,8 @@ export const useUploadFile = () => {
 
 export interface IMoveFileBody {
   src_file_ids: string[];
-  dest_file_id: string; // target folder id
+  dest_file_id?: string;
+  new_name?: string;
 }
 
 export const useMoveFile = () => {
@@ -119,7 +122,8 @@ export const useCreateFolder = () => {
     mutationKey: [FileApiAction.CreateFolder],
     mutationFn: async (params: { parentId: string; name: string }) => {
       const { data } = await fileManagerService.createFolder({
-        ...params,
+        name: params.name,
+        parent_id: params.parentId,
         type: 'folder',
       });
       if (data.code === 0) {
@@ -143,9 +147,10 @@ export const useFetchParentFolderList = () => {
     initialData: [],
     enabled: !!id,
     queryFn: async () => {
-      const { data } = await fileManagerService.getAllParentFolder({
-        fileId: id,
-      });
+      const { data } = await fileManagerService.getAllParentFolder(
+        {},
+        `${id}/ancestors`,
+      );
 
       return data?.data?.parent_folders?.toReversed() ?? [];
     },
@@ -210,7 +215,6 @@ export const useFetchFileList = () => {
 };
 
 export const useDeleteFile = () => {
-  const { setPaginationParams } = useSetPaginationParams();
   const queryClient = useQueryClient();
   const { t } = useTranslation();
 
@@ -221,14 +225,15 @@ export const useDeleteFile = () => {
   } = useMutation({
     mutationKey: [FileApiAction.DeleteFile],
     mutationFn: async (params: { fileIds: string[]; parentId: string }) => {
-      const { data } = await fileManagerService.removeFile(params);
+      const { data } = await fileManagerService.removeFile({
+        ids: params.fileIds,
+      });
       if (data.code === 0) {
         message.success(t('message.deleted'));
-        setPaginationParams(1); // TODO: There should be a better way to paginate the request list
-        queryClient.invalidateQueries({
-          queryKey: [FileApiAction.FetchFileList],
-        });
       }
+      queryClient.invalidateQueries({
+        queryKey: [FileApiAction.FetchFileList],
+      });
       return data.code;
     },
   });
@@ -262,7 +267,10 @@ export const useRenameFile = () => {
   } = useMutation({
     mutationKey: [FileApiAction.RenameFile],
     mutationFn: async (params: { fileId: string; name: string }) => {
-      const { data } = await fileManagerService.renameFile(params);
+      const { data } = await fileManagerService.moveFile({
+        src_file_ids: [params.fileId],
+        new_name: params.name,
+      });
       if (data.code === 0) {
         message.success(t('message.renamed'));
         queryClient.invalidateQueries({

@@ -84,6 +84,8 @@ const svgIcons = [
   LLMFactory.PaddleOCR,
   LLMFactory.N1n,
   // LLMFactory.DeerAPI,
+  LLMFactory.Avian,
+  LLMFactory.RAGcon,
 ];
 
 export const LlmIcon = ({
@@ -141,8 +143,8 @@ export const HomeIcon = ({
   imgClass,
 }: {
   name: string;
-  height?: string;
-  width?: string;
+  height?: string | number;
+  width?: string | number;
   imgClass?: string;
 }) => {
   const isDark = useIsDarkTheme();

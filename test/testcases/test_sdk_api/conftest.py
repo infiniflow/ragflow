@@ -23,6 +23,10 @@ from common import (
     batch_create_chat_assistants,
     batch_create_datasets,
     bulk_upload_documents,
+    delete_all_chats,
+    delete_all_chunks,
+    delete_all_datasets,
+    delete_all_sessions,
 )
 from configs import HOST_ADDRESS, VERSION
 from pytest import FixtureRequest
@@ -42,7 +46,7 @@ from utils.file_utils import (
 )
 
 
-@wait_for(30, 1, "Document parsing timeout")
+@wait_for(200, 1, "Document parsing timeout")
 def condition(_dataset: DataSet):
     documents = _dataset.list_documents(page_size=1000)
     for document in documents:
@@ -88,7 +92,7 @@ def client(token: str) -> RAGFlow:
 @pytest.fixture(scope="function")
 def clear_datasets(request: FixtureRequest, client: RAGFlow):
     def cleanup():
-        client.delete_datasets(ids=None)
+        delete_all_datasets(client)
 
     request.addfinalizer(cleanup)
 
@@ -96,7 +100,7 @@ def clear_datasets(request: FixtureRequest, client: RAGFlow):
 @pytest.fixture(scope="function")
 def clear_chat_assistants(request: FixtureRequest, client: RAGFlow):
     def cleanup():
-        client.delete_chats(ids=None)
+        delete_all_chats(client)
 
     request.addfinalizer(cleanup)
 
@@ -106,7 +110,7 @@ def clear_session_with_chat_assistants(request, add_chat_assistants):
     def cleanup():
         for chat_assistant in chat_assistants:
             try:
-                chat_assistant.delete_sessions(ids=None)
+                delete_all_sessions(chat_assistant)
             except Exception:
                 pass
 
@@ -118,7 +122,7 @@ def clear_session_with_chat_assistants(request, add_chat_assistants):
 @pytest.fixture(scope="class")
 def add_dataset(request: FixtureRequest, client: RAGFlow) -> DataSet:
     def cleanup():
-        client.delete_datasets(ids=None)
+        delete_all_datasets(client)
 
     request.addfinalizer(cleanup)
     return batch_create_datasets(client, 1)[0]
@@ -127,7 +131,7 @@ def add_dataset(request: FixtureRequest, client: RAGFlow) -> DataSet:
 @pytest.fixture(scope="function")
 def add_dataset_func(request: FixtureRequest, client: RAGFlow) -> DataSet:
     def cleanup():
-        client.delete_datasets(ids=None)
+        delete_all_datasets(client)
 
     request.addfinalizer(cleanup)
     return batch_create_datasets(client, 1)[0]
@@ -142,7 +146,7 @@ def add_document(add_dataset: DataSet, ragflow_tmp_dir: Path) -> tuple[DataSet, 
 def add_chunks(request: FixtureRequest, add_document: tuple[DataSet, Document]) -> tuple[DataSet, Document, list[Chunk]]:
     def cleanup():
         try:
-            document.delete_chunks(ids=[])
+            delete_all_chunks(document)
         except Exception:
             pass
 
@@ -161,7 +165,7 @@ def add_chunks(request: FixtureRequest, add_document: tuple[DataSet, Document]) 
 def add_chat_assistants(request, client, add_document) -> tuple[DataSet, Document, list[Chat]]:
     def cleanup():
         try:
-            client.delete_chats(ids=None)
+            delete_all_chats(client)
         except Exception:
             pass
 

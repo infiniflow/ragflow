@@ -19,6 +19,8 @@ export default {
       portugueseBr: 'Portugais (Brésil)',
       chinese: 'Chinois simplifié',
       traditionalChinese: 'Chinois traditionnel',
+      bulgarian: 'Bulgare',
+      arabic: 'Arabe',
       language: 'Langue',
       languageMessage: 'Veuillez saisir votre langue !',
       languagePlaceholder: 'Sélectionnez votre langue',
@@ -36,6 +38,7 @@ export default {
       pleaseInput: 'Veuillez saisir',
       submit: 'Soumettre',
       embedIntoSite: 'Intégrer dans la page web',
+      openInNewTab: 'Chat dans un nouvel onglet',
       previousPage: 'Précédent',
       nextPage: 'Suivant',
       add: 'Ajouter',
@@ -161,7 +164,7 @@ export default {
       changeSpecificCategory: 'Changer de catégorie spécifique',
       uploadTitle: 'Glissez-déposez votre fichier ici pour le téléverser',
       uploadDescription:
-        'Prise en charge du téléversement unique ou en lot. Pour RAGFlow en local : 1 Go max par téléversement, jusqu’à 32 fichiers. Pour demo.ragflow.io : 10 Mo max par fichier uploadDescription128 fichiers au total.',
+        'Prise en charge du téléversement unique ou en lot. Pour RAGFlow en local : 1 Go max par téléversement, jusqu’à 32 fichiers. Pour cloud.ragflow.io : 10 Mo max par fichier uploadDescription128 fichiers au total.',
       chunk: 'Segment',
       bulk: 'En masse',
       cancel: 'Annuler',
@@ -334,6 +337,9 @@ export default {
       delete: 'Supprimer',
     },
     chat: {
+      chatSupport: 'Support par chat',
+      replyInstantly: 'Nous répondons généralement instantanément',
+      typeYourMessage: 'Tapez votre message...',
       newConversation: 'Nouvelle conversation',
       createAssistant: 'Créer un assistant',
       assistantSetting: 'Paramètres de l’assistant',
@@ -475,6 +481,14 @@ export default {
       crossLanguage: 'Recherche inter-langues',
       crossLanguageTip: `Sélectionnez une ou plusieurs langues pour la recherche inter-langues. Si aucune langue n’est sélectionnée, le système recherche avec la requête originale.`,
     },
+    language: {
+      english: 'Anglais',
+      chinese: 'Chinois',
+      russian: 'Russe',
+      bulgarian: 'Bulgare',
+      arabic: 'Arabe',
+      turkish: 'Turc',
+    },
     setting: {
       profile: 'Profil',
       avatar: 'Avatar',
@@ -540,6 +554,8 @@ export default {
         "Si votre clé API provient d'OpenAI, ignorez ceci. Tout autre fournisseur intermédiaire fournira cette URL de base avec la clé API.",
       tongyiBaseUrlTip:
         'Pour les utilisateurs chinois, pas besoin de remplir ou utiliser https://dashscope.aliyuncs.com/compatible-mode/v1. Pour les utilisateurs internationaux, utilisez https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'Pour les utilisateurs chinois, pas besoin de remplir ou utiliser https://api.siliconflow.cn/v1. Pour les utilisateurs internationaux, utilisez https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         "(Utilisateurs internationaux uniquement, veuillez consulter l'astuce)",
       minimaxBaseUrlTip:
@@ -676,6 +692,8 @@ export default {
       modelsToBeAddedTooltip:
         'Si votre fournisseur de modèle n\'est pas listé mais prétend être "compatible OpenAI", sélectionnez la carte compatible OpenAI-API pour ajouter le(s) modèle(s) pertinent(s).',
       mcp: 'MCP',
+      dingtalkAITableDescription:
+        "Connectez-vous à Dingtalk AI Table et synchronisez les enregistrements d'une table spécifiée.",
     },
     message: {
       registered: 'Enregistré !',
@@ -727,7 +745,7 @@ export default {
       directory: 'Répertoire',
       uploadTitle: 'Glissez-déposez votre fichier ici pour téléverser',
       uploadDescription:
-        'Prise en charge du téléversement de fichiers uniques ou en lot. Pour un déploiement local de RAGFlow : la taille totale des fichiers par téléversement est limitée à 1 Go, avec un maximum de 32 fichiers par lot. Il n’y a pas de limite sur le nombre total de fichiers par compte. Pour demo.ragflow.io, la taille totale des fichiers par téléversement est limitée à 10 Mo, chaque fichier ne devant pas dépasser 10 Mo, avec un maximum de 128 fichiers par compte.',
+        'Prise en charge du téléversement de fichiers uniques ou en lot. Pour un déploiement local de RAGFlow : la taille totale des fichiers par téléversement est limitée à 1 Go, avec un maximum de 32 fichiers par lot. Il n’y a pas de limite sur le nombre total de fichiers par compte. Pour cloud.ragflow.io, la taille totale des fichiers par téléversement est limitée à 10 Mo, chaque fichier ne devant pas dépasser 10 Mo, avec un maximum de 128 fichiers par compte.',
       local: 'Téléversements locaux',
       s3: 'Téléversements S3',
       preview: 'Aperçu',
@@ -816,10 +834,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         "Un composant qui effectue des recherches via la URL de l'instance de SearXNG que vous fournissez. Spécifiez TopN et l'URL de l'instance.",
-      pdfGenerator: 'Générateur de Documents',
-      pDFGenerator: 'Générateur de Documents',
-      pdfGeneratorDescription: `Un composant qui génère des documents (PDF, DOCX, TXT) à partir de contenu formaté en markdown avec un style personnalisable, des images et des tableaux. Prend en charge : **gras**, *italique*, # titres, - listes, tableaux avec syntaxe |.`,
-      pDFGeneratorDescription: `Un composant qui génère des documents (PDF, DOCX, TXT) à partir de contenu formaté en markdown avec un style personnalisable, des images et des tableaux. Prend en charge : **gras**, *italique*, # titres, - listes, tableaux avec syntaxe |.`,
+      docGenerator: 'Générateur de Documents',
+      docGeneratorDescription: `Génère un fichier à partir de contenu Markdown.`,
       subtitle: 'Sous-titre',
       logoImage: 'Image Logo',
       logoPosition: 'Position Logo',
@@ -1158,11 +1174,12 @@ export default {
         'Un composant qui formate la sortie des autres composants. 1. Supporte les templates Jinja2, convertit d’abord l’entrée en objet puis rend le template, 2. Conserve en parallèle la méthode originale de remplacement de chaîne {parameter}',
       emailComponent: 'Email',
       emailDescription: 'Envoyer un email à une adresse spécifiée.',
-      smtpServer: 'Serveur SMTP',
+      smtpServer: 'Hôte SMTP',
       smtpPort: 'Port SMTP',
-      senderEmail: 'Email de l’expéditeur',
-      authCode: 'Code d’autorisation',
-      senderName: 'Nom de l’expéditeur',
+      senderEmail: 'Adresse d’expéditeur (From)',
+      smtpUsername: 'Nom d’utilisateur SMTP',
+      authCode: 'Mot de passe SMTP / mot de passe d’application',
+      senderName: 'Nom d’affichage de l’expéditeur',
       toEmail: 'Email du destinataire',
       ccEmail: 'Email en copie',
       emailSubject: 'Sujet',

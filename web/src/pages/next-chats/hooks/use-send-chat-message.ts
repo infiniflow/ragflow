@@ -70,9 +70,8 @@ export const useSendMessage = (controller: AbortController) => {
   const { handleUploadFile, isUploading, removeFile, files, clearFiles } =
     useUploadFile();
 
-  const { send, answer, done } = useSendMessageWithSse(
-    api.completeConversation,
-  );
+  const { id: chatId } = useParams();
+  const { send, answer, done } = useSendMessageWithSse();
   const {
     scrollRef,
     messageContainerRef,
@@ -97,9 +96,12 @@ export const useSendMessage = (controller: AbortController) => {
       currentConversationId?: string;
       messages?: IMessage[];
     } & NextMessageInputOnPressEnterParameter) => {
+      const sessionId = currentConversationId ?? conversationId;
       const res = await send(
+        api.completionUrl,
         {
-          conversation_id: currentConversationId ?? conversationId,
+          chat_id: chatId,
+          session_id: sessionId,
           messages: [
             ...(Array.isArray(messages) && messages?.length > 0
               ? messages
@@ -122,6 +124,7 @@ export const useSendMessage = (controller: AbortController) => {
     [
       derivedMessages,
       conversationId,
+      chatId,
       removeLatestMessage,
       setValue,
       send,
@@ -172,14 +175,26 @@ export const useSendMessage = (controller: AbortController) => {
             id,
             content: value.trim(),
             role: MessageType.User,
-            files: files,
+            files,
             conversationId: targetConversationId,
           },
           enableInternet,
           enableThinking,
         });
       }
+
       clearFiles();
+
+      // Auto scroll to bottom when sending new message
+      if (messageContainerRef.current) {
+        const el = messageContainerRef.current;
+
+        requestAnimationFrame(() => {
+          el.scrollTo({
+            top: el.scrollHeight,
+          });
+        });
+      }
     },
     [
       value,
@@ -190,6 +205,7 @@ export const useSendMessage = (controller: AbortController) => {
       clearFiles,
       setValue,
       sendMessage,
+      messageContainerRef,
     ],
   );
 

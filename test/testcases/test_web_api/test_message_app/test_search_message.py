@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from test_web_api.common import search_message, list_memory_message
+from test_common import search_message, list_memory_message
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
@@ -80,3 +80,23 @@ class TestSearchMessage:
         assert res["code"] == 0, res
         assert len(res["data"]) > 0
         assert len(res["data"]) <= params["top_n"]
+
+    @pytest.mark.p2
+    def test_query_missing_query(self, WebApiAuth):
+        memory_id = self.memory_id
+        res = search_message(WebApiAuth, {"memory_id": memory_id})
+        assert res["code"] in [100, 500], res
+
+    @pytest.mark.p2
+    def test_query_missing_memory_id(self, WebApiAuth):
+        res = search_message(WebApiAuth, {"query": "what is coriander"})
+        assert res["code"] == 0, res
+        assert isinstance(res["data"], list), res
+
+    @pytest.mark.p2
+    def test_query_with_csv_memory_ids(self, WebApiAuth):
+        memory_id = self.memory_id
+        query = "Coriander is a versatile herb."
+        res = search_message(WebApiAuth, {"memory_id": f"{memory_id},{memory_id}", "query": query})
+        assert res["code"] == 0, res
+        assert isinstance(res["data"], list), res

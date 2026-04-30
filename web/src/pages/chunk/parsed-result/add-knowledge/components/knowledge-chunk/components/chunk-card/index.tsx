@@ -1,5 +1,4 @@
 import Image from '@/components/image';
-import { useTheme } from '@/components/theme-provider';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
@@ -8,7 +7,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import type { ChunkDocType, IChunk } from '@/interfaces/database/knowledge';
+import type { ChunkDocType, IChunk } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
 import { CheckedState } from '@radix-ui/react-checkbox';
 import classNames from 'classnames';
@@ -44,7 +43,6 @@ const ChunkCard = ({
   const { t } = useTranslation();
   const available = Number(item.available_int);
   const [enabled, setEnabled] = useState(false);
-  const { theme } = useTheme();
 
   const onChange = (checked: boolean) => {
     setEnabled(checked);
@@ -73,10 +71,11 @@ const ChunkCard = ({
 
   return (
     <Card
-      className={classNames('relative flex-none', styles.chunkCard, {
-        [`${theme === 'dark' ? styles.cardSelectedDark : styles.cardSelected}`]:
-          selected,
-      })}
+      as="article"
+      className={classNames(
+        'relative flex-none p-3 pt-6 shadow-none transition-colors',
+        selected && 'bg-text-primary/15',
+      )}
     >
       <span
         className="
@@ -88,8 +87,12 @@ const ChunkCard = ({
         {t(`chunk.docType.${chunkType}`)}
       </span>
 
-      <div className="flex items-start justify-between gap-2">
-        <Checkbox onCheckedChange={handleCheck} checked={checked}></Checkbox>
+      <div className="flex items-start justify-between gap-2.5">
+        <Checkbox
+          className="mt-1"
+          onCheckedChange={handleCheck}
+          checked={checked}
+        />
 
         {/* Using <Tooltip> instead of <Popover> to avoid flickering when hovering over the image */}
         {item.image_id && (
@@ -98,41 +101,44 @@ const ChunkCard = ({
               <Image
                 t={imageCacheKey}
                 id={item.image_id}
-                className={styles.image}
+                className="mt-1 rounded !w-28 object-contain"
               />
             </TooltipTrigger>
+
             <TooltipContent
               className="p-0"
-              align={'start'}
-              side={'left'}
+              align="start"
+              side="left"
               sideOffset={-20}
               tabIndex={-1}
             >
               <Image
                 t={imageCacheKey}
                 id={item.image_id}
-                className={styles.imagePreview}
+                className="size-full max-w-[50vw] max-h-[50vh] object-contain"
               />
             </TooltipContent>
           </Tooltip>
         )}
 
         <section
+          className={cn(styles.content, 'flex-1')}
           onDoubleClick={handleContentDoubleClick}
           onClick={handleContentClick}
-          className={cn(styles.content, 'mt-2')}
         >
           <div
             dangerouslySetInnerHTML={{
-              __html: DOMPurify.sanitize(item.content_with_weight),
+              __html: DOMPurify.sanitize(item.content_with_weight).trim(),
             }}
-            className={classNames(styles.contentText, {
-              [styles.contentEllipsis]: textMode === ChunkTextMode.Ellipse,
-            })}
-          ></div>
+            className={classNames(
+              // Keep whitespaces?
+              'text-wrap break-words whitespace-pre',
+              textMode === ChunkTextMode.Ellipse && 'line-clamp-3',
+            )}
+          />
         </section>
 
-        <div className="mt-2">
+        <div>
           <Switch
             checked={enabled}
             onCheckedChange={onChange}

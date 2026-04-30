@@ -65,6 +65,7 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, has_canceled, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.file2document_service import File2DocumentService
+from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from common.versions import get_ragflow_version
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, \
@@ -289,6 +290,19 @@ async def build_chunks(task, progress_callback):
         logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
         raise
 
+    # Extract and persist PDF outline if the parser attached it.
+    if cks and cks[0].get("__outline__"):
+        outline = cks[0].pop("__outline__")
+        try:
+            DocMetadataService.update_document_metadata(
+                task["doc_id"],
+                update_metadata_to({"outline": outline},
+                                   DocMetadataService.get_document_metadata(task["doc_id"]) or {})
+            )
+            logging.info("Persisted PDF outline (%d entries) for doc %s", len(outline), task["doc_id"])
+        except Exception as e:
+            logging.warning("Failed to persist PDF outline for doc %s: %s", task["doc_id"], e)
+
     docs = []
     doc = {
         "doc_id": task["doc_id"],
@@ -342,7 +356,8 @@ async def build_chunks(task, progress_callback):
     if task["parser_config"].get("auto_keywords", 0):
         st = timer()
         progress_callback(msg="Start to generate keywords for every chunk ...")
-        chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
+        chat_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.CHAT, task["llm_id"])
+        chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
 
         async def doc_keyword_extraction(chat_mdl, d, topn):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "keywords", {"topn": topn})
@@ -375,7 +390,8 @@ async def build_chunks(task, progress_callback):
     if task["parser_config"].get("auto_questions", 0):
         st = timer()
         progress_callback(msg="Start to generate questions for every chunk ...")
-        chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
+        chat_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.CHAT, task["llm_id"])
+        chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
 
         async def doc_question_proposal(chat_mdl, d, topn):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "question", {"topn": topn})
@@ -404,24 +420,42 @@ async def build_chunks(task, progress_callback):
             raise
         progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
-    if task["parser_config"].get("enable_metadata", False) and task["parser_config"].get("metadata"):
+    if task["parser_config"].get("enable_metadata", False) and (task["parser_config"].get("metadata") or task["parser_config"].get("built_in_metadata")):
         st = timer()
         progress_callback(msg="Start to generate meta-data for every chunk ...")
-        chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
+        chat_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.CHAT, task["llm_id"])
+        chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
 
         async def gen_metadata_task(chat_mdl, d):
+            metadata_conf = task["parser_config"].get("metadata", [])
+            built_in_metadata = list(task["parser_config"].get("built_in_metadata") or [])
+            if isinstance(metadata_conf, dict):
+                if not isinstance(metadata_conf.get("properties"), dict):
+                    metadata_conf = {"type": "object", "properties": {}}
+                if built_in_metadata:
+                    metadata_conf = {
+                        **metadata_conf,
+                        "properties": {
+                            **metadata_conf.get("properties", {}),
+                            **turn2jsonschema(built_in_metadata).get("properties", {}),
+                        },
+                    }
+            elif isinstance(metadata_conf, list):
+                metadata_conf = metadata_conf + built_in_metadata
+            else:
+                metadata_conf = built_in_metadata
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "metadata",
-                                   task["parser_config"]["metadata"])
+                                   metadata_conf)
             if not cached:
                 if has_canceled(task["id"]):
                     progress_callback(-1, msg="Task has been canceled.")
                     return
                 async with chat_limiter:
                     cached = await gen_metadata(chat_mdl,
-                                                turn2jsonschema(task["parser_config"]["metadata"]),
+                                                turn2jsonschema(metadata_conf),
                                                 d["content_with_weight"])
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "metadata",
-                              task["parser_config"]["metadata"])
+                              metadata_conf)
             if cached:
                 d["metadata_obj"] = cached
 
@@ -461,8 +495,8 @@ async def build_chunks(task, progress_callback):
             set_tags_to_cache(kb_ids, all_tags)
         else:
             all_tags = json.loads(all_tags)
-
-        chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
+        chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, task["llm_id"])
+        chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
 
         docs_to_tag = []
         for d in docs:
@@ -517,7 +551,8 @@ async def build_chunks(task, progress_callback):
 
 def build_TOC(task, docs, progress_callback):
     progress_callback(msg="Start to generate table of content ...")
-    chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
+    chat_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.CHAT, task["llm_id"])
+    chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
     docs = sorted(docs, key=lambda d: (
         d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
         d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
@@ -592,17 +627,14 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         nonlocal mdl
         return mdl.encode([truncate(c, mdl.max_length - 10) for c in txts])
 
-    cnts_ = np.array([])
+    cnts_batches = []
     for i in range(0, len(cnts), settings.EMBEDDING_BATCH_SIZE):
         async with embed_limiter:
             vts, c = await thread_pool_exec(batch_encode, cnts[i: i + settings.EMBEDDING_BATCH_SIZE])
-        if len(cnts_) == 0:
-            cnts_ = vts
-        else:
-            cnts_ = np.concatenate((cnts_, vts), axis=0)
+        cnts_batches.append(vts)
         tk_count += c
         callback(prog=0.7 + 0.2 * (i + 1) / len(cnts), msg="")
-    cnts = cnts_
+    cnts = np.vstack(cnts_batches) if cnts_batches else np.array([])
     filename_embd_weight = parser_config.get("filename_embd_weight", 0.1)  # due to the db support none value
     if not filename_embd_weight:
         filename_embd_weight = 0.1
@@ -651,16 +683,25 @@ async def run_dataflow(task: dict):
         return
 
     embedding_token_consumption = chunks.get("embedding_token_consumption", 0)
-    if chunks.get("chunks"):
+    # The output key may exist with an empty payload; check presence, not truthiness.
+    if "chunks" in chunks:
         chunks = copy.deepcopy(chunks["chunks"])
-    elif chunks.get("json"):
+    elif "json" in chunks:
         chunks = copy.deepcopy(chunks["json"])
-    elif chunks.get("markdown"):
-        chunks = [{"text": [chunks["markdown"]]}]
-    elif chunks.get("text"):
-        chunks = [{"text": [chunks["text"]]}]
-    elif chunks.get("html"):
-        chunks = [{"text": [chunks["html"]]}]
+    elif "markdown" in chunks:
+        chunks = [{"text": [chunks["markdown"]]}] if chunks["markdown"] else []
+    elif "text" in chunks:
+        chunks = [{"text": [chunks["text"]]}] if chunks["text"] else []
+    elif "html" in chunks:
+        chunks = [{"text": [chunks["html"]]}] if chunks["html"] else []
+    else:
+        chunks = []
+
+    # An empty normalized payload means "nothing parsed", so stop before embedding/indexing.
+    if not chunks:
+        PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id,
+                                           task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
+        return
 
     keys = [k for o in chunks for k in list(o.keys())]
     if not any([re.match(r"q_[0-9]+_vec", k) for k in keys]):
@@ -668,28 +709,27 @@ async def run_dataflow(task: dict):
             set_progress(task_id, prog=0.82, msg="\n-------------------------------------\nStart to embedding...")
             e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
             embedding_id = kb.embd_id
-            embedding_model = LLMBundle(task["tenant_id"], LLMType.EMBEDDING, llm_name=embedding_id)
+            embd_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.EMBEDDING, embedding_id)
+            embedding_model = LLMBundle(task["tenant_id"], embd_model_config)
 
             @timeout(60)
             def batch_encode(txts):
                 nonlocal embedding_model
                 return embedding_model.encode([truncate(c, embedding_model.max_length - 10) for c in txts])
 
-            vects = np.array([])
+            vects_batches = []
             texts = [o.get("questions", o.get("summary", o["text"])) for o in chunks]
             delta = 0.20 / (len(texts) // settings.EMBEDDING_BATCH_SIZE + 1)
             prog = 0.8
             for i in range(0, len(texts), settings.EMBEDDING_BATCH_SIZE):
                 async with embed_limiter:
                     vts, c = await thread_pool_exec(batch_encode, texts[i: i + settings.EMBEDDING_BATCH_SIZE])
-                if len(vects) == 0:
-                    vects = vts
-                else:
-                    vects = np.concatenate((vects, vts), axis=0)
+                vects_batches.append(vts)
                 embedding_token_consumption += c
                 prog += delta
                 if i % (len(texts) // settings.EMBEDDING_BATCH_SIZE / 100 + 1) == 1:
                     set_progress(task_id, prog=prog, msg=f"{i + 1} / {len(texts) // settings.EMBEDDING_BATCH_SIZE}")
+            vects = np.vstack(vects_batches) if vects_batches else np.array([])
 
             assert len(vects) == len(chunks)
             for i, ck in enumerate(chunks):
@@ -762,6 +802,40 @@ async def run_dataflow(task: dict):
                                        dsl=str(pipeline))
 
 
+async def has_raptor_chunks(doc_id: str, tenant_id: str, kb_id: str) -> bool:
+    """Return True if RAPTOR chunks already exist for doc_id in the doc store.
+
+    Queries directly for raptor_kwd="raptor" rows so a non-RAPTOR leading
+    chunk cannot produce a false-negative result.  Uses thread_pool_exec so
+    the blocking doc-store call does not stall the event loop.
+    """
+    from common.doc_store.doc_store_base import OrderByExpr
+    from rag.nlp import search as nlp_search
+    try:
+        condition = {"doc_id": doc_id, "raptor_kwd": ["raptor"]}
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["raptor_kwd"], [], condition, [], OrderByExpr(),
+            0, 1, nlp_search.index_name(tenant_id), [kb_id]
+        )
+        field_map = settings.docStoreConn.get_fields(res, ["raptor_kwd"])
+        found = bool(field_map)
+        if found:
+            logging.info(
+                "Checkpoint hit: RAPTOR chunks for doc %s (tenant=%s kb=%s) already exist",
+                doc_id, tenant_id, kb_id,
+            )
+        else:
+            logging.info(
+                "Checkpoint miss: no RAPTOR chunks for doc %s (tenant=%s kb=%s)",
+                doc_id, tenant_id, kb_id,
+            )
+        return found
+    except Exception:
+        logging.exception("Failed to check RAPTOR chunks for doc %s", doc_id)
+        return False
+
+
 @timeout(3600)
 async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_size, callback=None, doc_ids=[]):
     fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
@@ -772,6 +846,14 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
     res = []
     tk_count = 0
     max_errors = int(os.environ.get("RAPTOR_MAX_ERRORS", 3))
+    doc_name_by_id = {}
+    for doc_id in set(doc_ids):
+        ok, source_doc = DocumentService.get_by_id(doc_id)
+        if not ok or not source_doc:
+            continue
+        source_name = getattr(source_doc, "name", "")
+        if source_name:
+            doc_name_by_id[doc_id] = source_name
 
     async def generate(chunks, did):
         nonlocal tk_count, res
@@ -785,18 +867,29 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
             max_errors=max_errors,
         )
         original_length = len(chunks)
-        chunks = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])
+        chunks, layers = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])
+        effective_doc_name = row["name"] if did == fake_doc_id else doc_name_by_id.get(did, row["name"])
         doc = {
             "doc_id": did,
             "kb_id": [str(row["kb_id"])],
-            "docnm_kwd": row["name"],
-            "title_tks": rag_tokenizer.tokenize(row["name"]),
+            "docnm_kwd": effective_doc_name,
+            "title_tks": rag_tokenizer.tokenize(effective_doc_name),
             "raptor_kwd": "raptor"
         }
         if row["pagerank"]:
             doc[PAGERANK_FLD] = int(row["pagerank"])
 
-        for content, vctr in chunks[original_length:]:
+        # Build index→layer mapping from RAPTOR layer boundaries.
+        # layers is [(start, end), ...] where layer 0 is the original chunks
+        # and layer 1+ are summary layers. We skip layer 0 (original chunks).
+        chunk_layer = {}
+        for layer_idx, (layer_start, layer_end) in enumerate(layers):
+            if layer_idx == 0:
+                continue  # layer 0 = original input chunks, not summaries
+            for ci in range(layer_start, layer_end):
+                chunk_layer[ci] = layer_idx
+
+        for idx, (content, vctr) in enumerate(chunks[original_length:], start=original_length):
             d = copy.deepcopy(doc)
             d["id"] = xxhash.xxh64((content + str(fake_doc_id)).encode("utf-8")).hexdigest()
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
@@ -805,11 +898,18 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
             d["content_with_weight"] = content
             d["content_ltks"] = rag_tokenizer.tokenize(content)
             d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+            d["raptor_layer_int"] = chunk_layer.get(idx, 1)
             res.append(d)
             tk_count += num_tokens_from_string(content)
 
     if raptor_config.get("scope", "file") == "file":
         for x, doc_id in enumerate(doc_ids):
+            # CHECKPOINT: skip docs that already have RAPTOR chunks in the doc store
+            if await has_raptor_chunks(doc_id, row["tenant_id"], row["kb_id"]):
+                callback(msg=f"[RAPTOR] doc:{doc_id} already has RAPTOR chunks, skipping.")
+                callback(prog=(x + 1.) / len(doc_ids))
+                continue
+
             chunks = []
             skipped_chunks = 0
             for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
@@ -821,15 +921,15 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
                     logging.warning(f"RAPTOR: Chunk missing vector field '{vctr_nm}' in doc {doc_id}, skipping")
                     continue
                 chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
-            
+
             if skipped_chunks > 0:
                 callback(msg=f"[WARN] Skipped {skipped_chunks} chunks without vector field '{vctr_nm}' for doc {doc_id}. Consider re-parsing the document with the current embedding model.")
-            
+
             if not chunks:
                 logging.warning(f"RAPTOR: No valid chunks with vectors found for doc {doc_id}")
                 callback(msg=f"[WARN] No valid chunks with vectors found for doc {doc_id}, skipping")
                 continue
-                
+
             await generate(chunks, doc_id)
             callback(prog=(x + 1.) / len(doc_ids))
     else:
@@ -897,7 +997,7 @@ async def insert_chunks(task_id, task_tenant_id, task_dataset_id, chunks, progre
         flds = list(mom_ck.keys())
         for fld in flds:
             if fld not in ["id", "content_with_weight", "doc_id", "docnm_kwd", "kb_id", "available_int",
-                           "position_int"]:
+                           "position_int", "create_timestamp_flt", "page_num_int", "top_int"]:
                 del mom_ck[fld]
         mothers.append(mom_ck)
 
@@ -985,7 +1085,11 @@ async def do_handle_task(task):
 
     try:
         # bind embedding model
-        embedding_model = LLMBundle(task_tenant_id, LLMType.EMBEDDING, llm_name=task_embedding_id, lang=task_language)
+        if task_embedding_id:
+            embd_model_config = get_model_config_by_type_and_name(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
+        else:
+            embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
+        embedding_model = LLMBundle(task_tenant_id, embd_model_config, lang=task_language)
         vts, _ = embedding_model.encode(["ok"])
         vector_size = len(vts[0])
     except Exception as e:
@@ -1037,7 +1141,8 @@ async def do_handle_task(task):
             return
 
         # bind LLM for raptor
-        chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=kb_task_llm_id, lang=task_language)
+        chat_model_config = get_model_config_by_type_and_name(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
+        chat_model = LLMBundle(task_tenant_id, chat_model_config, lang=task_language)
         # run RAPTOR
         async with kg_limiter:
             chunks, token_count = await run_raptor_for_kb(
@@ -1081,7 +1186,8 @@ async def do_handle_task(task):
 
         graphrag_conf = kb_parser_config.get("graphrag", {})
         start_ts = timer()
-        chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=kb_task_llm_id, lang=task_language)
+        chat_model_config = get_model_config_by_type_and_name(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
+        chat_model = LLMBundle(task_tenant_id, chat_model_config, lang=task_language)
         with_resolution = graphrag_conf.get("resolution", False)
         with_community = graphrag_conf.get("community", False)
         async with kg_limiter:
@@ -1178,6 +1284,7 @@ async def do_handle_task(task):
         )
 
     finally:
+        executor.shutdown(wait=False)
         if has_canceled(task_id):
             try:
                 exists = await thread_pool_exec(
@@ -1235,13 +1342,13 @@ async def handle_task():
             pass
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
     finally:
-        task_document_ids = []
-        if task_type in ["graphrag", "raptor", "mindmap"]:
-            task_document_ids = task["doc_ids"]
         if not task.get("dataflow_id", ""):
+            referred_document_id = None
+            if task_type in ["graphrag", "raptor", "mindmap"]:
+                referred_document_id = task["doc_ids"][0]
             PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id="",
                                                                   task_type=pipeline_task_type,
-                                                                  fake_document_ids=task_document_ids)
+                                                                  task_id=task_id, referred_document_id=referred_document_id)
 
     redis_msg.ack()
 
@@ -1364,7 +1471,7 @@ async def main():
 /___/_/ /_/\__, /\___/____/\__/_/\____/_/ /_/  /____/\___/_/    |___/\___/_/
           /____/
     """)
-    logging.info(f'RAGFlow version: {get_ragflow_version()}')
+    logging.info(f'RAGFlow ingestion version: {get_ragflow_version()}')
     show_configs()
     settings.init_settings()
     settings.check_and_install_torch()
@@ -1401,4 +1508,8 @@ async def main():
 if __name__ == "__main__":
     faulthandler.enable()
     init_root_logger(CONSUMER_NAME)
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        logging.exception(f"Unhandled exception: {e}")
+        sys.exit(1)

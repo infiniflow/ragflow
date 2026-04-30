@@ -12,7 +12,7 @@ import {
 } from '@/hooks/use-knowledge-request';
 import { ResponsePostType } from '@/interfaces/database/base';
 import { IAnswer } from '@/interfaces/database/chat';
-import { ITestingResult } from '@/interfaces/database/knowledge';
+import { ITestingResult } from '@/interfaces/database/dataset';
 import { IAskRequestBody } from '@/interfaces/request/chat';
 import kbService from '@/services/knowledge-service';
 import chatService from '@/services/next-chat-service';
@@ -46,8 +46,7 @@ export const useGetSharedSearchParams = () => {
   const [searchParams] = useSearchParams();
   const data_prefix = 'data_';
   const data = Object.fromEntries(
-    searchParams
-      .entries()
+    Array.from(searchParams.entries())
       .filter(([key]) => key.startsWith(data_prefix))
       .map(([key, value]) => [key.replace(data_prefix, ''), value]),
   );
@@ -68,7 +67,7 @@ export const useSearchFetchMindMap = () => {
   const sharedId = searchParams.get('shared_id');
   const fetchMindMapFunc = sharedId
     ? searchService.mindmapShare
-    : chatService.getMindMap;
+    : chatService.chatsMindmap;
   const {
     data,
     isPending: loading,
@@ -139,7 +138,7 @@ export const useTestChunkRetrieval = (
   const shared_id = searchParams.get('shared_id');
   const retrievalTestFunc = shared_id
     ? kbService.retrievalTestShare
-    : kbService.retrieval_test;
+    : kbService.retrievalTest;
   const {
     data,
     isPending: loading,
@@ -190,7 +189,7 @@ export const useTestChunkAllRetrieval = (
   const shared_id = searchParams.get('shared_id');
   const retrievalTestFunc = shared_id
     ? kbService.retrievalTestShare
-    : kbService.retrieval_test;
+    : kbService.retrievalTest;
   const {
     data,
     isPending: loading,
@@ -280,7 +279,7 @@ export const useFetchRelatedQuestions = (
   const shared_id = searchParams.get('shared_id');
   const retrievalTestFunc = shared_id
     ? searchService.getRelatedQuestionsShare
-    : chatService.getRelatedQuestions;
+    : chatService.chatsRelatedQuestions;
   const {
     data,
     isPending: loading,
@@ -309,9 +308,12 @@ export const useSendQuestion = (
   related_search: boolean = false,
 ) => {
   const { sharedId } = useGetSharedSearchParams();
-  const { send, answer, done, stopOutputMessage } = useSendMessageWithSse(
-    sharedId ? api.askShare : api.ask,
-  );
+  const askUrl = sharedId
+    ? api.askShare
+    : searchId
+      ? api.searchCompletion(searchId)
+      : '';
+  const { send, answer, done, stopOutputMessage } = useSendMessageWithSse();
 
   const { testChunk, loading } = useTestChunkRetrieval(tenantId);
   const { testChunkAll } = useTestChunkAllRetrieval(tenantId);
@@ -333,8 +335,16 @@ export const useSendQuestion = (
       setIsFirstRender(false);
       setCurrentAnswer({} as IAnswer);
       if (enableAI) {
+        if (!sharedId && !searchId) {
+          message.error('Search ID is required.');
+          return;
+        }
         setSendingLoading(true);
-        send({ kb_ids: kbIds, question: q, tenantId, search_id: searchId });
+        send(askUrl, {
+          kb_ids: kbIds,
+          question: q,
+          tenantId,
+        });
       }
       testChunk({
         kb_id: kbIds,
@@ -352,12 +362,14 @@ export const useSendQuestion = (
     [
       send,
       testChunk,
+      askUrl,
       kbIds,
       fetchRelatedQuestions,
       setPagination,
       pagination.pageSize,
       tenantId,
       searchId,
+      sharedId,
       related_search,
     ],
   );

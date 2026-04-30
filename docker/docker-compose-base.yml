@@ -36,7 +36,7 @@ services:
   opensearch01:
     profiles:
       - opensearch
-    image: hub.icert.top/opensearchproject/opensearch:2.19.1
+    image: opensearchproject/opensearch:2.19.1
     volumes:
       - osdata01:/usr/share/opensearch/data
     ports:
@@ -72,7 +72,7 @@ services:
   infinity:
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.7.0-dev2
+    image: infiniflow/infinity:v0.7.0-dev5
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -202,7 +202,7 @@ services:
     restart: unless-stopped
 
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
+    image: pgsty/minio:RELEASE.2026-03-25T00-00-00Z
     command: ["server", "--console-address", ":9001", "/data"]
     ports:
       - ${MINIO_PORT}:9000

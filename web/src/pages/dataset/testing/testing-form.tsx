@@ -33,6 +33,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
+import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
 import { trim } from 'lodash';
 import { Send } from 'lucide-react';
 import { useEffect } from 'react';
@@ -61,7 +62,7 @@ export default function TestingForm({
     ...vectorSimilarityWeightSchema,
     ...topKSchema,
     use_kg: z.boolean().optional(),
-    kb_ids: z.array(z.string()).optional(),
+    dataset_ids: z.array(z.string()).optional(),
     ...MetadataFilterSchema,
   });
 
@@ -72,7 +73,7 @@ export default function TestingForm({
       ...initialVectorSimilarityWeightValue,
       ...initialTopKValue,
       use_kg: false,
-      kb_ids: [knowledgeBaseId],
+      dataset_ids: [knowledgeBaseId],
     },
   });
 
@@ -81,7 +82,7 @@ export default function TestingForm({
   const values = useWatch({ control: form.control });
 
   useEffect(() => {
-    setValues(values as Required<z.infer<typeof formSchema>>);
+    setValues(values as ITestRetrievalRequestBody);
   }, [setValues, values]);
 
   function onSubmit() {
@@ -90,43 +91,52 @@ export default function TestingForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-        <FormContainer className="p-10">
-          <SimilaritySliderFormField
-            isTooltipShown={true}
-          ></SimilaritySliderFormField>
-          <RerankFormFields></RerankFormFields>
-          <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
-          <CrossLanguageFormField
-            name={'cross_languages'}
-          ></CrossLanguageFormField>
-          <MetadataFilter prefix=""></MetadataFilter>
-        </FormContainer>
-        <FormField
-          control={form.control}
-          name="question"
-          render={({ field }) => (
-            <FormItem>
-              {/* <FormLabel>{t('knowledgeDetails.testText')}</FormLabel> */}
-              <FormControl>
-                <Textarea {...field}></Textarea>
-              </FormControl>
-
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <div className="flex justify-end">
-          <ButtonLoading
-            type="submit"
-            disabled={!!!trim(question)}
-            loading={loading}
-          >
-            {/* {!loading && <CirclePlay />} */}
-            {t('knowledgeDetails.testingLabel')}
-            <Send />
-          </ButtonLoading>
+      <form
+        className="size-full flex flex-col"
+        onSubmit={form.handleSubmit(onSubmit)}
+      >
+        <div className="px-5 h-0 flex-1">
+          <FormContainer className="p-5 h-full overflow-auto">
+            <SimilaritySliderFormField
+              isTooltipShown={true}
+            ></SimilaritySliderFormField>
+            <RerankFormFields></RerankFormFields>
+            <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
+            <CrossLanguageFormField
+              name={'cross_languages'}
+            ></CrossLanguageFormField>
+            <MetadataFilter prefix=""></MetadataFilter>
+          </FormContainer>
         </div>
+
+        <footer className="flex-0 p-5">
+          <FormField
+            control={form.control}
+            name="question"
+            render={({ field }) => (
+              <FormItem>
+                {/* <FormLabel>{t('knowledgeDetails.testText')}</FormLabel> */}
+                <FormControl>
+                  <Textarea {...field}></Textarea>
+                </FormControl>
+
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <div className="mt-2.5 text-end">
+            <ButtonLoading
+              type="submit"
+              disabled={!trim(question)}
+              loading={loading}
+            >
+              {/* {!loading && <CirclePlay />} */}
+              {t('knowledgeDetails.testingLabel')}
+              <Send />
+            </ButtonLoading>
+          </div>
+        </footer>
       </form>
     </Form>
   );

@@ -29,7 +29,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp
-from common.constants import StatusEnum, TaskStatus
+from common.constants import StatusEnum, TaskStatus, MAXIMUM_PAGE_NUMBER, MAXIMUM_TASK_PAGE_NUMBER
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.utils.redis_conn import REDIS_CONN
 from common import settings
@@ -304,9 +304,8 @@ class TaskService(CommonService):
 
         Update Rules:
             - progress_msg: Always appends the new message to the existing one, and trims the result to max 3000 lines.
-            - progress: Only updates if the current progress is not -1 AND
-                        (the new progress is -1 OR greater than the existing progress),
-                        to avoid overwriting valid progress with invalid or regressive values.
+            - progress: Updates when (a) new progress >= 1 (allows recovery from -1), or
+                        (b) current progress != -1 AND (new progress is -1 OR greater than existing).
 
         Args:
             id (str): The unique identifier of the task to update.
@@ -327,10 +326,8 @@ class TaskService(CommonService):
                 prog = info["progress"]
                 cls.model.update(progress=prog).where(
                     (cls.model.id == id) &
-                    (
-                            (cls.model.progress != -1) &
-                            ((prog == -1) | (prog > cls.model.progress))
-                    )
+                    ((prog >= 1) | ((cls.model.progress != -1) &
+                    ((prog == -1) | (prog > cls.model.progress))))
                 ).execute()
         else:
             with DB.lock("update_progress", -1):
@@ -341,10 +338,8 @@ class TaskService(CommonService):
                     prog = info["progress"]
                     cls.model.update(progress=prog).where(
                         (cls.model.id == id) &
-                        (
-                            (cls.model.progress != -1) &
-                            ((prog == -1) | (prog > cls.model.progress))
-                        )
+                        ((prog >= 1) | ((cls.model.progress != -1) &
+                        ((prog == -1) | (prog > cls.model.progress))))
                     ).execute()
 
         process_duration = (datetime.now() - task.begin_at).total_seconds()
@@ -384,7 +379,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
             "doc_id": doc["id"],
             "progress": 0.0,
             "from_page": 0,
-            "to_page": 100000000,
+            "to_page": MAXIMUM_TASK_PAGE_NUMBER,
             "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
@@ -400,8 +395,8 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         if doc["parser_id"] == "paper":
             page_size = doc["parser_config"].get("task_page_size") or 22
         if doc["parser_id"] in ["one", "knowledge_graph"] or do_layout != "DeepDOC" or doc["parser_config"].get("toc_extraction", False):
-            page_size = 10 ** 9
-        page_ranges = doc["parser_config"].get("pages") or [(1, 10 ** 5)]
+            page_size = MAXIMUM_TASK_PAGE_NUMBER
+        page_ranges = doc["parser_config"].get("pages") or [(1, MAXIMUM_PAGE_NUMBER)]
         for s, e in page_ranges:
             s -= 1
             s = max(0, s)
@@ -500,7 +495,7 @@ def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: 
         return 0
     task["chunk_ids"] = prev_task["chunk_ids"]
     task["progress"] = 1.0
-    if "from_page" in task and "to_page" in task and int(task['to_page']) - int(task['from_page']) >= 10 ** 6:
+    if "from_page" in task and "to_page" in task and (int(task['to_page']) - int(task['from_page']) >= 10 ** 6 or (int(task['from_page']) == MAXIMUM_TASK_PAGE_NUMBER and int(task['to_page']) == MAXIMUM_TASK_PAGE_NUMBER)):
         task["progress_msg"] = f"Page({task['from_page']}~{task['to_page']}): "
     else:
         task["progress_msg"] = ""
@@ -535,7 +530,7 @@ def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str=CANVAS_DE
         id=task_id,
         doc_id=doc_id,
         from_page=0,
-        to_page=100000000,
+        to_page=MAXIMUM_TASK_PAGE_NUMBER,
         task_type="dataflow" if not rerun else "dataflow_rerun",
         priority=priority,
         begin_at= datetime.now().strftime("%Y-%m-%d %H:%M:%S"),

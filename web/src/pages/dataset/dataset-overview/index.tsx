@@ -1,17 +1,23 @@
-import FileStatusBadge from '@/components/file-status-badge';
 import { FilterCollection } from '@/components/list-filter-bar/interface';
 import SvgIcon from '@/components/svg-icon';
 import { useIsDarkTheme } from '@/components/theme-provider';
-import { AntToolTip } from '@/components/ui/tooltip';
+
+import {
+  Card,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+} from '@/components/ui/card';
+
+import WhatIsThis from '@/components/what-is-this';
 import { RunningStatusMap } from '@/constants/knowledge';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
-import { CircleQuestionMark } from 'lucide-react';
 import { FC, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RunningStatus } from '../dataset/constant';
 import { LogTabs } from './dataset-common';
 import { DatasetFilter } from './dataset-filter';
-import { useFetchFileLogList, useFetchOverviewTital } from './hook';
+import { useFetchFileLogList, useFetchOverviewTotal } from './hook';
 import { DocumentLog, IFileLogItem } from './interface';
 import FileLogsTable from './overview-table';
 
@@ -37,23 +43,35 @@ const StatCard: FC<StatCardProps> = ({
   tooltip,
 }) => {
   return (
-    <div className="bg-bg-card  p-4 rounded-lg border border-border flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <h3 className="flex items-center gap-1 text-sm font-medium text-text-secondary">
-          {title}
-          {tooltip && (
-            <AntToolTip title={tooltip} trigger="hover">
-              <CircleQuestionMark size={12} />
-            </AntToolTip>
-          )}
-        </h3>
-        {icon}
+    <Card
+      className="px-5 py-2.5 rounded-lg border-border-default grid grid-cols-[1fr_auto] grid-rows-[1fr_auto]"
+      style={{
+        gridTemplateAreas: '"data icon" "footer footer"',
+      }}
+    >
+      <span style={{ gridArea: 'icon' }}>{icon}</span>
+
+      <div style={{ gridArea: 'data' }}>
+        <CardHeader className="p-0">
+          <h3 className="flex items-center gap-1 text-sm font-medium text-text-secondary">
+            {title}
+
+            {tooltip && <WhatIsThis>{tooltip}</WhatIsThis>}
+          </h3>
+        </CardHeader>
+
+        <CardDescription className="text-text-primary text-2xl font-medium leading-9">
+          <data value={value}>{value}</data>
+        </CardDescription>
       </div>
-      <div className="text-2xl font-bold text-text-primary">{value}</div>
-      <div className="h-12 w-full flex items-center">
+
+      <CardFooter
+        className="p-0 mt-1.5 h-8 w-full flex items-end"
+        style={{ gridArea: 'footer' }}
+      >
         <div className="flex-1">{children}</div>
-      </div>
-    </div>
+      </CardFooter>
+    </Card>
   );
 };
 
@@ -64,38 +82,34 @@ const CardFooterProcess: FC<CardFooterProcessProps> = ({
   failedTip,
 }) => {
   const { t } = useTranslation();
+
   return (
     <div className="flex items-center flex-col gap-2">
-      <div className="w-full flex justify-between gap-4 rounded-lg text-sm font-bold text-text-primary">
-        <div className="flex items-center justify-between  rounded-md w-1/2 p-2 bg-state-success-5">
-          <div className="flex items-center rounded-lg gap-1">
-            <div className="w-2 h-2 rounded-full bg-state-success "></div>
+      <dl className="w-full flex justify-between gap-4 rounded-lg text-sm font-bold text-text-primary">
+        <div className="flex items-center justify-between rounded-sm w-1/2 p-2 bg-state-success-5">
+          <dt className="flex items-center rounded-lg gap-1">
+            <div className="w-1 h-1 rounded-full bg-state-success"></div>
             <div className="font-normal text-text-secondary text-xs flex items-center gap-1">
               {t('knowledgeDetails.success')}
-              {successTip && (
-                <AntToolTip title={successTip} trigger="hover">
-                  <CircleQuestionMark size={12} />
-                </AntToolTip>
-              )}
+              {successTip && <WhatIsThis>{successTip}</WhatIsThis>}
             </div>
-          </div>
-          <div>{success || 0}</div>
+          </dt>
+
+          <dd className="font-normal">{success || 0}</dd>
         </div>
-        <div className="flex items-center justify-between rounded-md w-1/2 bg-state-error-5 p-2">
-          <div className="flex items-center rounded-lg gap-1">
-            <div className="w-2 h-2 rounded-full bg-state-error"></div>
+
+        <div className="flex items-center justify-between rounded-sm w-1/2 bg-state-error-5 p-2">
+          <dt className="flex items-center rounded-lg gap-1">
+            <div className="w-1 h-1 rounded-full bg-state-error"></div>
             <div className="font-normal text-text-secondary text-xs flex items-center gap-1">
               {t('knowledgeDetails.failed')}
-              {failedTip && (
-                <AntToolTip title={failedTip} trigger="hover">
-                  <CircleQuestionMark size={12} />
-                </AntToolTip>
-              )}
+              {failedTip && <WhatIsThis>{failedTip}</WhatIsThis>}
             </div>
-          </div>
-          <div>{failed || 0}</div>
+          </dt>
+
+          <dd className="font-normal">{failed || 0}</dd>
         </div>
-      </div>
+      </dl>
     </div>
   );
 };
@@ -119,10 +133,10 @@ const FileLogsPage: FC = () => {
       failed: 0,
     },
   });
-  const { data: topData } = useFetchOverviewTital();
+  const { data: topData } = useFetchOverviewTotal();
   const {
     pagination: { total: fileTotal },
-  } = useFetchDocumentList();
+  } = useFetchDocumentList(false);
 
   useEffect(() => {
     setTopAllData((prev) => {
@@ -173,16 +187,10 @@ const FileLogsPage: FC = () => {
         label: t('knowledgeDetails.status'),
         list: Object.values(RunningStatus).map((value) => {
           // const value = key as RunningStatus;
-          console.log(value);
           return {
             id: value,
             // label: RunningStatusMap[value].label,
-            label: (
-              <FileStatusBadge
-                status={value as RunningStatus}
-                name={RunningStatusMap[value as RunningStatus]}
-              />
-            ),
+            label: RunningStatusMap[value],
           };
         }),
       },
@@ -212,7 +220,6 @@ const FileLogsPage: FC = () => {
   }, [active, t]);
 
   const tableList = useMemo(() => {
-    console.log('tableList', tableOriginData);
     if (tableOriginData && tableOriginData.logs?.length) {
       return tableOriginData.logs.map((item) => {
         return {
@@ -236,7 +243,6 @@ const FileLogsPage: FC = () => {
     page: number;
     pageSize: number;
   }) => {
-    console.log('Pagination changed:', { page, pageSize });
     setPagination({
       ...pagination,
       page,
@@ -247,9 +253,13 @@ const FileLogsPage: FC = () => {
   const isDark = useIsDarkTheme();
 
   return (
-    <div className="p-5 min-w-[880px] border-border border rounded-lg mr-5">
+    <Card
+      className="
+      p-5 min-w-[880px] mr-5 mb-5 bg-transparent shadow-none
+      flex flex-col overflow-y-auto scrollbar-auto"
+    >
       {/* Stats Cards */}
-      <div className="grid grid-cols-3 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-3 md:grid-cols-3 gap-7 mb-6">
         <StatCard
           title={t('datasetOverview.totalFiles')}
           value={topAllData.totalFiles.value}
@@ -261,12 +271,12 @@ const FileLogsPage: FC = () => {
             )
           }
         >
-          <div>
+          <div className="text-xs">
             <span className="text-accent-primary">
               {topAllData.totalFiles.precent > 0 ? '+' : ''}
               {topAllData.totalFiles.precent}%{' '}
             </span>
-            <span className="font-normal text-text-secondary text-xs">
+            <span className="font-normal text-text-secondary">
               {t('knowledgeConfiguration.lastWeek')}
             </span>
           </div>
@@ -330,7 +340,7 @@ const FileLogsPage: FC = () => {
         pageCount={10}
         active={active}
       />
-    </div>
+    </Card>
   );
 };
 

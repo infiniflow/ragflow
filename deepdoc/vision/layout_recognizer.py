@@ -17,7 +17,7 @@
 import logging
 import math
 import os
-# import re
+import re
 from collections import Counter
 from copy import deepcopy
 
@@ -46,6 +46,18 @@ class LayoutRecognizer(Recognizer):
     ]
 
     def __init__(self, domain):
+        self.garbage_layouts = ["footer", "header", "reference"]
+        self.client = None
+
+        dla_url = os.environ.get("DEEPDOC_URL") or os.environ.get("TENSORRT_DLA_SVR")
+        if dla_url:
+            from deepdoc.vision.dla_cli import DLAClient
+
+            self.client = DLAClient(dla_url)
+            env_used = "DEEPDOC_URL" if os.environ.get("DEEPDOC_URL") else "TENSORRT_DLA_SVR"
+            logging.info(f"LayoutRecognizer using remote DLA client at {dla_url} (via {env_used})")
+            return
+
         try:
             model_dir = os.path.join(get_project_base_directory(), "rag/res/deepdoc")
             super().__init__(self.labels, domain, model_dir)
@@ -53,18 +65,10 @@ class LayoutRecognizer(Recognizer):
             model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc", local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"), local_dir_use_symlinks=False)
             super().__init__(self.labels, domain, model_dir)
 
-        self.garbage_layouts = ["footer", "header", "reference"]
-        self.client = None
-        if os.environ.get("TENSORRT_DLA_SVR"):
-            from deepdoc.vision.dla_cli import DLAClient
-
-            self.client = DLAClient(os.environ["TENSORRT_DLA_SVR"])
-
     def __call__(self, image_list, ocr_res, scale_factor=3, thr=0.2, batch_size=16, drop=True):
         def __is_garbage(b):
-            return False
-            # patt = [r"^•+$", "^[0-9]{1,2} / ?[0-9]{1,2}$", r"^[0-9]{1,2} of [0-9]{1,2}$", "^http://[^ ]{12,}", "\\(cid *: *[0-9]+ *\\)"]
-            # return any([re.search(p, b["text"]) for p in patt])
+            patt = [r"\(cid\s*:\s*\d+\s*\)"]
+            return any([re.search(p, b.get("text", "")) for p in patt])
 
         if self.client:
             layouts = self.client.predict(image_list)

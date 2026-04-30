@@ -1,8 +1,8 @@
-import { FormFieldType } from '@/components/dynamic-form';
+import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
-import { Mail } from 'lucide-react';
+import { Mail, Rss } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
@@ -11,40 +11,132 @@ import GoogleDriveTokenField from '../component/google-drive-token-field';
 import { IDataSourceInfoMap } from '../interface';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
+import { jiraConstant } from './jira-constant';
 import { S3Constant } from './s3-constant';
+import { seafileConstant } from './seafile-constant';
 
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
-  S3 = 's3',
   NOTION = 'notion',
-  DISCORD = 'discord',
   GOOGLE_DRIVE = 'google_drive',
-  MOODLE = 'moodle',
   GMAIL = 'gmail',
+  GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
+  OCI_STORAGE = 'oci_storage',
+  S3 = 's3',
+  R2 = 'r2',
   JIRA = 'jira',
-  WEBDAV = 'webdav',
   BOX = 'box',
   DROPBOX = 'dropbox',
-  R2 = 'r2',
-  OCI_STORAGE = 'oci_storage',
-  GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
-  AIRTABLE = 'airtable',
+  BITBUCKET = 'bitbucket',
   GITLAB = 'gitlab',
+  GITHUB = 'github',
+  MOODLE = 'moodle',
+  DISCORD = 'discord',
+  ZENDESK = 'zendesk',
+  WEBDAV = 'webdav',
+  AIRTABLE = 'airtable',
   ASANA = 'asana',
   IMAP = 'imap',
-  GITHUB = 'github',
-  BITBUCKET = 'bitbucket',
-  ZENDESK = 'zendesk',
+  DINGTALK_AI_TABLE = 'dingtalk_ai_table',
   SEAFILE = 'seafile',
   MYSQL = 'mysql',
   POSTGRESQL = 'postgresql',
+  RSS = 'rss',
+
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
 }
 
+type DataSourceFeatureVisibility = {
+  syncDeletedFiles?: boolean;
+};
+
+type DataSourceFormValues = Record<string, any>;
+
+export const DataSourceFeatureVisibilityMap: Partial<
+  Record<DataSourceKey, DataSourceFeatureVisibility>
+> = {
+  [DataSourceKey.GITHUB]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.GITLAB]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.GOOGLE_DRIVE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.GMAIL]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.CONFLUENCE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.BOX]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.DROPBOX]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.S3]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.R2]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.OCI_STORAGE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.NOTION]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.DISCORD]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.JIRA]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.BITBUCKET]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.AIRTABLE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.WEBDAV]: {
+     syncDeletedFiles: true,
+  },
+  [DataSourceKey.ZENDESK]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.SEAFILE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.ASANA]: {
+    syncDeletedFiles: true,
+  },
+};
+
+const isDataSourceFeatureVisible = (
+  source?: DataSourceKey,
+  feature?: keyof DataSourceFeatureVisibility,
+) => {
+  if (!source || !feature) {
+    return false;
+  }
+
+  return Boolean(DataSourceFeatureVisibilityMap[source]?.[feature]);
+};
+
 export const generateDataSourceInfo = (t: TFunction) => {
   return {
+    [DataSourceKey.RSS]: {
+      name: 'RSS',
+      description: t(`setting.${DataSourceKey.RSS}Description`),
+      icon: <Rss className="text-text-primary" size={22} />,
+    },
     [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
       name: 'Google Cloud Storage',
       description: t(
@@ -122,6 +214,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.AIRTABLE}Description`),
       icon: <SvgIcon name={'data-source/airtable'} width={38} />,
     },
+    [DataSourceKey.DINGTALK_AI_TABLE]: {
+      name: 'Dingtalk AI Table',
+      description: t(`setting.dingtalkAITableDescription`),
+      icon: <SvgIcon name={'data-source/dingtalk-ai-table'} width={38} />,
+    },
     [DataSourceKey.GITLAB]: {
       name: 'GitLab',
       description: t(`setting.${DataSourceKey.GITLAB}Description`),
@@ -187,6 +284,30 @@ export const useDataSourceInfo = () => {
   return { dataSourceInfo };
 };
 
+const isPlainObject = (value: unknown): value is DataSourceFormValues =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export const mergeDataSourceFormValues = (
+  ...values: Array<DataSourceFormValues | undefined>
+): DataSourceFormValues =>
+  values.reduce<DataSourceFormValues>((result, current) => {
+    if (!current) {
+      return result;
+    }
+
+    const next = { ...result };
+
+    Object.entries(current).forEach(([key, value]) => {
+      if (isPlainObject(value) && isPlainObject(next[key])) {
+        next[key] = mergeDataSourceFormValues(next[key], value);
+      } else {
+        next[key] = value;
+      }
+    });
+
+    return next;
+  }, {});
+
 export const DataSourceFormBaseFields = [
   {
     id: 'Id',
@@ -214,7 +335,87 @@ export const DataSourceFormBaseFields = [
     })),
   },
 ];
+
+export const getCommonExtraFields = (
+  source?: DataSourceKey,
+): FormFieldConfig[] => [
+  {
+    label: t('setting.syncDeletedFiles'),
+    name: 'config.sync_deleted_files',
+    type: FormFieldType.Checkbox,
+    required: false,
+    defaultValue: false,
+    shouldRender: () => isDataSourceFeatureVisible(source, 'syncDeletedFiles'),
+  },
+];
+
+export const getCommonExtraDefaultValues = () => ({
+  config: {
+    sync_deleted_files: false,
+  },
+});
+
+export const getDataSourceFieldsWithExtras = (
+  source?: DataSourceKey,
+): FormFieldConfig[] => {
+  if (!source) {
+    return [];
+  }
+
+  const sourceFields =
+    DataSourceFormFields[source as keyof typeof DataSourceFormFields] || [];
+  const extraFields = getCommonExtraFields(source);
+
+  if (source !== DataSourceKey.JIRA) {
+    return [...sourceFields, ...extraFields];
+  }
+
+  const modeFieldIndex = sourceFields.findIndex(
+    (field) => field.name === 'config.is_cloud',
+  );
+  if (modeFieldIndex < 0) {
+    return [...sourceFields, ...extraFields];
+  }
+
+  const sharedFields = sourceFields.slice(0, modeFieldIndex);
+  const modeFields = sourceFields.slice(modeFieldIndex);
+
+  const sharedCheckboxFieldIndex = sharedFields.findIndex(
+    (field) => field.type === FormFieldType.Checkbox,
+  );
+
+  if (sharedCheckboxFieldIndex < 0) {
+    return [...sharedFields, ...extraFields, ...modeFields];
+  }
+
+  return [
+    ...sharedFields.slice(0, sharedCheckboxFieldIndex),
+    ...sharedFields.slice(sharedCheckboxFieldIndex),
+    ...extraFields,
+    ...modeFields,
+  ];
+};
+
 export const DataSourceFormFields = {
+  [DataSourceKey.RSS]: [
+    {
+      label: 'Feed URL',
+      name: 'config.feed_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://example.com/feed.xml',
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: 'Batch Size must be at least 1',
+      },
+    },
+  ],
   [DataSourceKey.GOOGLE_CLOUD_STORAGE]: [
     {
       label: 'GCS Access Key ID',
@@ -470,106 +671,7 @@ export const DataSourceFormFields = {
       required: true,
     },
   ],
-  [DataSourceKey.JIRA]: [
-    {
-      label: 'Jira Base URL',
-      name: 'config.base_url',
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: 'https://your-domain.atlassian.net',
-      tooltip: t('setting.jiraBaseUrlTip'),
-    },
-    {
-      label: 'Project Key',
-      name: 'config.project_key',
-      type: FormFieldType.Text,
-      required: false,
-      placeholder: 'RAGFlow',
-      tooltip: t('setting.jiraProjectKeyTip'),
-    },
-    {
-      label: 'Custom JQL',
-      name: 'config.jql_query',
-      type: FormFieldType.Textarea,
-      required: false,
-      placeholder: 'project = RAG AND updated >= -7d',
-      tooltip: t('setting.jiraJqlTip'),
-    },
-    {
-      label: 'Batch Size',
-      name: 'config.batch_size',
-      type: FormFieldType.Number,
-      required: false,
-      tooltip: t('setting.jiraBatchSizeTip'),
-    },
-    {
-      label: 'Include Comments',
-      name: 'config.include_comments',
-      type: FormFieldType.Checkbox,
-      required: false,
-      defaultValue: true,
-      tooltip: t('setting.jiraCommentsTip'),
-    },
-    {
-      label: 'Include Attachments',
-      name: 'config.include_attachments',
-      type: FormFieldType.Checkbox,
-      required: false,
-      defaultValue: false,
-      tooltip: t('setting.jiraAttachmentsTip'),
-    },
-    {
-      label: 'Attachment Size Limit (bytes)',
-      name: 'config.attachment_size_limit',
-      type: FormFieldType.Number,
-      required: false,
-      defaultValue: 10 * 1024 * 1024,
-      tooltip: t('setting.jiraAttachmentSizeTip'),
-    },
-    {
-      label: 'Labels to Skip',
-      name: 'config.labels_to_skip',
-      type: FormFieldType.Tag,
-      required: false,
-      tooltip: t('setting.jiraLabelsTip'),
-    },
-    {
-      label: 'Comment Email Blacklist',
-      name: 'config.comment_email_blacklist',
-      type: FormFieldType.Tag,
-      required: false,
-      tooltip: t('setting.jiraBlacklistTip'),
-    },
-    {
-      label: 'Use Scoped Token (Clould only)',
-      name: 'config.scoped_token',
-      type: FormFieldType.Checkbox,
-      required: false,
-      tooltip: t('setting.jiraScopedTokenTip'),
-    },
-    {
-      label: 'Jira User Email (Cloud) or User Name (Server)',
-      name: 'config.credentials.jira_user_email',
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: 'you@example.com',
-      tooltip: t('setting.jiraEmailTip'),
-    },
-    {
-      label: 'Jira API Token (Cloud only)',
-      name: 'config.credentials.jira_api_token',
-      type: FormFieldType.Password,
-      required: false,
-      tooltip: t('setting.jiraTokenTip'),
-    },
-    {
-      label: 'Jira Password (Server only)',
-      name: 'config.credentials.jira_password',
-      type: FormFieldType.Password,
-      required: false,
-      tooltip: t('setting.jiraPasswordTip'),
-    },
-  ],
+  [DataSourceKey.JIRA]: jiraConstant(t),
   [DataSourceKey.WEBDAV]: [
     {
       label: 'WebDAV Server URL',
@@ -653,6 +755,26 @@ export const DataSourceFormFields = {
     {
       label: 'Table Name OR ID',
       name: 'config.table_name_or_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+  ],
+  [DataSourceKey.DINGTALK_AI_TABLE]: [
+    {
+      label: 'Access Token',
+      name: 'config.credentials.access_token',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Base ID',
+      name: 'config.table_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Operator ID',
+      name: 'config.operator_id',
       type: FormFieldType.Text,
       required: true,
     },
@@ -834,39 +956,7 @@ export const DataSourceFormFields = {
       ],
     },
   ],
-  [DataSourceKey.SEAFILE]: [
-    {
-      label: 'SeaFile Server URL',
-      name: 'config.seafile_url',
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: 'https://seafile.example.com',
-      tooltip: t('setting.seafileUrlTip'),
-    },
-    {
-      label: 'API Token',
-      name: 'config.credentials.seafile_token',
-      type: FormFieldType.Password,
-      required: true,
-      tooltip: t('setting.seafileTokenTip'),
-    },
-    {
-      label: 'Include Shared Libraries',
-      name: 'config.include_shared',
-      type: FormFieldType.Checkbox,
-      required: false,
-      defaultValue: true,
-      tooltip: t('setting.seafileIncludeSharedTip'),
-    },
-    {
-      label: 'Batch Size',
-      name: 'config.batch_size',
-      type: FormFieldType.Number,
-      required: false,
-      placeholder: '100',
-      tooltip: t('setting.seafileBatchSizeTip'),
-    },
-  ],
+  [DataSourceKey.SEAFILE]: seafileConstant(t),
   [DataSourceKey.MYSQL]: [
     {
       label: 'Host',
@@ -915,6 +1005,30 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'title,description,content',
       tooltip: t('setting.mysqlContentColumnsTip'),
+    },
+    {
+      label: 'Metadata Columns',
+      name: 'config.metadata_columns',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id,category,status',
+      tooltip: t('setting.mysqlMetadataColumnsTip'),
+    },
+    {
+      label: 'ID Column',
+      name: 'config.id_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id',
+      tooltip: t('setting.mysqlIdColumnTip'),
+    },
+    {
+      label: 'Timestamp Column',
+      name: 'config.timestamp_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'updated_at',
+      tooltip: t('setting.mysqlTimestampColumnTip'),
     },
   ],
   [DataSourceKey.POSTGRESQL]: [
@@ -966,10 +1080,42 @@ export const DataSourceFormFields = {
       placeholder: 'title,description,content',
       tooltip: t('setting.postgresqlContentColumnsTip'),
     },
+    {
+      label: 'Metadata Columns',
+      name: 'config.metadata_columns',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id,category,status',
+      tooltip: t('setting.postgresqlMetadataColumnsTip'),
+    },
+    {
+      label: 'ID Column',
+      name: 'config.id_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id',
+      tooltip: t('setting.postgresqlIdColumnTip'),
+    },
+    {
+      label: 'Timestamp Column',
+      name: 'config.timestamp_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'updated_at',
+      tooltip: t('setting.postgresqlTimestampColumnTip'),
+    },
   ],
 };
 
 export const DataSourceFormDefaultValues = {
+  [DataSourceKey.RSS]: {
+    name: '',
+    source: DataSourceKey.RSS,
+    config: {
+      feed_url: '',
+      batch_size: 2,
+    },
+  },
   [DataSourceKey.S3]: {
     name: '',
     source: DataSourceKey.S3,
@@ -1104,6 +1250,7 @@ export const DataSourceFormDefaultValues = {
     name: '',
     source: DataSourceKey.JIRA,
     config: {
+      is_cloud: true,
       base_url: '',
       project_key: '',
       jql_query: '',
@@ -1116,6 +1263,7 @@ export const DataSourceFormDefaultValues = {
       scoped_token: false,
       credentials: {
         jira_user_email: '',
+        jira_username: '',
         jira_api_token: '',
         jira_password: '',
       },
@@ -1163,6 +1311,17 @@ export const DataSourceFormDefaultValues = {
       table_name_or_id: '',
       credentials: {
         airtable_access_token: '',
+      },
+    },
+  },
+  [DataSourceKey.DINGTALK_AI_TABLE]: {
+    name: '',
+    source: DataSourceKey.DINGTALK_AI_TABLE,
+    config: {
+      table_id: '',
+      operator_id: '',
+      credentials: {
+        access_token: '',
       },
     },
   },
@@ -1253,10 +1412,14 @@ export const DataSourceFormDefaultValues = {
     source: DataSourceKey.SEAFILE,
     config: {
       seafile_url: '',
+      sync_scope: 'account',
+      repo_id: '',
+      sync_path: '',
       include_shared: true,
       batch_size: 100,
       credentials: {
         seafile_token: '',
+        repo_token: '',
       },
     },
   },

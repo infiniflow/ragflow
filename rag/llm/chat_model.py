@@ -30,11 +30,12 @@ import openai
 from openai import AsyncOpenAI, OpenAI
 from strenum import StrEnum
 
+from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.nlp import is_chinese, is_english
 
-from common.misc_utils import thread_pool_exec
+
 class LLMErrorCode(StrEnum):
     ERROR_RATE_LIMIT = "RATE_LIMIT_EXCEEDED"
     ERROR_AUTHENTICATION = "AUTH_ERROR"
@@ -58,6 +59,55 @@ class ReActMode(StrEnum):
 ERROR_PREFIX = "**ERROR**"
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
+
+
+def _apply_model_family_policies(
+    model_name: str,
+    *,
+    backend: str,
+    provider: SupportedLiteLLMProvider | str | None = None,
+    gen_conf: dict | None = None,
+    request_kwargs: dict | None = None,
+):
+    model_name_lower = (model_name or "").lower()
+    sanitized_gen_conf = deepcopy(gen_conf) if gen_conf else {}
+    sanitized_kwargs = dict(request_kwargs) if request_kwargs else {}
+
+    # Qwen3 family disables thinking by extra_body on non-stream chat requests.
+    if "qwen3" in model_name_lower:
+        sanitized_kwargs["extra_body"] = {"enable_thinking": False}
+
+    if backend == "base":
+        return sanitized_gen_conf, sanitized_kwargs
+
+    if backend == "litellm":
+        if provider in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI} and "gpt-5" in model_name_lower:
+            for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
+                sanitized_gen_conf.pop(key, None)
+                sanitized_kwargs.pop(key, None)
+
+        if provider == SupportedLiteLLMProvider.HunYuan:
+            for key in ("presence_penalty", "frequency_penalty"):
+                sanitized_gen_conf.pop(key, None)
+        elif "kimi-k2.5" in model_name_lower:
+            reasoning = sanitized_gen_conf.pop("reasoning", None)
+            thinking = {"type": "enabled"}
+            if reasoning is not None:
+                thinking = {"type": "enabled"} if reasoning else {"type": "disabled"}
+            elif not isinstance(thinking, dict) or thinking.get("type") not in {"enabled", "disabled"}:
+                thinking = {"type": "disabled"}
+            sanitized_gen_conf["thinking"] = thinking
+
+            thinking_enabled = thinking.get("type") == "enabled"
+            sanitized_gen_conf["temperature"] = 1.0 if thinking_enabled else 0.6
+            sanitized_gen_conf["top_p"] = 0.95
+            sanitized_gen_conf["n"] = 1
+            sanitized_gen_conf["presence_penalty"] = 0.0
+            sanitized_gen_conf["frequency_penalty"] = 0.0
+
+        return sanitized_gen_conf, sanitized_kwargs
+
+    return sanitized_gen_conf, sanitized_kwargs
 
 
 class Base(ABC):
@@ -99,11 +149,11 @@ class Base(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
-        model_name_lower = (self.model_name or "").lower()
-        # gpt-5 and gpt-5.1 endpoints have inconsistent parameter support, clear custom generation params to prevent unexpected issues
-        if "gpt-5" in model_name_lower:
-            gen_conf = {}
-            return gen_conf
+        gen_conf, _ = _apply_model_family_policies(
+            self.model_name,
+            backend="base",
+            gen_conf=gen_conf,
+        )
 
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
@@ -149,12 +199,13 @@ class Base(ABC):
                 continue
             if not resp.choices[0].delta.content:
                 resp.choices[0].delta.content = ""
-            if kwargs.get("with_reasoning", True) and hasattr(resp.choices[0].delta, "reasoning_content") and resp.choices[0].delta.reasoning_content:
+            _reasoning = getattr(resp.choices[0].delta, "reasoning_content", None) or getattr(resp.choices[0].delta, "reasoning", None)
+            if kwargs.get("with_reasoning", True) and _reasoning:
                 ans = ""
                 if not reasoning_start:
                     reasoning_start = True
                     ans = "<think>"
-                ans += resp.choices[0].delta.reasoning_content + "</think>"
+                ans += _reasoning + "</think>"
             else:
                 reasoning_start = False
                 ans = resp.choices[0].delta.content
@@ -268,6 +319,34 @@ class Base(ABC):
             hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})
         return hist
 
+    def _append_history_batch(self, hist, results):
+        """
+        Append a batch of tool calls to history following the OpenAI protocol:
+        one assistant message containing all tool_calls, followed by one tool message per call.
+        results: list of (tool_call, name, args, result, error)
+        """
+        hist.append({
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "index": tc.index,
+                    "id": tc.id,
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    "type": "function",
+                }
+                for tc, _, _, _, _ in results
+            ],
+        })
+        for tc, _, _, result, err in results:
+            if err:
+                content = str(err)
+            elif isinstance(result, dict):
+                content = json.dumps(result, ensure_ascii=False)
+            else:
+                content = str(result)
+            hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
+        return hist
+
     def bind_tools(self, toolcall_session, tools):
         if not (toolcall_session and tools):
             return
@@ -294,8 +373,9 @@ class Base(ABC):
                         raise Exception(f"500 response structure error. Response: {response}")
 
                     if not hasattr(response.choices[0].message, "tool_calls") or not response.choices[0].message.tool_calls:
-                        if hasattr(response.choices[0].message, "reasoning_content") and response.choices[0].message.reasoning_content:
-                            ans += "<think>" + response.choices[0].message.reasoning_content + "</think>"
+                        _reasoning = getattr(response.choices[0].message, "reasoning_content", None) or getattr(response.choices[0].message, "reasoning", None)
+                        if _reasoning:
+                            ans += "<think>" + _reasoning + "</think>"
 
                         ans += response.choices[0].message.content
                         if response.choices[0].finish_reason == "length":
@@ -303,18 +383,24 @@ class Base(ABC):
 
                         return ans, tk_count
 
-                    for tool_call in response.choices[0].message.tool_calls:
-                        logging.info(f"Response {tool_call=}")
-                        name = tool_call.function.name
+                    async def _exec_tool(tc):
+                        name = tc.function.name
                         try:
-                            args = json_repair.loads(tool_call.function.arguments)
-                            tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
-                            history = self._append_history(history, tool_call, tool_response)
-                            ans += self._verbose_tool_use(name, args, tool_response)
+                            args = json_repair.loads(tc.function.arguments)
+                            if hasattr(self.toolcall_session, "tool_call_async"):
+                                result = await self.toolcall_session.tool_call_async(name, args)
+                            else:
+                                result = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
+                            return tc, name, args, result, None
                         except Exception as e:
-                            logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
-                            ans += self._verbose_tool_use(name, {}, str(e))
+                            logging.exception(f"Tool call failed: {tc}")
+                            return tc, name, {}, None, e
+
+                    logging.info(f"Response tool_calls={response.choices[0].message.tool_calls}")
+                    results = await asyncio.gather(*[_exec_tool(tc) for tc in response.choices[0].message.tool_calls])
+                    history = self._append_history_batch(history, results)
+                    for tc, name, args, result, err in results:
+                        ans += self._verbose_tool_use(name, args, err if err else result)
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
@@ -341,9 +427,9 @@ class Base(ABC):
         for attempt in range(self.max_retries + 1):
             history = deepcopy(hist)
             try:
-                for _ in range(self.max_rounds + 1):
+                for _round in range(self.max_rounds + 1):
                     reasoning_start = False
-                    logging.info(f"{tools=}")
+                    logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
 
                     response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
 
@@ -370,12 +456,13 @@ class Base(ABC):
                         if not hasattr(delta, "content") or delta.content is None:
                             delta.content = ""
 
-                        if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                        _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+                        if _reasoning:
                             ans = ""
                             if not reasoning_start:
                                 reasoning_start = True
                                 ans = "<think>"
-                            ans += delta.reasoning_content + "</think>"
+                            ans += _reasoning + "</think>"
                             yield ans
                         else:
                             reasoning_start = False
@@ -392,22 +479,36 @@ class Base(ABC):
                         if finish_reason == "length":
                             yield self._length_stop("")
 
-                    if answer:
+                    if answer and not final_tool_calls:
+                        logging.info(f"[ToolLoop] round={_round} completed with text response, exiting")
                         yield total_tokens
                         return
 
-                    for tool_call in final_tool_calls.values():
-                        name = tool_call.function.name
+                    async def _exec_tool(tc):
+                        name = tc.function.name
                         try:
-                            args = json_repair.loads(tool_call.function.arguments)
-                            yield self._verbose_tool_use(name, args, "Begin to call...")
-                            tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
-                            history = self._append_history(history, tool_call, tool_response)
-                            yield self._verbose_tool_use(name, args, tool_response)
+                            args = json_repair.loads(tc.function.arguments)
+                            if hasattr(self.toolcall_session, "tool_call_async"):
+                                result = await self.toolcall_session.tool_call_async(name, args)
+                            else:
+                                result = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
+                            return tc, name, args, result, None
                         except Exception as e:
-                            logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
-                            yield self._verbose_tool_use(name, {}, str(e))
+                            logging.exception(f"Tool call failed: {tc}")
+                            return tc, name, {}, None, e
+
+                    tcs = list(final_tool_calls.values())
+                    logging.info(f"[ToolLoop] round={_round} executing {len(tcs)} tool(s): {[tc.function.name for tc in tcs]}")
+                    for tc in tcs:
+                        try:
+                            args = json_repair.loads(tc.function.arguments)
+                        except Exception:
+                            args = {}
+                        yield self._verbose_tool_use(tc.function.name, args, "Begin to call...")
+                    results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
+                    history = self._append_history_batch(history, results)
+                    for tc, name, args, result, err in results:
+                        yield self._verbose_tool_use(name, args, err if err else result)
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
@@ -458,8 +559,11 @@ class Base(ABC):
 
             return final_ans.strip(), tol_token
 
-        if self.model_name.lower().find("qwen3") >= 0:
-            kwargs["extra_body"] = {"enable_thinking": False}
+        _, kwargs = _apply_model_family_policies(
+            self.model_name,
+            backend="base",
+            request_kwargs=kwargs,
+        )
 
         response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, **gen_conf, **kwargs)
 
@@ -1096,6 +1200,43 @@ class N1nChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
+class AvianChat(Base):
+    _FACTORY_NAME = "Avian"
+
+    def __init__(self, key, model_name, base_url="https://api.avian.io/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.avian.io/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class AstraflowChat(Base):
+    _FACTORY_NAME = "Astraflow"
+
+    def __init__(self, key, model_name, base_url="https://api-us-ca.umodelverse.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api-us-ca.umodelverse.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class AstraflowCNChat(Base):
+    _FACTORY_NAME = "Astraflow-CN"
+
+    def __init__(self, key, model_name, base_url="https://api.modelverse.cn/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.modelverse.cn/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class FuturMixChat(Base):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name, base_url="https://futurmix.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+        logging.info("[FuturMix] Chat initialized with model %s", model_name)
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -1181,31 +1322,18 @@ class LiteLLMBase(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
-        gen_conf = deepcopy(gen_conf) if gen_conf else {}
-
-        if self.provider == SupportedLiteLLMProvider.HunYuan:
-            unsupported = ["presence_penalty", "frequency_penalty"]
-            for key in unsupported:
-                gen_conf.pop(key, None)
-
-        elif "kimi-k2.5" in self.model_name.lower():
-            reasoning = gen_conf.pop("reasoning", None) # will never get one here, handle this later
-            thinking = {"type": "enabled"} # enable thinking by default
-            if reasoning is not None:
-                thinking = {"type": "enabled"} if reasoning else {"type": "disabled"}
-            elif not isinstance(thinking, dict) or thinking.get("type") not in {"enabled", "disabled"}:
-                thinking = {"type": "disabled"}
-            gen_conf["thinking"] = thinking
-
-            thinking_enabled = thinking.get("type") == "enabled"
-            gen_conf["temperature"] = 1.0 if thinking_enabled else 0.6
-            gen_conf["top_p"] = 0.95
-            gen_conf["n"] = 1
-            gen_conf["presence_penalty"] = 0.0
-            gen_conf["frequency_penalty"] = 0.0
+        gen_conf, _ = _apply_model_family_policies(
+            self.model_name,
+            backend="litellm",
+            provider=self.provider,
+            gen_conf=gen_conf,
+        )
 
         gen_conf.pop("max_tokens", None)
         return gen_conf
+
+    def _need_reasoning_content_back(self) -> bool:
+        return self.provider == SupportedLiteLLMProvider.DeepSeek
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
         hist = list(history) if history else []
@@ -1214,8 +1342,13 @@ class LiteLLMBase(ABC):
                 hist.insert(0, {"role": "system", "content": system})
 
         logging.info("[HISTORY]" + json.dumps(hist, ensure_ascii=False, indent=2))
-        if self.model_name.lower().find("qwen3") >= 0:
-            kwargs["extra_body"] = {"enable_thinking": False}
+        gen_conf = self._clean_conf(gen_conf)
+        _, kwargs = _apply_model_family_policies(
+            self.model_name,
+            backend="litellm",
+            provider=self.provider,
+            request_kwargs=kwargs,
+        )
 
         completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **{**gen_conf, **kwargs})
 
@@ -1270,12 +1403,13 @@ class LiteLLMBase(ABC):
                     if not hasattr(delta, "content") or delta.content is None:
                         delta.content = ""
 
-                    if kwargs.get("with_reasoning", True) and hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                    _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+                    if kwargs.get("with_reasoning", True) and _reasoning:
                         ans = ""
                         if not reasoning_start:
                             reasoning_start = True
                             ans = "<think>"
-                        ans += delta.reasoning_content + "</think>"
+                        ans += _reasoning + "</think>"
                     else:
                         reasoning_start = False
                         ans = delta.content
@@ -1335,28 +1469,60 @@ class LiteLLMBase(ABC):
     def _verbose_tool_use(self, name, args, res):
         return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
 
-    def _append_history(self, hist, tool_call, tool_res):
-        hist.append(
-            {
-                "role": "assistant",
-                "tool_calls": [
-                    {
-                        "index": tool_call.index,
-                        "id": tool_call.id,
-                        "function": {
-                            "name": tool_call.function.name,
-                            "arguments": tool_call.function.arguments,
-                        },
-                        "type": "function",
+    def _append_history(self, hist, tool_call, tool_res, reasoning_content=None):
+        assistant_msg = {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "index": tool_call.index,
+                    "id": tool_call.id,
+                    "function": {
+                        "name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments,
                     },
-                ],
-            }
-        )
+                    "type": "function",
+                },
+            ],
+        }
+        if reasoning_content:
+            assistant_msg["reasoning_content"] = reasoning_content
+        hist.append(assistant_msg)
         try:
             if isinstance(tool_res, dict):
                 tool_res = json.dumps(tool_res, ensure_ascii=False)
         finally:
             hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})
+        return hist
+
+    def _append_history_batch(self, hist, results, reasoning_content=None):
+        """
+        Append a batch of tool calls to history following the OpenAI protocol:
+        one assistant message containing all tool_calls, followed by one tool message per call.
+        results: list of (tool_call, name, args, result, error)
+        """
+        assistant_msg = {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "index": tc.index,
+                    "id": tc.id,
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    "type": "function",
+                }
+                for tc, _, _, _, _ in results
+            ],
+        }
+        if reasoning_content:
+            assistant_msg["reasoning_content"] = reasoning_content
+        hist.append(assistant_msg)
+        for tc, _, _, result, err in results:
+            if err:
+                content = str(err)
+            elif isinstance(result, dict):
+                content = json.dumps(result, ensure_ascii=False)
+            else:
+                content = str(result)
+            hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
         return hist
 
     def bind_tools(self, toolcall_session, tools):
@@ -1393,27 +1559,40 @@ class LiteLLMBase(ABC):
                         raise Exception(f"500 response structure error. Response: {response}")
 
                     message = response.choices[0].message
+                    reasoning_content = None
+                    if self._need_reasoning_content_back():
+                        reasoning_content = getattr(message, "reasoning_content", None) or getattr(message, "reasoning", None)
 
                     if not hasattr(message, "tool_calls") or not message.tool_calls:
-                        if hasattr(message, "reasoning_content") and message.reasoning_content:
-                            ans += f"<think>{message.reasoning_content}</think>"
+                        if reasoning_content:
+                            ans += f"<think>{reasoning_content}</think>"
                         ans += message.content or ""
                         if response.choices[0].finish_reason == "length":
                             ans = self._length_stop(ans)
                         return ans, tk_count
 
-                    for tool_call in message.tool_calls:
-                        logging.info(f"Response {tool_call=}")
-                        name = tool_call.function.name
+                    async def _exec_tool(tc):
+                        name = tc.function.name
                         try:
-                            args = json_repair.loads(tool_call.function.arguments)
-                            tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
-                            history = self._append_history(history, tool_call, tool_response)
-                            ans += self._verbose_tool_use(name, args, tool_response)
+                            args = json_repair.loads(tc.function.arguments)
+                            if hasattr(self.toolcall_session, "tool_call_async"):
+                                result = await self.toolcall_session.tool_call_async(name, args)
+                            else:
+                                result = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
+                            return tc, name, args, result, None
                         except Exception as e:
-                            logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
-                            ans += self._verbose_tool_use(name, {}, str(e))
+                            logging.exception(f"Tool call failed: {tc}")
+                            return tc, name, {}, None, e
+
+                    logging.info(f"Response tool_calls={message.tool_calls}")
+                    results = await asyncio.gather(*[_exec_tool(tc) for tc in message.tool_calls])
+                    history = self._append_history_batch(
+                        history,
+                        results,
+                        reasoning_content=reasoning_content if self._need_reasoning_content_back() else None,
+                    )
+                    for tc, name, args, result, err in results:
+                        ans += self._verbose_tool_use(name, args, err if err else result)
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
@@ -1442,9 +1621,10 @@ class LiteLLMBase(ABC):
         for attempt in range(self.max_retries + 1):
             history = deepcopy(hist)
             try:
-                for _ in range(self.max_rounds + 1):
+                for _round in range(self.max_rounds + 1):
                     reasoning_start = False
-                    logging.info(f"{tools=}")
+                    reasoning_content = ""
+                    logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
 
                     completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
                     response = await litellm.acompletion(
@@ -1476,12 +1656,15 @@ class LiteLLMBase(ABC):
                         if not hasattr(delta, "content") or delta.content is None:
                             delta.content = ""
 
-                        if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                        _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+                        if _reasoning:
+                            if self._need_reasoning_content_back():
+                                reasoning_content += _reasoning
                             ans = ""
                             if not reasoning_start:
                                 reasoning_start = True
                                 ans = "<think>"
-                            ans += delta.reasoning_content + "</think>"
+                            ans += _reasoning + "</think>"
                             yield ans
                         else:
                             reasoning_start = False
@@ -1498,22 +1681,40 @@ class LiteLLMBase(ABC):
                         if finish_reason == "length":
                             yield self._length_stop("")
 
-                    if answer:
+                    if answer and not final_tool_calls:
+                        logging.info(f"[ToolLoop] round={_round} completed with text response, exiting")
                         yield total_tokens
                         return
 
-                    for tool_call in final_tool_calls.values():
-                        name = tool_call.function.name
+                    async def _exec_tool(tc):
+                        name = tc.function.name
                         try:
-                            args = json_repair.loads(tool_call.function.arguments)
-                            yield self._verbose_tool_use(name, args, "Begin to call...")
-                            tool_response = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
-                            history = self._append_history(history, tool_call, tool_response)
-                            yield self._verbose_tool_use(name, args, tool_response)
+                            args = json_repair.loads(tc.function.arguments)
+                            if hasattr(self.toolcall_session, "tool_call_async"):
+                                result = await self.toolcall_session.tool_call_async(name, args)
+                            else:
+                                result = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
+                            return tc, name, args, result, None
                         except Exception as e:
-                            logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
-                            yield self._verbose_tool_use(name, {}, str(e))
+                            logging.exception(f"Tool call failed: {tc}")
+                            return tc, name, {}, None, e
+
+                    tcs = list(final_tool_calls.values())
+                    logging.info(f"[ToolLoop] round={_round} executing {len(tcs)} tool(s): {[tc.function.name for tc in tcs]}")
+                    for tc in tcs:
+                        try:
+                            args = json_repair.loads(tc.function.arguments)
+                        except Exception:
+                            args = {}
+                        yield self._verbose_tool_use(tc.function.name, args, "Begin to call...")
+                    results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
+                    history = self._append_history_batch(
+                        history,
+                        results,
+                        reasoning_content=reasoning_content if self._need_reasoning_content_back() else None,
+                    )
+                    for tc, name, args, result, err in results:
+                        yield self._verbose_tool_use(name, args, err if err else result)
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
@@ -1625,7 +1826,7 @@ class LiteLLMBase(ABC):
         elif self.provider == SupportedLiteLLMProvider.GPUStack:
             completion_args.update(
                 {
-                    "api_base": self.base_url,
+                    "api_base": urljoin(self.base_url, "v1"),
                 }
             )
         elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
@@ -1649,3 +1850,17 @@ class LiteLLMBase(ABC):
             completion_args["extra_headers"] = extra_headers
         return completion_args
 
+class RAGconChat(Base):
+    """
+    RAGcon Chat Provider - routes through LiteLLM proxy
+    
+    All model types are handled through a unified LiteLLM endpoint.
+    Default Base URL: https://connect.ragcon.com/v1
+    """
+    _FACTORY_NAME = "RAGcon"
+    
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        if not base_url:
+            base_url = "https://connect.ragcon.com/v1"
+        
+        super().__init__(key, model_name, base_url, **kwargs)

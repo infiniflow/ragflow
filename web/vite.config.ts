@@ -6,12 +6,133 @@ import { createHtmlPlugin } from 'vite-plugin-html';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 import { appName } from './src/conf.json';
 
+// Inject code location data attributes for react-dev-inspector
+const inspectorBabelPlugin = (): import('vite').Plugin => ({
+  name: 'inspector-babel',
+  enforce: 'pre' as const,
+  async transform(code: string, id: string) {
+    if (id.includes('node_modules')) return;
+    if (!/\.[jt]sx$/.test(id)) return;
+
+    // Dynamically import babel transform to inject data attributes
+    const { transform } = await import('@react-dev-inspector/babel-plugin');
+    return {
+      code: transform({
+        filePath: id,
+        sourceCode: code,
+      }),
+      map: null,
+    };
+  },
+});
+
+type MinifyValue = boolean | 'esbuild' | 'terser';
+
+function resolveMinify(value: string | undefined): MinifyValue {
+  if (value === undefined) return 'terser';
+  const lower = value.toLowerCase();
+  if (lower === 'false') return false;
+  if (lower === 'esbuild') return 'esbuild';
+  if (lower === 'terser') return 'terser';
+  return 'terser';
+}
+
 // https://vitejs.dev/config/
-export default defineConfig(({ mode, command }) => {
+export default defineConfig(({ mode }) => {
+  // Load env from .env file (also loads .env.local, .env.[mode], .env.[mode].local)
   const env = loadEnv(mode, process.cwd(), '');
 
+  // Try to load from .env file explicitly if API_PROXY_SCHEME not found
+  let proxyScheme = env.API_PROXY_SCHEME;
+  if (!proxyScheme) {
+    try {
+      const envLocal = loadEnv('', process.cwd(), '');
+      proxyScheme = envLocal.API_PROXY_SCHEME;
+    } catch {
+      // ignore
+    }
+  }
+  proxyScheme = proxyScheme || 'python';
+
+  console.log(`[vite.config] mode: ${mode}, API_PROXY_SCHEME: ${proxyScheme}`);
+
+  const proxySchemes = {
+    python: {
+      '/api/v1/admin': {
+        target: 'http://127.0.0.1:9381/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/api': {
+        target: 'http://127.0.0.1:9380/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/v1': {
+        target: 'http://127.0.0.1:9380/',
+        changeOrigin: true,
+        ws: true,
+      },
+    },
+    hybrid: {
+      '^(/v1/kb)|^(/v1/document)|^(/v1/llm/list)|^(/api/v1/datasets)|^(/api/v1/memories)|^(/v1/user)|^(/v1/user/tenant_info)|^(/v1/tenant/list)|^(/v1/system/config)|^(/v1/user/login)|^(/v1/user/logout)|^(/api/v1/files)':
+        {
+          target: 'http://127.0.0.1:9384/',
+          changeOrigin: true,
+          ws: true,
+        },
+      '^(/api/v1/admin/sandbox)|^(/api/v1/admin/roles)|^(/api/v1/admin/roles/owner/permission)|^(/api/v1/admin/roles_with_permission)|^(/api/v1/admin/whitelist)|^(/api/v1/admin/variables)':
+        {
+          target: 'http://127.0.0.1:9381/',
+          changeOrigin: true,
+          ws: true,
+        },
+      '/api/v1/admin': {
+        target: 'http://127.0.0.1:9383/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/api': {
+        target: 'http://127.0.0.1:9380/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/v1': {
+        target: 'http://127.0.0.1:9380/',
+        changeOrigin: true,
+        ws: true,
+      },
+    },
+    go: {
+      '/api/v1/admin': {
+        target: 'http://127.0.0.1:9383/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/api': {
+        target: 'http://127.0.0.1:9384/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/v1': {
+        target: 'http://127.0.0.1:9384/',
+        changeOrigin: true,
+        ws: true,
+      },
+    },
+  };
+
+  const proxy = proxySchemes[proxyScheme] || proxySchemes.python;
+
   return {
+    define: {
+      // Expose to client code via import.meta.env
+      'import.meta.env.API_PROXY_SCHEME': JSON.stringify(proxyScheme),
+      // Keep backward compatibility
+      __API_PROXY_SCHEME__: JSON.stringify(proxyScheme),
+    },
     plugins: [
+      inspectorBabelPlugin(),
       react(),
       viteStaticCopy({
         targets: [
@@ -64,18 +185,7 @@ export default defineConfig(({ mode, command }) => {
       hmr: {
         overlay: false,
       },
-      proxy: {
-        '/api/v1/admin': {
-          target: 'http://127.0.0.1:9381/',
-          changeOrigin: true,
-          ws: true,
-        },
-        '^/(api|v1)': {
-          target: 'http://127.0.0.1:9380/',
-          changeOrigin: true,
-          ws: true,
-        },
-      },
+      proxy,
     },
     assetsInclude: ['**/*.md'],
     base: env.VITE_BASE_URL,
@@ -86,7 +196,6 @@ export default defineConfig(({ mode, command }) => {
         'react',
         'react-dom',
         'react-router',
-        'antd',
         'axios',
         'lodash',
         'dayjs',
@@ -112,6 +221,13 @@ export default defineConfig(({ mode, command }) => {
             // if (id.includes('src/components')) {
             //   return 'components';
             // }
+
+            if (id.includes('src/locales/') && id.endsWith('.ts')) {
+              const match = id.match(/src\/locales\/([^/]+)\.ts$/);
+              if (match) {
+                return `locale-${match[1]}`;
+              }
+            }
 
             if (id.includes('node_modules')) {
               if (id.includes('node_modules/d3')) {
@@ -144,7 +260,7 @@ export default defineConfig(({ mode, command }) => {
         plugins: [],
         treeshake: true,
       },
-      minify: 'terser',
+      minify: resolveMinify(env.VITE_MINIFY),
       terserOptions: {
         compress: {
           drop_console: true, // delete console
@@ -161,7 +277,7 @@ export default defineConfig(({ mode, command }) => {
           comments: false, // Delete comments
         },
       },
-      sourcemap: true,
+      sourcemap: env.VITE_BUILD_SOURCEMAP !== 'false',
       cssCodeSplit: true,
       target: 'es2015',
     },

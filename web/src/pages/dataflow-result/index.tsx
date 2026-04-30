@@ -19,28 +19,21 @@ import { useGetDocumentUrl } from '@/components/document-preview/hooks';
 import { TimelineNode } from '@/components/originui/timeline';
 import { PageHeader } from '@/components/page-header';
 import Spotlight from '@/components/spotlight';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
-import { AgentCategory } from '@/constants/agent';
+import { AgentCategory, AgentQuery } from '@/constants/agent';
 import { Images } from '@/constants/common';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
+import { Routes } from '@/routes';
+import { LucideArrowBigLeft } from 'lucide-react';
 import TimelineDataFlow from './components/time-line';
 import { TimelineNodeType } from './constant';
 import styles from './index.module.less';
 import { IDslComponent, IPipelineFileLogDetail } from './interface';
 import ParserContainer from './parser';
 
-const Chunk = () => {
-  const { isReadOnly, knowledgeId, agentId, agentTitle, documentExtension } =
+const DataflowResult = () => {
+  const { isReadOnly, knowledgeId, agentId, documentExtension } =
     useGetPipelineResultSearchParams();
 
   const isAgent = !!agentId;
@@ -62,13 +55,7 @@ const Chunk = () => {
     agentId ? (pipelineResult as IPipelineFileLogDetail) : dataset,
   );
 
-  const {
-    navigateToDatasetOverview,
-    navigateToDatasetList,
-    navigateToAgents,
-    navigateToAgent,
-  } = useNavigatePage();
-  let fileUrl = useGetDocumentUrl(isAgent);
+  const fileUrl = useGetDocumentUrl(isAgent);
 
   const { highlights, setWidthAndHeight } =
     useGetChunkHighlights(selectedChunk);
@@ -158,46 +145,22 @@ const Chunk = () => {
   return (
     <>
       <PageHeader>
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink
-                onClick={() => {
-                  if (knowledgeId) {
-                    navigateToDatasetList();
-                  }
-                  if (agentId) {
-                    navigateToAgents();
-                  }
-                }}
-              >
-                {knowledgeId ? t('knowledgeDetails.dataset') : t('header.flow')}
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbLink
-                onClick={() => {
-                  if (knowledgeId) {
-                    navigateToDatasetOverview(knowledgeId)();
-                  }
-                  if (isAgent) {
-                    navigateToAgent(agentId, AgentCategory.DataflowCanvas)();
-                  }
-                }}
-              >
-                {knowledgeId ? t('knowledgeDetails.overview') : agentTitle}
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>
-                {knowledgeId ? documentInfo?.name : t('flow.viewResult')}
-              </BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
+        <Button
+          asLink
+          variant="outline"
+          to={
+            knowledgeId
+              ? `${Routes.DatasetBase}${Routes.DataSetOverview}/${knowledgeId}`
+              : isAgent
+                ? `${Routes.Agent}/${agentId}?${AgentQuery.Category}=${AgentCategory.DataflowCanvas}`
+                : '#'
+          }
+        >
+          <LucideArrowBigLeft />
+          {t('common.back')}
+        </Button>
       </PageHeader>
+
       {type === 'dataflow' && (
         <div className=" absolute ml-[50%] translate-x-[-50%] top-4 flex justify-center">
           <TimelineDataFlow
@@ -235,8 +198,8 @@ const Chunk = () => {
             )} */}
             {/* {currentTimeNode?.type === TimelineNodeType.parser && ( */}
             {(currentTimeNode?.type === TimelineNodeType.parser ||
-              currentTimeNode?.type === TimelineNodeType.characterSplitter ||
-              currentTimeNode?.type === TimelineNodeType.titleSplitter ||
+              currentTimeNode?.type === TimelineNodeType.tokenChunker ||
+              currentTimeNode?.type === TimelineNodeType.titleChunker ||
               currentTimeNode?.type === TimelineNodeType.contextGenerator) && (
               <ParserContainer
                 isReadonly={isReadOnly}
@@ -264,4 +227,4 @@ const Chunk = () => {
   );
 };
 
-export default Chunk;
+export default DataflowResult;

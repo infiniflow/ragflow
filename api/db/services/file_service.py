@@ -23,16 +23,20 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Union
 
+logger = logging.getLogger(__name__)
+
+import xxhash
 from peewee import fn
 
-from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileType
+from api.db import KNOWLEDGEBASE_FOLDER_NAME, SKILLS_FOLDER_NAME, FileType
 from api.db.db_models import DB, Document, File, File2Document, Knowledgebase, Task
 from api.db.services import duplicate_name
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from common.misc_utils import get_uuid
-from common.constants import TaskStatus, FileSource, ParserType
+from common.ssrf_guard import assert_url_is_safe
+from common.constants import TaskStatus, FileSource, ParserType, MAXIMUM_PAGE_NUMBER
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService
 from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img, sanitize_path
@@ -187,23 +191,24 @@ class FileService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def create_folder(cls, file, parent_id, name, count):
-        from api.apps import current_user
+    def create_folder(cls, file, parent_id, name, count, tenant_id, created_by):
         # Recursively create folder structure
         # Args:
         #     file: Current file object
         #     parent_id: Parent folder ID
         #     name: List of folder names to create
         #     count: Current depth in creation
+        #     tenant_id: Tenant ID
+        #     created_by: Created by user ID
         # Returns:
         #     Created file object
         if count > len(name) - 2:
             return file
         else:
             file = cls.insert(
-                {"id": get_uuid(), "parent_id": parent_id, "tenant_id": current_user.id, "created_by": current_user.id, "name": name[count], "location": "", "size": 0, "type": FileType.FOLDER.value}
+                {"id": get_uuid(), "parent_id": parent_id, "tenant_id": tenant_id, "created_by": created_by, "name": name[count], "location": "", "size": 0, "type": FileType.FOLDER.value}
             )
-            return cls.create_folder(file, file.id, name, count + 1)
+            return cls.create_folder(file, file.id, name, count + 1, tenant_id, created_by)
 
     @classmethod
     @DB.connection_context()
@@ -288,6 +293,28 @@ class FileService(CommonService):
         }
         cls.save(**file)
         return file
+
+    @classmethod
+    @DB.connection_context()
+    def init_skills_folder(cls, root_id, tenant_id):
+        # Initialize skills folder if not exists
+        # Args:
+        #     root_id: Root folder ID
+        #     tenant_id: Tenant ID
+        for _ in cls.model.select().where((cls.model.name == SKILLS_FOLDER_NAME) & (cls.model.parent_id == root_id)):
+            return
+        file_id = get_uuid()
+        file = {
+            "id": file_id,
+            "parent_id": root_id,
+            "tenant_id": tenant_id,
+            "created_by": tenant_id,
+            "name": SKILLS_FOLDER_NAME,
+            "type": FileType.FOLDER.value,
+            "size": 0,
+            "location": "",
+        }
+        cls.save(**file)
 
     @classmethod
     @DB.connection_context()
@@ -442,11 +469,31 @@ class FileService(CommonService):
             doc_id = file.id if hasattr(file, "id") else get_uuid()
             e, doc = DocumentService.get_by_id(doc_id)
             if e:
-                blob = file.read()
-                settings.STORAGE_IMPL.put(kb.id, doc.location, blob, kb.tenant_id)
-                doc.size = len(blob)
-                doc = doc.to_dict()
-                DocumentService.update_by_id(doc["id"], doc)
+                try:
+                    if str(doc.kb_id) != str(kb.id):
+                        logging.warning(
+                            "Existing document id collision detected for %s: belongs to kb_id=%s, incoming kb_id=%s. "
+                            "Skipping update to avoid cross-KB overwrite.",
+                            doc_id,
+                            doc.kb_id,
+                            kb.id,
+                        )
+                        user_msg = "Existing document id collision with another knowledge base; skipping update."
+                        err.append(file.filename + ": " + user_msg)
+                        continue
+                    blob = file.read()
+                    new_hash = xxhash.xxh128(blob).hexdigest()
+                    old_hash = doc.content_hash or ""
+                    settings.STORAGE_IMPL.put(kb.id, doc.location, blob, kb.tenant_id)
+                    doc.size = len(blob)
+                    doc.content_hash = new_hash
+                    doc = doc.to_dict()
+                    DocumentService.update_by_id(doc["id"], doc)
+                    if new_hash != old_hash:
+                        files.append((doc, blob))
+                except Exception as exc:
+                    logging.exception(f"Failed to update document {doc_id}: {exc}")
+                    err.append(file.filename + ": " + str(exc))
                 continue
             try:
                 DocumentService.check_doc_health(kb.tenant_id, file.filename)
@@ -485,6 +532,7 @@ class FileService(CommonService):
                     "location": location,
                     "size": len(blob),
                     "thumbnail": thumbnail_location,
+                    "content_hash": xxhash.xxh128(blob).hexdigest(),
                 }
                 DocumentService.insert(doc)
 
@@ -519,7 +567,7 @@ class FileService(CommonService):
         return "\n\n".join(res)
 
     @staticmethod
-    def parse(filename, blob, img_base64=True, tenant_id=None):
+    def parse(filename, blob, img_base64=True, tenant_id=None, layout_recognize=None):
         from rag.app import audio, email, naive, picture, presentation
         from api.apps import current_user
 
@@ -527,8 +575,8 @@ class FileService(CommonService):
             pass
 
         FACTORY = {ParserType.PRESENTATION.value: presentation, ParserType.PICTURE.value: picture, ParserType.AUDIO.value: audio, ParserType.EMAIL.value: email}
-        parser_config = {"chunk_token_num": 16096, "delimiter": "\n!?;。；！？", "layout_recognize": "Plain Text"}
-        kwargs = {"lang": "English", "callback": dummy, "parser_config": parser_config, "from_page": 0, "to_page": 100000, "tenant_id": current_user.id if current_user else tenant_id}
+        parser_config = {"chunk_token_num": 16096, "delimiter": "\n!?;。；！？", "layout_recognize": layout_recognize or "Plain Text"}
+        kwargs = {"lang": "English", "callback": dummy, "parser_config": parser_config, "from_page": 0, "to_page": MAXIMUM_PAGE_NUMBER, "tenant_id": current_user.id if current_user else tenant_id}
         file_type = filename_type(filename)
         if img_base64 and file_type == FileType.VISUAL.value:
             return GptV4.image2base64(blob)
@@ -602,6 +650,26 @@ class FileService(CommonService):
 
         return errors
 
+    _ALLOWED_SCHEMES = {"http", "https"}
+
+    @staticmethod
+    def _validate_url_for_crawl(url: str) -> tuple[str, str]:
+        """Raise ValueError if the URL is not safe to crawl (SSRF guard).
+
+        Delegates to :func:`common.ssrf_guard.assert_url_is_safe`, which
+        validates the scheme, hostname, and every DNS-resolved address, and
+        returns ``(hostname, resolved_ip)`` for DNS pinning.
+
+        Only the scheme and host (and port when present) are forwarded to the
+        guard so that credentials or query parameters in *url* are never
+        written to the log.
+        """
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        port_suffix = f":{parsed.port}" if parsed.port else ""
+        redacted = f"{parsed.scheme}://{parsed.hostname}{port_suffix}"
+        return assert_url_is_safe(redacted, allowed_schemes=FileService._ALLOWED_SCHEMES)
+
     @staticmethod
     def upload_info(user_id, file, url: str|None=None):
         def structured(filename, filetype, blob, content_type):
@@ -624,6 +692,53 @@ class FileService(CommonService):
             }
 
         if url:
+            import requests as _requests
+            from urllib.parse import urljoin as _urljoin
+
+            _MAX_CRAWL_REDIRECTS = 10
+
+            # Pre-resolve the full redirect chain so that AsyncWebCrawler never
+            # follows a server-sent redirect to an unvalidated (potentially
+            # internal) host.  Each hop is SSRF-checked before being followed;
+            # the validated (hostname, ip) pairs are pinned via Chromium's
+            # --host-resolver-rules so the browser cannot re-resolve any of them
+            # through a fresh DNS query.
+            current_url = url
+            current_hostname, current_ip = FileService._validate_url_for_crawl(current_url)
+            # Accumulate MAP rules for every hostname we encounter in the chain.
+            host_pins: dict[str, str] = {current_hostname: current_ip}
+
+            for _ in range(_MAX_CRAWL_REDIRECTS):
+                try:
+                    _resp = _requests.get(
+                        current_url,
+                        timeout=10,
+                        allow_redirects=False,
+                    )
+                except _requests.RequestException as _exc:
+                    raise ValueError(f"Failed to fetch {current_url!r}: {_exc}") from _exc
+
+                if _resp.status_code not in (301, 302, 303, 307, 308):
+                    break
+
+                _location = _resp.headers.get("Location")
+                if not _location:
+                    break
+
+                _next_url = _urljoin(current_url, _location)
+                _next_hostname, _next_ip = FileService._validate_url_for_crawl(_next_url)
+                host_pins[_next_hostname] = _next_ip
+                current_url = _next_url
+            else:
+                raise ValueError(
+                    f"Exceeded {_MAX_CRAWL_REDIRECTS} redirects fetching {url!r}"
+                )
+
+            # Build a single MAP rule string covering every validated hostname
+            # in the redirect chain.  Chromium uses the pinned IP for each,
+            # skipping DNS entirely and eliminating the rebinding window.
+            _map_rules = ",".join(f"MAP {h} {ip}" for h, ip in host_pins.items())
+
             from crawl4ai import (
                 AsyncWebCrawler,
                 BrowserConfig,
@@ -637,6 +752,7 @@ class FileService(CommonService):
                 browser_config = BrowserConfig(
                     headless=True,
                     verbose=False,
+                    extra_args=[f"--host-resolver-rules={_map_rules}"],
                 )
                 async with AsyncWebCrawler(config=browser_config) as crawler:
                     crawler_config = CrawlerRunConfig(
@@ -646,8 +762,10 @@ class FileService(CommonService):
                         pdf=True,
                         screenshot=False
                     )
+                    # Use the final resolved URL so the browser starts at the
+                    # redirect destination rather than re-following the chain.
                     result: CrawlResult = await crawler.arun(
-                        url=url,
+                        url=current_url,
                         config=crawler_config
                     )
                     return result
@@ -657,13 +775,13 @@ class FileService(CommonService):
                     filename += ".pdf"
                 return structured(filename, "pdf", page.pdf, page.response_headers["content-type"])
 
-            return structured(filename, "html", str(page.markdown).encode("utf-8"), page.response_headers["content-type"], user_id)
+            return structured(filename, "html", str(page.markdown).encode("utf-8"), page.response_headers["content-type"])
 
         DocumentService.check_doc_health(user_id, file.filename)
         return structured(file.filename, filename_type(file.filename), file.read(), file.content_type)
 
     @staticmethod
-    def get_files(files: Union[None, list[dict]]) -> list[str]:
+    def get_files(files: Union[None, list[dict]], raw: bool = False, layout_recognize: str = None) -> Union[list[str], tuple[list[str], list[dict]]]:
         if not files:
             return  []
         def image_to_base64(file):
@@ -671,10 +789,17 @@ class FileService(CommonService):
                                         base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
         exe = ThreadPoolExecutor(max_workers=5)
         threads = []
+        imgs = []
         for file in files:
             if file["mime_type"].find("image") >=0:
-                threads.append(exe.submit(image_to_base64, file))
+                if raw:
+                    imgs.append(FileService.get_blob(file["created_by"], file["id"]))
+                else:
+                    threads.append(exe.submit(image_to_base64, file))
                 continue
-            threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"]))
-        return [th.result() for th in threads]
-
+            threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"], layout_recognize))
+    
+        if raw:
+            return [th.result() for th in threads], imgs
+        else:
+            return [th.result() for th in threads]

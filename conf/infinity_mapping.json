@@ -3,6 +3,7 @@
 	"doc_id": {"type": "varchar", "default": ""},
 	"kb_id": {"type": "varchar", "default": "", "index_type": {"type": "secondary", "cardinality": "low"}},
 	"mom_id": {"type": "varchar", "default": ""},
+	"mom": {"type": "varchar", "default": ""},
 	"create_time": {"type": "varchar", "default": ""},
 	"create_timestamp_flt": {"type": "float", "default": 0.0},
 	"img_id": {"type": "varchar", "default": ""},
@@ -19,6 +20,7 @@
 	"position_int": {"type": "varchar", "default": ""},
 	"weight_int": {"type": "integer", "default": 0},
 	"weight_flt": {"type": "float", "default": 0.0},
+	"chunk_order_int": {"type": "integer", "default": 0},
 	"rank_int": {"type": "integer", "default": 0},
 	"rank_flt": {"type": "float", "default": 0},
 	"available_int": {"type": "integer", "default": 1, "index_type": {"type": "secondary", "cardinality": "low"}},
@@ -36,5 +38,6 @@
 	"removed_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"doc_type_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"toc_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
-	"raptor_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"}
+	"raptor_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+	"raptor_layer_int": {"type": "integer", "default": 0}
 }

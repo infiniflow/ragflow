@@ -1,7 +1,7 @@
 import { Authorization } from '@/constants/authorization';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { useGetPipelineResultSearchParams } from '@/pages/dataflow-result/hooks';
-import api, { api_host } from '@/utils/api';
+import api, { webAPI } from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import jsPreviewExcel from '@js-preview/excel';
 import { useSize } from 'ahooks';
@@ -57,7 +57,7 @@ export const useGetDocumentUrl = (isAgent: boolean) => {
     if (isAgent) {
       return api.downloadFile + `?id=${id}&created_by=${createdBy}`;
     }
-    return `${api_host}/document/get/${documentId}`;
+    return `${webAPI}/document/get/${documentId}`;
   }, [createdBy, documentId, id, isAgent]);
 
   return url;
@@ -164,4 +164,25 @@ export const useFetchDocx = (filePath: string) => {
   }, [fetchDocumentAsync]);
 
   return { succeed, containerRef, error };
+};
+
+export const useCatchDocumentError = (url: string) => {
+  const httpHeaders = useMemo(() => {
+    return {
+      [Authorization]: getAuthorization(),
+    };
+  }, []);
+  const [error, setError] = useState<string>('');
+
+  const fetchDocument = useCallback(async () => {
+    const { data } = await axios.get(url, { headers: httpHeaders });
+    if (data.code !== 0) {
+      setError(data?.message);
+    }
+  }, [url, httpHeaders]);
+  useEffect(() => {
+    fetchDocument();
+  }, [fetchDocument]);
+
+  return error;
 };

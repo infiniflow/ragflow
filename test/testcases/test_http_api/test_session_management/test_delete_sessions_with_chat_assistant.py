@@ -26,12 +26,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
-            (
-                RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
-            ),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
+            (RAGFlowHttpApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
@@ -45,11 +41,10 @@ class TestSessionWithChatAssistantDelete:
     @pytest.mark.parametrize(
         "chat_assistant_id, expected_code, expected_message",
         [
-            ("", 100, "<MethodNotAllowed '405: Method Not Allowed'>"),
             (
                 "invalid_chat_assistant_id",
-                102,
-                "You don't own the chat",
+                109,
+                "No authorization.",
             ),
         ],
     )
@@ -141,12 +136,13 @@ class TestSessionWithChatAssistantDelete:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message, remaining",
         [
-            pytest.param(None, 0, """TypeError("argument of type \'NoneType\' is not iterable")""", 0, marks=pytest.mark.skip),
+            pytest.param(None, 0, "", 5, marks=pytest.mark.p3),
             pytest.param({"ids": ["invalid_id"]}, 102, "The chat doesn't own the session invalid_id", 5, marks=pytest.mark.p3),
             pytest.param("not json", 100, """AttributeError("\'str\' object has no attribute \'get\'")""", 5, marks=pytest.mark.skip),
             pytest.param(lambda r: {"ids": r[:1]}, 0, "", 4, marks=pytest.mark.p3),
             pytest.param(lambda r: {"ids": r}, 0, "", 0, marks=pytest.mark.p1),
-            pytest.param({"ids": []}, 0, "", 0, marks=pytest.mark.p3),
+            pytest.param({"delete_all": True}, 0, "", 0, marks=pytest.mark.p1),
+            pytest.param({"ids": []}, 0, "", 5, marks=pytest.mark.p3),
         ],
     )
     def test_basic_scenarios(

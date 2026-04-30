@@ -26,7 +26,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useParams } from 'react-router';
+import { useParams, useSearchParams } from 'react-router';
 import { v4 as uuid } from 'uuid';
 import { BeginId } from '../constant';
 import { AgentChatLogContext } from '../context';
@@ -86,6 +86,7 @@ export function findMessageFromList(eventList: IEventList) {
     content: nextContent,
     audio_binary: audioBinary,
     attachment: workflowFinished?.data?.outputs?.attachment || {},
+    downloads: workflowFinished?.data?.outputs?.downloads || [],
   };
 }
 
@@ -105,7 +106,13 @@ export function findInputFromList(eventList: IEventList) {
 }
 
 export function getLatestError(eventList: IEventList) {
-  return get(eventList.at(-1), 'data.outputs._ERROR');
+  const latest = eventList.at(-1) as
+    | { code?: number; message?: string }
+    | undefined;
+  return (
+    get(latest, 'data.outputs._ERROR') ||
+    (latest?.code && latest.code !== 0 ? latest?.message : undefined)
+  );
 }
 
 export const useGetBeginNodePrologue = () => {
@@ -218,23 +225,26 @@ export const useSendAgentMessage = ({
   isShared,
   refetch,
   isTaskMode: isTask,
+  releaseMode,
 }: {
   url?: string;
   addEventList?: (data: IEventList, messageId: string) => void;
-  beginParams?: any[];
+  beginParams?: BeginQuery[];
   isShared?: boolean;
   refetch?: () => void;
   isTaskMode?: boolean;
+  releaseMode?: string | null;
 }) => {
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const inputs = useSelectBeginNodeDataInputs();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const { send, answerList, done, stopOutputMessage, resetAnswerList } =
-    useSendMessageBySSE(url || api.runCanvas);
+    useSendMessageBySSE(url || api.agentChatCompletion);
+  const firstAnswer = answerList[0];
   const messageId = useMemo(() => {
-    return answerList[0]?.message_id;
-  }, [answerList]);
+    return firstAnswer?.message_id;
+  }, [firstAnswer]);
 
   const isTaskMode = useIsTaskMode(isTask);
 
@@ -263,13 +273,19 @@ export const useSendAgentMessage = ({
     removeFile,
   } = useSetUploadResponseData();
 
+  const [searchParams] = useSearchParams();
+
+  const userId = searchParams.get('userId');
+
   const { stopMessage } = useStopMessage();
 
   const stopConversation = useCallback(() => {
-    const taskId = answerList.at(0)?.task_id;
+    const taskId = firstAnswer?.task_id;
     stopOutputMessage();
-    stopMessage(taskId);
-  }, [answerList, stopMessage, stopOutputMessage]);
+    if (!isShared) {
+      stopMessage(taskId);
+    }
+  }, [firstAnswer, isShared, stopMessage, stopOutputMessage]);
 
   const sendMessage = useCallback(
     async ({
@@ -282,13 +298,12 @@ export const useSendAgentMessage = ({
       beginInputs?: BeginQuery[];
       exploreSessionId?: string;
     }) => {
-      const params: Record<string, unknown> = {
-        id: agentId,
-      };
+      const params: Record<string, unknown> = { agent_id: agentId };
 
       params.running_hint_text = i18n.t('flow.runningHintText', {
         defaultValue: 'is running...🕞',
       });
+      params['openai-compatible'] = false;
       if (typeof message.content === 'string') {
         const query = inputs;
 
@@ -300,7 +315,17 @@ export const useSendAgentMessage = ({
 
         params.files = uploadResponseList;
 
-        params.session_id = sessionId || exploreSessionId;
+        // Prefer the session selected by the outer page state.
+        // The hook keeps its own session cache for streamed replies, but that cache
+        // can lag behind when the user switches sessions in Explore.
+        params.session_id = exploreSessionId || sessionId;
+        if (releaseMode) {
+          params.release = releaseMode;
+        }
+
+        if (userId) {
+          params.user_id = userId;
+        }
       }
 
       try {
@@ -327,6 +352,8 @@ export const useSendAgentMessage = ({
       beginParams,
       uploadResponseList,
       sessionId,
+      releaseMode,
+      userId,
       send,
       clearUploadResponseList,
       setValue,
@@ -336,17 +363,21 @@ export const useSendAgentMessage = ({
   );
 
   const sendFormMessage = useCallback(
-    async (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
+    async (body: { agent_id?: string; inputs: Record<string, BeginQuery> }) => {
       addNewestOneQuestion({
         content: Object.entries(body.inputs)
           .map(([, val]) => `${val.name}: ${val.value}`)
           .join('<br/>'),
         role: MessageType.User,
       });
-      await send({ ...body, session_id: sessionId });
+      await send({
+        ...body,
+        session_id: sessionId,
+        ...(releaseMode ? { release: releaseMode } : {}),
+      });
       refetch?.();
     },
-    [addNewestOneQuestion, refetch, send, sessionId],
+    [addNewestOneQuestion, refetch, releaseMode, send, sessionId],
   );
 
   // reset session
@@ -394,7 +425,7 @@ export const useSendAgentMessage = ({
     ],
   );
 
-  const sendedTaskMessage = useRef<boolean>(false);
+  const sendedTaskMessage = useRef(false);
 
   const sendMessageInTaskMode = useCallback(() => {
     if (isShared || !isTaskMode || sendedTaskMessage.current) {
@@ -413,7 +444,7 @@ export const useSendAgentMessage = ({
   }, [sendMessageInTaskMode]);
 
   useEffect(() => {
-    const { content, id, attachment, audio_binary } =
+    const { content, id, attachment, audio_binary, downloads } =
       findMessageFromList(answerList);
     const inputAnswer = findInputFromList(answerList);
     const answer = content || getLatestError(answerList);
@@ -423,6 +454,7 @@ export const useSendAgentMessage = ({
         answer: answer ?? '',
         audio_binary: audio_binary,
         attachment: attachment as IAttachment,
+        downloads,
         id: id,
         ...inputAnswer,
       });
@@ -455,10 +487,10 @@ export const useSendAgentMessage = ({
   }, [addEventList, answerList, addEventListFun, messageId]);
 
   useEffect(() => {
-    if (answerList[0]?.session_id) {
-      setSessionId(answerList[0]?.session_id);
+    if (firstAnswer?.session_id) {
+      setSessionId(firstAnswer.session_id);
     }
-  }, [answerList]);
+  }, [firstAnswer]);
 
   return {
     value,

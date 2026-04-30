@@ -78,12 +78,12 @@ The **Retrieval** component relies on query variables to specify its queries. Al
 
 ### Retrieval from
 
-Select the dataset(s) and memory to retrieve data from.
+Select the dataset(s) or memory to retrieve data from.
 
-- If no dataset is selected, meaning conversations with the agent will not be based on any dataset, ensure that the **Empty response** field is left blank to avoid an error.
 - If you select multiple datasets, you must ensure that the datasets you select use the same embedding model; otherwise, an error message would occur.
-
-![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/retrieve_from_memory.PNG)
+- If you select **Memory**, configure either of the following:
+  - **Memory**: Retrieve from specific existing memories.
+  - **User ID**: Retrieve from conversations associated with a User ID. See [User ID](./message.md#user-id) for further details.
 
 ### Similarity threshold
 
@@ -128,7 +128,7 @@ Select one or more languages for cross‑language search. If no language is sele
 ### Use knowledge graph
 
 :::caution IMPORTANT
-Before enabling this feature, ensure you have properly [constructed a knowledge graph from each target dataset](../../dataset/construct_knowledge_graph.md).
+Before enabling this feature, ensure you have properly [constructed a knowledge graph from each target dataset](../../dataset/advanced/construct_knowledge_graph.md).
 :::
 
 Whether to use knowledge graph(s) in the specified dataset(s) during retrieval for multi-hop question answering. When enabled, this would involve iterative searches across entity, relationship, and community report chunks, greatly increasing retrieval time.

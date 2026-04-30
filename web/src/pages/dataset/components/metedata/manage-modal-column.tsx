@@ -1,10 +1,10 @@
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
-import { DateInput } from '@/components/ui/input-date';
 import { formatDate } from '@/utils/date';
 import { ColumnDef, Row, Table } from '@tanstack/react-table';
-import { ListChevronsDownUp, Settings, Trash2 } from 'lucide-react';
+import { ListChevronsDownUp, LucidePencil, Trash2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -147,7 +147,7 @@ export const useMetadataColumns = ({
         header: () => <span>{t('knowledgeDetails.metadata.description')}</span>,
         cell: ({ row }) => (
           <div className="text-sm truncate max-w-32">
-            {row.getValue('description')}
+            {row.getValue('description') || '-'}
           </div>
         ),
       },
@@ -209,7 +209,7 @@ export const useMetadataColumns = ({
                     <div key={value}>
                       {row.original.valueType ===
                         metadataValueTypeEnum.time && (
-                        <DateInput
+                        <DatePicker
                           value={new Date(editingValue.newValue)}
                           onChange={(value) => {
                             const newValue = {
@@ -347,17 +347,17 @@ export const useMetadataColumns = ({
         cell: ({ row }) => (
           <div className=" flex opacity-0 group-hover:opacity-100 gap-2">
             <Button
-              variant={'ghost'}
-              className="bg-transparent px-1 py-0"
+              variant="ghost"
+              size="icon-sm"
               onClick={() => {
                 handleEditValueRow(row.original, row.index);
               }}
             >
-              <Settings />
+              <LucidePencil />
             </Button>
             <Button
-              variant={'delete'}
-              className="p-0 bg-transparent"
+              variant="delete"
+              size="icon-sm"
               onClick={() => {
                 setDeleteDialogContent({
                   visible: true,

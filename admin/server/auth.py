@@ -22,7 +22,6 @@ from datetime import datetime
 
 from flask import jsonify, request
 from flask_login import current_user, login_user
-from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
 from api.common.exceptions import AdminException, UserNotFoundError
 from api.common.base64 import encode_to_base64
@@ -40,18 +39,34 @@ from common import settings
 def setup_auth(login_manager):
     @login_manager.request_loader
     def load_user(web_request):
-        jwt = Serializer(secret_key=settings.SECRET_KEY)
+        # Authorization header contains JWT-encoded access token
+        # First decode JWT to get the UUID, then query database
+        from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
+        from common import settings
+
         authorization = web_request.headers.get("Authorization")
         if authorization:
             try:
-                access_token = str(jwt.loads(authorization))
+                # Strip "Bearer " prefix if present
+                jwt_token = authorization
+                if jwt_token.startswith("Bearer "):
+                    jwt_token = jwt_token[7:]
 
-                if not access_token or not access_token.strip():
-                    logging.warning("Authentication attempt with empty access token")
+                jwt_token = jwt_token.strip()
+                if not jwt_token:
+                    logging.warning("Authentication attempt with empty JWT token")
                     return None
 
-                # Access tokens should be UUIDs (32 hex characters)
-                if len(access_token.strip()) < 32:
+                # Decode JWT to get the UUID access_token
+                jwt = Serializer(secret_key=settings.SECRET_KEY)
+                access_token = str(jwt.loads(jwt_token))
+
+                if not access_token or not access_token.strip():
+                    logging.warning("Authentication attempt with empty access token after JWT decode")
+                    return None
+
+                # Access tokens stored in database are UUIDs (32 hex characters)
+                if len(access_token) < 32:
                     logging.warning(f"Authentication attempt with invalid token format: {len(access_token)} chars")
                     return None
 
@@ -110,7 +125,8 @@ def add_tenant_for_admin(user_info: dict, role: str):
         "embd_id": settings.EMBEDDING_MDL,
         "asr_id": settings.ASR_MDL,
         "parser_ids": settings.PARSERS,
-        "img2txt_id": settings.IMAGE2TEXT_MDL
+        "img2txt_id": settings.IMAGE2TEXT_MDL,
+        "rerank_id": settings.RERANK_MDL,
     }
     usr_tenant = {
         "tenant_id": user_info["id"],

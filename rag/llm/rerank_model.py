@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import logging
 from abc import ABC
 from urllib.parse import urljoin
 
@@ -274,10 +275,13 @@ class SILICONFLOWRerank(Base):
     _FACTORY_NAME = "SILICONFLOW"
 
     def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1/rerank"):
-        if not base_url:
-            base_url = "https://api.siliconflow.cn/v1/rerank"
+        normalized_base_url = (base_url or "").strip()
+        if not normalized_base_url:
+            normalized_base_url = "https://api.siliconflow.cn/v1/rerank"
+        if "/rerank" not in normalized_base_url:
+            normalized_base_url = urljoin(f"{normalized_base_url.rstrip('/')}/", "rerank").rstrip("/")
         self.model_name = model_name
-        self.base_url = base_url
+        self.base_url = normalized_base_url
         self.headers = {
             "accept": "application/json",
             "content-type": "application/json",
@@ -294,7 +298,8 @@ class SILICONFLOWRerank(Base):
             "max_chunks_per_doc": 1024,
             "overlap_tokens": 80,
         }
-        response = requests.post(self.base_url, json=payload, headers=self.headers).json()
+        response_raw = requests.post(self.base_url, json=payload, headers=self.headers)
+        response = response_raw.json()
         rank = np.zeros(len(texts), dtype=float)
         try:
             for d in response["results"]:
@@ -361,7 +366,7 @@ class VoyageRerank(Base):
 class QWenRerank(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
 
-    def __init__(self, key, model_name="gte-rerank", base_url=None, **kwargs):
+    def __init__(self, key, model_name="gte-rerank", **kwargs):
         import dashscope
 
         self.api_key = key
@@ -372,7 +377,20 @@ class QWenRerank(Base):
 
         import dashscope
 
-        resp = dashscope.TextReRank.call(api_key=self.api_key, model=self.model_name, query=query, documents=texts, top_n=len(texts), return_documents=False)
+        # Build call parameters
+        call_kwargs = {
+            "api_key": self.api_key,
+            "model": self.model_name,
+            "query": query,
+            "documents": texts,
+            "top_n": len(texts)
+        }
+        # qwen3-rerank does not support return_documents parameter
+        if not self.model_name.startswith("qwen3-rerank"):
+            call_kwargs["return_documents"] = False
+        
+        resp = dashscope.TextReRank.call(**call_kwargs)  
+
         rank = np.zeros(len(texts), dtype=float)
         if resp.status_code == HTTPStatus.OK:
             try:
@@ -503,3 +521,58 @@ class JiekouAIRerank(JinaRerank):
         if not base_url:
             base_url = "https://api.jiekou.ai/openai/v1/rerank"
         super().__init__(key, model_name, base_url)
+
+
+class FuturMixRerank(OpenAI_APIRerank):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name, base_url="https://futurmix.ai/v1/rerank"):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1/rerank"
+        super().__init__(key, model_name, base_url)
+        logging.info("[FuturMix] Rerank initialized with model %s", model_name)
+
+
+class RAGconRerank(Base):
+    """
+    RAGcon Rerank Provider - routes through LiteLLM proxy
+    
+    Assumes LiteLLM proxy supports /rerank endpoint.
+    Default Base URL: https://connect.ragcon.ai/v1
+    """
+    _FACTORY_NAME = "RAGcon"
+    
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        if not base_url:
+            base_url = "https://connect.ragcon.com/v1"
+        
+        self._api_key = key
+        self._base_url = base_url
+        
+        self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
+        self.model_name = model_name
+        
+    
+    def similarity(self, query: str, texts: list):
+        # noway to config Ragflow , use fix setting
+        texts = [truncate(t, 500) for t in texts]
+        data = {
+            "model": self.model_name,
+            "query": query,
+            "documents": texts,
+            "top_n": len(texts),
+        }
+        token_count = 0
+        for t in texts:
+            token_count += num_tokens_from_string(t)
+        res = requests.post(self._base_url + "/rerank", headers=self.headers, json=data).json()
+        rank = np.zeros(len(texts), dtype=float)
+        try:
+            for d in res["results"]:
+                rank[d["index"]] = d["relevance_score"]
+        except Exception as _e:
+            log_exception(_e, res)
+
+        rank = Base._normalize_rank(rank)
+
+        return rank, token_count

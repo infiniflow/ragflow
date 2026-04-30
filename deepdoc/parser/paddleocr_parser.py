@@ -29,6 +29,8 @@ import pdfplumber
 import requests
 from PIL import Image
 
+from common.constants import MAXIMUM_PAGE_NUMBER
+
 try:
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 except Exception:
@@ -36,11 +38,19 @@ except Exception:
     class RAGFlowPdfParser:
         pass
 
+from deepdoc.parser.utils import extract_pdf_outlines
 
-AlgorithmType = Literal["PaddleOCR-VL"]
+
+AlgorithmType = Literal["PaddleOCR-VL", "PP-OCRv5", "PP-StructureV3", "PaddleOCR-VL-1.5"]
 SectionTuple = tuple[str, ...]
 TableTuple = tuple[str, ...]
 ParseResult = tuple[list[SectionTuple], list[TableTuple]]
+SUPPORTED_PADDLEOCR_ALGORITHMS: tuple[AlgorithmType, ...] = (
+    "PaddleOCR-VL",
+    "PP-OCRv5",
+    "PP-StructureV3",
+    "PaddleOCR-VL-1.5",
+)
 
 
 _MARKDOWN_IMAGE_PATTERN = re.compile(
@@ -59,11 +69,22 @@ def _remove_images_from_markdown(markdown: str) -> str:
     return _MARKDOWN_IMAGE_PATTERN.sub("", markdown)
 
 
+def _normalize_bbox(bbox: list[Any] | tuple[Any, ...]) -> tuple[float, float, float, float]:
+    if len(bbox) < 4:
+        return 0.0, 0.0, 0.0, 0.0
+
+    left, top, right, bottom = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+    if left > right:
+        left, right = right, left
+    if top > bottom:
+        top, bottom = bottom, top
+    return left, top, right, bottom
+
+
 @dataclass
 class PaddleOCRVLConfig:
     """Configuration for PaddleOCR-VL algorithm."""
 
-    use_doc_orientation_classify: Optional[bool] = False
     use_doc_orientation_classify: Optional[bool] = False
     use_doc_unwarping: Optional[bool] = False
     use_layout_detection: Optional[bool] = None
@@ -115,12 +136,12 @@ class PaddleOCRConfig:
         algorithm = cfg.get("algorithm", "PaddleOCR-VL")
 
         # Validate algorithm
-        if algorithm not in ("PaddleOCR-VL"):
+        if algorithm not in SUPPORTED_PADDLEOCR_ALGORITHMS:
             raise ValueError(f"Unsupported algorithm: {algorithm}")
 
         # Extract algorithm-specific configuration
         algorithm_config: dict[str, Any] = {}
-        if algorithm == "PaddleOCR-VL":
+        if algorithm in SUPPORTED_PADDLEOCR_ALGORITHMS:
             algorithm_config = asdict(PaddleOCRVLConfig())
         algorithm_config_user = cfg.get("algorithm_config")
         if isinstance(algorithm_config_user, dict):
@@ -158,34 +179,39 @@ class PaddleOCRParser(RAGFlowPdfParser):
         "visualize": "visualize",
     }
 
+    _VL_FIELD_MAPPING: ClassVar[dict[str, str]] = {
+        "use_doc_orientation_classify": "useDocOrientationClassify",
+        "use_doc_unwarping": "useDocUnwarping",
+        "use_layout_detection": "useLayoutDetection",
+        "use_chart_recognition": "useChartRecognition",
+        "use_seal_recognition": "useSealRecognition",
+        "use_ocr_for_image_block": "useOcrForImageBlock",
+        "layout_threshold": "layoutThreshold",
+        "layout_nms": "layoutNms",
+        "layout_unclip_ratio": "layoutUnclipRatio",
+        "layout_merge_bboxes_mode": "layoutMergeBboxesMode",
+        "layout_shape_mode": "layoutShapeMode",
+        "prompt_label": "promptLabel",
+        "format_block_content": "formatBlockContent",
+        "repetition_penalty": "repetitionPenalty",
+        "temperature": "temperature",
+        "top_p": "topP",
+        "min_pixels": "minPixels",
+        "max_pixels": "maxPixels",
+        "max_new_tokens": "maxNewTokens",
+        "merge_layout_blocks": "mergeLayoutBlocks",
+        "markdown_ignore_labels": "markdownIgnoreLabels",
+        "vlm_extra_args": "vlmExtraArgs",
+        "restructure_pages": "restructurePages",
+        "merge_tables": "mergeTables",
+        "relevel_titles": "relevelTitles",
+    }
+
     _ALGORITHM_FIELD_MAPPINGS: ClassVar[dict[str, dict[str, str]]] = {
-        "PaddleOCR-VL": {
-            "use_doc_orientation_classify": "useDocOrientationClassify",
-            "use_doc_unwarping": "useDocUnwarping",
-            "use_layout_detection": "useLayoutDetection",
-            "use_chart_recognition": "useChartRecognition",
-            "use_seal_recognition": "useSealRecognition",
-            "use_ocr_for_image_block": "useOcrForImageBlock",
-            "layout_threshold": "layoutThreshold",
-            "layout_nms": "layoutNms",
-            "layout_unclip_ratio": "layoutUnclipRatio",
-            "layout_merge_bboxes_mode": "layoutMergeBboxesMode",
-            "layout_shape_mode": "layoutShapeMode",
-            "prompt_label": "promptLabel",
-            "format_block_content": "formatBlockContent",
-            "repetition_penalty": "repetitionPenalty",
-            "temperature": "temperature",
-            "top_p": "topP",
-            "min_pixels": "minPixels",
-            "max_pixels": "maxPixels",
-            "max_new_tokens": "maxNewTokens",
-            "merge_layout_blocks": "mergeLayoutBlocks",
-            "markdown_ignore_labels": "markdownIgnoreLabels",
-            "vlm_extra_args": "vlmExtraArgs",
-            "restructure_pages": "restructurePages",
-            "merge_tables": "mergeTables",
-            "relevel_titles": "relevelTitles",
-        },
+        "PaddleOCR-VL": _VL_FIELD_MAPPING,
+        "PP-OCRv5": _VL_FIELD_MAPPING,
+        "PP-StructureV3": _VL_FIELD_MAPPING,
+        "PaddleOCR-VL-1.5": _VL_FIELD_MAPPING,
     }
 
     def __init__(
@@ -199,6 +225,7 @@ class PaddleOCRParser(RAGFlowPdfParser):
         """Initialize PaddleOCR parser."""
         super().__init__()
 
+        self.outlines = []
         self.api_url = api_url.rstrip("/") if api_url else os.getenv("PADDLEOCR_API_URL", "")
         self.access_token = access_token or os.getenv("PADDLEOCR_ACCESS_TOKEN")
         self.algorithm = algorithm
@@ -241,6 +268,7 @@ class PaddleOCRParser(RAGFlowPdfParser):
         **kwargs: Any,
     ) -> ParseResult:
         """Parse PDF document using PaddleOCR API."""
+        self.outlines = extract_pdf_outlines(binary if binary is not None else filepath)
         # Create configuration - pass all kwargs to capture VL config parameters
         config_dict = {
             "api_url": api_url if api_url is not None else self.api_url,
@@ -376,7 +404,7 @@ class PaddleOCRParser(RAGFlowPdfParser):
         """Convert API response to section tuples."""
         sections: list[SectionTuple] = []
 
-        if algorithm in ("PaddleOCR-VL",):
+        if algorithm in SUPPORTED_PADDLEOCR_ALGORITHMS:
             layout_parsing_results = result.get("layoutParsingResults", [])
 
             for page_idx, layout_result in enumerate(layout_parsing_results):
@@ -393,10 +421,11 @@ class PaddleOCRParser(RAGFlowPdfParser):
 
                     label = block.get("block_label", "")
                     block_bbox = block.get("block_bbox", [0, 0, 0, 0])
+                    left, top, right, bottom = _normalize_bbox(block_bbox)
 
-                    tag = f"@@{page_idx + 1}\t{block_bbox[0] // self._ZOOMIN}\t{block_bbox[2] // self._ZOOMIN}\t{block_bbox[1] // self._ZOOMIN}\t{block_bbox[3] // self._ZOOMIN}##"
+                    tag = f"@@{page_idx + 1}\t{left // self._ZOOMIN}\t{right // self._ZOOMIN}\t{top // self._ZOOMIN}\t{bottom // self._ZOOMIN}##"
 
-                    if parse_method == "manual":
+                    if parse_method in {"manual", "pipeline"}:
                         sections.append((block_content, label, tag))
                     elif parse_method == "paper":
                         sections.append((block_content + tag, label))
@@ -409,7 +438,7 @@ class PaddleOCRParser(RAGFlowPdfParser):
         """Convert API response to table tuples."""
         return []
 
-    def __images__(self, fnm, page_from=0, page_to=100, callback=None):
+    def __images__(self, fnm, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         """Generate page images from PDF for cropping."""
         self.page_from = page_from
         self.page_to = page_to
@@ -509,6 +538,16 @@ class PaddleOCRParser(RAGFlowPdfParser):
 
             img0 = self.page_images[pns[0]]
             x0, y0, x1, y1 = int(left), int(top), int(right), int(min(bottom, img0.size[1]))
+            if x0 > x1:
+                x0, x1 = x1, x0
+            if y0 > y1:
+                y0, y1 = y1, y0
+            x0 = max(0, min(x0, img0.size[0]))
+            x1 = max(0, min(x1, img0.size[0]))
+            y0 = max(0, min(y0, img0.size[1]))
+            y1 = max(0, min(y1, img0.size[1]))
+            if x1 <= x0 or y1 <= y0:
+                continue
             crop0 = img0.crop((x0, y0, x1, y1))
             imgs.append(crop0)
             if 0 < ii < len(poss) - 1:
@@ -521,6 +560,17 @@ class PaddleOCRParser(RAGFlowPdfParser):
                     continue
                 page = self.page_images[pn]
                 x0, y0, x1, y1 = int(left), 0, int(right), int(min(bottom, page.size[1]))
+                if x0 > x1:
+                    x0, x1 = x1, x0
+                if y0 > y1:
+                    y0, y1 = y1, y0
+                x0 = max(0, min(x0, page.size[0]))
+                x1 = max(0, min(x1, page.size[0]))
+                y0 = max(0, min(y0, page.size[1]))
+                y1 = max(0, min(y1, page.size[1]))
+                if x1 <= x0 or y1 <= y0:
+                    bottom -= page.size[1]
+                    continue
                 cimgp = page.crop((x0, y0, x1, y1))
                 imgs.append(cimgp)
                 if 0 < ii < len(poss) - 1:
@@ -532,21 +582,25 @@ class PaddleOCRParser(RAGFlowPdfParser):
                 return None, None
             return
 
-        height = 0
+        total_height = 0
+        max_width = 0
+        img_sizes = []
         for img in imgs:
-            height += img.size[1] + GAP
-        height = int(height)
-        width = int(np.max([i.size[0] for i in imgs]))
-        pic = Image.new("RGB", (width, height), (245, 245, 245))
-        height = 0
-        for ii, img in enumerate(imgs):
-            if ii == 0 or ii + 1 == len(imgs):
+            w, h = img.size
+            img_sizes.append((w, h))
+            max_width = max(max_width, w)
+            total_height += h + GAP
+
+        pic = Image.new("RGB", (max_width, int(total_height)), (245, 245, 245))
+        current_height = 0
+        imgs_count = len(imgs)
+        for ii, (img, (w, h)) in enumerate(zip(imgs, img_sizes)):
+            if ii == 0 or ii + 1 == imgs_count:
                 img = img.convert("RGBA")
-                overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-                overlay.putalpha(128)
+                overlay = Image.new("RGBA", img.size, (0, 0, 0, 128))
                 img = Image.alpha_composite(img, overlay).convert("RGB")
-            pic.paste(img, (0, int(height)))
-            height += img.size[1] + GAP
+            pic.paste(img, (0, int(current_height)))
+            current_height += h + GAP
 
         if need_position:
             return pic, positions

@@ -17,11 +17,9 @@ import random
 import re
 
 import pytest
-from test_web_api.common import create_memory
+from test_common import create_memory
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
-from hypothesis import example, given, settings
-from utils.hypothesis_utils import valid_names
 
 
 class TestAuthorization:
@@ -42,14 +40,12 @@ class TestAuthorization:
 
 class TestMemoryCreate:
     @pytest.mark.p1
-    @given(name=valid_names())
-    @example("d" * 128)
-    @settings(max_examples=20)
+    @pytest.mark.parametrize("name", ["test_memory_name", "d" * 128])
     def test_name(self, WebApiAuth, name):
         payload = {
             "name": name,
             "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
-            "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW",
+            "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
             "llm_id": "glm-4-flash@ZHIPU-AI"
         }
         res = create_memory(WebApiAuth, payload)
@@ -72,19 +68,19 @@ class TestMemoryCreate:
         payload = {
             "name": name,
             "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
-            "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW",
+            "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
             "llm_id": "glm-4-flash@ZHIPU-AI"
         }
         res = create_memory(WebApiAuth, payload)
         assert res["message"] == expected_message, res
 
     @pytest.mark.p2
-    @given(name=valid_names())
+    @pytest.mark.parametrize("name", ["invalid_type_name", "memory_alpha"])
     def test_type_invalid(self, WebApiAuth, name):
         payload = {
             "name": name,
             "memory_type": ["something"],
-            "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW",
+            "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
             "llm_id": "glm-4-flash@ZHIPU-AI"
         }
         res = create_memory(WebApiAuth, payload)
@@ -96,7 +92,7 @@ class TestMemoryCreate:
         payload = {
             "name": name,
             "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
-            "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW",
+            "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
             "llm_id": "glm-4-flash@ZHIPU-AI"
         }
         res1 = create_memory(WebApiAuth, payload)

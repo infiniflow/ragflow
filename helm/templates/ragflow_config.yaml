@@ -18,7 +18,7 @@ kind: ConfigMap
 metadata:
   name: nginx-config
 data:
-  ragflow.conf: |
+  ragflow.conf.python: |
     server {
         listen 80;
         server_name _;
@@ -30,6 +30,11 @@ data:
         gzip_types text/plain application/javascript application/x-javascript text/css application/xml text/javascript application/x-httpd-php image/jpeg image/gif image/png;
         gzip_vary on;
         gzip_disable "MSIE [1-6]\.";
+
+        location ~ ^/api/v1/admin {
+            proxy_pass http://localhost:9381;
+            include proxy.conf;
+        }
 
         location ~ ^/(v1|api) {
             proxy_pass http://localhost:9380;

@@ -41,12 +41,13 @@ export const fileIconMap = {
   xml: 'xml.svg',
 };
 
+// TODO: Use standard BCP 47 language tag and display names
 export const LanguageList = [
   'English',
   'Chinese',
   'Traditional Chinese',
   'Russian',
-  'Indonesia',
+  'Indonesian',
   'Spanish',
   'Vietnamese',
   'Japanese',
@@ -54,26 +55,33 @@ export const LanguageList = [
   'German',
   'French',
   'Italian',
+  'Bulgarian',
+  'Arabic',
+  'Turkish',
 ];
 export const LanguageMap = {
   English: 'English',
   Chinese: '简体中文',
   'Traditional Chinese': '繁體中文',
   Russian: 'Русский',
+  Indonesian: 'Bahasa Indonesia',
   Indonesia: 'Indonesia',
   Spanish: 'Español',
   Vietnamese: 'Tiếng việt',
   Japanese: '日本語',
   'Portuguese BR': 'Português BR',
-  German: 'German',
+  German: 'Deutsch',
   French: 'Français',
   Italian: 'Italiano',
+  Bulgarian: 'Български',
+  Arabic: 'العربية',
+  Turkish: 'Türkçe',
 };
 
 export enum LanguageAbbreviation {
   En = 'en',
-  Zh = 'zh',
-  ZhTraditional = 'zh-TRADITIONAL',
+  Zh = 'zh-Hans',
+  ZhTraditional = 'zh-Hant',
   Ru = 'ru',
   Id = 'id',
   Ja = 'ja',
@@ -83,6 +91,9 @@ export enum LanguageAbbreviation {
   De = 'de',
   Fr = 'fr',
   It = 'it',
+  Bg = 'bg',
+  Ar = 'ar',
+  Tr = 'tr',
 }
 
 export const LanguageAbbreviationMap = {
@@ -90,7 +101,7 @@ export const LanguageAbbreviationMap = {
   [LanguageAbbreviation.Zh]: '简体中文',
   [LanguageAbbreviation.ZhTraditional]: '繁體中文',
   [LanguageAbbreviation.Ru]: 'Русский',
-  [LanguageAbbreviation.Id]: 'Indonesia',
+  [LanguageAbbreviation.Id]: 'Bahasa Indonesia',
   [LanguageAbbreviation.Es]: 'Español',
   [LanguageAbbreviation.Vi]: 'Tiếng việt',
   [LanguageAbbreviation.Ja]: '日本語',
@@ -98,19 +109,25 @@ export const LanguageAbbreviationMap = {
   [LanguageAbbreviation.De]: 'Deutsch',
   [LanguageAbbreviation.Fr]: 'Français',
   [LanguageAbbreviation.It]: 'Italiano',
+  [LanguageAbbreviation.Bg]: 'Български',
+  [LanguageAbbreviation.Ar]: 'العربية',
+  [LanguageAbbreviation.Tr]: 'Türkçe',
 };
 
 export const LanguageTranslationMap = {
   English: 'en',
-  Chinese: 'zh',
-  'Traditional Chinese': 'zh-TRADITIONAL',
+  Chinese: 'zh-Hans',
+  'Traditional Chinese': 'zh-Hant',
   Russian: 'ru',
   Indonesian: 'id',
+  Indonesia: 'id',
   Spanish: 'es',
   Vietnamese: 'vi',
   Japanese: 'ja',
   Korean: 'ko',
-  'Portuguese BR': 'pt-br',
+  'Portuguese BR': 'pt-BR',
+  'pt-br': 'pt-BR',
+  'pt-BR': 'pt-BR',
   German: 'de',
   French: 'fr',
   Italian: 'it',
@@ -121,6 +138,9 @@ export const LanguageTranslationMap = {
   Greek: 'el',
   Hindi: 'hi',
   Ukrainian: 'uk',
+  Bulgarian: 'bg',
+  Arabic: 'ar',
+  Turkish: 'tr',
 };
 
 export enum FileMimeType {
@@ -148,7 +168,7 @@ export enum FileMimeType {
   Mdx = 'text/markdown',
 }
 
-export const Domain = 'demo.ragflow.io';
+export const Domain = 'cloud.ragflow.io';
 
 //#region file preview
 export const Images = [

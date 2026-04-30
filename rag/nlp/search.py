@@ -26,6 +26,7 @@ from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, OrderByE
 from common.string_utils import remove_redundant_spaces
 from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
+from common.tag_feature_utils import parse_tag_features
 from common import settings
 
 from common.misc_utils import thread_pool_exec
@@ -59,6 +60,63 @@ class Dealer:
         vector_column_name = f"q_{len(embedding_data)}_vec"
         return MatchDenseExpr(vector_column_name, embedding_data, 'float', 'cosine', topk, {"similarity": similarity})
 
+    async def _existing_doc_ids(self, doc_ids: list[str]) -> set[str]:
+        if not doc_ids:
+            return set()
+
+        unique_doc_ids = list(dict.fromkeys(doc_ids))
+
+        def _load():
+            from api.db.services.document_service import DocumentService
+
+            return {row["id"] for row in DocumentService.get_by_ids(unique_doc_ids).dicts()}
+
+        return await thread_pool_exec(_load)
+
+    async def _prune_deleted_chunks(self, sres: SearchResult) -> SearchResult:
+        # Temporary safety net:
+        # Some delete paths can leave stale chunks in the doc store if the DB row
+        # is removed but the vector record is not fully cleaned up. We filter those
+        # chunks here so chat/retrieval does not surface content from deleted docs.
+        # Keep this as a fallback, not as the primary delete mechanism.
+        chunk_doc_ids = [chunk.get("doc_id") for chunk in sres.field.values() if chunk and chunk.get("doc_id")]
+        if not chunk_doc_ids:
+            return sres
+
+        existing_doc_ids = await self._existing_doc_ids(chunk_doc_ids)
+        if len(existing_doc_ids) == len(set(chunk_doc_ids)):
+            return sres
+
+        filtered_ids = []
+        filtered_field = {}
+        filtered_highlight = {} if sres.highlight else sres.highlight
+        removed = 0
+
+        for chunk_id in sres.ids:
+            chunk = sres.field.get(chunk_id)
+            if not chunk or chunk.get("doc_id") not in existing_doc_ids:
+                removed += 1
+                continue
+
+            filtered_ids.append(chunk_id)
+            filtered_field[chunk_id] = chunk
+            if sres.highlight and chunk_id in sres.highlight:
+                filtered_highlight[chunk_id] = sres.highlight[chunk_id]
+
+        if removed:
+            logging.warning("Pruned %s stale chunks whose documents no longer exist.", removed)
+
+        return self.SearchResult(
+            total=len(filtered_ids),
+            ids=filtered_ids,
+            query_vector=sres.query_vector,
+            field=filtered_field,
+            highlight=filtered_highlight,
+            aggregation=sres.aggregation,
+            keywords=sres.keywords,
+            group_docs=sres.group_docs,
+        )
+
     def get_filters(self, req):
         condition = dict()
         for key, field in {"kb_ids": "kb_id", "doc_ids": "doc_id"}.items():
@@ -90,15 +148,16 @@ class Dealer:
 
         src = req.get("fields",
                       ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
-                       "doc_id", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
+                       "doc_id", "chunk_order_int", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
                        "question_kwd", "question_tks", "doc_type_kwd",
-                       "available_int", "content_with_weight", "mom_id", PAGERANK_FLD, TAG_FLD])
+                       "available_int", "content_with_weight", "mom_id", PAGERANK_FLD, TAG_FLD, "row_id()"])
         kwds = set([])
 
         qst = req.get("question", "")
         q_vec = []
         if not qst:
             if req.get("sort"):
+                orderBy.asc("chunk_order_int")
                 orderBy.asc("page_num_int")
                 orderBy.asc("top_int")
                 orderBy.desc("create_timestamp_flt")
@@ -193,16 +252,18 @@ class Dealer:
                         i += 1
                     pieces_.append("".join(pieces[st: i]) + "\n")
                 else:
+                    # Sentence boundary regex includes Arabic punctuation (، ؛ ؟ ۔)
                     pieces_.extend(
                         re.split(
-                            r"([^\|][；。？!！\n]|[a-z][.?;!][ \n])",
+                            r"([^\|][；。？!！،؛؟۔\n]|[a-z\u0600-\u06FF][.?;!،؛؟][ \n])",
                             pieces[i]))
                     i += 1
             pieces = pieces_
         else:
-            pieces = re.split(r"([^\|][；。？!！\n]|[a-z][.?;!][ \n])", answer)
+            # Sentence boundary regex includes Arabic punctuation (، ؛ ؟ ۔)
+            pieces = re.split(r"([^\|][；。？!！،؛؟۔\n]|[a-z\u0600-\u06FF][.?;!،؛؟][ \n])", answer)
         for i in range(1, len(pieces)):
-            if re.match(r"([^\|][；。？!！\n]|[a-z][.?;!][ \n])", pieces[i]):
+            if re.match(r"([^\|][；。？!！،؛؟۔\n]|[a-z\u0600-\u06FF][.?;!،؛؟][ \n])", pieces[i]):
                 pieces[i - 1] += pieces[i][0]
                 pieces[i] = pieces[i][1:]
         idx = []
@@ -276,12 +337,18 @@ class Dealer:
             return np.array([0 for _ in range(len(search_res.ids))]) + pageranks
 
         q_denor = np.sqrt(np.sum([s * s for t, s in query_rfea.items() if t != PAGERANK_FLD]))
+        if q_denor == 0:
+            return np.array([0 for _ in range(len(search_res.ids))]) + pageranks
         for i in search_res.ids:
             nor, denor = 0, 0
             if not search_res.field[i].get(TAG_FLD):
                 rank_fea.append(0)
                 continue
-            for t, sc in eval(search_res.field[i].get(TAG_FLD, "{}")).items():
+            tag_feas = parse_tag_features(search_res.field[i].get(TAG_FLD), allow_json_string=True, allow_python_literal=True)
+            if not tag_feas:
+                rank_fea.append(0)
+                continue
+            for t, sc in tag_feas.items():
                 if t in query_rfea:
                     nor += query_rfea[t] * sc
                 denor += sc * sc
@@ -333,7 +400,9 @@ class Dealer:
     def rerank_by_model(self, rerank_mdl, sres, query, tkweight=0.3,
                         vtweight=0.7, cfield="content_ltks",
                         rank_feature: dict | None = None):
+        print(f"[DEBUG rerank_by_model] query={query}, tkweight={tkweight}, vtweight={vtweight}")
         _, keywords = self.qryr.question(query)
+        print(f"[DEBUG rerank_by_model] keywords={keywords}")
 
         for i in sres.ids:
             if isinstance(sres.field[i].get("important_kwd", []), str):
@@ -345,11 +414,29 @@ class Dealer:
             important_kwd = sres.field[i].get("important_kwd", [])
             tks = content_ltks + title_tks + important_kwd
             ins_tw.append(tks)
+            print(f"[DEBUG rerank_by_model] chunk id={i}, content_ltks={len(content_ltks)}, title_tks={len(title_tks)}, important_kwd={len(important_kwd)}")
+            doc_text = remove_redundant_spaces(" ".join(tks))
+            if len(doc_text) > 100:
+                print(f"[DEBUG rerank_by_model] chunk id={i}, doc_text (first 100)={doc_text[:100]}...")
+            else:
+                print(f"[DEBUG rerank_by_model] chunk id={i}, doc_text={doc_text}")
+
+        docs = [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw]
+        print(f"[DEBUG rerank_by_model] docs sent to reranker: {len(docs)} docs")
+        for idx, doc in enumerate(docs[:2]):  # Print first 2
+            print(f"[DEBUG rerank_by_model] doc[{idx}] len={len(doc)}, full={doc}")
+            if len(doc) > 100:
+                print(f"[DEBUG rerank_by_model] doc[{idx}] (first 100)={doc[:100]}...")
+            else:
+                print(f"[DEBUG rerank_by_model] doc[{idx}]={doc}")
 
         tksim = self.qryr.token_similarity(keywords, ins_tw)
-        vtsim, _ = rerank_mdl.similarity(query, [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw])
+        print(f"[DEBUG rerank_by_model] tksim={tksim}")
+        vtsim, _ = rerank_mdl.similarity(query, docs)
+        print(f"[DEBUG rerank_by_model] vtsim from reranker={vtsim}")
         ## For rank feature(tag_fea) scores.
         rank_fea = self._rank_feature_scores(rank_feature, sres)
+        print(f"[DEBUG rerank_by_model] rank_fea={rank_fea}")
 
         return tkweight * np.array(tksim) + vtweight * vtsim + rank_fea, tksim, vtsim
 
@@ -380,13 +467,18 @@ class Dealer:
         if not question:
             return ranks
 
-        # Ensure RERANK_LIMIT is multiple of page_size
+        # Keep the historical windowing strategy by default, but when an external
+        # reranker is enabled cap candidate count by both top_k and provider-safe 64.
         RERANK_LIMIT = math.ceil(64 / page_size) * page_size if page_size > 1 else 1
         RERANK_LIMIT = max(30, RERANK_LIMIT)
+        if rerank_mdl and top > 0:
+            RERANK_LIMIT = min(RERANK_LIMIT, top, 64)
+        page = max(page, 1)
+        global_offset = (page - 1) * page_size
         req = {
             "kb_ids": kb_ids,
             "doc_ids": doc_ids,
-            "page": math.ceil(page_size * page / RERANK_LIMIT),
+            "page": global_offset // RERANK_LIMIT + 1,
             "size": RERANK_LIMIT,
             "question": question,
             "vector": True,
@@ -394,12 +486,19 @@ class Dealer:
             "similarity": similarity_threshold,
             "available_int": 1,
         }
+        logging.debug(f"[Search] global_offset={global_offset}, rerank_limit={RERANK_LIMIT}, page_size={page_size}, page={page}")
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
 
         sres = await self.search(req, [index_name(tid) for tid in tenant_ids], kb_ids, embd_mdl, highlight,
                            rank_feature=rank_feature)
+        # Temporary retrieval-side guard: prune chunks whose parent document no
+        # longer exists before reranking and returning results.
+        sres = await self._prune_deleted_chunks(sres)
+        if sres.total == 0:
+            ranks["doc_aggs"] = []
+            return ranks
 
         if rerank_mdl and sres.total > 0:
             sim, tsim, vsim = self.rerank_by_model(
@@ -436,6 +535,12 @@ class Dealer:
 
         # When vector_similarity_weight is 0, similarity_threshold is not meaningful for term-only scores.
         post_threshold = 0.0 if vector_similarity_weight <= 0 else similarity_threshold
+
+        # When doc_ids is explicitly provided (metadata or document filtering), bypass threshold
+        # User wants those specific documents regardless of their relevance score
+        if doc_ids:
+            post_threshold = 0.0
+
         valid_idx = [int(i) for i in sorted_idx if sim_np[i] >= post_threshold]
         filtered_count = len(valid_idx)
         ranks["total"] = int(filtered_count)
@@ -444,9 +549,7 @@ class Dealer:
             ranks["doc_aggs"] = []
             return ranks
 
-        max_pages = max(RERANK_LIMIT // max(page_size, 1), 1)
-        page_index = (page - 1) % max_pages
-        begin = page_index * page_size
+        begin = global_offset % RERANK_LIMIT
         end = begin + page_size
         page_idx = valid_idx[begin:end]
 
@@ -469,6 +572,7 @@ class Dealer:
                 "docnm_kwd": dnm,
                 "kb_id": chunk["kb_id"],
                 "important_kwd": chunk.get("important_kwd", []),
+                "tag_kwd": chunk.get("tag_kwd", []),
                 "image_id": chunk.get("img_id", ""),
                 "similarity": float(sim_np[i]),
                 "vector_similarity": float(vsim[i]),
@@ -477,6 +581,7 @@ class Dealer:
                 "positions": position_int,
                 "doc_type_kwd": chunk.get("doc_type_kwd", ""),
                 "mom_id": chunk.get("mom_id", ""),
+                "row_id": chunk.get("row_id()"),
             }
             if highlight and sres.highlight:
                 if id in sres.highlight:
@@ -538,15 +643,18 @@ class Dealer:
         res = []
         bs = 128
         for p in range(offset, max_count, bs):
-            es_res = self.dataStore.search(fields, [], condition, [], orderBy, p, bs, index_name(tenant_id),
+            limit = min(bs, max_count - p)
+            if limit <= 0:
+                break
+            es_res = self.dataStore.search(fields, [], condition, [], orderBy, p, limit, index_name(tenant_id),
                                            kb_ids)
             dict_chunks = self.dataStore.get_fields(es_res, fields)
             for id, doc in dict_chunks.items():
                 doc["id"] = id
             if dict_chunks:
                 res.extend(dict_chunks.values())
-            # FIX: Solo terminar si no hay chunks, no si hay menos de bs
-            if len(dict_chunks.values()) == 0:
+            chunk_count = len(dict_chunks)
+            if chunk_count == 0 or chunk_count < limit:
                 break
         return res
 

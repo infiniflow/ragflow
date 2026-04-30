@@ -33,16 +33,20 @@ A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure
 
 ### Create chat completion
 
-**POST** `/api/v1/chats_openai/{chat_id}/chat/completions`
+**POST** `/api/v1/openai/{chat_id}/chat/completions`
 
 Creates a model response for a given chat conversation.
+
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/chats_openai/{chat_id}/chat/completions` is deprecated. Please use this endpoint instead.
+:::
 
 This API follows the same request and response format as OpenAI's API. It allows you to interact with the model in a manner similar to how you would with [OpenAI's API](https://platform.openai.com/docs/api-reference/chat/create).
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/chats_openai/{chat_id}/chat/completions`
+- URL: `/api/v1/openai/{chat_id}/chat/completions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -56,11 +60,11 @@ This API follows the same request and response format as OpenAI's API. It allows
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/chats_openai/{chat_id}/chat/completions \
+     --url http://{address}/api/v1/openai/{chat_id}/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
-        "model": "model",
+        "model": "glm-4-flash@ZHIPU-AI",
         "messages": [{"role": "user", "content": "Say this is a test!"}],
         "stream": true,
         "extra_body": {
@@ -85,17 +89,20 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `model` (*Body parameter*) `string`, *Required*  
-  The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
+- `chat_id` (*Path parameter*) `string`, *Required*
+  Existing chat assistant ID. The request will use that chat assistant's knowledge and settings.
 
-- `messages` (*Body parameter*) `list[object]`, *Required*  
+- `model` (*Body parameter*) `string`, *Required*
+  The model used to generate the response. When `chat_id` is provided, you may also use the legacy placeholder value `"model"` to keep using the chat assistant's configured model.
+
+- `messages` (*Body parameter*) `list[object]`, *Required*
   A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
 
-- `stream` (*Body parameter*) `boolean`  
+- `stream` (*Body parameter*) `boolean`
   Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
 
-- `extra_body` (*Body parameter*) `object`  
-  Extra request parameters:  
+- `extra_body` (*Body parameter*) `object`
+  Extra request parameters:
   - `reference`: `boolean` - include reference in the final chunk (stream) or in the final message (non-stream).
   - `reference_metadata`: `object` - include document metadata in each reference chunk.
     - `include`: `boolean` - enable document metadata in reference chunks.
@@ -218,16 +225,16 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `model` (*Body parameter*) `string`, *Required*  
+- `model` (*Body parameter*) `string`, *Required*
   The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
 
-- `messages` (*Body parameter*) `list[object]`, *Required*  
+- `messages` (*Body parameter*) `list[object]`, *Required*
   A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
 
-- `stream` (*Body parameter*) `boolean`  
+- `stream` (*Body parameter*) `boolean`
   Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
 
-- `session_id` (*Body parameter*) `string`  
+- `session_id` (*Body parameter*) `string`
   Agent session id.
 
 #### Response
@@ -493,33 +500,33 @@ curl --request POST \
 
 ##### Request parameters
 
-- `"name"`: (*Body parameter*), `string`, *Required*  
-  The unique name of the dataset to create. It must adhere to the following requirements:  
+- `"name"`: (*Body parameter*), `string`, *Required*
+  The unique name of the dataset to create. It must adhere to the following requirements:
   - Basic Multilingual Plane (BMP) only
   - Maximum 128 characters
   - Case-insensitive
 
-- `"avatar"`: (*Body parameter*), `string`  
+- `"avatar"`: (*Body parameter*), `string`
   Base64 encoding of the avatar.
   - Maximum 65535 characters
 
-- `"description"`: (*Body parameter*), `string`  
+- `"description"`: (*Body parameter*), `string`
   A brief description of the dataset to create.
   - Maximum 65535 characters
 
-- `"embedding_model"`: (*Body parameter*), `string`  
+- `"embedding_model"`: (*Body parameter*), `string`
   The name of the embedding model to use. For example: `"BAAI/bge-large-zh-v1.5@BAAI"`
   - Maximum 255 characters
   - Must follow `model_name@model_factory` format
 
-- `"permission"`: (*Body parameter*), `string`  
-  Specifies who can access the dataset to create. Available options:  
+- `"permission"`: (*Body parameter*), `string`
+  Specifies who can access the dataset to create. Available options:
   - `"me"`: (Default) Only you can manage the dataset.
   - `"team"`: All team members can manage the dataset.
 
-- `"chunk_method"`: (*Body parameter*), `enum<string>`  
-  The default chunk method of the dataset to create. Mutually exclusive with `"parse_type"` and `"pipeline_id"`. If you set `"chunk_method"`, do not include `"parse_type"` or `"pipeline_id"`.  
-  Available options:  
+- `"chunk_method"`: (*Body parameter*), `enum<string>`
+  The default chunk method of the dataset to create. Mutually exclusive with `"parse_type"` and `"pipeline_id"`. If you set `"chunk_method"`, do not include `"parse_type"` or `"pipeline_id"`.
+  Available options:
   - `"naive"`: General (default)
   - `"book"`: Book
   - `"email"`: Email
@@ -533,8 +540,8 @@ curl --request POST \
   - `"table"`: Table
   - `"tag"`: Tag
 
-- `"parser_config"`: (*Body parameter*), `object`  
-  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
+- `"parser_config"`: (*Body parameter*), `object`
+  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
     - `"auto_keywords"`: `int`
       - Defaults to `0`
@@ -566,17 +573,20 @@ curl --request POST \
       - Defaults to: `{"use_raptor": false}`
     - `"graphrag"`: `object` GRAPHRAG-specific settings.
       - Defaults to: `{"use_graphrag": false}`
-  - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:  
+    - `"parent_child"`: `object` Parent-child chunking settings. When enabled, each chunk is further split into smaller child chunks using `children_delimiter`. At retrieval time, matched child chunks are replaced by their parent's full text before being passed to the LLM, giving precise vector matching with broader context.
+      - `"use_parent_child"`: `bool` Whether to enable parent-child chunking. Defaults to `false`.
+      - `"children_delimiter"`: `string` The delimiter used to split a parent chunk into child chunks. Only takes effect when `"use_parent_child"` is `true`. Defaults to `"\n"`.
+  - If `"chunk_method"` is `"qa"`, `"manual"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
     - `"raptor"`: `object` RAPTOR-specific settings.
       - Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
 
-- `"parse_type"`: (*Body parameter*), `int`  
-  The ingestion pipeline parse type identifier, i.e., the number of parsers in your **Parser** component.  
+- `"parse_type"`: (*Body parameter*), `int`
+  The ingestion pipeline parse type identifier, i.e., the number of parsers in your **Parser** component.
   - Required (along with `"pipeline_id"`) if specifying an ingestion pipeline.
   - Must not be included when `"chunk_method"` is specified.
 
-- `"pipeline_id"`: (*Body parameter*), `string`  
+- `"pipeline_id"`: (*Body parameter*), `string`
   The ingestion pipeline ID. Can be found in the corresponding URL in the RAGFlow UI.
   - Required (along with `"parse_type"`) if specifying an ingestion pipeline.
   - Must be a 32-character lowercase hexadecimal string, e.g., `"d0bebe30ae2211f0970942010a8e0005"`.
@@ -613,10 +623,10 @@ Success:
         "name": "RAGFlow example",
         "pagerank": 0,
         "parser_config": {
-            "chunk_token_num": 128, 
-            "delimiter": "\\n!?;。；！？", 
-            "html4excel": false, 
-            "layout_recognize": "DeepDOC", 
+            "chunk_token_num": 128,
+            "delimiter": "\\n!?;。；！？",
+            "html4excel": false,
+            "layout_recognize": "DeepDOC",
             "raptor": {
                 "use_raptor": false
                 }
@@ -657,8 +667,9 @@ Deletes datasets by ID.
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
-  - Body:
-    - `"ids"`: `list[string]` or `null`
+- Body:
+  - `"ids"`: `list[string]` or `null`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -672,13 +683,24 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/datasets \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+     "delete_all": true
+     }'
+```
+
 ##### Request parameters
 
-- `"ids"`: (*Body parameter*), `list[string]` or `null`,   *Required*  
+- `"ids"`: (*Body parameter*), `list[string]` or `null`
   Specifies the datasets to delete:
-  - If `null`, all datasets will be deleted.
-  - If an array of IDs, only the specified datasets will be deleted.
-  - If an empty array, no datasets will be deleted.
+  - If omitted, or set to `null` or an empty array, no datasets are deleted.
+  - If an array of IDs is provided, only the datasets matching those IDs are deleted.
+- `"delete_all"`: (*Body parameter*), `boolean`
+  Whether to delete all datasets owned by the current user when`"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -686,7 +708,7 @@ Success:
 
 ```json
 {
-    "code": 0 
+    "code": 0
 }
 ```
 
@@ -740,32 +762,32 @@ curl --request PUT \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the dataset to update.
-- `"name"`: (*Body parameter*), `string`  
+- `"name"`: (*Body parameter*), `string`
   The revised name of the dataset.
   - Basic Multilingual Plane (BMP) only
   - Maximum 128 characters
   - Case-insensitive
-- `"avatar"`: (*Body parameter*), `string`  
+- `"avatar"`: (*Body parameter*), `string`
   The updated base64 encoding of the avatar.
   - Maximum 65535 characters
-- `"embedding_model"`: (*Body parameter*), `string`  
-  The updated embedding model name.  
+- `"embedding_model"`: (*Body parameter*), `string`
+  The updated embedding model name.
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
   - Maximum 255 characters
   - Must follow `model_name@model_factory` format
-- `"permission"`: (*Body parameter*), `string`  
-  The updated dataset permission. Available options:  
+- `"permission"`: (*Body parameter*), `string`
+  The updated dataset permission. Available options:
   - `"me"`: (Default) Only you can manage the dataset.
   - `"team"`: All team members can manage the dataset.
-- `"pagerank"`: (*Body parameter*), `int`  
+- `"pagerank"`: (*Body parameter*), `int`
   refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank)
   - Default: `0`
   - Minimum: `0`
   - Maximum: `100`
-- `"chunk_method"`: (*Body parameter*), `enum<string>`  
-  The chunking method for the dataset. Available options:  
+- `"chunk_method"`: (*Body parameter*), `enum<string>`
+  The chunking method for the dataset. Available options:
   - `"naive"`: General (default)
   - `"book"`: Book
   - `"email"`: Email
@@ -778,8 +800,8 @@ curl --request PUT \
   - `"qa"`: Q&A
   - `"table"`: Table
   - `"tag"`: Tag
-- `"parser_config"`: (*Body parameter*), `object`  
-  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
+- `"parser_config"`: (*Body parameter*), `object`
+  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
     - `"auto_keywords"`: `int`
       - Defaults to `0`
@@ -808,7 +830,10 @@ curl --request PUT \
       - Defaults to: `{"use_raptor": false}`
     - `"graphrag"`: `object` GRAPHRAG-specific settings.
       - Defaults to: `{"use_graphrag": false}`
-  - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:  
+    - `"parent_child"`: `object` Parent-child chunking settings. When enabled, each chunk is further split into smaller child chunks using `children_delimiter`. At retrieval time, matched child chunks are replaced by their parent's full text before being passed to the LLM, giving precise vector matching with broader context.
+      - `"use_parent_child"`: `bool` Whether to enable parent-child chunking. Defaults to `false`.
+      - `"children_delimiter"`: `string` The delimiter used to split a parent chunk into child chunks. Only takes effect when `"use_parent_child"` is `true`. Defaults to `"\n"`.
+  - If `"chunk_method"` is `"qa"`, `"manual"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
     - `"raptor"`: `object` RAPTOR-specific settings.
       - Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
@@ -819,7 +844,7 @@ Success:
 
 ```json
 {
-    "code": 0 
+    "code": 0
 }
 ```
 
@@ -836,14 +861,14 @@ Failure:
 
 ### List datasets
 
-**GET** `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
+**GET** `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}&include_parsing_status={include_parsing_status}`
 
 Lists datasets.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
+- URL: `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}&include_parsing_status={include_parsing_status}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -855,22 +880,36 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
+```bash
+# List datasets with parsing status
+curl --request GET \
+     --url 'http://{address}/api/v1/datasets?include_parsing_status=true' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
 ##### Request parameters
 
-- `page`: (*Filter parameter*)  
+- `page`: (*Filter parameter*)
   Specifies the page on which the datasets will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*)  
+- `page_size`: (*Filter parameter*)
   The number of datasets on each page. Defaults to `30`.
-- `orderby`: (*Filter parameter*)  
+- `orderby`: (*Filter parameter*)
   The field by which datasets should be sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `desc`: (*Filter parameter*)  
+- `desc`: (*Filter parameter*)
   Indicates whether the retrieved datasets should be sorted in descending order. Defaults to `true`.
-- `name`: (*Filter parameter*)  
+- `name`: (*Filter parameter*)
   The name of the dataset to retrieve.
-- `id`: (*Filter parameter*)  
+- `id`: (*Filter parameter*)
   The ID of the dataset to retrieve.
+- `include_parsing_status`: (*Filter parameter*)
+  Whether to include document parsing status counts in the response. Defaults to `false`. When set to `true`, each dataset object in the response will include the following additional fields:
+  - `unstart_count`: Number of documents not yet started parsing.
+  - `running_count`: Number of documents currently being parsed.
+  - `cancel_count`: Number of documents whose parsing was cancelled.
+  - `done_count`: Number of documents that have been successfully parsed.
+  - `fail_count`: Number of documents whose parsing failed.
 
 #### Response
 
@@ -918,6 +957,49 @@ Success:
 }
 ```
 
+Success (with `include_parsing_status=true`):
+
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "avatar": null,
+            "cancel_count": 0,
+            "chunk_count": 30,
+            "chunk_method": "qa",
+            "create_date": "2026-03-09T18:57:13",
+            "create_time": 1773053833094,
+            "created_by": "928f92a210b911f1ac4cc39e0b8fa3ad",
+            "description": null,
+            "document_count": 1,
+            "done_count": 1,
+            "embedding_model": "text-embedding-v2@Tongyi-Qianwen",
+            "fail_count": 0,
+            "id": "ba6586c21ba611f1a3dc476f0709e75e",
+            "language": "English",
+            "name": "Test Dataset",
+            "parser_config": {
+                "graphrag": { "use_graphrag": false },
+                "llm_id": "deepseek-chat@DeepSeek",
+                "raptor": { "use_raptor": false }
+            },
+            "permission": "me",
+            "running_count": 0,
+            "similarity_threshold": 0.2,
+            "status": "1",
+            "tenant_id": "928f92a210b911f1ac4cc39e0b8fa3ad",
+            "token_num": 1746,
+            "unstart_count": 0,
+            "update_date": "2026-03-09T18:59:32",
+            "update_time": 1773053972723,
+            "vector_similarity_weight": 0.3
+        }
+    ],
+    "total_datasets": 1
+}
+```
+
 Failure:
 
 ```json
@@ -952,7 +1034,7 @@ curl --request GET \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the target dataset.
 
 #### Response
@@ -1032,7 +1114,7 @@ curl --request DELETE \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the target dataset.
 
 #### Response
@@ -1080,7 +1162,7 @@ curl --request POST \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the target dataset.
 
 #### Response
@@ -1130,7 +1212,7 @@ curl --request GET \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the target dataset.
 
 #### Response
@@ -1195,7 +1277,7 @@ curl --request POST \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the target dataset.
 
 #### Response
@@ -1245,7 +1327,7 @@ curl --request GET \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the target dataset.
 
 #### Response
@@ -1298,15 +1380,26 @@ Failure:
 
 Uploads documents to a specified dataset.
 
+This endpoint supports three creation modes via the optional `type` query parameter:
+
+- `type=local` or omitted: Upload one or more local files using `multipart/form-data`.
+- `type=web`: Crawl a web page and save it as a document.
+- `type=empty`: Create an empty virtual document by name.
+
 #### Request
 
 - Method: POST
 - URL: `/api/v1/datasets/{dataset_id}/documents`
+- Query:
+  - `type`: Optional. One of `local`, `web`, or `empty`. Defaults to `local`.
 - Headers:
-  - `'Content-Type: multipart/form-data'`
+  - `'Content-Type: multipart/form-data'` for `type=local` and `type=web`
+  - `'Content-Type: application/json'` for `type=empty`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
-- Form:
-  - `'file=@{FILE_PATH}'`
+- Body:
+  - For `type=local`: form field `'file=@{FILE_PATH}'`
+  - For `type=web`: form fields `'name'` and `'url'`
+  - For `type=empty`: JSON body with `'name'`
 
 ##### Request example
 
@@ -1319,12 +1412,38 @@ curl --request POST \
      --form 'file=@./test2.pdf'
 ```
 
+```bash
+curl --request POST \
+     --url 'http://{address}/api/v1/datasets/{dataset_id}/documents?type=web' \
+     --header 'Content-Type: multipart/form-data' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --form 'name=example-page' \
+     --form 'url=https://example.com'
+```
+
+```bash
+curl --request POST \
+     --url 'http://{address}/api/v1/datasets/{dataset_id}/documents?type=empty' \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{"name":"blank.txt"}'
+```
+
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the dataset to which the documents will be uploaded.
-- `'file'`: (*Body parameter*)  
-  A document to upload.
+- `type`: (*Query parameter*)
+  Controls how the document is created:
+  - `local`: Upload files.
+  - `web`: Crawl a URL into a document.
+  - `empty`: Create an empty document without file upload.
+- `'file'`: (*Body parameter*)
+  A document to upload. Required when `type=local`.
+- `'name'`: (*Body parameter*)
+  The document name. Required when `type=web` or `type=empty`.
+- `'url'`: (*Body parameter*)
+  The source URL to crawl. Required when `type=web`.
 
 #### Response
 
@@ -1398,8 +1517,8 @@ curl --request PUT \
      --header 'Content-Type: application/json' \
      --data '
      {
-          "name": "manual.txt", 
-          "chunk_method": "manual", 
+          "name": "manual.txt",
+          "chunk_method": "manual",
           "parser_config": {"chunk_token_num": 128}
      }'
 
@@ -1407,14 +1526,14 @@ curl --request PUT \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The ID of the associated dataset.
-- `document_id`: (*Path parameter*)  
+- `document_id`: (*Path parameter*)
   The ID of the document to update.
 - `"name"`: (*Body parameter*), `string`
 - `"meta_fields"`: (*Body parameter*), `dict[str, Any]` The meta fields of the document.
-- `"chunk_method"`: (*Body parameter*), `string`  
-  The parsing method to apply to the document:  
+- `"chunk_method"`: (*Body parameter*), `string`
+  The parsing method to apply to the document:
   - `"naive"`: General
   - `"manual`: Manual
   - `"qa"`: Q&A
@@ -1426,8 +1545,8 @@ curl --request PUT \
   - `"picture"`: Picture
   - `"one"`: One
   - `"email"`: Email
-- `"parser_config"`: (*Body parameter*), `object`  
-  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
+- `"parser_config"`: (*Body parameter*), `object`
+  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
     - `"chunk_token_num"`: Defaults to `256`.
     - `"layout_recognize"`: Defaults to `true`.
@@ -1435,13 +1554,13 @@ curl --request PUT \
     - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
     - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
-  - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
+  - If `"chunk_method"` is `"qa"`, `"manual"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
     - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
-- `"enabled"`: (*Body parameter*), `integer`  
-  Whether the document should be **available** in the knowledge base.  
-  - `1` → （available）  
-  - `0` → （unavailable）  
+- `"enabled"`: (*Body parameter*), `integer`
+  Whether the document should be **available** in the knowledge base.
+  - `1` → （available）
+  - `0` → （unavailable）
 
 #### Response
 
@@ -1565,9 +1684,9 @@ curl --request GET \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `documents_id`: (*Path parameter*)  
+- `documents_id`: (*Path parameter*)
   The ID of the document to download.
 
 #### Response
@@ -1615,30 +1734,30 @@ curl --request GET \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `keywords`: (*Filter parameter*), `string`  
+- `keywords`: (*Filter parameter*), `string`
   The keywords used to match document titles.
 - `page`: (*Filter parameter*), `integer`
   Specifies the page on which the documents will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*), `integer`  
+- `page_size`: (*Filter parameter*), `integer`
   The maximum number of documents on each page. Defaults to `30`.
-- `orderby`: (*Filter parameter*), `string`  
+- `orderby`: (*Filter parameter*), `string`
   The field by which documents should be sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `desc`: (*Filter parameter*), `boolean`  
+- `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved documents should be sorted in descending order. Defaults to `true`.
-- `id`: (*Filter parameter*), `string`  
+- `id`: (*Filter parameter*), `string`
   The ID of the document to retrieve.
-- `create_time_from`: (*Filter parameter*), `integer`  
+- `create_time_from`: (*Filter parameter*), `integer`
   Unix timestamp for filtering documents created after this time. 0 means no filter. Defaults to `0`.
-- `create_time_to`: (*Filter parameter*), `integer`  
+- `create_time_to`: (*Filter parameter*), `integer`
   Unix timestamp for filtering documents created before this time. 0 means no filter. Defaults to `0`.
-- `suffix`: (*Filter parameter*), `array[string]`  
+- `suffix`: (*Filter parameter*), `array[string]`
   Filter by file suffix. Supports multiple values, e.g., `pdf`, `txt`, and `docx`. Defaults to all suffixes.
-- `run`: (*Filter parameter*), `array[string]`  
-  Filter by document processing status. Supports numeric, text, and mixed formats:  
+- `run`: (*Filter parameter*), `array[string]`
+  Filter by document processing status. Supports numeric, text, and mixed formats:
   - Numeric format: `["0", "1", "2", "3", "4"]`
   - Text format: `[UNSTART, RUNNING, CANCEL, DONE, FAIL]`
   - Mixed format: `[UNSTART, 1, DONE]` (mixing numeric and text formats)
@@ -1647,7 +1766,7 @@ curl --request GET \
     - `1` / `RUNNING`: Document is currently being processed
     - `2` / `CANCEL`: Document processing was cancelled
     - `3` / `DONE`: Document processing completed successfully
-    - `4` / `FAIL`: Document processing failed  
+    - `4` / `FAIL`: Document processing failed
   Defaults to all statuses.
 - `metadata_condition`: (*Filter parameter*), `object` (JSON in query)
   Optional metadata filter applied to documents when `document_ids` is not provided. Uses the same structure as retrieval:
@@ -1745,6 +1864,7 @@ Deletes documents by ID.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"ids"`: `list[string]`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -1759,12 +1879,26 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "delete_all": true
+     }'
+```
+
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `"ids"`: (*Body parameter*), `list[string]`  
-  The IDs of the documents to delete. If it is not specified, all documents in the specified dataset will be deleted.
+- `"ids"`: (*Body parameter*), `list[string]`
+  The IDs of the documents to delete.
+  - If omitted, or set to `null` or an empty array, no documents are deleted.
+  - If an array of IDs is provided, only the documents matching those IDs are deleted.
+- `"delete_all"`: (*Body parameter*), `boolean`
+  Whether to delete all documents in the specified dataset when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -1818,9 +1952,9 @@ curl --request POST \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The dataset ID.
-- `"document_ids"`: (*Body parameter*), `list[string]`, *Required*  
+- `"document_ids"`: (*Body parameter*), `list[string]`, *Required*
   The IDs of the documents to parse.
 
 #### Response
@@ -1875,9 +2009,9 @@ curl --request DELETE \
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `"document_ids"`: (*Body parameter*), `list[string]`, *Required*  
+- `"document_ids"`: (*Body parameter*), `list[string]`, *Required*
   The IDs of the documents for which the parsing should be stopped.
 
 #### Response
@@ -1916,11 +2050,14 @@ Adds a chunk to a specified document in a specified dataset.
 - Method: POST
 - URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"content"`: `string`
   - `"important_keywords"`: `list[string]`
+  - `"tag_kwd"`: `list[string]`
+  - `"questions"`: `list[string]`
+  - `"image_base64"`: `string`
 
 ##### Request example
 
@@ -1931,22 +2068,27 @@ curl --request POST \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
      {
-          "content": "<CHUNK_CONTENT_HERE>"
+          "content": "<CHUNK_CONTENT_HERE>",
+          "image_base64": "<BASE64_ENCODED_IMAGE>"
      }'
 ```
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `document_ids`: (*Path parameter*)  
+- `document_id`: (*Path parameter*)
   The associated document ID.
-- `"content"`: (*Body parameter*), `string`, *Required*  
+- `"content"`: (*Body parameter*), `string`, *Required*
   The text content of the chunk.
-- `"important_keywords`(*Body parameter*), `list[string]`  
+- `"important_keywords"`: (*Body parameter*), `list[string]`
   The key terms or phrases to tag with the chunk.
-- `"questions"`(*Body parameter*), `list[string]`
-  If there is a given question, the embedded chunks will be based on them
+- `"tag_kwd"`: (*Body parameter*), `list[string]`
+  Tag keywords to associate with the chunk.
+- `"questions"`: (*Body parameter*), `list[string]`
+  Optional questions to use when embedding the chunk.
+- `"image_base64"`: (*Body parameter*), `string`
+  A base64-encoded image to associate with the chunk.
 
 #### Response
 
@@ -1963,7 +2105,9 @@ Success:
             "dataset_id": "72f36e1ebdf411efb7250242ac120006",
             "document_id": "61d68474be0111ef98dd0242ac120006",
             "id": "12ccdc56e59837e5",
+            "image_id": "",
             "important_keywords": [],
+            "tag_kwd": [],
             "questions": []
         }
     }
@@ -1999,23 +2143,23 @@ Lists chunks in a specified document.
 ```bash
 curl --request GET \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks?keywords={keywords}&page={page}&page_size={page_size}&id={chunk_id} \
-     --header 'Authorization: Bearer <YOUR_API_KEY>' 
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `document_id`: (*Path parameter*)  
+- `document_id`: (*Path parameter*)
   The associated document ID.
-- `keywords`(*Filter parameter*), `string`  
+- `keywords`(*Filter parameter*), `string`
   The keywords used to match chunk content.
-- `page`(*Filter parameter*), `integer`  
+- `page`(*Filter parameter*), `integer`
   Specifies the page on which the chunks will be displayed. Defaults to `1`.
-- `page_size`(*Filter parameter*), `integer`  
-  The maximum number of chunks on each page. Defaults to `1024`.
-- `id`(*Filter parameter*), `string`  
-  The ID of the chunk to retrieve.
+- `page_size`(*Filter parameter*), `integer`
+  The maximum number of chunks on each page. Defaults to `30`.
+- `id`(*Filter parameter*), `string`
+  The ID of the chunk to retrieve. You can also use `GET /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` to retrieve one chunk.
 
 #### Response
 
@@ -2033,10 +2177,9 @@ Success:
                 "document_id": "b330ec2e91ec11efbc510242ac120004",
                 "id": "b48c170e90f70af998485c1065490726",
                 "image_id": "",
-                "important_keywords": "",
-                "positions": [
-                    ""
-                ]
+                "important_keywords": [],
+                "tag_kwd": [],
+                "positions": []
             }
         ],
         "doc": {
@@ -2088,6 +2231,68 @@ Failure:
 
 ---
 
+### Get chunk
+
+**GET** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}`
+
+Retrieves a specified chunk in a specified document. Runtime fields such as vector and token fields are not returned.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)
+  The associated dataset ID.
+- `document_id`: (*Path parameter*)
+  The associated document ID.
+- `chunk_id`: (*Path parameter*)
+  The ID of the chunk to retrieve.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "available_int": 1,
+        "content_with_weight": "This is a test content.",
+        "doc_id": "b330ec2e91ec11efbc510242ac120004",
+        "docnm_kwd": "1.txt",
+        "id": "b48c170e90f70af998485c1065490726",
+        "img_id": "",
+        "important_kwd": [],
+        "question_kwd": [],
+        "tag_kwd": []
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 100,
+    "message": "Chunk not found"
+}
+```
+
+---
+
 ### Delete chunks
 
 **DELETE** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
@@ -2099,10 +2304,11 @@ Deletes chunks by ID.
 - Method: DELETE
 - URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"chunk_ids"`: `list[string]`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -2117,14 +2323,28 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "delete_all": true
+     }'
+```
+
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `document_ids`: (*Path parameter*)  
+- `document_id`: (*Path parameter*)
   The associated document ID.
-- `"chunk_ids"`: (*Body parameter*), `list[string]`  
-  The IDs of the chunks to delete. If it is not specified, all chunks of the specified document will be deleted.
+- `"chunk_ids"`: (*Body parameter*), `list[string]`
+  The IDs of the chunks to delete.
+  - If omitted, or set to `null` or an empty array, no chunks are deleted.
+  - If an array of IDs is provided, only the chunks matching those IDs are deleted.
+- `"delete_all"`: (*Body parameter*), `boolean`
+  Whether to delete all chunks of the specified document when `"chunk_ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -2141,7 +2361,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "`chunk_ids` is required"
+    "message": "rm_chunk deleted chunks 0, expect 1"
 }
 ```
 
@@ -2149,52 +2369,68 @@ Failure:
 
 ### Update chunk
 
-**PUT** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}`
+**PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}`
 
 Updates content or configurations for a specified chunk.
 
+:::caution DEPRECATED
+The previous endpoint `PUT /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` is deprecated. Please use this endpoint instead.
+:::
+
 #### Request
 
-- Method: PUT
+- Method: PATCH
 - URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"content"`: `string`
   - `"important_keywords"`: `list[string]`
+  - `"questions"`: `list[string]`
+  - `"positions"`: `list`
+  - `"tag_kwd"`: `list[string]`
   - `"available"`: `boolean`
+  - `"image_base64"`: `string`
 
 ##### Request example
 
 ```bash
-curl --request PUT \
+curl --request PATCH \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id} \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
-     {   
-          "content": "ragflow123",  
-          "important_keywords": []  
+     {
+          "content": "ragflow123",
+          "important_keywords": []
      }'
 ```
 
 ##### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `document_ids`: (*Path parameter*)  
+- `document_id`: (*Path parameter*)
   The associated document ID.
-- `chunk_id`: (*Path parameter*)  
+- `chunk_id`: (*Path parameter*)
   The ID of the chunk to update.
-- `"content"`: (*Body parameter*), `string`  
+- `"content"`: (*Body parameter*), `string`
   The text content of the chunk.
-- `"important_keywords"`: (*Body parameter*), `list[string]`  
+- `"important_keywords"`: (*Body parameter*), `list[string]`
   A list of key terms or phrases to tag with the chunk.
-- `"available"`: (*Body parameter*) `boolean`  
-  The chunk's availability status in the dataset. Value options:  
+- `"questions"`: (*Body parameter*), `list[string]`
+  Optional questions to use when embedding the chunk.
+- `"positions"`: (*Body parameter*), `list`
+  Updated source positions for the chunk.
+- `"tag_kwd"`: (*Body parameter*), `list[string]`
+  Updated tag keywords.
+- `"available"`: (*Body parameter*) `boolean`
+  The chunk's availability status in the dataset. Value options:
   - `true`: Available (default)
   - `false`: Unavailable
+- `"image_base64"`: (*Body parameter*), `string`
+  Base64-encoded image content to associate with the chunk.
 
 #### Response
 
@@ -2212,6 +2448,105 @@ Failure:
 {
     "code": 102,
     "message": "Can't find this chunk 29a2d9987e16ba331fb4d7d30d99b71d2"
+}
+```
+
+---
+
+### Update chunk availability
+
+**PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
+
+Updates or switches the availability status of specified chunks, controlling whether they are available for retrieval.
+
+#### Request
+
+- Method: PATCH
+- URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"chunk_ids"`: `list[string]` (*Required*)
+  - `"available_int"`: `integer` (*Optional*)
+  - `"available"`: `boolean` (*Optional*)
+
+##### Request example
+
+```bash
+curl --request PATCH \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '
+     {
+          "chunk_ids": ["chunk_id_1", "chunk_id_2"],
+          "available_int": 1
+     }'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)
+  The ID of the dataset.
+- `document_id`: (*Path parameter*)
+  The ID of the document.
+- `"chunk_ids"`: (*Body parameter*), `list[string]` (*Required*)
+  IDs of the chunks whose availability status is to be updated.
+- `"available_int"`: (*Body parameter*), `integer` (*Optional*)
+  Availability status for the specified chunks. You must provide either `"available_int"` or `"available"`. If both are provided, `"available_int"` is used.
+  - `1`: Available,
+  - `0`: Unavailable.
+- `"available"`: (*Body parameter*), `boolean` (*Optional*)
+  Availability status of the specified chunks. Used when `"available_int"` is not provided.
+  - `true`: Available,
+  - `false`: Unavailable.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "You don't own the dataset {dataset_id}."
+}
+```
+
+```json
+{
+    "code": 102,
+    "message": "`chunk_ids` is required."
+}
+```
+
+```json
+{
+    "code": 102,
+    "message": "`available_int` or `available` is required."
+}
+```
+
+```json
+{
+    "code": 102,
+    "message": "Document not found!"
+}
+```
+
+```json
+{
+    "code": 102,
+    "message": "Index updating failure"
 }
 ```
 
@@ -2274,18 +2609,18 @@ Batch update or delete document-level metadata within a specified dataset. If bo
 
 #### Request parameters
 
-- `dataset_id`: (*Path parameter*)  
+- `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `"selector"`: (*Body parameter*), `object`, *optional*  
-  A document selector:  
-  - `"document_ids"`: `list[string]` *optional*  
-    The associated document ID.  
-  - `"metadata_condition"`: `object`, *optional*  
+- `"selector"`: (*Body parameter*), `object`, *optional*
+  A document selector:
+  - `"document_ids"`: `list[string]` *optional*
+    The associated document ID.
+  - `"metadata_condition"`: `object`, *optional*
     - `"logic"`: Defines the logic relation between conditions if multiple conditions are provided. Options:
       - `"and"` (default)
       - `"or"`
-    - `"conditions"`: `list[object]` *optional*  
-      Each object: `{ "name": string, "comparison_operator": string, "value": string }`  
+    - `"conditions"`: `list[object]` *optional*
+      Each object: `{ "name": string, "comparison_operator": string, "value": string }`
       - `"name"`: `string` The key name to search by.
       - `"comparison_operator"`: `string` Available options:
         - `"is"`
@@ -2302,14 +2637,14 @@ Batch update or delete document-level metadata within a specified dataset. If bo
         - `"≤"`
         - `"empty"`
         - `"not empty"`
-      - `"value"`: `string` The key value to search by.  
-- `"updates"`: (*Body parameter*), `list[object]`, *optional*  
-  Replaces metadata of the retrieved documents. Each object: `{ "key": string, "match": string, "value": string }`.  
+      - `"value"`: `string` The key value to search by.
+- `"updates"`: (*Body parameter*), `list[object]`, *optional*
+  Replaces metadata of the retrieved documents. Each object: `{ "key": string, "match": string, "value": string }`.
   - `"key"`: `string` The name of the key to update.
   - `"match"`: `string` *optional* The current value of the key to update. When omitted, the corresponding keys are updated to `"value"` regardless of their current values.
   - `"value"`: `string` The new value to set for the specified keys.
-- `"deletes`: (*Body parameter*), `list[ojbect]`, *optional*  
-  Deletes metadata of the retrieved documents. Each object: `{ "key": string, "value": string }`.  
+- `"deletes"`: (*Body parameter*), `list[object]`, *optional*
+  Deletes metadata of the retrieved documents. Each object: `{ "key": string, "value": string }`.
   - `"key"`: `string` The name of the key to delete.
   - `"value"`: `string` *Optional* The value of the key to delete.
     - When provided, only keys with a matching value are deleted.
@@ -2371,16 +2706,16 @@ Retrieves chunks from specified datasets.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"question"`: `string`  
-  - `"dataset_ids"`: `list[string]`  
+  - `"question"`: `string`
+  - `"dataset_ids"`: `list[string]`
   - `"document_ids"`: `list[string]`
-  - `"page"`: `integer`  
-  - `"page_size"`: `integer`  
-  - `"similarity_threshold"`: `float`  
-  - `"vector_similarity_weight"`: `float`  
-  - `"top_k"`: `integer`  
-  - `"rerank_id"`: `string`  
-  - `"keyword"`: `boolean`  
+  - `"page"`: `integer`
+  - `"page_size"`: `integer`
+  - `"similarity_threshold"`: `float`
+  - `"vector_similarity_weight"`: `float`
+  - `"top_k"`: `integer`
+  - `"rerank_id"`: `string`
+  - `"keyword"`: `boolean`
   - `"highlight"`: `boolean`
   - `"cross_languages"`: `list[string]`
   - `"metadata_condition"`: `object`
@@ -2419,45 +2754,45 @@ curl --request POST \
 
 ##### Request parameter
 
-- `"question"`: (*Body parameter*), `string`, *Required*  
+- `"question"`: (*Body parameter*), `string`, *Required*
   The user query or query keywords.
-- `"dataset_ids"`: (*Body parameter*) `list[string]`  
+- `"dataset_ids"`: (*Body parameter*) `list[string]`
   The IDs of the datasets to search. If you do not set this argument, ensure that you set `"document_ids"`.
-- `"document_ids"`: (*Body parameter*), `list[string]`  
+- `"document_ids"`: (*Body parameter*), `list[string]`
   The IDs of the documents to search. Ensure that all selected documents use the same embedding model. Otherwise, an error will occur. If you do not set this argument, ensure that you set `"dataset_ids"`.
-- `"page"`: (*Body parameter*), `integer`  
+- `"page"`: (*Body parameter*), `integer`
   Specifies the page on which the chunks will be displayed. Defaults to `1`.
-- `"page_size"`: (*Body parameter*)  
+- `"page_size"`: (*Body parameter*)
   The maximum number of chunks on each page. Defaults to `30`.
-- `"similarity_threshold"`: (*Body parameter*)  
+- `"similarity_threshold"`: (*Body parameter*)
   The minimum similarity score. Defaults to `0.2`.
-- `"vector_similarity_weight"`: (*Body parameter*), `float`  
+- `"vector_similarity_weight"`: (*Body parameter*), `float`
   The weight of vector cosine similarity. Defaults to `0.3`. If x represents the weight of vector cosine similarity, then (1 - x) is the term similarity weight.
-- `"top_k"`: (*Body parameter*), `integer`  
+- `"top_k"`: (*Body parameter*), `integer`
   The number of chunks engaged in vector cosine computation. Defaults to `1024`.
-- `"use_kg"`: (*Body parameter*), `boolean`  
-  Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](https://ragflow.io/docs/dev/construct_knowledge_graph) for details.
-- `"toc_enhance"`: (*Body parameter*), `boolean`  
+- `"use_kg"`: (*Body parameter*), `boolean`
+  Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/dataset/advanced/construct_knowledge_graph.md) for details.
+- `"toc_enhance"`: (*Body parameter*), `boolean`
   Whether to search chunks with extracted table of content. Defaults to `False`. Before enabling this, ensure you have enabled `TOC_Enhance` and successfully extracted table of contents for the specified datasets. See [here](https://ragflow.io/docs/dev/enable_table_of_contents) for details.
-- `"rerank_id"`: (*Body parameter*), `integer`  
+- `"rerank_id"`: (*Body parameter*), `integer`
   The ID of the rerank model.
-- `"keyword"`: (*Body parameter*), `boolean`  
-  Indicates whether to enable keyword-based matching:  
+- `"keyword"`: (*Body parameter*), `boolean`
+  Indicates whether to enable keyword-based matching:
   - `true`: Enable keyword-based matching.
   - `false`: Disable keyword-based matching (default).
-- `"highlight"`: (*Body parameter*), `boolean`  
-  Specifies whether to enable highlighting of matched terms in the results:  
+- `"highlight"`: (*Body parameter*), `boolean`
+  Specifies whether to enable highlighting of matched terms in the results:
   - `true`: Enable highlighting of matched terms.
   - `false`: Disable highlighting of matched terms (default).
-- `"cross_languages"`: (*Body parameter*) `list[string]`  
+- `"cross_languages"`: (*Body parameter*) `list[string]`
   The languages that should be translated into, in order to achieve keywords retrievals in different languages.
-- `"metadata_condition"`: (*Body parameter*), `object`  
-  The metadata condition used for filtering chunks:  
+- `"metadata_condition"`: (*Body parameter*), `object`
+  The metadata condition used for filtering chunks:
   - `"logic"`: (*Body parameter*), `string`
     - `"and"`: Return only results that satisfy *every* condition (default).
     - `"or"`: Return results that satisfy *any* condition.
-  - `"conditions"`: (*Body parameter*), `array`  
-    A list of metadata filter conditions.  
+  - `"conditions"`: (*Body parameter*), `array`
+    A list of metadata filter conditions.
     - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/set_metadata.md) for details.
     - `comparison_operator`: `string` - The comparison operator. Can be one of:
       - `"contains"`
@@ -2493,6 +2828,7 @@ Success:
                 "important_keywords": [
                     ""
                 ],
+                "tag_kwd": [],
                 "kb_id": "c7ee74067a2c11efb21c0242ac120006",
                 "positions": [
                     ""
@@ -2544,10 +2880,11 @@ Creates a chat assistant.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`: `string`
-  - `"avatar"`: `string`
+  - `"icon"`: `string`
   - `"dataset_ids"`: `list[string]`
-  - `"llm"`: `object`
-  - `"prompt"`: `object`
+  - `"llm_id"`: `string`
+  - `"llm_setting"`: `object`
+  - `"prompt_config"`: `object`
 
 ##### Request example
 
@@ -2564,52 +2901,47 @@ curl --request POST \
 
 ##### Request parameters
 
-- `"name"`: (*Body parameter*), `string`, *Required*  
+- `"name"`: (*Body parameter*), `string`, *Required*
   The name of the chat assistant.
-- `"avatar"`: (*Body parameter*), `string`  
+- `"icon"`: (*Body parameter*), `string`
   Base64 encoding of the avatar.
-- `"dataset_ids"`: (*Body parameter*), `list[string]`  
-  The IDs of the associated datasets.
-- `"llm"`: (*Body parameter*), `object`  
-  The LLM settings for the chat assistant to create. If it is not explicitly set, a JSON object with the following values will be generated as the default. An `llm` JSON object contains the following attributes:  
-  - `"model_name"`, `string`  
-    The chat model name. If not set, the user's default chat model will be used.  
-
-  :::caution WARNING
-  `model_type` is an *internal* parameter, serving solely as a temporary workaround for the current model-configuration design limitations.
-
-  Its main purpose is to let *multimodal* models (stored in the database as `"image2text"`) pass backend validation/dispatching. Be mindful that:
-
-  - Do *not* treat it as a stable public API.
-  - It is subject to change or removal in future releases.
-  :::
-
-  - `"model_type"`: `string`  
+- `"dataset_ids"`: (*Body parameter*), `list[string]`
+  The unique identifiers for the associated datasets. If omitted or set to `[]`, an empty chat assistant is created; datasets can be attached at a later time.
+- `"llm_id"`: (*Body parameter*), `string`
+  The identifier of the chat model. If not specified, the system defaults to the user's pre-configured chat model.
+- `"llm_setting"`: (*Body parameter*), `object`
+  A configuration object defining the LLM parameters for the assistant. The `llm_setting` object may contain the following attributes:
+  - `"model_type"`: `string`
     A model type specifier. Only `"chat"` and `"image2text"` are recognized; any other inputs, or when omitted, are treated as `"chat"`.
-  - `"model_name"`, `string`
-  - `"temperature"`: `float`  
-    Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
-  - `"top_p"`: `float`  
-    Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
-  - `"presence_penalty"`: `float`  
+  - `"temperature"`: `float`
+    Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.
+  - `"top_p"`: `float`
+    Also known as "nucleus sampling", this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`
+  - `"presence_penalty"`: `float`
     This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.4`.
-  - `"frequency penalty"`: `float`  
-    Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
-- `"prompt"`: (*Body parameter*), `object`  
-  Instructions for the LLM to follow. If it is not explicitly set, a JSON object with the following values will be generated as the default. A `prompt` JSON object contains the following attributes:  
-  - `"similarity_threshold"`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
-  - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
-  - `"top_n"`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `6`.
-  - `"variables"`: `object[]` This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:  
+  - `"frequency penalty"`: `float`
+    Similar to the presence penalty, this reduces the model's tendency to repeat the same words frequently. Defaults to `0.7`.
+- `"prompt_config"`: (*Body parameter*), `object`
+  Instructions for the LLM to follow. A `prompt_config` object may contain the following attributes:
+  - `"system"`: `string` The prompt content.
+  - `"prologue"`: `string` The opening greeting for the user.
+  - `"parameters"`: `object[]` This argument lists the variables to use in the system prompt. Note that:
     - `"knowledge"` is a reserved variable, which represents the retrieved chunks.
-    - All the variables in 'System' should be curly bracketed.
-    - The default value is `[{"key": "knowledge", "optional": true}]`.
-  - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used.
-  - `top_k`: `int` Refers to the process of reordering or selecting the top-k items from a list or set based on a specific ranking criterion. Default to 1024.
+    - All the variables in `"system"` should be curly bracketed.
   - `"empty_response"`: `string` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank.
-  - `"opener"`: `string` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
-  - `"show_quote`: `boolean` Indicates whether the source of text should be displayed. Defaults to `true`.
-  - `"prompt"`: `string` The prompt content.
+  - `"quote"`: `boolean` Whether the source of text should be displayed. Defaults to `true`.
+  - `"tts"`: `boolean`
+  - `"refine_multiturn"`: `boolean`
+  - `"use_kg"`: `boolean`
+  - `"reasoning"`: `boolean`
+  - `"cross_languages"`: `list[string]`
+  - `"tavily_api_key"`: `string`
+  - `"toc_enhance"`: `boolean`
+- `"similarity_threshold"`: (*Body parameter*), `float`
+- `"vector_similarity_weight"`: (*Body parameter*), `float`
+- `"top_n"`: (*Body parameter*), `int`
+- `"top_k"`: (*Body parameter*), `int`
+- `"rerank_id"`: (*Body parameter*), `string`
 
 #### Response
 
@@ -2619,39 +2951,42 @@ Success:
 {
     "code": 0,
     "data": {
-        "avatar": "",
+        "icon": "",
         "create_date": "Thu, 24 Oct 2024 11:18:29 GMT",
         "create_time": 1729768709023,
         "dataset_ids": [
             "527fa74891e811ef9c650242ac120006"
         ],
+        "kb_names": [
+            "dataset_1"
+        ],
         "description": "A helpful Assistant",
-        "do_refer": "1",
         "id": "b1f2f15691f911ef81180242ac120003",
         "language": "English",
-        "llm": {
+        "llm_id": "qwen-plus@Tongyi-Qianwen",
+        "llm_setting": {
             "frequency_penalty": 0.7,
-            "model_name": "qwen-plus@Tongyi-Qianwen",
             "presence_penalty": 0.4,
             "temperature": 0.1,
             "top_p": 0.3
         },
         "name": "12234",
-        "prompt": {
+        "prompt_config": {
             "empty_response": "Sorry! No relevant content was found in the knowledge base!",
-            "keywords_similarity_weight": 0.3,
-            "opener": "Hi! I'm your assistant. What can I do for you?",
-            "prompt": "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\n ",
-            "rerank_model": "",
-            "similarity_threshold": 0.2,
-            "top_n": 6,
-            "variables": [
+            "prologue": "Hi! I'm your assistant. What can I do for you?",
+            "quote": true,
+            "system": "You are an intelligent assistant...",
+            "parameters": [
                 {
                     "key": "knowledge",
                     "optional": false
                 }
             ]
         },
+        "rerank_id": "",
+        "similarity_threshold": 0.2,
+        "vector_similarity_weight": 0.3,
+        "top_n": 6,
         "prompt_type": "simple",
         "status": "1",
         "tenant_id": "69736c5e723611efb51b0242ac120007",
@@ -2667,7 +3002,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Duplicated chat name in creating dataset."
+    "message": "Duplicated chat name."
 }
 ```
 
@@ -2677,7 +3012,9 @@ Failure:
 
 **PUT** `/api/v1/chats/{chat_id}`
 
-Updates configurations for a specified chat assistant.
+Overwrites the existing configuration for a specified chat assistant.
+
+Use this endpoint only when providing a complete configuration. Any fields omitted from the request will be reset to their server-side default values. For partial updates, use `PATCH /api/v1/chats/{chat_id}` instead.
 
 #### Request
 
@@ -2688,10 +3025,11 @@ Updates configurations for a specified chat assistant.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`: `string`
-  - `"avatar"`: `string`
+  - `"icon"`: `string`
   - `"dataset_ids"`: `list[string]`
-  - `"llm"`: `object`
-  - `"prompt"`: `object`
+  - `"llm_id"`: `string`
+  - `"llm_setting"`: `object`
+  - `"prompt_config"`: `object`
 
 ##### Request example
 
@@ -2702,54 +3040,97 @@ curl --request PUT \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
      {
-          "name":"Test"
+          "name":"Test",
+          "icon":"",
+          "dataset_ids":["0b2cbc8c877f11ef89070242ac120005"],
+          "llm_id":"qwen-plus@Tongyi-Qianwen",
+          "llm_setting":{"temperature":0.1,"top_p":0.3,"presence_penalty":0.4,"frequency_penalty":0.7},
+          "prompt_config":{
+               "system":"You are an intelligent assistant...",
+               "prologue":"Hi! I'\''m your assistant. What can I do for you?",
+               "parameters":[{"key":"knowledge","optional":false}],
+               "empty_response":"Sorry! No relevant content was found in the knowledge base!",
+               "quote":true
+          },
+          "similarity_threshold":0.2,
+          "vector_similarity_weight":0.3,
+          "top_n":6,
+          "top_k":1024,
+          "rerank_id":""
      }'
 ```
 
 #### Parameters
 
-- `chat_id`: (*Path parameter*)  
+- `chat_id`: (*Path parameter*)
   The ID of the chat assistant to update.
-- `"name"`: (*Body parameter*), `string`, *Required*  
+- `"name"`: (*Body parameter*), `string`, *Required*
   The revised name of the chat assistant.
-- `"avatar"`: (*Body parameter*), `string`  
+- `"icon"`: (*Body parameter*), `string`
   Base64 encoding of the avatar.
-- `"dataset_ids"`: (*Body parameter*), `list[string]`  
+- `"dataset_ids"`: (*Body parameter*), `list[string]`
   The IDs of the associated datasets.
-- `"llm"`: (*Body parameter*), `object`  
-  The LLM settings for the chat assistant to create. If it is not explicitly set, a dictionary with the following values will be generated as the default. An `llm` object contains the following attributes:  
-  - `"model_name"`, `string`  
-    The chat model name. If not set, the user's default chat model will be used.  
-  - `"temperature"`: `float`  
-    Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
-  - `"top_p"`: `float`  
-    Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
-  - `"presence_penalty"`: `float`  
-    This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.2`.
-  - `"frequency penalty"`: `float`  
-    Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
-- `"prompt"`: (*Body parameter*), `object`  
-  Instructions for the LLM to follow.  A `prompt` object contains the following attributes:  
-  - `"similarity_threshold"`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted rerank score during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
-  - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
-  - `"top_n"`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
-  - `"variables"`: `object[]` This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:  
-    - `"knowledge"` is a reserved variable, which represents the retrieved chunks.
-    - All the variables in 'System' should be curly bracketed.
-    - The default value is `[{"key": "knowledge", "optional": true}]`
-  - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used.
-  - `"empty_response"`: `string` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank.
-  - `"opener"`: `string` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
-  - `"show_quote`: `boolean` Indicates whether the source of text should be displayed. Defaults to `true`.
-  - `"prompt"`: `string` The prompt content.
+- `"llm_id"`: (*Body parameter*), `string`
+  The chat model name. If not set, the user's default chat model is used.
+- `"llm_setting"`: (*Body parameter*), `object`
+  The LLM settings for the chat assistant. An `llm_setting` object contains the following attributes:
+  - `"model_type"`: `string`
+    A model type specifier. Supported values are `"chat"` and `"image2text"`. If the field is omitted or an unrecognized value is provided, it defaults to `"chat"`.
+  - `"temperature"`: `float`
+    Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.
+  - `"top_p"`: `float`
+    Also known as "nucleus sampling", this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`
+  - `"presence_penalty"`: `float`
+    This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.4`.
+  - `"frequency penalty"`: `float`
+    Similar to the presence penalty, this reduces the model's tendency to repeat the same words frequently. Defaults to `0.7`.
+- `"prompt_config"`: (*Body parameter*), `object`
+- `"similarity_threshold"`: (*Body parameter*), `float`
+- `"vector_similarity_weight"`: (*Body parameter*), `float`
+- `"top_n"`: (*Body parameter*), `int`
+- `"top_k"`: (*Body parameter*), `int`
+- `"rerank_id"`: (*Body parameter*), `string`
+
+For `PUT` requests, any fields omitted from the request body are reset to their server-side default values.
 
 #### Response
 
-Success:
+Success: returns the full updated chat assistant object.
 
 ```json
 {
-    "code": 0
+    "code": 0,
+    "data": {
+        "id": "04d0d8e28d1911efa3630242ac120006",
+        "name": "Test",
+        "description": "A helpful Assistant",
+        "icon": "",
+        "dataset_ids": ["527fa74891e811ef9c650242ac120006"],
+        "kb_names": ["dataset_1"],
+        "llm_id": "qwen-plus@Tongyi-Qianwen",
+        "llm_setting": {
+            "frequency_penalty": 0.7,
+            "presence_penalty": 0.4,
+            "temperature": 0.1,
+            "top_p": 0.3
+        },
+        "prompt_config": {
+            "empty_response": "Sorry! No relevant content was found in the knowledge base!",
+            "prologue": "Hi! I'm your assistant. What can I do for you?",
+            "quote": true,
+            "system": "You are an intelligent assistant...",
+            "parameters": [{"key": "knowledge", "optional": false}]
+        },
+        "similarity_threshold": 0.2,
+        "vector_similarity_weight": 0.3,
+        "top_n": 6,
+        "top_k": 1024,
+        "rerank_id": "",
+        "status": "1",
+        "tenant_id": "69736c5e723611efb51b0242ac120007",
+        "create_time": 1729232406637,
+        "update_time": 1729232406638
+    }
 }
 ```
 
@@ -2758,7 +3139,190 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Duplicated chat name in updating dataset."
+    "message": "Duplicated chat name."
+}
+```
+
+---
+
+### Get chat assistant
+
+**GET** `/api/v1/chats/{chat_id}`
+
+Retrieves a specified chat assistant.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/chats/{chat_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/chats/{chat_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `chat_id`: (*Path parameter*)
+  The ID of the chat assistant to retrieve.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "icon": "",
+        "create_date": "Fri, 18 Oct 2024 06:20:06 GMT",
+        "create_time": 1729232406637,
+        "description": "A helpful Assistant",
+        "id": "04d0d8e28d1911efa3630242ac120006",
+        "dataset_ids": ["527fa74891e811ef9c650242ac120006"],
+        "kb_names": ["dataset_1"],
+        "language": "English",
+        "llm_id": "qwen-plus@Tongyi-Qianwen",
+        "llm_setting": {
+            "temperature": 0.1,
+            "top_p": 0.3
+        },
+        "name": "my_chat",
+        "prompt_config": {
+            "empty_response": "Sorry! No relevant content was found in the knowledge base!",
+            "prologue": "Hi! I'm your assistant. What can I do for you?",
+            "quote": true,
+            "system": "You are an intelligent assistant...",
+            "parameters": [{"key": "knowledge", "optional": false}]
+        },
+        "rerank_id": "",
+        "similarity_threshold": 0.2,
+        "vector_similarity_weight": 0.3,
+        "top_n": 6,
+        "status": "1",
+        "tenant_id": "69736c5e723611efb51b0242ac120007",
+        "update_date": "Fri, 18 Oct 2024 06:20:06 GMT",
+        "update_time": 1729232406638
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "No authorization."
+}
+```
+
+---
+
+### Partially update chat assistant
+
+**PATCH** `/api/v1/chats/{chat_id}`
+
+Performs a partial update on a specified chat assistant.
+
+Unspecified fields are preserved, while nested objects, such as `llm_setting` and `prompt_config`, are deep-merged with the existing configuration. This is the recommended endpoint for renaming an assistant or modifying a specific subset of settings.
+
+#### Request
+
+- Method: PATCH
+- URL: `/api/v1/chats/{chat_id}`
+- Headers:
+  - `'content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body: any subset of the fields accepted by `PUT /api/v1/chats/{chat_id}`
+
+##### Request example
+
+```bash
+curl --request PATCH \
+     --url http://{address}/api/v1/chats/{chat_id} \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+    "llm_id": "gpt-4o",
+    "llm_setting": {"temperature": 0.5}
+}'
+```
+
+#### Response
+
+Success: returns the full updated chat assistant object (same structure as `PUT /api/v1/chats/{chat_id}`).
+
+```json
+{
+    "code": 0,
+    "data": {
+        "id": "04d0d8e28d1911efa3630242ac120006",
+        "name": "Renamed assistant",
+        "llm_id": "qwen-plus@Tongyi-Qianwen",
+        "..."  : "..."
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "No authorization."
+}
+```
+
+---
+
+### Delete chat assistant
+
+**DELETE** `/api/v1/chats/{chat_id}`
+
+Deletes a chat assistant by ID.
+
+#### Request
+
+- Method: DELETE
+- URL: `/api/v1/chats/{chat_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/chats/{chat_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `chat_id`: (*Path parameter*)
+  The ID of the chat assistant to delete.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "No authorization."
 }
 ```
 
@@ -2770,6 +3334,10 @@ Failure:
 
 Deletes chat assistants by ID.
 
+:::caution DEPRECATED
+The `chat_id` in the request body is deprecated, please use `ids` list.
+:::
+
 #### Request
 
 - Method: DELETE
@@ -2779,6 +3347,7 @@ Deletes chat assistants by ID.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"ids"`: `list[string]`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -2793,10 +3362,24 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/chats \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "delete_all": true
+     }'
+```
+
 ##### Request parameters
 
-- `"ids"`: (*Body parameter*), `list[string]`  
-  The IDs of the chat assistants to delete. If it is not specified, all chat assistants in the system will be deleted.
+- `"ids"`: (*Body parameter*), `list[string]`
+  The IDs of the chat assistants to delete.
+  - If omitted, or set to `null` or an empty array, no chat assistants are deleted.
+  - If an array of IDs is provided, only the chat assistants matching those IDs are deleted.
+- `"delete_all"`: (*Body parameter*), `boolean`
+  Whether to delete all chat assistants owned by the current user when `"ids"` is omitted, or set to`null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -2821,14 +3404,14 @@ Failure:
 
 ### List chat assistants
 
-**GET** `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={chat_name}&id={chat_id}`
+**GET** `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&owner_ids={owner_id}&name={chat_name}&id={chat_id}`
 
 Lists chat assistants.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={chat_name}&id={chat_id}`
+- URL: `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&owner_ids={owner_id}&name={chat_name}&id={chat_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -2836,26 +3419,32 @@ Lists chat assistants.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={chat_name}&id={chat_id} \
+     --url http://{address}/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&owner_ids={owner_id}&name={chat_name}&id={chat_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
 ##### Request parameters
 
-- `page`: (*Filter parameter*), `integer`  
+- `page`: (*Filter parameter*), `integer`
   Specifies the page on which the chat assistants will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*), `integer`  
+- `page_size`: (*Filter parameter*), `integer`
   The number of chat assistants on each page. Defaults to `30`.
-- `orderby`: (*Filter parameter*), `string`  
+- `orderby`: (*Filter parameter*), `string`
   The attribute by which the results are sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `desc`: (*Filter parameter*), `boolean`  
+- `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved chat assistants should be sorted in descending order. Defaults to `true`.
-- `id`: (*Filter parameter*), `string`  
-  The ID of the chat assistant to retrieve.
-- `name`: (*Filter parameter*), `string`  
-  The name of the chat assistant to retrieve.
+- `keywords`: (*Filter parameter*), `string`
+  Case-insensitive fuzzy match against chat assistant names.
+- `owner_ids`: (*Filter parameter*), `string` (repeatable)
+  Filter by owner tenant IDs. Can be specified multiple times: `?owner_ids=id1&owner_ids=id2`.
+- `id`: (*Filter parameter*), `string`
+  The ID of the chat assistant to retrieve with exact match.
+- `name`: (*Filter parameter*), `string`
+  The name of the chat assistant to retrieve with exact match.
+
+When `id` or `name` is provided, exact filtering takes precedence over `keywords`.
 
 #### Response
 
@@ -2864,47 +3453,50 @@ Success:
 ```json
 {
     "code": 0,
-    "data": [
-        {
-            "avatar": "",
-            "create_date": "Fri, 18 Oct 2024 06:20:06 GMT",
-            "create_time": 1729232406637,
-            "description": "A helpful Assistant",
-            "do_refer": "1",
-            "id": "04d0d8e28d1911efa3630242ac120006",
-            "dataset_ids": ["527fa74891e811ef9c650242ac120006"],
-            "language": "English",
-            "llm": {
-                "frequency_penalty": 0.7,
-                "model_name": "qwen-plus@Tongyi-Qianwen",
-                "presence_penalty": 0.4,
-                "temperature": 0.1,
-                "top_p": 0.3
-            },
-            "name": "13243",
-            "prompt": {
-                "empty_response": "Sorry! No relevant content was found in the knowledge base!",
-                "keywords_similarity_weight": 0.3,
-                "opener": "Hi! I'm your assistant. What can I do for you?",
-                "prompt": "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\n",
-                "rerank_model": "",
+    "data": {
+        "chats": [
+            {
+                "icon": "",
+                "create_date": "Fri, 18 Oct 2024 06:20:06 GMT",
+                "create_time": 1729232406637,
+                "description": "A helpful Assistant",
+                "id": "04d0d8e28d1911efa3630242ac120006",
+                "dataset_ids": ["527fa74891e811ef9c650242ac120006"],
+                "kb_names": ["dataset_1"],
+                "language": "English",
+                "llm_id": "qwen-plus@Tongyi-Qianwen",
+                "llm_setting": {
+                    "frequency_penalty": 0.7,
+                    "presence_penalty": 0.4,
+                    "temperature": 0.1,
+                    "top_p": 0.3
+                },
+                "name": "13243",
+                "prompt_config": {
+                    "empty_response": "Sorry! No relevant content was found in the knowledge base!",
+                    "prologue": "Hi! I'm your assistant. What can I do for you?",
+                    "quote": true,
+                    "system": "You are an intelligent assistant...",
+                    "parameters": [
+                        {
+                            "key": "knowledge",
+                            "optional": false
+                        }
+                    ]
+                },
+                "rerank_id": "",
                 "similarity_threshold": 0.2,
+                "vector_similarity_weight": 0.3,
                 "top_n": 6,
-                "variables": [
-                    {
-                        "key": "knowledge",
-                        "optional": false
-                    }
-                ]
-            },
-            "prompt_type": "simple",
-            "status": "1",
-            "tenant_id": "69736c5e723611efb51b0242ac120007",
-            "top_k": 1024,
-            "update_date": "Fri, 18 Oct 2024 06:20:06 GMT",
-            "update_time": 1729232406638
-        }
-    ]
+                "prompt_type": "simple",
+                "status": "1",
+                "tenant_id": "69736c5e723611efb51b0242ac120007",
+                "update_date": "Fri, 18 Oct 2024 06:20:06 GMT",
+                "update_time": 1729232406638
+            }
+        ],
+        "total": 1
+    }
 }
 ```
 
@@ -2955,11 +3547,11 @@ curl --request POST \
 
 ##### Request parameters
 
-- `chat_id`: (*Path parameter*)  
+- `chat_id`: (*Path parameter*)
   The ID of the associated chat assistant.
-- `"name"`: (*Body parameter*), `string`  
+- `"name"`: (*Body parameter*), `string`
   The name of the chat session to create.
-- `"user_id"`: (*Body parameter*), `string`  
+- `"user_id"`: (*Body parameter*), `string`
   Optional user-defined ID.
 
 #### Response
@@ -2992,7 +3584,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Name cannot be empty."
+    "message": "`name` can not be empty."
 }
 ```
 
@@ -3000,25 +3592,28 @@ Failure:
 
 ### Update chat assistant's session
 
-**PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}`
+**PATCH** `/api/v1/chats/{chat_id}/sessions/{session_id}`
 
 Updates a session of a specified chat assistant.
 
+:::caution DEPRECATED
+The previous endpoint `PUT /api/v1/chats/{chat_id}/sessions/{session_id}` is deprecated. Please use this endpoint instead.
+:::
+
 #### Request
 
-- Method: PUT
+- Method: PATCH
 - URL: `/api/v1/chats/{chat_id}/sessions/{session_id}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"name`: `string`
-  - `"user_id`: `string` (optional)
+  - `"name"`: `string`
 
 ##### Request example
 
 ```bash
-curl --request PUT \
+curl --request PATCH \
      --url http://{address}/api/v1/chats/{chat_id}/sessions/{session_id} \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
@@ -3030,14 +3625,12 @@ curl --request PUT \
 
 ##### Request Parameter
 
-- `chat_id`: (*Path parameter*)  
+- `chat_id`: (*Path parameter*)
   The ID of the associated chat assistant.
-- `session_id`: (*Path parameter*)  
+- `session_id`: (*Path parameter*)
   The ID of the session to update.
-- `"name"`: (*Body Parameter*), `string`  
+- `"name"`: (*Body Parameter*), `string`
   The revised name of the session.
-- `"user_id"`: (*Body parameter*), `string`  
-  Optional user-defined ID.
 
 #### Response
 
@@ -3045,7 +3638,23 @@ Success:
 
 ```json
 {
-    "code": 0
+    "code": 0,
+    "data": {
+        "chat_id": "2ca4b22e878011ef88fe0242ac120005",
+        "create_date": "Fri, 11 Oct 2024 08:46:14 GMT",
+        "create_time": 1728636374571,
+        "id": "4606b4ec87ad11efbc4f0242ac120006",
+        "messages": [
+            {
+                "content": "Hi! I am your assistant, can I help you?",
+                "role": "assistant"
+            }
+        ],
+        "name": "updated session name",
+        "update_date": "Fri, 11 Oct 2024 08:46:14 GMT",
+        "update_time": 1728636374571,
+        "user_id": ""
+    }
 }
 ```
 
@@ -3054,7 +3663,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Name cannot be empty."
+    "message": "`name` can not be empty."
 }
 ```
 
@@ -3062,7 +3671,7 @@ Failure:
 
 ### List chat assistant's sessions
 
-**GET** `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}`
+**GET** `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}&user_id={user_id}`
 
 Lists sessions associated with a specified chat assistant.
 
@@ -3077,29 +3686,29 @@ Lists sessions associated with a specified chat assistant.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id} \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}&user_id={user_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
 ##### Request Parameters
 
-- `chat_id`: (*Path parameter*)  
+- `chat_id`: (*Path parameter*)
   The ID of the associated chat assistant.
-- `page`: (*Filter parameter*), `integer`  
+- `page`: (*Filter parameter*), `integer`
   Specifies the page on which the sessions will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*), `integer`  
-  The number of sessions on each page. Defaults to `30`.
-- `orderby`: (*Filter parameter*), `string`  
-  The field by which sessions should be sorted. Available options:  
+- `page_size`: (*Filter parameter*), `integer`
+  The number of sessions on each page. Defaults to `30`. If set to `0`, an empty list is returned.
+- `orderby`: (*Filter parameter*), `string`
+  The field by which sessions should be sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `desc`: (*Filter parameter*), `boolean`  
+- `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `true`.
-- `name`: (*Filter parameter*) `string`  
+- `name`: (*Filter parameter*) `string`
   The name of the chat session to retrieve.
-- `id`: (*Filter parameter*), `string`  
+- `id`: (*Filter parameter*), `string`
   The ID of the chat session to retrieve.
-- `user_id`: (*Filter parameter*), `string`  
+- `user_id`: (*Filter parameter*), `string`
   The optional user-defined ID passed in when creating session.
 
 #### Response
@@ -3111,7 +3720,7 @@ Success:
     "code": 0,
     "data": [
         {
-            "chat": "2ca4b22e878011ef88fe0242ac120005",
+            "chat_id": "2ca4b22e878011ef88fe0242ac120005",
             "create_date": "Fri, 11 Oct 2024 08:46:43 GMT",
             "create_time": 1728636403974,
             "id": "578d541e87ad11ef96b90242ac120006",
@@ -3122,8 +3731,10 @@ Success:
                 }
             ],
             "name": "new session",
+            "reference": [],
             "update_date": "Fri, 11 Oct 2024 08:46:43 GMT",
-            "update_time": 1728636403974
+            "update_time": 1728636403974,
+            "user_id": ""
         }
     ]
 }
@@ -3135,6 +3746,202 @@ Failure:
 {
     "code": 102,
     "message": "The session doesn't exist"
+}
+```
+
+---
+
+### Get chat assistant's session
+
+**GET** `/api/v1/chats/{chat_id}/sessions/{session_id}`
+
+Gets a specific session of a specified chat assistant, including its messages, references, and avatar.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/chats/{chat_id}/sessions/{session_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions/{session_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request Parameters
+
+- `chat_id`: (*Path parameter*)
+  The ID of the associated chat assistant.
+- `session_id`: (*Path parameter*)
+  The ID of the session to retrieve.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "chat_id": "2ca4b22e878011ef88fe0242ac120005",
+        "id": "4606b4ec87ad11efbc4f0242ac120006",
+        "name": "new session",
+        "avatar": "data:image/png;base64,...",
+        "messages": [
+            {
+                "content": "Hi! I am your assistant, can I help you?",
+                "role": "assistant"
+            }
+        ],
+        "reference": []
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Session not found!"
+}
+```
+
+---
+
+### Delete a message from a chat assistant's session
+
+**DELETE** `/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id}`
+
+Deletes a user message and its paired assistant reply from a specified chat assistant session.
+
+#### Request
+
+- Method: DELETE
+- URL: `/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request Parameters
+
+- `chat_id`: (*Path parameter*)
+  The ID of the associated chat assistant.
+- `session_id`: (*Path parameter*)
+  The ID of the session that owns the message.
+- `msg_id`: (*Path parameter*)
+  The ID of the message to delete.
+
+#### Response
+
+Success: returns the updated session object.
+
+```json
+{
+    "code": 0,
+    "data": {
+        "chat_id": "2ca4b22e878011ef88fe0242ac120005",
+        "id": "4606b4ec87ad11efbc4f0242ac120006",
+        "messages": [],
+        "reference": []
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Session not found!"
+}
+```
+
+---
+
+### Update message feedback in a chat assistant's session
+
+**PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id}/feedback`
+
+Updates feedback for an assistant message in a specified chat assistant session.
+
+#### Request
+
+- Method: PUT
+- URL: `/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id}/feedback`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"thumbup"`: `boolean`
+  - `"feedback"`: `string` (optional)
+
+##### Request example
+
+```bash
+curl --request PUT \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions/{session_id}/messages/{msg_id}/feedback \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "thumbup": false,
+          "feedback": "The answer missed the cited document."
+     }'
+```
+
+##### Request Parameters
+
+- `chat_id`: (*Path parameter*)
+  The ID of the associated chat assistant.
+- `session_id`: (*Path parameter*)
+  The ID of the session that owns the message.
+- `msg_id`: (*Path parameter*)
+  The ID of the assistant message to update.
+- `"thumbup"`: (*Body parameter*), `boolean`
+  Whether the assistant message is marked as positive feedback.
+- `"feedback"`: (*Body parameter*), `string`
+  Optional feedback text, typically used when `"thumbup"` is `false`.
+
+#### Response
+
+Success: returns the updated session object.
+
+```json
+{
+    "code": 0,
+    "data": {
+        "chat_id": "2ca4b22e878011ef88fe0242ac120005",
+        "id": "4606b4ec87ad11efbc4f0242ac120006",
+        "messages": [
+            {
+                "id": "message-id",
+                "role": "assistant",
+                "content": "Here is the answer.",
+                "thumbup": false,
+                "feedback": "The answer missed the cited document."
+            }
+        ]
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Session not found!"
 }
 ```
 
@@ -3155,6 +3962,7 @@ Deletes sessions of a chat assistant by ID.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"ids"`: `list[string]`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -3169,12 +3977,26 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "delete_all": true
+     }'
+```
+
 ##### Request Parameters
 
-- `chat_id`: (*Path parameter*)  
+- `chat_id`: (*Path parameter*)
   The ID of the associated chat assistant.
-- `"ids"`: (*Body Parameter*), `list[string]`  
-  The IDs of the sessions to delete. If it is not specified, all sessions associated with the specified chat assistant will be deleted.
+- `"ids"`: (*Body Parameter*), `list[string]`
+  The IDs of the sessions to delete.
+  - If omitted, or set to `null` or an empty array, no sessions are deleted.
+  - If an array of IDs is provided, only the sessions matching those IDs are deleted.
+- `"delete_all"`: (*Body Parameter*), `boolean`
+  Whether to delete all sessions of the specified chat assistant when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -3199,9 +4021,17 @@ Failure:
 
 ### Converse with chat assistant
 
-**POST** `/api/v1/chats/{chat_id}/completions`
+**POST** `/api/v1/chat/completions`
 
-Asks a specified chat assistant a question to start an AI-powered conversation.
+Starts a chat completion request. The same endpoint supports three modes:
+
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/chats/{chat_id}/completions` is deprecated. Please use this endpoint instead.
+:::
+
+- No `chat_id`: talk directly with the tenant's default chat model.
+- With `chat_id` but no `session_id`: use that chat's configuration and automatically create a new session.
+- With both `chat_id` and `session_id`: continue an existing chat session.
 
 :::tip NOTE
 
@@ -3221,88 +4051,87 @@ Asks a specified chat assistant a question to start an AI-powered conversation.
 #### Request
 
 - Method: POST
-- URL: `/api/v1/chats/{chat_id}/completions`
+- URL: `/api/v1/chat/completions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"question"`: `string`
+  - `"messages"`: `list[object]`
   - `"stream"`: `boolean`
+  - `"chat_id"`: `string` (optional)
   - `"session_id"`: `string` (optional)
-  - `"user_id`: `string` (optional)
-  - `"metadata_condition"`: `object` (optional)
+  - `"llm_id"`: `string` (optional)
 
 ##### Request example
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/chats/{chat_id}/completions \
+     --url http://{address}/api/v1/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
      {
+          "messages": [
+              {
+                  "role": "user",
+                  "content": "Who are you?"
+              }
+          ]
      }'
 ```
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/chats/{chat_id}/completions \
+     --url http://{address}/api/v1/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
      {
-          "question": "Who are you",
+          "chat_id": "{chat_id}",
           "stream": true,
           "session_id":"9fa7691cb85c11ef9c5f0242ac120005",
-          "metadata_condition": {
-            "logic": "and",
-            "conditions": [
+          "messages": [
               {
-                "name": "author",
-                "comparison_operator": "is",
-                "value": "bob"
+                  "role": "assistant",
+                  "content": "Hi! I'\''m your assistant. What can I do for you?"
+              },
+              {
+                  "role": "user",
+                  "content": "Who are you?"
               }
-            ]
-          }
+          ]
      }'
 ```
 
 ##### Request Parameters
 
-- `chat_id`: (*Path parameter*)  
-  The ID of the associated chat assistant.
-- `"question"`: (*Body Parameter*), `string`, *Required*  
-  The question to start an AI-powered conversation.
-- `"stream"`: (*Body Parameter*), `boolean`  
+- `"messages"`: (*Body Parameter*), `list[object]`, *Required*
+  The conversation messages sent to the model.
+- `"stream"`: (*Body Parameter*), `boolean`
   Indicates whether to output responses in a streaming way:
   - `true`: Enable streaming (default).
   - `false`: Disable streaming.
-- `"session_id"`: (*Body Parameter*)  
-  The ID of session. If it is not provided, a new session will be generated.
-- `"user_id"`: (*Body parameter*), `string`  
-  The optional user-defined ID. Valid *only* when no `session_id` is provided.
-- `"metadata_condition"`: (*Body parameter*), `object`  
-  Optional metadata filter conditions applied to retrieval results.  
-  - `logic`: `string`, one of `and` / `or`
-  - `conditions`: `list[object]` where each condition contains:
-    - `name`: `string` metadata key
-    - `comparison_operator`: `string` (e.g. `is`, `not is`, `contains`, `not contains`, `start with`, `end with`, `empty`, `not empty`, `>`, `<`, `≥`, `≤`)
-    - `value`: `string|number|boolean` (optional for `empty`/`not empty`)
+- `"chat_id"`: (*Body Parameter*)
+  Optional chat assistant ID. If omitted, the tenant's default chat model is used directly.
+- `"session_id"`: (*Body Parameter*)
+  Optional session ID. If `chat_id` is provided but `session_id` is omitted, a new session will be generated automatically.
+- `"llm_id"`: (*Body Parameter*), `string`
+  Optional model override when a specific chat model should be used for this request.
 
 #### Response
 
-Success without `session_id`:
+Success without `chat_id` or `session_id`:
 
 ```json
 data:{
     "code": 0,
     "message": "",
     "data": {
-        "answer": "Hi! I'm your assistant. What can I do for you?",
+        "answer": "I am an assistant powered by the tenant's default chat model.",
         "reference": {},
         "audio_binary": null,
-        "id": null,
-        "session_id": "b01eed84b85611efa0e90242ac120005"
+        "id": "b01eed84b85611efa0e90242ac120005",
+        "session_id": ""
     }
 }
 data:{
@@ -3312,7 +4141,7 @@ data:{
 }
 ```
 
-Success with `session_id`:
+Success with `chat_id` and `session_id`:
 
 ```json
 data:{
@@ -3437,9 +4266,9 @@ curl --request POST \
 
 ##### Request parameters
 
-- `agent_id`: (*Path parameter*)  
+- `agent_id`: (*Path parameter*)
   The ID of the associated agent.
-- `user_id`: (*Filter parameter*)  
+- `user_id`: (*Filter parameter*)
   The optional user-defined ID for parsing docs (especially images) when creating a session while uploading files.
 
 #### Response
@@ -3651,78 +4480,89 @@ Failure:
 
 ### Converse with agent
 
-**POST** `/api/v1/agents/{agent_id}/completions`  
+**POST** `/api/v1/agents/{agent_id}/completions`
 
 Asks a specified agent a question to start an AI-powered conversation.
 
+Uses a single completion endpoint for all agent conversations.
+
+- Standard mode: send `agent_id` with `query`.
+- OpenAI-compatible mode: send the same endpoint with `"openai-compatible": true`.
+
 :::tip NOTE
 
-- In streaming mode, not all responses include a reference, as this depends on the system's judgement.
-- In streaming mode, the last message is an empty message:
-
-  ```
-  [DONE]
-  ```
-
-- You can optionally return step-by-step trace logs (see `return_trace` below).
+- Older agent completion routes have been removed. Use only `/api/v1/agents/chat/completion`.
+- In standard streaming mode, not all responses include a reference, as this depends on the workflow result.
+- In streaming mode, the server terminates the stream with `[DONE]`.
 
 :::
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/agents/{agent_id}/completions`
+- URL: `/api/v1/agents/chat/completion`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
-- Body:
-  - `"question"`: `string`
-  - `"stream"`: `boolean`
-  - `"session_id"`: `string` (optional)
-  - `"inputs"`: `object` (optional)
-  - `"user_id"`: `string` (optional)
-  - `"return_trace"`: `boolean` (optional, default `false`) — include execution trace logs.
+
+#### Standard mode
+
+Use this mode for the native agent API.
+
+##### Body
+
+- `"agent_id"`: `string`
+- `"query"`: `string`
+- `"stream"`: `boolean`
+- `"session_id"`: `string` (optional)
+- `"inputs"`: `object` (optional)
+- `"files"`: `list[object]` (optional)
+- `"user_id"`: `string` (optional)
+- `"return_trace"`: `boolean` (optional, default `false`)
+- `"release"`: `boolean` (optional, default `false`)
 
 #### Streaming events to handle
 
-When `stream=true`, the server sends Server-Sent Events (SSE). Clients should handle these `event` types:
+When `stream=true`, the server sends Server-Sent Events (SSE). A client should handle these events:
 
-- `message`: streaming content from Message components.
-- `message_end`: end of a Message component; may include `reference`/`attachment`.
-- `node_finished`: a component finishes; `data.inputs/outputs/error/elapsed_time` describe the node result. If `return_trace=true`, the trace is attached inside the same `node_finished` event (`data.trace`).
+- `message`: Streaming content from the **Message** components.
+- `message_end`: End of a **Message** component, which may include `reference` or `attachment`.
+- `node_finished`: A component finishes. `data.inputs`, `data.outputs`, `data.error`, and `data.elapsed_time` describe the node result. If `return_trace=true`, the same event also contains `data.trace`.
 
 The stream terminates with `[DONE]`.
 
 :::info IMPORTANT
-You can include custom parameters in the request body, but first ensure they are defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) component.
+You can include custom parameters in the request body, but they must be defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) component first.
 :::
 
-##### Request example
+##### Request examples
 
-- If the **Begin** component does not take parameters:
+If the **Begin** component does not take parameters:
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents/{agent_id}/completions \
+     --url http://{address}/api/v1/agents/chat/completion \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
      {
-        "question": "Hello",
-        "stream": false,
+        "agent_id": "AGENT_ID",
+        "query": "Hello",
+        "stream": false
      }'
 ```
 
-- If the **Begin** component takes parameters, include their values in the body of `"inputs"` as follows:  
+- If the **Begin** component takes parameters, include their values in the body of `"inputs"` as follows:
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents/{agent_id}/completions \
+     --url http://{address}/api/v1/agents/chat/completion \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
-    {
-        "question": "Hello",
+     {
+        "agent_id": "AGENT_ID",
+        "query": "",
         "stream": false,
         "inputs": {
             "line_var": {
@@ -3746,74 +4586,60 @@ curl --request POST \
                 "value": true
             }
         }
-    }'
+     }'
 ```
 
-The following code will execute the completion process
+To continue an existing session:
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents/{agent_id}/completions \
+     --url http://{address}/api/v1/agents/chat/completion \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
      {
-          "question": "Hello",
-          "stream": true,
-          "session_id": "cb2f385cb86211efa36e0242ac120005"
+        "agent_id": "AGENT_ID",
+        "query": "Hello again",
+        "stream": true,
+        "session_id": "cb2f385cb86211efa36e0242ac120005"
      }'
 ```
 
-##### Request Parameters
+##### Request parameters
 
-- `agent_id`: (*Path parameter*), `string`  
+- `agent_id`: (*Path parameter*), `string`
   The ID of the associated agent.
-- `"question"`: (*Body Parameter*), `string`, *Required*  
+- `"question"`: (*Body Parameter*), `string`, *Required*
   The question to start an AI-powered conversation.
-- `"stream"`: (*Body Parameter*), `boolean`  
-  Indicates whether to output responses in a streaming way:  
+- `"stream"`: (*Body Parameter*), `boolean`
+  Indicates whether to output responses in a streaming way:
   - `true`: Enable streaming (default).
   - `false`: Disable streaming.
-- `"session_id"`: (*Body Parameter*)  
+- `"session_id"`: (*Body Parameter*)
   The ID of the session. If it is not provided, a new session will be generated.
-- `"inputs"`: (*Body Parameter*)  
-  Variables specified in the **Begin** component.  
-- `"user_id"`: (*Body parameter*), `string`  
+- `"inputs"`: (*Body Parameter*)
+  Variables specified in the **Begin** component.
+- `"user_id"`: (*Body parameter*), `string`
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
 
 :::tip NOTE
-For now, this method does *not* support a file type input/variable. As a workaround, use the following to upload a file to an agent:  
-`http://{address}/v1/canvas/upload/{agent_id}`  
+For now, this method does *not* support a file type input/variable. As a workaround, use the following to upload a file to an agent:
+`http://{address}/v1/canvas/upload/{agent_id}`
 *You will get a corresponding file ID from its response body.*
 :::
 
-#### Response
+##### Response
 
-success without `session_id` provided and with no variables specified in the **Begin** component:
-
-Stream:
+Standard mode stream:
 
 ```json
-...
-
 data: {
     "event": "message",
     "message_id": "cecdcb0e83dc11f0858253708ecb6573",
     "created_at": 1756364483,
     "task_id": "d1f79142831f11f09cc51795b9eb07c0",
     "data": {
-        "content": " themes"
-    },
-    "session_id": "cd097ca083dc11f0858253708ecb6573"
-}
-
-data: {
-    "event": "message",
-    "message_id": "cecdcb0e83dc11f0858253708ecb6573",
-    "created_at": 1756364483,
-    "task_id": "d1f79142831f11f09cc51795b9eb07c0",
-    "data": {
-        "content": "."
+        "content": "Hello"
     },
     "session_id": "cd097ca083dc11f0858253708ecb6573"
 }
@@ -3824,140 +4650,7 @@ data: {
     "created_at": 1756364483,
     "task_id": "d1f79142831f11f09cc51795b9eb07c0",
     "data": {
-        "reference": {
-            "chunks": {
-                "20": {
-                    "id": "4b8935ac0a22deb1",
-                    "content": "```cd /usr/ports/editors/neovim/ && make install```## Android[Termux](https://github.com/termux/termux-app) offers a Neovim package.",
-                    "document_id": "4bdd2ff65e1511f0907f09f583941b45",
-                    "document_name": "INSTALL22.md",
-                    "dataset_id": "456ce60c5e1511f0907f09f583941b45",
-                    "image_id": "",
-                    "positions": [
-                        [
-                            12,
-                            11,
-                            11,
-                            11,
-                            11
-                        ]
-                    ],
-                    "url": null,
-                    "similarity": 0.5705525104787287,
-                    "vector_similarity": 0.7351750337624289,
-                    "term_similarity": 0.5000000005,
-                    "doc_type": ""
-                }
-            },
-            "doc_aggs": {
-                "INSTALL22.md": {
-                    "doc_name": "INSTALL22.md",
-                    "doc_id": "4bdd2ff65e1511f0907f09f583941b45",
-                    "count": 3
-                },
-                "INSTALL.md": {
-                    "doc_name": "INSTALL.md",
-                    "doc_id": "4bd7fdd85e1511f0907f09f583941b45",
-                    "count": 2
-                },
-                "INSTALL(1).md": {
-                    "doc_name": "INSTALL(1).md",
-                    "doc_id": "4bdfb42e5e1511f0907f09f583941b45",
-                    "count": 2
-                },
-                "INSTALL3.md": {
-                    "doc_name": "INSTALL3.md",
-                    "doc_id": "4bdab5825e1511f0907f09f583941b45",
-                    "count": 1
-                }
-            }
-        }
-    },
-    "session_id": "cd097ca083dc11f0858253708ecb6573"
-}
-
-data: {
-    "event": "node_finished",
-    "message_id": "cecdcb0e83dc11f0858253708ecb6573",
-    "created_at": 1756364483,
-    "task_id": "d1f79142831f11f09cc51795b9eb07c0",
-    "data": {
-        "inputs": {
-            "sys.query": "how to install neovim?"
-        },
-        "outputs": {
-            "content": "xxxxxxx",
-            "_created_time": 15294.0382,
-            "_elapsed_time": 0.00017
-        },
-        "component_id": "Agent:EveryHairsChew",
-        "component_name": "Agent_1",
-        "component_type": "Agent",
-        "error": null,
-        "elapsed_time": 11.2091,
-        "created_at": 15294.0382,
-        "trace": [
-            {
-                "component_id": "begin",
-                "trace": [
-                    {
-                        "inputs": {},
-                        "outputs": {
-                            "_created_time": 15257.7949,
-                            "_elapsed_time": 0.00070
-                        },
-                        "component_id": "begin",
-                        "component_name": "begin",
-                        "component_type": "Begin",
-                        "error": null,
-                        "elapsed_time": 0.00085,
-                        "created_at": 15257.7949
-                    }
-                ]
-            },
-            {
-                "component_id": "Agent:WeakDragonsRead",
-                "trace": [
-                    {
-                        "inputs": {
-                            "sys.query": "how to install neovim?"
-                        },
-                        "outputs": {
-                            "content": "xxxxxxx",
-                            "_created_time": 15257.7982,
-                            "_elapsed_time": 36.2382
-                        },
-                        "component_id": "Agent:WeakDragonsRead",
-                        "component_name": "Agent_0",
-                        "component_type": "Agent",
-                        "error": null,
-                        "elapsed_time": 36.2385,
-                        "created_at": 15257.7982
-                    }
-                ]
-            },
-            {
-                "component_id": "Agent:EveryHairsChew",
-                "trace": [
-                    {
-                        "inputs": {
-                            "sys.query": "how to install neovim?"
-                        },
-                        "outputs": {
-                            "content": "xxxxxxxxxxxxxxxxx",
-                            "_created_time": 15294.0382,
-                            "_elapsed_time": 0.00017
-                        },
-                        "component_id": "Agent:EveryHairsChew",
-                        "component_name": "Agent_1",
-                        "component_type": "Agent",
-                        "error": null,
-                        "elapsed_time": 11.2091,
-                        "created_at": 15294.0382
-                    }
-                ]
-            }
-        ]
+        "reference": {}
     },
     "session_id": "cd097ca083dc11f0858253708ecb6573"
 }
@@ -3967,173 +4660,17 @@ data:[DONE]
 
 When `extra_body.reference_metadata.include` is `true`, each reference chunk may include a `document_metadata` object.
 
-Non-stream:
+Standard mode non-stream:
 
 ```json
 {
     "code": 0,
     "data": {
-        "created_at": 1756363177,
         "data": {
-            "content": "\nTo install Neovim, the process varies depending on your operating system:\n\n### For macOS:\nUsing Homebrew:\n```bash\nbrew install neovim\n```\n\n### For Linux (Debian/Ubuntu):\n```bash\nsudo apt update\nsudo apt install neovim\n```\n\nFor other Linux distributions, you can use their respective package managers or build from source.\n\n### For Windows:\n1. Download the latest Windows installer from the official Neovim GitHub releases page\n2. Run the installer and follow the prompts\n3. Add Neovim to your PATH if not done automatically\n\n### From source (Unix-like systems):\n```bash\ngit clone https://github.com/neovim/neovim.git\ncd neovim\nmake CMAKE_BUILD_TYPE=Release\nsudo make install\n```\n\nAfter installation, you can verify it by running `nvim --version` in your terminal.",
-            "created_at": 18129.044975627,
-            "elapsed_time": 10.0157331670016,
-            "inputs": {
-                "var1": {
-                    "value": "I am var1"
-                },
-                "var2": {
-                    "value": "I am var2"
-                }
-            },
-            "outputs": {
-                "_created_time": 18129.502422278,
-                "_elapsed_time": 0.00013378599760471843,
-                "content": "\nTo install Neovim, the process varies depending on your operating system:\n\n### For macOS:\nUsing Homebrew:\n```bash\nbrew install neovim\n```\n\n### For Linux (Debian/Ubuntu):\n```bash\nsudo apt update\nsudo apt install neovim\n```\n\nFor other Linux distributions, you can use their respective package managers or build from source.\n\n### For Windows:\n1. Download the latest Windows installer from the official Neovim GitHub releases page\n2. Run the installer and follow the prompts\n3. Add Neovim to your PATH if not done automatically\n\n### From source (Unix-like systems):\n```bash\ngit clone https://github.com/neovim/neovim.git\ncd neovim\nmake CMAKE_BUILD_TYPE=Release\nsudo make install\n```\n\nAfter installation, you can verify it by running `nvim --version` in your terminal."
-            },
-            "reference": {
-                "chunks": {
-                    "20": {
-                        "content": "```cd /usr/ports/editors/neovim/ && make install```## Android[Termux](https://github.com/termux/termux-app) offers a Neovim package.",
-                        "dataset_id": "456ce60c5e1511f0907f09f583941b45",
-                        "doc_type": "",
-                        "document_id": "4bdd2ff65e1511f0907f09f583941b45",
-                        "document_name": "INSTALL22.md",
-                        "id": "4b8935ac0a22deb1",
-                        "image_id": "",
-                        "positions": [
-                            [
-                                12,
-                                11,
-                                11,
-                                11,
-                                11
-                            ]
-                        ],
-                        "similarity": 0.5705525104787287,
-                        "term_similarity": 0.5000000005,
-                        "url": null,
-                        "vector_similarity": 0.7351750337624289
-                    }
-                },
-                "doc_aggs": {
-                    "INSTALL(1).md": {
-                        "count": 2,
-                        "doc_id": "4bdfb42e5e1511f0907f09f583941b45",
-                        "doc_name": "INSTALL(1).md"
-                    },
-                    "INSTALL.md": {
-                        "count": 2,
-                        "doc_id": "4bd7fdd85e1511f0907f09f583941b45",
-                        "doc_name": "INSTALL.md"
-                    },
-                    "INSTALL22.md": {
-                        "count": 3,
-                        "doc_id": "4bdd2ff65e1511f0907f09f583941b45",
-                        "doc_name": "INSTALL22.md"
-                    },
-                    "INSTALL3.md": {
-                        "count": 1,
-                        "doc_id": "4bdab5825e1511f0907f09f583941b45",
-                        "doc_name": "INSTALL3.md"
-                    }
-                }
-            },
-            "trace": [
-                {
-                    "component_id": "begin",
-                    "trace": [
-                        {
-                            "component_id": "begin",
-                            "component_name": "begin",
-                            "component_type": "Begin",
-                            "created_at": 15926.567517862,
-                            "elapsed_time": 0.0008189299987861887,
-                            "error": null,
-                            "inputs": {},
-                            "outputs": {
-                                "_created_time": 15926.567517862,
-                                "_elapsed_time": 0.0006958619997021742
-                            }
-                        }
-                    ]
-                },
-                {
-                    "component_id": "Agent:WeakDragonsRead",
-                    "trace": [
-                        {
-                            "component_id": "Agent:WeakDragonsRead",
-                            "component_name": "Agent_0",
-                            "component_type": "Agent",
-                            "created_at": 15926.569121755,
-                            "elapsed_time": 53.49016142000073,
-                            "error": null,
-                            "inputs": {
-                                "sys.query": "how to install neovim?"
-                            },
-                            "outputs": {
-                                "_created_time": 15926.569121755,
-                                "_elapsed_time": 53.489981256001556,
-                                "content": "xxxxxxxxxxxxxx",
-                                "use_tools": [
-                                    {
-                                        "arguments": {
-                                            "query": "xxxx"
-                                        },
-                                        "name": "search_my_dateset",
-                                        "results": "xxxxxxxxxxx"
-                                    }
-                                ]
-                            }
-                        }
-                    ]
-                },
-                {
-                    "component_id": "Agent:EveryHairsChew",
-                    "trace": [
-                        {
-                            "component_id": "Agent:EveryHairsChew",
-                            "component_name": "Agent_1",
-                            "component_type": "Agent",
-                            "created_at": 15980.060569101,
-                            "elapsed_time": 23.61718057500002,
-                            "error": null,
-                            "inputs": {
-                                "sys.query": "how to install neovim?"
-                            },
-                            "outputs": {
-                                "_created_time": 15980.060569101,
-                                "_elapsed_time": 0.0003451630000199657,
-                                "content": "xxxxxxxxxxxx"
-                            }
-                        }
-                    ]
-                },
-                {
-                    "component_id": "Message:SlickDingosHappen",
-                    "trace": [
-                        {
-                            "component_id": "Message:SlickDingosHappen",
-                            "component_name": "Message_0",
-                            "component_type": "Message",
-                            "created_at": 15980.061302513,
-                            "elapsed_time": 23.61655923699982,
-                            "error": null,
-                            "inputs": {
-                                "Agent:EveryHairsChew@content": "xxxxxxxxx",
-                                "Agent:WeakDragonsRead@content": "xxxxxxxxxxx"
-                            },
-                            "outputs": {
-                                "_created_time": 15980.061302513,
-                                "_elapsed_time": 0.0006695749998471001,
-                                "content": "xxxxxxxxxxx"
-                            }
-                        }
-                    ]
-                }
-            ]
+            "content": "Hello",
+            "reference": {},
+            "trace": []
         },
-        "event": "workflow_finished",
         "message_id": "c4692a2683d911f0858253708ecb6573",
         "session_id": "c39f6f9c83d911f0858253708ecb6573",
         "task_id": "d1f79142831f11f09cc51795b9eb07c0"
@@ -4141,159 +4678,126 @@ Non-stream:
 }
 ```
 
-Success without `session_id` provided and with variables specified in the **Begin** component:
+If one or more components produce structured output, set `return_trace=true` and inspect that component output from `trace`.
 
-Stream:
+#### OpenAI-compatible mode
 
-```json
-data:{
-    "event": "message",
-    "message_id": "0e273472783711f0806e1a6272e682d8",
-    "created_at": 1755083830,
-    "task_id": "99ee29d6783511f09c921a6272e682d8",
-    "data": {
-        "content": "Hello"
-    },
-    "session_id": "0e0d1542783711f0806e1a6272e682d8"
-}
+Use the same endpoint and add `"openai-compatible": true`.
 
-data:{
-    "event": "message",
-    "message_id": "0e273472783711f0806e1a6272e682d8",
-    "created_at": 1755083830,
-    "task_id": "99ee29d6783511f09c921a6272e682d8",
-    "data": {
-        "content": "!"
-    },
-    "session_id": "0e0d1542783711f0806e1a6272e682d8"
-}
+##### Body
 
-data:{
-    "event": "message",
-    "message_id": "0e273472783711f0806e1a6272e682d8",
-    "created_at": 1755083830,
-    "task_id": "99ee29d6783511f09c921a6272e682d8",
-    "data": {
-        "content": " How"
-    },
-    "session_id": "0e0d1542783711f0806e1a6272e682d8"
-}
+- `"agent_id"`: `string`
+- `"messages"`: `list[object]`
+- `"openai-compatible"`: `boolean`, must be `true`
+- `"stream"`: `boolean`
+- `"session_id"`: `string` (optional)
+- `"model"`: `string` (optional, accepted for compatibility)
 
-...
+##### Request examples
 
-data:[DONE]
+Streaming request:
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents/chat/completion \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data-binary '
+     {
+        "agent_id": "AGENT_ID",
+        "openai-compatible": true,
+        "stream": true,
+        "messages": [
+            {
+                "role": "user",
+                "content": "Hello"
+            }
+        ]
+     }'
 ```
 
-Non-stream:
+Non-stream request with existing session:
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents/chat/completion \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data-binary '
+     {
+        "agent_id": "AGENT_ID",
+        "openai-compatible": true,
+        "stream": false,
+        "session_id": "cb2f385cb86211efa36e0242ac120005",
+        "messages": [
+            {
+                "role": "user",
+                "content": "Hello"
+            }
+        ]
+     }'
+```
+
+##### Request parameters
+
+- `"agent_id"`: (*Body parameter*), `string`, *Required*  
+  The ID of the associated agent.
+- `"messages"`: (*Body parameter*), `list[object]`, *Required*  
+  OpenAI-style chat messages.
+- `"openai-compatible"`: (*Body parameter*), `boolean`, *Required*  
+  Must be `true` to enable OpenAI-compatible responses.
+- `"stream"`: (*Body parameter*), `boolean`  
+  Whether to return streaming chunks.
+- `"session_id"`: (*Body parameter*), `string`  
+  Optional existing session ID.
+- `"model"`: (*Body parameter*), `string`  
+  Optional compatibility field. The server still routes by `agent_id`.
+
+##### Response
+
+OpenAI-compatible stream:
 
 ```json
-{
-    "code": 0,
-    "data": {
-        "created_at": 1755083779,
-        "data": {
-            "created_at": 547400.868004651,
-            "elapsed_time": 3.5037803899031132,
-            "inputs": {
-                "boolean_var": {
-                    "type": "boolean",
-                    "value": true
-                },
-                "int_var": {
-                    "type": "integer",
-                    "value": 1
-                },
-                "line_var": {
-                    "type": "line",
-                    "value": "I am line_var"
-                },
-                "option_var": {
-                    "type": "options",
-                    "value": "option 2"
-                },
-                "paragraph_var": {
-                    "type": "paragraph",
-                    "value": "a\nb\nc"
-                }
+data: {
+    "id": "chatcmpl-xxx",
+    "object": "chat.completion.chunk",
+    "model": "AGENT_ID",
+    "choices": [
+        {
+            "delta": {
+                "content": "Hello"
             },
-            "outputs": {
-                "_created_time": 547400.869271305,
-                "_elapsed_time": 0.0001251999055966735,
-                "content": "Hello there! How can I assist you today?"
-            }
-        },
-        "event": "workflow_finished",
-        "message_id": "effdad8c783611f089261a6272e682d8",
-        "session_id": "efe523b6783611f089261a6272e682d8",
-        "task_id": "99ee29d6783511f09c921a6272e682d8"
-    }
+            "finish_reason": null,
+            "index": 0
+        }
+    ]
 }
+
+data: [DONE]
 ```
 
-Success with variables specified in the **Begin** component:
-
-Stream:
-
-```json
-data:{
-    "event": "message",
-    "message_id": "5b62e790783711f0bc531a6272e682d8",
-    "created_at": 1755083960,
-    "task_id": "99ee29d6783511f09c921a6272e682d8",
-    "data": {
-        "content": "Hello"
-    },
-    "session_id": "979e450c781d11f095cb729e3aa55728"
-}
-
-data:{
-    "event": "message",
-    "message_id": "5b62e790783711f0bc531a6272e682d8",
-    "created_at": 1755083960,
-    "task_id": "99ee29d6783511f09c921a6272e682d8",
-    "data": {
-        "content": "!"
-    },
-    "session_id": "979e450c781d11f095cb729e3aa55728"
-}
-
-data:{
-    "event": "message",
-    "message_id": "5b62e790783711f0bc531a6272e682d8",
-    "created_at": 1755083960,
-    "task_id": "99ee29d6783511f09c921a6272e682d8",
-    "data": {
-        "content": " You"
-    },
-    "session_id": "979e450c781d11f095cb729e3aa55728"
-}
-
-...
-
-data:[DONE]
-```
-
-Non-stream:
+OpenAI-compatible non-stream:
 
 ```json
 {
-    "code": 0,
-    "data": {
-        "created_at": 1755084029,
-        "data": {
-            "created_at": 547650.750818867,
-            "elapsed_time": 1.6227330720284954,
-            "inputs": {},
-            "outputs": {
-                "_created_time": 547650.752800839,
-                "_elapsed_time": 9.628792759031057e-05,
-                "content": "Hello! It appears you've sent another \"Hello\" without additional context. I'm here and ready to respond to any requests or questions you may have. Is there something specific you'd like to discuss or learn about?"
+    "id": "chatcmpl-xxx",
+    "object": "chat.completion",
+    "model": "AGENT_ID",
+    "choices": [
+        {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": "Hello",
+                "reference": {}
             }
-        },
-        "event": "workflow_finished",
-        "message_id": "84eec534783711f08db41a6272e682d8",
-        "session_id": "979e450c781d11f095cb729e3aa55728",
-        "task_id": "99ee29d6783511f09c921a6272e682d8"
+        }
+    ],
+    "usage": {
+        "prompt_tokens": 6,
+        "completion_tokens": 1,
+        "total_tokens": 7
     }
 }
 ```
@@ -4303,7 +4807,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "`question` is required."
+    "message": "Agent not found."
 }
 ```
 
@@ -4332,23 +4836,23 @@ curl --request GET \
 
 ##### Request Parameters
 
-- `agent_id`: (*Path parameter*)  
+- `agent_id`: (*Path parameter*)
   The ID of the associated agent.
-- `page`: (*Filter parameter*), `integer`  
+- `page`: (*Filter parameter*), `integer`
   Specifies the page on which the sessions will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*), `integer`  
+- `page_size`: (*Filter parameter*), `integer`
   The number of sessions on each page. Defaults to `30`.
-- `orderby`: (*Filter parameter*), `string`  
-  The field by which sessions should be sorted. Available options:  
+- `orderby`: (*Filter parameter*), `string`
+  The field by which sessions should be sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `desc`: (*Filter parameter*), `boolean`  
+- `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `true`.
-- `id`: (*Filter parameter*), `string`  
+- `id`: (*Filter parameter*), `string`
   The ID of the agent session to retrieve.
-- `user_id`: (*Filter parameter*), `string`  
+- `user_id`: (*Filter parameter*), `string`
   The optional user-defined ID passed in when creating session.
-- `dsl`: (*Filter parameter*), `boolean`  
+- `dsl`: (*Filter parameter*), `boolean`
   Indicates whether to include the dsl field of the sessions in the response. Defaults to `true`.
 
 #### Response
@@ -4518,6 +5022,7 @@ Deletes sessions of an agent by ID.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"ids"`: `list[string]`
+  - `"delete_all"`: `boolean`
 
 ##### Request example
 
@@ -4532,12 +5037,26 @@ curl --request DELETE \
      }'
 ```
 
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/agents/{agent_id}/sessions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "delete_all": true
+     }'
+```
+
 ##### Request Parameters
 
-- `agent_id`: (*Path parameter*)  
+- `agent_id`: (*Path parameter*)
   The ID of the associated agent.
-- `"ids"`: (*Body Parameter*), `list[string]`  
-  The IDs of the sessions to delete. If it is not specified, all sessions associated with the specified agent will be deleted.
+- `"ids"`: (*Body Parameter*), `list[string]`
+  The IDs of the sessions to delete.
+  - If omitted, or set to `null` or an empty array, no sessions are deleted.
+  - If an array of IDs is provided, only the sessions matching those IDs are deleted.
+- `"delete_all"`: (*Body Parameter*), `boolean`
+  Whether to delete all sessions of the specified agent when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -4560,11 +5079,165 @@ Failure:
 
 ---
 
+### Text-to-speech
+
+**POST** `/api/v1/chat/audio/speech`
+
+Converts text to speech audio using the tenant's default TTS model, returning a streaming audio response.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/chat/audio/speech`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
+- Body:
+  - `"text"`: `string` *(Required)* The text to synthesize.
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/chat/audio/speech \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
+     --output audio.mp3 \
+     --data '{"text": "Hello, how can I help you today?"}'
+```
+
+#### Response
+
+Success: binary `audio/mpeg` stream with headers `Cache-Control: no-cache`, `Connection: keep-alive`, `X-Accel-Buffering: no`.
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "No default TTS model is set"
+}
+```
+
+---
+
+### Speech-to-text
+
+**POST** `/api/v1/chat/audio/transcription`
+
+Transcribes an audio file using the tenant's default ASR (automatic speech recognition) model.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/chat/audio/transcription`
+- Headers:
+  - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
+- Body (multipart/form-data):
+  - `"file"`: audio file (`.wav`, `.mp3`, `.m4a`, `.aac`, `.flac`, `.ogg`, `.webm`, `.opus`, `.wma`)
+  - `"stream"`: `string` `"true"` for SSE streaming, `"false"` (default) for a single JSON response.
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/chat/audio/transcription \
+     --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
+     --form file=@recording.wav \
+     --form stream=false
+```
+
+#### Response
+
+Success (non-streaming):
+
+```json
+{
+    "code": 0,
+    "data": {
+        "text": "Hello, how can I help you today?"
+    }
+}
+```
+
+Success (streaming): SSE events with `data: {"event": "partial", "text": "..."}`.
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Unsupported audio format: .mp4. Allowed: .aac, .flac, .m4a, .mp3, .ogg, .opus, .wav, .webm, .wma"
+}
+```
+
+---
+
+### Generate mind map
+
+**POST** `/api/v1/chat/mindmap`
+
+Generates a mind map from a question and a set of knowledge base IDs.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/chat/mindmap`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
+- Body:
+  - `"question"`: `string` *(Required)* The central question or topic.
+  - `"kb_ids"`: `list[string]` *(Required)* Knowledge base IDs to search.
+  - `"search_id"`: `string` *(Optional)* ID of a saved search configuration to merge additional `kb_ids` and settings.
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/chat/mindmap \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
+     --data '{
+         "question": "What is retrieval-augmented generation?",
+         "kb_ids": ["kb-abc123"]
+     }'
+```
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "name": "Retrieval-Augmented Generation",
+        "children": [...]
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 500,
+    "message": "..."
+}
+```
+
+---
+
 ### Generate related questions
 
-**POST** `/api/v1/sessions/related_questions`
+**POST** `/api/v1/chat/recommandation`
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
+
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/sessions/related_questions` is deprecated. Please use this endpoint instead.
+:::
 
 This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find it in the Request Headers in your browser easily as shown below:
 
@@ -4577,25 +5250,23 @@ The chat model autonomously determines the number of questions to generate based
 #### Request
 
 - Method: POST
-- URL: `/api/v1/sessions/related_questions`
+- URL: `/api/v1/chat/recommandation`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
 - Body:
-  - `"question"`: `string`
-  - `"industry"`: `string`
+  - `"question"`: `string` *(Required)* The original user question.
+  - `"search_id"`: `string` *(Optional)* ID of a saved search configuration to use custom LLM settings.
 
 ##### Request example
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/sessions/related_questions \
+     --url http://{address}/api/v1/chat/recommandation \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
-     --data '
-     {
-          "question": "What are the key advantages of Neovim over Vim?",
-          "industry": "software_development"
+     --data '{
+          "question": "What are the key advantages of Neovim over Vim?"
      }'
 ```
 
@@ -4603,8 +5274,8 @@ curl --request POST \
 
 - `"question"`: (*Body Parameter*), `string`
   The original user question.
-- `"industry"`: (*Body Parameter*), `string`
-  Industry of the question.
+- `"search_id"`: (*Body Parameter*), `string`
+  ID of a saved search configuration to use custom LLM settings. If provided, the LLM model and generation settings from the search configuration will be used.
 
 #### Response
 
@@ -4667,19 +5338,19 @@ curl --request GET \
 
 ##### Request parameters
 
-- `page`: (*Filter parameter*), `integer`  
+- `page`: (*Filter parameter*), `integer`
   Specifies the page on which the agents will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*), `integer`  
+- `page_size`: (*Filter parameter*), `integer`
   The number of agents on each page. Defaults to `30`.
-- `orderby`: (*Filter parameter*), `string`  
+- `orderby`: (*Filter parameter*), `string`
   The attribute by which the results are sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `desc`: (*Filter parameter*), `boolean`  
+- `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved agents should be sorted in descending order. Defaults to `true`.
-- `id`: (*Filter parameter*), `string`  
+- `id`: (*Filter parameter*), `string`
   The ID of the agent to retrieve.
-- `title`: (*Filter parameter*), `string`  
+- `title`: (*Filter parameter*), `string`
   The name of the agent to retrieve.
 
 #### Response
@@ -4791,11 +5462,11 @@ curl --request POST \
 
 ##### Request parameters
 
-- `title`: (*Body parameter*), `string`, *Required*  
+- `title`: (*Body parameter*), `string`, *Required*
   The title of the agent.
-- `description`: (*Body parameter*), `string`  
+- `description`: (*Body parameter*), `string`
   The description of the agent. Defaults to `None`.
-- `dsl`: (*Body parameter*), `object`, *Required*  
+- `dsl`: (*Body parameter*), `object`, *Required*
   The canvas DSL object of the agent.
 
 #### Response
@@ -4857,13 +5528,13 @@ curl --request PUT \
 
 ##### Request parameters
 
-- `agent_id`: (*Path parameter*), `string`  
+- `agent_id`: (*Path parameter*), `string`
   The id of the agent to be updated.
-- `title`: (*Body parameter*), `string`  
+- `title`: (*Body parameter*), `string`
   The title of the agent.
-- `description`: (*Body parameter*), `string`  
+- `description`: (*Body parameter*), `string`
   The description of the agent.
-- `dsl`: (*Body parameter*), `object`  
+- `dsl`: (*Body parameter*), `object`
   The canvas DSL object of the agent.
 
 Only specify the parameter you want to change in the request body. If a parameter does not exist or is `None`, it won't be updated.
@@ -4917,7 +5588,7 @@ curl --request DELETE \
 
 ##### Request parameters
 
-- `agent_id`: (*Path parameter*), `string`  
+- `agent_id`: (*Path parameter*), `string`
   The id of the agent to be deleted.
 
 #### Response
@@ -4963,7 +5634,7 @@ Create a new memory.
 - Body:
   - `"name"`: `string`
   - `"memory_type"`: `list[string]`
-  - `"embd_id"`: `string`. 
+  - `"embd_id"`: `string`.
   - `"llm_id"`: `string`
 
 ##### Request example
@@ -5265,13 +5936,13 @@ Failure:
 
 **GET** `/api/v1/memories/{memory_id}/config`
 
-Get the configuration of a specified memory. 
+Get the configuration of a specified memory.
 
 #### Request
 
 - Method: GET
 - URL: `/api/v1/memories/{memory_id}/config`
-- Headers: 
+- Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -5349,7 +6020,7 @@ Delete a specified memory.
 - Method: DELETE
 - URL: `/api/v1/memories/{memory_id}`
 - Headers:
-- Headers: 
+- Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -5668,7 +6339,7 @@ Failure
 
 Update message status, enable or disable a message. Once a message is disabled, it will not be retrieved by agents.
 
-#### Request 
+#### Request
 
 - Method: PUT
 - URL: `/api/v1/messages/{memory_id}:{message_id}`
@@ -5748,11 +6419,11 @@ curl --location 'http://{address}/api/v1/messages/search?query=%22who%20are%20yo
 
 ##### Request parameters
 
-- `question`: (*Filter parameter*), `string`, *Required* 
+- `question`: (*Filter parameter*), `string`, *Required*
 
   The search term or natural language question used to find relevant messages.
 
-- `memory_id`: (*Filter parameter*), `string` or `list[string]`, *Required* 
+- `memory_id`: (*Filter parameter*), `string` or `list[string]`, *Required*
 
   The IDs of the memories to search.  Supports multiple values.
 
@@ -5763,6 +6434,10 @@ curl --location 'http://{address}/api/v1/messages/search?query=%22who%20are%20yo
 - `session_id`: (*Filter parameter*), `string`, *Optional*
 
   The ID of the message's session. Defaults to `None`.
+
+- `user_id`: (*Filter parameter*), `string`, *Optional*
+
+  The user participating in the conversation with the agent. Defaults to `None`.
 
 - `similarity_threshold`: (*Filter parameter*), `float`, *Optional*
 
@@ -5790,7 +6465,7 @@ Success
     "data": [
         {
             "agent_id": "8db9c8eddfcc11f0b5da84ba59bc53c7",
-            "content": "User Input: who am I?\nAgent Response: To address the question \"who am I?\", let's follow the logical steps outlined in the instructions:\n\n1. **Understand the User’s Request**: The user is asking for a clarification or identification of their own self. This is a fundamental question about personal identity.\n\n2. **Decompose the Request**: The request is quite simple and doesn't require complex decomposition. The core task is to provide an answer that identifies the user in some capacity.\n\n3. **Execute the Subtask**:\n   - **Identify the nature of the question**: The user is seeking to understand their own existence or their sense of self.\n   - **Assess the context**: The context is not explicitly given, so the response will be general.\n   - **Provide a response**: The answer should acknowledge the user's inquiry into their identity.\n\n4. **Validate Accuracy and Consistency**: The response should be consistent with the general understanding of the question. Since the user has not provided specific details about their identity, the response should be broad and open-ended.\n\n5. **Summarize the Final Result**: The user is asking \"who am I?\" which is an inquiry into their own identity. The answer is that the user is the individual who is asking the question. Without more specific information, a detailed description of their identity cannot be provided.\n\nSo, the final summary would be:\n\nThe user is asking the question \"who am I?\" to seek an understanding of their own identity. The response to this question is that the user is the individual who is posing the question. Without additional context or details, a more comprehensive description of the user's identity cannot be given.",
+            "content": "User Input: who am I?\nAgent Response: To address the question \"who am I?\", let's follow the logical steps outlined in the instructions:\n\n1. **Understand the User's Request**: The user is asking for a clarification or identification of their own self. This is a fundamental question about personal identity.\n\n2. **Decompose the Request**: The request is quite simple and doesn't require complex decomposition. The core task is to provide an answer that identifies the user in some capacity.\n\n3. **Execute the Subtask**:\n   - **Identify the nature of the question**: The user is seeking to understand their own existence or their sense of self.\n   - **Assess the context**: The context is not explicitly given, so the response will be general.\n   - **Provide a response**: The answer should acknowledge the user's inquiry into their identity.\n\n4. **Validate Accuracy and Consistency**: The response should be consistent with the general understanding of the question. Since the user has not provided specific details about their identity, the response should be broad and open-ended.\n\n5. **Summarize the Final Result**: The user is asking \"who am I?\" which is an inquiry into their own identity. The answer is that the user is the individual who is asking the question. Without more specific information, a detailed description of their identity cannot be provided.\n\nSo, the final summary would be:\n\nThe user is asking the question \"who am I?\" to seek an understanding of their own identity. The response to this question is that the user is the individual who is posing the question. Without additional context or details, a more comprehensive description of the user's identity cannot be given.",
             "forget_at": "None",
             "invalid_at": "None",
             "memory_id": "6c8983badede11f083f184ba59bc53c7",
@@ -5842,7 +6517,7 @@ curl --location 'http://{address}/api/v1/messages?memory_id=6c8983badede11f083f1
 
 ##### Request parameters
 
-- `memory_id`: (*Filter parameter*), `string` or `list[string]`, *Required* 
+- `memory_id`: (*Filter parameter*), `string` or `list[string]`, *Required*
 
   The IDs of the memories to search.  Supports multiple values.
 
@@ -5973,20 +6648,24 @@ Failure
 
 ---
 
-### System
+## System
 
 ---
 
 ### Check system health
 
-**GET** `/v1/system/healthz`
+**GET** `/api/v1/system/healthz`
 
-Check the health status of RAGFlow’s dependencies (database, Redis, document engine, object storage).
+Check the health status of RAGFlow's dependencies (database, Redis, document engine, object storage).
+
+:::caution DEPRECATED
+The previous endpoint `GET /v1/system/healthz` is deprecated. Please use this endpoint instead.
+:::
 
 #### Request
 
 - Method: GET
-- URL: `/v1/system/healthz`
+- URL: `/api/v1/system/healthz`
 - Headers:
   - 'Content-Type: application/json'
   (no Authorization required)
@@ -5995,13 +6674,13 @@ Check the health status of RAGFlow’s dependencies (database, Redis, document e
 
 ```bash
 curl --request GET
-     --url http://{address}/v1/system/healthz
+     --url http://{address}/api/v1/system/healthz
      --header 'Content-Type: application/json'
 ```
 
 ##### Request parameters
 
-- `address`: (*Path parameter*), string  
+- `address`: (*Path parameter*), string
   The host and port of the backend service (e.g., `localhost:7897`).
 
 ---
@@ -6044,11 +6723,11 @@ Content-Type: application/json
 }
 ```
 
-Explanation:  
+Explanation:
 
-- Each service is reported as "ok" or "nok".  
-- The top-level `status` reflects overall health.  
-- If any service is "nok", detailed error info appears in `_meta`.  
+- Each service is reported as "ok" or "nok".
+- The top-level `status` reflects overall health.
+- If any service is "nok", detailed error info appears in `_meta`.
 
 ---
 
@@ -6058,14 +6737,18 @@ Explanation:
 
 ### Upload file
 
-**POST** `/api/v1/file/upload`
+**POST** `/api/v1/files`
 
 Uploads one or multiple files to the system.
+
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/file/upload` is deprecated. Please use this endpoint instead.
+:::
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/file/upload`
+- URL: `/api/v1/files`
 - Headers:
   - `'Content-Type: multipart/form-data'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -6077,7 +6760,7 @@ Uploads one or multiple files to the system.
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/file/upload \
+     --url http://{address}/api/v1/files \
      --header 'Content-Type: multipart/form-data' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --form 'file=@./test1.txt' \
@@ -6087,9 +6770,9 @@ curl --request POST \
 
 ##### Request parameters
 
-- `'file'`: (*Form parameter*), `file`, *Required*  
+- `'file'`: (*Form parameter*), `file`, *Required*
   The file(s) to upload. Multiple files can be uploaded in a single request.
-- `'parent_id'`: (*Form parameter*), `string`  
+- `'parent_id'`: (*Form parameter*), `string`
   The parent folder ID where the file will be uploaded. If not specified, files will be uploaded to the root folder.
 
 #### Response
@@ -6124,16 +6807,151 @@ Failure:
 
 ---
 
-### Create file or folder
+### Upload document
 
-**POST** `/api/v1/file/create`
+**POST** `/v1/document/upload_info`
 
-Creates a new file or folder in the system.
+Uploads a file and creates the respective document.
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/file/create`
+- URL: `/v1/document/upload_info`
+- Headers:
+  - `'Content-Type: multipart/form-data'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Form:
+  - `'file=@{FILE_PATH}'` (mutually exclusive with `url`)
+- Query:
+  - `url`: URL to crawl and convert to a runtime attachment (mutually exclusive with `file`).
+
+##### Request example
+
+Upload a local file:
+
+```bash
+curl --request POST \
+     --url http://{address}/v1/document/upload_info \
+     --header 'Content-Type: multipart/form-data' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --form 'file=@./test1.pdf'
+```
+
+Crawl a URL:
+
+```bash
+curl --request POST \
+     --url 'http://{address}/v1/document/upload_info?url=https://example.com/page' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `'file'`: (*Form parameter*), `file`, *Optional*
+  The file to upload. Mutually exclusive with `url`; either `file` or `url` must be provided.
+- `url`: (*Query parameter*), `string`, *Optional*
+  A URL to crawl and store as an attachment. Mutually exclusive with `file`; either `url` or `file` must be provided.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+      "created_at": 1772451421.7924063,
+      "created_by": "be951084066611f18f5f00155d2f98f4",
+      "extension": "pdf",
+      "id": "2143a03d162c11f1b80f00155d334d02",
+      "mime_type": "application/pdf",
+      "name": "test1.pdf",
+      "preview_url": null,
+      "size": 49705
+    },
+    "message": "success"
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 400,
+    "message": "Provide either multipart file(s) or ?url=...!"
+}
+```
+
+---
+
+### Download attachment
+
+**GET** `/v1/document/download/{attachment_id}`
+
+Downloads a runtime attachment previously uploaded via the [Upload document](#upload-document) method.
+
+#### Request
+
+- Method: GET
+- URL: `/v1/document/download/{attachment_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Query parameter:
+  - `ext`: `string` (Optional)
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url 'http://{address}/v1/document/download/{attachment_id}?ext=pdf' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --output ./downloaded_attachment.pdf
+```
+
+##### Request parameters
+
+- `attachment_id`: (*Path parameter*), `string`, *Required*
+  The `id` value returned by the [Upload document](#upload-document) method.
+- `ext`: (*Query parameter*), `string`, *Optional*
+  A file extension hint specifying the response's Content-Type. Defaults to `"markdown"`. Available values:
+  - `"markdown"`
+  - `"html"`
+  - `"pdf"`
+  - `"docx"`
+  - `"xlsx"`
+  - `"csv"`
+
+#### Response
+
+Success:
+
+Returns the file content as a binary stream with the relevant Content-Type header.
+
+Failure:
+
+```json
+{
+    "code": 500,
+    "message": "Internal server error"
+}
+```
+
+---
+
+### Create file or folder
+
+**POST** `/api/v1/files`
+
+Creates a new file or folder in the system.
+
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/file/create` is deprecated. Please use this endpoint instead.
+:::
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/files`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -6146,26 +6964,26 @@ Creates a new file or folder in the system.
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/file/create \
+     --url http://{address}/api/v1/files \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
           "name": "New Folder",
-          "type": "FOLDER",
+          "type": "folder",
           "parent_id": "{folder_id}"
      }'
 ```
 
 ##### Request parameters
 
-- `"name"`: (*Body parameter*), `string`, *Required*  
+- `"name"`: (*Body parameter*), `string`, *Required*
   The name of the file or folder to create.
-- `"parent_id"`: (*Body parameter*), `string`  
+- `"parent_id"`: (*Body parameter*), `string`
   The parent folder ID. If not specified, the file/folder will be created in the root folder.
-- `"type"`: (*Body parameter*), `string`  
+- `"type"`: (*Body parameter*), `string`
   The type of the file to create. Available options:
-  - `"FOLDER"`: Create a folder
-  - `"VIRTUAL"`: Create a virtual file
+  - `"folder"`: Create a folder
+  - `"virtual"`: Create a virtual file
 
 #### Response
 
@@ -6177,7 +6995,7 @@ Success:
     "data": {
         "id": "b330ec2e91ec11efbc510242ac120004",
         "name": "New Folder",
-        "type": "FOLDER",
+        "type": "folder",
         "parent_id": "527fa74891e811ef9c650242ac120006",
         "size": 0,
         "create_time": 1729763127646
@@ -6198,14 +7016,18 @@ Failure:
 
 ### List files
 
-**GET** `/api/v1/file/list?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
+**GET** `/api/v1/files?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
 
 Lists files and folders under a specific folder.
+
+:::caution DEPRECATED
+The previous endpoint `GET /api/v1/file/list` is deprecated. Please use this endpoint instead.
+:::
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/file/list?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
+- URL: `/api/v1/files?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -6213,24 +7035,24 @@ Lists files and folders under a specific folder.
 
 ```bash
 curl --request GET \
-     --url 'http://{address}/api/v1/file/list?parent_id={folder_id}&page=1&page_size=15' \
+     --url 'http://{address}/api/v1/files?parent_id={folder_id}&page=1&page_size=15' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
 ##### Request parameters
 
-- `parent_id`: (*Filter parameter*), `string`  
+- `parent_id`: (*Filter parameter*), `string`
   The folder ID to list files from. If not specified, the root folder is used by default.
-- `keywords`: (*Filter parameter*), `string`  
+- `keywords`: (*Filter parameter*), `string`
   Search keyword to filter files by name.
-- `page`: (*Filter parameter*), `integer`  
+- `page`: (*Filter parameter*), `integer`
   Specifies the page on which the files will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*), `integer`  
+- `page_size`: (*Filter parameter*), `integer`
   The number of files on each page. Defaults to `15`.
-- `orderby`: (*Filter parameter*), `string`  
+- `orderby`: (*Filter parameter*), `string`
   The field by which files should be sorted. Available options:
   - `create_time` (default)
-- `desc`: (*Filter parameter*), `boolean`  
+- `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved files should be sorted in descending order. Defaults to `true`.
 
 #### Response
@@ -6271,60 +7093,20 @@ Failure:
 
 ---
 
-### Get root folder
-
-**GET** `/api/v1/file/root_folder`
-
-Retrieves the user's root folder information.
-
-#### Request
-
-- Method: GET
-- URL: `/api/v1/file/root_folder`
-- Headers:
-  - `'Authorization: Bearer <YOUR_API_KEY>'`
-
-##### Request example
-
-```bash
-curl --request GET \
-     --url http://{address}/api/v1/file/root_folder \
-     --header 'Authorization: Bearer <YOUR_API_KEY>'
-```
-
-##### Request parameters
-
-No parameters required.
-
-#### Response
-
-Success:
-
-```json
-{
-    "code": 0,
-    "data": {
-        "root_folder": {
-            "id": "527fa74891e811ef9c650242ac120006",
-            "name": "root",
-            "type": "FOLDER"
-        }
-    }
-}
-```
-
----
-
 ### Get parent folder
 
-**GET** `/api/v1/file/parent_folder?file_id={file_id}`
+**GET** `/api/v1/files/{file_id}/parent`
 
 Retrieves the immediate parent folder information of a specified file.
 
+:::caution DEPRECATED
+The previous endpoint `GET /api/v1/file/parent_folder?file_id=...` is deprecated. Please use this endpoint instead.
+:::
+
 #### Request
 
 - Method: GET
-- URL: `/api/v1/file/parent_folder?file_id={file_id}`
+- URL: `/api/v1/files/{file_id}/parent`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -6332,13 +7114,13 @@ Retrieves the immediate parent folder information of a specified file.
 
 ```bash
 curl --request GET \
-     --url 'http://{address}/api/v1/file/parent_folder?file_id={file_id}' \
+     --url 'http://{address}/api/v1/files/{file_id}/parent' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
 ##### Request parameters
 
-- `file_id`: (*Filter parameter*), `string`, *Required*  
+- `file_id`: (*Path parameter*), `string`, *Required*
   The ID of the file whose immediate parent folder to retrieve.
 
 #### Response
@@ -6370,14 +7152,18 @@ Failure:
 
 ### Get all parent folders
 
-**GET** `/api/v1/file/all_parent_folder?file_id={file_id}`
+**GET** `/api/v1/files/{file_id}/ancestors`
 
 Retrieves all parent folders of a specified file in the folder hierarchy.
+
+:::caution DEPRECATED
+The previous endpoint `GET /api/v1/file/all_parent_folder?file_id=...` is deprecated. Please use this endpoint instead.
+:::
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/file/all_parent_folder?file_id={file_id}`
+- URL: `/api/v1/files/{file_id}/ancestors`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -6385,13 +7171,13 @@ Retrieves all parent folders of a specified file in the folder hierarchy.
 
 ```bash
 curl --request GET \
-     --url 'http://{address}/api/v1/file/all_parent_folder?file_id={file_id}' \
+     --url 'http://{address}/api/v1/files/{file_id}/ancestors' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
 ##### Request parameters
 
-- `file_id`: (*Filter parameter*), `string`, *Required*  
+- `file_id`: (*Path parameter*), `string`, *Required*
   The ID of the file whose parent folders to retrieve.
 
 #### Response
@@ -6429,35 +7215,39 @@ Failure:
 
 ### Delete files
 
-**POST** `/api/v1/file/rm`
+**DELETE** `/api/v1/files`
 
 Deletes one or multiple files or folders.
 
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/file/rm` is deprecated. Please use this endpoint instead.
+:::
+
 #### Request
 
-- Method: POST
-- URL: `/api/v1/file/rm`
+- Method: DELETE
+- URL: `/api/v1/files`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"file_ids"`: `list[string]`
+  - `"ids"`: `list[string]`
 
 ##### Request example
 
 ```bash
-curl --request POST \
-     --url http://{address}/api/v1/file/rm \
+curl --request DELETE \
+     --url http://{address}/api/v1/files \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
-          "file_ids": ["file_id_1", "file_id_2"]
+          "ids": ["file_id_1", "file_id_2"]
      }'
 ```
 
 ##### Request parameters
 
-- `"file_ids"`: (*Body parameter*), `list[string]`, *Required*  
+- `"ids"`: (*Body parameter*), `list[string]`, *Required*
   The IDs of the files or folders to delete.
 
 #### Response
@@ -6467,7 +7257,9 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "data": {
+        "success_count": 2
+    }
 }
 ```
 
@@ -6475,76 +7267,14 @@ Failure:
 
 ```json
 {
-    "code": 404,
-    "message": "File or Folder not found!"
-}
-```
-
----
-
-### Rename file
-
-**POST** `/api/v1/file/rename`
-
-Renames a file or folder.
-
-#### Request
-
-- Method: POST
-- URL: `/api/v1/file/rename`
-- Headers:
-  - `'Content-Type: application/json'`
-  - `'Authorization: Bearer <YOUR_API_KEY>'`
-- Body:
-  - `"file_id"`: `string`
-  - `"name"`: `string`
-
-##### Request example
-
-```bash
-curl --request POST \
-     --url http://{address}/api/v1/file/rename \
-     --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer <YOUR_API_KEY>' \
-     --data '{
-          "file_id": "{file_id}",
-          "name": "new_name.txt"
-     }'
-```
-
-##### Request parameters
-
-- `"file_id"`: (*Body parameter*), `string`, *Required*  
-  The ID of the file or folder to rename.
-- `"name"`: (*Body parameter*), `string`, *Required*  
-  The new name for the file or folder. Note: Changing file extensions is *not* supported.
-
-#### Response
-
-Success:
-
-```json
-{
-    "code": 0,
-    "data": true
-}
-```
-
-Failure:
-
-```json
-{
-    "code": 400,
-    "message": "The extension of file can't be changed"
-}
-```
-
-or
-
-```json
-{
-    "code": 409,
-    "message": "Duplicated file name in the same folder."
+    "code": 102,
+    "message": "Partially deleted 1 files with 1 errors",
+    "data": {
+        "success_count": 1,
+        "errors": [
+            "No authorization for file file1"
+        ]
+    }
 }
 ```
 
@@ -6552,14 +7282,18 @@ or
 
 ### Download file
 
-**GET** `/api/v1/file/get/{file_id}`
+**GET** `/api/v1/files/{file_id}`
 
 Downloads a file from the system.
+
+:::caution DEPRECATED
+The previous endpoint `GET /api/v1/file/get/{file_id}` is deprecated. Please use this endpoint instead.
+:::
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/file/get/{file_id}`
+- URL: `/api/v1/files/{file_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -6567,14 +7301,14 @@ Downloads a file from the system.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/file/get/{file_id} \
+     --url http://{address}/api/v1/files/{file_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --output ./downloaded_file.txt
 ```
 
 ##### Request parameters
 
-- `file_id`: (*Path parameter*), `string`, *Required*  
+- `file_id`: (*Path parameter*), `string`, *Required*
   The ID of the file to download.
 
 #### Response
@@ -6594,28 +7328,39 @@ Failure:
 
 ---
 
-### Move files
+### Move or rename files
 
-**POST** `/api/v1/file/mv`
+**POST** `/api/v1/files/move`
 
-Moves one or multiple files or folders to a specified folder.
+Moves and/or renames files or folders. Follows Linux `mv` semantics: at least one of `dest_file_id` or `new_name` must be provided.
+
+:::caution DEPRECATED
+The previous endpoints `POST /api/v1/file/mv` and `POST /api/v1/file/rename` are deprecated. Please use this endpoint instead.
+:::
+
+- `dest_file_id` only: move files to a new folder, names unchanged.
+- `new_name` only: rename a single file or folder in place, no storage operation.
+- Both: move and rename simultaneously.
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/file/mv`
+- URL: `/api/v1/files/move`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"src_file_ids"`: `list[string]`
-  - `"dest_file_id"`: `string`
+  - `"src_file_ids"`: `list[string]`, *Required*
+  - `"dest_file_id"`: `string`, *Optional*
+  - `"new_name"`: `string`, *Optional*
 
-##### Request example
+##### Request examples
+
+Move files to a folder:
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/file/mv \
+     --url http://{address}/api/v1/files/move \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
@@ -6624,12 +7369,27 @@ curl --request POST \
      }'
 ```
 
+Rename a file in place:
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/files/move \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "src_file_ids": ["{file_id}"],
+          "new_name": "new_name.txt"
+     }'
+```
+
 ##### Request parameters
 
-- `"src_file_ids"`: (*Body parameter*), `list[string]`, *Required*  
-  The IDs of the files or folders to move.
-- `"dest_file_id"`: (*Body parameter*), `string`, *Required*  
-  The ID of the destination folder.
+- `"src_file_ids"`: (*Body parameter*), `list[string]`, *Required*
+  The IDs of the files or folders to move or rename.
+- `"dest_file_id"`: (*Body parameter*), `string`, *Optional*
+  The ID of the destination folder. Omit to rename in place.
+- `"new_name"`: (*Body parameter*), `string`, *Optional*
+  New name for the file or folder. Only valid when `src_file_ids` contains a single entry. Note: Changing file extensions is *not* supported.
 
 #### Response
 
@@ -6656,22 +7416,31 @@ or
 ```json
 {
     "code": 404,
-    "message": "Parent Folder not found!"
+    "message": "Parent folder not found!"
+}
+```
+
+or
+
+```json
+{
+    "code": 400,
+    "message": "The extension of file can't be changed"
 }
 ```
 
 ---
 
-### Convert files to documents and link them to datasets
+### Links files to datasets and convert to documents
 
-**POST** `/api/v1/file/convert`
+**POST** `/api/v1/files/link-to-datasets`
 
 Converts files to documents and links them to specified datasets.
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/file/convert`
+- URL: `/api/v1/files/link-to-datasets`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -6683,7 +7452,7 @@ Converts files to documents and links them to specified datasets.
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/file/convert \
+     --url http://{address}/api/v1/files/link-to-datasets \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
@@ -6694,9 +7463,9 @@ curl --request POST \
 
 ##### Request parameters
 
-- `"file_ids"`: (*Body parameter*), `list[string]`, *Required*  
+- `"file_ids"`: (*Body parameter*), `list[string]`, *Required*
   The IDs of the files to convert. If a folder ID is provided, all files within that folder will be converted.
-- `"kb_ids"`: (*Body parameter*), `list[string]`, *Required*  
+- `"kb_ids"`: (*Body parameter*), `list[string]`, *Required*
   The IDs of the target datasets.
 
 #### Response
@@ -6731,5 +7500,366 @@ or
 {
     "code": 404,
     "message": "Can't find this dataset!"
+}
+```
+
+---
+
+## SEARCH APP MANAGEMENT
+
+### Create search app
+
+**POST** `/api/v1/searches`
+
+Creates a search app.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/searches`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+
+```json
+{
+    "name": "my_search_app",
+    "description": "optional description"
+}
+```
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url 'http://{address}/api/v1/searches' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --header 'Content-Type: application/json' \
+     --data '{
+         "name": "my_search_app",
+         "description": "My first search app"
+     }'
+```
+
+##### Request parameters
+
+- `"name"`: (*Body parameter*), `string`, *Required*
+  The name of the search app. Must be unique and no longer than 255 characters.
+- `"description"`: (*Body parameter*), `string`
+  A brief description of the search app.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "search_id": "b330ec2e91ec11efbc510242ac120006"
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Search name can't be empty."
+}
+```
+
+---
+
+### List search apps
+
+**GET** `/api/v1/searches?keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&owner_ids={owner_ids}`
+
+Lists search apps for the current user.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/searches`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url 'http://{address}/api/v1/searches?page=1&page_size=20' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `keywords`: (*Filter parameter*), `string`
+  Search keyword to filter search apps by name.
+- `page`: (*Filter parameter*), `integer`
+  Specifies the page number. Defaults to `0` (no pagination).
+- `page_size`: (*Filter parameter*), `integer`
+  The number of items per page. Defaults to `0` (no pagination).
+- `orderby`: (*Filter parameter*), `string`
+  The field to sort by. Defaults to `create_time`.
+- `desc`: (*Filter parameter*), `boolean`
+  Whether to sort in descending order. Defaults to `true`.
+- `owner_ids`: (*Filter parameter*), `string` (repeatable)
+  Filter by owner tenant IDs. Can be specified multiple times: `?owner_ids=id1&owner_ids=id2`.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "total": 2,
+        "search_apps": [
+            {
+                "id": "b330ec2e91ec11efbc510242ac120006",
+                "name": "my_search_app",
+                "description": "My first search app",
+                "tenant_id": "7c8983badede11f083f184ba59bc53c7",
+                "create_time": 1729763127646
+            }
+        ]
+    }
+}
+```
+
+---
+
+### Get search app
+
+**GET** `/api/v1/searches/{search_id}`
+
+Gets the details of a search app.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/searches/{search_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url 'http://{address}/api/v1/searches/b330ec2e91ec11efbc510242ac120006' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `search_id`: (*Path parameter*), `string`, *Required*
+  The ID of the search app to retrieve.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "id": "b330ec2e91ec11efbc510242ac120006",
+        "name": "my_search_app",
+        "description": "My first search app",
+        "tenant_id": "7c8983badede11f083f184ba59bc53c7",
+        "search_config": {},
+        "create_time": 1729763127646
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Can't find this Search App!"
+}
+```
+
+---
+
+### Update search app
+
+**PUT** `/api/v1/searches/{search_id}`
+
+Updates a search app.
+
+#### Request
+
+- Method: PUT
+- URL: `/api/v1/searches/{search_id}`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+
+```json
+{
+    "name": "updated_name",
+    "search_config": {"top_k": 5}
+}
+```
+
+##### Request example
+
+```bash
+curl --request PUT \
+     --url 'http://{address}/api/v1/searches/b330ec2e91ec11efbc510242ac120006' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --header 'Content-Type: application/json' \
+     --data '{
+         "name": "updated_name",
+         "search_config": {"top_k": 5}
+     }'
+```
+
+##### Request parameters
+
+- `search_id`: (*Path parameter*), `string`, *Required*
+  The ID of the search app to update.
+- `"name"`: (*Body parameter*), `string`, *Required*
+  The new name of the search app.
+- `"search_config"`: (*Body parameter*), `object`, *Required*
+  Configuration fields to update. Merged with the existing config.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "id": "b330ec2e91ec11efbc510242ac120006",
+        "name": "updated_name",
+        "search_config": {"top_k": 5},
+        "create_time": 1729763127646
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 109,
+    "message": "No authorization."
+}
+```
+
+---
+
+### Delete search app
+
+**DELETE** `/api/v1/searches/{search_id}`
+
+Deletes a search app.
+
+#### Request
+
+- Method: DELETE
+- URL: `/api/v1/searches/{search_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request DELETE \
+     --url 'http://{address}/api/v1/searches/b330ec2e91ec11efbc510242ac120006' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `search_id`: (*Path parameter*), `string`, *Required*
+  The ID of the search app to delete.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 109,
+    "message": "No authorization."
+}
+```
+
+---
+
+### Search completion
+
+**POST** `/api/v1/searches/{search_id}/completion`
+
+Generates an answer using the saved search app configuration and returns the result as a Server-Sent Events stream.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/searches/{search_id}/completion`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
+- Body:
+  - `"question"`: `string` *(Required)* The user question.
+  - `"kb_ids"`: `list[string]` *(Optional)* Fallback dataset IDs. Used only when the search app config does not already define `kb_ids`.
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/searches/{search_id}/completion \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
+     --data '{
+         "question": "What is retrieval-augmented generation?"
+     }'
+```
+
+##### Request parameters
+
+- `search_id`: (*Path parameter*), `string`, *Required*
+  The ID of the search app.
+- `"question"`: (*Body parameter*), `string`, *Required*
+  The user question.
+- `"kb_ids"`: (*Body parameter*), `list[string]`
+  Optional fallback dataset IDs when the search app config does not define them.
+
+#### Response
+
+Success (streaming):
+
+```text
+data: {"code": 0, "message": "", "data": {"answer": "...", "reference": {...}}}
+
+data: {"code": 0, "message": "", "data": true}
+```
+
+Failure:
+
+```json
+{
+    "code": 109,
+    "message": "No authorization."
 }
 ```

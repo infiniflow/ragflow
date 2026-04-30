@@ -15,11 +15,8 @@
 #
 
 import base64
-import ipaddress
 import json
 import re
-import socket
-from urllib.parse import urlparse
 import aiosmtplib
 from email.mime.text import MIMEText
 from email.header import Header
@@ -37,10 +34,10 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 
 OTP_LENGTH = 4
-OTP_TTL_SECONDS = 5 * 60 # valid for 5 minutes
-ATTEMPT_LIMIT = 5 # maximum attempts
-ATTEMPT_LOCK_SECONDS = 30 * 60 # lock for 30 minutes
-RESEND_COOLDOWN_SECONDS = 60 # cooldown for 1 minute
+OTP_TTL_SECONDS = 5 * 60  # valid for 5 minutes
+ATTEMPT_LIMIT = 5  # maximum attempts
+ATTEMPT_LOCK_SECONDS = 30 * 60  # lock for 30 minutes
+RESEND_COOLDOWN_SECONDS = 60  # cooldown for 1 minute
 
 
 CONTENT_TYPE_MAP = {
@@ -90,6 +87,46 @@ CONTENT_TYPE_MAP = {
     "ppt": "application/vnd.ms-powerpoint",
     "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
+
+
+FORCE_ATTACHMENT_EXTENSIONS = {
+    "htm",
+    "html",
+    "shtml",
+    "xht",
+    "xhtml",
+    "xml",
+    "mhtml",
+    "svg",
+}
+
+
+FORCE_ATTACHMENT_CONTENT_TYPES = {
+    "text/html",
+    "image/svg+xml",
+    "application/xhtml+xml",
+    "text/xml",
+    "application/xml",
+    "multipart/related",
+}
+
+
+def should_force_attachment(ext: str | None, content_type: str | None = None) -> bool:
+    normalized_ext = (ext or "").lower().strip(".")
+    if normalized_ext in FORCE_ATTACHMENT_EXTENSIONS:
+        return True
+    normalized_type = (content_type or "").lower()
+    return normalized_type in FORCE_ATTACHMENT_CONTENT_TYPES
+
+
+def apply_safe_file_response_headers(response, content_type: str | None, ext: str | None = None):
+    if content_type:
+        response.headers.set("Content-Type", content_type)
+    force_attachment = should_force_attachment(ext, content_type)
+    if force_attachment:
+        response.headers.set("X-Content-Type-Options", "nosniff")
+        response.headers.set("Content-Disposition", "attachment")
+    return response
 
 
 def html2pdf(
@@ -148,29 +185,16 @@ def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_opt
         return base64.b64decode(result["data"])
 
 
-def is_private_ip(ip: str) -> bool:
-    try:
-        ip_obj = ipaddress.ip_address(ip)
-        return ip_obj.is_private
-    except ValueError:
-        return False
-
-
 def is_valid_url(url: str) -> bool:
     if not re.match(r"(https?)://[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]", url):
         return False
-    parsed_url = urlparse(url)
-    hostname = parsed_url.hostname
+    from common.ssrf_guard import assert_url_is_safe
 
-    if not hostname:
-        return False
     try:
-        ip = socket.gethostbyname(hostname)
-        if is_private_ip(ip):
-            return False
-    except socket.gaierror:
+        assert_url_is_safe(url)
+        return True
+    except ValueError:
         return False
-    return True
 
 
 def safe_json_parse(data: str | dict) -> dict:
@@ -188,10 +212,9 @@ def get_float(req: dict, key: str, default: float | int = 10.0) -> float:
         return parsed if parsed > 0 else default
     except (TypeError, ValueError):
         return default
-    
+
 
 async def send_email_html(to_email: str, subject: str, template_key: str, **context):
-
     body = await render_template_string(EMAIL_TEMPLATES.get(template_key), **context)
     msg = MIMEText(body, "plain", "utf-8")
     msg["Subject"] = Header(subject, "utf-8")
@@ -236,10 +259,10 @@ def otp_keys(email: str):
 
 def hash_code(code: str, salt: bytes) -> str:
     import hashlib
-    import hmac 
+    import hmac
+
     return hmac.new(salt, (code or "").encode("utf-8"), hashlib.sha256).hexdigest()
-    
+
 
 def captcha_key(email: str) -> str:
     return f"captcha:{email}"
-    
