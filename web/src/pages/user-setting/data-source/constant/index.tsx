@@ -108,7 +108,13 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.DINGTALK_AI_TABLE]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.ZENDESK]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.SEAFILE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.ASANA]: {
     syncDeletedFiles: true,
   },
 };

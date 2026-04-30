@@ -46,8 +46,15 @@ func (z *GoogleModel) Name() string {
 	return "google"
 }
 
-// Chat sends a message and returns response
-func (z *GoogleModel) Chat(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (z *GoogleModel) ChatWithMessages(modelName string, apiConfig *APIConfig, messages []Message, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is nil or empty")
+	}
+
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("messages is empty")
+	}
+
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  *apiConfig.ApiKey,
@@ -57,39 +64,59 @@ func (z *GoogleModel) Chat(modelName, message *string, apiConfig *APIConfig, cha
 		return nil, err
 	}
 
-	contents := []*genai.Content{
-		genai.NewContentFromText(*message, genai.RoleUser),
+	// Convert messages to Google SDK format
+	var contents []*genai.Content
+	for _, msg := range messages {
+		var role genai.Role
+		switch msg.Role {
+		case "user":
+			role = genai.RoleUser
+		case "model", "assistant":
+			role = genai.RoleModel
+		default:
+			role = genai.RoleUser
+		}
+
+		// Handle content based on type
+		switch c := msg.Content.(type) {
+		case string:
+			contents = append(contents, genai.NewContentFromText(c, role))
+		case []interface{}:
+			// Multimodal content - group parts within a single content
+			var parts []*genai.Part
+			for _, item := range c {
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					contentType, _ := itemMap["type"].(string)
+					switch contentType {
+					case "text":
+						if text, ok := itemMap["text"].(string); ok {
+							parts = append(parts, genai.NewPartFromText(text))
+						}
+					case "image_url":
+						if imgMap, ok := itemMap["image_url"].(map[string]interface{}); ok {
+							if url, ok := imgMap["url"].(string); ok {
+								parts = append(parts, genai.NewPartFromURI(url, "image/jpeg"))
+							}
+						}
+					}
+				}
+			}
+			if len(parts) > 0 {
+				contents = append(contents, genai.NewContentFromParts(parts, role))
+			}
+		}
 	}
 
-	generateContentConfig := &genai.GenerateContentConfig{}
-	generateContentConfig.ThinkingConfig = &genai.ThinkingConfig{}
-	if chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		generateContentConfig.ThinkingConfig.IncludeThoughts = true
-	} else {
-		generateContentConfig.ThinkingConfig.IncludeThoughts = false
-	}
-
-	response, err := client.Models.GenerateContent(ctx, *modelName, contents, generateContentConfig)
+	// Generate content (non-streaming)
+	response, err := client.Models.GenerateContent(ctx, modelName, contents, nil)
 	if err != nil {
 		return nil, err
 	}
-	content := response.Text()
 
-	var responseContent string
-	if chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		responseContent = response.Candidates[0].Content.Parts[0].Text
-	}
+	// Extract text from response
+	answer := response.Text()
 
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &responseContent,
-	}
-	return chatResponse, nil
-}
-
-// ChatWithMessages sends multiple messages with roles and returns response
-func (z *GoogleModel) ChatWithMessages(modelName string, apiKey *string, messages []Message, modelConfig *ChatConfig) (string, error) {
-	return "", fmt.Errorf("not implemented")
+	return &ChatResponse{Answer: &answer}, nil
 }
 
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
