@@ -88,6 +88,7 @@ Try our demo at [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 ## 🔥 Latest Updates
 
+- 2026-04-24 Supports DeepSeek v4.
 - 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — Provides an official skill for accessing RAGFlow datasets via OpenClaw.
 - 2025-12-26 Supports 'Memory' for AI agent.
 - 2025-11-19 Supports Gemini 3 Pro.
