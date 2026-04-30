@@ -106,7 +106,7 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.WEBDAV]: {
-     syncDeletedFiles: true,
+    syncDeletedFiles: true,
   },
   [DataSourceKey.ZENDESK]: {
     syncDeletedFiles: true,
@@ -118,6 +118,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.RSS]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.MOODLE]: {
     syncDeletedFiles: true,
   },
 };
