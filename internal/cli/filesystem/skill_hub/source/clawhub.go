@@ -903,12 +903,9 @@ func isSafePath(path string) bool {
 		return false
 	}
 	
-	// Check for parent directory references
-	parts := strings.Split(clean, string(filepath.Separator))
-	for _, part := range parts {
-		if part == ".." {
-			return false
-		}
+	// Check for parent directory references (including after cleaning)
+	if strings.HasPrefix(clean, "..") {
+		return false
 	}
 	
 	return true

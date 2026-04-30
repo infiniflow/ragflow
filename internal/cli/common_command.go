@@ -144,7 +144,7 @@ func (c *RAGFlowClient) LoginUser(cmd *Command) error {
 	password, ok := cmd.Params["password"].(string)
 	if !ok {
 		// Get password from user input (hidden)
-		fmt.Printf("password for %s: ", email)
+		fmt.Fprint(os.Stderr, "password: ")
 		password, err = ReadPassword()
 		if err != nil {
 			return fmt.Errorf("failed to read password: %w", err)
@@ -161,7 +161,7 @@ func (c *RAGFlowClient) LoginUser(cmd *Command) error {
 	}
 
 	c.HTTPClient.LoginToken = token
-	fmt.Printf("Login user %s successfully\n", email)
+	fmt.Fprintf(os.Stderr, "Login user %s successfully\n", email)
 	return nil
 }
 

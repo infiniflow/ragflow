@@ -54,6 +54,7 @@ func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, p
 	if desc {
 		orderDirection = "DESC"
 	}
+	orderby = sanitizeOrderBy(orderby)
 	query = query.Order(orderby + " " + orderDirection)
 
 	// Count total
@@ -103,6 +104,7 @@ func (dao *SearchDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby s
 	if desc {
 		orderDirection = "DESC"
 	}
+	orderby = sanitizeOrderBy(orderby)
 	query = query.Order(orderby + " " + orderDirection)
 
 	// Get all matching records

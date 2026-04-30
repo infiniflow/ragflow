@@ -79,6 +79,7 @@ func (dao *ChatDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pag
 	if desc {
 		orderDirection = "DESC"
 	}
+	orderby = sanitizeOrderBy(orderby)
 	query = query.Order(orderby + " " + orderDirection)
 
 	// Count total
@@ -128,6 +129,7 @@ func (dao *ChatDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby str
 	if desc {
 		orderDirection = "DESC"
 	}
+	orderby = sanitizeOrderBy(orderby)
 	query = query.Order(orderby + " " + orderDirection)
 
 	// Get all matching records

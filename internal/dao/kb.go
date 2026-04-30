@@ -169,6 +169,7 @@ func (dao *KnowledgebaseDAO) GetByTenantIDs(tenantIDs []string, userID string, p
 		query = query.Where("knowledgebase.parser_id = ?", parserID)
 	}
 
+	orderby = sanitizeOrderBy(orderby)
 	if desc {
 		query = query.Order("knowledgebase." + orderby + " DESC")
 	} else {

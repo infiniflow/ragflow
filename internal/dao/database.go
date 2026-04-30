@@ -176,6 +176,20 @@ func InitDB() error {
 	return nil
 }
 
+// sanitizeOrderBy validates that an order-by column name contains only safe characters.
+// If the input is empty or contains unexpected characters, it falls back to "create_time".
+func sanitizeOrderBy(orderby string) string {
+	if orderby == "" {
+		return "create_time"
+	}
+	for _, r := range orderby {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_') {
+			return "create_time"
+		}
+	}
+	return orderby
+}
+
 // GetDB get database instance
 func GetDB() *gorm.DB {
 	return DB
@@ -302,3 +316,4 @@ func InitLLMFactory() error {
 
 	return nil
 }
+

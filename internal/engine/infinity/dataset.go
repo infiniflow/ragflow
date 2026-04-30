@@ -343,7 +343,9 @@ func (e *infinityEngine) InsertDataset(ctx context.Context, chunks []map[string]
 	if len(insertChunks) > 0 {
 		idList := make([]string, len(insertChunks))
 		for i, chunk := range insertChunks {
-			idList[i] = fmt.Sprintf("'%v'", chunk["id"])
+			idStr := fmt.Sprint(chunk["id"])
+			idStr = strings.ReplaceAll(strings.ReplaceAll(idStr, `\`, `\\`), `'`, `\'`)
+			idList[i] = fmt.Sprintf("'%s'", idStr)
 		}
 		filter := fmt.Sprintf("id IN (%s)", strings.Join(idList, ", "))
 		logger.Debug(fmt.Sprintf("Deleting existing rows with filter: %s", filter))

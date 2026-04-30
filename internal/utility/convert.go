@@ -19,6 +19,7 @@ package utility
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -123,6 +124,9 @@ func ConvertHexToPositionIntArray(hexStr string) interface{} {
 		if err != nil {
 			continue
 		}
+		if val < math.MinInt || val > math.MaxInt {
+			continue
+		}
 		intVals = append(intVals, int(val))
 	}
 
@@ -177,6 +181,9 @@ func ConvertHexToIntArray(hexStr string) interface{} {
 		}
 		val, err := strconv.ParseInt(part, 16, 64)
 		if err != nil {
+			continue
+		}
+		if val < math.MinInt || val > math.MaxInt {
 			continue
 		}
 		result = append(result, int(val))

@@ -26,6 +26,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -86,6 +87,9 @@ func checkScryptPassword(password, hashStr string) bool {
 		return false
 	}
 
+	if n > math.MaxInt || r > math.MaxInt || p > math.MaxInt {
+		return false
+	}
 	computed, err := scrypt.Key([]byte(password), salt, int(n), int(r), int(p), len(expectedHash))
 	if err != nil {
 		return false

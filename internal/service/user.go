@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"hash"
 	"os"
+	"math"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
@@ -534,6 +535,9 @@ func (s *UserService) verifyScryptPassword(hashedPassword, password string) bool
 	}
 
 	// Compute password hash
+	if n > math.MaxInt || r > math.MaxInt || p > math.MaxInt {
+		return false
+	}
 	computed, err := scrypt.Key([]byte(password), salt, int(n), int(r), int(p), len(expectedHash))
 	if err != nil {
 		return false

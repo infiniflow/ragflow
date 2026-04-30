@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -294,7 +296,15 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 		return
 	}
 
-	// Read the JSON file
+	// Validate and read the JSON file
+	cleanPath := filepath.Clean(req.FilePath)
+	if strings.Contains(cleanPath, "..") || filepath.IsAbs(cleanPath) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "invalid file path",
+		})
+		return
+	}
 	data, err := os.ReadFile(req.FilePath)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{

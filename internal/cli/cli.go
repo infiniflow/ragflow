@@ -524,7 +524,7 @@ func (c *CLI) Run() error {
 
 			if err = c.VerifyAuth(); err != nil {
 				if attempt < maxAttempts {
-					fmt.Printf("Authentication failed: %v (%d/%d attempts)\n", err, attempt, maxAttempts)
+					fmt.Fprintf(os.Stderr, "Authentication failed: %v (%d/%d attempts)\n", err, attempt, maxAttempts)
 					continue
 				}
 				return fmt.Errorf("authentication failed after %d attempts: %v", maxAttempts, err)
@@ -575,7 +575,7 @@ func (c *CLI) Run() error {
 		}
 
 		if err = c.executeNew(input); err != nil {
-			fmt.Printf("CLI error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "CLI error: %v\n", err)
 		}
 	}
 
@@ -1175,7 +1175,7 @@ func (c *CLI) handleMetaCommand(cmd *Command) error {
 			fmt.Printf("Current host: %s\n", c.client.HTTPClient.Host)
 		} else {
 			c.client.HTTPClient.Host = args[0]
-			fmt.Printf("Host set to: %s\n", args[0])
+			fmt.Fprintf(os.Stderr, "Host set to: %s\n", args[0])
 		}
 	case "port":
 		if len(args) == 0 {

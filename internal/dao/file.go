@@ -64,6 +64,7 @@ func (dao *FileDAO) GetByPfID(tenantID, pfID string, page, pageSize int, orderby
 	if desc {
 		orderDirection = "DESC"
 	}
+	orderby = sanitizeOrderBy(orderby)
 	query = query.Order(orderby + " " + orderDirection)
 
 	// Apply pagination

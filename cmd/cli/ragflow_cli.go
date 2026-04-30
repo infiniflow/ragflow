@@ -53,13 +53,13 @@ func main() {
 	if args.Command != nil {
 		// Single command mode
 		if err = cliApp.RunSingleCommand(args.Command); err != nil {
-			fmt.Printf("Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 	} else {
 		// Interactive mode
 		if err = cliApp.Run(); err != nil {
-			fmt.Printf("CLI error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "CLI error: %v\n", err)
 			os.Exit(1)
 		}
 	}
