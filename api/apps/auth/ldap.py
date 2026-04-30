@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import hashlib
 import logging
 
 from .oauth import UserInfo
@@ -80,6 +81,8 @@ class LDAPClient:
 
         if not self.bind_dn_template and not self.bind_user_dn:
             raise ValueError("LDAP config must define either 'bind_dn_template' or 'bind_user_dn' for search-then-bind.")
+        if self.bind_user_dn and not self.bind_dn_template and not self.user_search_base:
+            raise ValueError("LDAP search-then-bind requires 'user_search_base'.")
 
     def _server(self):
         """Build an ``ldap3.Server`` with the configured TLS policy and
@@ -145,11 +148,15 @@ class LDAPClient:
             email = f"{login_name}@{self.channel_id}.ldap.local"
             synthetic_email = True
 
+        # Log a fingerprint of the resolved DN instead of the DN itself so
+        # operators can correlate log lines without exposing usernames or
+        # directory structure (which can carry PII).
+        user_dn_fp = hashlib.sha256(user_dn.encode("utf-8")).hexdigest()[:12]
         logging.info(
-            "LDAP authenticate ok channel=%s host=%s user_dn=%s synthetic_email=%s",
+            "LDAP authenticate ok channel=%s host=%s user_dn_fp=%s synthetic_email=%s",
             self.channel_id,
             self.host,
-            user_dn,
+            user_dn_fp,
             synthetic_email,
         )
 

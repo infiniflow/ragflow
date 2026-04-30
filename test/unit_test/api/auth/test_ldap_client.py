@@ -51,6 +51,12 @@ class TestLDAPClientConfig:
         with pytest.raises(ValueError):
             LDAPClient({"host": "ldap.example.com"})
 
+    def test_search_then_bind_requires_user_search_base(self):
+        cfg = _search_bind_config()
+        cfg.pop("user_search_base")
+        with pytest.raises(ValueError, match="user_search_base"):
+            LDAPClient(cfg)
+
     def test_filter_escape_neutralizes_metacharacters(self):
         cli = LDAPClient(_direct_bind_config())
         assert cli._escape_filter("a*b(c)") == r"a\2ab\28c\29"

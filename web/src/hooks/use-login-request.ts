@@ -66,10 +66,16 @@ export const useLoginWithLdap = () => {
     }) => {
       const { data: res = {}, response } = await loginWithLdap(params);
       if (res.code === 0) {
-        saveSetting({ language: storage.getLanguage() });
         const { data } = res;
         const authorization = response.headers.get(Authorization);
-        const token = data.access_token;
+        const token = data?.access_token;
+        if (!authorization || !token) {
+          // Backend signalled success but the auth payload is incomplete;
+          // refuse to persist a half-authenticated state.
+          message.error(res.message || 'Invalid authentication response');
+          return 1;
+        }
+        saveSetting({ language: storage.getLanguage() });
         const userInfo = {
           avatar: data.avatar,
           name: data.nickname,
