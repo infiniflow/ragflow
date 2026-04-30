@@ -111,7 +111,13 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.POSTGRESQL]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.ZENDESK]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.SEAFILE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.ASANA]: {
     syncDeletedFiles: true,
   },
 };
