@@ -496,7 +496,8 @@ class MinerUParser(RAGFlowPdfParser):
             return sanitized or "unnamed"
 
         safe_stem = _sanitize_filename(file_stem)
-        allowed_names = {f"{file_stem}_content_list.json", f"{safe_stem}_content_list.json"}
+        content_names = tuple(dict.fromkeys((f"{file_stem}_content_list.json", f"{safe_stem}_content_list.json")))
+        allowed_names = set(content_names)
         self.logger.info(f"[MinerU] Expected output files: {', '.join(sorted(allowed_names))}")
         self.logger.info(f"[MinerU] Searching output in: {output_dir}")
 
@@ -520,6 +521,62 @@ class MinerUParser(RAGFlowPdfParser):
                 if nested_alt.exists():
                     subdir = nested_alt.parent
                     json_file = nested_alt
+
+        if not json_file:
+            parse_subdir = None
+            if backend.startswith("pipeline"):
+                parse_subdir = method
+            elif backend.startswith("hybrid"):
+                parse_subdir = f"hybrid_{method}"
+            elif backend.startswith("vlm"):
+                parse_subdir = "vlm"
+
+            if parse_subdir:
+                for content_name in content_names:
+                    for candidate in output_dir.glob(f"**/{parse_subdir}/{content_name}"):
+                        self.logger.info(f"[MinerU] Trying parse-method path: {candidate}")
+                        attempted.append(candidate)
+                        subdir = candidate.parent
+                        json_file = candidate
+                        break
+                    if json_file:
+                        break
+
+        if not json_file:
+            stem_dirs = tuple(dict.fromkeys((file_stem, safe_stem)))
+            patterns = []
+            if parse_subdir:
+                for stem_dir in stem_dirs:
+                    patterns.extend(
+                        [
+                            f"**/{stem_dir}/{parse_subdir}/content_list.json",
+                            f"**/{stem_dir}/{parse_subdir}/*_content_list.json",
+                        ]
+                    )
+                patterns.extend(
+                    [
+                        f"**/{parse_subdir}/content_list.json",
+                        f"**/{parse_subdir}/*_content_list.json",
+                    ]
+                )
+            for stem_dir in stem_dirs:
+                patterns.extend(
+                    [
+                        f"**/{stem_dir}/content_list.json",
+                        f"**/{stem_dir}/*_content_list.json",
+                    ]
+                )
+            patterns.extend(["**/content_list.json", "**/*_content_list.json"])
+
+            for pattern in patterns:
+                for candidate in sorted(output_dir.glob(pattern)):
+                    self.logger.info(f"[MinerU] Trying fallback path: {candidate}")
+                    attempted.append(candidate)
+                    subdir = candidate.parent
+                    json_file = candidate
+                    break
+                if json_file:
+                    break
 
         if not json_file:
             raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(p) for p in attempted)}")
