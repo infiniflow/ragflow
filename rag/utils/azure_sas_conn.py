@@ -49,12 +49,12 @@ class RAGFlowAzureSasBlob:
 
     def health(self):
         _bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
-        return self.conn.upload_blob(name=fnm, data=BytesIO(binary), length=len(binary))
+        return self.conn.upload_blob(name=f"{_bucket}/{fnm}", data=BytesIO(binary), length=len(binary))
 
     def put(self, bucket, fnm, binary, tenant_id=None):
         for _ in range(3):
             try:
-                return self.conn.upload_blob(name=fnm, data=BytesIO(binary), length=len(binary))
+                return self.conn.upload_blob(name=f"{bucket}/{fnm}", data=BytesIO(binary), length=len(binary))
             except Exception:
                 logging.exception(f"Fail put {bucket}/{fnm}")
                 self.__open__()
@@ -62,24 +62,24 @@ class RAGFlowAzureSasBlob:
 
     def rm(self, bucket, fnm):
         try:
-            self.conn.delete_blob(fnm)
+            self.conn.delete_blob(f"{bucket}/{fnm}")
         except Exception:
             logging.exception(f"Fail rm {bucket}/{fnm}")
 
     def get(self, bucket, fnm):
         for _ in range(1):
             try:
-                r = self.conn.download_blob(fnm)
+                r = self.conn.download_blob(f"{bucket}/{fnm}")
                 return r.read()
             except Exception:
                 logging.exception(f"fail get {bucket}/{fnm}")
                 self.__open__()
                 time.sleep(1)
-        return
+        return None
 
     def obj_exist(self, bucket, fnm):
         try:
-            return self.conn.get_blob_client(fnm).exists()
+            return self.conn.get_blob_client(f"{bucket}/{fnm}").exists()
         except Exception:
             logging.exception(f"Fail put {bucket}/{fnm}")
         return False
@@ -87,9 +87,9 @@ class RAGFlowAzureSasBlob:
     def get_presigned_url(self, bucket, fnm, expires):
         for _ in range(10):
             try:
-                return self.conn.get_presigned_url("GET", bucket, fnm, expires)
+                return self.conn.get_blob_client(f"{bucket}/{fnm}").url
             except Exception:
                 logging.exception(f"fail get {bucket}/{fnm}")
                 self.__open__()
                 time.sleep(1)
-        return
+        return None
