@@ -22,6 +22,8 @@ import pandas as pd
 import pymysql
 import psycopg2
 import pyodbc
+import sqlglot
+from sqlglot import expressions as exp
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from common.connection_utils import timeout
 
@@ -77,6 +79,60 @@ class ExeSQLParam(ToolParamBase):
         }
 
 
+_ALLOWED_READ_EXPRESSIONS = (
+    exp.Select,
+    exp.Union,
+    exp.Except,
+    exp.Intersect,
+)
+
+
+def _strip_sql_code_fences(sql: str) -> str:
+    return sql.replace("```", "").strip()
+
+
+def _sqlglot_dialect(db_type: str) -> str | None:
+    return {
+        "mysql": "mysql",
+        "mariadb": "mysql",
+        "oceanbase": "mysql",
+        "postgres": "postgres",
+        "mssql": "tsql",
+        "trino": "trino",
+        "IBM DB2": None,
+    }.get(db_type)
+
+
+def _parse_sql_statements(sql: str, db_type: str) -> list[exp.Expression]:
+    dialect = _sqlglot_dialect(db_type)
+    try:
+        statements = [statement for statement in sqlglot.parse(sql, read=dialect) if statement]
+    except Exception as e:
+        raise ValueError(f"Invalid SQL statement: {e}")
+    return statements
+
+
+def _split_sql_statements(sql: str, db_type: str) -> list[str]:
+    statements = _parse_sql_statements(sql, db_type)
+    if len(statements) != 1:
+        raise ValueError("For security reasons, only one read-only SQL statement is supported.")
+    return [sql.strip()]
+
+
+def _ensure_read_only_sql(sql: str, db_type: str) -> None:
+    statements = _parse_sql_statements(sql, db_type)
+    if len(statements) != 1:
+        raise ValueError("For security reasons, only one read-only SQL statement is supported.")
+
+    statement = statements[0]
+    if not isinstance(statement, _ALLOWED_READ_EXPRESSIONS):
+        raise ValueError("For security reasons, only read-only SELECT statements are supported.")
+
+    unsafe = statement.find(exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create, exp.Alter, exp.Command, exp.Lock)
+    if unsafe or statement.args.get("locks"):
+        raise ValueError("For security reasons, only read-only SELECT statements are supported.")
+
+
 class ExeSQL(ToolBase, ABC):
     component_name = "ExeSQL"
 
@@ -123,7 +179,7 @@ class ExeSQL(ToolBase, ABC):
         if self.check_if_canceled("ExeSQL processing"):
             return
 
-        sqls = sql.split(";")
+        sqls = _split_sql_statements(sql, self._param.db_type)
         if self._param.db_type in ["mysql", "mariadb"]:
             db = pymysql.connect(db=self._param.database, user=self._param.username, host=self._param.host,
                                  port=self._param.port, password=self._param.password)
@@ -203,10 +259,11 @@ class ExeSQL(ToolBase, ABC):
                     if self.check_if_canceled("ExeSQL processing"):
                         return
 
-                    single_sql = single_sql.replace("```", "").strip()
+                    single_sql = _strip_sql_code_fences(single_sql)
                     if not single_sql:
                         continue
                     single_sql = re.sub(r"\[ID:[0-9]+\]", "", single_sql)
+                    _ensure_read_only_sql(single_sql, self._param.db_type)
 
                     stmt = ibm_db.exec_immediate(conn, single_sql)
                     rows = []
@@ -251,14 +308,12 @@ class ExeSQL(ToolBase, ABC):
                 if self.check_if_canceled("ExeSQL processing"):
                     return
 
-                single_sql = single_sql.replace('```', '').strip()
+                single_sql = _strip_sql_code_fences(single_sql)
                 if not single_sql:
                     continue
                 single_sql = re.sub(r"\[ID:[0-9]+\]", "", single_sql)
-                if re.match(r"^(insert|update|delete)\b", single_sql, flags=re.IGNORECASE):
-                    sql_res.append({"content": "For security reasons, INSERT, UPDATE, and DELETE statements are not supported."})
-                    formalized_content.append("For security reasons, INSERT, UPDATE, and DELETE statements are not supported.")
-                    continue
+                _ensure_read_only_sql(single_sql, self._param.db_type)
+                # The SQL is user/LLM-provided, so validate the parsed statement above before execution.
                 cursor.execute(single_sql)
                 if cursor.rowcount == 0:
                     sql_res.append({"content": "No record in the database!"})
