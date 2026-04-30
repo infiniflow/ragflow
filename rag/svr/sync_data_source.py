@@ -261,15 +261,7 @@ class SyncBase:
                 task["connector_id"],
                 task["kb_id"],
             )
-        elif file_list == []:
-            logging.warning(
-                "%s deleted-file sync skipped because the snapshot was empty "
-                "(connector_id=%s, kb_id=%s)",
-                self.SOURCE_NAME,
-                task["connector_id"],
-                task["kb_id"],
-            )
-        elif file_list is not None:
+        elif file_list:
             logging.info(
                 "[%s] Starting stale document reconciliation. Snapshot size: %d "
                 "(connector_id=%s, kb_id=%s)",
