@@ -61,12 +61,16 @@ func (z *XAIModel) Name() string {
 
 // ChatWithMessages sends multiple messages with roles and returns the response
 func (z *XAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
 	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil {
+	if apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
 
@@ -121,9 +125,7 @@ func (z *XAIModel) ChatWithMessages(modelName string, messages []Message, apiCon
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := z.httpClient.Do(req)
 	if err != nil {
@@ -219,8 +221,13 @@ func (z *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 	}
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
+		// Refuse to run if the caller explicitly asked for stream=false.
+		// The body of this method only knows how to read SSE, so a non-SSE
+		// JSON response would be parsed as if it were a stream and produce
+		// no chunks. Better to fail clearly. Leave reqBody["stream"] as
+		// the default (true) when Stream is nil or true.
+		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
+			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 		}
 
 		if chatModelConfig.MaxTokens != nil {
