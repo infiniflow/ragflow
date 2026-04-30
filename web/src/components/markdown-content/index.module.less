@@ -1,4 +1,46 @@
 .markdownContentWrapper {
+  /* Heading / list rhythm for streamed assistant Markdown (GFM + breaks) */
+  :global(h1) {
+    font-size: 1.25em;
+    font-weight: 600;
+    margin: 0.65em 0 0.4em;
+    line-height: 1.35;
+  }
+  :global(h2) {
+    font-size: 1.15em;
+    font-weight: 600;
+    margin: 0.55em 0 0.35em;
+    line-height: 1.35;
+  }
+  :global(h3) {
+    font-size: 1.08em;
+    font-weight: 600;
+    margin: 0.5em 0 0.3em;
+    line-height: 1.35;
+  }
+  :global(h4),
+  :global(h5),
+  :global(h6) {
+    font-size: 1em;
+    font-weight: 600;
+    margin: 0.45em 0 0.25em;
+    line-height: 1.35;
+  }
+  :global(p) {
+    margin: 0.35em 0;
+  }
+  :global(ul),
+  :global(ol) {
+    margin: 0.35em 0;
+    padding-inline-start: 1.25em;
+  }
+  :global(li) {
+    margin: 0.15em 0;
+  }
+  :global(table) {
+    margin: 0.5em 0;
+  }
+
   :global(section.think) {
     padding-inline-start: 10px;
     color: #8b8b8b;

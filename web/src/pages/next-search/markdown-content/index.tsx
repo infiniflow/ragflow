@@ -8,8 +8,7 @@ import Markdown from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
+import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 
 import { useTranslation } from 'react-i18next';
@@ -246,7 +245,7 @@ const MarkdownContent = ({
     >
       <Markdown
         rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={MarkdownRemarkPlugins}
         components={
           {
             p: ({ children, node, ...props }: any) => (
