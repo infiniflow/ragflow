@@ -213,6 +213,9 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
     :param auth_header: Authorization header for Go backend API calls
     :return: (success, result) or (success, error_message)
     """
+    errors: list[str] = []
+    success_count = 0
+
     def _get_space_uuid_by_name(tenant_id, space_name, authorization):
         """Get space UUID by space name from Go backend"""
         try:
@@ -305,24 +308,45 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
             )
             return False
 
-    def _delete_single_file(file):
+    def _delete_single_file(file) -> int:
         try:
             if file.location:
                 settings.STORAGE_IMPL.rm(file.parent_id, file.location)
         except Exception as e:
             logging.exception(f"Fail to remove object: {file.parent_id}/{file.location}, error: {e}")
+            errors.append(f"Failed to remove object {file.parent_id}/{file.location}: {e}")
 
         informs = File2DocumentService.get_by_file_id(file.id)
         for inform in informs:
             doc_id = inform.document_id
             e, doc = DocumentService.get_by_id(doc_id)
-            if e and doc:
-                tenant_id = DocumentService.get_tenant_id(doc_id)
-                if tenant_id:
-                    DocumentService.remove_document(doc, tenant_id)
-            File2DocumentService.delete_by_file_id(file.id)
+            if not e or not doc:
+                errors.append(f"Document not found for file {file.id}: {doc_id}")
+                continue
 
-        FileService.delete(file)
+            tenant_id = DocumentService.get_tenant_id(doc_id)
+            if not tenant_id:
+                errors.append(f"Tenant not found for document {doc_id}")
+                continue
+
+            if not DocumentService.remove_document(doc, tenant_id):
+                errors.append(f"Failed to remove document {doc_id} for file {file.id}")
+
+        try:
+            File2DocumentService.delete_by_file_id(file.id)
+        except Exception as e:
+            logging.exception(f"Fail to remove file-document relations for file {file.id}, error: {e}")
+            errors.append(f"Failed to remove file-document relations for file {file.id}: {e}")
+
+        try:
+            FileService.delete(file)
+        except Exception as e:
+            logging.exception(f"Fail to delete file record {file.id}, error: {e}")
+            errors.append(f"Failed to delete file record {file.id}: {e}")
+        else:
+            return 1
+
+        return 0
 
     def _find_ancestor_skill_space(folder_id, tenant_id):
         """Walk up the folder hierarchy to find an ancestor with source_type == 'skill_space'.
@@ -343,65 +367,58 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
             current_id = folder.parent_id
         return False, None
 
-    def _delete_folder_recursive(folder, tenant_id, is_skill_folder=False, space_name=None, authorization=""):
-        # Determine if this is a space folder, skill folder, or regular folder
-        current_space_name = space_name
+    def _delete_folder_recursive(folder, tenant_id) -> int:
+        deleted = 0
+        current_space_name = None
         is_space_folder = folder.source_type == "skill_space"
+        is_skill_folder = False
 
-        # If not already identified as skill folder and no space name, check parent/ancestors
-        if not is_skill_folder and not current_space_name and not is_space_folder:
-            # First check immediate parent
+        if not is_space_folder:
             parent_success, parent_folder = FileService.get_by_id(folder.parent_id)
             if parent_success and parent_folder and parent_folder.source_type == "skill_space":
                 is_skill_folder = True
-                # Use parent folder name as space name (e.g., "space11")
                 current_space_name = parent_folder.name
                 logging.info(f"Identified skill folder '{folder.name}' (parent space: {current_space_name})")
             else:
-                # Walk up the hierarchy to find skill_space ancestor
                 ancestor_success, ancestor_folder = _find_ancestor_skill_space(folder.parent_id, tenant_id)
                 if ancestor_success and ancestor_folder:
                     is_skill_folder = True
                     current_space_name = ancestor_folder.name
                     logging.info(f"Identified skill folder '{folder.name}' (ancestor space: {current_space_name})")
 
-        # If this is a space folder, extract space name for children
         if is_space_folder:
             current_space_name = folder.name
             logging.info(f"Processing space folder '{folder.name}' - will delete all skill indexes within")
 
-        # If this is a skill folder (not space folder), delete its index first
         if is_skill_folder and current_space_name and not is_space_folder:
             logging.info(f"Deleting skill index for skill '{folder.name}' in space '{current_space_name}'")
-            index_deleted = _delete_skill_index(tenant_id, current_space_name, folder.name, authorization)
+            index_deleted = _delete_skill_index(tenant_id, current_space_name, folder.name, auth_header)
             if not index_deleted:
                 logging.error(
                     f"Aborting folder deletion due to index deletion failure: "
                     f"folder={folder.name}, space={current_space_name}"
                 )
-                raise RuntimeError(
+                errors.append(
                     f"Failed to delete skill index for folder '{folder.name}' in space '{current_space_name}'. "
                     f"Folder deletion aborted to prevent orphaned indexes."
                 )
-
+                return deleted
         sub_files = FileService.list_all_files_by_parent_id(folder.id)
         logging.info(f"Folder '{folder.name}': found {len(sub_files)} children to delete")
         
         for sub_file in sub_files:
             if sub_file.type == FileType.FOLDER.value:
-                # Recursively delete subfolder, passing space_name for skill identification
-                _delete_folder_recursive(sub_file, tenant_id, is_skill_folder, current_space_name, authorization)
+                deleted += _delete_folder_recursive(sub_file, tenant_id)
             else:
-                # Note: Skill index is already deleted above when deleting the skill folder.
-                # We don't delete index here because skill index uses skill name (folder name) as key,
-                # not the individual file names. Deleting files here would incorrectly try to delete
-                # non-existent documents with file names as keys.
-                _delete_single_file(sub_file)
+                deleted += _delete_single_file(sub_file)
+        try:
+            FileService.delete(folder)
+        except Exception as e:
+            logging.exception(f"Fail to delete folder record {folder.id}, error: {e}")
+            errors.append(f"Failed to delete folder record {folder.id}: {e}")
+        else:
+            deleted += 1
         
-        # Delete folder from database
-        FileService.delete(folder)
-        
-        # Remove storage bucket for this folder (folder.id is used as bucket name for its children)
         try:
             if hasattr(settings.STORAGE_IMPL, 'remove_bucket'):
                 logging.info(f"Removing storage bucket for folder '{folder.name}' (id={folder.id})")
@@ -409,18 +426,23 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
             else:
                 logging.debug(f"Storage implementation does not support remove_bucket, skipping for folder '{folder.name}'")
         except Exception as e:
-            # Log but don't fail - the bucket might not exist or might be already empty
             logging.warning(f"Failed to remove storage bucket for folder '{folder.name}' (id={folder.id}): {e}")
+        
+        return deleted
 
     def _rm_sync():
+        nonlocal success_count
         for file_id in file_ids:
             e, file = FileService.get_by_id(file_id)
             if not e or not file:
-                return False, "File or Folder not found!"
+                errors.append(f"File or Folder not found: {file_id}")
+                continue
             if not file.tenant_id:
-                return False, "Tenant not found!"
+                errors.append(f"Tenant not found for file {file_id}")
+                continue
             if not check_file_team_permission(file, uid):
-                return False, "No authorization."
+                errors.append(f"No authorization for file {file_id}")
+                continue
 
             if file.source_type == FileSource.KNOWLEDGEBASE:
                 continue
@@ -429,16 +451,14 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
                 continue
 
             if file.type == FileType.FOLDER.value:
-                try:
-                    _delete_folder_recursive(file, uid, False, None, auth_header)
-                except RuntimeError as e:
-                    logging.error(f"Folder deletion failed: {e}")
-                    return False, str(e)
+                success_count += _delete_folder_recursive(file, uid)
                 continue
 
-            _delete_single_file(file)
+            success_count += _delete_single_file(file)
 
-        return True, True
+        if errors:
+            return False, {"success_count": success_count, "errors": errors}
+        return True, {"success_count": success_count}
 
     return await thread_pool_exec(_rm_sync)
 

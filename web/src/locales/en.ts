@@ -449,6 +449,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       raptor: 'RAPTOR',
       processingType: 'Processing type',
       dataPipeline: 'Switch or configure ingestion pipeline.',
+      dataPipelineTitle: 'Ingestion pipeline',
       operations: 'Operations',
       taskId: 'Task ID',
       duration: 'Duration',

@@ -258,7 +258,7 @@ def test_delete_files_checks_team_permission(monkeypatch):
 
     ok, message = _run(module.delete_files("tenant1", ["file1"]))
     assert ok is False
-    assert message == "No authorization."
+    assert message == {"success_count": 0, "errors": ["No authorization for file file1"]}
 
 
 @pytest.mark.p2
