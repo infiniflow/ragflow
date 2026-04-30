@@ -111,6 +111,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.POSTGRESQL]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.WEBDAV]: {
+     syncDeletedFiles: true,
+  },
   [DataSourceKey.ZENDESK]: {
     syncDeletedFiles: true,
   },

@@ -199,6 +199,14 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
 
+	// For local deployed models
+	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
+		newURL := map[string]string{
+			region: baseURL,
+		}
+		providerInfo.ModelDriver = providerInfo.ModelDriver.NewInstance(newURL)
+	}
+
 	return providerInfo.ModelDriver.ListModels(apiConfig)
 }
 
@@ -674,7 +682,14 @@ func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, mod
 	return common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName, userID, message string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig) (*modelModule.ChatResponse, common.ErrorCode, error) {
+// ChatToModelWithMessages sends messages to the model with messages array
+func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceName, modelName, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig) (*modelModule.ChatResponse, common.ErrorCode, error) {
+	if apiConfig == nil {
+		apiConfig = &modelModule.APIConfig{}
+	}
+	if modelConfig == nil {
+		modelConfig = &modelModule.ChatConfig{}
+	}
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -725,9 +740,12 @@ func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName
 		apiConfig.ApiKey = &instance.APIKey
 
 		var response *modelModule.ChatResponse
-		response, err = providerInfo.ModelDriver.Chat(&modelName, &message, apiConfig, modelConfig)
+		response, err = providerInfo.ModelDriver.ChatWithMessages(modelName, apiConfig, messages, modelConfig)
 		if err != nil {
 			return nil, common.CodeServerError, err
+		}
+		if response == nil {
+			return nil, common.CodeServerError, errors.New("empty chat response")
 		}
 
 		return response, common.CodeSuccess, nil
@@ -750,9 +768,6 @@ func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
-		modelTypes := extra["model_types"]
-		println(modelTypes)
-
 		modelConfig.ModelClass = &providerInfo.Class
 
 		newURL := map[string]string{
@@ -761,10 +776,14 @@ func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName
 		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
 		var response *modelModule.ChatResponse
-		response, err = newProviderInfo.Chat(&modelName, &message, apiConfig, modelConfig)
+		response, err = newProviderInfo.ChatWithMessages(modelName, apiConfig, messages, modelConfig)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
+		if response == nil {
+			return nil, common.CodeServerError, errors.New("empty chat response")
+		}
+
 		return response, common.CodeSuccess, nil
 	}
 
@@ -783,13 +802,16 @@ func (m *ModelProviderService) ChatWithMessagesToModelByApiKey(providerName, mod
 		return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
 	}
 
-	var response string
-	response, err = providerInfo.ModelDriver.ChatWithMessages(modelName, &apiKey, messages, nil)
+	var response *modelModule.ChatResponse
+	response, err = providerInfo.ModelDriver.ChatWithMessages(modelName, &modelModule.APIConfig{ApiKey: &apiKey}, messages, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
+	if response == nil {
+		return nil, common.CodeServerError, errors.New("empty chat response")
+	}
 
-	return &response, common.CodeSuccess, nil
+	return response.Answer, common.CodeSuccess, nil
 }
 
 // ChatToModelStreamWithSender streams chat response directly via sender function (best performance, no channel)
@@ -817,7 +839,7 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		return common.CodeServerError, err
 	}
 
-	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+	modelInfo, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
 	if err != nil {
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo == nil {
@@ -839,12 +861,42 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
-		// Direct call with sender function
 		err = providerInfo.ModelDriver.ChatStreamlyWithSender(&modelName, &message, apiConfig, modelConfig, sender)
 		if err != nil {
 			return common.CodeServerError, err
 		}
 
+		return common.CodeSuccess, nil
+	}
+
+	if modelInfo.Status == "active" {
+		// For local deployed models
+		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+		if providerInfo == nil {
+			return common.CodeNotFound, errors.New("provider not found")
+		}
+
+		var extra map[string]string
+		err = json.Unmarshal([]byte(instance.Extra), &extra)
+		if err != nil {
+			return common.CodeServerError, err
+		}
+
+		region := extra["region"]
+		apiConfig.Region = &region
+		apiConfig.ApiKey = &instance.APIKey
+
+		modelConfig.ModelClass = &providerInfo.Class
+
+		newURL := map[string]string{
+			region: extra["base_url"],
+		}
+		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
+
+		err = newProviderInfo.ChatStreamlyWithSender(&modelName, &message, apiConfig, modelConfig, sender)
+		if err != nil {
+			return common.CodeServerError, err
+		}
 		return common.CodeSuccess, nil
 	}
 

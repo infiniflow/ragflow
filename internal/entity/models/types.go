@@ -1,9 +1,14 @@
 package models
 
-// Message represents a chat message with role
+// Message represents a chat message with role and content
+//
+// Content is interface{} to support different formats:
+//   - string: plain text message (e.g., "Hello")
+//   - []interface{}: multimodal content array where each element is map[string]interface{}
+//     (e.g., [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "..."}}])
 type Message struct {
-	Role    string
-	Content string
+	Role    string      `json:"role"`
+	Content interface{} `json:"content"`
 }
 
 // EmbeddingModel interface for embedding models
@@ -12,10 +17,8 @@ type ModelDriver interface {
 
 	Name() string
 
-	// Chat sends a message and returns response
-	Chat(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig) (*ChatResponse, error)
-	// ChatWithMessages sends multiple messages with roles (system, user, etc.) and returns response
-	ChatWithMessages(modelName string, apiKey *string, messages []Message, modelConfig *ChatConfig) (string, error)
+	// ChatWithMessages sends multiple messages with role and content
+	ChatWithMessages(modelName string, apiConfig *APIConfig, messages []Message, chatModelConfig *ChatConfig) (*ChatResponse, error)
 	// ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
 	ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error
 	// Encode encodes a list of texts into embeddings
