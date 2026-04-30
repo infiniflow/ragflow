@@ -93,6 +93,10 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             base = self._build_query_with_time_filter(None, None).strip().rstrip(";")
             return [f"SELECT DISTINCT {id_col} FROM ({base}) AS _ragflow_slim"]
         tables = self._get_tables()
+        if len(tables) > 1:
+            raise ConnectorValidationError(
+                "Deleted-file sync for queryless RDBMS connectors requires a single-table query or table-scoped document IDs."
+            )
         return [
             f"SELECT DISTINCT {id_col} FROM {self._quote_identifier(table)}"
             for table in tables
