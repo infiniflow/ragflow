@@ -27,6 +27,7 @@ from openai import OpenAI
 from openai.lib.azure import AzureOpenAI
 
 from common.token_utils import num_tokens_from_string
+from rag.llm.retry import ERROR_PREFIX, retry_or_fallback
 
 
 class Base(ABC):
@@ -37,6 +38,7 @@ class Base(ABC):
         """
         pass
 
+    @retry_or_fallback(lambda e: (f"{ERROR_PREFIX}: {e}", 0))
     def transcription(self, audio_path, **kwargs):
         with open(audio_path, "rb") as audio_file:
             transcription = self.client.audio.transcriptions.create(model=self.model_name, file=audio_file)
@@ -88,6 +90,7 @@ class QWenSeq2txt(Base):
         dashscope.api_key = key
         self.model_name = model_name
 
+    @retry_or_fallback(lambda e: (f"{ERROR_PREFIX}: {e}", 0))
     def transcription(self, audio_path):
         import dashscope
 
@@ -117,10 +120,7 @@ class QWenSeq2txt(Base):
             }
         )
 
-        try:
-            text = resp["output"]["choices"][0]["message"].content[0]["text"]
-        except Exception as e:
-            text = "**ERROR**: " + str(e)
+        text = resp["output"]["choices"][0]["message"].content[0]["text"]
         return text, num_tokens_from_string(text)
 
     def stream_transcription(self, audio_path):
@@ -181,6 +181,7 @@ class XinferenceSeq2txt(Base):
         self.model_name = model_name
         self.key = key
 
+    @retry_or_fallback(lambda e: (f"{ERROR_PREFIX}: {e}", 0))
     def transcription(self, audio, language="zh", prompt=None, response_format="json", temperature=0.7):
         if isinstance(audio, str):
             with open(audio, "rb") as audio_file:
@@ -194,19 +195,15 @@ class XinferenceSeq2txt(Base):
 
         files = {"file": (audio_file_name, audio_data, "audio/wav")}
 
-        try:
-            response = requests.post(f"{self.base_url}/v1/audio/transcriptions", files=files, data=payload)
-            response.raise_for_status()
-            result = response.json()
+        response = requests.post(f"{self.base_url}/v1/audio/transcriptions", files=files, data=payload)
+        response.raise_for_status()
+        result = response.json()
 
-            if "text" in result:
-                transcription_text = result["text"].strip()
-                return transcription_text, num_tokens_from_string(transcription_text)
-            else:
-                return "**ERROR**: Failed to retrieve transcription.", 0
-
-        except requests.exceptions.RequestException as e:
-            return f"**ERROR**: {str(e)}", 0
+        if "text" in result:
+            transcription_text = result["text"].strip()
+            return transcription_text, num_tokens_from_string(transcription_text)
+        else:
+            raise RuntimeError("Failed to retrieve transcription.")
 
 
 class TencentCloudSeq2txt(Base):
@@ -257,18 +254,18 @@ class TencentCloudSeq2txt(Base):
                     return text, num_tokens_from_string(text)
                 elif resp.Data.StatusStr == "failed":
                     return (
-                        "**ERROR**: Failed to retrieve speech recognition results.",
+                        f"{ERROR_PREFIX}: Failed to retrieve speech recognition results.",
                         0,
                     )
                 else:
                     time.sleep(retry_interval)
                     retries += 1
-            return "**ERROR**: Max retries exceeded. Task may still be processing.", 0
+            return f"{ERROR_PREFIX}: Max retries exceeded. Task may still be processing.", 0
 
         except TencentCloudSDKException as e:
-            return "**ERROR**: " + str(e), 0
+            return f"{ERROR_PREFIX}: {e}", 0
         except Exception as e:
-            return "**ERROR**: " + str(e), 0
+            return f"{ERROR_PREFIX}: {e}", 0
 
 
 class GPUStackSeq2txt(Base):
@@ -358,6 +355,7 @@ class ZhipuSeq2txt(Base):
         except Exception as e:
             raise RuntimeError(f"audio convert failed: {e}")
 
+    @retry_or_fallback(lambda e: (f"{ERROR_PREFIX}: {e}", 0))
     def transcription(self, audio_path):
         payload = {
             "model": self.model_name,
@@ -371,22 +369,19 @@ class ZhipuSeq2txt(Base):
         with open(converted, "rb") as audio_file:
             files = {"file": audio_file}
 
-            try:
-                response = requests.post(
-                    url=f"{self.base_url}/audio/transcriptions",
-                    data=payload,
-                    files=files,
-                    headers=headers,
-                )
-                body = response.json()
-                if response.status_code == 200:
-                    full_content = body["text"]
-                    return full_content, num_tokens_from_string(full_content)
-                else:
-                    error = body["error"]
-                    return f"**ERROR**: code: {error['code']}, message: {error['message']}", 0
-            except Exception as e:
-                return "**ERROR**: " + str(e), 0
+            response = requests.post(
+                url=f"{self.base_url}/audio/transcriptions",
+                data=payload,
+                files=files,
+                headers=headers,
+            )
+            body = response.json()
+            if response.status_code == 200:
+                full_content = body["text"]
+                return full_content, num_tokens_from_string(full_content)
+            else:
+                error = body["error"]
+                raise RuntimeError(f"code: {error['code']}, message: {error['message']}")
 
 
 class RAGconSeq2txt(Base):
@@ -409,7 +404,8 @@ class RAGconSeq2txt(Base):
         self.lang = lang
         
         self.client = OpenAI(api_key=key, base_url=self.base_url)
-    
+
+    @retry_or_fallback(lambda e: (f"{ERROR_PREFIX}: {e}", 0))
     def transcription(self, audio_path, **kwargs):
         """
         Transcribe audio file using RAGcon's OpenAI-compatible API.

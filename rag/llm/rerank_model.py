@@ -18,13 +18,14 @@ import logging
 from abc import ABC
 from urllib.parse import urljoin
 
-import httpx
 import numpy as np
 import requests
 from yarl import URL
 
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
+from rag.llm.retry import retry
+
 
 class Base(ABC):
     def __init__(self, key, model_name, **kwargs):
@@ -62,6 +63,7 @@ class JinaRerank(Base):
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name
 
+    @retry
     def similarity(self, query: str, texts: list):
         texts = [truncate(t, 8196) for t in texts]
         data = {"model": self.model_name, "query": query, "documents": texts, "top_n": len(texts)}
@@ -89,6 +91,7 @@ class XInferenceRerank(Base):
         if key and key != "x":
             self.headers["Authorization"] = f"Bearer {key}"
 
+    @retry
     def similarity(self, query: str, texts: list):
         if len(texts) == 0:
             return np.array([]), 0
@@ -118,6 +121,7 @@ class LocalAIRerank(Base):
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name.split("___")[0]
 
+    @retry
     def similarity(self, query: str, texts: list):
         # noway to config Ragflow , use fix setting
         texts = [truncate(t, 500) for t in texts]
@@ -164,6 +168,7 @@ class NvidiaRerank(Base):
             "Authorization": f"Bearer {key}",
         }
 
+    @retry
     def similarity(self, query: str, texts: list):
         token_count = num_tokens_from_string(query) + sum([num_tokens_from_string(t) for t in texts])
         data = {
@@ -205,6 +210,7 @@ class OpenAI_APIRerank(Base):
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name.split("___")[0]
 
+    @retry
     def similarity(self, query: str, texts: list):
         # noway to config Ragflow , use fix setting
         texts = [truncate(t, 500) for t in texts]
@@ -243,6 +249,7 @@ class CoHereRerank(Base):
         self.client = Client(**client_kwargs)
         self.model_name = model_name.split("___")[0]
 
+    @retry
     def similarity(self, query: str, texts: list):
         token_count = num_tokens_from_string(query) + sum([num_tokens_from_string(t) for t in texts])
         res = self.client.rerank(
@@ -288,6 +295,7 @@ class SILICONFLOWRerank(Base):
             "authorization": f"Bearer {key}",
         }
 
+    @retry
     def similarity(self, query: str, texts: list):
         payload = {
             "model": self.model_name,
@@ -324,6 +332,7 @@ class BaiduYiyanRerank(Base):
         self.client = Reranker(ak=ak, sk=sk)
         self.model_name = model_name
 
+    @retry
     def similarity(self, query: str, texts: list):
         res = self.client.do(
             model=self.model_name,
@@ -349,6 +358,7 @@ class VoyageRerank(Base):
         self.client = voyageai.Client(api_key=key)
         self.model_name = model_name
 
+    @retry
     def similarity(self, query: str, texts: list):
         if not texts:
             return np.array([]), 0
@@ -372,6 +382,7 @@ class QWenRerank(Base):
         self.api_key = key
         self.model_name = dashscope.TextReRank.Models.gte_rerank if model_name is None else model_name
 
+    @retry
     def similarity(self, query: str, texts: list):
         from http import HTTPStatus
 
@@ -430,6 +441,7 @@ class HuggingfaceRerank(Base):
         self.model_name = model_name.split("___")[0]
         self.base_url = base_url
 
+    @retry
     def similarity(self, query: str, texts: list) -> tuple[np.ndarray, int]:
         if not texts:
             return np.array([]), 0
@@ -454,6 +466,7 @@ class GPUStackRerank(Base):
             "authorization": f"Bearer {key}",
         }
 
+    @retry
     def similarity(self, query: str, texts: list):
         payload = {
             "model": self.model_name,
@@ -462,29 +475,25 @@ class GPUStackRerank(Base):
             "top_n": len(texts),
         }
 
+        response = requests.post(self.base_url, json=payload, headers=self.headers)
+        response.raise_for_status()
+        response_json = response.json()
+
+        rank = np.zeros(len(texts), dtype=float)
+
+        token_count = 0
+        for t in texts:
+            token_count += num_tokens_from_string(t)
         try:
-            response = requests.post(self.base_url, json=payload, headers=self.headers)
-            response.raise_for_status()
-            response_json = response.json()
+            for result in response_json["results"]:
+                rank[result["index"]] = result["relevance_score"]
+        except Exception as _e:
+            log_exception(_e, response)
 
-            rank = np.zeros(len(texts), dtype=float)
-
-            token_count = 0
-            for t in texts:
-                token_count += num_tokens_from_string(t)
-            try:
-                for result in response_json["results"]:
-                    rank[result["index"]] = result["relevance_score"]
-            except Exception as _e:
-                log_exception(_e, response)
-
-            return (
-                rank,
-                token_count,
-            )
-
-        except httpx.HTTPStatusError as e:
-            raise ValueError(f"Error calling GPUStackRerank model {self.model_name}: {e.response.status_code} - {e.response.text}")
+        return (
+            rank,
+            token_count,
+        )
 
 
 class NovitaRerank(JinaRerank):
@@ -551,8 +560,8 @@ class RAGconRerank(Base):
         
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name
-        
-    
+
+    @retry
     def similarity(self, query: str, texts: list):
         # noway to config Ragflow , use fix setting
         texts = [truncate(t, 500) for t in texts]

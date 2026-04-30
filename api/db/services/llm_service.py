@@ -27,6 +27,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.tenant_llm_service import LLM4Tenant, TenantLLMService
 from common.constants import LLMType
 from common.token_utils import num_tokens_from_string
+from rag.llm.retry import ERROR_PREFIX
 
 
 class LLMService(CommonService):
@@ -151,7 +152,14 @@ class LLMBundle(LLM4Tenant):
         if self.langfuse:
             generation = self.langfuse.start_observation(trace_context=self.trace_context, as_type="generation", name="describe", metadata={"model": self.model_config["llm_name"]})
 
-        txt, used_tokens = self.mdl.describe(image)
+        try:
+            txt, used_tokens = self.mdl.describe(image)
+        except Exception as e:
+            logging.exception("LLMBundle.describe failed")
+            if self.langfuse:
+                generation.update(output={"error": str(e)})
+                generation.end()
+            return f"{ERROR_PREFIX}: {e}"
         if not TenantLLMService.increase_usage_by_id(self.model_config["id"], used_tokens):
             logging.error("LLMBundle.describe can't update token usage for {}/IMAGE2TEXT used_tokens: {}".format(self.tenant_id, used_tokens))
 
@@ -165,7 +173,14 @@ class LLMBundle(LLM4Tenant):
         if self.langfuse:
             generation = self.langfuse.start_observation(trace_context=self.trace_context, as_type="generation", name="describe_with_prompt", metadata={"model": self.model_config["llm_name"], "prompt": prompt})
 
-        txt, used_tokens = self.mdl.describe_with_prompt(image, prompt)
+        try:
+            txt, used_tokens = self.mdl.describe_with_prompt(image, prompt)
+        except Exception as e:
+            logging.exception("LLMBundle.describe_with_prompt failed")
+            if self.langfuse:
+                generation.update(output={"error": str(e)})
+                generation.end()
+            return f"{ERROR_PREFIX}: {e}"
         if not TenantLLMService.increase_usage_by_id(self.model_config["id"], used_tokens):
             logging.error("LLMBundle.describe can't update token usage for {}/IMAGE2TEXT used_tokens: {}".format(self.tenant_id, used_tokens))
 

@@ -40,6 +40,7 @@ from pydantic import BaseModel, conint
 
 from common.http_client import sync_request
 from common.token_utils import num_tokens_from_string
+from rag.llm.retry import ERROR_PREFIX
 
 
 class ServeReferenceAudio(BaseModel):
@@ -180,7 +181,7 @@ class FishAudioTTS(Base):
                 yield num_tokens_from_string(text)
 
             except httpx.HTTPStatusError as e:
-                raise RuntimeError(f"**ERROR**: {e}")
+                raise RuntimeError(f"{ERROR_PREFIX}: {e}")
 
 
 class QwenTTS(Base):
@@ -238,7 +239,7 @@ class QwenTTS(Base):
             yield num_tokens_from_string(text)
 
         except Exception as e:
-            raise RuntimeError(f"**ERROR**: {e}")
+            raise RuntimeError(f"{ERROR_PREFIX}: {e}")
 
 
 class OpenAITTS(HTTPBasedTTS):
@@ -332,7 +333,7 @@ class SparkTTS(Base):
             audio_chunk = self.audio_queue.get()
             if audio_chunk is None:
                 if status_code == 0:
-                    raise Exception(f"Fail to access model({model_name}) using the provided credentials. **ERROR**: Invalid APPID, API Secret, or API Key.")
+                    raise Exception(f"Fail to access model({model_name}) using the provided credentials. {ERROR_PREFIX}: Invalid APPID, API Secret, or API Key.")
                 else:
                     break
             status_code = 1
@@ -516,7 +517,7 @@ class RAGconTTS(Base):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
         }
-    
+
     def tts(self, text, voice="English Female", stream=True):
         """
         Uses LiteLLM's /v1/audio/speech endpoint

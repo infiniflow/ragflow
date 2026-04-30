@@ -31,6 +31,7 @@ from openai import OpenAI, AsyncOpenAI
 from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
+from rag.llm.retry import ERROR_PREFIX, retry
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
 
@@ -147,7 +148,7 @@ class Base(ABC):
             )
             return response.choices[0].message.content.strip(), response.usage.total_tokens
         except Exception as e:
-            return "**ERROR**: " + str(e), 0
+            return f"{ERROR_PREFIX}: {e}", 0
 
     async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
@@ -170,7 +171,7 @@ class Base(ABC):
                     tk_count += resp.usage.total_tokens
                 yield ans
         except Exception as e:
-            yield ans + "\n**ERROR**: " + str(e)
+            yield f"{ans}\n{ERROR_PREFIX}: {e}"
 
         yield tk_count
 
@@ -258,6 +259,7 @@ class GptV4(Base):
         self.lang = lang
         super().__init__(**kwargs)
 
+    @retry
     def describe(self, image):
         b64 = self.image2base64(image)
         res = self.client.chat.completions.create(
@@ -267,6 +269,7 @@ class GptV4(Base):
         )
         return res.choices[0].message.content.strip(), total_token_count_from_response(res)
 
+    @retry
     def describe_with_prompt(self, image, prompt=None):
         b64 = self.image2base64(image)
         res = self.client.chat.completions.create(
@@ -346,7 +349,7 @@ class QWenCV(GptV4):
                 summary, summary_num_tokens = self._process_video(video_bytes, filename, self._resolve_video_prompt(system, history, **kwargs))
                 return summary, summary_num_tokens
             except Exception as e:
-                return "**ERROR**: " + str(e), 0
+                return f"{ERROR_PREFIX}: {e}", 0
 
         return await super().async_chat(system, history, gen_conf, images=images, **kwargs)
 
@@ -488,13 +491,14 @@ class Zhipu4V(GptV4):
                     tk_count = total_token_count_from_response(resp)
                 yield ans
         except Exception as e:
-            yield ans + "\n**ERROR**: " + str(e)
+            yield f"{ans}\n{ERROR_PREFIX}: {e}"
 
         yield tk_count
 
     def describe(self, image):
         return self.describe_with_prompt(image)
 
+    @retry
     def describe_with_prompt(self, image, prompt=None):
         b64 = self.image2base64(image)
         if prompt is None:
@@ -723,31 +727,27 @@ class OllamaCV(Base):
                 break
         return hist
 
+    @retry
     def describe(self, image):
         prompt = self.prompt("")
-        try:
-            response = self.client.generate(
-                model=self.model_name,
-                prompt=prompt[0]["content"],
-                images=[image],
-            )
-            ans = response["response"].strip()
-            return ans, 128
-        except Exception as e:
-            return "**ERROR**: " + str(e), 0
+        response = self.client.generate(
+            model=self.model_name,
+            prompt=prompt[0]["content"],
+            images=[image],
+        )
+        ans = response["response"].strip()
+        return ans, 128
 
+    @retry
     def describe_with_prompt(self, image, prompt=None):
         vision_prompt = self.vision_llm_prompt("", prompt) if prompt else self.vision_llm_prompt("")
-        try:
-            response = self.client.generate(
-                model=self.model_name,
-                prompt=vision_prompt[0]["content"],
-                images=[image],
-            )
-            ans = response["response"].strip()
-            return ans, 128
-        except Exception as e:
-            return "**ERROR**: " + str(e), 0
+        response = self.client.generate(
+            model=self.model_name,
+            prompt=vision_prompt[0]["content"],
+            images=[image],
+        )
+        ans = response["response"].strip()
+        return ans, 128
 
     async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
         try:
@@ -756,7 +756,7 @@ class OllamaCV(Base):
             ans = response["message"]["content"].strip()
             return ans, response["eval_count"] + response.get("prompt_eval_count", 0)
         except Exception as e:
-            return "**ERROR**: " + str(e), 0
+            return f"{ERROR_PREFIX}: {e}", 0
 
     async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
@@ -768,7 +768,7 @@ class OllamaCV(Base):
                 ans = resp["message"]["content"]
                 yield ans
         except Exception as e:
-            yield ans + "\n**ERROR**: " + str(e)
+            yield f"{ans}\n{ERROR_PREFIX}: {e}"
         yield 0
 
 
@@ -848,6 +848,7 @@ class GeminiCV(Base):
 
         return contents
 
+    @retry
     def describe(self, image):
         from google.genai import types
 
@@ -873,6 +874,7 @@ class GeminiCV(Base):
         )
         return res.text, total_token_count_from_response(res)
 
+    @retry
     def describe_with_prompt(self, image, prompt=None):
         from google.genai import types
 
@@ -903,7 +905,7 @@ class GeminiCV(Base):
                 return summary, summary_num_tokens
             except Exception as e:
                 logging.info(f"[GeminiCV] async_chat video error: {e}")
-                return "**ERROR**: " + str(e), 0
+                return f"{ERROR_PREFIX}: {e}", 0
 
         from google.genai import types
 
@@ -926,7 +928,7 @@ class GeminiCV(Base):
             return ans, total_token_count_from_response(response)
         except Exception as e:
             logging.warning(f"[GeminiCV] async_chat error: {e}")
-            return "**ERROR**: " + str(e), 0
+            return f"{ERROR_PREFIX}: {e}", 0
 
     async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
@@ -955,7 +957,7 @@ class GeminiCV(Base):
             logging.info("[GeminiCV] chat_streamly completed")
         except Exception as e:
             logging.warning(f"[GeminiCV] chat_streamly error: {e}")
-            yield ans + "\n**ERROR**: " + str(e)
+            yield f"{ans}\n{ERROR_PREFIX}: {e}"
 
         yield total_token_count_from_response(response)
 
@@ -1018,6 +1020,7 @@ class NvidiaCV(Base):
             htmls += ' <img src="{}"/>'.format(f"data:image/jpeg;base64,{img}" if img[:4] != "data" else img)
         return text + htmls
 
+    @retry
     def describe(self, image):
         b64 = self.image2base64(image)
         response = requests.post(
@@ -1047,6 +1050,7 @@ class NvidiaCV(Base):
         )
         return response.json()
 
+    @retry
     def describe_with_prompt(self, image, prompt=None):
         b64 = self.image2base64(image)
         vision_prompt = self.vision_llm_prompt(b64, prompt) if prompt else self.vision_llm_prompt(b64)
@@ -1058,7 +1062,7 @@ class NvidiaCV(Base):
             response = await thread_pool_exec(self._request, self._form_history(system, history, images), gen_conf)
             return (response["choices"][0]["message"]["content"].strip(), total_token_count_from_response(response))
         except Exception as e:
-            return "**ERROR**: " + str(e), 0
+            return f"{ERROR_PREFIX}: {e}", 0
 
     async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         total_tokens = 0
@@ -1069,7 +1073,7 @@ class NvidiaCV(Base):
             for resp in cnt:
                 yield resp
         except Exception as e:
-            yield "\n**ERROR**: " + str(e)
+            yield f"\n{ERROR_PREFIX}: {e}"
 
         yield total_tokens
 
@@ -1106,11 +1110,13 @@ class AnthropicCV(Base):
             )
         return pmpt
 
+    @retry
     def describe(self, image):
         b64 = self.image2base64(image)
         response = self.client.messages.create(model=self.model_name, max_tokens=self.max_tokens, messages=self.prompt(b64))
         return response["content"][0]["text"].strip(), response["usage"]["input_tokens"] + response["usage"]["output_tokens"]
 
+    @retry
     def describe_with_prompt(self, image, prompt=None):
         b64 = self.image2base64(image)
         prompt = self.prompt(b64, prompt if prompt else vision_llm_describe_prompt())
@@ -1147,7 +1153,7 @@ class AnthropicCV(Base):
                 total_token_count_from_response(response),
             )
         except Exception as e:
-            return ans + "\n**ERROR**: " + str(e), 0
+            return f"{ans}\n{ERROR_PREFIX}: {e}", 0
 
     async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         gen_conf = self._clean_conf(gen_conf)
@@ -1175,7 +1181,7 @@ class AnthropicCV(Base):
                         yield res.delta.text
                         total_tokens += num_tokens_from_string(res.delta.text)
         except Exception as e:
-            yield "\n**ERROR**: " + str(e)
+            yield f"\n{ERROR_PREFIX}: {e}"
 
         yield total_tokens
 
