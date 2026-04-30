@@ -22,13 +22,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"ragflow/internal/common"
 	"strings"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"go.uber.org/zap"
 
 	"ragflow/internal/engine/types"
-	"ragflow/internal/logger"
 )
 
 // SearchResponse Elasticsearch search response
@@ -203,8 +203,8 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 	}
 
 	// Log search details
-	logger.Debug("Elasticsearch searching indices", zap.Strings("indices", req.IndexNames))
-	logger.Debug("Elasticsearch DSL", zap.Any("dsl", queryBody))
+	common.Debug("Elasticsearch searching indices", zap.Strings("indices", req.IndexNames))
+	common.Debug("Elasticsearch DSL", zap.Any("dsl", queryBody))
 
 	// Build search request
 	reqES := esapi.SearchRequest{
@@ -222,9 +222,9 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 	if res.IsError() {
 		bodyBytes, err := io.ReadAll(res.Body)
 		if err != nil {
-			logger.Error("Elasticsearch failed to read error response body", err)
+			common.Error("Elasticsearch failed to read error response body", err)
 		} else {
-			logger.Warn("Elasticsearch error response", zap.String("body", string(bodyBytes)))
+			common.Warn("Elasticsearch error response", zap.String("body", string(bodyBytes)))
 		}
 		return nil, fmt.Errorf("Elasticsearch returned error: %s", res.Status())
 	}
@@ -560,24 +560,24 @@ func AddMustNot(query map[string]interface{}, clauses ...map[string]interface{})
 
 // GetFields is not implemented for Elasticsearch
 func (e *elasticsearchEngine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
-	logger.Warn("GetFields not implemented for Elasticsearch")
+	common.Warn("GetFields not implemented for Elasticsearch")
 	return nil
 }
 
 // GetAggregation is not implemented for Elasticsearch
 func (e *elasticsearchEngine) GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{} {
-	logger.Warn("GetAggregation not implemented for Elasticsearch")
+	common.Warn("GetAggregation not implemented for Elasticsearch")
 	return nil
 }
 
 // GetHighlight is not implemented for Elasticsearch
 func (e *elasticsearchEngine) GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
-	logger.Warn("GetHighlight not implemented for Elasticsearch")
+	common.Warn("GetHighlight not implemented for Elasticsearch")
 	return nil
 }
 
 // GetDocIDs is not implemented for Elasticsearch
 func (e *elasticsearchEngine) GetDocIDs(chunks []map[string]interface{}) []string {
-	logger.Warn("GetDocIDs not implemented for Elasticsearch")
+	common.Warn("GetDocIDs not implemented for Elasticsearch")
 	return nil
 }

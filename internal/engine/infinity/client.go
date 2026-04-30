@@ -19,14 +19,15 @@ package infinity
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/common"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
-	infinity "github.com/infiniflow/infinity-go-sdk"
 	"ragflow/internal/server"
-	"ragflow/internal/logger"
+
+	infinity "github.com/infiniflow/infinity-go-sdk"
 )
 
 // infinityClient Infinity SDK client wrapper
@@ -52,7 +53,7 @@ func NewInfinityClient(cfg *server.InfinityConfig) (*infinityClient, error) {
 	}
 
 	// Retry connecting for up to 120 seconds (24 attempts * 5 seconds)
-	logger.Info("Connecting to Infinity")
+	common.Info("Connecting to Infinity")
 	var conn *infinity.InfinityConnection
 	var err error
 	for i := 0; i < 24; i++ {
@@ -78,7 +79,7 @@ func NewInfinityClient(cfg *server.InfinityConfig) (*infinityClient, error) {
 
 // WaitForHealthy blocks until Infinity is healthy or timeout
 func (c *infinityClient) WaitForHealthy(ctx context.Context, timeout time.Duration) error {
-	logger.Info("Waiting for Infinity to be healthy")
+	common.Info("Waiting for Infinity to be healthy")
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		select {
@@ -110,7 +111,7 @@ func (c *infinityClient) WaitForHealthy(ctx context.Context, timeout time.Durati
 		if errorCode.Int() == 0 {
 			status := serverStatus.String()
 			if status == "started" || status == "alive" {
-				logger.Info("Infinity is healthy")
+				common.Info("Infinity is healthy")
 				return nil
 			}
 		}
@@ -121,7 +122,7 @@ func (c *infinityClient) WaitForHealthy(ctx context.Context, timeout time.Durati
 
 // Engine Infinity engine implementation using Go SDK
 type infinityEngine struct {
-	config                  *server.InfinityConfig
+	config                 *server.InfinityConfig
 	client                 *infinityClient
 	mappingFileName        string
 	docMetaMappingFileName string
@@ -155,9 +156,9 @@ func NewEngine(cfg interface{}) (*infinityEngine, error) {
 	}
 
 	engine := &infinityEngine{
-		config:              infConfig,
-		client:              client,
-		mappingFileName:     mappingFileName,
+		config:                 infConfig,
+		client:                 client,
+		mappingFileName:        mappingFileName,
 		docMetaMappingFileName: docMetaMappingFileName,
 	}
 

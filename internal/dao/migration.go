@@ -18,8 +18,8 @@ package dao
 
 import (
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/logger"
 	"strings"
 
 	"go.uber.org/zap"
@@ -62,7 +62,7 @@ func RunMigrations(db *gorm.DB) error {
 		return fmt.Errorf("failed to migrate skill space tables: %w", err)
 	}
 
-	logger.Info("All manual migrations completed successfully")
+	common.Info("All manual migrations completed successfully")
 	return nil
 }
 
@@ -102,7 +102,7 @@ func migrateTenantLLMPrimaryKey(db *gorm.DB) error {
 		}
 	}
 
-	logger.Info("Migrating tenant_llm to use ID primary key...")
+	common.Info("Migrating tenant_llm to use ID primary key...")
 
 	// Start transaction
 	return db.Transaction(func(tx *gorm.DB) error {
@@ -112,7 +112,7 @@ func migrateTenantLLMPrimaryKey(db *gorm.DB) error {
 			WHERE TABLE_NAME = 'tenant_llm' AND COLUMN_NAME = 'temp_id'`).Scan(&tempIdExists)
 		if tempIdExists > 0 {
 			if err := tx.Exec("ALTER TABLE tenant_llm DROP COLUMN temp_id").Error; err != nil {
-				logger.Warn("Failed to drop temp_id column", zap.Error(err))
+				common.Warn("Failed to drop temp_id column", zap.Error(err))
 			}
 		}
 
@@ -144,11 +144,11 @@ func migrateTenantLLMPrimaryKey(db *gorm.DB) error {
 				ALTER TABLE tenant_llm 
 				ADD UNIQUE INDEX idx_tenant_llm_unique (tenant_id, llm_factory, llm_name)
 			`).Error; err != nil {
-				logger.Warn("Failed to add unique index idx_tenant_llm_unique", zap.Error(err))
+				common.Warn("Failed to add unique index idx_tenant_llm_unique", zap.Error(err))
 			}
 		}
 
-		logger.Info("tenant_llm primary key migration completed")
+		common.Info("tenant_llm primary key migration completed")
 		return nil
 	})
 }
@@ -179,17 +179,17 @@ func migrateAddUniqueEmail(db *gorm.DB) error {
 	}
 
 	if duplicateCount > 0 {
-		logger.Warn("Found duplicate emails in user table, cannot add unique index", zap.Int64("count", duplicateCount))
+		common.Warn("Found duplicate emails in user table, cannot add unique index", zap.Int64("count", duplicateCount))
 		return nil
 	}
 
-	logger.Info("Adding unique index on user.email...")
+	common.Info("Adding unique index on user.email...")
 	if err = db.Exec(`ALTER TABLE user ADD UNIQUE INDEX idx_user_email_unique (email)`).Error; err != nil {
 
 		// Check if error is MySQL duplicate index error (Error 1061)
 		errStr := err.Error()
 		if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
-			logger.Info("Index already exists, skipping", zap.String("error", errStr))
+			common.Info("Index already exists, skipping", zap.String("error", errStr))
 			return nil
 		}
 		return fmt.Errorf("failed to add unique index on email: %w", err)
@@ -211,21 +211,21 @@ func modifyColumnTypes(db *gorm.DB) error {
 	// dialog.top_k: ensure it's INTEGER with default 1024
 	if db.Migrator().HasTable("dialog") && columnExists("dialog", "top_k") {
 		if err := db.Exec(`ALTER TABLE dialog MODIFY COLUMN top_k BIGINT NOT NULL DEFAULT 1024`).Error; err != nil {
-			logger.Warn("Failed to modify dialog.top_k", zap.Error(err))
+			common.Warn("Failed to modify dialog.top_k", zap.Error(err))
 		}
 	}
 
 	// tenant_llm.api_key: ensure it's TEXT type
 	if db.Migrator().HasTable("tenant_llm") && columnExists("tenant_llm", "api_key") {
 		if err := db.Exec(`ALTER TABLE tenant_llm MODIFY COLUMN api_key LONGTEXT`).Error; err != nil {
-			logger.Warn("Failed to modify tenant_llm.api_key", zap.Error(err))
+			common.Warn("Failed to modify tenant_llm.api_key", zap.Error(err))
 		}
 	}
 
 	// api_token.dialog_id: ensure it's varchar(32)
 	if db.Migrator().HasTable("api_token") && columnExists("api_token", "dialog_id") {
 		if err := db.Exec(`ALTER TABLE api_token MODIFY COLUMN dialog_id VARCHAR(32)`).Error; err != nil {
-			logger.Warn("Failed to modify api_token.dialog_id", zap.Error(err))
+			common.Warn("Failed to modify api_token.dialog_id", zap.Error(err))
 		}
 	}
 
@@ -234,12 +234,12 @@ func modifyColumnTypes(db *gorm.DB) error {
 	if db.Migrator().HasTable("canvas_template") {
 		if columnExists("canvas_template", "title") {
 			if err := db.Exec(`ALTER TABLE canvas_template MODIFY COLUMN title LONGTEXT NULL`).Error; err != nil {
-				logger.Warn("Failed to modify canvas_template.title", zap.Error(err))
+				common.Warn("Failed to modify canvas_template.title", zap.Error(err))
 			}
 		}
 		if columnExists("canvas_template", "description") {
 			if err := db.Exec(`ALTER TABLE canvas_template MODIFY COLUMN description LONGTEXT NULL`).Error; err != nil {
-				logger.Warn("Failed to modify canvas_template.description", zap.Error(err))
+				common.Warn("Failed to modify canvas_template.description", zap.Error(err))
 			}
 		}
 	}
@@ -247,21 +247,21 @@ func modifyColumnTypes(db *gorm.DB) error {
 	// system_settings.value: ensure it's LONGTEXT
 	if db.Migrator().HasTable("system_settings") && columnExists("system_settings", "value") {
 		if err := db.Exec(`ALTER TABLE system_settings MODIFY COLUMN value LONGTEXT NOT NULL`).Error; err != nil {
-			logger.Warn("Failed to modify system_settings.value", zap.Error(err))
+			common.Warn("Failed to modify system_settings.value", zap.Error(err))
 		}
 	}
 
 	// knowledgebase.raptor_task_finish_at: ensure it's DateTime
 	if db.Migrator().HasTable("knowledgebase") && columnExists("knowledgebase", "raptor_task_finish_at") {
 		if err := db.Exec(`ALTER TABLE knowledgebase MODIFY COLUMN raptor_task_finish_at DATETIME`).Error; err != nil {
-			logger.Warn("Failed to modify knowledgebase.raptor_task_finish_at", zap.Error(err))
+			common.Warn("Failed to modify knowledgebase.raptor_task_finish_at", zap.Error(err))
 		}
 	}
 
 	// knowledgebase.mindmap_task_finish_at: ensure it's DateTime
 	if db.Migrator().HasTable("knowledgebase") && columnExists("knowledgebase", "mindmap_task_finish_at") {
 		if err := db.Exec(`ALTER TABLE knowledgebase MODIFY COLUMN mindmap_task_finish_at DATETIME`).Error; err != nil {
-			logger.Warn("Failed to modify knowledgebase.mindmap_task_finish_at", zap.Error(err))
+			common.Warn("Failed to modify knowledgebase.mindmap_task_finish_at", zap.Error(err))
 		}
 	}
 
@@ -290,14 +290,14 @@ func renameColumnIfExists(db *gorm.DB, tableName, oldName, newName string) error
 	// Check if new column already exists
 	if columnExists(newName) {
 		// Both exist, drop the old one
-		logger.Warn("Both old and new columns exist, dropping old one",
+		common.Warn("Both old and new columns exist, dropping old one",
 			zap.String("table", tableName),
 			zap.String("oldColumn", oldName),
 			zap.String("newColumn", newName))
 		return db.Migrator().DropColumn(tableName, oldName)
 	}
 
-	logger.Info("Renaming column",
+	common.Info("Renaming column",
 		zap.String("table", tableName),
 		zap.String("oldColumn", oldName),
 		zap.String("newColumn", newName))
@@ -318,7 +318,7 @@ func addColumnIfNotExists(db *gorm.DB, tableName, columnName, columnDef string) 
 		return nil
 	}
 
-	logger.Info("Adding column",
+	common.Info("Adding column",
 		zap.String("table", tableName),
 		zap.String("column", columnName))
 	sql := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", tableName, columnName, columnDef)
@@ -329,7 +329,7 @@ func addColumnIfNotExists(db *gorm.DB, tableName, columnName, columnDef string) 
 func migrateSkillSearchTables(db *gorm.DB) error {
 	// Create skill_search_configs table only
 	if !db.Migrator().HasTable("skill_search_configs") {
-		logger.Info("Creating skill_search_configs table...")
+		common.Info("Creating skill_search_configs table...")
 		sql := `
 		CREATE TABLE IF NOT EXISTS skill_search_configs (
 			id VARCHAR(32) PRIMARY KEY,
@@ -352,12 +352,12 @@ func migrateSkillSearchTables(db *gorm.DB) error {
 		)
 		`
 		if err := db.Exec(sql).Error; err != nil {
-			logger.Warn("Failed to create skill_search_configs table with MySQL dialect, trying generic", zap.Error(err))
+			common.Warn("Failed to create skill_search_configs table with MySQL dialect, trying generic", zap.Error(err))
 			if err := db.AutoMigrate(&entity.SkillSearchConfig{}); err != nil {
 				return err
 			}
 			// AutoMigrate doesn't create unique indexes, so create them explicitly
-			logger.Info("Creating unique indexes for skill_search_configs...")
+			common.Info("Creating unique indexes for skill_search_configs...")
 			if err := db.Exec(`ALTER TABLE skill_search_configs ADD UNIQUE INDEX idx_tenant_space_embd (tenant_id, space_id, embd_id)`).Error; err != nil {
 				return fmt.Errorf("failed to create unique index idx_tenant_space_embd: %w", err)
 			}
@@ -373,7 +373,7 @@ func migrateSkillSearchTables(db *gorm.DB) error {
 		db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
 			WHERE TABLE_NAME = 'skill_search_configs' AND INDEX_NAME = 'idx_tenant_embd'`).Scan(&legacyIndexExists)
 		if legacyIndexExists > 0 {
-			logger.Info("Dropping legacy unique index idx_tenant_embd from skill_search_configs...")
+			common.Info("Dropping legacy unique index idx_tenant_embd from skill_search_configs...")
 			if err := db.Exec(`ALTER TABLE skill_search_configs DROP INDEX idx_tenant_embd`).Error; err != nil {
 				return fmt.Errorf("failed to drop legacy unique index idx_tenant_embd: %w", err)
 			}
@@ -384,7 +384,7 @@ func migrateSkillSearchTables(db *gorm.DB) error {
 		db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
 			WHERE TABLE_NAME = 'skill_search_configs' AND INDEX_NAME = 'idx_tenant_space_embd'`).Scan(&indexExists)
 		if indexExists == 0 {
-			logger.Info("Adding unique index idx_tenant_space_embd to skill_search_configs...")
+			common.Info("Adding unique index idx_tenant_space_embd to skill_search_configs...")
 			if err := db.Exec(`ALTER TABLE skill_search_configs 
 				ADD UNIQUE INDEX idx_tenant_space_embd (tenant_id, space_id, embd_id)`).Error; err != nil {
 				return fmt.Errorf("failed to add unique index idx_tenant_space_embd: %w", err)
@@ -398,7 +398,7 @@ func migrateSkillSearchTables(db *gorm.DB) error {
 // migrateSkillSpaceTables creates skill space related tables
 func migrateSkillSpaceTables(db *gorm.DB) error {
 	if !db.Migrator().HasTable("skill_spaces") {
-		logger.Info("Creating skill_spaces table...")
+		common.Info("Creating skill_spaces table...")
 		sql := `
 		CREATE TABLE IF NOT EXISTS skill_spaces (
 			id VARCHAR(32) PRIMARY KEY,
@@ -417,13 +417,13 @@ func migrateSkillSpaceTables(db *gorm.DB) error {
 		)
 		`
 		if err := db.Exec(sql).Error; err != nil {
-			logger.Warn("Failed to create skill_spaces table with MySQL dialect, trying generic", zap.Error(err))
+			common.Warn("Failed to create skill_spaces table with MySQL dialect, trying generic", zap.Error(err))
 			// Try with AutoMigrate as fallback
 			if err := db.AutoMigrate(&entity.SkillSpace{}); err != nil {
 				return err
 			}
 			// AutoMigrate doesn't create unique indexes, so create them explicitly
-			logger.Info("Creating unique indexes for skill_spaces...")
+			common.Info("Creating unique indexes for skill_spaces...")
 			if err := db.Exec(`ALTER TABLE skill_spaces ADD UNIQUE INDEX idx_tenant_name_status (tenant_id, name, status)`).Error; err != nil {
 				return fmt.Errorf("failed to create unique index idx_tenant_name_status: %w", err)
 			}
@@ -450,27 +450,27 @@ func migrateSkillSpaceIndex(db *gorm.DB) error {
 		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
 		WHERE TABLE_NAME = 'skill_spaces' AND INDEX_NAME = 'idx_tenant_name'
 	`).Scan(&oldIndexExists)
-	
+
 	if oldIndexExists > 0 {
-		logger.Info("Dropping old idx_tenant_name index from skill_spaces...")
+		common.Info("Dropping old idx_tenant_name index from skill_spaces...")
 		if err := db.Exec(`DROP INDEX idx_tenant_name ON skill_spaces`).Error; err != nil {
 			return fmt.Errorf("failed to drop old index idx_tenant_name: %w", err)
 		}
 	}
-	
+
 	// Check if new index exists
 	var newIndexExists int64
 	db.Raw(`
 		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
 		WHERE TABLE_NAME = 'skill_spaces' AND INDEX_NAME = 'idx_tenant_name_status'
 	`).Scan(&newIndexExists)
-	
+
 	if newIndexExists == 0 {
-		logger.Info("Creating new idx_tenant_name_status index on skill_spaces...")
+		common.Info("Creating new idx_tenant_name_status index on skill_spaces...")
 		if err := db.Exec(`CREATE UNIQUE INDEX idx_tenant_name_status ON skill_spaces(tenant_id, name, status)`).Error; err != nil {
 			return fmt.Errorf("failed to create unique index idx_tenant_name_status: %w", err)
 		}
 	}
-	
+
 	return nil
 }

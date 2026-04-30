@@ -21,9 +21,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
-
-	"ragflow/internal/logger"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
 )
@@ -46,7 +45,7 @@ func (e *infinityEngine) Delete(ctx context.Context, condition map[string]interf
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
-		logger.Warn(fmt.Sprintf("Table %s does not exist, skipping delete", tableName))
+		common.Warn(fmt.Sprintf("Table %s does not exist, skipping delete", tableName))
 		return 0, nil
 	}
 
@@ -199,7 +198,7 @@ func existsCondition(field string, tableColumns map[string]struct {
 }) string {
 	col, colOk := tableColumns[field]
 	if !colOk {
-		logger.Warn(fmt.Sprintf("Column '%s' not found in table columns", field))
+		common.Warn(fmt.Sprintf("Column '%s' not found in table columns", field))
 		return fmt.Sprintf("%s!=null", field)
 	}
 	if strings.Contains(strings.ToLower(col.Type), "char") {

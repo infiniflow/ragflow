@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 
@@ -29,7 +30,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/logger"
 )
 
 // ChatSessionService chat session (conversation) service
@@ -524,7 +524,7 @@ func (s *ChatSessionService) asyncChatStream(dialog *entity.Chat, session *entit
 
 // asyncChatSolo performs simple chat without RAG (non-streaming)
 func (s *ChatSessionService) asyncChatSolo(dialog *entity.Chat, session *entity.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}, stream bool) (map[string]interface{}, error) {
-	logger.Info("asyncChatSolo started",
+	common.Info("asyncChatSolo started",
 		zap.String("tenant_id", dialog.TenantID),
 		zap.String("llm_id", dialog.LLMID),
 		zap.String("dialog_id", dialog.ID),
@@ -538,7 +538,7 @@ func (s *ChatSessionService) asyncChatSolo(dialog *entity.Chat, session *entity.
 
 	chatModel, err := s.modelProviderSvc.GetChatModel(dialog.TenantID, dialog.LLMID)
 	if err != nil {
-		logger.Error("asyncChatSolo failed to get chat model", err)
+		common.Error("asyncChatSolo failed to get chat model", err)
 		return nil, err
 	}
 
@@ -564,11 +564,11 @@ func (s *ChatSessionService) asyncChatSolo(dialog *entity.Chat, session *entity.
 	// Perform chat
 	response, err := chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, chatModel.APIConfig, msgs, chatConfig)
 	if err != nil {
-		logger.Error("asyncChatSolo chat failed", err)
+		common.Error("asyncChatSolo chat failed", err)
 		return nil, err
 	}
 
-	logger.Info("asyncChatSolo completed",
+	common.Info("asyncChatSolo completed",
 		zap.String("tenant_id", dialog.TenantID),
 		zap.String("llm_id", dialog.LLMID),
 		zap.Int("response_length", len(*response.Answer)))
@@ -585,7 +585,7 @@ func (s *ChatSessionService) asyncChatSolo(dialog *entity.Chat, session *entity.
 
 // asyncChatSoloStream performs simple streaming chat without RAG
 func (s *ChatSessionService) asyncChatSoloStream(dialog *entity.Chat, session *entity.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}, resultChan chan<- map[string]interface{}) {
-	logger.Info("asyncChatSoloStream started",
+	common.Info("asyncChatSoloStream started",
 		zap.String("tenant_id", dialog.TenantID),
 		zap.String("llm_id", dialog.LLMID),
 		zap.String("dialog_id", dialog.ID),
@@ -599,7 +599,7 @@ func (s *ChatSessionService) asyncChatSoloStream(dialog *entity.Chat, session *e
 
 	chatModel, err := s.modelProviderSvc.GetChatModel(dialog.TenantID, dialog.LLMID)
 	if err != nil {
-		logger.Error("asyncChatSoloStream failed to get chat model", err)
+		common.Error("asyncChatSoloStream failed to get chat model", err)
 		resultChan <- s.structureAnswer(session, "**ERROR**: "+err.Error(), messageID, session.ID, reference)
 		return
 	}
@@ -642,7 +642,7 @@ func (s *ChatSessionService) asyncChatSoloStream(dialog *entity.Chat, session *e
 		return
 	}
 
-	logger.Info("asyncChatSoloStream completed",
+	common.Info("asyncChatSoloStream completed",
 		zap.String("tenant_id", dialog.TenantID),
 		zap.String("llm_id", dialog.LLMID),
 		zap.Int("response_length", len(fullAnswer)))

@@ -19,10 +19,10 @@ package infinity
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
 
 	"go.uber.org/zap"
-	"ragflow/internal/logger"
 )
 
 // IndexDocument indexes a single document
@@ -77,9 +77,9 @@ func (e *infinityEngine) InsertSkill(ctx context.Context, tableName, docID strin
 	filter := fmt.Sprintf("skill_id = '%s'", docIDEscaped)
 	delResp, delErr := table.Delete(filter)
 	if delErr != nil {
-		logger.Warn(fmt.Sprintf("Failed to delete existing skill document: %v", delErr))
+		common.Warn(fmt.Sprintf("Failed to delete existing skill document: %v", delErr))
 	} else if delResp.DeletedRows > 0 {
-		logger.Debug(fmt.Sprintf("Deleted %d existing skill document(s)", delResp.DeletedRows))
+		common.Debug(fmt.Sprintf("Deleted %d existing skill document(s)", delResp.DeletedRows))
 	}
 
 	// Insert the document
@@ -124,7 +124,7 @@ func (e *infinityEngine) BulkInsertSkill(ctx context.Context, tableName string, 
 	for _, doc := range docs {
 		docMap, ok := doc.(map[string]interface{})
 		if !ok {
-			logger.Warn("Invalid doc type in bulk insert, expected map[string]interface{}")
+			common.Warn("Invalid doc type in bulk insert, expected map[string]interface{}")
 			continue
 		}
 
@@ -150,7 +150,7 @@ func (e *infinityEngine) BulkInsertSkill(ctx context.Context, tableName string, 
 	}
 
 	if len(insertDocs) == 0 {
-		logger.Warn("No valid documents to bulk insert", zap.String("tableName", tableName))
+		common.Warn("No valid documents to bulk insert", zap.String("tableName", tableName))
 		return 0, nil
 	}
 
@@ -161,12 +161,12 @@ func (e *infinityEngine) BulkInsertSkill(ctx context.Context, tableName string, 
 		filter := fmt.Sprintf("skill_id = '%s'", docIDEscaped)
 		delResp, delErr := table.Delete(filter)
 		if delErr != nil {
-			logger.Warn("Failed to delete existing skill document before bulk insert",
+			common.Warn("Failed to delete existing skill document before bulk insert",
 				zap.String("tableName", tableName),
 				zap.String("skill_id", skillID),
 				zap.Error(delErr))
 		} else if delResp.DeletedRows > 0 {
-			logger.Debug("Deleted existing skill document before bulk insert",
+			common.Debug("Deleted existing skill document before bulk insert",
 				zap.String("tableName", tableName),
 				zap.String("skill_id", skillID),
 				zap.Int64("deletedRows", delResp.DeletedRows))
@@ -179,7 +179,7 @@ func (e *infinityEngine) BulkInsertSkill(ctx context.Context, tableName string, 
 		return 0, fmt.Errorf("failed to bulk insert skill documents: %w", err)
 	}
 
-	logger.Debug("Bulk upserted skill documents",
+	common.Debug("Bulk upserted skill documents",
 		zap.String("tableName", tableName),
 		zap.Int("count", len(insertDocs)),
 		zap.Int("skillIDs", len(skillIDs)))
@@ -229,7 +229,7 @@ func (e *infinityEngine) DeleteDocument(ctx context.Context, tableName, docID st
 		return fmt.Errorf("failed to delete document: %w", err)
 	}
 
-	logger.Debug("Deleted document from Infinity",
+	common.Debug("Deleted document from Infinity",
 		zap.String("tableName", tableName),
 		zap.String("docID", docID),
 		zap.String("idField", idField),

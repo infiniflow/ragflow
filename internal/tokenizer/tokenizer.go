@@ -19,6 +19,7 @@ package tokenizer
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"runtime"
 	"sync"
@@ -28,7 +29,6 @@ import (
 	"go.uber.org/zap"
 
 	rag "ragflow/internal/binding"
-	"ragflow/internal/logger"
 )
 
 // PoolConfig configures the elastic analyzer pool
@@ -98,7 +98,7 @@ func Init(cfg *PoolConfig) error {
 			cfg.AcquireTimeout = 10 * time.Second
 		}
 
-		logger.Info("Initializing analyzer pool",
+		common.Info("Initializing analyzer pool",
 			zap.String("dict_path", cfg.DictPath),
 			zap.Int("min_size", cfg.MinSize),
 			zap.Int("max_size", cfg.MaxSize),
@@ -115,13 +115,13 @@ func Init(cfg *PoolConfig) error {
 		baseAnalyzer, err := rag.NewAnalyzer(cfg.DictPath)
 		if err != nil {
 			poolInitError = fmt.Errorf("failed to create base analyzer: %w", err)
-			logger.Error("Failed to create base analyzer", poolInitError)
+			common.Error("Failed to create base analyzer", poolInitError)
 			return
 		}
 
 		if err = baseAnalyzer.Load(); err != nil {
 			poolInitError = fmt.Errorf("failed to load base analyzer: %w", err)
-			logger.Error("Failed to load base analyzer", poolInitError)
+			common.Error("Failed to load base analyzer", poolInitError)
 			baseAnalyzer.Close()
 			return
 		}
@@ -133,7 +133,7 @@ func Init(cfg *PoolConfig) error {
 			instance, err := globalPool.createInstance()
 			if err != nil {
 				poolInitError = fmt.Errorf("failed to create instance %d: %w", i, err)
-				logger.Error("Failed to create pool instance", poolInitError)
+				common.Error("Failed to create pool instance", poolInitError)
 				globalPool.Close()
 				return
 			}
@@ -142,7 +142,7 @@ func Init(cfg *PoolConfig) error {
 		}
 
 		globalPool.initialized = true
-		logger.Info("Analyzer pool initialized successfully",
+		common.Info("Analyzer pool initialized successfully",
 			zap.Int("pre_warmed", cfg.MinSize),
 			zap.Int32("current_size", atomic.LoadInt32(&globalPool.currentSize)))
 
@@ -198,7 +198,7 @@ func (p *analyzerPool) acquire() (*poolInstance, error) {
 				atomic.AddInt32(&p.currentSize, -1)
 				return nil, fmt.Errorf("failed to dynamically create instance: %w", err)
 			}
-			logger.Info("Pool expanded dynamically",
+			common.Info("Pool expanded dynamically",
 				zap.Int32("previous_size", current),
 				zap.Int32("new_size", current+1),
 				zap.Int("max_size", p.config.MaxSize))
@@ -237,7 +237,7 @@ func (p *analyzerPool) release(instance *poolInstance) {
 		// Successfully returned to pool
 	default:
 		// Pool is full (shouldn't happen normally), close this instance
-		logger.Warn("Pool full when releasing instance, destroying it",
+		common.Warn("Pool full when releasing instance, destroying it",
 			zap.Int32("current_size", atomic.LoadInt32(&p.currentSize)))
 		instance.analyzer.Close()
 		atomic.AddInt32(&p.currentSize, -1)
@@ -308,7 +308,7 @@ func (p *analyzerPool) shrink() {
 		}
 
 		newSize := atomic.AddInt32(&p.currentSize, -int32(len(toRemove)))
-		logger.Info("Pool shrunk",
+		common.Info("Pool shrunk",
 			zap.Int("removed_instances", len(toRemove)),
 			zap.Int32("previous_size", currentSize),
 			zap.Int32("new_size", newSize),
@@ -348,7 +348,7 @@ func (p *analyzerPool) Close() {
 		p.baseAnalyzer = nil
 	}
 
-	logger.Info(fmt.Sprintf("Analyzer pool closed, final_size: %d", atomic.LoadInt32(&p.currentSize)))
+	common.Info(fmt.Sprintf("Analyzer pool closed, final_size: %d", atomic.LoadInt32(&p.currentSize)))
 }
 
 // GetPoolStats returns current pool statistics
@@ -440,7 +440,7 @@ func Analyze(text string) ([]rag.Token, error) {
 func SetFineGrained(fineGrained bool) {
 	// In pool mode, we don't set global state on instances
 	// Each request gets a fresh instance with default settings
-	logger.Debug("SetFineGrained is no-op in pool mode", zap.Bool("fine_grained", fineGrained))
+	common.Debug("SetFineGrained is no-op in pool mode", zap.Bool("fine_grained", fineGrained))
 }
 
 // FineGrainedTokenize performs fine-grained tokenization on space-separated tokens
@@ -460,7 +460,7 @@ func FineGrainedTokenize(tokens string) (string, error) {
 // SetEnablePosition sets whether to enable position tracking
 // Note: This is a no-op in pool mode as each request uses its own instance
 func SetEnablePosition(enablePosition bool) {
-	logger.Debug("SetEnablePosition is no-op in pool mode", zap.Bool("enable_position", enablePosition))
+	common.Debug("SetEnablePosition is no-op in pool mode", zap.Bool("enable_position", enablePosition))
 }
 
 // IsInitialized checks whether the tokenizer pool has been initialized

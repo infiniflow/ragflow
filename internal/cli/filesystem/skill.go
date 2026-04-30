@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"regexp"
 	"strings"
 	"time"
@@ -32,8 +33,6 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
-
-	"ragflow/internal/logger"
 )
 
 // SkillProvider handles skill operations using /skills API
@@ -56,7 +55,7 @@ import (
 const (
 	MaxSkillTotalSize = 50 * 1024 * 1024 // 50MB
 	MaxSkillFileSize  = 5 * 1024 * 1024  // 5MB per file
-	DefaultSpaceID      = "default"
+	DefaultSpaceID    = "default"
 )
 
 // Text file extensions allowed in skills
@@ -166,7 +165,7 @@ func (p *SkillProvider) List(ctx stdctx.Context, subPath string, opts *ListOptio
 	}
 
 	parts := SplitPath(subPath)
-	
+
 	switch len(parts) {
 	case 1:
 		// skills/{space_id} - list skills in space
@@ -214,10 +213,10 @@ func (p *SkillProvider) Search(ctx stdctx.Context, subPath string, opts *SearchO
 		page = (opts.Offset / pageSize) + 1
 	}
 	payload := map[string]interface{}{
-		"query":      opts.Query,
-		"space_id":    spaceID,
-		"page":       page,
-		"page_size":  pageSize,
+		"query":     opts.Query,
+		"space_id":  spaceID,
+		"page":      page,
+		"page_size": pageSize,
 	}
 
 	// Call skill search API
@@ -538,7 +537,7 @@ func (p *SkillProvider) listSkillsInSpace(ctx stdctx.Context, spaceName string, 
 		"sort_order": opts.SortOrder,
 	}
 
-	logger.Debug("Listing skills via search API", zap.String("space", spaceName), zap.String("spaceUUID", spaceUUID), zap.Int("limit", limit))
+	common.Debug("Listing skills via search API", zap.String("space", spaceName), zap.String("spaceUUID", spaceUUID), zap.Int("limit", limit))
 
 	resp, err := p.httpClient.Request("POST", "/skills/search", true, "auto", nil, payload)
 	if err == nil {
@@ -560,7 +559,7 @@ func (p *SkillProvider) listSkillsInSpace(ctx stdctx.Context, spaceName string, 
 		}
 
 		if err := json.Unmarshal(resp.Body, &result); err == nil && result.Code == 0 {
-			logger.Debug("Search API response", zap.Int("skills_count", len(result.Data.Skills)), zap.Int64("total", result.Data.Total))
+			common.Debug("Search API response", zap.Int("skills_count", len(result.Data.Skills)), zap.Int64("total", result.Data.Total))
 			// If search returned results, use them
 			if len(result.Data.Skills) > 0 {
 				nodes := make([]*Node, 0, len(result.Data.Skills))
@@ -582,7 +581,7 @@ func (p *SkillProvider) listSkillsInSpace(ctx stdctx.Context, spaceName string, 
 						},
 					})
 				}
-				logger.Info("Listed skills via SEARCH", zap.String("space", spaceName), zap.Int("count", len(nodes)), zap.Int64("total", result.Data.Total))
+				common.Info("Listed skills via SEARCH", zap.String("space", spaceName), zap.Int("count", len(nodes)), zap.Int64("total", result.Data.Total))
 				return &Result{
 					Nodes:      nodes,
 					Total:      int(result.Data.Total),
@@ -591,16 +590,16 @@ func (p *SkillProvider) listSkillsInSpace(ctx stdctx.Context, spaceName string, 
 				}, nil
 			}
 			// Search returned empty result, fall through to file system
-			logger.Debug("Search returned empty result, falling back to file system")
+			common.Debug("Search returned empty result, falling back to file system")
 		} else {
-			logger.Debug("Search API error", zap.Error(err), zap.Int("code", result.Code), zap.String("msg", result.Msg))
+			common.Debug("Search API error", zap.Error(err), zap.Int("code", result.Code), zap.String("msg", result.Msg))
 		}
 	} else {
-		logger.Debug("Search request failed", zap.Error(err))
+		common.Debug("Search request failed", zap.Error(err))
 	}
 
 	// Fall back to file system listing (for skills not yet indexed)
-	logger.Info("Listing skills via FILE SYSTEM (search unavailable)", zap.String("space", spaceName))
+	common.Info("Listing skills via FILE SYSTEM (search unavailable)", zap.String("space", spaceName))
 	return p.listSkillsInSpaceFromFileSystem(ctx, spaceName, opts)
 }
 
@@ -611,14 +610,14 @@ func (p *SkillProvider) listSkillsInSpaceFromFileSystem(ctx stdctx.Context, spac
 	if err != nil {
 		return nil, fmt.Errorf("failed to get skills folder: %w", err)
 	}
-	logger.Debug("Got skills folder ID", zap.String("skillsFolderID", skillsFolderID))
+	common.Debug("Got skills folder ID", zap.String("skillsFolderID", skillsFolderID))
 
 	// Find the space folder
 	spaceFolderID, err := p.findFolderID(ctx, skillsFolderID, spaceName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find space folder: %w", err)
 	}
-	logger.Debug("Got space folder ID", zap.String("spaceName", spaceName), zap.String("spaceFolderID", spaceFolderID))
+	common.Debug("Got space folder ID", zap.String("spaceName", spaceName), zap.String("spaceFolderID", spaceFolderID))
 
 	// List all subfolders in the space folder (each subfolder is a skill)
 	skillsResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", spaceFolderID), true, "auto", nil, nil)
@@ -646,7 +645,7 @@ func (p *SkillProvider) listSkillsInSpaceFromFileSystem(ctx stdctx.Context, spac
 	if skillsResult.Code != 0 {
 		return nil, fmt.Errorf("failed to list skills: %s", skillsResult.Msg)
 	}
-	logger.Debug("File system list response", zap.Int("files_count", len(skillsResult.Data.Files)))
+	common.Debug("File system list response", zap.Int("files_count", len(skillsResult.Data.Files)))
 
 	// Convert folders to nodes
 	nodes := make([]*Node, 0)
@@ -675,7 +674,7 @@ func (p *SkillProvider) listSkillsInSpaceFromFileSystem(ctx stdctx.Context, spac
 		nodes = nodes[:limit]
 	}
 
-	logger.Info("Listed skills via FILE SYSTEM", zap.String("space", spaceName), zap.Int("count", len(nodes)), zap.Int("total", total))
+	common.Info("Listed skills via FILE SYSTEM", zap.String("space", spaceName), zap.Int("count", len(nodes)), zap.Int("total", total))
 
 	return &Result{
 		Nodes:      nodes,
@@ -1039,10 +1038,10 @@ func (p *SkillProvider) listSkillContent(ctx stdctx.Context, spaceID, skillName,
 		}
 
 		nodes = append(nodes, &Node{
-			Name: file.Name,
-			Type: nodeType,
-			Path: currentPath + "/" + file.Name,
-			Size: file.Size,
+			Name:      file.Name,
+			Type:      nodeType,
+			Path:      currentPath + "/" + file.Name,
+			Size:      file.Size,
 			UpdatedAt: time.UnixMilli(file.UpdateTime),
 			Metadata: map[string]interface{}{
 				"id": file.ID,
@@ -1142,9 +1141,9 @@ func (p *SkillProvider) IndexSkill(ctx stdctx.Context, spaceID string, skillInfo
 
 	// Build index request
 	payload := map[string]interface{}{
-		"skills":  []interface{}{skillInfo},
+		"skills":   []interface{}{skillInfo},
 		"space_id": spaceUUID,
-		"embd_id": embdID,
+		"embd_id":  embdID,
 	}
 
 	// Call index API

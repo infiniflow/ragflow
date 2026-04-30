@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"ragflow/internal/common"
 	"strconv"
 	"sync"
 	"time"
@@ -30,7 +31,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
-	"ragflow/internal/logger"
 	"ragflow/internal/server"
 )
 
@@ -109,7 +109,7 @@ func Init(cfg *server.RedisConfig) error {
 	var initErr error
 	once.Do(func() {
 		if cfg.Host == "" {
-			logger.Info("Redis host not configured, skipping Redis initialization")
+			common.Info("Redis host not configured, skipping Redis initialization")
 			return
 		}
 
@@ -135,7 +135,7 @@ func Init(cfg *server.RedisConfig) error {
 			luaTokenBucket:   redis.NewScript(luaTokenBucketScript),
 		}
 
-		logger.Info("Redis client initialized",
+		common.Info("Redis client initialized",
 			zap.String("host", cfg.Host),
 			zap.Int("port", cfg.Port),
 			zap.Int("db", cfg.DB),
@@ -193,7 +193,7 @@ func (r *RedisClient) Info() map[string]interface{} {
 	ctx := context.Background()
 	infoStr, err := r.client.Info(ctx).Result()
 	if err != nil {
-		logger.Warn("Failed to get Redis info", zap.Error(err))
+		common.Warn("Failed to get Redis info", zap.Error(err))
 		return nil
 	}
 
@@ -281,7 +281,7 @@ func (r *RedisClient) Exist(key string) (bool, error) {
 	ctx := context.Background()
 	exists, err := r.client.Exists(ctx, key).Result()
 	if err != nil {
-		logger.Warn("Redis Exist error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis Exist error", zap.String("key", key), zap.Error(err))
 		return false, err
 	}
 	return exists > 0, nil
@@ -298,7 +298,7 @@ func (r *RedisClient) Get(key string) (string, error) {
 		return "", nil
 	}
 	if err != nil {
-		logger.Warn("Redis Get error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis Get error", zap.String("key", key), zap.Error(err))
 		return "", err
 	}
 	return val, nil
@@ -312,11 +312,11 @@ func (r *RedisClient) SetObj(key string, obj interface{}, exp time.Duration) boo
 	ctx := context.Background()
 	data, err := json.Marshal(obj)
 	if err != nil {
-		logger.Warn("Redis SetObj marshal error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis SetObj marshal error", zap.String("key", key), zap.Error(err))
 		return false
 	}
 	if err := r.client.Set(ctx, key, data, exp).Err(); err != nil {
-		logger.Warn("Redis SetObj error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis SetObj error", zap.String("key", key), zap.Error(err))
 		return false
 	}
 	return true
@@ -333,11 +333,11 @@ func (r *RedisClient) GetObj(key string, dest interface{}) bool {
 		return false
 	}
 	if err != nil {
-		logger.Warn("Redis GetObj error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis GetObj error", zap.String("key", key), zap.Error(err))
 		return false
 	}
 	if err := json.Unmarshal([]byte(data), dest); err != nil {
-		logger.Warn("Redis GetObj unmarshal error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis GetObj unmarshal error", zap.String("key", key), zap.Error(err))
 		return false
 	}
 	return true
@@ -350,7 +350,7 @@ func (r *RedisClient) Set(key string, value string, exp time.Duration) bool {
 	}
 	ctx := context.Background()
 	if err := r.client.Set(ctx, key, value, exp).Err(); err != nil {
-		logger.Warn("Redis Set error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis Set error", zap.String("key", key), zap.Error(err))
 		return false
 	}
 	return true
@@ -364,7 +364,7 @@ func (r *RedisClient) SetNX(key string, value string, exp time.Duration) bool {
 	ctx := context.Background()
 	ok, err := r.client.SetNX(ctx, key, value, exp).Result()
 	if err != nil {
-		logger.Warn("Redis SetNX error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis SetNX error", zap.String("key", key), zap.Error(err))
 		return false
 	}
 	return ok
@@ -380,7 +380,7 @@ func (r *RedisClient) GetOrCreateKey(key string, value string) (string, error) {
 	// First, try to get the existing key
 	existingKey, err := r.client.Get(ctx, key).Result()
 	if err == nil {
-		logger.Warn("Redis Get error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis Get error", zap.String("key", key), zap.Error(err))
 		// Successfully retrieved existing key
 		return existingKey, nil
 	}
@@ -414,7 +414,7 @@ func (r *RedisClient) SAdd(key string, member string) bool {
 	}
 	ctx := context.Background()
 	if err := r.client.SAdd(ctx, key, member).Err(); err != nil {
-		logger.Warn("Redis SAdd error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis SAdd error", zap.String("key", key), zap.Error(err))
 		return false
 	}
 	return true
@@ -427,7 +427,7 @@ func (r *RedisClient) SRem(key string, member string) bool {
 	}
 	ctx := context.Background()
 	if err := r.client.SRem(ctx, key, member).Err(); err != nil {
-		logger.Warn("Redis SRem error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis SRem error", zap.String("key", key), zap.Error(err))
 		return false
 	}
 	return true
@@ -441,7 +441,7 @@ func (r *RedisClient) SMembers(key string) ([]string, error) {
 	ctx := context.Background()
 	members, err := r.client.SMembers(ctx, key).Result()
 	if err != nil {
-		logger.Warn("Redis SMembers error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis SMembers error", zap.String("key", key), zap.Error(err))
 		return nil, err
 	}
 	return members, nil
@@ -455,7 +455,7 @@ func (r *RedisClient) SIsMember(key string, member string) bool {
 	ctx := context.Background()
 	ok, err := r.client.SIsMember(ctx, key, member).Result()
 	if err != nil {
-		logger.Warn("Redis SIsMember error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis SIsMember error", zap.String("key", key), zap.Error(err))
 		return false
 	}
 	return ok
@@ -468,7 +468,7 @@ func (r *RedisClient) ZAdd(key string, member string, score float64) bool {
 	}
 	ctx := context.Background()
 	if err := r.client.ZAdd(ctx, key, redis.Z{Score: score, Member: member}).Err(); err != nil {
-		logger.Warn("Redis ZAdd error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis ZAdd error", zap.String("key", key), zap.Error(err))
 		return false
 	}
 	return true
@@ -482,7 +482,7 @@ func (r *RedisClient) ZCount(key string, min, max float64) int64 {
 	ctx := context.Background()
 	count, err := r.client.ZCount(ctx, key, fmt.Sprintf("%f", min), fmt.Sprintf("%f", max)).Result()
 	if err != nil {
-		logger.Warn("Redis ZCount error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis ZCount error", zap.String("key", key), zap.Error(err))
 		return 0
 	}
 	return count
@@ -496,7 +496,7 @@ func (r *RedisClient) ZPopMin(key string, count int) ([]redis.Z, error) {
 	ctx := context.Background()
 	members, err := r.client.ZPopMin(ctx, key, int64(count)).Result()
 	if err != nil {
-		logger.Warn("Redis ZPopMin error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis ZPopMin error", zap.String("key", key), zap.Error(err))
 		return nil, err
 	}
 	return members, nil
@@ -513,7 +513,7 @@ func (r *RedisClient) ZRangeByScore(key string, min, max float64) ([]string, err
 		Max: fmt.Sprintf("%f", max),
 	}).Result()
 	if err != nil {
-		logger.Warn("Redis ZRangeByScore error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis ZRangeByScore error", zap.String("key", key), zap.Error(err))
 		return nil, err
 	}
 	return members, nil
@@ -527,7 +527,7 @@ func (r *RedisClient) ZRemRangeByScore(key string, min, max float64) int64 {
 	ctx := context.Background()
 	count, err := r.client.ZRemRangeByScore(ctx, key, fmt.Sprintf("%f", min), fmt.Sprintf("%f", max)).Result()
 	if err != nil {
-		logger.Warn("Redis ZRemRangeByScore error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis ZRemRangeByScore error", zap.String("key", key), zap.Error(err))
 		return 0
 	}
 	return count
@@ -541,7 +541,7 @@ func (r *RedisClient) IncrBy(key string, increment int64) (int64, error) {
 	ctx := context.Background()
 	val, err := r.client.IncrBy(ctx, key, increment).Result()
 	if err != nil {
-		logger.Warn("Redis IncrBy error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis IncrBy error", zap.String("key", key), zap.Error(err))
 		return 0, err
 	}
 	return val, nil
@@ -555,7 +555,7 @@ func (r *RedisClient) DecrBy(key string, decrement int64) (int64, error) {
 	ctx := context.Background()
 	val, err := r.client.DecrBy(ctx, key, decrement).Result()
 	if err != nil {
-		logger.Warn("Redis DecrBy error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis DecrBy error", zap.String("key", key), zap.Error(err))
 		return 0, err
 	}
 	return val, nil
@@ -582,7 +582,7 @@ func (r *RedisClient) GenerateAutoIncrementID(keyPrefix string, namespace string
 	// Check if key exists
 	exists, err := r.client.Exists(ctx, redisKey).Result()
 	if err != nil {
-		logger.Warn("Redis GenerateAutoIncrementID error", zap.Error(err))
+		common.Warn("Redis GenerateAutoIncrementID error", zap.Error(err))
 		return -1
 	}
 
@@ -604,7 +604,7 @@ func (r *RedisClient) GenerateAutoIncrementID(keyPrefix string, namespace string
 	// Increment
 	nextID, err := r.client.IncrBy(ctx, redisKey, increment).Result()
 	if err != nil {
-		logger.Warn("Redis GenerateAutoIncrementID increment error", zap.Error(err))
+		common.Warn("Redis GenerateAutoIncrementID increment error", zap.Error(err))
 		return -1
 	}
 
@@ -621,7 +621,7 @@ func (r *RedisClient) Transaction(key string, value string, exp time.Duration) b
 	pipe.SetNX(ctx, key, value, exp)
 	_, err := pipe.Exec(ctx)
 	if err != nil {
-		logger.Warn("Redis Transaction error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis Transaction error", zap.String("key", key), zap.Error(err))
 		return false
 	}
 	return true
@@ -637,7 +637,7 @@ func (r *RedisClient) QueueProduct(queue string, message interface{}) bool {
 	for i := 0; i < 3; i++ {
 		data, err := json.Marshal(message)
 		if err != nil {
-			logger.Warn("Redis QueueProduct marshal error", zap.Error(err))
+			common.Warn("Redis QueueProduct marshal error", zap.Error(err))
 			return false
 		}
 
@@ -648,7 +648,7 @@ func (r *RedisClient) QueueProduct(queue string, message interface{}) bool {
 		if err == nil {
 			return true
 		}
-		logger.Warn("Redis QueueProduct error", zap.String("queue", queue), zap.Error(err))
+		common.Warn("Redis QueueProduct error", zap.String("queue", queue), zap.Error(err))
 		time.Sleep(100 * time.Millisecond)
 	}
 	return false
@@ -665,7 +665,7 @@ func (r *RedisClient) QueueConsumer(queueName, groupName, consumerName string, m
 		// Create consumer group if not exists
 		groups, err := r.client.XInfoGroups(ctx, queueName).Result()
 		if err != nil && err.Error() != "no such key" {
-			logger.Warn("Redis QueueConsumer XInfoGroups error", zap.Error(err))
+			common.Warn("Redis QueueConsumer XInfoGroups error", zap.Error(err))
 		}
 
 		groupExists := false
@@ -679,7 +679,7 @@ func (r *RedisClient) QueueConsumer(queueName, groupName, consumerName string, m
 		if !groupExists {
 			err = r.client.XGroupCreateMkStream(ctx, queueName, groupName, "0").Err()
 			if err != nil && err.Error() != "BUSYGROUP Consumer Group name already exists" {
-				logger.Warn("Redis QueueConsumer XGroupCreate error", zap.Error(err))
+				common.Warn("Redis QueueConsumer XGroupCreate error", zap.Error(err))
 			}
 		}
 
@@ -699,7 +699,7 @@ func (r *RedisClient) QueueConsumer(queueName, groupName, consumerName string, m
 			return nil, nil
 		}
 		if err != nil {
-			logger.Warn("Redis QueueConsumer XReadGroup error", zap.Error(err))
+			common.Warn("Redis QueueConsumer XReadGroup error", zap.Error(err))
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
@@ -733,7 +733,7 @@ func (m *RedisMsg) Ack() bool {
 	ctx := context.Background()
 	err := m.consumer.XAck(ctx, m.queueName, m.groupName, m.msgID).Err()
 	if err != nil {
-		logger.Warn("RedisMsg Ack error", zap.Error(err))
+		common.Warn("RedisMsg Ack error", zap.Error(err))
 		return false
 	}
 	return true
@@ -764,7 +764,7 @@ func (r *RedisClient) GetPendingMsg(queue, groupName string) ([]redis.XPendingEx
 	}).Result()
 	if err != nil {
 		if err.Error() != "No such key" {
-			logger.Warn("Redis GetPendingMsg error", zap.Error(err))
+			common.Warn("Redis GetPendingMsg error", zap.Error(err))
 		}
 		return nil, err
 	}
@@ -781,7 +781,7 @@ func (r *RedisClient) RequeueMsg(queue, groupName, msgID string) {
 	for i := 0; i < 3; i++ {
 		msgs, err := r.client.XRange(ctx, queue, msgID, msgID).Result()
 		if err != nil {
-			logger.Warn("Redis RequeueMsg XRange error", zap.Error(err))
+			common.Warn("Redis RequeueMsg XRange error", zap.Error(err))
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
@@ -808,7 +808,7 @@ func (r *RedisClient) QueueInfo(queue, groupName string) (map[string]interface{}
 	for i := 0; i < 3; i++ {
 		groups, err := r.client.XInfoGroups(ctx, queue).Result()
 		if err != nil {
-			logger.Warn("Redis QueueInfo error", zap.Error(err))
+			common.Warn("Redis QueueInfo error", zap.Error(err))
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
@@ -836,7 +836,7 @@ func (r *RedisClient) DeleteIfEqual(key, expectedValue string) bool {
 	ctx := context.Background()
 	result, err := r.luaDeleteIfEqual.Run(ctx, r.client, []string{key}, expectedValue).Result()
 	if err != nil {
-		logger.Warn("Redis DeleteIfEqual error", zap.Error(err))
+		common.Warn("Redis DeleteIfEqual error", zap.Error(err))
 		return false
 	}
 	return result.(int64) == 1
@@ -849,7 +849,7 @@ func (r *RedisClient) Delete(key string) bool {
 	}
 	ctx := context.Background()
 	if err := r.client.Del(ctx, key).Err(); err != nil {
-		logger.Warn("Redis Delete error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis Delete error", zap.String("key", key), zap.Error(err))
 		return false
 	}
 	return true
@@ -862,7 +862,7 @@ func (r *RedisClient) Expire(key string, exp time.Duration) bool {
 	}
 	ctx := context.Background()
 	if err := r.client.Expire(ctx, key, exp).Err(); err != nil {
-		logger.Warn("Redis Expire error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis Expire error", zap.String("key", key), zap.Error(err))
 		return false
 	}
 	return true
@@ -876,7 +876,7 @@ func (r *RedisClient) TTL(key string) time.Duration {
 	ctx := context.Background()
 	ttl, err := r.client.TTL(ctx, key).Result()
 	if err != nil {
-		logger.Warn("Redis TTL error", zap.String("key", key), zap.Error(err))
+		common.Warn("Redis TTL error", zap.String("key", key), zap.Error(err))
 		return -2
 	}
 	return ttl
@@ -974,7 +974,7 @@ func (tb *TokenBucket) Allow(cost float64) (bool, float64) {
 	result, err := tb.client.luaTokenBucket.Run(ctx, tb.client.client, []string{tb.key},
 		tb.capacity, tb.rate, now, cost).Result()
 	if err != nil {
-		logger.Warn("TokenBucket Allow error", zap.Error(err))
+		common.Warn("TokenBucket Allow error", zap.Error(err))
 		return true, 0
 	}
 

@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/logger"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 )
@@ -84,7 +84,7 @@ func (z *GiteeModel) ChatWithMessages(modelName string, apiConfig *APIConfig, me
 			"content": msg.Content,
 		}
 	}
-	logger.Info(fmt.Sprintf("GiteeAPI messages: %+v", apiMessages))
+	common.Info(fmt.Sprintf("GiteeAPI messages: %+v", apiMessages))
 
 	// Build request body
 	reqBody := map[string]interface{}{
@@ -133,7 +133,7 @@ func (z *GiteeModel) ChatWithMessages(modelName string, apiConfig *APIConfig, me
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	logger.Info(fmt.Sprintf("GiteeAPI request body: %s", string(jsonData)))
+	common.Info(fmt.Sprintf("GiteeAPI request body: %s", string(jsonData)))
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -298,7 +298,7 @@ func (z *GiteeModel) ChatStreamlyWithSender(modelName, message *string, apiConfi
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		logger.Info(line)
+		common.Info(line)
 
 		// SSE data line starts with "data:"
 		if !strings.HasPrefix(line, "data:") {

@@ -19,7 +19,7 @@ package models
 import (
 	"context"
 	"fmt"
-	"ragflow/internal/logger"
+	"ragflow/internal/common"
 
 	"google.golang.org/genai"
 )
@@ -150,14 +150,14 @@ func (z *GoogleModel) ChatStreamlyWithSender(modelName, message *string, apiConf
 		}
 
 		if responseContent != "" {
-			logger.Info(fmt.Sprintf("Thinking: %s", responseContent))
+			common.Info(fmt.Sprintf("Thinking: %s", responseContent))
 			if err = sender(nil, &responseContent); err != nil {
 				return err
 			}
 		}
 
 		if content != "" {
-			logger.Info(fmt.Sprintf("Answer: %s", responseContent))
+			common.Info(fmt.Sprintf("Answer: %s", responseContent))
 			if err = sender(&content, nil); err != nil {
 				return err
 			}
