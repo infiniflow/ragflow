@@ -39,7 +39,7 @@
 </p>
 
 <h4 align="center">
-  <a href="https://cloud.ragflow.io">Cloud</a>
+  <a href="https://cloud.ragflow.io">Cloud</a> |
   <a href="https://ragflow.io/docs/dev/">Document</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/12241">Roadmap</a> |
   <a href="https://discord.gg/NjYzJD3GM3">Discord</a>
