@@ -199,6 +199,14 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
 
+	// For local deployed models
+	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
+		newURL := map[string]string{
+			region: baseURL,
+		}
+		providerInfo.ModelDriver = providerInfo.ModelDriver.NewInstance(newURL)
+	}
+
 	return providerInfo.ModelDriver.ListModels(apiConfig)
 }
 
@@ -831,7 +839,7 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		return common.CodeServerError, err
 	}
 
-	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+	modelInfo, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
 	if err != nil {
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo == nil {
@@ -853,12 +861,42 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
-		// Direct call with sender function
 		err = providerInfo.ModelDriver.ChatStreamlyWithSender(&modelName, &message, apiConfig, modelConfig, sender)
 		if err != nil {
 			return common.CodeServerError, err
 		}
 
+		return common.CodeSuccess, nil
+	}
+
+	if modelInfo.Status == "active" {
+		// For local deployed models
+		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+		if providerInfo == nil {
+			return common.CodeNotFound, errors.New("provider not found")
+		}
+
+		var extra map[string]string
+		err = json.Unmarshal([]byte(instance.Extra), &extra)
+		if err != nil {
+			return common.CodeServerError, err
+		}
+
+		region := extra["region"]
+		apiConfig.Region = &region
+		apiConfig.ApiKey = &instance.APIKey
+
+		modelConfig.ModelClass = &providerInfo.Class
+
+		newURL := map[string]string{
+			region: extra["base_url"],
+		}
+		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
+
+		err = newProviderInfo.ChatStreamlyWithSender(&modelName, &message, apiConfig, modelConfig, sender)
+		if err != nil {
+			return common.CodeServerError, err
+		}
 		return common.CodeSuccess, nil
 	}
 
