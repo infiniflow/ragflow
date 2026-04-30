@@ -369,7 +369,7 @@ async def build_chunks(task, progress_callback):
                     cached = await keyword_extraction(chat_mdl, d["content_with_weight"], topn)
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords", {"topn": topn})
             if cached:
-                d["important_kwd"] = cached.split(",")
+                d["important_kwd"] = [k for k in re.split(r"[,，;；、\r\n]+", cached) if k.strip()]
                 d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
             return
 
@@ -759,7 +759,7 @@ async def run_dataflow(task: dict):
             del ck["questions"]
         if "keywords" in ck:
             if "important_tks" not in ck:
-                ck["important_kwd"] = ck["keywords"].split(",")
+                ck["important_kwd"] = [k for k in re.split(r"[,，;；、\r\n]+", ck["keywords"]) if k.strip()]
                 ck["important_tks"] = rag_tokenizer.tokenize(str(ck["keywords"]))
             del ck["keywords"]
         if "summary" in ck:
