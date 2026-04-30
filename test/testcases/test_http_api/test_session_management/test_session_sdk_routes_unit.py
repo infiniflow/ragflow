@@ -561,8 +561,27 @@ def _load_session_module(monkeypatch):
     quart_auth_mod.AuthUser = _StubAuthUser
     monkeypatch.setitem(sys.modules, "quart_auth", quart_auth_mod)
 
+    class _FakeExpr:
+        def __or__(self, other):
+            return self
+
+    class _FakeField:
+        def __eq__(self, other):
+            return _FakeExpr()
+
+        def __ne__(self, other):
+            return _FakeExpr()
+
+        def is_null(self, value=True):
+            return _FakeExpr()
+
+    class _StubTaskModel:
+        id = _FakeField()
+        doc_id = _FakeField()
+
     db_models_mod = ModuleType("api.db.db_models")
     db_models_mod.APIToken = SimpleNamespace(query=lambda **_kwargs: [])
+    db_models_mod.Task = _StubTaskModel
     monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
 
     services_pkg = ModuleType("api.db.services")
@@ -614,7 +633,10 @@ def _load_session_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.doc_metadata_service", doc_metadata_service_mod)
 
     knowledgebase_service_mod = ModuleType("api.db.services.knowledgebase_service")
-    knowledgebase_service_mod.KnowledgebaseService = SimpleNamespace(query=lambda **_kwargs: [])
+    knowledgebase_service_mod.KnowledgebaseService = SimpleNamespace(
+        query=lambda **_kwargs: [],
+        get_by_id=lambda *_args, **_kwargs: (False, None),
+    )
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", knowledgebase_service_mod)
 
     search_service_mod = ModuleType("api.db.services.search_service")
@@ -740,7 +762,10 @@ def _load_agent_api_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.document_service", document_service_mod)
 
     knowledgebase_service_mod = ModuleType("api.db.services.knowledgebase_service")
-    knowledgebase_service_mod.KnowledgebaseService = SimpleNamespace(query=lambda **_kwargs: [])
+    knowledgebase_service_mod.KnowledgebaseService = SimpleNamespace(
+        query=lambda **_kwargs: [],
+        get_by_id=lambda *_args, **_kwargs: (False, None),
+    )
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", knowledgebase_service_mod)
 
     task_service_mod = ModuleType("api.db.services.task_service")

@@ -143,9 +143,27 @@ def _load_doc_module(monkeypatch):
     common_settings_mod.STORAGE_IMPL = SimpleNamespace(get=lambda *_args, **_kwargs: b"", rm=lambda *_args, **_kwargs: None)
     monkeypatch.setitem(sys.modules, "common.settings", common_settings_mod)
 
+    class _FakeExpr:
+        def __or__(self, other):
+            return self
+
+    class _FakeField:
+        def __eq__(self, other):
+            return _FakeExpr()
+
+        def __ne__(self, other):
+            return _FakeExpr()
+
+        def is_null(self, value=True):
+            return _FakeExpr()
+
+    class _StubDocumentModel:
+        id = _FakeField()
+        run = _FakeField()
+
     db_models_mod = ModuleType("api.db.db_models")
     db_models_mod.APIToken = SimpleNamespace(query=lambda **_kwargs: [])
-    db_models_mod.Document = SimpleNamespace()
+    db_models_mod.Document = _StubDocumentModel()
     db_models_mod.Task = SimpleNamespace()
     monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
 
@@ -452,7 +470,7 @@ def _patch_docstore(monkeypatch, module, **kwargs):
         "index_exist": lambda *_args, **_kwargs: False,
     }
     defaults.update(kwargs)
-    monkeypatch.setattr(module.settings, "docStoreConn", SimpleNamespace(**defaults))
+    monkeypatch.setattr(module.settings, "docStoreConn", SimpleNamespace(**defaults), raising=False)
 
 
 @pytest.mark.p2
