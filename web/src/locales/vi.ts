@@ -64,6 +64,12 @@ export default {
       description:
         'Đăng ký miễn phí để khám phá công nghệ RAG hàng đầu. Tạo cơ sở kiến thức và AI để trao quyền cho doanh nghiệp của bạn.',
       review: 'từ hơn 500 đánh giá',
+      usernameLabel: 'Tên người dùng',
+      usernamePlaceholder: 'Vui lòng nhập tên người dùng',
+      ldapTitle: 'Đăng nhập bằng {{provider}}',
+      ldapDescription:
+        'Sử dụng thông tin xác thực thư mục của bạn để đăng nhập.',
+      cancel: 'Hủy',
     },
     header: {
       knowledgeBase: 'Cơ sở kiến thức',

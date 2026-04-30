@@ -92,6 +92,12 @@ export default {
       description:
         'Registrieren Sie sich kostenlos, um führende RAG-Technologie zu erkunden. Erstellen Sie Wissensdatenbanken und KIs, um Ihr Unternehmen zu stärken.',
       review: 'von über 500 Bewertungen',
+      usernameLabel: 'Benutzername',
+      usernamePlaceholder: 'Bitte Benutzernamen eingeben',
+      ldapTitle: 'Mit {{provider}} anmelden',
+      ldapDescription:
+        'Verwenden Sie Ihre Verzeichnis-Anmeldedaten zum Anmelden.',
+      cancel: 'Abbrechen',
     },
     header: {
       knowledgeBase: 'Wissensdatenbank',

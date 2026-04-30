@@ -57,6 +57,11 @@ export default {
       description:
         'Daftar gratis untuk menjelajahi teknologi RAG teratas. Buat basis pengetahuan dan AI untuk memberdayakan bisnis Anda.',
       review: 'dari 500+ ulasan',
+      usernameLabel: 'Nama pengguna',
+      usernamePlaceholder: 'Silakan masukkan nama pengguna',
+      ldapTitle: 'Masuk dengan {{provider}}',
+      ldapDescription: 'Gunakan kredensial direktori Anda untuk masuk.',
+      cancel: 'Batal',
     },
     header: {
       knowledgeBase: 'Basis Pengetahuan',

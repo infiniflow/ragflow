@@ -53,6 +53,12 @@ export default {
       description:
         'Tecnología RAG de primer nivel. Crea bases de conocimiento y asistentes inteligentes.',
       review: 'Fiscalía General de la Nación',
+      usernameLabel: 'Nombre de usuario',
+      usernamePlaceholder: 'Por favor, ingresa el nombre de usuario',
+      ldapTitle: 'Iniciar sesión con {{provider}}',
+      ldapDescription:
+        'Usa tus credenciales de directorio para iniciar sesión.',
+      cancel: 'Cancelar',
     },
     header: {
       knowledgeBase: 'Base de conocimiento',

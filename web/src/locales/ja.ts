@@ -59,6 +59,12 @@ export default {
       description:
         '無料でサインアップして、最先端のRAGテクノロジーを探索してください。ナレッジベースやAIを作成して、ビジネスを強化しましょう。',
       review: '500件以上のレビューより',
+      usernameLabel: 'ユーザー名',
+      usernamePlaceholder: 'ユーザー名を入力してください',
+      ldapTitle: '{{provider}} でサインイン',
+      ldapDescription:
+        'ディレクトリの認証情報を使用してサインインしてください。',
+      cancel: 'キャンセル',
     },
     header: {
       knowledgeBase: 'ナレッジベース',
