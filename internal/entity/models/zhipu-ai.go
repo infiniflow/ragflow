@@ -52,6 +52,10 @@ func NewZhipuAIModel(baseURL map[string]string, urlSuffix URLSuffix) *ZhipuAIMod
 	}
 }
 
+func (z *ZhipuAIModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
+}
+
 func (z *ZhipuAIModel) Name() string {
 	return "zhipu"
 }

@@ -52,6 +52,10 @@ func NewDeepSeekModel(baseURL map[string]string, urlSuffix URLSuffix) *DeepSeekM
 	}
 }
 
+func (z *DeepSeekModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
+}
+
 func (z *DeepSeekModel) Name() string {
 	return "deepseek"
 }

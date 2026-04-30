@@ -1,5 +1,4 @@
 import Image from '@/components/image';
-import { useTheme } from '@/components/theme-provider';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -8,7 +7,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
-import { IChunk } from '@/interfaces/database/knowledge';
+import { IChunk } from '@/interfaces/database/dataset';
 import { CheckedState } from '@radix-ui/react-checkbox';
 import classNames from 'classnames';
 import DOMPurify from 'dompurify';
@@ -39,7 +38,6 @@ const ChunkCard = ({
 }: IProps) => {
   const available = Number(item.available_int);
   const [enabled, setEnabled] = useState(false);
-  const { theme } = useTheme();
 
   const onChange = (checked: boolean) => {
     setEnabled(checked);

@@ -242,6 +242,7 @@ export default {
       raptor: 'RAPTOR',
       processingType: '处理类型',
       dataPipeline: '切换或配置 ingestion pipeline。',
+      dataPipelineTitle: '数据管道',
       operations: '操作',
       taskId: '任务ID',
       duration: '耗时',
@@ -1261,9 +1262,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         author: '作者',
         sectionTitle: '章节标题',
       },
-      includeHeadingContent: '包含标题内容',
+      includeHeadingContent: '分离上级标题正文',
       includeHeadingContentTip:
-        '启用后，标题下的直接内容将作为一个独立的块保留。子块仅保留标题路径。',
+        '启用后，每个分块仅保留标题路径和自身内容，与上级标题紧挨着的内容将作为一个独立的块保留。',
       rootAsHeading: '将首个切片设为 H0 标题',
       rootAsHeadingTip:
         '将首个切片设为全局标题，以确保整个文档层级结构中拥有一致的上下文信息。该功能尤其适用于首段包含关键信息的简历。',

@@ -52,6 +52,10 @@ func NewGiteeModel(baseURL map[string]string, urlSuffix URLSuffix) *GiteeModel {
 	}
 }
 
+func (z *GiteeModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
+}
+
 func (z *GiteeModel) Name() string {
 	return "gitee"
 }

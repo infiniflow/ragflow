@@ -34,6 +34,10 @@ func NewDummyModel(baseURL map[string]string, urlSuffix URLSuffix) *DummyModel {
 	}
 }
 
+func (z *DummyModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
+}
+
 func (z *DummyModel) Name() string {
 	return "dummy"
 }

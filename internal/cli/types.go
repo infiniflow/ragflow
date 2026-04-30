@@ -137,6 +137,8 @@ const (
 	TokenChunks
 	TokenDocument
 	TokenTag
+	TokenRegion
+	TokenURL
 	TokenLog
 	TokenLevel
 	TokenDebug

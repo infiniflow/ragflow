@@ -37,6 +37,16 @@ func (dao *TenantModelDAO) DeleteByModelID(modelID string) (int64, error) {
 	return result.RowsAffected, result.Error
 }
 
+func (dao *TenantModelDAO) DeleteByProviderIDAndInstanceID(provideID, instanceID string) (int64, error) {
+	result := DB.Unscoped().Where("provider_id = ? AND instance_id = ?", provideID, instanceID).Delete(&entity.TenantModel{})
+	return result.RowsAffected, result.Error
+}
+
+func (dao *TenantModelDAO) DeleteByProviderIDAndInstanceIDAndModelName(provideID, instanceID, modelName string) (int64, error) {
+	result := DB.Unscoped().Where("provider_id = ? AND instance_id = ? AND model_name = ?", provideID, instanceID, modelName).Delete(&entity.TenantModel{})
+	return result.RowsAffected, result.Error
+}
+
 // GetByID get tenant model by primary key (id)
 func (dao *TenantModelDAO) GetByID(id string) (*entity.TenantModel, error) {
 	var model entity.TenantModel

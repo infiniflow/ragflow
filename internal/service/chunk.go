@@ -44,6 +44,7 @@ type ChunkService struct {
 	embeddingCache *utility.EmbeddingLRU
 	kbDAO          *dao.KnowledgebaseDAO
 	userTenantDAO  *dao.UserTenantDAO
+	documentDAO    *dao.DocumentDAO
 	searchService  *SearchService
 }
 
@@ -56,6 +57,7 @@ func NewChunkService() *ChunkService {
 		embeddingCache: utility.NewEmbeddingLRU(1000), // default capacity
 		kbDAO:          dao.NewKnowledgebaseDAO(),
 		userTenantDAO:  dao.NewUserTenantDAO(),
+		documentDAO:    dao.NewDocumentDAO(),
 		searchService:  NewSearchService(),
 	}
 }
@@ -395,7 +397,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	}
 
 	// Call RetrievalService to perform retrieval
-	retrievalResult, err := nlp.NewRetrievalService(s.docEngine).Retrieval(ctx, retrievalReq)
+	retrievalResult, err := nlp.NewRetrievalService(s.docEngine, s.documentDAO).Retrieval(ctx, retrievalReq)
 	if err != nil {
 		return nil, fmt.Errorf("retrieval search failed: %w", err)
 	}

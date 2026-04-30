@@ -52,6 +52,10 @@ func NewMoonshotModel(baseURL map[string]string, urlSuffix URLSuffix) *MoonshotM
 	}
 }
 
+func (z *MoonshotModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
+}
+
 func (z *MoonshotModel) Name() string {
 	return "moonshot"
 }
