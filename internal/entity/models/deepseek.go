@@ -52,90 +52,101 @@ func NewDeepSeekModel(baseURL map[string]string, urlSuffix URLSuffix) *DeepSeekM
 	}
 }
 
+func (z *DeepSeekModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
+}
+
 func (z *DeepSeekModel) Name() string {
 	return "deepseek"
 }
 
-// Chat sends a message and returns response
-func (z *DeepSeekModel) Chat(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if message == nil {
-		return nil, fmt.Errorf("message is nil")
+func (z *DeepSeekModel) ChatWithMessages(modelName string, apiConfig *APIConfig, messages []Message, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("messages is empty")
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
 
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
 
+	// Convert messages to the format expected by API
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
 	// Build request body
 	reqBody := map[string]interface{}{
-		"model": modelName,
-		"messages": []map[string]string{
-			{"role": "user", "content": *message},
-		},
+		"model":       modelName,
+		"messages":    apiMessages,
 		"stream":      false,
 		"temperature": 1,
 	}
 
-	if chatModelConfig.Stream != nil {
-		reqBody["stream"] = *chatModelConfig.Stream
-	}
+	if chatModelConfig != nil {
+		if chatModelConfig.Stream != nil {
+			reqBody["stream"] = *chatModelConfig.Stream
+		}
 
-	if chatModelConfig.MaxTokens != nil {
-		reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-	}
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		}
 
-	if chatModelConfig.Temperature != nil {
-		reqBody["temperature"] = *chatModelConfig.Temperature
-	}
+		if chatModelConfig.Temperature != nil {
+			reqBody["temperature"] = *chatModelConfig.Temperature
+		}
 
-	if chatModelConfig.TopP != nil {
-		reqBody["top_p"] = *chatModelConfig.TopP
-	}
+		if chatModelConfig.TopP != nil {
+			reqBody["top_p"] = *chatModelConfig.TopP
+		}
 
-	if chatModelConfig.Stop != nil {
-		reqBody["stop"] = *chatModelConfig.Stop
-	}
+		if chatModelConfig.Stop != nil {
+			reqBody["stop"] = *chatModelConfig.Stop
+		}
 
-	if chatModelConfig.Thinking != nil {
-		if *chatModelConfig.Thinking {
-			var thinkingFlag string
-			switch *chatModelConfig.Effort {
-			case "none":
-				thinkingFlag = "disabled"
-				chatModelConfig.Thinking = nil
-				break
-			case "low":
-				thinkingFlag = "disabled"
-				chatModelConfig.Thinking = nil
-				break
-			case "medium":
-				thinkingFlag = "disabled"
-				chatModelConfig.Thinking = nil
-				break
-			case "high":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "high"
-				break
-			case "default":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "high"
-				break
-			case "max":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "max"
-				break
-			default:
-				return nil, fmt.Errorf("invalid effort level")
-			}
-			reqBody["thinking"] = map[string]interface{}{
-				"type": thinkingFlag,
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
+		if chatModelConfig.Thinking != nil {
+			if *chatModelConfig.Thinking {
+				var thinkingFlag string
+				effort := "high"
+				if chatModelConfig.Effort != nil {
+					effort = *chatModelConfig.Effort
+				}
+				switch effort {
+				case "none":
+					thinkingFlag = "disabled"
+					chatModelConfig.Thinking = nil
+				case "low":
+					thinkingFlag = "disabled"
+					chatModelConfig.Thinking = nil
+				case "medium":
+					thinkingFlag = "disabled"
+					chatModelConfig.Thinking = nil
+				case "high":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "high"
+				case "default":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "high"
+				case "max":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "max"
+				default:
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = effort
+				}
+				reqBody["thinking"] = map[string]interface{}{
+					"type": thinkingFlag,
+				}
+			} else {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "disabled",
+				}
 			}
 		}
 	}
@@ -151,7 +162,9 @@ func (z *DeepSeekModel) Chat(modelName, message *string, apiConfig *APIConfig, c
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
 
 	resp, err := z.httpClient.Do(req)
 	if err != nil {
@@ -195,7 +208,7 @@ func (z *DeepSeekModel) Chat(modelName, message *string, apiConfig *APIConfig, c
 	}
 
 	var reasonContent string
-	if chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
 		reasonContent, ok = messageMap["reasoning_content"].(string)
 		if !ok {
 			return nil, fmt.Errorf("invalid content format")
@@ -212,11 +225,6 @@ func (z *DeepSeekModel) Chat(modelName, message *string, apiConfig *APIConfig, c
 	}
 
 	return chatResponse, nil
-}
-
-// ChatWithMessages sends multiple messages with roles and returns response
-func (z *DeepSeekModel) ChatWithMessages(modelName string, apiKey *string, messages []Message, chatModelConfig *ChatConfig) (string, error) {
-	return "", fmt.Errorf("%s, ChatWithMessages not implemented", z.Name())
 }
 
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
@@ -396,8 +404,8 @@ func (z *DeepSeekModel) ChatStreamlyWithSender(modelName, message *string, apiCo
 	return scanner.Err()
 }
 
-// EncodeToEmbedding encodes a list of texts into embeddings
-func (z *DeepSeekModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+// Encode encodes a list of texts into embeddings
+func (z *DeepSeekModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
@@ -475,4 +483,9 @@ func (z *DeepSeekModel) CheckConnection(apiConfig *APIConfig) error {
 		return err
 	}
 	return nil
+}
+
+// Rerank calculates similarity scores between query and texts
+func (z *DeepSeekModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }

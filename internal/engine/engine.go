@@ -53,6 +53,11 @@ type DocEngine interface {
 	DropTable(ctx context.Context, indexName string) error
 	TableExists(ctx context.Context, indexName string) (bool, error)
 
+	// Document operations (used by skill indexing)
+	IndexDocument(ctx context.Context, indexName, docID string, doc interface{}) error
+	DeleteDocument(ctx context.Context, indexName, docID string) error
+	BulkIndex(ctx context.Context, indexName string, docs []interface{}) (interface{}, error)
+
 	// Utility functions for search result processing
 	GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{}
 	GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{}
@@ -62,6 +67,9 @@ type DocEngine interface {
 	// Health check
 	Ping(ctx context.Context) error
 	Close() error
+
+	// GetType returns the engine type
+	GetType() string
 }
 
 // Type returns the engine type (helper method for runtime type checking)

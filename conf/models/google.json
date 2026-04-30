@@ -6,7 +6,7 @@
   "url_suffix": {
     "models": "v1beta/models"
   },
-  "series": "gemini",
+  "class": "gemini",
   "models": [
     {
       "name": "gemini-2.5-flash",

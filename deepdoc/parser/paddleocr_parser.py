@@ -41,10 +41,16 @@ except Exception:
 from deepdoc.parser.utils import extract_pdf_outlines
 
 
-AlgorithmType = Literal["PaddleOCR-VL"]
+AlgorithmType = Literal["PaddleOCR-VL", "PP-OCRv5", "PP-StructureV3", "PaddleOCR-VL-1.5"]
 SectionTuple = tuple[str, ...]
 TableTuple = tuple[str, ...]
 ParseResult = tuple[list[SectionTuple], list[TableTuple]]
+SUPPORTED_PADDLEOCR_ALGORITHMS: tuple[AlgorithmType, ...] = (
+    "PaddleOCR-VL",
+    "PP-OCRv5",
+    "PP-StructureV3",
+    "PaddleOCR-VL-1.5",
+)
 
 
 _MARKDOWN_IMAGE_PATTERN = re.compile(
@@ -130,12 +136,12 @@ class PaddleOCRConfig:
         algorithm = cfg.get("algorithm", "PaddleOCR-VL")
 
         # Validate algorithm
-        if algorithm not in ("PaddleOCR-VL"):
+        if algorithm not in SUPPORTED_PADDLEOCR_ALGORITHMS:
             raise ValueError(f"Unsupported algorithm: {algorithm}")
 
         # Extract algorithm-specific configuration
         algorithm_config: dict[str, Any] = {}
-        if algorithm == "PaddleOCR-VL":
+        if algorithm in SUPPORTED_PADDLEOCR_ALGORITHMS:
             algorithm_config = asdict(PaddleOCRVLConfig())
         algorithm_config_user = cfg.get("algorithm_config")
         if isinstance(algorithm_config_user, dict):
@@ -173,34 +179,39 @@ class PaddleOCRParser(RAGFlowPdfParser):
         "visualize": "visualize",
     }
 
+    _VL_FIELD_MAPPING: ClassVar[dict[str, str]] = {
+        "use_doc_orientation_classify": "useDocOrientationClassify",
+        "use_doc_unwarping": "useDocUnwarping",
+        "use_layout_detection": "useLayoutDetection",
+        "use_chart_recognition": "useChartRecognition",
+        "use_seal_recognition": "useSealRecognition",
+        "use_ocr_for_image_block": "useOcrForImageBlock",
+        "layout_threshold": "layoutThreshold",
+        "layout_nms": "layoutNms",
+        "layout_unclip_ratio": "layoutUnclipRatio",
+        "layout_merge_bboxes_mode": "layoutMergeBboxesMode",
+        "layout_shape_mode": "layoutShapeMode",
+        "prompt_label": "promptLabel",
+        "format_block_content": "formatBlockContent",
+        "repetition_penalty": "repetitionPenalty",
+        "temperature": "temperature",
+        "top_p": "topP",
+        "min_pixels": "minPixels",
+        "max_pixels": "maxPixels",
+        "max_new_tokens": "maxNewTokens",
+        "merge_layout_blocks": "mergeLayoutBlocks",
+        "markdown_ignore_labels": "markdownIgnoreLabels",
+        "vlm_extra_args": "vlmExtraArgs",
+        "restructure_pages": "restructurePages",
+        "merge_tables": "mergeTables",
+        "relevel_titles": "relevelTitles",
+    }
+
     _ALGORITHM_FIELD_MAPPINGS: ClassVar[dict[str, dict[str, str]]] = {
-        "PaddleOCR-VL": {
-            "use_doc_orientation_classify": "useDocOrientationClassify",
-            "use_doc_unwarping": "useDocUnwarping",
-            "use_layout_detection": "useLayoutDetection",
-            "use_chart_recognition": "useChartRecognition",
-            "use_seal_recognition": "useSealRecognition",
-            "use_ocr_for_image_block": "useOcrForImageBlock",
-            "layout_threshold": "layoutThreshold",
-            "layout_nms": "layoutNms",
-            "layout_unclip_ratio": "layoutUnclipRatio",
-            "layout_merge_bboxes_mode": "layoutMergeBboxesMode",
-            "layout_shape_mode": "layoutShapeMode",
-            "prompt_label": "promptLabel",
-            "format_block_content": "formatBlockContent",
-            "repetition_penalty": "repetitionPenalty",
-            "temperature": "temperature",
-            "top_p": "topP",
-            "min_pixels": "minPixels",
-            "max_pixels": "maxPixels",
-            "max_new_tokens": "maxNewTokens",
-            "merge_layout_blocks": "mergeLayoutBlocks",
-            "markdown_ignore_labels": "markdownIgnoreLabels",
-            "vlm_extra_args": "vlmExtraArgs",
-            "restructure_pages": "restructurePages",
-            "merge_tables": "mergeTables",
-            "relevel_titles": "relevelTitles",
-        },
+        "PaddleOCR-VL": _VL_FIELD_MAPPING,
+        "PP-OCRv5": _VL_FIELD_MAPPING,
+        "PP-StructureV3": _VL_FIELD_MAPPING,
+        "PaddleOCR-VL-1.5": _VL_FIELD_MAPPING,
     }
 
     def __init__(
@@ -393,7 +404,7 @@ class PaddleOCRParser(RAGFlowPdfParser):
         """Convert API response to section tuples."""
         sections: list[SectionTuple] = []
 
-        if algorithm in ("PaddleOCR-VL",):
+        if algorithm in SUPPORTED_PADDLEOCR_ALGORITHMS:
             layout_parsing_results = result.get("layoutParsingResults", [])
 
             for page_idx, layout_result in enumerate(layout_parsing_results):

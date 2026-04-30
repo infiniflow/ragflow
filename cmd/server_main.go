@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -65,10 +66,14 @@ func main() {
 	}
 
 	// Override port with command line argument if provided
+	config := server.GetConfig()
 	if portFlag > 0 {
-		config := server.GetConfig()
 		config.Server.Port = portFlag
 		logger.Info("Port overridden by command line argument", zap.Int("port", portFlag))
+	}
+
+	if config.Server.Port == 0 {
+		logger.Fatal("Server port is not configured. Please specify via --port flag or config file.")
 	}
 
 	// Load model providers configuration
@@ -76,11 +81,6 @@ func main() {
 		logger.Fatal("Failed to load model providers", zap.Error(err))
 	}
 	logger.Info("Model providers loaded", zap.Int("count", len(server.GetModelProviders())))
-
-	config := server.GetConfig()
-	if config.Server.Port == 0 {
-		logger.Fatal("Server port is not configured. Please specify via --port flag or config file.")
-	}
 
 	// Reinitialize logger with configured level if different
 	if config.Log.Level != "" && config.Log.Level != "info" {
@@ -181,6 +181,9 @@ func startServer(config *server.Config) {
 	memoryService := service.NewMemoryService()
 	modelProviderService := service.NewModelProviderService()
 
+	// Initialize doc engine for skill search
+	docEngine := engine.Get()
+
 	// Initialize handler layer
 	authHandler := handler.NewAuthHandler()
 	userHandler := handler.NewUserHandler(userService)
@@ -197,10 +200,11 @@ func startServer(config *server.Config) {
 	searchHandler := handler.NewSearchHandler(searchService, userService)
 	fileHandler := handler.NewFileHandler(fileService, userService)
 	memoryHandler := handler.NewMemoryHandler(memoryService)
+	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, kbHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, providerHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, kbHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, skillSearchHandler, providerHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()
@@ -214,11 +218,15 @@ func startServer(config *server.Config) {
 	// Setup routes
 	r.Setup(ginEngine)
 
-	// Create HTTP server
+	// Create HTTP server with timeouts to prevent slow clients from blocking shutdown
 	addr := fmt.Sprintf(":%d", config.Server.Port)
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: ginEngine,
+		Addr:              addr,
+		Handler:           ginEngine,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// Start server in a goroutine
@@ -232,15 +240,15 @@ func startServer(config *server.Config) {
 		)
 		logger.Info(fmt.Sprintf("RAGFlow Go Version: %s", utility.GetRAGFlowVersion()))
 		logger.Info(fmt.Sprintf("Server starting on port: %d", config.Server.Port))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Fatal("Failed to start server", zap.Error(err))
 		}
 	}()
 
 	// Get local IP address for heartbeat reporting
-	localIP := utility.GetLocalIP()
-	if localIP == "" {
-		localIP = "127.0.0.1"
+	localIP, err := utility.GetLocalIP()
+	if err != nil {
+		logger.Fatal("fail to get local ip address")
 	}
 
 	// Initialize and start heartbeat reporter to admin server
@@ -251,7 +259,7 @@ func startServer(config *server.Config) {
 		localIP,
 		config.Server.Port,
 	)
-	if err := heartbeatService.InitHTTPClient(); err != nil {
+	if err = heartbeatService.InitHTTPClient(); err != nil {
 		logger.Warn("Failed to initialize heartbeat service", zap.Error(err))
 	} else {
 		// Start heartbeat reporter with 30 seconds interval
@@ -280,7 +288,7 @@ func startServer(config *server.Config) {
 	defer cancel()
 
 	// Shutdown server
-	if err := srv.Shutdown(ctx); err != nil {
+	if err = srv.Shutdown(ctx); err != nil {
 		logger.Fatal("Server forced to shutdown", zap.Error(err))
 	}
 }

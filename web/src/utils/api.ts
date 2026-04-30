@@ -66,6 +66,8 @@ export default {
   getKbDetail: (datasetId: string) => `${restAPIv1}/datasets/${datasetId}`,
   getKnowledgeGraph: (knowledgeId: string) =>
     `${restAPIv1}/datasets/${knowledgeId}/graph/search`,
+  knowledgeGraph: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/graph`,
   deleteKnowledgeGraph: (knowledgeId: string) =>
     `${restAPIv1}/datasets/${knowledgeId}/graph`,
   getMeta: `${restAPIv1}/datasets/metadata/flattened`,
@@ -79,11 +81,11 @@ export default {
   fetchPipelineDatasetLogs: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions`,
   runIndex: (datasetId: string, indexType: string) =>
-    `${restAPIv1}/datasets/${datasetId}/index?type=${indexType}`,
+    `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
   traceIndex: (datasetId: string, indexType: string) =>
-    `${restAPIv1}/datasets/${datasetId}/index?type=${indexType}`,
+    `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
   unbindPipelineTask: (datasetId: string, indexType: string) =>
-    `${restAPIv1}/datasets/${datasetId}/${indexType}`,
+    `${restAPIv1}/datasets/${datasetId}/${indexType.toLowerCase()}`,
   pipelineRerun: `${webAPI}/canvas/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
@@ -107,8 +109,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks`,
   chunkDetail: (datasetId: string, documentId: string, chunkId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks/${chunkId}`,
-  retrievalTest: `${webAPI}/chunk/retrieval_test`,
-  knowledgeGraph: `${webAPI}/chunk/knowledge_graph`,
+  retrievalTest: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/search`,
 
   // document
   getDocumentList: (datasetId: string) =>
@@ -161,7 +163,7 @@ export default {
   searchCompletion: (searchId: string) =>
     `${restAPIv1}/searches/${searchId}/completion`,
   chatsMindmap: `${restAPIv1}/chat/mindmap`,
-  chatsRelatedQuestions: `${restAPIv1}/chat/recommandation`,
+  chatsRelatedQuestions: `${restAPIv1}/chat/recommendation`,
 
   // next chat
   fetchExternalChatInfo: (id: string) => `${restAPIv1}/chatbots/${id}/info`,
@@ -331,4 +333,13 @@ export default {
   adminGetSandboxConfig: `${restAPIv1}/admin/sandbox/config`,
   adminSetSandboxConfig: `${restAPIv1}/admin/sandbox/config`,
   adminTestSandboxConnection: `${restAPIv1}/admin/sandbox/test`,
+
+  // Skill spaces
+  skillSpaces: `${restAPIv1}/skills/spaces`,
+  skillSpace: (spaceId: string) => `${restAPIv1}/skills/spaces/${spaceId}`,
+  skillSpaceByFolder: `${restAPIv1}/skills/space/by-folder`,
+  skillConfig: `${restAPIv1}/skills/config`,
+  skillSearch: `${restAPIv1}/skills/search`,
+  skillIndex: `${restAPIv1}/skills/index`,
+  skillReindex: `${restAPIv1}/skills/reindex`,
 };
