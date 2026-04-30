@@ -33,6 +33,20 @@ def test_not_in_operator():
     assert meta_filter(metas, filters) == ["doc3"]
 
 
+def test_in_operator_with_list_value_is_case_insensitive():
+    metas = {"product": {"F2": ["doc1"], "F11": ["doc2"], "G1": ["doc3"]}}
+    filters = [{"key": "product", "op": "in", "value": ["F2", "F11"]}]
+
+    assert set(meta_filter(metas, filters)) == {"doc1", "doc2"}
+
+
+def test_not_in_operator_with_list_value_is_case_insensitive():
+    metas = {"product": {"F2": ["doc1"], "F11": ["doc2"], "G1": ["doc3"]}}
+    filters = [{"key": "product", "op": "not in", "value": ["F2", "F11"]}]
+
+    assert meta_filter(metas, filters) == ["doc3"]
+
+
 def test_start_with():
     # returns chunk where the metadata starts with the value
     metas = {"name": {"prefix_value": ["doc1"], "other": ["doc2"]}}
