@@ -247,7 +247,6 @@ def _load_session_module(monkeypatch):
     common_constants_mod.TAG_FLD = "tag_feas"
     # Import pure-Python constants from the real module (no heavy deps)
     from common.constants import MAXIMUM_PAGE_NUMBER as _MPN, MAXIMUM_TASK_PAGE_NUMBER as _MTPN
-
     common_constants_mod.MAXIMUM_PAGE_NUMBER = _MPN
     common_constants_mod.MAXIMUM_TASK_PAGE_NUMBER = _MTPN
     monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
@@ -270,12 +269,14 @@ def _load_session_module(monkeypatch):
     api_utils_mod.get_error_data_result = lambda message="Sorry! Data missing!", code=_StubRetCode.DATA_ERROR: {"code": code, "message": message}
     api_utils_mod.get_json_result = lambda code=_StubRetCode.SUCCESS, message="success", data=None: {"code": code, "message": message, "data": data}
     api_utils_mod.get_result = lambda code=_StubRetCode.SUCCESS, message="", data=None, total=None: {
-        key: value for key, value in {"code": code, "message": message, "data": data, "total": total}.items() if value is not None
+        key: value
+        for key, value in {"code": code, "message": message, "data": data, "total": total}.items()
+        if value is not None
     }
     api_utils_mod.get_request_json = lambda: _AwaitableValue({})
     api_utils_mod.server_error_response = lambda e: {"code": _StubRetCode.SERVER_ERROR, "message": str(e)}
     api_utils_mod.token_required = lambda func: func
-    api_utils_mod.validate_request = lambda *_args, **_kwargs: lambda func: func
+    api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda func: func)
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
     rag_app_tag_mod = ModuleType("rag.app.tag")
@@ -344,7 +345,7 @@ def _load_session_module(monkeypatch):
 
     # Mock tenant_llm_service for TenantLLMService and TenantService
     tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")
-
+    
     class _MockModelConfig:
         def __init__(self, tenant_id, model_name):
             self.tenant_id = tenant_id
@@ -357,7 +358,7 @@ def _load_session_module(monkeypatch):
             self.used_tokens = 0
             self.status = 1
             self.id = 1
-
+        
         def to_dict(self):
             return {
                 "tenant_id": self.tenant_id,
@@ -369,15 +370,23 @@ def _load_session_module(monkeypatch):
                 "max_tokens": self.max_tokens,
                 "used_tokens": self.used_tokens,
                 "status": self.status,
-                "id": self.id,
+                "id": self.id
             }
-
+    
     class _StubTenantService:
         @staticmethod
         def get_by_id(tenant_id):
             # Return a mock tenant with default model configurations
-            return True, SimpleNamespace(id=tenant_id, llm_id="chat-model", embd_id="embd-model", asr_id="asr-model", img2txt_id="img2txt-model", rerank_id="rerank-model", tts_id="tts-model")
-
+            return True, SimpleNamespace(
+                id=tenant_id,
+                llm_id="chat-model",
+                embd_id="embd-model",
+                asr_id="asr-model",
+                img2txt_id="img2txt-model",
+                rerank_id="rerank-model",
+                tts_id="tts-model"
+            )
+    
     class _StubTenantLLMService:
         @staticmethod
         def get_api_key(tenant_id, model_name):
@@ -402,14 +411,16 @@ def _load_session_module(monkeypatch):
 
     # Mock LLMService
     llm_service_mod = ModuleType("api.db.services.llm_service")
-
+    
     class _StubLLM:
         def __init__(self, llm_name):
             self.llm_name = llm_name
             self.is_tools = False
-
-    llm_service_mod.LLMService = SimpleNamespace(query=lambda llm_name: [_StubLLM(llm_name)] if llm_name else [])
-
+    
+    llm_service_mod.LLMService = SimpleNamespace(
+        query=lambda llm_name: [_StubLLM(llm_name)] if llm_name else []
+    )
+    
     class _StubLLMBundle:
         def __init__(self, tenant_id: str, model_config: dict, lang="Chinese", **kwargs):
             self.tenant_id = tenant_id
@@ -421,13 +432,13 @@ def _load_session_module(monkeypatch):
 
         def transcription(self, audio_path):
             return "mock transcription"
-
+    
     llm_service_mod.LLMBundle = _StubLLMBundle
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
 
     # Mock tenant_model_service to ensure it uses mocked services
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
-
+    
     class _MockModelConfig2:
         def __init__(self, tenant_id, model_name, model_type="chat"):
             self.tenant_id = tenant_id
@@ -452,7 +463,7 @@ def _load_session_module(monkeypatch):
                 "max_tokens": self.max_tokens,
                 "used_tokens": self.used_tokens,
                 "status": self.status,
-                "id": self.id,
+                "id": self.id
             }
 
     def _get_model_config_by_id(tenant_model_id: int) -> dict:
@@ -466,7 +477,6 @@ def _load_session_module(monkeypatch):
     def _get_tenant_default_model_by_type(tenant_id: str, model_type):
         # Check if tenant exists
         from api.db.services.tenant_llm_service import TenantService
-
         exist, tenant = TenantService.get_by_id(tenant_id)
         if not exist:
             raise LookupError("Tenant not found!")
@@ -489,11 +499,19 @@ def _load_session_module(monkeypatch):
             raise Exception("OCR model name is required")
         if not model_name:
             # Use friendly model type names
-            friendly_names = {"embedding": "Embedding", "speech2text": "ASR", "image2text": "Image2Text", "chat": "Chat", "rerank": "Rerank", "tts": "TTS", "ocr": "OCR"}
+            friendly_names = {
+                "embedding": "Embedding",
+                "speech2text": "ASR",
+                "image2text": "Image2Text",
+                "chat": "Chat",
+                "rerank": "Rerank",
+                "tts": "TTS",
+                "ocr": "OCR"
+            }
             friendly_name = friendly_names.get(model_type_val, model_type_val)
             raise Exception(f"No default {friendly_name} model is set")
         return _MockModelConfig2(tenant_id, model_name, model_type_val).to_dict()
-
+    
     tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
     tenant_model_service_mod.get_model_config_by_type_and_name = _get_model_config_by_type_and_name
     tenant_model_service_mod.get_tenant_default_model_by_type = _get_tenant_default_model_by_type
@@ -665,7 +683,7 @@ def _load_session_module(monkeypatch):
     module.manager = _DummyManager()
     monkeypatch.setitem(sys.modules, "test_session_sdk_routes_unit_module", module)
     spec.loader.exec_module(module)
-
+    
     # Add TenantService to module for test compatibility
     class _StubTenantServiceForTest:
         @staticmethod
@@ -676,10 +694,18 @@ def _load_session_module(monkeypatch):
         @staticmethod
         def get_by_id(tenant_id):
             # Return mock tenant by id
-            return True, SimpleNamespace(id=tenant_id, llm_id="chat-model", embd_id="embd-model", asr_id="asr-model", img2txt_id="img2txt-model", rerank_id="rerank-model", tts_id="tts-model")
+            return True, SimpleNamespace(
+                id=tenant_id,
+                llm_id="chat-model",
+                embd_id="embd-model",
+                asr_id="asr-model",
+                img2txt_id="img2txt-model",
+                rerank_id="rerank-model",
+                tts_id="tts-model"
+            )
 
     module.TenantService = _StubTenantServiceForTest
-
+    
     return module
 
 
@@ -1003,7 +1029,7 @@ def test_openai_nonstream_branch_unit(monkeypatch):
 
     res = _run(inspect.unwrap(module.openai_chat_completions)("chat-1"))
     assert res["choices"][0]["message"]["content"] == "world"
-
+    
 
 @pytest.mark.p2
 def test_agents_openai_compatibility_unit(monkeypatch):
@@ -1175,7 +1201,7 @@ def test_agent_completions_stream_and_nonstream_unit(monkeypatch):
         "c4": {},
     }
     assert [item["component_id"] for item in res["data"]["data"]["trace"]] == ["c2", "c3", "c4"]
-
+    
 
 @pytest.mark.p2
 def test_delete_routes_partial_duplicate_unit(monkeypatch):
