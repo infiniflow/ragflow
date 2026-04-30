@@ -251,6 +251,53 @@ def _load_session_module(monkeypatch):
     common_constants_mod.MAXIMUM_TASK_PAGE_NUMBER = _MTPN
     monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
 
+    common_metadata_utils_mod = ModuleType("common.metadata_utils")
+    common_metadata_utils_mod.apply_meta_data_filter = lambda *_args, **_kwargs: []
+    common_metadata_utils_mod.convert_conditions = lambda conditions: conditions
+    common_metadata_utils_mod.meta_filter = lambda *_args, **_kwargs: True
+    monkeypatch.setitem(sys.modules, "common.metadata_utils", common_metadata_utils_mod)
+
+    common_settings_mod = ModuleType("common.settings")
+    common_settings_mod.retriever = SimpleNamespace()
+    common_settings_mod.kg_retriever = SimpleNamespace()
+    monkeypatch.setitem(sys.modules, "common.settings", common_settings_mod)
+
+    api_utils_mod = ModuleType("api.utils.api_utils")
+    api_utils_mod.add_tenant_id_to_kwargs = lambda func: func
+    api_utils_mod.check_duplicate_ids = lambda ids, _kind="item": (ids, [])
+    api_utils_mod.get_data_error_result = lambda message="Sorry! Data missing!", code=_StubRetCode.DATA_ERROR: {"code": code, "message": message}
+    api_utils_mod.get_error_data_result = lambda message="Sorry! Data missing!", code=_StubRetCode.DATA_ERROR: {"code": code, "message": message}
+    api_utils_mod.get_json_result = lambda code=_StubRetCode.SUCCESS, message="success", data=None: {"code": code, "message": message, "data": data}
+    api_utils_mod.get_result = lambda code=_StubRetCode.SUCCESS, message="", data=None, total=None: {
+        key: value
+        for key, value in {"code": code, "message": message, "data": data, "total": total}.items()
+        if value is not None
+    }
+    api_utils_mod.get_request_json = lambda: _AwaitableValue({})
+    api_utils_mod.server_error_response = lambda e: {"code": _StubRetCode.SERVER_ERROR, "message": str(e)}
+    api_utils_mod.token_required = lambda func: func
+    api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda func: func)
+    monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
+
+    rag_app_tag_mod = ModuleType("rag.app.tag")
+    rag_app_tag_mod.label_question = lambda *_args, **_kwargs: {}
+    monkeypatch.setitem(sys.modules, "rag.app.tag", rag_app_tag_mod)
+
+    rag_prompts_generator_mod = ModuleType("rag.prompts.generator")
+    rag_prompts_generator_mod.cross_languages = lambda *_args, **_kwargs: ""
+    rag_prompts_generator_mod.keyword_extraction = lambda *_args, **_kwargs: ""
+    rag_prompts_generator_mod.chunks_format = lambda chunks: chunks
+    monkeypatch.setitem(sys.modules, "rag.prompts.generator", rag_prompts_generator_mod)
+
+    rag_prompts_template_mod = ModuleType("rag.prompts.template")
+    rag_prompts_template_mod.load_prompt = lambda *_args, **_kwargs: ""
+    monkeypatch.setitem(sys.modules, "rag.prompts.template", rag_prompts_template_mod)
+
+    rag_nlp_mod = ModuleType("rag.nlp")
+    rag_nlp_mod.search = SimpleNamespace(index_name=lambda tenant_id: f"idx_{tenant_id}")
+    monkeypatch.setitem(sys.modules, "rag.nlp", rag_nlp_mod)
+    monkeypatch.setitem(sys.modules, "rag.nlp.search", rag_nlp_mod.search)
+
     deepdoc_pkg = ModuleType("deepdoc")
     deepdoc_parser_pkg = ModuleType("deepdoc.parser")
     deepdoc_parser_pkg.__path__ = []
@@ -508,7 +555,127 @@ def _load_session_module(monkeypatch):
     quart_mod.jsonify = lambda payload: payload
     quart_mod.current_app = SimpleNamespace()
     quart_mod.has_app_context = lambda: False
+    quart_mod.has_request_context = lambda: False
+    quart_mod.has_websocket_context = lambda: False
+    quart_mod.websocket = SimpleNamespace()
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
+
+    quart_auth_mod = ModuleType("quart_auth")
+
+    class _StubAuthUser:
+        pass
+
+    quart_auth_mod.AuthUser = _StubAuthUser
+    monkeypatch.setitem(sys.modules, "quart_auth", quart_auth_mod)
+
+    class _FakeExpr:
+        def __or__(self, other):
+            return self
+
+        def __and__(self, other):
+            return self
+
+    class _FakeField:
+        def __eq__(self, other):
+            return _FakeExpr()
+
+        def __ne__(self, other):
+            return _FakeExpr()
+
+        def is_null(self, value=True):
+            return _FakeExpr()
+
+    class _StubTaskModel:
+        id = _FakeField()
+        doc_id = _FakeField()
+
+    db_models_mod = ModuleType("api.db.db_models")
+    db_models_mod.APIToken = SimpleNamespace(query=lambda **_kwargs: [])
+    db_models_mod.Task = _StubTaskModel
+    monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
+
+    services_pkg = ModuleType("api.db.services")
+    services_pkg.__path__ = [str(repo_root / "api" / "db" / "services")]
+    monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
+
+    api_service_mod = ModuleType("api.db.services.api_service")
+    api_service_mod.API4ConversationService = SimpleNamespace(
+        get_names=lambda *_args, **_kwargs: [],
+        get_list=lambda *_args, **_kwargs: (0, []),
+        save=lambda **_kwargs: True,
+        get_by_id=lambda _session_id: (True, SimpleNamespace(to_dict=lambda: {"id": _session_id})),
+        delete_by_id=lambda *_args, **_kwargs: True,
+        query=lambda **_kwargs: [],
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.api_service", api_service_mod)
+
+    canvas_service_mod = ModuleType("api.db.services.canvas_service")
+    canvas_service_mod.CanvasTemplateService = SimpleNamespace(get_all=lambda *_args, **_kwargs: [])
+    canvas_service_mod.UserCanvasService = SimpleNamespace(
+        query=lambda **_kwargs: [],
+        get_by_id=lambda *_args, **_kwargs: (False, None),
+        accessible=lambda *_args, **_kwargs: False,
+        get_agent_dsl_with_release=lambda *_args, **_kwargs: (SimpleNamespace(id="agent-1"), "{}"),
+    )
+
+    async def _empty_agent_completion(*_args, **_kwargs):
+        if False:
+            yield None
+
+    canvas_service_mod.completion = _empty_agent_completion
+    canvas_service_mod.completion_openai = lambda *_args, **_kwargs: {}
+    monkeypatch.setitem(sys.modules, "api.db.services.canvas_service", canvas_service_mod)
+
+    conversation_service_mod = ModuleType("api.db.services.conversation_service")
+    conversation_service_mod.ConversationService = SimpleNamespace(query=lambda **_kwargs: [])
+    conversation_service_mod.async_iframe_completion = lambda *_args, **_kwargs: None
+    conversation_service_mod.async_completion = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "api.db.services.conversation_service", conversation_service_mod)
+
+    dialog_service_mod = ModuleType("api.db.services.dialog_service")
+    dialog_service_mod.DialogService = SimpleNamespace(
+        query=lambda **_kwargs: [],
+        get_by_id=lambda *_args, **_kwargs: (False, None),
+    )
+    dialog_service_mod.async_ask = lambda *_args, **_kwargs: None
+    dialog_service_mod.async_chat = lambda *_args, **_kwargs: None
+    dialog_service_mod.gen_mindmap = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "api.db.services.dialog_service", dialog_service_mod)
+
+    doc_metadata_service_mod = ModuleType("api.db.services.doc_metadata_service")
+    doc_metadata_service_mod.DocMetadataService = SimpleNamespace(
+        get_flatted_meta_by_kbs=lambda *_args, **_kwargs: [],
+        get_metadata_for_documents=lambda *_args, **_kwargs: {},
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.doc_metadata_service", doc_metadata_service_mod)
+
+    knowledgebase_service_mod = ModuleType("api.db.services.knowledgebase_service")
+    knowledgebase_service_mod.KnowledgebaseService = SimpleNamespace(
+        query=lambda **_kwargs: [],
+        get_by_id=lambda *_args, **_kwargs: (False, None),
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", knowledgebase_service_mod)
+
+    search_service_mod = ModuleType("api.db.services.search_service")
+    search_service_mod.SearchService = SimpleNamespace(
+        query=lambda **_kwargs: [],
+        get_detail=lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.search_service", search_service_mod)
+
+    user_service_mod = ModuleType("api.db.services.user_service")
+    user_service_mod.UserTenantService = SimpleNamespace(query=lambda **_kwargs: [])
+    monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_service_mod)
+
+    user_canvas_version_mod = ModuleType("api.db.services.user_canvas_version")
+    user_canvas_version_mod.UserCanvasVersionService = SimpleNamespace(
+        list_by_canvas_id=lambda *_args, **_kwargs: [],
+        get_by_id=lambda *_args, **_kwargs: (False, None),
+        get_latest_version_title=lambda *_args, **_kwargs: "",
+        save_or_replace_latest=lambda **_kwargs: True,
+        build_version_title=lambda *_args, **_kwargs: "v1",
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.user_canvas_version", user_canvas_version_mod)
 
     module_path = repo_root / "api" / "apps" / "sdk" / "session.py"
     spec = importlib.util.spec_from_file_location("test_session_sdk_routes_unit_module", module_path)
@@ -612,7 +779,10 @@ def _load_agent_api_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.document_service", document_service_mod)
 
     knowledgebase_service_mod = ModuleType("api.db.services.knowledgebase_service")
-    knowledgebase_service_mod.KnowledgebaseService = SimpleNamespace(query=lambda **_kwargs: [])
+    knowledgebase_service_mod.KnowledgebaseService = SimpleNamespace(
+        query=lambda **_kwargs: [],
+        get_by_id=lambda *_args, **_kwargs: (False, None),
+    )
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", knowledgebase_service_mod)
 
     task_service_mod = ModuleType("api.db.services.task_service")
@@ -1352,7 +1522,7 @@ def test_searchbots_retrieval_test_embedded_matrix_unit(monkeypatch):
                 "rank_feature": rank_feature,
             }
         )
-        return {"chunks": [{"id": "chunk-1", "vector": [0.1]}]}
+        return {"chunks": [{"id": "chunk-1", "doc_id": "doc-1", "kb_id": "kb-1", "vector": [0.1]}]}
 
     async def _translate(_tenant_id, _chat_id, question, _langs):
         return question + "-translated"
@@ -1384,10 +1554,16 @@ def test_searchbots_retrieval_test_embedded_matrix_unit(monkeypatch):
                 "vector_similarity_weight": 0.8,
                 "top_k": 7,
                 "rerank_id": "reranker-model",
+                "reference_metadata": {"include": True, "fields": ["author"]},
             }
         },
     )
     monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kb_ids: [{"id": "doc-2"}])
+    monkeypatch.setattr(
+        module.DocMetadataService,
+        "get_metadata_for_documents",
+        lambda _doc_ids, _kb_id: {"doc-1": {"author": "alice", "year": "2025"}},
+    )
     monkeypatch.setattr(module, "apply_meta_data_filter", _apply_filter)
     monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-a")])
     monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
@@ -1409,6 +1585,8 @@ def test_searchbots_retrieval_test_embedded_matrix_unit(monkeypatch):
     assert retrieval_capture["local_doc_ids"] == ["doc-filtered"]
     assert retrieval_capture["rank_feature"] == ["label-1"]
     assert retrieval_capture["rerank_mdl"] is not None
+    assert res["data"]["chunks"][0]["document_metadata"]["author"] == "alice"
+    assert "year" not in res["data"]["chunks"][0]["document_metadata"]
     assert any(call[1] == module.LLMType.EMBEDDING.value and call[2] == "embd-model" for call in llm_calls)
 
     llm_calls.clear()
@@ -1621,7 +1799,16 @@ def test_build_reference_chunks_metadata_matrix_unit(monkeypatch):
 
     monkeypatch.setattr(module, "chunks_format", lambda _reference: [{"dataset_id": "kb-1", "document_id": "doc-1"}])
     monkeypatch.setattr(module.DocMetadataService, "get_metadata_for_documents", lambda _doc_ids, _kb_id: {"doc-1": {"author": "alice"}})
+    res = module._build_reference_chunks([], include_metadata=True, metadata_fields=None)
+    assert res[0]["document_metadata"] == {"author": "alice"}
+
+    res = module._build_reference_chunks([], include_metadata=True, metadata_fields=[])
+    assert "document_metadata" not in res[0]
+
     res = module._build_reference_chunks([], include_metadata=True, metadata_fields=[1, None])
+    assert "document_metadata" not in res[0]
+
+    res = module._build_reference_chunks([], include_metadata=True, metadata_fields="author")
     assert "document_metadata" not in res[0]
 
     source_chunks = [
