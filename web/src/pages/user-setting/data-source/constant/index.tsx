@@ -117,6 +117,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.ASANA]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.RSS]: {
+    syncDeletedFiles: true,
+  },
 };
 
 const isDataSourceFeatureVisible = (
