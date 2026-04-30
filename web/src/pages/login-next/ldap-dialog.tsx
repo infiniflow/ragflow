@@ -44,7 +44,7 @@ export function LdapDialog({
   const { login, loading } = useLoginWithLdap();
 
   const schema = z.object({
-    username: z.string().min(1, { message: t('usernamePlaceholder') }),
+    username: z.string().trim().min(1, { message: t('usernamePlaceholder') }),
     password: z.string().min(1, { message: t('passwordPlaceholder') }),
   });
 
