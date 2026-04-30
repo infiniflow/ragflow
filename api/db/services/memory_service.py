@@ -92,6 +92,11 @@ class MemoryService(CommonService):
         memories = cls.model.select(*fields).join(User, on=(cls.model.tenant_id == User.id))
         if filter_dict.get("tenant_id"):
             memories = memories.where(cls.model.tenant_id.in_(filter_dict["tenant_id"]))
+        if filter_dict.get("accessible_user_id"):
+            memories = memories.where(
+                (cls.model.tenant_id == filter_dict["accessible_user_id"]) |
+                (cls.model.permissions == "team")
+            )
         if filter_dict.get("memory_type"):
             memory_type_int = calculate_memory_type(filter_dict["memory_type"])
             memories = memories.where(cls.model.memory_type.bin_and(memory_type_int) > 0)
