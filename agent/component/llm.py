@@ -345,6 +345,8 @@ class LLM(ComponentBase):
             return re.sub(r"(<think>|</think>)", "", delta_ans)
 
         stream_kwargs = {"images": self.imgs} if self.imgs else {}
+        extra_chat_kwargs = self._get_chat_template_kwargs()
+        stream_kwargs.update(extra_chat_kwargs)
         async for ans in self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), **stream_kwargs):
             if self.check_if_canceled("LLM streaming"):
                 return
@@ -375,6 +377,7 @@ class LLM(ComponentBase):
             return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
 
         prompt, msg, _ = self._prepare_prompt_variables()
+        extra_chat_kwargs = self._get_chat_template_kwargs()
         error: str = ""
         output_structure = None
         try:
@@ -393,7 +396,7 @@ class LLM(ComponentBase):
                     int(self.chat_mdl.max_length * 0.97),
                 )
                 error = ""
-                ans = await self._generate_async(msg_fit)
+                ans = await self._generate_async(msg_fit, **extra_chat_kwargs)
                 msg_fit.pop(0)
                 if ans.find("**ERROR**") >= 0:
                     logging.error(f"LLM response error: {ans}")
@@ -426,7 +429,7 @@ class LLM(ComponentBase):
                 [{"role": "system", "content": prompt}, *deepcopy(msg)], int(self.chat_mdl.max_length * 0.97)
             )
             error = ""
-            ans = await self._generate_async(msg_fit)
+            ans = await self._generate_async(msg_fit, **extra_chat_kwargs)
             msg_fit.pop(0)
             if ans.find("**ERROR**") >= 0:
                 logging.error(f"LLM response error: {ans}")
@@ -444,6 +447,24 @@ class LLM(ComponentBase):
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
         return asyncio.run(self._invoke_async(**kwargs))
+
+    def _get_chat_template_kwargs(self) -> dict[str, Any]:
+        chat_template_kwargs = self._canvas.get_variable_value("sys.chat_template_kwargs")
+        if chat_template_kwargs is None:
+            return {}
+
+        # The API should pass this as a JSON object, but accept a JSON string for compatibility.
+        if isinstance(chat_template_kwargs, str):
+            try:
+                chat_template_kwargs = json_repair.loads(chat_template_kwargs)
+            except Exception:
+                logging.warning("Ignore invalid sys.chat_template_kwargs: expected JSON object or JSON string object.")
+                return {}
+
+        if not isinstance(chat_template_kwargs, dict):
+            logging.warning("Ignore invalid sys.chat_template_kwargs type: %s", type(chat_template_kwargs).__name__)
+            return {}
+        return {"chat_template_kwargs": chat_template_kwargs}
 
     async def add_memory(self, user:str, assist:str, func_name: str, params: dict, results: str, user_defined_prompt:dict={}):
         summ = await tool_call_summary(self.chat_mdl, func_name, params, results, user_defined_prompt)
