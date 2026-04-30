@@ -202,7 +202,7 @@ class SyncBase:
             docs = []
             for doc in document_batch:
                 d = {
-                    "id": hash128(doc.id),
+                    "id": hash128(f"{task['connector_id']}:{doc.id}"),
                     "connector_id": task["connector_id"],
                     "source": self.SOURCE_NAME,
                     "semantic_identifier": doc.semantic_identifier,
