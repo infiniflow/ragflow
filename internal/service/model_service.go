@@ -740,7 +740,7 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 		apiConfig.ApiKey = &instance.APIKey
 
 		var response *modelModule.ChatResponse
-		response, err = providerInfo.ModelDriver.ChatWithMessages(modelName, apiConfig, messages, modelConfig)
+		response, err = providerInfo.ModelDriver.ChatWithMessages(modelName, messages, apiConfig, modelConfig)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -776,7 +776,7 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
 		var response *modelModule.ChatResponse
-		response, err = newProviderInfo.ChatWithMessages(modelName, apiConfig, messages, modelConfig)
+		response, err = newProviderInfo.ChatWithMessages(modelName, messages, apiConfig, modelConfig)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -803,7 +803,7 @@ func (m *ModelProviderService) ChatWithMessagesToModelByApiKey(providerName, mod
 	}
 
 	var response *modelModule.ChatResponse
-	response, err = providerInfo.ModelDriver.ChatWithMessages(modelName, &modelModule.APIConfig{ApiKey: &apiKey}, messages, nil)
+	response, err = providerInfo.ModelDriver.ChatWithMessages(modelName, messages, &modelModule.APIConfig{ApiKey: &apiKey}, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -815,7 +815,7 @@ func (m *ModelProviderService) ChatWithMessagesToModelByApiKey(providerName, mod
 }
 
 // ChatToModelStreamWithSender streams chat response directly via sender function (best performance, no channel)
-func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, message string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
+func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -861,7 +861,7 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
-		err = providerInfo.ModelDriver.ChatStreamlyWithSender(&modelName, &message, apiConfig, modelConfig, sender)
+		err = providerInfo.ModelDriver.ChatStreamlyWithSender(modelName, messages, apiConfig, modelConfig, sender)
 		if err != nil {
 			return common.CodeServerError, err
 		}
@@ -893,7 +893,7 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		}
 		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
-		err = newProviderInfo.ChatStreamlyWithSender(&modelName, &message, apiConfig, modelConfig, sender)
+		err = newProviderInfo.ChatStreamlyWithSender(modelName, messages, apiConfig, modelConfig, sender)
 		if err != nil {
 			return common.CodeServerError, err
 		}
