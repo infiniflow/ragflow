@@ -118,7 +118,7 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
   return (
     <div
       className={classNames(
-        'relative w-full h-full p-4 bg-background-paper border border-border-normal rounded-md',
+        'relative w-full h-full p-4 bg-background-paper border border-border-normal rounded-md overflow-auto',
         className,
       )}
     >
