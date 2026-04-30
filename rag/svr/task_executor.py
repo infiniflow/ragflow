@@ -134,6 +134,11 @@ MAX_CONCURRENT_MINIO = int(os.environ.get('MAX_CONCURRENT_MINIO', '10'))
 # on lower-VRAM consumer GPUs where cumulative arena fragmentation eventually
 # manifests as "Available memory of 0" allocation failures.
 MAX_TASKS_PER_WORKER = int(os.environ.get('MAX_TASKS_PER_WORKER', '0'))
+# Bounded grace period when shutting down: how long we wait for in-flight
+# task_managers to finish before cancelling them. Prevents an unresponsive
+# task from blocking the recycle indefinitely. The supervisor / orchestrator
+# can still SIGKILL after its own timeout if the cancel itself hangs.
+SHUTDOWN_TIMEOUT = float(os.environ.get('TASK_EXECUTOR_SHUTDOWN_TIMEOUT', '300'))
 _completed_task_count = 0
 task_limiter = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
 chunk_limiter = asyncio.Semaphore(MAX_CONCURRENT_CHUNK_BUILDERS)
@@ -1542,9 +1547,20 @@ async def main():
             tasks.append(t)
     finally:
         # Wait for in-flight task_managers to finish so a recycle (or any
-        # other stop_event) preserves work already in progress. The supervisor
-        # / orchestrator can SIGKILL if a real forced shutdown is needed.
-        await asyncio.gather(*tasks, return_exceptions=True)
+        # other stop_event) preserves work already in progress, but bound the
+        # wait so a single hung task cannot block the worker from exiting.
+        # After the timeout, any still-running tasks are cancelled and we let
+        # the supervisor / orchestrator escalate to SIGKILL if needed.
+        if tasks:
+            _, pending = await asyncio.wait(tasks, timeout=SHUTDOWN_TIMEOUT)
+            if pending:
+                logging.warning(
+                    f"[recycle] {len(pending)} task(s) still running after "
+                    f"{SHUTDOWN_TIMEOUT}s grace; cancelling them."
+                )
+                for t in pending:
+                    t.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
         report_task.cancel()
         await asyncio.gather(report_task, return_exceptions=True)
     logging.error("BUG!!! You should not reach here!!!")
