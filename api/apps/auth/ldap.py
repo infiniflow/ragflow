@@ -197,8 +197,14 @@ class LDAPClient:
         )
 
     def _bind(self, conn):
-        """Bind the connection, performing StartTLS first when configured."""
+        """Bind the connection, performing StartTLS first when configured.
+
+        ``auto_bind=False`` leaves the socket closed; some ldap3 versions
+        won't auto-open it for ``start_tls()`` (which then silently no-ops
+        or fails). Open it explicitly before negotiating TLS.
+        """
         if self.use_tls and not self.use_ssl:
+            conn.open()
             if not conn.start_tls():
                 raise LDAPAuthError("StartTLS negotiation failed.")
         return conn.bind()

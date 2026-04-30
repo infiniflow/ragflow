@@ -193,7 +193,7 @@ class TestSearchThenBind:
 
 
 class TestStartTLS:
-    def test_use_tls_triggers_start_tls_before_bind(self):
+    def test_use_tls_opens_socket_then_start_tls_then_bind(self):
         cli = LDAPClient(_direct_bind_config(use_tls=True))
 
         conn = MagicMock()
@@ -204,9 +204,14 @@ class TestStartTLS:
         with patch.object(cli, "_open", return_value=conn), patch.object(cli, "_server"):
             cli.authenticate("alice", "secret")
 
+        # Order matters: ldap3.start_tls() requires an open socket, and bind
+        # must come after the channel has been upgraded.
+        manager = MagicMock()
+        manager.attach_mock(conn.open, "open")
+        manager.attach_mock(conn.start_tls, "start_tls")
+        manager.attach_mock(conn.bind, "bind")
+        conn.open.assert_called_once()
         conn.start_tls.assert_called_once()
-        assert conn.start_tls.call_args.args == ()
-        # bind() must run after start_tls() in the same connection.
         conn.bind.assert_called_once()
 
     def test_failed_start_tls_aborts_login(self):
