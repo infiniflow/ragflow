@@ -234,7 +234,7 @@ async def async_chat_solo(dialog, messages, stream=True):
         else:
             text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
         attachments = "\n\n".join(text_attachments)
-    
+
     if dialog.llm_id:
         model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
     elif dialog.tenant_llm_id:
@@ -844,10 +844,9 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
     else:
         doc_engine = "es"
 
-    def _validate_uuid_hex(value: str, label: str = "id") -> str:
-        """Validate UUID and return its 32-char hex form (no hyphens) to match stored IDs."""
+    def _assert_valid_uuid(value: str, label: str = "id") -> None:
         try:
-            return uuid.UUID(str(value)).hex
+            uuid.UUID(str(value))
         except (ValueError, AttributeError, TypeError):
             logger.warning("SQL injection guard rejected invalid %s value (length=%d)", label, len(str(value)))
             raise ValueError(f"Invalid {label} format: {value!r}")
@@ -858,7 +857,8 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
     base_table = index_name(tenant_id)
     if doc_engine == "infinity" and kb_ids and len(kb_ids) == 1:
         # Infinity: append kb_id to table name — validate before interpolating
-        table_name = f"{base_table}_{_validate_uuid_hex(kb_ids[0], 'kb_id')}"
+        _assert_valid_uuid(kb_ids[0], "kb_id")
+        table_name = f"{base_table}_{kb_ids[0]}"
         logging.debug(f"use_sql: Using Infinity table name: {table_name}")
     else:
         # Elasticsearch/OpenSearch: use base index name
@@ -904,13 +904,14 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
             return sql
 
         # Validate all kb_ids are UUIDs before interpolating into SQL
-        safe_kb_ids = [_validate_uuid_hex(kid, "kb_id") for kid in kb_ids]
+        for kid in kb_ids:
+            _assert_valid_uuid(kid, "kb_id")
 
         # Build kb_filter: single KB or multiple KBs with OR
-        if len(safe_kb_ids) == 1:
-            kb_filter = f"kb_id = '{safe_kb_ids[0]}'"
+        if len(kb_ids) == 1:
+            kb_filter = f"kb_id = '{kb_ids[0]}'"
         else:
-            kb_filter = "(" + " OR ".join([f"kb_id = '{kid}'" for kid in safe_kb_ids]) + ")"
+            kb_filter = "(" + " OR ".join([f"kb_id = '{kid}'" for kid in kb_ids]) + ")"
 
         if "where " not in sql.lower():
             o = sql.lower().split("order by")
