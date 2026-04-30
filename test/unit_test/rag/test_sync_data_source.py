@@ -121,19 +121,36 @@ def _patch_common_dependencies(monkeypatch):
 
 @pytest.mark.anyio
 @pytest.mark.p2
-async def test_run_task_logic_skips_cleanup_for_empty_snapshot(monkeypatch):
+async def test_run_task_logic_cleans_up_for_empty_snapshot(monkeypatch):
     cleanup_calls = []
 
     _patch_common_dependencies(monkeypatch)
+
+    def _fake_cleanup(*args, **kwargs):
+        cleanup_calls.append((args, kwargs))
+        return 0, []
+
     monkeypatch.setattr(
         sync_data_source.ConnectorService,
         "cleanup_stale_documents_for_task",
-        lambda *_args, **_kwargs: cleanup_calls.append((_args, _kwargs)),
+        _fake_cleanup,
     )
 
-    await _FakeSync((iter(()), []))._run_task_logic(_make_task())
+    file_list = []
+    await _FakeSync((iter(()), file_list))._run_task_logic(_make_task())
 
-    assert cleanup_calls == []
+    assert cleanup_calls == [
+        (
+            (
+                "task-1",
+                "connector-1",
+                "kb-1",
+                "tenant-1",
+                file_list,
+            ),
+            {},
+        )
+    ]
 
 
 @pytest.mark.anyio
