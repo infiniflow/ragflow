@@ -105,6 +105,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.AIRTABLE]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.SEAFILE]: {
+    syncDeletedFiles: true,
+  },
 };
 
 const isDataSourceFeatureVisible = (
