@@ -76,6 +76,18 @@ func (z *XAIModel) Name() string {
 	return "xai"
 }
 
+// baseURLForRegion returns the base URL for the given region, or an
+// error if no entry exists. This makes a misconfigured region fail
+// fast with a clear message, instead of silently producing a relative
+// URL that the HTTP transport then rejects.
+func (z *XAIModel) baseURLForRegion(region string) (string, error) {
+	base, ok := z.BaseURL[region]
+	if !ok || base == "" {
+		return "", fmt.Errorf("xai: no base URL configured for region %q", region)
+	}
+	return base, nil
+}
+
 // ChatWithMessages sends multiple messages with roles and returns the response
 func (z *XAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
@@ -91,7 +103,11 @@ func (z *XAIModel) ChatWithMessages(modelName string, messages []Message, apiCon
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
+	baseURL, err := z.baseURLForRegion(region)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, z.URLSuffix.Chat)
 
 	// Convert messages to the format expected by the API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -222,7 +238,11 @@ func (z *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
+	baseURL, err := z.baseURLForRegion(region)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, z.URLSuffix.Chat)
 
 	// Convert messages to API format (supports multimodal content)
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -296,6 +316,12 @@ func (z *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 	// 1MB so we never silently truncate a long data: line.
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	// sawTerminal flips to true when the upstream actually told us the
+	// stream is over (either a "[DONE]" marker or a non-empty
+	// finish_reason). If the body closes before either of those, we
+	// must not emit a synthetic "[DONE]" because that would hide a
+	// truncated response from the caller.
+	sawTerminal := false
 	for scanner.Scan() {
 		line := scanner.Text()
 
@@ -309,6 +335,7 @@ func (z *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 
 		// [DONE] marks the end of the stream
 		if data == "[DONE]" {
+			sawTerminal = true
 			break
 		}
 
@@ -349,12 +376,16 @@ func (z *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 
 		finishReason, ok := firstChoice["finish_reason"].(string)
 		if ok && finishReason != "" {
+			sawTerminal = true
 			break
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
+	}
+	if !sawTerminal {
+		return fmt.Errorf("xai: stream ended before [DONE] or finish_reason")
 	}
 
 	// Send the [DONE] marker for OpenAI compatibility
@@ -383,7 +414,11 @@ func (z *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Models)
+	baseURL, err := z.baseURLForRegion(region)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, z.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
