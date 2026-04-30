@@ -228,6 +228,15 @@ class LDAPClient:
                         search_filter=f"({self.username_attr}={self._escape_filter(username)})",
                         attributes=attrs_wanted,
                     )
+                    if len(conn.entries) > 1:
+                        # Multiple directory entries match — refuse rather than
+                        # bind one principal and return another's attributes.
+                        logging.error(
+                            "LDAP post-bind search returned %d entries channel=%s",
+                            len(conn.entries),
+                            self.channel_id,
+                        )
+                        raise LDAPAuthError("Ambiguous directory match.")
                     entry = conn.entries[0] if conn.entries else None
                     if entry is None:
                         logging.info(
@@ -262,6 +271,17 @@ class LDAPClient:
                     self.user_search_base,
                 )
                 raise LDAPAuthError("User not found in directory.")
+            if len(service_conn.entries) > 1:
+                # The username matched more than one record; refuse instead of
+                # silently binding the first one and authenticating the wrong
+                # principal.
+                logging.error(
+                    "LDAP search returned %d entries channel=%s base=%s",
+                    len(service_conn.entries),
+                    self.channel_id,
+                    self.user_search_base,
+                )
+                raise LDAPAuthError("Ambiguous directory match.")
             entry = service_conn.entries[0]
             user_dn = entry.entry_dn
             attrs = self._entry_attrs(entry, attrs_wanted)

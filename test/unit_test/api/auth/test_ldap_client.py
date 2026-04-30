@@ -191,6 +191,35 @@ class TestSearchThenBind:
             with pytest.raises(LDAPAuthError):
                 cli.authenticate("ghost", "pw")
 
+    def test_authenticate_rejects_ambiguous_search_match(self):
+        cli = LDAPClient(_search_bind_config())
+
+        service_conn = MagicMock()
+        service_conn.bind.return_value = True
+        # Two entries match the same login — must refuse rather than bind one
+        # principal and return another's attributes.
+        service_conn.entries = [MagicMock(), MagicMock()]
+
+        with patch.object(cli, "_open", return_value=service_conn), patch.object(cli, "_server"):
+            with pytest.raises(LDAPAuthError, match="Ambiguous"):
+                cli.authenticate("dup", "pw")
+
+
+class TestDirectBindPostSearch:
+    def test_rejects_ambiguous_post_bind_search(self):
+        # bind_dn_template + user_search_base path. The post-bind search must
+        # also refuse multiple matches.
+        cfg = _direct_bind_config(user_search_base="ou=people,dc=example,dc=com")
+        cli = LDAPClient(cfg)
+
+        bind_conn = MagicMock()
+        bind_conn.bind.return_value = True
+        bind_conn.entries = [MagicMock(), MagicMock()]
+
+        with patch.object(cli, "_open", return_value=bind_conn), patch.object(cli, "_server"):
+            with pytest.raises(LDAPAuthError, match="Ambiguous"):
+                cli.authenticate("alice", "secret")
+
 
 class TestStartTLS:
     def test_use_tls_opens_socket_then_start_tls_then_bind(self):

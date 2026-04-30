@@ -267,9 +267,11 @@ async def ldap_login():
         )
 
     # Inject the channel id into a config copy so the LDAPClient can
-    # namespace synthetic emails by channel rather than by host.
+    # namespace synthetic emails by channel rather than by host. Always
+    # overwrite — a stale "channel" value left in the config would put two
+    # LDAP providers on the same synthetic-email namespace.
     cfg = dict(channel_config)
-    cfg.setdefault("channel", channel)
+    cfg["channel"] = channel
 
     try:
         ldap_cli: LDAPClient = get_auth_client(cfg)
