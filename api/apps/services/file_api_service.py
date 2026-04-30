@@ -211,54 +211,92 @@ async def delete_files(uid: str, file_ids: list):
     :param file_ids: list of file IDs to delete
     :return: (success, result) or (success, error_message)
     """
-    def _delete_single_file(file):
+    errors: list[str] = []
+    success_count = 0
+
+    def _delete_single_file(file) -> int:
         try:
             if file.location:
                 settings.STORAGE_IMPL.rm(file.parent_id, file.location)
         except Exception as e:
             logging.exception(f"Fail to remove object: {file.parent_id}/{file.location}, error: {e}")
+            errors.append(f"Failed to remove object {file.parent_id}/{file.location}: {e}")
 
         informs = File2DocumentService.get_by_file_id(file.id)
         for inform in informs:
             doc_id = inform.document_id
             e, doc = DocumentService.get_by_id(doc_id)
-            if e and doc:
-                tenant_id = DocumentService.get_tenant_id(doc_id)
-                if tenant_id:
-                    DocumentService.remove_document(doc, tenant_id)
-            File2DocumentService.delete_by_file_id(file.id)
+            if not e or not doc:
+                errors.append(f"Document not found for file {file.id}: {doc_id}")
+                continue
 
-        FileService.delete(file)
+            tenant_id = DocumentService.get_tenant_id(doc_id)
+            if not tenant_id:
+                errors.append(f"Tenant not found for document {doc_id}")
+                continue
+
+            if not DocumentService.remove_document(doc, tenant_id):
+                errors.append(f"Failed to remove document {doc_id} for file {file.id}")
+
+        try:
+            File2DocumentService.delete_by_file_id(file.id)
+        except Exception as e:
+            logging.exception(f"Fail to remove file-document relations for file {file.id}, error: {e}")
+            errors.append(f"Failed to remove file-document relations for file {file.id}: {e}")
+
+        try:
+            FileService.delete(file)
+        except Exception as e:
+            logging.exception(f"Fail to delete file record {file.id}, error: {e}")
+            errors.append(f"Failed to delete file record {file.id}: {e}")
+        else:
+            return 1
+
+        return 0
 
     def _delete_folder_recursive(folder, tenant_id):
+        deleted = 0
         sub_files = FileService.list_all_files_by_parent_id(folder.id)
         for sub_file in sub_files:
             if sub_file.type == FileType.FOLDER.value:
-                _delete_folder_recursive(sub_file, tenant_id)
+                deleted += _delete_folder_recursive(sub_file, tenant_id)
             else:
-                _delete_single_file(sub_file)
-        FileService.delete(folder)
+                deleted += _delete_single_file(sub_file)
+        try:
+            FileService.delete(folder)
+        except Exception as e:
+            logging.exception(f"Fail to delete folder record {folder.id}, error: {e}")
+            errors.append(f"Failed to delete folder record {folder.id}: {e}")
+        else:
+            deleted += 1
+        return deleted
 
     def _rm_sync():
+        nonlocal success_count
         for file_id in file_ids:
             e, file = FileService.get_by_id(file_id)
             if not e or not file:
-                return False, "File or Folder not found!"
+                errors.append(f"File or Folder not found: {file_id}")
+                continue
             if not file.tenant_id:
-                return False, "Tenant not found!"
+                errors.append(f"Tenant not found for file {file_id}")
+                continue
             if not check_file_team_permission(file, uid):
-                return False, "No authorization."
+                errors.append(f"No authorization for file {file_id}")
+                continue
 
             if file.source_type == FileSource.KNOWLEDGEBASE:
                 continue
 
             if file.type == FileType.FOLDER.value:
-                _delete_folder_recursive(file, uid)
+                success_count += _delete_folder_recursive(file, uid)
                 continue
 
-            _delete_single_file(file)
+            success_count += _delete_single_file(file)
 
-        return True, True
+        if errors:
+            return False, {"success_count": success_count, "errors": errors}
+        return True, {"success_count": success_count}
 
     return await thread_pool_exec(_rm_sync)
 

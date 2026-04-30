@@ -24,8 +24,10 @@ from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
     get_error_argument_result,
     get_error_data_result,
+    get_json_result,
     get_result,
 )
+from common.constants import RetCode
 from api.utils.validation_utils import (
     CreateFolderReq,
     DeleteFileReq,
@@ -189,6 +191,16 @@ async def delete(tenant_id: str = None):
         if success:
             return get_result(data=result)
         else:
+            if isinstance(result, dict):
+                success_count = result.get("success_count", 0)
+                errors = result.get("errors", [])
+                return get_json_result(
+                    code=RetCode.DATA_ERROR,
+                    message=f"Partially deleted {success_count} files with {len(errors)} errors"
+                    if success_count > 0
+                    else f"Deleted files failed with {len(errors)} errors",
+                    data=result,
+                )
             return get_error_data_result(message=result)
     except Exception as e:
         logging.exception(e)
@@ -360,5 +372,3 @@ async def ancestors(tenant_id: str = None, file_id: str = None):
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
-
-
