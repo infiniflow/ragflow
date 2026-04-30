@@ -180,12 +180,20 @@ async def apply_meta_data_filter(
     - manual: directly filter based on provided conditions
 
     Returns:
-        list of doc_ids, ["-999"] when manual filters yield no result, or None
-        when auto/semi_auto filters return empty.
+        - A non-empty list of doc_ids when filtering narrows the result set.
+        - ``None`` when no document restriction should be applied (e.g.
+          meta_data_filter is falsy, no metadata tags exist, or LLM-
+          generated conditions matched nothing and we fall back to
+          unfiltered retrieval).  Downstream callers pass this value
+          straight into ``retrieval(doc_ids=...)``, and the search layer
+          treats ``None`` as "no doc_id filter" (see ``get_filters`` in
+          ``rag/nlp/search.py``).
+        - ``["-999"]`` when manual filters explicitly yield no result
+          (sentinel for "nothing matched").
     """
     from rag.prompts.generator import gen_meta_filter # move from the top of the file to avoid circular import
 
-    doc_ids = list(base_doc_ids) if base_doc_ids else []
+    doc_ids = list(base_doc_ids) if base_doc_ids else None
 
     if not meta_data_filter:
         return doc_ids
@@ -193,10 +201,27 @@ async def apply_meta_data_filter(
     method = meta_data_filter.get("method")
 
     if method == "auto":
+        # When the knowledge base has no metadata tags, skip the LLM call
+        # and return the base doc_ids so that normal retrieval proceeds
+        # without any document restriction.  See:
+        # https://github.com/infiniflow/ragflow/issues/13987
+        if not metas:
+            return doc_ids
         filters: dict = await gen_meta_filter(chat_mdl, metas, question)
-        doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
-        if not doc_ids:
-            return None
+        if filters.get("conditions"):
+            matched = meta_filter(metas, filters["conditions"], filters.get("logic", "and"))
+            if matched:
+                if doc_ids is None:
+                    doc_ids = matched
+                else:
+                    doc_ids.extend(matched)
+            else:
+                # LLM generated conditions but nothing matched — fall back to
+                # unfiltered retrieval instead of silently skipping search.
+                logging.info(
+                    "Auto metadata filter produced conditions that matched no documents; "
+                    "falling back to unfiltered retrieval."
+                )
     elif method == "semi_auto":
         selected_keys = []
         constraints = {}
@@ -214,15 +239,29 @@ async def apply_meta_data_filter(
             filtered_metas = {key: metas[key] for key in selected_keys if key in metas}
             if filtered_metas:
                 filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
-                doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
-                if not doc_ids:
-                    return None
+                if filters.get("conditions"):
+                    matched = meta_filter(metas, filters["conditions"], filters.get("logic", "and"))
+                    if matched:
+                        if doc_ids is None:
+                            doc_ids = matched
+                        else:
+                            doc_ids.extend(matched)
+                    else:
+                        logging.info(
+                            "Semi-auto metadata filter produced conditions that matched no documents; "
+                            "falling back to unfiltered retrieval."
+                        )
     elif method == "manual":
         filters = meta_data_filter.get("manual", [])
         if manual_value_resolver:
             filters = [manual_value_resolver(flt) for flt in filters]
-        doc_ids.extend(meta_filter(metas, filters, meta_data_filter.get("logic", "and")))
-        if filters and not doc_ids:
+        manual_results = meta_filter(metas, filters, meta_data_filter.get("logic", "and"))
+        if manual_results:
+            if doc_ids is None:
+                doc_ids = manual_results
+            else:
+                doc_ids.extend(manual_results)
+        elif filters:
             doc_ids = ["-999"]
 
     return doc_ids
