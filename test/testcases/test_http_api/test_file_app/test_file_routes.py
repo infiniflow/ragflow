@@ -221,7 +221,7 @@ def test_upload_file_success_uses_new_service_layer(monkeypatch):
     monkeypatch.setattr(
         module.FileService,
         "create_folder",
-        lambda _file, parent_id, _names, _len_id: SimpleNamespace(id=parent_id),
+        lambda _file, parent_id, _names, _len_id, *_args: SimpleNamespace(id=parent_id),
     )
     monkeypatch.setattr(module.settings, "STORAGE_IMPL", SimpleNamespace(
         obj_exist=lambda *_args, **_kwargs: False,

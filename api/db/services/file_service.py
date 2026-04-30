@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 import xxhash
 from peewee import fn
 
-from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileType
+from api.db import KNOWLEDGEBASE_FOLDER_NAME, SKILLS_FOLDER_NAME, FileType
 from api.db.db_models import DB, Document, File, File2Document, Knowledgebase, Task
 from api.db.services import duplicate_name
 from api.db.services.common_service import CommonService
@@ -191,23 +191,24 @@ class FileService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def create_folder(cls, file, parent_id, name, count):
-        from api.apps import current_user
+    def create_folder(cls, file, parent_id, name, count, tenant_id, created_by):
         # Recursively create folder structure
         # Args:
         #     file: Current file object
         #     parent_id: Parent folder ID
         #     name: List of folder names to create
         #     count: Current depth in creation
+        #     tenant_id: Tenant ID
+        #     created_by: Created by user ID
         # Returns:
         #     Created file object
         if count > len(name) - 2:
             return file
         else:
             file = cls.insert(
-                {"id": get_uuid(), "parent_id": parent_id, "tenant_id": current_user.id, "created_by": current_user.id, "name": name[count], "location": "", "size": 0, "type": FileType.FOLDER.value}
+                {"id": get_uuid(), "parent_id": parent_id, "tenant_id": tenant_id, "created_by": created_by, "name": name[count], "location": "", "size": 0, "type": FileType.FOLDER.value}
             )
-            return cls.create_folder(file, file.id, name, count + 1)
+            return cls.create_folder(file, file.id, name, count + 1, tenant_id, created_by)
 
     @classmethod
     @DB.connection_context()
@@ -292,6 +293,28 @@ class FileService(CommonService):
         }
         cls.save(**file)
         return file
+
+    @classmethod
+    @DB.connection_context()
+    def init_skills_folder(cls, root_id, tenant_id):
+        # Initialize skills folder if not exists
+        # Args:
+        #     root_id: Root folder ID
+        #     tenant_id: Tenant ID
+        for _ in cls.model.select().where((cls.model.name == SKILLS_FOLDER_NAME) & (cls.model.parent_id == root_id)):
+            return
+        file_id = get_uuid()
+        file = {
+            "id": file_id,
+            "parent_id": root_id,
+            "tenant_id": tenant_id,
+            "created_by": tenant_id,
+            "name": SKILLS_FOLDER_NAME,
+            "type": FileType.FOLDER.value,
+            "size": 0,
+            "location": "",
+        }
+        cls.save(**file)
 
     @classmethod
     @DB.connection_context()

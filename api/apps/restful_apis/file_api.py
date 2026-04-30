@@ -187,7 +187,9 @@ async def delete(tenant_id: str = None):
         return get_error_argument_result(err)
 
     try:
-        success, result = await file_api_service.delete_files(tenant_id, req["ids"])
+        # Get Authorization header to pass to Go backend
+        auth_header = request.headers.get("Authorization", "")
+        success, result = await file_api_service.delete_files(tenant_id, req["ids"], auth_header)
         if success:
             return get_result(data=result)
         else:
