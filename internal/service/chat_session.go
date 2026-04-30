@@ -549,9 +549,12 @@ func (s *ChatSessionService) asyncChatSolo(dialog *entity.Chat, session *entity.
 	}
 	for _, msg := range processedMessages {
 		role, _ := msg["role"].(string)
-		content, _ := msg["content"].(string)
-		if role != "" && content != "" && role != "system" {
-			msgs = append(msgs, modelModule.Message{Role: role, Content: content})
+		if role == "" || role == "system" {
+			continue
+		}
+
+		if msg["content"] != nil {
+			msgs = append(msgs, modelModule.Message{Role: role, Content: msg["content"]})
 		}
 	}
 
@@ -559,7 +562,7 @@ func (s *ChatSessionService) asyncChatSolo(dialog *entity.Chat, session *entity.
 	chatConfig := s.buildChatConfig(dialog, config)
 
 	// Perform chat
-	response, err := chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, chatModel.APIConfig.ApiKey, msgs, chatConfig)
+	response, err := chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, chatModel.APIConfig, msgs, chatConfig)
 	if err != nil {
 		logger.Error("asyncChatSolo chat failed", err)
 		return nil, err
@@ -568,11 +571,11 @@ func (s *ChatSessionService) asyncChatSolo(dialog *entity.Chat, session *entity.
 	logger.Info("asyncChatSolo completed",
 		zap.String("tenant_id", dialog.TenantID),
 		zap.String("llm_id", dialog.LLMID),
-		zap.Int("response_length", len(response)))
+		zap.Int("response_length", len(*response.Answer)))
 
 	// Structure the answer
 	ans := map[string]interface{}{
-		"answer":    response,
+		"answer":    *response.Answer,
 		"reference": reference[len(reference)-1],
 		"final":     true,
 	}
