@@ -21,7 +21,6 @@ from abc import ABC
 import pandas as pd
 import pymysql
 import psycopg2
-import pyodbc
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from common.connection_utils import timeout
 
@@ -52,21 +51,44 @@ class ExeSQLParam(ToolParamBase):
         self.port = 3306
         self.password = ""
         self.max_records = 1024
+        self.google_application_credentials_source = "adc"
+        self.google_application_credentials_json = ""
 
     def check(self):
-        self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgres', 'mariadb', 'mssql', 'IBM DB2', 'trino', 'oceanbase'])
-        self.check_empty(self.database, "Database name")
-        self.check_empty(self.username, "database username")
-        self.check_empty(self.host, "IP Address")
-        self.check_positive_integer(self.port, "IP Port")
-        if self.db_type != "trino":
-            self.check_empty(self.password, "Database password")
-        self.check_positive_integer(self.max_records, "Maximum number of records")
-        if self.database == "rag_flow":
-            if self.host == "ragflow-mysql":
-                raise ValueError("For the security reason, it dose not support database named rag_flow.")
-            if self.password == "infini_rag_flow":
-                raise ValueError("For the security reason, it dose not support database named rag_flow.")
+        """
+        Validates the configuration for connecting to a database or BigQuery.
+
+        Checks if the provided database details or BigQuery credentials are valid
+        and ensures appropriate values are set for each parameter. It applies
+        specific validation rules depending on the type of database or service chosen.
+
+        Raises:
+            ValueError: If certain conditions or validation rules are violated
+            (e.g., missing or invalid credential parameters, restricted database
+            configurations).
+
+        Parameters:
+            None
+        """
+        self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgres', 'mariadb', 'mssql', 'IBM DB2', 'trino', 'oceanbase','BigQuery'])
+        if self.db_type == "BigQuery":
+            self.check_valid_value(self.google_application_credentials_source, "Google Application Credentials Source", ['adc', 'json'])
+            if self.google_application_credentials_source == "json":
+                self.check_empty(self.google_application_credentials_json, "Google Application Credentials JSON")
+
+        else:
+            self.check_empty(self.database, "Database name")
+            self.check_empty(self.username, "database username")
+            self.check_empty(self.host, "IP Address")
+            self.check_positive_integer(self.port, "IP Port")
+            if self.db_type != "trino":
+                self.check_empty(self.password, "Database password")
+            self.check_positive_integer(self.max_records, "Maximum number of records")
+            if self.database == "rag_flow":
+                if self.host == "ragflow-mysql":
+                    raise ValueError("For the security reason, it dose not support database named rag_flow.")
+                if self.password == "infini_rag_flow":
+                    raise ValueError("For the security reason, it dose not support database named rag_flow.")
 
     def get_input_form(self) -> dict[str, dict]:
         return {
@@ -82,6 +104,34 @@ class ExeSQL(ToolBase, ABC):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60)))
     def _invoke(self, **kwargs):
+        """
+        Executes SQL commands on various databases and processes the results.
+
+        The `_invoke` method performs the execution of SQL queries on specified databases, handling different database types such as MySQL, PostgreSQL, Microsoft SQL Server, Trino, IBM DB2, and BigQuery. Executes commands in batches, handles JSON serialization, converts unsupported data types, and outputs results in specified formats.
+
+        Attributes:
+            None
+
+        Methods:
+            _invoke(**kwargs)
+                Executes SQL queries, processes the output, and provides formatted results.
+
+        Parameters:
+            kwargs: dict
+                A dictionary of keyword arguments containing SQL statements and other possible runtime parameters.
+
+        Raises:
+            Exception: Raised in the following scenarios:
+                - If the SQL string is empty or not provided.
+                - If the SQL execution is canceled at any stage.
+                - If the database connection fails.
+                - If required dependencies are missing for certain database types.
+                - For Trino, if the database is not correctly defined.
+            Other exceptions may be passed from database connection and execution errors.
+
+        Returns:
+            None
+        """
         if self.check_if_canceled("ExeSQL processing"):
             return
 
@@ -134,6 +184,10 @@ class ExeSQL(ToolBase, ABC):
             db = psycopg2.connect(dbname=self._param.database, user=self._param.username, host=self._param.host,
                                   port=self._param.port, password=self._param.password)
         elif self._param.db_type == 'mssql':
+            try:
+                import pyodbc
+            except ImportError:
+                raise Exception("Missing dependency 'pyodbc'. Please install system dependencies for ODBC.")
             conn_str = (
                     r'DRIVER={ODBC Driver 17 for SQL Server};'
                     r'SERVER=' + self._param.host + ',' + str(self._param.port) + ';'
@@ -237,6 +291,19 @@ class ExeSQL(ToolBase, ABC):
             self.set_output("json", sql_res)
             self.set_output("formalized_content", "\n\n".join(formalized_content))
             return self.output("formalized_content")
+        elif self._param.db_type == 'BigQuery':
+            from google.oauth2 import service_account
+            from google.cloud import bigquery
+            from google.cloud.bigquery import dbapi
+
+            if self._param.google_application_credentials_source == "adc":
+                client = bigquery.Client()
+            else:
+                service_account_info = json.loads(self._param.google_application_credentials_json)
+                credentials = service_account.Credentials.from_service_account_info(service_account_info)
+                client = bigquery.Client(credentials=credentials, project=credentials.project_id)
+            db = dbapi.Connection(client)
+
         try:
             cursor = db.cursor()
         except Exception as e:
@@ -266,8 +333,18 @@ class ExeSQL(ToolBase, ABC):
                 if self._param.db_type == 'mssql':
                     single_res = pd.DataFrame.from_records(cursor.fetchmany(self._param.max_records),
                                                            columns=[desc[0] for desc in cursor.description])
+                elif self._param.db_type == 'BigQuery':
+                    rows = cursor.fetchmany(self._param.max_records)
+                    converted_rows = []
+                    for row in rows:
+                        if hasattr(row, '_asdict'):  # NamedTuple-like objects
+                            converted_rows.append(row._asdict())
+                        elif hasattr(row, 'keys'):  # Dict-like objects
+                            converted_rows.append(dict(row))
+                        else:  # Tuple or list objects
+                            converted_rows.append(list(row))
+                    single_res = pd.DataFrame(converted_rows)
                 else:
-                    single_res = pd.DataFrame([i for i in cursor.fetchmany(self._param.max_records)])
                     single_res.columns = [i[0] for i in cursor.description]
 
                 for col in single_res.columns:

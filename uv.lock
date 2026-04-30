@@ -2578,6 +2578,23 @@ wheels = [
 ]
 
 [[package]]
+name = "google-cloud-bigquery"
+version = "3.18.0"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "google-api-core" },
+    { name = "google-cloud-core" },
+    { name = "google-resumable-media" },
+    { name = "packaging" },
+    { name = "python-dateutil" },
+    { name = "requests" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/1c/0c/620541d2ae1ee3ed0f77d3899558fa22f8b7b573f0bcc08251a8a57f23d8/google-cloud-bigquery-3.18.0.tar.gz", hash = "sha256:74f0fc6f0ba9477f808d25924dc8a052c55f7ca91064e83e16d3ee5fb7ca77ab" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/ad/64/e4b1b187fa367dc63946ab3aec64f4d99245cc9f37a9269ee7b5b21e644a/google_cloud_bigquery-3.18.0-py2.py3-none-any.whl", hash = "sha256:3520552075502c69710d37b1e9600c84e6974ad271914677d16bfafa502857fb" },
+]
+
+[[package]]
 name = "google-cloud-core"
 version = "2.5.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
@@ -6588,6 +6605,7 @@ dependencies = [
     { name = "flask-session" },
     { name = "google-api-python-client" },
     { name = "google-auth-oauthlib" },
+    { name = "google-cloud-bigquery" },
     { name = "google-cloud-storage" },
     { name = "google-genai" },
     { name = "google-search-results" },
@@ -6732,6 +6750,7 @@ requires-dist = [
     { name = "flask-session", specifier = "==0.8.0" },
     { name = "google-api-python-client", specifier = ">=2.190.0,<3.0.0" },
     { name = "google-auth-oauthlib", specifier = ">=1.2.0,<2.0.0" },
+    { name = "google-cloud-bigquery", specifier = ">=3.18.0" },
     { name = "google-cloud-storage", specifier = ">=2.19.0,<3.0.0" },
     { name = "google-genai", specifier = ">=1.41.0,<2.0.0" },
     { name = "google-search-results", specifier = "==2.4.2" },
