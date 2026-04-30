@@ -124,22 +124,26 @@ class LDAPClient:
             logging.exception("LDAP directory error on channel=%s", self.channel_id)
             raise LDAPAuthError("LDAP directory error.")
 
-        logging.info(
-            "LDAP authenticate ok channel=%s host=%s",
-            self.channel_id,
-            self.host,
-        )
-
         email = self._first(attrs.get(self.email_attr))
         nickname = self._first(attrs.get(self.nickname_attr)) or username
         login_name = self._first(attrs.get(self.username_attr)) or username
 
+        synthetic_email = False
         if not email:
             if self.require_email:
                 raise LDAPAuthError("Directory entry has no email attribute and require_email is enabled.")
             # Channel-namespaced fallback so two directories using the same
             # uid do not collapse onto a single application user.
             email = f"{login_name}@{self.channel_id}.ldap.local"
+            synthetic_email = True
+
+        logging.info(
+            "LDAP authenticate ok channel=%s host=%s user_dn=%s synthetic_email=%s",
+            self.channel_id,
+            self.host,
+            user_dn,
+            synthetic_email,
+        )
 
         return UserInfo(
             email=email,

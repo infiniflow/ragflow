@@ -14,14 +14,15 @@
 #  limitations under the License.
 #
 import asyncio
+import base64
+import binascii
 import logging
-import string
 import os
 import re
 import secrets
+import string
 import time
 from datetime import datetime
-import base64
 
 from quart import make_response, redirect, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -255,7 +256,8 @@ async def ldap_login():
     # perform the bind, so we have to decode the base64 layer ourselves.
     try:
         password = base64.b64decode(decrypt(raw_password)).decode("utf-8")
-    except BaseException:
+    except (ValueError, TypeError, UnicodeDecodeError, binascii.Error) as e:
+        logging.warning("LDAP password decode failed (%s)", type(e).__name__)
         return get_json_result(
             data=False,
             code=RetCode.SERVER_ERROR,
