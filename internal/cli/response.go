@@ -140,6 +140,7 @@ func (r *NonStreamResponse) PrintOut() {
 			fmt.Printf("Thinking: %s\n", r.ReasoningContent)
 		}
 		fmt.Printf("Answer: %s\n", r.Answer)
+		fmt.Printf("Time: %f\n", r.Duration)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
@@ -166,7 +167,9 @@ func (r *StreamMessageResponse) SetOutputFormat(format OutputFormat) {
 }
 
 func (r *StreamMessageResponse) PrintOut() {
-	if r.Code != 0 {
+	if r.Code == 0 {
+		fmt.Printf("Time: %f\n", r.Duration)
+	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
 	}
@@ -319,3 +322,26 @@ func (r *ContextSearchResponse) PrintOut() {
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
 	}
 }
+
+// ContextCatResponse represents the response for cat command
+type ContextCatResponse struct {
+	Code         int          `json:"code"`
+	Content      string       `json:"content"`
+	Message      string       `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ContextCatResponse) Type() string                        { return "ce_cat" }
+func (r *ContextCatResponse) TimeCost() float64                   { return r.Duration }
+func (r *ContextCatResponse) SetOutputFormat(format OutputFormat) { r.OutputFormat = format }
+func (r *ContextCatResponse) PrintOut() {
+	if r.Code == 0 {
+		fmt.Println(r.Content)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+

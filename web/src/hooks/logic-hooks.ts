@@ -10,7 +10,7 @@ import {
   IMessage,
   Message,
 } from '@/interfaces/database/chat';
-import { IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { IKnowledgeFile } from '@/interfaces/database/dataset';
 import { changeLanguageAsync } from '@/locales/config';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
@@ -275,7 +275,7 @@ export const useSendMessageWithSse = () => {
                 if (typeof d !== 'boolean') {
                   setAnswer((prev) => {
                     const prevAnswer = prev.answer || '';
-                    const currentAnswer = d.answer || '';
+                    const currentAnswer = d.final ? '' : d.answer || '';
 
                     let newAnswer: string;
                     if (prevAnswer && currentAnswer.startsWith(prevAnswer)) {

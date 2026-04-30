@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.25.0"
+version = "0.25.1"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -53,7 +53,7 @@ dependencies = [
     "infinity-emb>=0.0.66,<0.0.67",
     "jira==3.10.5",
     "json-repair==0.35.0",
-    "langfuse>=2.60.0",
+    "langfuse>=4.0.1",
     "mammoth>=1.11.0",
     "markdown==3.6",
     "markdown-to-json==2.1.1",

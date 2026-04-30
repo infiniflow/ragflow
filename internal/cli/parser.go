@@ -57,9 +57,10 @@ func (p *Parser) Parse(adminCommand bool) (*Command, error) {
 	}
 
 	// Check for ContextEngine commands (ls, cat, search)
-	//if p.curToken.Type == TokenIdentifier && isCECommand(p.curToken.Value) {
-	//	return p.parseCECommand()
-	//}
+	// Note: These are now handled in parseUserCommand to support both SQL-style and CE-style syntax
+	// if p.curToken.Type == TokenIdentifier && isCECommand(p.curToken.Value) {
+	// 	return p.parseCECommand()
+	// }
 
 	return p.parseCommand(adminCommand)
 }
@@ -196,10 +197,12 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseChatCommand()
 	case TokenThink:
 		return p.parseThinkCommand()
+	case TokenCheck:
+		return p.parseCheckCommand()
 	case TokenLS:
-		return p.parseContextListCommand()
+		return p.parseCEListCommand()
 	case TokenCat:
-		return p.parseContextCatCommand()
+		return p.parseCECatCommand()
 	case TokenUse:
 		return p.parseUseCommand()
 	case TokenUpdate:
@@ -246,7 +249,7 @@ func isKeyword(tokenType int) bool {
 	return tokenType >= TokenLogin && tokenType <= TokenTag
 }
 
-// isCECommand checks if the given string is a ContextEngine command
+// isCECommand checks if the given string is a Filesystem command
 func isCECommand(s string) bool {
 	upper := strings.ToUpper(s)
 	switch upper {
@@ -302,6 +305,8 @@ func (p *Parser) parseCECommand() (*Command, error) {
 	switch cmdName {
 	case "LS", "LIST":
 		return p.parseCEListCommand()
+	case "CAT":
+		return p.parseCECatCommand()
 	case "SEARCH":
 		return p.parseCESearchCommand()
 	default:
@@ -325,12 +330,123 @@ func (p *Parser) parseCEListCommand() (*Command, error) {
 		if p.curToken.Type == TokenQuotedString {
 			path = strings.Trim(path, "\"'")
 		}
-		cmd.Params["path"] = path
 		p.nextToken()
+
+		// Handle path components separated by slashes (e.g., "skills/hub1")
+		for p.curToken.Type == TokenSlash {
+			p.nextToken() // consume slash
+			if p.curToken.Type == TokenIdentifier || p.curToken.Type == TokenDatasets ||
+				p.curToken.Type == TokenAgents || p.curToken.Type == TokenChats {
+				path = path + "/" + p.curToken.Value
+				p.nextToken()
+			} else if p.curToken.Type == TokenNumber {
+				// Handle version numbers like 1.0.0 (parsed as number . number . number)
+				// OR filenames starting with numbers like 3_list_compressors.pdf
+				numberPart := p.curToken.Value
+				p.nextToken()
+				// Continue reading .number parts (version number format)
+				if p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
+					versionPart := numberPart
+					for p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
+						p.nextToken() // consume .
+						if p.curToken.Type == TokenNumber {
+							versionPart = versionPart + "." + p.curToken.Value
+							p.nextToken()
+						} else {
+							break
+						}
+					}
+					path = path + "/" + versionPart
+				} else if p.curToken.Type == TokenIdentifier {
+					// Filename starting with number: 3_list_compressors.pdf
+					path = path + "/" + numberPart + p.curToken.Value
+					p.nextToken()
+				} else {
+					// Just a number
+					path = path + "/" + numberPart
+				}
+			} else {
+				// Trailing slash, just append it
+				path = path + "/"
+				break
+			}
+		}
+
+		cmd.Params["path"] = path
 	} else {
 		// Default to "datasets" root
 		cmd.Params["path"] = "datasets"
 	}
+
+	// Optional semicolon
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// parseCECatCommand parses the cat command
+// Syntax: cat <path>
+func (p *Parser) parseCECatCommand() (*Command, error) {
+	p.nextToken() // consume CAT
+
+	cmd := NewCommand("ce_cat")
+
+	if p.curToken.Type != TokenIdentifier && p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected path after CAT")
+	}
+
+	path := p.curToken.Value
+	if p.curToken.Type == TokenQuotedString {
+		path = strings.Trim(path, "\"'")
+	}
+	p.nextToken()
+
+	// Handle path components separated by slashes (e.g., "skills/hub1/skill/README.md")
+	for p.curToken.Type == TokenSlash {
+		p.nextToken() // consume slash
+		if p.curToken.Type == TokenIdentifier || p.curToken.Type == TokenAgents ||
+			p.curToken.Type == TokenChats || p.curToken.Type == TokenDatasets {
+			path = path + "/" + p.curToken.Value
+			p.nextToken()
+		} else if p.curToken.Type == TokenNumber {
+			// Handle version numbers like 1.0.0 (parsed as number . number . number)
+			// OR filenames starting with numbers like 3_list_compressors.pdf
+			numberPart := p.curToken.Value
+			p.nextToken()
+			// Continue reading .number parts (version number format)
+			if p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
+				versionPart := numberPart
+				for p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
+					p.nextToken() // consume .
+					if p.curToken.Type == TokenNumber {
+						versionPart = versionPart + "." + p.curToken.Value
+						p.nextToken()
+					} else {
+						break
+					}
+				}
+				path = path + "/" + versionPart
+			} else if p.curToken.Type == TokenIdentifier {
+				// Filename starting with number: 3_list_compressors.pdf
+				path = path + "/" + numberPart + p.curToken.Value
+				p.nextToken()
+			} else {
+				// Just a number
+				path = path + "/" + numberPart
+			}
+		} else if p.curToken.Type == TokenQuotedString {
+			path = path + "/" + strings.Trim(p.curToken.Value, "\"'")
+			p.nextToken()
+		} else {
+			// Trailing slash, just append it
+			path = path + "/"
+			break
+		}
+	}
+
+	cmd.Params["path"] = path
 
 	// Optional semicolon
 	if p.curToken.Type == TokenSemicolon {
@@ -370,8 +486,52 @@ func (p *Parser) parseCESearchCommand() (*Command, error) {
 		if p.curToken.Type == TokenQuotedString {
 			path = strings.Trim(path, "\"'")
 		}
-		cmd.Params["path"] = path
 		p.nextToken()
+
+		// Handle path components separated by slashes (e.g., "skills/hub1")
+		for p.curToken.Type == TokenSlash {
+			p.nextToken() // consume slash
+			if p.curToken.Type == TokenIdentifier || p.curToken.Type == TokenAgents ||
+				p.curToken.Type == TokenChats || p.curToken.Type == TokenDatasets {
+				path = path + "/" + p.curToken.Value
+				p.nextToken()
+		} else if p.curToken.Type == TokenNumber {
+			// Handle version numbers like 1.0.0 (parsed as number . number . number)
+			// OR filenames starting with numbers like 3_list_compressors.pdf
+			numberPart := p.curToken.Value
+			p.nextToken()
+			// Continue reading .number parts (version number format)
+			if p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
+				versionPart := numberPart
+				for p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
+					p.nextToken() // consume .
+					if p.curToken.Type == TokenNumber {
+						versionPart = versionPart + "." + p.curToken.Value
+						p.nextToken()
+					} else {
+						break
+					}
+				}
+				path = path + "/" + versionPart
+			} else if p.curToken.Type == TokenIdentifier {
+				// Filename starting with number: 3_list_compressors.pdf
+				path = path + "/" + numberPart + p.curToken.Value
+				p.nextToken()
+			} else {
+				// Just a number
+				path = path + "/" + numberPart
+			}
+		} else if p.curToken.Type == TokenQuotedString {
+			path = path + "/" + strings.Trim(p.curToken.Value, "\"'")
+			p.nextToken()
+		} else {
+			// Trailing slash, just append it
+			path = path + "/"
+			break
+		}
+	}
+
+	cmd.Params["path"] = path
 	} else {
 		cmd.Params["path"] = "."
 	}

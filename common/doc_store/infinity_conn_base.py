@@ -173,7 +173,15 @@ class InfinityConnectionBase(DocStoreConnection):
 
         cond = list()
         for k, v in condition.items():
-            if not isinstance(k, str) or not v:
+            if not isinstance(k, str):
+                continue
+            if k == "available_int":
+                if v == 0:
+                    cond.append("available_int=0")
+                elif v == 1:
+                    cond.append("available_int=1")
+                continue
+            if not v:
                 continue
             if self.field_keyword(k):
                 if isinstance(v, list):

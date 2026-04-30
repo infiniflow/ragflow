@@ -1134,16 +1134,16 @@
             "url": "https://api.deepseek.com/v1",
             "llm": [
                 {
-                    "llm_name": "deepseek-chat",
+                    "llm_name": "deepseek-v4-flash",
                     "tags": "LLM,CHAT,",
-                    "max_tokens": 64000,
+                    "max_tokens": 1000000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "deepseek-reasoner",
+                    "llm_name": "deepseek-v4-pro",
                     "tags": "LLM,CHAT,",
-                    "max_tokens": 64000,
+                    "max_tokens": 1000000,
                     "model_type": "chat",
                     "is_tools": true
                 }
@@ -6255,6 +6255,14 @@
             "llm": []
         },
         {
+            "name": "OpenDataLoader",
+            "logo": "",
+            "tags": "OCR",
+            "status": "1",
+            "rank": "920",
+            "llm": []
+        },
+        {
             "name": "n1n",
             "logo": "",
             "tags": "LLM",
@@ -6445,6 +6453,121 @@
                     "tags": "TEXT EMBEDDING,8K",
                     "max_tokens": 8191,
                     "model_type": "embedding",
+                    "is_tools": false
+                }
+            ]
+        },
+        {
+            "name": "FuturMix",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT,SPEECH2TEXT,TTS,TEXT RE-RANK",
+            "status": "1",
+            "rank": "248",
+            "url": "https://futurmix.ai/v1",
+            "llm": [
+                {
+                    "llm_name": "claude-sonnet-4-20250514",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 200000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-3.5-haiku",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 200000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-4o",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-4o-mini",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gemini-2.5-flash",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gemini-2.0-flash",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-chat",
+                    "tags": "LLM,CHAT,64k",
+                    "max_tokens": 65536,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-reasoner",
+                    "tags": "LLM,CHAT,64k",
+                    "max_tokens": 65536,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "gpt-4o",
+                    "tags": "IMAGE2TEXT,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "text-embedding-3-small",
+                    "tags": "TEXT EMBEDDING,8K",
+                    "max_tokens": 8191,
+                    "model_type": "embedding",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "text-embedding-3-large",
+                    "tags": "TEXT EMBEDDING,8K",
+                    "max_tokens": 8191,
+                    "model_type": "embedding",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "tts-1",
+                    "tags": "TTS",
+                    "max_tokens": 4096,
+                    "model_type": "tts",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "tts-1-hd",
+                    "tags": "TTS",
+                    "max_tokens": 4096,
+                    "model_type": "tts",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "whisper-1",
+                    "tags": "SPEECH2TEXT",
+                    "max_tokens": 25000000,
+                    "model_type": "speech2text",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "jina-reranker-v2-base-multilingual",
+                    "tags": "RE-RANK,8k",
+                    "max_tokens": 8192,
+                    "model_type": "rerank",
                     "is_tools": false
                 }
             ]

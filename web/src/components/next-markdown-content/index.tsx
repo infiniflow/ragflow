@@ -45,7 +45,7 @@ import styles from './index.module.less';
 const getChunkIndex = (match: string) => parseCitationIndex(match);
 
 const isArtifactUrl = (url?: string) =>
-  Boolean(url && url.includes('/document/artifact/'));
+  Boolean(url && url.includes('/api/v1/documents/artifact/'));
 
 const fetchArtifactBlob = async (url: string): Promise<Blob> => {
   const response = await request(url, {

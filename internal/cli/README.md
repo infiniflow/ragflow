@@ -7,12 +7,12 @@ This is the Go implementation of the RAGFlow command-line interface, compatible 
 - Interactive mode and single command execution
 - Full compatibility with Python CLI syntax
 - Recursive descent parser for SQL-like commands
-- Context Engine (Virtual Filesystem) for intuitive resource management
+- Virtual Filesystem for intuitive resource management
 - Support for all major commands:
   - User management: LOGIN, REGISTER, CREATE USER, DROP USER, LIST USERS, etc.
   - Service management: LIST SERVICES, SHOW SERVICE, STARTUP/SHUTDOWN/RESTART SERVICE
   - Role management: CREATE ROLE, DROP ROLE, LIST ROLES, GRANT/REVOKE PERMISSION
-  - Dataset management via Context Engine: `ls`, `search`, `mkdir`, `cat`, `rm`
+  - Dataset management via Virtual Filesystem: `ls`, `search`, `mkdir`, `cat`, `rm`
   - Model management: SET/RESET DEFAULT LLM/VLM/EMBEDDING/etc.
   - And more...
 
@@ -30,24 +30,24 @@ go build -o ragflow_cli ./cmd/ragflow_cli.go
 ```
 internal/cli/
 ├── cli.go              # Main CLI loop and interaction
-├── client.go           # RAGFlowClient with Context Engine integration
+├── client.go           # RAGFlowClient with Filesystem integration
 ├── http_client.go      # HTTP client for API communication
 ├── parser/             # Command parser package
 │   ├── types.go        # Token and Command types
 │   ├── lexer.go        # Lexical analyzer
 │   └── parser.go       # Recursive descent parser
-└── contextengine/      # Context Engine (Virtual Filesystem)
+└── filesystem/         # Virtual Filesystem
     ├── engine.go       # Core engine: path resolution, command routing
     ├── types.go        # Node, Command, Result types
-    ├── provider.go     # Provider interface definition    
-    ├── dataset_provider.go  # Dataset provider implementation
-    ├── file_provider.go  # File manager provider implementation
+    ├── base.go         # Provider interface definition    
+    ├── dataset.go      # Dataset provider implementation
+    ├── file.go         # File manager provider implementation
     └── utils.go        # Helper functions
 ```
 
-## Context Engine
+## Virtual Filesystem
 
-The Context Engine provides a unified virtual filesystem interface over RAGFlow's RESTful APIs.
+The Virtual Filesystem provides a unified filesystem interface over RAGFlow's RESTful APIs.
 
 ### Design Principles
 
@@ -90,11 +90,7 @@ ls datasets/kb1 -n 50           # List 50 files in kb1 dataset
 Semantic search in datasets.
 
 **Options:**
-- `-d, --dir <path>` - Directory to search in (can be specified multiple times)
-- `-q, --query <query>` - Search query (required)
-- `-k, --top-k <number>` - Number of top results to return (default: 10)
-- `-t, --threshold <num>` - Similarity threshold, 0.0-1.0 (default: 0.2)
-- `-h, --help` - Show search help message
+- `-n, --number` - Number of top results to return (default: 10)
 
 **Output Formats:**
 - Default: JSON format
@@ -103,10 +99,10 @@ Semantic search in datasets.
 
 **Examples:**
 ```bash
-search -q "machine learning"                    # Search all datasets (JSON output)
-search -d datasets/kb1 -q "neural networks"     # Search in kb1
-search -d datasets/kb1 -q "AI" --output plain   # Plain text output
-search -q "RAG" -k 20 -t 0.5                    # Return 20 results with threshold 0.5
+search "machine learning"                    # Search all datasets (JSON output)
+search "neural networks" datasets/kb1        # Search in kb1
+search "AI" datasets/kb1  --output plain     # Plain text output
+search "RAG" -n 20                           # Return 20 results
 ```
 
 #### `cat <path>` - Display content
@@ -155,20 +151,6 @@ SET DEFAULT LLM 'gpt-4';
 SET DEFAULT EMBEDDING 'text-embedding-ada-002';
 RESET DEFAULT LLM;
 
--- Context Engine (Virtual Filesystem)
-ls;                                       -- List all datasets (default 10)
-ls -n 20;                                 -- List 20 datasets
-ls datasets/my_dataset;                   -- List documents in dataset
-ls datasets/my_dataset -n 50;             -- List 50 documents
-ls datasets/my_dataset/info;              -- Show dataset info
-search -q "test";                         -- Search all datasets (JSON output)
-search -d datasets/my_dataset -q "test";  -- Search in specific dataset
-
--- Meta commands
-\?          -- Show help
-\q          -- Quit
-\c          -- Clear screen
-```
 
 ## Parser Implementation
 

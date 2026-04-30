@@ -60,6 +60,63 @@ class Dealer:
         vector_column_name = f"q_{len(embedding_data)}_vec"
         return MatchDenseExpr(vector_column_name, embedding_data, 'float', 'cosine', topk, {"similarity": similarity})
 
+    async def _existing_doc_ids(self, doc_ids: list[str]) -> set[str]:
+        if not doc_ids:
+            return set()
+
+        unique_doc_ids = list(dict.fromkeys(doc_ids))
+
+        def _load():
+            from api.db.services.document_service import DocumentService
+
+            return {row["id"] for row in DocumentService.get_by_ids(unique_doc_ids).dicts()}
+
+        return await thread_pool_exec(_load)
+
+    async def _prune_deleted_chunks(self, sres: SearchResult) -> SearchResult:
+        # Temporary safety net:
+        # Some delete paths can leave stale chunks in the doc store if the DB row
+        # is removed but the vector record is not fully cleaned up. We filter those
+        # chunks here so chat/retrieval does not surface content from deleted docs.
+        # Keep this as a fallback, not as the primary delete mechanism.
+        chunk_doc_ids = [chunk.get("doc_id") for chunk in sres.field.values() if chunk and chunk.get("doc_id")]
+        if not chunk_doc_ids:
+            return sres
+
+        existing_doc_ids = await self._existing_doc_ids(chunk_doc_ids)
+        if len(existing_doc_ids) == len(set(chunk_doc_ids)):
+            return sres
+
+        filtered_ids = []
+        filtered_field = {}
+        filtered_highlight = {} if sres.highlight else sres.highlight
+        removed = 0
+
+        for chunk_id in sres.ids:
+            chunk = sres.field.get(chunk_id)
+            if not chunk or chunk.get("doc_id") not in existing_doc_ids:
+                removed += 1
+                continue
+
+            filtered_ids.append(chunk_id)
+            filtered_field[chunk_id] = chunk
+            if sres.highlight and chunk_id in sres.highlight:
+                filtered_highlight[chunk_id] = sres.highlight[chunk_id]
+
+        if removed:
+            logging.warning("Pruned %s stale chunks whose documents no longer exist.", removed)
+
+        return self.SearchResult(
+            total=len(filtered_ids),
+            ids=filtered_ids,
+            query_vector=sres.query_vector,
+            field=filtered_field,
+            highlight=filtered_highlight,
+            aggregation=sres.aggregation,
+            keywords=sres.keywords,
+            group_docs=sres.group_docs,
+        )
+
     def get_filters(self, req):
         condition = dict()
         for key, field in {"kb_ids": "kb_id", "doc_ids": "doc_id"}.items():
@@ -343,7 +400,9 @@ class Dealer:
     def rerank_by_model(self, rerank_mdl, sres, query, tkweight=0.3,
                         vtweight=0.7, cfield="content_ltks",
                         rank_feature: dict | None = None):
+        print(f"[DEBUG rerank_by_model] query={query}, tkweight={tkweight}, vtweight={vtweight}")
         _, keywords = self.qryr.question(query)
+        print(f"[DEBUG rerank_by_model] keywords={keywords}")
 
         for i in sres.ids:
             if isinstance(sres.field[i].get("important_kwd", []), str):
@@ -355,11 +414,29 @@ class Dealer:
             important_kwd = sres.field[i].get("important_kwd", [])
             tks = content_ltks + title_tks + important_kwd
             ins_tw.append(tks)
+            print(f"[DEBUG rerank_by_model] chunk id={i}, content_ltks={len(content_ltks)}, title_tks={len(title_tks)}, important_kwd={len(important_kwd)}")
+            doc_text = remove_redundant_spaces(" ".join(tks))
+            if len(doc_text) > 100:
+                print(f"[DEBUG rerank_by_model] chunk id={i}, doc_text (first 100)={doc_text[:100]}...")
+            else:
+                print(f"[DEBUG rerank_by_model] chunk id={i}, doc_text={doc_text}")
+
+        docs = [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw]
+        print(f"[DEBUG rerank_by_model] docs sent to reranker: {len(docs)} docs")
+        for idx, doc in enumerate(docs[:2]):  # Print first 2
+            print(f"[DEBUG rerank_by_model] doc[{idx}] len={len(doc)}, full={doc}")
+            if len(doc) > 100:
+                print(f"[DEBUG rerank_by_model] doc[{idx}] (first 100)={doc[:100]}...")
+            else:
+                print(f"[DEBUG rerank_by_model] doc[{idx}]={doc}")
 
         tksim = self.qryr.token_similarity(keywords, ins_tw)
-        vtsim, _ = rerank_mdl.similarity(query, [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw])
+        print(f"[DEBUG rerank_by_model] tksim={tksim}")
+        vtsim, _ = rerank_mdl.similarity(query, docs)
+        print(f"[DEBUG rerank_by_model] vtsim from reranker={vtsim}")
         ## For rank feature(tag_fea) scores.
         rank_fea = self._rank_feature_scores(rank_feature, sres)
+        print(f"[DEBUG rerank_by_model] rank_fea={rank_fea}")
 
         return tkweight * np.array(tksim) + vtweight * vtsim + rank_fea, tksim, vtsim
 
@@ -409,12 +486,19 @@ class Dealer:
             "similarity": similarity_threshold,
             "available_int": 1,
         }
+        logging.debug(f"[Search] global_offset={global_offset}, rerank_limit={RERANK_LIMIT}, page_size={page_size}, page={page}")
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
 
         sres = await self.search(req, [index_name(tid) for tid in tenant_ids], kb_ids, embd_mdl, highlight,
                            rank_feature=rank_feature)
+        # Temporary retrieval-side guard: prune chunks whose parent document no
+        # longer exists before reranking and returning results.
+        sres = await self._prune_deleted_chunks(sres)
+        if sres.total == 0:
+            ranks["doc_aggs"] = []
+            return ranks
 
         if rerank_mdl and sres.total > 0:
             sim, tsim, vsim = self.rerank_by_model(

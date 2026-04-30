@@ -18,196 +18,546 @@ package infinity
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/utility"
+	"regexp"
+	"slices"
+	"sort"
+	"strconv"
 	"strings"
-	"unicode/utf8"
+	"unicode"
+
+	"ragflow/internal/logger"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
+	"go.uber.org/zap"
 )
 
-const (
-	PAGERANK_FLD = "pagerank_fea"
-	TAG_FLD      = "tag_feas"
-)
-
-type SortType int
-
-const (
-	SortAsc  SortType = 0
-	SortDesc SortType = 1
-)
-
-type OrderByExpr struct {
-	Fields []OrderByField
-}
-
-type OrderByField struct {
-	Field string
-	Type  SortType
-}
-
-// fieldKeyword checks if field is a keyword field
-func fieldKeyword(fieldName string) bool {
-	// Treat "*_kwd" tag-like columns as keyword lists except knowledge_graph_kwd
-	if fieldName == "source_id" {
-		return true
-	}
-	if strings.HasSuffix(fieldName, "_kwd") &&
-		fieldName != "knowledge_graph_kwd" &&
-		fieldName != "docnm_kwd" &&
-		fieldName != "important_kwd" &&
-		fieldName != "question_kwd" {
-		return true
-	}
-	return false
-}
-
-// equivalentConditionToStr converts condition dict to filter string
-func equivalentConditionToStr(condition map[string]interface{}, tableColumns map[string]struct {
-	Type    string
-	Default interface{}
-}) string {
-	if len(condition) == 0 {
-		return ""
-	}
-
-	var conditions []string
-
-	for k, v := range condition {
-		if !strings.HasPrefix(k, "_") {
-			continue
+// Search searches the Infinity engine for matching chunks.
+// It supports three matching types: MatchTextExpr (full-text), MatchDenseExpr (vector), and FusionExpr (combined).
+// If no match expressions are provided, Search relies solely on filter (e.g., doc_id, available_int) to find results.
+func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	logger.Debug("Search in Infinity started", zap.Any("indexNames", req.IndexNames))
+	if logger.IsDebugEnabled() {
+		// Format match expressions for logging
+		var matchExprsStr string
+		for i, expr := range req.MatchExprs {
+			switch e := expr.(type) {
+			case *types.MatchTextExpr:
+				matchExprsStr += fmt.Sprintf("    [%d] MatchTextExpr: fields=%v, matchingText=%s, topN=%d, extraOptions=%v\n", i, e.Fields, e.MatchingText, e.TopN, e.ExtraOptions)
+			case *types.MatchDenseExpr:
+				matchExprsStr += fmt.Sprintf("    [%d] MatchDenseExpr: vectorColumn=%s, vectorSize=%d, topN=%d, extraOptions=%v\n", i, e.VectorColumnName, len(e.EmbeddingData), e.TopN, e.ExtraOptions)
+			case *types.FusionExpr:
+				matchExprsStr += fmt.Sprintf("    [%d] FusionExpr: method=%s, topN=%d, fusionParams=%v\n", i, e.Method, e.TopN, e.FusionParams)
+			default:
+				matchExprsStr += fmt.Sprintf("    [%d] unknown type\n", i)
+			}
 		}
-		if v == nil || v == "" {
-			continue
-		}
+		logger.Debug(fmt.Sprintf("Search request:\n"+
+			"    indexNames=%v\n"+
+			"    KbIDs=%v\n"+
+			"    offset=%d, limit=%d\n"+
+			"    SelectFields=%v\n"+
+			"    Filter=%v\n"+
+			"    MatchExprs:\n%s    orderBy=%v\n"+
+			"    RankFeature=%v",
+			req.IndexNames, req.KbIDs, req.Offset, req.Limit, req.SelectFields, req.Filter, matchExprsStr, req.OrderBy, req.RankFeature))
+	}
 
-		// Handle keyword fields with filter_fulltext
-		if fieldKeyword(k) {
-			if listVal, isList := v.([]interface{}); isList {
-				var orConds []string
-				for _, item := range listVal {
-					if strItem, ok := item.(string); ok {
-						strItem = strings.ReplaceAll(strItem, "'", "''")
-						orConds = append(orConds, fmt.Sprintf("filter_fulltext('%s', '%s')", convertMatchingField(k), strItem))
+	if len(req.IndexNames) == 0 {
+		return nil, fmt.Errorf("index names cannot be empty")
+	}
+
+	// Get retrieval parameters with defaults
+	pageSize := req.Limit
+	if pageSize <= 0 {
+		pageSize = 30
+	}
+
+	offset := req.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database: %w", err)
+	}
+
+	isMetadataTable := false
+	isSkillIndex := false
+	for _, idx := range req.IndexNames {
+		if strings.HasPrefix(idx, "ragflow_doc_meta_") {
+			isMetadataTable = true
+			break
+		}
+		if strings.HasPrefix(idx, "skill_") {
+			isSkillIndex = true
+			break
+		}
+	}
+
+	var outputColumns []string
+	if isMetadataTable {
+		outputColumns = []string{"id", "kb_id", "meta_fields"}
+	} else if isSkillIndex {
+		outputColumns = []string{
+			"skill_id", "space_id", "folder_id", "name", "tags", "description", "content",
+			"version", "status", "create_time", "update_time",
+		}
+		outputColumns = convertSelectFields(outputColumns, true)
+	} else {
+		outputColumns = []string{
+			"id", "doc_id", "kb_id", "content_ltks", "content_with_weight",
+			"title_tks", "docnm_kwd", "img_id", "available_int", "important_kwd",
+			"position_int", "page_num_int", "top_int", "chunk_order_int",
+			"create_timestamp_flt", "knowledge_graph_kwd", "question_kwd", "question_tks",
+			"doc_type_kwd", "mom_id", "tag_kwd", "pagerank_fea", "tag_feas",
+		}
+		outputColumns = convertSelectFields(outputColumns)
+	}
+
+	hasTextMatch := false
+	hasVectorMatch := false
+	var matchText *types.MatchTextExpr
+	var matchDense *types.MatchDenseExpr
+	if req.MatchExprs != nil && len(req.MatchExprs) > 0 {
+		for _, expr := range req.MatchExprs {
+			if expr == nil {
+				continue
+			}
+			switch e := expr.(type) {
+			case string:
+				if e != "" {
+					hasTextMatch = true
+					matchText = &types.MatchTextExpr{
+						MatchingText: e,
+						TopN:         pageSize,
 					}
 				}
-				if len(orConds) > 0 {
-					conditions = append(conditions, "("+strings.Join(orConds, " OR ")+")")
+			case *types.MatchTextExpr:
+				if e.MatchingText != "" {
+					hasTextMatch = true
+					matchText = e
 				}
-			} else if strVal, ok := v.(string); ok {
-				strVal = strings.ReplaceAll(strVal, "'", "''")
-				conditions = append(conditions, fmt.Sprintf("filter_fulltext('%s', '%s')", convertMatchingField(k), strVal))
+			case *types.MatchDenseExpr:
+				if len(e.EmbeddingData) > 0 {
+					hasVectorMatch = true
+					matchDense = e
+				}
 			}
-		} else if listVal, isList := v.([]interface{}); isList {
-			// Handle IN conditions
-			var inVals []string
-			for _, item := range listVal {
-				if strItem, ok := item.(string); ok {
-					strItem = strings.ReplaceAll(strItem, "'", "''")
-					inVals = append(inVals, fmt.Sprintf("'%s'", strItem))
+		}
+	}
+
+	if hasTextMatch || hasVectorMatch {
+		if hasTextMatch {
+			outputColumns = append(outputColumns, "score()")
+		}
+		// similarity() is only allowed by Infinity when there is ONLY MATCH VECTOR.
+		// When both text and vector matches exist (hybrid search with Fusion),
+		// only score() is valid — Fusion produces a unified SCORE column.
+		if hasVectorMatch && !hasTextMatch {
+			outputColumns = append(outputColumns, "similarity()")
+		}
+		// Skill index does not have pagerank_fea and tag_feas columns
+		if !isSkillIndex {
+			if !slices.Contains(outputColumns, common.PAGERANK_FLD) {
+				outputColumns = append(outputColumns, common.PAGERANK_FLD)
+			}
+			if !slices.Contains(outputColumns, common.TAG_FLD) {
+				outputColumns = append(outputColumns, common.TAG_FLD)
+			}
+		}
+	}
+
+	if !slices.Contains(outputColumns, "row_id") && !slices.Contains(outputColumns, "row_id()") {
+		outputColumns = append(outputColumns, "row_id()")
+	}
+
+	outputColumns = convertSelectFields(outputColumns, isSkillIndex)
+	if hasVectorMatch && matchDense != nil && matchDense.VectorColumnName != "" {
+		outputColumns = append(outputColumns, matchDense.VectorColumnName)
+	}
+
+	var filterParts []string
+	if isMetadataTable && len(req.KbIDs) > 0 && req.KbIDs[0] != "" {
+		kbIDs := req.KbIDs
+		if len(kbIDs) == 1 {
+			filterParts = append(filterParts, fmt.Sprintf("kb_id = '%s'", kbIDs[0]))
+		} else {
+			kbIDStr := strings.Join(kbIDs, "', '")
+			filterParts = append(filterParts, fmt.Sprintf("kb_id IN ('%s')", kbIDStr))
+		}
+	}
+
+	if !isMetadataTable && (hasTextMatch || hasVectorMatch) {
+		if req.Filter != nil {
+			if availInt, ok := req.Filter["available_int"]; ok {
+				filterParts = append(filterParts, fmt.Sprintf("available_int=%v", availInt))
+			} else if status, ok := req.Filter["status"]; ok {
+				filterParts = append(filterParts, fmt.Sprintf("status='%s'", status))
+			} else {
+				if isSkillIndex {
+					filterParts = append(filterParts, "status='1'")
 				} else {
-					inVals = append(inVals, fmt.Sprintf("%v", item))
-				}
-			}
-			if len(inVals) > 0 {
-				conditions = append(conditions, fmt.Sprintf("%s IN (%s)", k, strings.Join(inVals, ", ")))
-			}
-		} else if k == "must_not" {
-			// Handle must_not conditions
-			if mustNotMap, ok := v.(map[string]interface{}); ok {
-				if existsVal, ok := mustNotMap["exists"]; ok {
-					if existsField, ok := existsVal.(string); ok {
-						col, colOk := tableColumns[existsField]
-						if colOk && strings.Contains(strings.ToLower(col.Type), "char") {
-							conditions = append(conditions, fmt.Sprintf(" %s!='' ", existsField))
-						} else {
-							conditions = append(conditions, fmt.Sprintf("%s!=null", existsField))
-						}
-					}
-				}
-			}
-		} else if strVal, ok := v.(string); ok {
-			strVal = strings.ReplaceAll(strVal, "'", "''")
-			conditions = append(conditions, fmt.Sprintf("%s='%s'", k, strVal))
-		} else if k == "exists" {
-			if existsField, ok := v.(string); ok {
-				col, colOk := tableColumns[existsField]
-				if colOk && strings.Contains(strings.ToLower(col.Type), "char") {
-					conditions = append(conditions, fmt.Sprintf(" %s!='' ", existsField))
-				} else {
-					conditions = append(conditions, fmt.Sprintf("%s!=null", existsField))
+					filterParts = append(filterParts, "available_int=1")
 				}
 			}
 		} else {
-			conditions = append(conditions, fmt.Sprintf("%s=%v", k, v))
+			if isSkillIndex {
+				filterParts = append(filterParts, "status='1'")
+			} else {
+				filterParts = append(filterParts, "available_int=1")
+			}
 		}
 	}
 
-	if len(conditions) == 0 {
-		return ""
+	// Build filter string from req.Filter
+	if req.Filter != nil {
+		filterCopy := req.Filter
+		if !isMetadataTable {
+			filterCopy = make(map[string]interface{})
+			for k, v := range req.Filter {
+				if k != "kb_id" {
+					filterCopy[k] = v
+				}
+			}
+		}
+
+		condStr := equivalentConditionToStr(filterCopy)
+		if condStr != "" {
+			filterParts = append(filterParts, condStr)
+		}
 	}
-	return strings.Join(conditions, " AND ")
-}
+	filterStr := strings.Join(filterParts, " AND ")
 
-// SearchRequest Infinity search request (legacy, kept for backward compatibility)
-type SearchRequest struct {
-	TableName   string
-	ColumnNames []string
-	MatchText   *MatchTextExpr
-	MatchDense  *MatchDenseExpr
-	Fusion      *FusionExpr
-	Offset      int
-	Limit       int
-	Filter      map[string]interface{}
-	OrderBy     *OrderByExpr
-}
-
-// SearchResponse Infinity search response
-type SearchResponse struct {
-	Rows  []map[string]interface{}
-	Total int64
-}
-
-// MatchTextExpr text match expression
-type MatchTextExpr struct {
-	Fields       []string
-	MatchingText string
-	TopN         int
-	ExtraOptions map[string]interface{}
-}
-
-// MatchDenseExpr vector match expression
-type MatchDenseExpr struct {
-	VectorColumnName  string
-	EmbeddingData     []float64
-	EmbeddingDataType string
-	DistanceType      string
-	TopN              int
-	ExtraOptions      map[string]interface{}
-}
-
-// FusionExpr fusion expression
-type FusionExpr struct {
-	Method       string
-	TopN         int
-	Weights      []float64
-	FusionParams map[string]interface{}
-}
-
-// Search executes search (supports unified engine.SearchRequest only)
-func (e *infinityEngine) Search(ctx context.Context, req interface{}) (interface{}, error) {
-	switch searchReq := req.(type) {
-	case *types.SearchRequest:
-		return e.searchUnified(ctx, searchReq)
-	default:
-		return nil, fmt.Errorf("invalid search request type: %T", req)
+	orderBy := req.OrderBy
+	var rankFeature map[string]float64
+	if req.RankFeature != nil {
+		rankFeature = req.RankFeature
 	}
+
+	var fusionExpr *types.FusionExpr
+	if len(req.MatchExprs) > 2 {
+		if fe, ok := req.MatchExprs[2].(*types.FusionExpr); ok {
+			fusionExpr = fe
+		}
+	}
+
+	var allResults []map[string]interface{}
+	totalHits := int64(0)
+
+	for _, indexName := range req.IndexNames {
+		var tableNames []string
+		if strings.HasPrefix(indexName, "ragflow_doc_meta_") {
+			tableNames = []string{indexName}
+		} else {
+			kbIDs := req.KbIDs
+			if len(kbIDs) == 0 {
+				kbIDs = []string{""}
+			}
+			for _, kbID := range kbIDs {
+				if kbID == "" {
+					tableNames = append(tableNames, indexName)
+				} else {
+					tableNames = append(tableNames, fmt.Sprintf("%s_%s", indexName, kbID))
+				}
+			}
+		}
+
+		minMatch := 0.3
+
+		var questionText string
+		var vectorData []float64
+		textTopN := pageSize
+		var originalQuery string
+		if matchText != nil {
+			questionText = matchText.MatchingText
+			textTopN = int(matchText.TopN)
+			if matchText.ExtraOptions != nil {
+				if oq, ok := matchText.ExtraOptions["original_query"].(string); ok {
+					originalQuery = oq
+				}
+			}
+		}
+		if matchDense != nil {
+			vectorData = matchDense.EmbeddingData
+		}
+
+		for _, tableName := range tableNames {
+			tbl, err := db.GetTable(tableName)
+			if err != nil {
+				continue
+			}
+			table := tbl.Output(outputColumns)
+
+			var textFields []string
+			if matchText != nil && len(matchText.Fields) > 0 {
+				textFields = matchText.Fields
+			} else if isSkillIndex {
+			textFields = []string{
+				"name^10",
+				"tags^5",
+				"description^3",
+				"content^1",
+			}
+			} else {
+				textFields = []string{
+					"title_tks^10",
+					"title_sm_tks^5",
+					"important_kwd^30",
+					"important_tks^20",
+					"question_tks^20",
+					"content_ltks^2",
+					"content_sm_ltks",
+				}
+			}
+
+			// Convert field names for Infinity
+			var convertedFields []string
+			for _, f := range textFields {
+				cf := convertMatchingField(f)
+				convertedFields = append(convertedFields, cf)
+			}
+			fields := strings.Join(convertedFields, ",")
+
+			hasTextMatch := questionText != ""
+			hasVectorMatch := len(vectorData) > 0
+			// Add text match if question is provided
+			if hasTextMatch {
+				extraOptions := map[string]string{
+					"minimum_should_match": fmt.Sprintf("%d%%", int(minMatch*100)),
+				}
+
+				if filterStr != "" {
+					extraOptions["filter"] = filterStr
+				}
+
+				if rankFeature != nil {
+					var rankFeaturesList []string
+					for featureName, weight := range rankFeature {
+						rankFeaturesList = append(rankFeaturesList, fmt.Sprintf("%s^%s^%.0f", common.TAG_FLD, featureName, weight))
+					}
+					if len(rankFeaturesList) > 0 {
+						extraOptions["rank_features"] = strings.Join(rankFeaturesList, ",")
+					}
+				}
+
+				if originalQuery != "" {
+					extraOptions["original_query"] = originalQuery
+				}
+
+				table = table.MatchText(fields, questionText, textTopN, extraOptions)
+
+				logger.Debug(fmt.Sprintf(
+					"MatchTextExpr:\n"+
+						"    fields=%s\n"+
+						"    matching_text=%s\n"+
+						"    topn=%d\n"+
+						"    extra_options=%v",
+					fields, questionText, textTopN, extraOptions,
+				))
+			}
+
+			// Add vector match if provided
+			if hasVectorMatch {
+				vectorSize := len(vectorData)
+				fieldName := fmt.Sprintf("q_%d_vec", vectorSize)
+				dataType := "float"
+				distanceType := "cosine"
+
+				if matchDense != nil {
+					if matchDense.VectorColumnName != "" {
+						fieldName = matchDense.VectorColumnName
+					}
+					if matchDense.EmbeddingDataType != "" {
+						dataType = matchDense.EmbeddingDataType
+					}
+					if matchDense.DistanceType != "" {
+						distanceType = matchDense.DistanceType
+					}
+				}
+
+				vectorTopN := pageSize
+				if matchDense != nil && matchDense.TopN > 0 {
+					vectorTopN = int(matchDense.TopN)
+				}
+
+			denseFilterStr := filterStr
+			if denseFilterStr == "" {
+				if isSkillIndex {
+					denseFilterStr = "status='1'"
+				} else {
+					denseFilterStr = "available_int=1"
+				}
+			}
+
+				if hasTextMatch && fusionExpr == nil {
+					fieldsStr := strings.Join(convertedFields, ",")
+					filterFulltext := fmt.Sprintf("filter_fulltext('%s', '%s')", fieldsStr, questionText)
+					denseFilterStr = fmt.Sprintf("(%s) AND %s", denseFilterStr, filterFulltext)
+				}
+				extraOptions := map[string]string{
+					"threshold": utility.FloatToString(0.0),
+					"filter":    denseFilterStr,
+				}
+
+				logger.Debug("MatchDense for hybrid search",
+					zap.String("fieldName", fieldName),
+					zap.String("distanceType", distanceType),
+					zap.Int("topN", vectorTopN),
+					zap.Bool("hasFusion", fusionExpr != nil))
+
+				table = table.MatchDense(fieldName, vectorData, dataType, distanceType, vectorTopN, extraOptions)
+			}
+
+			// Add fusion (for text + vector combination)
+			if hasTextMatch && hasVectorMatch && fusionExpr != nil {
+				fusionMethod := fusionExpr.Method
+				fusionTopK := fusionExpr.TopN
+				if fusionTopK == 0 {
+					fusionTopK = pageSize
+				}
+				fusionParams := map[string]interface{}{
+					"normalize": "atan",
+				}
+				if fusionExpr.FusionParams != nil {
+					for k, v := range fusionExpr.FusionParams {
+						fusionParams[k] = v
+					}
+				}
+
+				logger.Debug("Applying Fusion for hybrid search",
+					zap.String("method", fusionMethod),
+					zap.Int("topN", fusionTopK),
+					zap.Any("params", fusionParams))
+
+				table = table.Fusion(fusionMethod, fusionTopK, fusionParams)
+			}
+
+			// Add order_by if provided
+			if orderBy != nil && len(orderBy.Fields) > 0 {
+				var sortFields [][2]interface{}
+				for _, orderField := range orderBy.Fields {
+					sortType := infinity.SortTypeAsc
+					if orderField.Type == types.SortDesc {
+						sortType = infinity.SortTypeDesc
+					}
+					sortFields = append(sortFields, [2]interface{}{orderField.Field, sortType})
+				}
+				table = table.Sort(sortFields)
+			}
+
+			// Add filter when there's no text/vector match (like metadata queries)
+			if !hasTextMatch && !hasVectorMatch && filterStr != "" {
+				logger.Debug(fmt.Sprintf("Adding filter for no-match query: %s", filterStr))
+				table = table.Filter(filterStr)
+			}
+
+			// Set limit and offset
+			table = table.Limit(pageSize)
+			if offset > 0 {
+				table = table.Offset(offset)
+			}
+
+			// Request total_hits_count from Infinity
+			table = table.Option(map[string]interface{}{"total_hits_count": true})
+
+			// Execute query
+			df, err := table.ToDataFrame()
+			if err != nil {
+				logger.Warn("Infinity query failed",
+					zap.String("tableName", tableName),
+					zap.Bool("hasTextMatch", hasTextMatch),
+					zap.Bool("hasVectorMatch", hasVectorMatch),
+					zap.Bool("hasFusion", fusionExpr != nil),
+					zap.Error(err))
+				continue
+			}
+
+			// Convert DataFrame to chunks format (column-oriented to row-oriented)
+			chunks := make([]map[string]interface{}, 0)
+			for colName, colData := range df.ColumnData {
+				for i, val := range colData {
+					for len(chunks) <= i {
+						chunks = append(chunks, make(map[string]interface{}))
+					}
+					chunks[i][colName] = val
+				}
+			}
+
+			// Apply field name mapping and row_id handling
+			// Skill index uses different schema
+			// so we skip the document-specific field mappings
+			if !isSkillIndex {
+				GetFields(chunks, nil)
+			} else {
+				// For skill index, only handle ROW_ID -> row_id() mapping
+				for _, chunk := range chunks {
+					if val, ok := chunk["ROW_ID"]; ok {
+						chunk["row_id()"] = val
+						delete(chunk, "ROW_ID")
+					}
+				}
+			}
+
+			// Parse total_hits_count from ExtraInfo
+			var tableTotal int64
+			if df.ExtraInfo != "" {
+				var extraResult map[string]interface{}
+				if err := json.Unmarshal([]byte(df.ExtraInfo), &extraResult); err == nil {
+					if count, ok := extraResult["total_hits_count"].(float64); ok {
+						tableTotal = int64(count)
+					}
+				}
+			}
+
+			searchResult := &types.SearchResult{
+				Chunks: chunks,
+				Total:  tableTotal,
+			}
+
+			allResults = append(allResults, searchResult.Chunks...)
+			totalHits += searchResult.Total
+		}
+	}
+
+	if hasTextMatch || hasVectorMatch {
+		scoreColumn := ""
+		if hasTextMatch && hasVectorMatch {
+			scoreColumn = "SCORE"
+		} else if hasTextMatch {
+			scoreColumn = "SCORE"
+		} else if hasVectorMatch {
+			scoreColumn = "SIMILARITY"
+		}
+		pagerankField := common.PAGERANK_FLD
+		if isSkillIndex {
+			pagerankField = "" // Skill index has no pagerank field
+		}
+
+		allResults = calculateScores(allResults, scoreColumn, pagerankField)
+		allResults = sortByScore(allResults, len(allResults))
+	}
+
+	if len(allResults) > pageSize {
+		allResults = allResults[:pageSize]
+	}
+
+	logger.Debug("Search in Infinity completed", zap.Int("returnedRows", len(allResults)), zap.Int64("totalHits", totalHits))
+
+	return &types.SearchResult{
+		Chunks: allResults,
+		Total:  totalHits,
+	}, nil
 }
 
 // convertSelectFields converts field names to Infinity format
-func convertSelectFields(output []string) []string {
+// isSkillIndex indicates if this is a skill index (uses skill_id instead of id)
+func convertSelectFields(output []string, isSkillIndex ...bool) []string {
 	fieldMapping := map[string]string{
 		"docnm_kwd":           "docnm",
 		"title_tks":           "docnm",
@@ -221,6 +571,11 @@ func convertSelectFields(output []string) []string {
 		"content_sm_ltks":     "content",
 		"authors_tks":         "authors",
 		"authors_sm_tks":      "authors",
+	}
+
+	skillIndex := false
+	if len(isSkillIndex) > 0 {
+		skillIndex = isSkillIndex[0]
 	}
 
 	needEmptyCount := false
@@ -244,15 +599,20 @@ func convertSelectFields(output []string) []string {
 	}
 
 	// Add id and empty count if needed
+	// For skill index, use skill_id instead of id
 	hasID := false
+	idField := "id"
+	if skillIndex {
+		idField = "skill_id"
+	}
 	for _, f := range result {
-		if f == "id" {
+		if f == idField {
 			hasID = true
 			break
 		}
 	}
 	if !hasID {
-		result = append([]string{"id"}, result...)
+		result = append([]string{idField}, result...)
 	}
 
 	if needEmptyCount {
@@ -262,69 +622,10 @@ func convertSelectFields(output []string) []string {
 	return result
 }
 
-// isChinese checks if a string contains Chinese characters
-func isChinese(s string) bool {
-	for _, r := range s {
-		if '\u4e00' <= r && r <= '\u9fff' {
-			return true
-		}
-	}
-	return false
-}
-
-// hasSubTokens checks if the text has sub-tokens after fine-grained tokenization
-// - Returns False if len < 3
-// - Returns False if text is only ASCII alphanumeric
-// - Returns True otherwise (meaning there are sub-tokens)
-func hasSubTokens(s string) bool {
-	if utf8.RuneCountInString(s) < 3 {
-		return false
-	}
-	isASCIIOnly := true
-	for _, r := range s {
-		if r > 127 {
-			isASCIIOnly = false
-			break
-		}
-	}
-	if isASCIIOnly {
-		// Check if it's only alphanumeric and allowed special chars
-		for _, r := range s {
-			if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '.' || r == '+' || r == '#' || r == '_' || r == '*' || r == '-') {
-				isASCIIOnly = false
-				break
-			}
-		}
-		if isASCIIOnly {
-			return false
-		}
-	}
-	// Has sub-tokens if it's Chinese and length >= 3
-	return isChinese(s)
-}
-
-// formatQuestion formats the question
-// - If len < 3: returns ((query)^1.0)
-// - If has sub-tokens: adds fuzzy search ((query OR "query" OR ("query"~2)^0.5)^1.0)
-// - Otherwise: returns ((query)^1.0)
-func formatQuestion(question string) string {
-	// Trim whitespace
-	question = strings.TrimSpace(question)
-	fmt.Printf("[DEBUG formatQuestion] input: %q, len: %d, hasSubTokens: %v\n", question, len(question), hasSubTokens(question))
-
-	// If no sub-tokens, use simple format
-	if !hasSubTokens(question) {
-		result := fmt.Sprintf("((%s)^1.0)", question)
-		fmt.Printf("[DEBUG formatQuestion] simple: %s\n", result)
-		return result
-	}
-
-	result := fmt.Sprintf("((%s OR \"%s\" OR (\"%s\"~2)^0.5)^1.0)", question, question, question)
-	fmt.Printf("[DEBUG formatQuestion] fuzzy: %s\n", result)
-	return result
-}
-
 // convertMatchingField converts field names for matching
+// For regular document indices: maps _tks/_kwd fields to column@index_name format
+// For skill indices: maps raw field names to column@index_name format
+// Infinity requires column@index_name when a column has multiple full-text indexes
 func convertMatchingField(fieldWeightStr string) string {
 	// Split on ^ to get field name
 	parts := strings.Split(fieldWeightStr, "^")
@@ -345,6 +646,11 @@ func convertMatchingField(fieldWeightStr string) string {
 		"authors_tks":         "authors@ft_authors_rag_coarse",
 		"authors_sm_tks":      "authors@ft_authors_rag_fine",
 		"tag_kwd":             "tag_kwd@ft_tag_kwd_whitespace__",
+		// Skill index fields
+		"name":               "name@ft_name_rag_coarse",
+		"tags":               "tags@ft_tags_rag_coarse",
+		"description":        "description@ft_description_rag_coarse",
+		"content":            "content@ft_content_rag_coarse",
 	}
 
 	if newField, ok := fieldMapping[field]; ok {
@@ -354,309 +660,180 @@ func convertMatchingField(fieldWeightStr string) string {
 	return strings.Join(parts, "^")
 }
 
-// searchUnified handles the unified engine.SearchRequest
-func (e *infinityEngine) searchUnified(ctx context.Context, req *types.SearchRequest) (*types.SearchResponse, error) {
-	if len(req.IndexNames) == 0 {
-		return nil, fmt.Errorf("index names cannot be empty")
+// escapeFilterValue escapes single quotes for filter values
+func escapeFilterValue(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
+
+// equivalentConditionToStr converts a condition map to an Infinity filter string
+func equivalentConditionToStr(condition map[string]interface{}) string {
+	if len(condition) == 0 {
+		return ""
 	}
 
-	// Get retrieval parameters with defaults
-	topK := req.TopK
-	if topK <= 0 {
-		topK = 1024
-	}
+	var cond []string
 
-	pageSize := req.Size
-	if pageSize <= 0 {
-		pageSize = 30
-	}
-
-	offset := (req.Page - 1) * pageSize
-	if offset < 0 {
-		offset = 0
-	}
-
-	// Get database
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get database: %w", err)
-	}
-
-	// Determine if this is a metadata table
-	isMetadataTable := false
-	for _, idx := range req.IndexNames {
-		if strings.HasPrefix(idx, "ragflow_doc_meta_") {
-			isMetadataTable = true
-			break
+	for k, v := range condition {
+		if k == "_id" || utility.IsEmpty(v) {
+			continue
 		}
-	}
 
-	// Build output columns
-	// For metadata tables, only use: id, kb_id, meta_fields
-	// For chunk tables, use all the standard fields
-	var outputColumns []string
-	if isMetadataTable {
-		outputColumns = []string{"id", "kb_id", "meta_fields"}
-	} else {
-		outputColumns = []string{
-			"id",
-			"doc_id",
-			"kb_id",
-			"content",
-			"content_ltks",
-			"content_with_weight",
-			"title_tks",
-			"docnm_kwd",
-			"img_id",
-			"available_int",
-			"important_kwd",
-			"position_int",
-			"page_num_int",
-			"doc_type_kwd",
-			"mom_id",
-			"question_tks",
-		}
-	}
-	outputColumns = convertSelectFields(outputColumns)
-
-	// Determine if text or vector search
-	hasTextMatch := req.Question != ""
-	hasVectorMatch := !req.KeywordOnly && len(req.Vector) > 0
-
-	// Determine score column
-	scoreColumn := ""
-	if hasTextMatch {
-		scoreColumn = "SCORE"
-	} else if hasVectorMatch {
-		scoreColumn = "SIMILARITY"
-	}
-
-	// Add score column if needed
-	if hasTextMatch || hasVectorMatch {
-		if hasTextMatch {
-			outputColumns = append(outputColumns, "score()")
-		} else if hasVectorMatch {
-			outputColumns = append(outputColumns, "similarity()")
-		}
-		// Add pagerank field
-		outputColumns = append(outputColumns, PAGERANK_FLD)
-	}
-
-	// Remove duplicates
-	outputColumns = convertSelectFields(outputColumns)
-
-	// Build filter string
-	var filterParts []string
-
-	// For metadata tables, add kb_id filter if provided
-	if isMetadataTable && len(req.KbIDs) > 0 && req.KbIDs[0] != "" {
-		kbIDs := req.KbIDs
-		if len(kbIDs) == 1 {
-			filterParts = append(filterParts, fmt.Sprintf("kb_id = '%s'", kbIDs[0]))
-		} else {
-			kbIDStr := strings.Join(kbIDs, "', '")
-			filterParts = append(filterParts, fmt.Sprintf("kb_id IN ('%s')", kbIDStr))
-		}
-	}
-
-	// DocIDs filters by doc_id (document ID) to find all chunks belonging to a document
-	// This is used by ChunkService.List() to list all chunks for a document
-	if len(req.DocIDs) > 0 {
-		if len(req.DocIDs) == 1 {
-			filterParts = append(filterParts, fmt.Sprintf("doc_id = '%s'", req.DocIDs[0]))
-		} else {
-			docIDs := strings.Join(req.DocIDs, "', '")
-			filterParts = append(filterParts, fmt.Sprintf("doc_id IN ('%s')", docIDs))
-		}
-	}
-
-	// Only add available_int filter when there's text/vector match or AvailableInt is explicitly set
-	// This matches Python's behavior where chunk_list doesn't filter by available_int
-	if !isMetadataTable && (hasTextMatch || hasVectorMatch || req.AvailableInt != nil) {
-		if req.AvailableInt != nil {
-			filterParts = append(filterParts, fmt.Sprintf("available_int=%d", *req.AvailableInt))
-		} else {
-			filterParts = append(filterParts, "available_int=1")
-		}
-	}
-
-	filterStr := strings.Join(filterParts, " AND ")
-
-	// Build order_by
-	var orderBy *OrderByExpr
-	if req.OrderBy != "" {
-		orderBy = &OrderByExpr{Fields: []OrderByField{}}
-		// Parse order_by field and direction
-		fields := strings.Split(req.OrderBy, ",")
-		for _, field := range fields {
-			field = strings.TrimSpace(field)
-			if strings.HasSuffix(field, " desc") || strings.HasSuffix(field, " DESC") {
-				fieldName := strings.TrimSuffix(field, " desc")
-				fieldName = strings.TrimSuffix(fieldName, " DESC")
-				orderBy.Fields = append(orderBy.Fields, OrderByField{Field: fieldName, Type: SortDesc})
-			} else {
-				orderBy.Fields = append(orderBy.Fields, OrderByField{Field: field, Type: SortAsc})
+		// Handle must_not specially
+		if k == "must_not" {
+			if m, ok := v.(map[string]interface{}); ok {
+				for kk, vv := range m {
+					if kk == "exists" {
+						// For must_not exists, use !='' since we don't have table schema
+						cond = append(cond, fmt.Sprintf("NOT (%v!='')", vv))
+					}
+				}
 			}
+			continue
 		}
-	}
 
-	// rank_feature support
-	var rankFeature map[string]float64
-	if req.RankFeature != nil {
-		rankFeature = req.RankFeature
-	}
+		// Handle exists specially (without table schema, use string comparison)
+		if k == "exists" {
+			cond = append(cond, fmt.Sprintf("%v!=''", v))
+			continue
+		}
 
-	// Results from all tables
-	var allResults []map[string]interface{}
-	totalHits := int64(0)
-
-	// Search across all tables
-	for _, indexName := range req.IndexNames {
-		// Determine table names to search
-		var tableNames []string
-		if strings.HasPrefix(indexName, "ragflow_doc_meta_") {
-			tableNames = []string{indexName}
-		} else {
-			// For each KB ID, create a table name
-			kbIDs := req.KbIDs
-			if len(kbIDs) == 0 {
-				// If no KB IDs, use the index name directly
-				kbIDs = []string{""}
+		// Handle keyword fields (using full-text filter)
+		if fieldKeyword(k) {
+			// For keyword fields, values are always treated as strings for filter_fulltext
+			switch val := v.(type) {
+			case []string:
+				var inCond []string
+				for _, item := range val {
+					inCond = append(inCond, fmt.Sprintf("filter_fulltext('%s', '%s')",
+						convertMatchingField(k), escapeFilterValue(item)))
+				}
+				if len(inCond) > 0 {
+					cond = append(cond, "("+strings.Join(inCond, " or ")+")")
+				}
+			case []interface{}:
+				var inCond []string
+				for _, item := range val {
+					if s, ok := item.(string); ok {
+						inCond = append(inCond, fmt.Sprintf("filter_fulltext('%s', '%s')",
+							convertMatchingField(k), escapeFilterValue(s)))
+					} else {
+						inCond = append(inCond, fmt.Sprintf("filter_fulltext('%s', '%s')",
+							convertMatchingField(k), escapeFilterValue(fmt.Sprintf("%v", item))))
+					}
+				}
+				if len(inCond) > 0 {
+					cond = append(cond, "("+strings.Join(inCond, " or ")+")")
+				}
+			case string:
+				cond = append(cond, fmt.Sprintf("filter_fulltext('%s', '%s')",
+					convertMatchingField(k), escapeFilterValue(val)))
+			default:
+				cond = append(cond, fmt.Sprintf("filter_fulltext('%s', '%s')",
+					convertMatchingField(k), escapeFilterValue(fmt.Sprintf("%v", v))))
 			}
-			for _, kbID := range kbIDs {
-				if kbID == "" {
-					tableNames = append(tableNames, indexName)
+			continue
+		}
+
+		// Handle list values (mixed types - strings get quotes, numbers don't)
+		if list, ok := v.([]interface{}); ok && len(list) > 0 {
+			var strItems, numItems []string
+			for _, item := range list {
+				if s, ok := item.(string); ok {
+					strItems = append(strItems, fmt.Sprintf("'%s'", escapeFilterValue(s)))
+				} else if n, ok := item.(int); ok {
+					numItems = append(numItems, strconv.Itoa(n))
+				} else if n, ok := item.(int64); ok {
+					numItems = append(numItems, strconv.FormatInt(n, 10))
+				} else if f, ok := item.(float64); ok {
+					numItems = append(numItems, strconv.FormatFloat(f, 'f', -1, 64))
+				} else if s, ok := item.(fmt.Stringer); ok {
+					strItems = append(strItems, fmt.Sprintf("'%s'", escapeFilterValue(s.String())))
 				} else {
-					tableNames = append(tableNames, fmt.Sprintf("%s_%s", indexName, kbID))
+					strItems = append(strItems, fmt.Sprintf("'%s'", escapeFilterValue(fmt.Sprintf("%v", item))))
 				}
 			}
-		}
-
-		// Search each table
-		// 1. First try with min_match=0.3 (30%)
-		// 2. If no results and has doc_id filter: search without match
-		// 3. If no results and no doc_id filter: retry with min_match=0.1 (10%) and lower similarity
-		minMatch := 0.3
-		hasDocIDFilter := len(req.DocIDs) > 0
-
-		for _, tableName := range tableNames {
-			fmt.Printf("[DEBUG] Searching table: %s\n", tableName)
-			// Try to get table
-			_, err := db.GetTable(tableName)
-			if err != nil {
-				// Table doesn't exist, skip
-				continue
-			}
-
-			// Build query for this table
-			result, err := e.executeTableSearch(db, tableName, outputColumns, req.Question, req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, req.SimilarityThreshold, minMatch)
-			if err != nil {
-				// Skip this table on error
-				continue
-			}
-
-			allResults = append(allResults, result.Chunks...)
-			totalHits += result.Total
-		}
-
-		// If no results, try fallback strategies
-		if totalHits == 0 && (hasTextMatch || hasVectorMatch) {
-			fmt.Printf("[DEBUG] No results, trying fallback strategies\n")
-			allResults = nil
-			totalHits = 0
-
-			if hasDocIDFilter {
-				// If has doc_id filter, search without match
-				fmt.Printf("[DEBUG] Retry with no match (has doc_id filter)\n")
-				for _, tableName := range tableNames {
-					_, err := db.GetTable(tableName)
-					if err != nil {
-						continue
-					}
-					// Search without match - pass empty question
-					result, err := e.executeTableSearch(db, tableName, outputColumns, "", req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, req.SimilarityThreshold, 0.0)
-					if err != nil {
-						continue
-					}
-					allResults = append(allResults, result.Chunks...)
-					totalHits += result.Total
+			if len(strItems) > 0 {
+				if len(strItems) == 1 {
+					cond = append(cond, fmt.Sprintf("%s=%s", k, strItems[0]))
+				} else {
+					cond = append(cond, fmt.Sprintf("%s IN (%s)", k, strings.Join(strItems, ", ")))
 				}
+			}
+			if len(numItems) > 0 {
+				if len(numItems) == 1 {
+					cond = append(cond, fmt.Sprintf("%s=%s", k, numItems[0]))
+				} else {
+					cond = append(cond, fmt.Sprintf("%s IN (%s)", k, strings.Join(numItems, ", ")))
+				}
+			}
+			continue
+		}
+
+		if list, ok := v.([]string); ok && len(list) > 0 {
+			if len(list) == 1 {
+				cond = append(cond, fmt.Sprintf("%s='%s'", k, escapeFilterValue(list[0])))
 			} else {
-				// Retry with lower min_match and similarity
-				fmt.Printf("[DEBUG] Retry with min_match=0.1, similarity=0.17\n")
-				lowerThreshold := 0.17
-				for _, tableName := range tableNames {
-					_, err := db.GetTable(tableName)
-					if err != nil {
-						continue
-					}
-					result, err := e.executeTableSearch(db, tableName, outputColumns, req.Question, req.Vector, filterStr, topK, pageSize, offset, orderBy, rankFeature, lowerThreshold, 0.1)
-					if err != nil {
-						continue
-					}
-					allResults = append(allResults, result.Chunks...)
-					totalHits += result.Total
+				var items []string
+				for _, item := range list {
+					items = append(items, fmt.Sprintf("'%s'", escapeFilterValue(item)))
 				}
+				cond = append(cond, fmt.Sprintf("%s IN (%s)", k, strings.Join(items, ", ")))
 			}
+			continue
 		}
-	}
 
-	if hasTextMatch || hasVectorMatch {
-		allResults = calculateScores(allResults, scoreColumn, PAGERANK_FLD)
-	}
-
-	if hasTextMatch || hasVectorMatch {
-		allResults = sortByScore(allResults, len(allResults))
-	}
-
-	// Apply threshold filter to combined results
-	fmt.Printf("[DEBUG] Threshold check: SimilarityThreshold=%f, hasVectorMatch=%v, hasTextMatch=%v\n", req.SimilarityThreshold, hasVectorMatch, hasTextMatch)
-	if req.SimilarityThreshold > 0 && hasVectorMatch {
-		var filteredResults []map[string]interface{}
-		for _, chunk := range allResults {
-			score := getScore(chunk)
-			chunkID := ""
-			if id, ok := chunk["id"]; ok {
-				chunkID = fmt.Sprintf("%v", id)
+		if list, ok := v.([]int); ok && len(list) > 0 {
+			if len(list) == 1 {
+				cond = append(cond, fmt.Sprintf("%s=%d", k, list[0]))
+			} else {
+				var strs []string
+				for _, n := range list {
+					strs = append(strs, strconv.Itoa(n))
+				}
+				cond = append(cond, fmt.Sprintf("%s IN (%s)", k, strings.Join(strs, ", ")))
 			}
-			fmt.Printf("[DEBUG] Threshold filter: id=%s, score=%f, threshold=%f, pass=%v\n", chunkID, score, req.SimilarityThreshold, score >= req.SimilarityThreshold)
-			if score >= req.SimilarityThreshold {
-				filteredResults = append(filteredResults, chunk)
-			}
+			continue
 		}
-		fmt.Printf("[DEBUG] After threshold filter (combined): %d -> %d chunks\n", len(allResults), len(filteredResults))
-		allResults = filteredResults
+
+		// Handle numeric values (no quotes)
+		if utility.IsNumericValue(v) {
+			cond = append(cond, fmt.Sprintf("%s=%v", k, v))
+			continue
+		}
+
+		// Handle string values (with quotes and escaping)
+		if str, ok := v.(string); ok {
+			cond = append(cond, fmt.Sprintf("%s='%s'", k, escapeFilterValue(str)))
+			continue
+		}
+
+		// Fallback: treat as string
+		cond = append(cond, fmt.Sprintf("%s='%s'", k, escapeFilterValue(fmt.Sprintf("%v", v))))
 	}
 
-	// Limit to pageSize
-	if len(allResults) > pageSize {
-		allResults = allResults[:pageSize]
+	if len(cond) == 0 {
+		return ""
 	}
-
-	return &types.SearchResponse{
-		Chunks: allResults,
-		Total:  totalHits,
-	}, nil
+	return strings.Join(cond, " AND ")
 }
 
 // calculateScores calculates _score = score_column + pagerank
 func calculateScores(chunks []map[string]interface{}, scoreColumn, pagerankField string) []map[string]interface{} {
-	fmt.Printf("[DEBUG] calculateScores: scoreColumn=%s, pagerankField=%s\n", scoreColumn, pagerankField)
 	for i := range chunks {
 		score := 0.0
 		if scoreVal, ok := chunks[i][scoreColumn]; ok {
 			if f, ok := utility.ToFloat64(scoreVal); ok {
 				score += f
-				fmt.Printf("[DEBUG]   chunk[%d]: %s=%f\n", i, scoreColumn, f)
 			}
 		}
-		if pagerankVal, ok := chunks[i][pagerankField]; ok {
-			if f, ok := utility.ToFloat64(pagerankVal); ok {
-				score += f
+		if pagerankField != "" {
+			if prVal, ok := chunks[i][pagerankField]; ok {
+				if f, ok := utility.ToFloat64(prVal); ok {
+					score += f
+				}
 			}
 		}
 		chunks[i]["_score"] = score
-		fmt.Printf("[DEBUG]   chunk[%d]: _score=%f\n", i, score)
 	}
 	return chunks
 }
@@ -668,15 +845,11 @@ func sortByScore(chunks []map[string]interface{}, limit int) []map[string]interf
 	}
 
 	// Sort by _score descending
-	for i := 0; i < len(chunks)-1; i++ {
-		for j := i + 1; j < len(chunks); j++ {
-			scoreI := getScore(chunks[i])
-			scoreJ := getScore(chunks[j])
-			if scoreI < scoreJ {
-				chunks[i], chunks[j] = chunks[j], chunks[i]
-			}
-		}
-	}
+	sort.Slice(chunks, func(i, j int) bool {
+		scoreI := getChunkScore(chunks[i])
+		scoreJ := getChunkScore(chunks[j])
+		return scoreI > scoreJ
+	})
 
 	// Limit
 	if len(chunks) > limit && limit > 0 {
@@ -686,270 +859,244 @@ func sortByScore(chunks []map[string]interface{}, limit int) []map[string]interf
 	return chunks
 }
 
-func getScore(chunk map[string]interface{}) float64 {
-	// Check _score first
-	if score, ok := chunk["_score"].(float64); ok {
-		return score
+// getChunkScore extracts the score from a chunk
+func getChunkScore(chunk map[string]interface{}) float64 {
+	if v, ok := chunk["_score"].(float64); ok {
+		return v
 	}
-	if score, ok := chunk["_score"].(int); ok {
-		return float64(score)
+	if v, ok := chunk["SCORE"].(float64); ok {
+		return v
 	}
-	if score, ok := chunk["_score"].(int64); ok {
-		return float64(score)
-	}
-	// Fallback to SCORE (for fusion) or SIMILARITY (for vector-only)
-	if score, ok := chunk["SCORE"].(float64); ok {
-		return score
-	}
-	if score, ok := chunk["SIMILARITY"].(float64); ok {
-		return score
+	if v, ok := chunk["SIMILARITY"].(float64); ok {
+		return v
 	}
 	return 0.0
 }
 
-// executeTableSearch executes search on a single table
-func (e *infinityEngine) executeTableSearch(db *infinity.Database, tableName string, outputColumns []string, question string, vector []float64, filterStr string, topK, pageSize, offset int, orderBy *OrderByExpr, rankFeature map[string]float64, similarityThreshold float64, minMatch float64) (*types.SearchResponse, error) {
-	// Debug logging
-	fmt.Printf("[DEBUG] executeTableSearch: question=%s, topK=%d, pageSize=%d, similarityThreshold=%f, filterStr=%s\n", question, topK, pageSize, similarityThreshold, filterStr)
-
-	// Get table
-	table, err := db.GetTable(tableName)
-	if err != nil {
-		return nil, err
+// GetAggregation aggregates field values from search results.
+//
+// Example:
+// input chunks:
+//
+//	[{"docnm_kwd": "docA"}, {"docnm_kwd": "docA"}, {"docnm_kwd": "docB"}]
+//
+// GetAggregation(chunks, "docnm_kwd") returns:
+//
+//	[{"key": "docA", "count": 2}, {"key": "docB", "count": 1}]
+//
+// For tag_kwd field, splits values by "###" separator.
+// For other fields, uses comma separation.
+func (e *infinityEngine) GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{} {
+	if len(chunks) == 0 {
+		return []map[string]interface{}{}
 	}
 
-	// Build query using Table's chainable methods
-	hasTextMatch := question != ""
-	hasVectorMatch := len(vector) > 0
-
-	table = table.Output(outputColumns)
-
-	// Define text fields
-	textFields := []string{
-		"title_tks^10",
-		"title_sm_tks^5",
-		"important_kwd^30",
-		"important_tks^20",
-		"question_tks^20",
-		"content_ltks^2",
-		"content_sm_ltks",
+	// Check if field exists in first chunk
+	hasField := false
+	for _, chunk := range chunks {
+		if _, ok := chunk[fieldName]; ok {
+			hasField = true
+			break
+		}
+	}
+	if !hasField {
+		return []map[string]interface{}{}
 	}
 
-	// Convert field names for Infinity
-	var convertedFields []string
-	for _, f := range textFields {
-		cf := convertMatchingField(f)
-		convertedFields = append(convertedFields, cf)
-	}
-	fields := strings.Join(convertedFields, ",")
-
-	// Format question
-	formattedQuestion := formatQuestion(question)
-
-	// Compute full filter with filter_fulltext for MatchDense extra_options
-	var fullFilterWithFulltext string
-	if filterStr != "" && fields != "" {
-		fullFilterWithFulltext = fmt.Sprintf("(%s) AND FILTER_FULLTEXT('%s', '%s')", filterStr, fields, formattedQuestion)
-	}
-
-	// Add text match if question is provided
-	if hasTextMatch {
-		extraOptions := map[string]string{
-			"topn":                 fmt.Sprintf("%d", topK),
-			"minimum_should_match": fmt.Sprintf("%d%%", int(minMatch*100)),
+	// Count occurrences
+	tagCounts := make(map[string]int)
+	for _, chunk := range chunks {
+		value, ok := chunk[fieldName]
+		if !ok || value == nil {
+			continue
 		}
 
-		// Add rank_features support
-		if rankFeature != nil {
-			var rankFeaturesList []string
-			for featureName, weight := range rankFeature {
-				rankFeaturesList = append(rankFeaturesList, fmt.Sprintf("%s^%s^%f", TAG_FLD, featureName, weight))
+		// Handle string value
+		if valueStr, ok := value.(string); ok {
+			if valueStr == "" {
+				continue
 			}
-			if len(rankFeaturesList) > 0 {
-				extraOptions["rank_features"] = strings.Join(rankFeaturesList, ",")
+
+			var tags []string
+			// Split by "###" for tag_kwd field
+			if fieldName == "tag_kwd" && strings.Contains(valueStr, "###") {
+				for _, tag := range strings.Split(valueStr, "###") {
+					tag = strings.TrimSpace(tag)
+					if tag != "" {
+						tags = append(tags, tag)
+					}
+				}
+			} else {
+				// Fallback to comma separation
+				for _, tag := range strings.Split(valueStr, ",") {
+					tag = strings.TrimSpace(tag)
+					if tag != "" {
+						tags = append(tags, tag)
+					}
+				}
+			}
+
+			for _, tag := range tags {
+				tagCounts[tag]++
+			}
+			continue
+		}
+
+		// Handle list value
+		if valueList, ok := value.([]interface{}); ok {
+			for _, item := range valueList {
+				if itemStr, ok := item.(string); ok {
+					tag := strings.TrimSpace(itemStr)
+					if tag != "" {
+						tagCounts[tag]++
+					}
+				}
 			}
 		}
-
-		table = table.MatchText(fields, formattedQuestion, topK, extraOptions)
-		fmt.Printf("[DEBUG] MatchTextExpr: fields=%s, matching_text=%s, topn=%d, extra_options=%v\n", fields, formattedQuestion, topK, extraOptions)
 	}
 
-	// Add vector match if provided
-	if hasVectorMatch {
-		vectorSize := len(vector)
-		fieldName := fmt.Sprintf("q_%d_vec", vectorSize)
-		threshold := similarityThreshold
-		if threshold <= 0 {
-			threshold = 0.1 // default
-		}
-		extraOptions := map[string]string{
-			// Add threshold
-			"threshold": fmt.Sprintf("%f", threshold),
-		}
-
-		// Add filter with filter_fulltext, add to MatchDense extra_options
-		// This is the full filter that includes both available_int=1 AND filter_fulltext
-		if fullFilterWithFulltext != "" {
-			extraOptions["filter"] = fullFilterWithFulltext
-			fmt.Printf("[DEBUG] filterStr=%s, fullFilterWithFulltext=%s\n", filterStr, fullFilterWithFulltext)
-		}
-
-		fmt.Printf("[DEBUG] MatchDenseExpr: field=%s, topn=%d, extra_options=%v\n", fieldName, topK, extraOptions)
-
-		table = table.MatchDense(fieldName, vector, "float", "cosine", topK, extraOptions)
+	if len(tagCounts) == 0 {
+		return []map[string]interface{}{}
 	}
 
-	// Add fusion (for text+vector combination)
-	if hasTextMatch && hasVectorMatch {
-		fusionParams := map[string]interface{}{
-			"normalize": "atan",
-			"weights":   "0.05,0.95",
-		}
-		fmt.Printf("[DEBUG] FusionExpr: method=weighted_sum, topn=%d, fusion_params=%v\n", topK, fusionParams)
-		fmt.Printf("[DEBUG] Before Fusion - table has MatchText=%v, MatchDense=%v\n", hasTextMatch, hasVectorMatch)
-		table = table.Fusion("weighted_sum", topK, fusionParams)
+	// Convert to slice and sort by count descending
+	type tagCountPair struct {
+		tag   string
+		count int
+	}
+	pairs := make([]tagCountPair, 0, len(tagCounts))
+	for tag, count := range tagCounts {
+		pairs = append(pairs, tagCountPair{tag, count})
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		return pairs[i].count > pairs[j].count
+	})
+
+	// Convert to []map[string]interface{} directly
+	result := make([]map[string]interface{}, len(pairs))
+	for i, p := range pairs {
+		result[i] = map[string]interface{}{"key": p.tag, "count": p.count}
 	}
 
-	// Add order_by if provided
-	if orderBy != nil && len(orderBy.Fields) > 0 {
-		var sortFields [][2]interface{}
-		for _, field := range orderBy.Fields {
-			sortType := infinity.SortTypeAsc
-			if field.Type == SortDesc {
-				sortType = infinity.SortTypeDesc
-			}
-			sortFields = append(sortFields, [2]interface{}{field.Field, sortType})
-		}
-		table = table.Sort(sortFields)
-	}
-
-	// Add filter when there's no text/vector match (like metadata queries)
-	if !hasTextMatch && !hasVectorMatch && filterStr != "" {
-		fmt.Printf("[DEBUG] Adding filter for no-match query: %s\n", filterStr)
-		table = table.Filter(filterStr)
-	}
-
-	// Set limit and offset
-	// Use topK to get more results from Infinity, then filter/sort in Go
-	table = table.Limit(topK)
-	if offset > 0 {
-		table = table.Offset(offset)
-	}
-
-	// Execute query - get the raw query and execute via SDK
-	result, err := e.executeQuery(table)
-	if err != nil {
-		return nil, err
-	}
-
-	// Debug logging - show returned chunks
-	scoreColumn := "SIMILARITY"
-	if hasTextMatch {
-		scoreColumn = "SCORE"
-	}
-	fmt.Printf("[DEBUG] executeTableSearch returned %d chunks\n", len(result.Chunks))
-
-	result.Chunks = calculateScores(result.Chunks, scoreColumn, PAGERANK_FLD)
-
-	// Debug after calculateScores
-	for i, chunk := range result.Chunks {
-		chunkID := ""
-		if id, ok := chunk["id"]; ok {
-			chunkID = fmt.Sprintf("%v", id)
-		}
-		score := getScore(chunk)
-		fmt.Printf("[DEBUG]   chunk[%d]: id=%s, _score=%f\n", i, chunkID, score)
-	}
-
-	// Sort by score
-	result.Chunks = sortByScore(result.Chunks, len(result.Chunks))
-
-	if len(result.Chunks) > pageSize {
-		result.Chunks = result.Chunks[:pageSize]
-	}
-	result.Total = int64(len(result.Chunks))
-
-	return result, nil
+	return result
 }
 
-// executeQuery executes the query and returns results
-func (e *infinityEngine) executeQuery(table *infinity.Table) (*types.SearchResponse, error) {
-	// Use ToResult() to execute query
-	result, err := table.ToResult()
-	if err != nil {
-		return nil, fmt.Errorf("Infinity query failed: %w", err)
+// GetDocIDs extracts document IDs from search results.
+// Extracts "id" field from each chunk and returns as a list.
+func (e *infinityEngine) GetDocIDs(chunks []map[string]interface{}) []string {
+	if len(chunks) == 0 {
+		return nil
 	}
-
-	// Debug: print raw result info
-	// fmt.Printf("[DEBUG] Infinity raw result: %+v\n", result)
-
-	// Convert result to SearchResponse format
-	// The SDK returns QueryResult with Data as map[string][]interface{}
-	qr, ok := result.(*infinity.QueryResult)
-	if !ok {
-		return &types.SearchResponse{
-			Chunks: []map[string]interface{}{},
-			Total:  0,
-		}, nil
-	}
-
-	// Convert to chunks format
-	chunks := make([]map[string]interface{}, 0)
-	for colName, colData := range qr.Data {
-		for i, val := range colData {
-			// Ensure we have a row for this index
-			for len(chunks) <= i {
-				chunks = append(chunks, make(map[string]interface{}))
-			}
-			chunks[i][colName] = val
+	ids := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		if id, ok := chunk["id"].(string); ok {
+			ids = append(ids, id)
 		}
 	}
+	return ids
+}
 
-	// Post-process: convert nil/empty values to empty slices for array-like fields
-	arrayFields := map[string]bool{
-		"doc_type_kwd":    true,
-		"important_kwd":   true,
-		"important_tks":   true,
-		"question_tks":    true,
-		"authors_tks":     true,
-		"authors_sm_tks":  true,
-		"title_tks":       true,
-		"title_sm_tks":    true,
-		"content_ltks":    true,
-		"content_sm_ltks": true,
+// GetHighlight generates highlighted text snippets for search results.
+// Matches keywords in text and wraps them with <em> tags.
+func (e *infinityEngine) GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
+	result := make(map[string]string)
+	if len(chunks) == 0 || len(keywords) == 0 {
+		return result
 	}
-	for i := range chunks {
-		for colName := range arrayFields {
-			if val, ok := chunks[i][colName]; !ok || val == nil || val == "" {
-				chunks[i][colName] = []interface{}{}
+
+	// Check if field exists
+	hasField := false
+	for _, chunk := range chunks {
+		if _, ok := chunk[fieldName]; ok {
+			hasField = true
+			break
+		}
+	}
+	if !hasField {
+		// Try alternative field names
+		if fieldName == "content_with_weight" {
+			if _, ok := chunks[0]["content"]; ok {
+				fieldName = "content"
+				hasField = true
 			}
 		}
-		// Convert position_int from hex string to array format
-		if posVal, ok := chunks[i]["position_int"].(string); ok {
-			chunks[i]["position_int"] = utility.ConvertHexToPositionIntArray(posVal)
+	}
+	if !hasField {
+		return result
+	}
+
+	emTag := regexp.MustCompile(`<em>[^<>]+</em>`)
+
+	for _, chunk := range chunks {
+		id := ""
+		if idVal, ok := chunk["id"].(string); ok {
+			id = idVal
+		}
+
+		txt, ok := chunk[fieldName].(string)
+		if !ok || txt == "" {
+			continue
+		}
+
+		// Check if already highlighted
+		if emTag.MatchString(txt) {
+			result[id] = txt
+			continue
+		}
+
+		// Replace newlines with spaces
+		txt = regexp.MustCompile(`[\r\n]`).ReplaceAllString(txt, " ")
+
+		// Split by sentence delimiters
+		delimiters := regexp.MustCompile(`[.?!;\n]`)
+		segments := delimiters.Split(txt, -1)
+
+		var highlightedSegments []string
+		for _, segment := range segments {
+			// Check if segment is English or contains keywords
+			englishCount := 0
+			totalCount := 0
+			for _, r := range segment {
+				if unicode.IsLetter(r) {
+					totalCount++
+					if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+						englishCount++
+					}
+				}
+			}
+			isEnglish := totalCount > 0 && float64(englishCount)/float64(totalCount) > 0.5
+			segmentToCheck := segment
+			if isEnglish {
+				// For English: match whole words with boundaries
+				for _, kw := range keywords {
+					re := regexp.MustCompile(`(^|[ .?/'\"\(\)!,:;-])` + regexp.QuoteMeta(kw) + `([ .?/'\"\(\)!,:;-]|$)`)
+					segmentToCheck = re.ReplaceAllString(segmentToCheck, "$1<em>"+kw+"</em>$2")
+				}
+			} else {
+				// For non-English: simple keyword replacement (sorted by length desc for longer matches first)
+				sortedKeywords := make([]string, len(keywords))
+				copy(sortedKeywords, keywords)
+				sort.Slice(sortedKeywords, func(i, j int) bool {
+					return len(sortedKeywords[i]) > len(sortedKeywords[j])
+				})
+				for _, kw := range sortedKeywords {
+					re := regexp.MustCompile(regexp.QuoteMeta(kw))
+					segmentToCheck = re.ReplaceAllString(segmentToCheck, "<em>"+kw+"</em>")
+				}
+			}
+
+			// Check if any keywords were highlighted
+			if emTag.MatchString(segmentToCheck) {
+				highlightedSegments = append(highlightedSegments, segmentToCheck)
+			}
+		}
+
+		if len(highlightedSegments) > 0 {
+			result[id] = "..." + strings.Join(highlightedSegments, "...") + "..."
 		} else {
-			chunks[i]["position_int"] = []interface{}{}
-		}
-		// Convert page_num_int and top_int from hex string to array
-		for _, colName := range []string{"page_num_int", "top_int"} {
-			if val, ok := chunks[i][colName].(string); ok {
-				chunks[i][colName] = utility.ConvertHexToIntArray(val)
-			}
+			result[id] = txt
 		}
 	}
 
-	return &types.SearchResponse{
-		Chunks: chunks,
-		Total:  int64(len(chunks)),
-	}, nil
-}
-
-// contains checks if slice contains string
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
+	return result
 }
