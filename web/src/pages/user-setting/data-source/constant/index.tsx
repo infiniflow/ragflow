@@ -105,6 +105,12 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.AIRTABLE]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.MYSQL]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.POSTGRESQL]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.WEBDAV]: {
      syncDeletedFiles: true,
   },

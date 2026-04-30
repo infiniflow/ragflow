@@ -12,8 +12,9 @@ from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
     ConnectorValidationError,
 )
-from common.data_source.interfaces import LoadConnector, PollConnector, SecondsSinceUnixEpoch
-from common.data_source.models import Document
+
+from common.data_source.interfaces import LoadConnector, PollConnector, SecondsSinceUnixEpoch, SlimConnectorWithPermSync
+from common.data_source.models import Document, GenerateSlimDocumentOutput, SlimDocument
 
 
 class DatabaseType(str, Enum):
@@ -22,7 +23,7 @@ class DatabaseType(str, Enum):
     POSTGRESQL = "postgresql"
 
 
-class RDBMSConnector(LoadConnector, PollConnector):
+class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     """
     RDBMS connector for importing data from MySQL and PostgreSQL databases.
     
@@ -73,6 +74,77 @@ class RDBMSConnector(LoadConnector, PollConnector):
         
         self._connection = None
         self._credentials: Dict[str, Any] = {}
+
+    def _quote_identifier(self, name: str) -> str:
+        if self.db_type == DatabaseType.MYSQL:
+            return "`" + name.replace("`", "") + "`"
+        return '"' + name.replace('"', "") + '"'
+
+    def _logical_document_id(self, pk: Any) -> str:
+        return f"{self.db_type}:{self.database}:{pk}"
+
+    def _slim_snapshot_sql_list(self) -> list[str]:
+        if not self.id_column:
+            raise ConnectorValidationError(
+                "RDBMS slim snapshot requires id_column so document IDs match ingestion."
+            )
+        id_col = self._quote_identifier(self.id_column)
+        if self.query:
+            base = self._build_query_with_time_filter(None, None).strip().rstrip(";")
+            return [f"SELECT DISTINCT {id_col} FROM ({base}) AS _ragflow_slim"]
+        tables = self._get_tables()
+        if len(tables) > 1:
+            raise ConnectorValidationError(
+                "Deleted-file sync for queryless RDBMS connectors requires a single-table query or table-scoped document IDs."
+            )
+        return [
+            f"SELECT DISTINCT {id_col} FROM {self._quote_identifier(table)}"
+            for table in tables
+        ]
+
+    def retrieve_all_slim_docs_perm_sync(
+        self,
+        callback: Any = None,
+    ) -> GenerateSlimDocumentOutput:
+        """
+        List primary-key values for rows matching the connector query (no content fetch).
+
+        Requires ``id_column``; IDs match :meth:`_row_to_document`.
+        """
+        del callback
+        logging.info(
+            "RDBMS slim snapshot (%s) database=%s id_column=%s",
+            self.db_type.value,
+            self.database,
+            self.id_column,
+        )
+        batch: list[SlimDocument] = []
+        try:
+            sql_list = self._slim_snapshot_sql_list()
+            connection = self._get_connection()
+            for sql in sql_list:
+                cursor = connection.cursor()
+                try:
+                    logging.debug("RDBMS slim snapshot SQL: %s", sql[:300])
+                    cursor.execute(sql)
+                    for row in cursor:
+                        pk = row[0]
+                        if pk is None:
+                            continue
+                        batch.append(SlimDocument(id=self._logical_document_id(pk)))
+                        if len(batch) >= self.batch_size:
+                            yield batch
+                            batch = []
+                finally:
+                    try:
+                        cursor.fetchall()
+                    except Exception:
+                        pass
+                    cursor.close()
+            if batch:
+                yield batch
+        finally:
+            self._close_connection()
 
     def load_credentials(self, credentials: Dict[str, Any]) -> Dict[str, Any] | None:
         """Load database credentials."""
@@ -211,7 +283,7 @@ class RDBMSConnector(LoadConnector, PollConnector):
         content = "\n\n".join(content_parts)
         
         if self.id_column and self.id_column in row_dict:
-            doc_id = f"{self.db_type}:{self.database}:{row_dict[self.id_column]}"
+            doc_id = self._logical_document_id(row_dict[self.id_column])
         else:
             content_hash = hashlib.md5(content.encode()).hexdigest()
             doc_id = f"{self.db_type}:{self.database}:{content_hash}"
