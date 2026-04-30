@@ -107,7 +107,7 @@ export const DataSourceFeatureVisibilityMap: Partial<
   },
   [DataSourceKey.WEBDAV]: {
      syncDeletedFiles: true,
-  }
+  },
   [DataSourceKey.ZENDESK]: {
     syncDeletedFiles: true,
   },
