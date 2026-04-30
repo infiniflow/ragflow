@@ -1545,14 +1545,37 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	effort := cmd.Params["effort"].(string)
 	verbosity := cmd.Params["verbosity"].(string)
 
-	url := fmt.Sprintf("/chat/completions")
+	url := "/chat/completions"
+
+	message = strings.TrimSpace(message)
+	var formattedMessage []map[string]interface{}
+
+	// Check if message is JSON (multimodal content)
+	if (strings.HasPrefix(message, "[") && strings.HasSuffix(message, "]")) ||
+		(strings.HasPrefix(message, "{") && strings.HasSuffix(message, "}")) {
+		// Use raw JSON for content
+		formattedMessage = []map[string]interface{}{
+			{
+				"role":    "user",
+				"content": json.RawMessage(message),
+			},
+		}
+	} else {
+		// Simple text content - just use string
+		formattedMessage = []map[string]interface{}{
+			{
+				"role":    "user",
+				"content": message,
+			},
+		}
+	}
 
 	payload := map[string]interface{}{
 		"provider_name": providerName,
 		"instance_name": instanceName,
 		"model_name":    modelName,
-		"message":       message,
-		"stream":        stream, // use stream API
+		"messages":      formattedMessage,
+		"stream":        stream,
 		"thinking":      thinking,
 	}
 
