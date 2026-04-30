@@ -49,19 +49,14 @@ class LDAPClient:
         self.bind_user_dn = config.get("bind_user_dn")
         self.bind_user_password = config.get("bind_user_password")
         self.user_search_base = config.get("user_search_base")
-        self.user_search_filter = config.get(
-            "user_search_filter", "(uid={username})"
-        )
+        self.user_search_filter = config.get("user_search_filter", "(uid={username})")
 
         self.email_attr = config.get("email_attr", "mail")
         self.nickname_attr = config.get("nickname_attr", "cn")
         self.username_attr = config.get("username_attr", "uid")
 
         if not self.bind_dn_template and not self.bind_user_dn:
-            raise ValueError(
-                "LDAP config must define either 'bind_dn_template' "
-                "or 'bind_user_dn' for search-then-bind."
-            )
+            raise ValueError("LDAP config must define either 'bind_dn_template' or 'bind_user_dn' for search-then-bind.")
 
     def _server(self):
         from ldap3 import Server, Tls
@@ -85,7 +80,6 @@ class LDAPClient:
         Returns a :class:`UserInfo` on success. Raises :class:`LDAPAuthError`
         on invalid credentials or directory misconfiguration.
         """
-        from ldap3 import Connection
         from ldap3.core.exceptions import LDAPException
 
         if not username or not password:
@@ -135,9 +129,7 @@ class LDAPClient:
                 if self.user_search_base:
                     conn.search(
                         search_base=self.user_search_base,
-                        search_filter=f"(distinguishedName={user_dn})"
-                        if "dc=" not in user_dn.lower()
-                        else f"({self.username_attr}={self._escape(username)})",
+                        search_filter=f"(distinguishedName={user_dn})" if "dc=" not in user_dn.lower() else f"({self.username_attr}={self._escape(username)})",
                         attributes=attrs_wanted,
                     )
                     entry = conn.entries[0] if conn.entries else None
@@ -159,9 +151,7 @@ class LDAPClient:
         if not service_conn.bind():
             raise LDAPAuthError("LDAP service account bind failed.")
         try:
-            search_filter = self.user_search_filter.format(
-                username=self._escape(username)
-            )
+            search_filter = self.user_search_filter.format(username=self._escape(username))
             service_conn.search(
                 search_base=self.user_search_base,
                 search_filter=search_filter,

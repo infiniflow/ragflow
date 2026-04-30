@@ -88,6 +88,11 @@ export default {
       description:
         '免费注册以探索顶级 RAG 技术。 创建知识库和人工智能来增强您的业务',
       review: '来自 500 多条评论',
+      usernameLabel: '用户名',
+      usernamePlaceholder: '请输入用户名',
+      ldapTitle: '使用 {{provider}} 登录',
+      ldapDescription: '使用您的目录凭据进行登录。',
+      cancel: '取消',
     },
     header: {
       knowledgeBase: '知识库',

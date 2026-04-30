@@ -61,9 +61,7 @@ class TestDirectBind:
         bind_conn.bind.return_value = True
         bind_conn.entries = []
 
-        with patch("ldap3.Connection", return_value=bind_conn) as conn_cls, patch(
-            "ldap3.Server"
-        ):
+        with patch("ldap3.Connection", return_value=bind_conn) as conn_cls, patch("ldap3.Server"):
             info = cli.authenticate("alice", "secret")
 
         # Connection was constructed with the formatted DN.
@@ -116,9 +114,7 @@ class TestSearchThenBind:
         user_conn = MagicMock()
         user_conn.bind.return_value = True
 
-        with patch("ldap3.Connection", side_effect=[service_conn, user_conn]) as conn_cls, patch(
-            "ldap3.Server"
-        ):
+        with patch("ldap3.Connection", side_effect=[service_conn, user_conn]) as conn_cls, patch("ldap3.Server"):
             info = cli.authenticate("bob", "userpw")
 
         assert conn_cls.call_count == 2

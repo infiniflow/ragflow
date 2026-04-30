@@ -33,9 +33,7 @@ def get_auth_client(config):
     if channel_type == "":
         if config.get("issuer"):
             channel_type = "oidc"
-        elif config.get("host") and (
-            config.get("bind_dn_template") or config.get("bind_user_dn")
-        ):
+        elif config.get("host") and (config.get("bind_dn_template") or config.get("bind_user_dn")):
             channel_type = "ldap"
         else:
             channel_type = "oauth2"
