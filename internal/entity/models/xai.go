@@ -19,6 +19,7 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,6 +28,12 @@ import (
 	"time"
 )
 
+// nonStreamCallTimeout caps the time spent on a single non-streaming
+// request (ChatWithMessages, ListModels). The shared httpClient itself
+// has no client-wide timeout, so streaming requests can run as long as
+// the API keeps the SSE connection open.
+const nonStreamCallTimeout = 120 * time.Second
+
 // XAIModel implements ModelDriver for xAI (Grok models)
 type XAIModel struct {
 	BaseURL    map[string]string
@@ -34,19 +41,29 @@ type XAIModel struct {
 	httpClient *http.Client // Reusable HTTP client with connection pool
 }
 
-// NewXAIModel creates a new xAI model instance
+// NewXAIModel creates a new xAI model instance.
+//
+// We clone http.DefaultTransport so we keep Go's defaults for
+// ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
+// TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
+// the few connection-pool fields we care about.
+//
+// The Client itself has no Timeout. http.Client.Timeout would also
+// cap the time spent reading the response body, which would cut off
+// long-lived SSE streams in ChatStreamlyWithSender. Non-streaming
+// callers wrap each request with context.WithTimeout instead.
 func NewXAIModel(baseURL map[string]string, urlSuffix URLSuffix) *XAIModel {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns = 100
+	transport.MaxIdleConnsPerHost = 10
+	transport.IdleConnTimeout = 90 * time.Second
+	transport.DisableCompression = false
+
 	return &XAIModel{
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
-			},
+			Transport: transport,
 		},
 	}
 }
@@ -119,7 +136,10 @@ func (z *XAIModel) ChatWithMessages(modelName string, messages []Message, apiCon
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -365,7 +385,10 @@ func (z *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Models)
 
-	req, err := http.NewRequest("GET", url, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
