@@ -296,7 +296,8 @@ export const getDatasetLogsTableColumns = (
       header: t('processingType'),
       cell: ({ row }) => (
         <div className="flex items-center gap-2 text-text-primary">
-          {ProcessingType.knowledgeGraph === row.original.task_type && (
+          {(ProcessingType.knowledgeGraph === row.original.task_type ||
+            row.original.task_type === 'GraphRAG') && (
             <IconFontFill
               name={`knowledgegraph`}
               className="text-text-secondary"

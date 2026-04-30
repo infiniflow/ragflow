@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package contextengine
+package filesystem
 
 import (
 	stdctx "context"
@@ -540,6 +540,92 @@ func (p *FileProvider) downloadFile(ctx stdctx.Context, fileID string) ([]byte, 
 
 	// Return raw file content
 	return resp.Body, nil
+}
+
+// DeleteFile deletes a file or folder by its ID
+func (p *FileProvider) DeleteFile(ctx stdctx.Context, fileID string) error {
+	// Use JSON body format expected by Python backend: {"ids": ["file_id"]}
+	payload := map[string]interface{}{
+		"ids": []string{fileID},
+	}
+	resp, err := p.httpClient.Request("DELETE", "/files", true, "api", nil, payload)
+	if err != nil {
+		return fmt.Errorf("delete request failed: %w", err)
+	}
+
+	// Handle empty response (e.g., 204 No Content)
+	if len(resp.Body) == 0 {
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return nil
+		}
+		return fmt.Errorf("delete failed with status code: %d", resp.StatusCode)
+	}
+
+	var apiResp struct {
+		Code    int         `json:"code"`
+		Data    interface{} `json:"data"`
+		Message string      `json:"message"`
+	}
+
+	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if apiResp.Code != 0 {
+		return fmt.Errorf("delete failed: %s", apiResp.Message)
+	}
+
+	return nil
+}
+
+// DeleteFolderByPath deletes a folder by its path (e.g., "skills/hub11/skill-name")
+func (p *FileProvider) DeleteFolderByPath(ctx stdctx.Context, folderPath string) error {
+	parts := SplitPath(folderPath)
+	if len(parts) == 0 {
+		return fmt.Errorf("empty folder path")
+	}
+
+	// Find the folder ID by traversing the path
+	var folderID string
+	currentPath := ""
+
+	for i, part := range parts {
+		if i == 0 {
+			// First part - find in root
+			id, err := p.getFolderIDByName(ctx, part)
+			if err != nil {
+				return fmt.Errorf("folder not found: %s", part)
+			}
+			folderID = id
+			currentPath = part
+		} else {
+			// Subsequent parts - find in parent folder
+			result, err := p.listFilesByParentID(ctx, folderID, currentPath, nil)
+			if err != nil {
+				return fmt.Errorf("failed to list folder contents: %w", err)
+			}
+
+			found := false
+			for _, node := range result.Nodes {
+				if node.Name == part && node.Type == NodeTypeDirectory {
+					folderID = getString(node.Metadata["id"])
+					if folderID == "" {
+						return fmt.Errorf("folder ID not found for: %s", part)
+					}
+					currentPath = currentPath + "/" + part
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				return fmt.Errorf("folder not found: %s in %s", part, currentPath)
+			}
+		}
+	}
+
+	// Delete the folder
+	return p.DeleteFile(ctx, folderID)
 }
 
 // ==================== Conversion Functions ====================

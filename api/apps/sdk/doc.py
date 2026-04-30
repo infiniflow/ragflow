@@ -436,6 +436,8 @@ async def retrieval_test(tenant_id):
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
+    if top <= 0:
+        return get_error_data_result("`top_k` must be greater than 0")
     highlight_val = req.get("highlight", None)
     if highlight_val is None:
         highlight = False

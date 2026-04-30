@@ -319,6 +319,8 @@ async def retrieval_test_embedded():
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
+    if top <= 0:
+        return get_error_data_result("`top_k` must be greater than 0")
     langs = req.get("cross_languages", [])
     rerank_id = req.get("rerank_id", "")
     tenant_rerank_id = req.get("tenant_rerank_id", "")

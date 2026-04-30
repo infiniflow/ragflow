@@ -108,6 +108,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.ZENDESK]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.SEAFILE]: {
+    syncDeletedFiles: true,
+  },
 };
 
 const isDataSourceFeatureVisible = (
