@@ -265,15 +265,6 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 		return
 	}
 
-	// Check if instance name is "default"
-	if req.InstanceName == "default" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": "Instance name cannot be 'default'",
-		})
-		return
-	}
-
 	userID := c.GetString("user_id")
 
 	_, err := h.modelProviderService.CreateProviderInstance(providerName, req.InstanceName, req.APIKey, req.BaseURL, req.Region, userID)
