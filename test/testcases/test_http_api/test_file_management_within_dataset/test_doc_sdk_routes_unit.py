@@ -147,6 +147,9 @@ def _load_doc_module(monkeypatch):
         def __or__(self, other):
             return self
 
+        def __and__(self, other):
+            return self
+
     class _FakeField:
         def __eq__(self, other):
             return _FakeExpr()
@@ -161,10 +164,13 @@ def _load_doc_module(monkeypatch):
         id = _FakeField()
         run = _FakeField()
 
+    class _StubTaskModel:
+        doc_id = _FakeField()
+
     db_models_mod = ModuleType("api.db.db_models")
     db_models_mod.APIToken = SimpleNamespace(query=lambda **_kwargs: [])
-    db_models_mod.Document = _StubDocumentModel()
-    db_models_mod.Task = SimpleNamespace()
+    db_models_mod.Document = _StubDocumentModel
+    db_models_mod.Task = _StubTaskModel
     monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
 
     services_pkg = ModuleType("api.db.services")

@@ -263,7 +263,9 @@ def _load_session_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common.settings", common_settings_mod)
 
     api_utils_mod = ModuleType("api.utils.api_utils")
+    api_utils_mod.add_tenant_id_to_kwargs = lambda func: func
     api_utils_mod.check_duplicate_ids = lambda ids, _kind="item": (ids, [])
+    api_utils_mod.get_data_error_result = lambda message="Sorry! Data missing!", code=_StubRetCode.DATA_ERROR: {"code": code, "message": message}
     api_utils_mod.get_error_data_result = lambda message="Sorry! Data missing!", code=_StubRetCode.DATA_ERROR: {"code": code, "message": message}
     api_utils_mod.get_json_result = lambda code=_StubRetCode.SUCCESS, message="success", data=None: {"code": code, "message": message, "data": data}
     api_utils_mod.get_result = lambda code=_StubRetCode.SUCCESS, message="", data=None, total=None: {
@@ -290,6 +292,11 @@ def _load_session_module(monkeypatch):
     rag_prompts_template_mod = ModuleType("rag.prompts.template")
     rag_prompts_template_mod.load_prompt = lambda *_args, **_kwargs: ""
     monkeypatch.setitem(sys.modules, "rag.prompts.template", rag_prompts_template_mod)
+
+    rag_nlp_mod = ModuleType("rag.nlp")
+    rag_nlp_mod.search = SimpleNamespace(index_name=lambda tenant_id: f"idx_{tenant_id}")
+    monkeypatch.setitem(sys.modules, "rag.nlp", rag_nlp_mod)
+    monkeypatch.setitem(sys.modules, "rag.nlp.search", rag_nlp_mod.search)
 
     deepdoc_pkg = ModuleType("deepdoc")
     deepdoc_parser_pkg = ModuleType("deepdoc.parser")
@@ -565,6 +572,9 @@ def _load_session_module(monkeypatch):
         def __or__(self, other):
             return self
 
+        def __and__(self, other):
+            return self
+
     class _FakeField:
         def __eq__(self, other):
             return _FakeExpr()
@@ -600,13 +610,20 @@ def _load_session_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.api_service", api_service_mod)
 
     canvas_service_mod = ModuleType("api.db.services.canvas_service")
+    canvas_service_mod.CanvasTemplateService = SimpleNamespace(get_all=lambda *_args, **_kwargs: [])
     canvas_service_mod.UserCanvasService = SimpleNamespace(
         query=lambda **_kwargs: [],
         get_by_id=lambda *_args, **_kwargs: (False, None),
         accessible=lambda *_args, **_kwargs: False,
         get_agent_dsl_with_release=lambda *_args, **_kwargs: (SimpleNamespace(id="agent-1"), "{}"),
     )
-    canvas_service_mod.completion = lambda *_args, **_kwargs: None
+
+    async def _empty_agent_completion(*_args, **_kwargs):
+        if False:
+            yield None
+
+    canvas_service_mod.completion = _empty_agent_completion
+    canvas_service_mod.completion_openai = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.services.canvas_service", canvas_service_mod)
 
     conversation_service_mod = ModuleType("api.db.services.conversation_service")
