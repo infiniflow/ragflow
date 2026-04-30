@@ -319,7 +319,10 @@ class Extractor:
             node1_attrs = graph.nodes[node1]
             node0_attrs["description"] += f"{GRAPH_FIELD_SEP}{node1_attrs['description']}"
             node0_attrs["source_id"] = sorted(set(node0_attrs["source_id"] + node1_attrs["source_id"]))
-            for neighbor in graph.neighbors(node1):
+            # Snapshot neighbors before mutation; otherwise networkx raises
+            # "dictionary keys changed during iteration" when concurrent merges
+            # or graph.add_edge/remove_node below touch the same adjacency dict.
+            for neighbor in list(graph.neighbors(node1)):
                 change.removed_edges.add(get_from_to(node1, neighbor))
                 if neighbor not in nodes_set:
                     edge1_attrs = graph.get_edge_data(node1, neighbor)
@@ -335,6 +338,10 @@ class Extractor:
                         graph.add_edge(nodes[0], neighbor, **edge0_attrs)
                     else:
                         graph.add_edge(nodes[0], neighbor, **edge1_attrs)
+                        # Track the redirected neighbour so a later node1 in this
+                        # merge that also points to it takes the merge branch
+                        # above instead of overwriting the edge we just added.
+                        node0_neighbors.add(neighbor)
             graph.remove_node(node1)
         node0_attrs["description"] = await self._handle_entity_relation_summary(nodes[0], node0_attrs["description"], task_id=task_id)
         graph.nodes[nodes[0]].update(node0_attrs)

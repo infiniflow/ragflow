@@ -39,6 +39,78 @@ ErrorHandlerFn = Callable[[BaseException | None, str | None, dict | None], None]
 
 chat_limiter = asyncio.Semaphore(int(os.environ.get("MAX_CONCURRENT_CHATS", 10)))
 
+# Doc-store insert batching for GraphRAG subgraph/node/edge/community_report
+# chunks.  Defaults (64 docs per batch, up to 4 batches in flight) mirror the
+# regular ingest pipeline in document_service.py while still keeping the total
+# number of simultaneous requests to ES/Infinity bounded.  Override with
+# GRAPHRAG_INSERT_BULK_SIZE and GRAPHRAG_INSERT_CONCURRENCY.
+_INSERT_BULK_SIZE = max(1, int(os.environ.get("GRAPHRAG_INSERT_BULK_SIZE", 64)))
+_INSERT_CONCURRENCY = max(1, int(os.environ.get("GRAPHRAG_INSERT_CONCURRENCY", 4)))
+
+
+async def insert_chunks_bounded(chunks, tenant_id, kb_id, *, callback=None, label="Insert chunks"):
+    """Insert ``chunks`` into the doc store in batches with bounded concurrency and retries.
+
+    Batch size is controlled by ``GRAPHRAG_INSERT_BULK_SIZE`` (default 64) and
+    the number of batches in flight by ``GRAPHRAG_INSERT_CONCURRENCY``
+    (default 4).  Each batch has the same retry / timeout behaviour as the
+    previous hand-rolled loop (3 attempts, exponential backoff).
+
+    Raises the first unrecoverable error; other in-flight batches are then
+    cancelled by ``asyncio.gather``.
+    """
+    if not chunks:
+        return
+    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+    sem = asyncio.Semaphore(_INSERT_CONCURRENCY)
+    total = len(chunks)
+    progress = {"done": 0, "next_report": 100}
+    progress_lock = asyncio.Lock()
+
+    async def _one(offset: int) -> None:
+        batch = chunks[offset : offset + _INSERT_BULK_SIZE]
+        timeout_s = 3 if enable_timeout_assertion else 30000000
+        max_retries = 3
+        async with sem:
+            for attempt in range(max_retries):
+                try:
+                    result = await asyncio.wait_for(
+                        thread_pool_exec(
+                            settings.docStoreConn.insert,
+                            batch,
+                            search.index_name(tenant_id),
+                            kb_id,
+                        ),
+                        timeout=timeout_s,
+                    )
+                    if result:
+                        raise Exception(f"Insert chunk error: {result}, please check log file and Elasticsearch/Infinity status!")
+                    break
+                except asyncio.TimeoutError:
+                    if attempt < max_retries - 1:
+                        wait = 2 ** attempt
+                        logging.warning(f"Insert batch at offset {offset}/{total} attempt {attempt + 1} timed out, retrying in {wait}s")
+                        await asyncio.sleep(wait)
+                    else:
+                        raise
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        wait = 2 ** attempt
+                        logging.warning(f"Insert batch at offset {offset}/{total} attempt {attempt + 1} failed: {e}, retrying in {wait}s")
+                        await asyncio.sleep(wait)
+                    else:
+                        raise
+        if callback:
+            async with progress_lock:
+                progress["done"] += len(batch)
+                if progress["done"] >= progress["next_report"] or progress["done"] == total:
+                    callback(msg=f"{label}: {progress['done']}/{total}")
+                    progress["next_report"] = progress["done"] + 100
+
+    await asyncio.gather(*(asyncio.create_task(_one(o)) for o in range(0, total, _INSERT_BULK_SIZE)))
+
 
 @dataclasses.dataclass
 class GraphChange:
@@ -439,61 +511,10 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     global chat_limiter
     start = asyncio.get_running_loop().time()
 
-    await thread_pool_exec(
-        settings.docStoreConn.delete,
-        {"knowledge_graph_kwd": ["graph", "subgraph"]},
-        search.index_name(tenant_id),
-        kb_id
-    )
-
-    if change.removed_nodes:
-        await thread_pool_exec(
-            settings.docStoreConn.delete,
-            {"knowledge_graph_kwd": ["entity"], "entity_kwd": sorted(change.removed_nodes)},
-            search.index_name(tenant_id),
-            kb_id
-        )
-
-    if change.removed_edges:
-
-        async def del_edges(from_node, to_node):
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    async with chat_limiter:
-                        await thread_pool_exec(
-                            settings.docStoreConn.delete,
-                            {"knowledge_graph_kwd": ["relation"], "from_entity_kwd": from_node, "to_entity_kwd": to_node},
-                            search.index_name(tenant_id),
-                            kb_id
-                        )
-                    return
-                except Exception as e:
-                    if attempt < max_retries - 1:
-                        wait = 2 ** attempt
-                        logging.warning(f"del_edges({from_node}, {to_node}) attempt {attempt + 1} failed: {e}, retrying in {wait}s")
-                        await asyncio.sleep(wait)
-                    else:
-                        raise
-
-        tasks = []
-        for from_node, to_node in change.removed_edges:
-            tasks.append(asyncio.create_task(del_edges(from_node, to_node)))
-
-        try:
-            await asyncio.gather(*tasks, return_exceptions=False)
-        except Exception as e:
-            logging.error(f"Error while deleting edges: {e}")
-            for t in tasks:
-                t.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            raise
-
-    now = asyncio.get_running_loop().time()
-    if callback:
-        callback(msg=f"set_graph removed {len(change.removed_nodes)} nodes and {len(change.removed_edges)} edges from index in {now - start:.2f}s.")
-    start = now
-
+    # Build all new chunks first (graph, subgraphs, node/edge embeddings) before
+    # deleting anything.  This ensures that if embedding generation or any other
+    # step crashes, the old graph and per-doc subgraph checkpoints remain intact
+    # so the pipeline can resume without re-running earlier phases.
     chunks = [
         {
             "id": get_uuid(),
@@ -565,49 +586,69 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         callback(msg=f"set_graph converted graph change to {len(chunks)} chunks in {now - start:.2f}s.")
     start = now
 
-    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
-    es_bulk_size = 4
-    for b in range(0, len(chunks), es_bulk_size):
-        timeout = 3 if enable_timeout_assertion else 30000000
-        max_retries = 3
-        for attempt in range(max_retries):
-            task = asyncio.create_task(
-                thread_pool_exec(
-                    settings.docStoreConn.insert,
-                    chunks[b : b + es_bulk_size],
-                    search.index_name(tenant_id),
-                    kb_id
-                )
+    # All new chunks are ready.  Now delete old data and insert the new data.
+    # Deleting only after chunks are built ensures that a crash during embedding
+    # generation above does not destroy the old graph/subgraph checkpoints.
+    await thread_pool_exec(
+        settings.docStoreConn.delete,
+        {"knowledge_graph_kwd": ["graph", "subgraph"]},
+        search.index_name(tenant_id),
+        kb_id
+    )
+
+    if change.removed_nodes:
+        BATCH_SIZE = 100
+        sorted_nodes = sorted(change.removed_nodes)
+        for i in range(0, len(sorted_nodes), BATCH_SIZE):
+            batch = sorted_nodes[i:i + BATCH_SIZE]
+            await thread_pool_exec(
+                settings.docStoreConn.delete,
+                {"knowledge_graph_kwd": ["entity"], "entity_kwd": batch},
+                search.index_name(tenant_id),
+                kb_id
             )
-            try:
-                doc_store_result = await asyncio.wait_for(task, timeout=timeout)
-                break
-            except asyncio.TimeoutError:
-                task.cancel()
+
+    if change.removed_edges:
+
+        async def del_edges(from_node, to_node):
+            max_retries = 3
+            for attempt in range(max_retries):
                 try:
-                    await task
-                except (asyncio.CancelledError, Exception):
-                    pass
-                if attempt < max_retries - 1:
-                    wait = 2 ** attempt
-                    logging.warning(f"Insert batch {b}/{len(chunks)} attempt {attempt + 1} timed out, retrying in {wait}s")
-                    await asyncio.sleep(wait)
-                else:
-                    raise
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    wait = 2 ** attempt
-                    logging.warning(f"Insert batch {b}/{len(chunks)} attempt {attempt + 1} failed: {e}, retrying in {wait}s")
-                    await asyncio.sleep(wait)
-                else:
-                    raise
-        if b % 100 == es_bulk_size and callback:
-            callback(msg=f"Insert chunks: {b}/{len(chunks)}")
-        if doc_store_result:
-            error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
-            raise Exception(error_message)
+                    async with chat_limiter:
+                        await thread_pool_exec(
+                            settings.docStoreConn.delete,
+                            {"knowledge_graph_kwd": ["relation"], "from_entity_kwd": from_node, "to_entity_kwd": to_node},
+                            search.index_name(tenant_id),
+                            kb_id
+                        )
+                    return
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        wait = 2 ** attempt
+                        logging.warning(f"del_edges({from_node}, {to_node}) attempt {attempt + 1} failed: {e}, retrying in {wait}s")
+                        await asyncio.sleep(wait)
+                    else:
+                        raise
+
+        tasks = []
+        for from_node, to_node in change.removed_edges:
+            tasks.append(asyncio.create_task(del_edges(from_node, to_node)))
+
+        try:
+            await asyncio.gather(*tasks, return_exceptions=False)
+        except Exception as e:
+            logging.error(f"Error while deleting edges: {e}")
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
+
+    del_now = asyncio.get_running_loop().time()
+    if callback:
+        callback(msg=f"set_graph removed {len(change.removed_nodes)} nodes and {len(change.removed_edges)} edges from index in {del_now - start:.2f}s.")
+    start = del_now
+
+    await insert_chunks_bounded(chunks, tenant_id, kb_id, callback=callback, label="Insert chunks")
     now = asyncio.get_running_loop().time()
     if callback:
         callback(msg=f"set_graph added/updated {len(change.added_updated_nodes)} nodes and {len(change.added_updated_edges)} edges from index in {now - start:.2f}s.")

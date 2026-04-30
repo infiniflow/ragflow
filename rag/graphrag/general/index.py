@@ -23,19 +23,26 @@ import networkx as nx
 from api.db.services.document_service import DocumentService
 from api.db.services.task_service import has_canceled
 from common.exceptions import TaskCanceledException
-from common.misc_utils import get_uuid
 from common.connection_utils import timeout
 from rag.graphrag.entity_resolution import EntityResolution
 from rag.graphrag.general.community_reports_extractor import CommunityReportsExtractor
 from rag.graphrag.general.extractor import Extractor
 from rag.graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
 from rag.graphrag.light.graph_extractor import GraphExtractor as LightKGExt
+from rag.graphrag.phase_markers import (
+    PHASE_COMMUNITY,
+    PHASE_RESOLUTION,
+    clear_phase_markers,
+    has_phase_marker,
+    set_phase_marker,
+)
 from rag.graphrag.utils import (
     GraphChange,
     chunk_id,
     does_graph_contains,
     get_graph,
     graph_merge,
+    insert_chunks_bounded,
     set_graph,
     tidy_graph,
 )
@@ -354,8 +361,16 @@ async def run_graphrag_for_kb(
         raise TaskCanceledException(f"Task {row['id']} was cancelled")
 
     ok_docs = [d for d in doc_ids if d in subgraphs]
-    if not ok_docs:
-        callback(msg=f"[GraphRAG] kb:{kb_id} no subgraphs generated successfully, end.")
+    final_graph = None
+
+    # Determine whether the resolution/community phases still need to run on
+    # this KB. Markers from a prior task let us skip already-completed phases
+    # even when no new docs are merged this round (the resume path).
+    resolution_pending = with_resolution and not has_phase_marker(kb_id, PHASE_RESOLUTION)
+    community_pending = with_community and not has_phase_marker(kb_id, PHASE_COMMUNITY)
+
+    if not ok_docs and not resolution_pending and not community_pending:
+        callback(msg=f"[GraphRAG] kb:{kb_id} no subgraphs to merge and no phases pending, end.")
         now = asyncio.get_running_loop().time()
         return {"ok_docs": [], "failed_docs": failed_docs, "total_docs": len(doc_ids), "total_chunks": total_chunks, "seconds": now - start}
 
@@ -369,7 +384,6 @@ async def run_graphrag_for_kb(
 
     try:
         union_nodes: set = set()
-        final_graph = None
 
         for doc_id in ok_docs:
             sg = subgraphs[doc_id]
@@ -386,16 +400,28 @@ async def run_graphrag_for_kb(
             if new_graph is not None:
                 final_graph = new_graph
 
-        if final_graph is None:
+        if ok_docs and final_graph is None:
             callback(msg=f"[GraphRAG] kb:{kb_id} merge finished (no in-memory graph returned).")
-        else:
+        elif ok_docs:
             callback(msg=f"[GraphRAG] kb:{kb_id} merge finished, graph ready.")
+            # New content was merged into the global graph; any prior
+            # resolution/community results are now stale and must be redone
+            # on this or a future run. Clear phase markers accordingly.
+            clear_phase_markers(kb_id)
+            resolution_pending = with_resolution
+            community_pending = with_community
+            callback(msg=f"[GraphRAG] kb:{kb_id} cleared phase markers after merge.")
     finally:
         kb_lock.release()
 
     if not with_resolution and not with_community:
         now = asyncio.get_running_loop().time()
         callback(msg=f"[GraphRAG] KB merge done in {now - start:.2f}s. ok={len(ok_docs)} / total={len(doc_ids)}")
+        return {"ok_docs": ok_docs, "failed_docs": failed_docs, "total_docs": len(doc_ids), "total_chunks": total_chunks, "seconds": now - start}
+
+    if not resolution_pending and not community_pending:
+        now = asyncio.get_running_loop().time()
+        callback(msg=f"[GraphRAG] kb:{kb_id} all requested phases already complete; nothing to do.")
         return {"ok_docs": ok_docs, "failed_docs": failed_docs, "total_docs": len(doc_ids), "total_chunks": total_chunks, "seconds": now - start}
 
     if has_canceled(row["id"]):
@@ -406,11 +432,26 @@ async def run_graphrag_for_kb(
     callback(msg=f"[GraphRAG] kb:{kb_id} post-merge lock acquired for resolution/community")
 
     try:
+        # Resume path: no docs were merged this round but pending phases
+        # require the previously-persisted graph. Load it from the doc store.
+        if final_graph is None:
+            final_graph = await get_graph(tenant_id, kb_id)
+            if final_graph is None:
+                callback(msg=f"[GraphRAG] kb:{kb_id} no persisted graph found; cannot run resolution/community.")
+                now = asyncio.get_running_loop().time()
+                return {"ok_docs": ok_docs, "failed_docs": failed_docs, "total_docs": len(doc_ids), "total_chunks": total_chunks, "seconds": now - start}
+            callback(msg=f"[GraphRAG] kb:{kb_id} loaded persisted graph for resume.")
+
         subgraph_nodes = set()
         for sg in subgraphs.values():
             subgraph_nodes.update(set(sg.nodes()))
+        # On a pure-resume run (no new docs) the union of "newly added" nodes
+        # is empty, but resolution still needs *some* anchor set. Fall back to
+        # all graph nodes so candidate pairing actually finds something.
+        if not subgraph_nodes:
+            subgraph_nodes = set(final_graph.nodes())
 
-        if with_resolution:
+        if resolution_pending:
             await resolve_entities(
                 final_graph,
                 subgraph_nodes,
@@ -422,8 +463,11 @@ async def run_graphrag_for_kb(
                 callback,
                 task_id=row["id"],
             )
+            set_phase_marker(kb_id, PHASE_RESOLUTION)
+        elif with_resolution:
+            callback(msg=f"[GraphRAG] kb:{kb_id} resolution already completed previously, skipping.")
 
-        if with_community:
+        if community_pending:
             await extract_community(
                 final_graph,
                 tenant_id,
@@ -434,6 +478,9 @@ async def run_graphrag_for_kb(
                 callback,
                 task_id=row["id"],
             )
+            set_phase_marker(kb_id, PHASE_COMMUNITY)
+        elif with_community:
+            callback(msg=f"[GraphRAG] kb:{kb_id} community detection already completed previously, skipping.")
     finally:
         kb_lock.release()
 
@@ -632,8 +679,17 @@ async def extract_community(
             "report": rep,
             "evidences": "\n".join([f.get("explanation", "") for f in stru["findings"]]),
         }
+        # Deterministic id derived from (kb_id, community title) so reruns of
+        # extract_community produce stable ids.  Combined with insert-then-
+        # prune below, this means a crash mid-insert leaves the prior set of
+        # community reports intact -- never the partial-delete state the old
+        # delete-then-insert order produced.
+        chunk_payload_for_id = {
+            "content_with_weight": f"community_report::{stru['title']}",
+            "kb_id": kb_id,
+        }
         chunk = {
-            "id": get_uuid(),
+            "id": chunk_id(chunk_payload_for_id),
             "docnm_kwd": stru["title"],
             "title_tks": rag_tokenizer.tokenize(stru["title"]),
             "content_with_weight": json.dumps(obj, ensure_ascii=False),
@@ -649,13 +705,43 @@ async def extract_community(
         chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
         chunks.append(chunk)
 
-    await thread_pool_exec(settings.docStoreConn.delete,{"knowledge_graph_kwd": "community_report", "kb_id": kb_id},search.index_name(tenant_id),kb_id,)
-    es_bulk_size = 4
-    for b in range(0, len(chunks), es_bulk_size):
-        doc_store_result = await thread_pool_exec(settings.docStoreConn.insert,chunks[b : b + es_bulk_size],search.index_name(tenant_id),kb_id,)
-        if doc_store_result:
-            error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
-            raise Exception(error_message)
+    new_ids: set[str] = {c["id"] for c in chunks}
+
+    # Snapshot existing community_report ids BEFORE inserting so we can
+    # delete exactly the stale set afterwards.  If the search fails we fall
+    # back to the prior delete-everything-then-insert behaviour rather than
+    # leaving an inconsistent mix.
+    old_ids: list[str] = []
+    try:
+        existing_res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["id"], [], {"knowledge_graph_kwd": ["community_report"]}, [], OrderByExpr(),
+            0, 10000, search.index_name(tenant_id), [kb_id],
+        )
+        existing_fields = settings.docStoreConn.get_fields(existing_res, ["id"])
+        old_ids = list(existing_fields.keys())
+    except Exception:
+        logging.exception("Failed to enumerate existing community reports for kb %s; falling back to delete-then-insert.", kb_id)
+        await thread_pool_exec(settings.docStoreConn.delete, {"knowledge_graph_kwd": "community_report", "kb_id": kb_id}, search.index_name(tenant_id), kb_id)
+        old_ids = []
+
+    await insert_chunks_bounded(chunks, tenant_id, kb_id, callback=callback, label="Insert community reports")
+
+    # Now that all new reports are persisted, prune stale rows.  Anything in
+    # old_ids that is not also in new_ids is no longer current (community
+    # composition changed across runs).  A failure here just leaves stale
+    # rows; the new rows are already in place.
+    stale_ids = [i for i in old_ids if i not in new_ids]
+    if stale_ids:
+        try:
+            await thread_pool_exec(
+                settings.docStoreConn.delete,
+                {"knowledge_graph_kwd": ["community_report"], "id": stale_ids},
+                search.index_name(tenant_id),
+                kb_id,
+            )
+        except Exception:
+            logging.exception("Failed to prune %d stale community reports for kb %s", len(stale_ids), kb_id)
 
     if task_id and has_canceled(task_id):
         callback(msg=f"Task {task_id} cancelled after community indexing.")
