@@ -1,5 +1,5 @@
 import message from '@/components/ui/message';
-import { Authorization } from '@/constants/authorization';
+import { Authorization, Token, UserInfo } from '@/constants/authorization';
 import userService, {
   getLoginChannels,
   loginWithChannel,
@@ -81,10 +81,12 @@ export const useLoginWithLdap = () => {
           name: data.nickname,
           email: data.email,
         };
+        // Use computed keys from the auth constants so the storage keys
+        // match what authorizationUtil.getToken / removeAll look up.
         authorizationUtil.setItems({
-          Authorization: authorization,
-          userInfo: JSON.stringify(userInfo),
-          Token: token,
+          [Authorization]: authorization,
+          [UserInfo]: JSON.stringify(userInfo),
+          [Token]: token,
         });
       } else if (res.message) {
         message.error(res.message);
