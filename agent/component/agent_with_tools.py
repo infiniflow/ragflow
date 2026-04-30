@@ -34,7 +34,11 @@ from api.db.services.tenant_llm_service import TenantLLMService
 from common.connection_utils import timeout
 from common.mcp_tool_call_conn import MCPToolCallSession, mcp_tool_metadata_to_openai_tool
 from rag.prompts.generator import citation_plus, citation_prompt, full_question, kb_prompt, message_fit_in, structured_output_prompt
+from contextvars import ContextVar
 
+# Global tracker for async-safe tool call detection
+_tool_call_tracker = ContextVar("tool_call_tracker", default=False)
+_tool_success_tracker = ContextVar("tool_success_tracker", default=False)
 
 class AgentParam(LLMParam, ToolParamBase):
     """
@@ -71,9 +75,17 @@ class AgentParam(LLMParam, ToolParamBase):
 
 
 class Agent(LLM, ToolBase):
+    """
+    Represents an LLM-driven Agent capable of executing tools, managing conversational context,
+    and handling strict validation trapdoors to prevent hallucinated actions.
+    """
     component_name = "Agent"
 
     def __init__(self, canvas, id, param: LLMParam):
+        """
+        Initialize the Agent component, bind available standard and MCP tools, 
+        and set up concurrency-safe tracking callbacks.
+        """
         LLM.__init__(self, canvas, id, param)
         self.tools = {}
         for idx, cpn in enumerate(self._param.tools):
@@ -81,6 +93,7 @@ class Agent(LLM, ToolBase):
             original_name = cpn.get_meta()["function"]["name"]
             indexed_name = f"{original_name}_{idx}"
             self.tools[indexed_name] = cpn
+        
         chat_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id), self._param.llm_id)
         self.chat_mdl = LLMBundle(
             self._canvas.get_tenant_id(),
@@ -90,6 +103,7 @@ class Agent(LLM, ToolBase):
             max_rounds=self._param.max_rounds,
             verbose_tool_use=False,
         )
+        
         self.tool_meta = []
         for indexed_name, tool_obj in self.tools.items():
             original_meta = tool_obj.get_meta()
@@ -104,12 +118,39 @@ class Agent(LLM, ToolBase):
             for tnm, meta in mcp["tools"].items():
                 self.tool_meta.append(mcp_tool_metadata_to_openai_tool(meta))
                 self.tools[tnm] = tool_call_session
-        self.callback = partial(self._canvas.tool_use_callback, id)
+                
+        # --- THE CONCURRENCY FIX ---
+        original_callback = partial(self._canvas.tool_use_callback, id)
+        
+        # We wrap the callback to safely track tool usage per-invocation
+        def tracking_callback(*args, **kwargs):
+            if args and args[0] not in ("Multi-turn conversation optimization", "gen_citations"):
+                _tool_call_tracker.set(True)
+                
+                output = args[2] if len(args) > 2 else kwargs.get("output", None)
+                if output is not None:
+                    # THE FIX: Added 'and output' to ensure the dictionary isn't empty {}
+                    if isinstance(output, dict) and output and "_ERROR" not in output:
+                        _tool_success_tracker.set(True)
+                    elif isinstance(output, list) and len(output) > 0:
+                        _tool_success_tracker.set(True)
+                    elif output and not isinstance(output, (dict, list)):
+                        out_str = str(output)
+                        if "**ERROR**" not in out_str and "Unmatched input parameters" not in out_str:
+                            _tool_success_tracker.set(True)
+                            
+            return original_callback(*args, **kwargs)
+            
+        self.callback = tracking_callback
         self.toolcall_session = LLMToolPluginCallSession(self.tools, self.callback)
+        
         if self.tool_meta:
             self.chat_mdl.bind_tools(self.toolcall_session, self.tool_meta)
 
     def _fit_messages(self, prompt: str, msg: list[dict]) -> list[dict]:
+        """
+        Truncate or fit messages into the model's maximum context length dynamically.
+        """
         _, fitted_messages = message_fit_in(
             [{"role": "system", "content": prompt}, *msg],
             int(self.chat_mdl.max_length * 0.97),
@@ -118,16 +159,25 @@ class Agent(LLM, ToolBase):
 
     @staticmethod
     def _append_system_prompt(msg: list[dict], extra_prompt: str) -> None:
+        """
+        Safely append additional instruction constraints to the active system prompt.
+        """
         if extra_prompt and msg and msg[0]["role"] == "system":
             msg[0]["content"] += "\n" + extra_prompt
 
     @staticmethod
     def _clean_formatted_answer(ans: str) -> str:
+        """
+        Clean up formatting artifacts, reasoning tags, and markdown code blocks from the raw LLM output.
+        """
         ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
         ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
         return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
 
     def _load_tool_obj(self, cpn: dict) -> object:
+        """
+        Dynamically load and instantiate a tool component object by its registered name and parameters.
+        """
         from agent.component import component_class
 
         tool_name = cpn["component_name"]
@@ -142,6 +192,9 @@ class Agent(LLM, ToolBase):
         return component_class(cpn["component_name"])(self._canvas, cpn_id, param)
 
     def get_meta(self) -> dict[str, Any]:
+        """
+        Retrieve the metadata schema for this Agent, including dynamic user prompts.
+        """
         self._param.function_name = self._id.split("-->")[-1]
         m = super().get_meta()
         if hasattr(self._param, "user_prompt") and self._param.user_prompt:
@@ -150,6 +203,9 @@ class Agent(LLM, ToolBase):
         return m
 
     def get_input_form(self) -> dict[str, dict]:
+        """
+        Generate the input form schema for the Agent component and its associated tools.
+        """
         res = {}
         for k, v in self.get_input_elements().items():
             res[k] = {"type": "line", "name": v["name"]}
@@ -160,6 +216,9 @@ class Agent(LLM, ToolBase):
         return res
 
     def _get_output_schema(self):
+        """
+        Extract the structured JSON output schema if one is explicitly defined in the component parameters.
+        """
         try:
             cand = self._param.outputs.get("structured")
         except Exception:
@@ -175,6 +234,9 @@ class Agent(LLM, ToolBase):
         return None
 
     async def _force_format_to_schema_async(self, text: str, schema_prompt: str) -> str:
+        """
+        Force the LLM to re-format its previous plain-text response strictly into the requested JSON schema.
+        """
         fmt_msgs = [
             {"role": "system", "content": schema_prompt + "\nIMPORTANT: Output ONLY valid JSON. No markdown, no extra text."},
             {"role": "user", "content": text},
@@ -183,12 +245,45 @@ class Agent(LLM, ToolBase):
         return await self._generate_async(fmt_msgs)
 
     def _invoke(self, **kwargs):
+        """
+        Synchronous wrapper for the asynchronous _invoke_async logic.
+        """
         return asyncio.run(self._invoke_async(**kwargs))
+
+    
+    def _check_tools_succeeded(self) -> bool:
+        """
+        Helper to safely evaluate if any tool returned valid data.
+        Checks both the callback tracker (for MCP tools) and standard parameter outputs.
+        """
+        # 1. Check the new callback tracker (Covers MCP Tools)
+        if _tool_success_tracker.get():
+            return True
+            
+        # 2. Fallback to standard parameter inspection (Covers standard tools and tests)
+        for tool_obj in self.tools.values():
+            if hasattr(tool_obj, "_param") and hasattr(tool_obj._param, "outputs"):
+                outputs = tool_obj._param.outputs
+                if isinstance(outputs, dict) and outputs and "_ERROR" not in outputs:
+                    return True
+                elif isinstance(outputs, list) and len(outputs) > 0:
+                    return True
+                elif outputs and not isinstance(outputs, (dict, list)):
+                    return True
+        return False
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 20 * 60)))
     async def _invoke_async(self, **kwargs):
+        """
+        Execute the primary asynchronous agent logic, including prompt formatting, tool invocation,
+        and applying state-aware trapdoors to override hallucinated actions.
+        """
         if self.check_if_canceled("Agent processing"):
             return
+
+        # Reset tracker safely for this specific concurrent invocation
+        _tool_call_tracker.set(False)
+        _tool_success_tracker.set(False)
 
         if kwargs.get("user_prompt"):
             usr_pmt = ""
@@ -209,22 +304,48 @@ class Agent(LLM, ToolBase):
 
         prompt, msg, user_defined_prompt = self._prepare_prompt_variables()
         output_schema = self._get_output_schema()
-        schema_prompt = ""
-        if output_schema:
-            schema = json.dumps(output_schema, ensure_ascii=False, indent=2)
-            schema_prompt = structured_output_prompt(schema)
 
         component = self._canvas.get_component(self._id)
         downstreams = component["downstream"] if component else []
         ex = self.exception_handler()
         has_message_downstream = any(self._canvas.get_component_obj(cid).component_name.lower() == "message" for cid in downstreams)
+        
         if has_message_downstream and not (ex and ex["goto"]) and not output_schema:
             self.set_output("content", partial(self.stream_output_with_tools_async, prompt, deepcopy(msg), user_defined_prompt))
             return
 
         msg = self._fit_messages(prompt, msg)
-        self._append_system_prompt(msg, schema_prompt)
+        
+        # TIGHTENED SAFETY PROMPT
+        safety_prompt = (
+            "SYSTEM WARNING: You are bound to strict tool validation. "
+            "ONLY if you attempt to use a tool and it fails or returns no context, "
+            "you MUST NOT invent an answer. You must reply EXACTLY with 'ACTION_NOT_PERFORMED'. "
+            "If you are answering a greeting or non-tool query, answer normally."
+        )
+        self._append_system_prompt(msg, safety_prompt)
+
+        schema_prompt = ""
+        if output_schema:
+            schema = json.dumps(output_schema, ensure_ascii=False, indent=2)
+            schema_prompt = structured_output_prompt(schema)
+            self._append_system_prompt(msg, schema_prompt)
+
         ans = await self._generate_async(msg)
+        
+        # LAYER 2: ASYNC-SAFE TRAPDOOR
+        if _tool_call_tracker.get() and not self._check_tools_succeeded():
+            logging.info("Trapdoor triggered: Overriding LLM hallucination.")
+            ans = "ACTION_NOT_PERFORMED"
+            self.set_output("content", ans)
+            
+            # CodeRabbit Schema Fix: Return structured object if downstream expects it
+            if output_schema:
+                err_obj = {"error": ans}
+                self.set_output("structured", err_obj)
+                return err_obj
+                
+            return ans
 
         if ans.find("**ERROR**") >= 0:
             logging.error(f"Agent._chat got error. response: {ans}")
@@ -246,7 +367,6 @@ class Agent(LLM, ToolBase):
                     ans = await self._force_format_to_schema_async(ans, schema_prompt)
                     if ans.find("**ERROR**") >= 0:
                         continue
-
             self.set_output("_ERROR", error)
             return
 
@@ -257,6 +377,13 @@ class Agent(LLM, ToolBase):
         return ans
 
     async def stream_output_with_tools_async(self, prompt, msg, user_defined_prompt={}):
+        """
+        Stream the LLM response token-by-token back to the user, while actively monitoring 
+        for tool failures to dynamically cut off hallucinations via trapdoors.
+        """
+        _tool_call_tracker.set(False)
+        _tool_success_tracker.set(False)
+        
         if len(msg) > 3:
             st = timer()
             user_request = await full_question(messages=msg, chat_mdl=self.chat_mdl)
@@ -265,6 +392,14 @@ class Agent(LLM, ToolBase):
 
         msg = self._fit_messages(prompt, msg)
 
+        safety_prompt = (
+            "SYSTEM WARNING: You are bound to strict tool validation. "
+            "ONLY if you attempt to use a tool and it fails or returns no context, "
+            "you MUST NOT invent an answer. You must reply EXACTLY with 'ACTION_NOT_PERFORMED'. "
+            "If you are answering a greeting or non-tool query, answer normally."
+        )
+        self._append_system_prompt(msg, safety_prompt)
+
         need2cite = self._param.cite and self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0
         cited = False
         if need2cite and len(msg) < 7:
@@ -272,9 +407,22 @@ class Agent(LLM, ToolBase):
             cited = True
 
         answer = ""
+        trapdoor_fired = False
+        
         async for delta in self._generate_streamly(msg):
             if self.check_if_canceled("Agent streaming"):
                 return
+                
+            # THE STREAMING TRAPDOOR (In-Loop)
+            if _tool_call_tracker.get() and not self._check_tools_succeeded():
+                if not trapdoor_fired:
+                    logging.info("Trapdoor triggered during stream: Empty tool outputs.")
+                    yield "ACTION_NOT_PERFORMED"
+                    answer = "ACTION_NOT_PERFORMED"
+                    self.set_output("content", answer) # CodeRabbit Fix 1: Set output before returning
+                    trapdoor_fired = True
+                return 
+
             if delta.find("**ERROR**") >= 0:
                 if self.get_exception_default_value():
                     self.set_output("content", self.get_exception_default_value())
@@ -282,9 +430,19 @@ class Agent(LLM, ToolBase):
                 else:
                     self.set_output("_ERROR", delta)
                 return
+                
             if not need2cite or cited:
                 yield delta
             answer += delta
+
+        # THE STREAMING TRAPDOOR (Zero-Delta Catch)
+        # CodeRabbit Fix 2: If the LLM yielded nothing, the loop bypassed the trapdoor. Catch it here.
+        if not trapdoor_fired and _tool_call_tracker.get() and not self._check_tools_succeeded():
+            logging.info("Trapdoor triggered after stream (zero-delta): Empty tool outputs.")
+            yield "ACTION_NOT_PERFORMED"
+            answer = "ACTION_NOT_PERFORMED"
+            self.set_output("content", answer)
+            return
 
         if not need2cite or cited:
             artifact_md = self._collect_tool_artifact_markdown(existing_text=answer)
@@ -296,19 +454,45 @@ class Agent(LLM, ToolBase):
 
         st = timer()
         cited_answer = ""
+        
         async for delta in self._gen_citations_async(answer):
             if self.check_if_canceled("Agent streaming"):
                 return
+                
+            # CodeRabbit noted the citation loop needs the same protection
+            if _tool_call_tracker.get() and not self._check_tools_succeeded():
+                if not trapdoor_fired:
+                    logging.info("Trapdoor triggered during citations stream: Empty tool outputs.")
+                    yield "ACTION_NOT_PERFORMED"
+                    cited_answer = "ACTION_NOT_PERFORMED"
+                    self.set_output("content", cited_answer)
+                    trapdoor_fired = True
+                return
+
             yield delta
             cited_answer += delta
+
+        # Zero-Delta Catch for citations
+        if not trapdoor_fired and _tool_call_tracker.get() and not self._check_tools_succeeded():
+            logging.info("Trapdoor triggered after citations stream (zero-delta): Empty tool outputs.")
+            yield "ACTION_NOT_PERFORMED"
+            cited_answer = "ACTION_NOT_PERFORMED"
+            self.set_output("content", cited_answer)
+            return
+            
         artifact_md = self._collect_tool_artifact_markdown(existing_text=cited_answer)
         if artifact_md:
             yield "\n\n" + artifact_md
             cited_answer += "\n\n" + artifact_md
+            
         self.callback("gen_citations", {}, cited_answer, elapsed_time=timer() - st)
         self.set_output("content", cited_answer)
 
     async def _gen_citations_async(self, text):
+        """
+        Generate knowledge base citations dynamically by correlating the generated text 
+        against the retrieved document chunks.
+        """
         retrievals = self._canvas.get_reference()
         retrievals = {"chunks": list(retrievals["chunks"].values()), "doc_aggs": list(retrievals["doc_aggs"].values())}
         formated_refer = kb_prompt(retrievals, self.chat_mdl.max_length, True)
@@ -316,6 +500,10 @@ class Agent(LLM, ToolBase):
             yield delta_ans
 
     def _collect_tool_artifact_markdown(self, existing_text: str = "") -> str:
+        """
+        Collect any visual or file artifacts (like images or downloadable documents) returned by tools
+        and format them cleanly into Markdown links.
+        """
         md_parts = []
         for tool_obj in self.tools.values():
             if not hasattr(tool_obj, "_param") or not hasattr(tool_obj._param, "outputs"):
