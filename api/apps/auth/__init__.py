@@ -44,6 +44,10 @@ def infer_channel_type(config):
 
 
 def get_auth_client(config):
+    """Instantiate the auth client matching ``config``'s channel type.
+
+    Raises ``ValueError`` for unknown types.
+    """
     channel_type = infer_channel_type(config)
     client_class = CLIENT_TYPES.get(channel_type)
     if not client_class:

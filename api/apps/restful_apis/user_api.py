@@ -142,6 +142,8 @@ async def login():
 
 
 def _mask_email(value):
+    """Reduce ``value`` to ``"<first-char>***@<domain>"`` for log redaction
+    so directory-side identifiers don't end up in plaintext logs."""
     if not value or "@" not in value:
         return "***"
     local, _, domain = value.partition("@")

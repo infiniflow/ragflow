@@ -20,7 +20,8 @@ from .oauth import UserInfo
 
 
 class LDAPAuthError(Exception):
-    pass
+    """Raised when LDAP authentication fails for any reason (bad credentials,
+    bind error, missing user, TLS negotiation failure, ...)."""
 
 
 class LDAPClient:
@@ -42,6 +43,10 @@ class LDAPClient:
     DEFAULT_RECEIVE_TIMEOUT = 10
 
     def __init__(self, config):
+        """Initialise the client from an ``oauth.<name>`` block in
+        ``service_conf.yaml`` (host, port, TLS, bind strategy, attribute
+        mapping, timeouts). Raises ``ValueError`` when neither
+        ``bind_dn_template`` nor ``bind_user_dn`` is set."""
         self.config = config
         self.channel_id = config.get("channel") or config.get("display_name") or "ldap"
         self.host = config["host"]
@@ -77,6 +82,9 @@ class LDAPClient:
             raise ValueError("LDAP config must define either 'bind_dn_template' or 'bind_user_dn' for search-then-bind.")
 
     def _server(self):
+        """Build an ``ldap3.Server`` with the configured TLS policy and
+        connect timeout. ``get_info`` is set to ``"NONE"`` so we don't fetch
+        the directory schema on every login."""
         import ssl
 
         from ldap3 import Server, Tls
@@ -173,6 +181,9 @@ class LDAPClient:
         return conn.bind()
 
     def _resolve_user(self, server, username, password):
+        """Resolve the user's DN and directory attributes using the
+        configured bind strategy. Returns ``(user_dn, attrs_dict)`` and
+        raises ``LDAPAuthError`` on bind / search failures."""
         attrs_wanted = [self.email_attr, self.nickname_attr, self.username_attr]
 
         if self.bind_dn_template:
@@ -235,7 +246,8 @@ class LDAPClient:
 
     @staticmethod
     def _escape_filter(value):
-        # Escape per RFC 4515 to prevent LDAP filter injection.
+        """Escape ``value`` per RFC 4515 so it is safe to interpolate into
+        an LDAP search filter."""
         replacements = {
             "\\": r"\5c",
             "*": r"\2a",
@@ -249,13 +261,16 @@ class LDAPClient:
 
     @staticmethod
     def _escape_rdn(value):
-        # RFC 4514 RDN-value escaping for safe interpolation into a DN.
+        """Escape ``value`` per RFC 4514 for safe interpolation into a
+        DN/RDN. Delegates to ``ldap3.utils.dn.escape_rdn``."""
         from ldap3.utils.dn import escape_rdn
 
         return escape_rdn(value)
 
     @staticmethod
     def _first(value):
+        """Return the first item when ``value`` is a list/tuple, the value
+        itself when scalar, or ``None`` when missing."""
         if value is None:
             return None
         if isinstance(value, (list, tuple)):
@@ -264,6 +279,8 @@ class LDAPClient:
 
     @staticmethod
     def _entry_attrs(entry, wanted):
+        """Materialise ``{name: values}`` from an ldap3 entry, silently
+        skipping attributes that aren't present on the entry."""
         if entry is None:
             return {}
         result = {}
