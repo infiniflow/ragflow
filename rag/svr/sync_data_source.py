@@ -1061,20 +1061,23 @@ class Asana(SyncBase):
             {"asana_api_token_secret": credentials["asana_api_token_secret"]}
         )
 
-        if task.get("reindex") == "1" or not task.get("poll_range_start"):
+        poll_start = task.get("poll_range_start")
+        file_list = None
+
+        if task.get("reindex") == "1" or not poll_start:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
-            poll_start = task.get("poll_range_start")
-            if poll_start is None:
-                document_generator = self.connector.load_from_state()
-                _begin_info = "totally"
-            else:
-                document_generator = self.connector.poll_source(
-                    poll_start.timestamp(),
-                    datetime.now(timezone.utc).timestamp(),
-                )
-                _begin_info = f"from {poll_start}"
+            end_time = datetime.now(timezone.utc).timestamp()
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                end_time,
+            )
+            _begin_info = f"from {poll_start}"
 
         self.log_connection(
             "Asana",
@@ -1082,7 +1085,7 @@ class Asana(SyncBase):
             task,
         )
 
-        return document_generator
+        return document_generator, file_list
 
 class Github(SyncBase):
     SOURCE_NAME: str = FileSource.GITHUB
