@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -561,7 +562,7 @@ func AddMustNot(query map[string]interface{}, clauses ...map[string]interface{})
 // GetFields is not implemented for Elasticsearch
 func (e *elasticsearchEngine) GetFields(chunks []map[string]interface{}, fields []string) (map[string]map[string]interface{}, error) {
 	logger.Warn("GetFields not implemented for Elasticsearch")
-	return nil, nil
+	return nil, errors.New("GetFields not implemented for Elasticsearch")
 }
 
 // GetAggregation is not implemented for Elasticsearch
