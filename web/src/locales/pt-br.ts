@@ -66,6 +66,8 @@ export default {
       ldapTitle: 'Entrar com {{provider}}',
       ldapDescription: 'Use suas credenciais de diretório para entrar.',
       cancel: 'Cancelar',
+      passwordEncryptFailed:
+        'Não foi possível criptografar a senha. Por favor, recarregue a página e tente novamente.',
     },
     header: {
       knowledgeBase: 'Base de Conhecimento',

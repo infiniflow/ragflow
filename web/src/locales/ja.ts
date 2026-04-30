@@ -65,6 +65,8 @@ export default {
       ldapDescription:
         'ディレクトリの認証情報を使用してサインインしてください。',
       cancel: 'キャンセル',
+      passwordEncryptFailed:
+        'パスワードを暗号化できませんでした。ページを再読み込みしてやり直してください。',
     },
     header: {
       knowledgeBase: 'ナレッジベース',

@@ -149,8 +149,18 @@ user_default_llm:
 #     display_name: "LDAP"
 #     host: "ldap.example.com"
 #     port: 389
+#     # Transport security:
+#     #   use_ssl: true       # ldaps:// (port 636), TLS from the start
+#     #   use_tls: true       # plain port 389 + StartTLS upgrade before bind
+#     # Either flag enables certificate validation; set tls_validate=false only
+#     # for development / self-signed test directories.
 #     use_ssl: false
 #     use_tls: false
+#     tls_validate: true
+#     # ca_certs_file: "/etc/ssl/certs/ldap-ca.pem"
+#     # Connection-level timeouts (seconds). Defaults: 5 / 10.
+#     # connect_timeout: 5
+#     # receive_timeout: 10
 #     # Direct-bind mode (simple): the supplied username is interpolated into
 #     # the template and used to bind. Comment out the search-then-bind block
 #     # below if you use direct-bind.
@@ -165,6 +175,11 @@ user_default_llm:
 #     # email_attr: "mail"
 #     # nickname_attr: "cn"
 #     # username_attr: "uid"
+#     # When true, refuse to authenticate users whose entry has no email
+#     # attribute. When false, fall back to a per-channel synthetic address
+#     # of the form "<uid>@<channel>.ldap.local" so distinct directories
+#     # cannot collapse onto a single application user.
+#     # require_email: false
 # authentication:
 #  client:
 #    switch: false

@@ -59,6 +59,8 @@ export default {
       ldapDescription:
         'Usa tus credenciales de directorio para iniciar sesión.',
       cancel: 'Cancelar',
+      passwordEncryptFailed:
+        'No se pudo cifrar la contraseña. Por favor, recarga la página e inténtalo de nuevo.',
     },
     header: {
       knowledgeBase: 'Base de conocimiento',

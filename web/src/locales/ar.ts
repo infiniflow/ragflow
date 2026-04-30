@@ -103,6 +103,8 @@ export default {
       ldapTitle: 'تسجيل الدخول باستخدام {{provider}}',
       ldapDescription: 'استخدم بيانات اعتماد الدليل الخاص بك لتسجيل الدخول.',
       cancel: 'إلغاء',
+      passwordEncryptFailed:
+        'تعذر تشفير كلمة المرور. يرجى إعادة تحميل الصفحة والمحاولة مرة أخرى.',
     },
     header: {
       knowledgeBase: 'مجموعة البيانات',

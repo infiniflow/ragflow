@@ -14,11 +14,10 @@
 #  limitations under the License.
 #
 
-from .oauth import OAuthClient
-from .oidc import OIDCClient
 from .github import GithubOAuthClient
 from .ldap import LDAPClient
-
+from .oauth import OAuthClient
+from .oidc import OIDCClient
 
 CLIENT_TYPES = {
     "oauth2": OAuthClient,
@@ -28,15 +27,24 @@ CLIENT_TYPES = {
 }
 
 
+def infer_channel_type(config):
+    """Resolve the auth channel type for a single OAUTH_CONFIG entry.
+
+    Order: explicit ``type`` field > OIDC discovery (``issuer``) >
+    LDAP heuristic (``host`` + a bind option) > generic ``oauth2``.
+    """
+    declared = str(config.get("type", "")).lower()
+    if declared:
+        return declared
+    if config.get("issuer"):
+        return "oidc"
+    if config.get("host") and (config.get("bind_dn_template") or config.get("bind_user_dn")):
+        return "ldap"
+    return "oauth2"
+
+
 def get_auth_client(config):
-    channel_type = str(config.get("type", "")).lower()
-    if channel_type == "":
-        if config.get("issuer"):
-            channel_type = "oidc"
-        elif config.get("host") and (config.get("bind_dn_template") or config.get("bind_user_dn")):
-            channel_type = "ldap"
-        else:
-            channel_type = "oauth2"
+    channel_type = infer_channel_type(config)
     client_class = CLIENT_TYPES.get(channel_type)
     if not client_class:
         raise ValueError(f"Unsupported type: {channel_type}")

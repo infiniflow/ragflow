@@ -93,6 +93,7 @@ export default {
       ldapTitle: '使用 {{provider}} 登录',
       ldapDescription: '使用您的目录凭据进行登录。',
       cancel: '取消',
+      passwordEncryptFailed: '无法加密密码，请刷新页面后重试。',
     },
     header: {
       knowledgeBase: '知识库',

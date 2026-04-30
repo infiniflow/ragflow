@@ -18,28 +18,32 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-pytest.importorskip("ldap3")
-
-from api.apps.auth.ldap import LDAPAuthError, LDAPClient  # noqa: E402
+from api.apps.auth.ldap import LDAPAuthError, LDAPClient
 
 
-def _direct_bind_config():
-    return {
+def _direct_bind_config(**overrides):
+    base = {
         "host": "ldap.example.com",
         "port": 389,
+        "channel": "corp",
         "bind_dn_template": "uid={username},ou=people,dc=example,dc=com",
     }
+    base.update(overrides)
+    return base
 
 
-def _search_bind_config():
-    return {
+def _search_bind_config(**overrides):
+    base = {
         "host": "ldap.example.com",
         "port": 389,
+        "channel": "corp",
         "bind_user_dn": "cn=admin,dc=example,dc=com",
         "bind_user_password": "service",
         "user_search_base": "ou=people,dc=example,dc=com",
         "user_search_filter": "(uid={username})",
     }
+    base.update(overrides)
+    return base
 
 
 class TestLDAPClientConfig:
@@ -47,10 +51,15 @@ class TestLDAPClientConfig:
         with pytest.raises(ValueError):
             LDAPClient({"host": "ldap.example.com"})
 
-    def test_escape_neutralizes_filter_metacharacters(self):
+    def test_filter_escape_neutralizes_metacharacters(self):
         cli = LDAPClient(_direct_bind_config())
-        assert cli._escape("a*b(c)") == r"a\2ab\28c\29"
-        assert cli._escape("d\\e") == r"d\5ce"
+        assert cli._escape_filter("a*b(c)") == r"a\2ab\28c\29"
+        assert cli._escape_filter("d\\e") == r"d\5ce"
+
+    def test_rdn_escape_uses_ldap3_helper(self):
+        cli = LDAPClient(_direct_bind_config())
+        # Comma is a DN separator and must be escaped to live inside an RDN.
+        assert cli._escape_rdn("a,b") == "a\\,b"
 
 
 class TestDirectBind:
@@ -61,17 +70,17 @@ class TestDirectBind:
         bind_conn.bind.return_value = True
         bind_conn.entries = []
 
-        with patch("ldap3.Connection", return_value=bind_conn) as conn_cls, patch("ldap3.Server"):
+        with patch.object(cli, "_open", return_value=bind_conn) as opener, patch.object(cli, "_server"):
             info = cli.authenticate("alice", "secret")
 
-        # Connection was constructed with the formatted DN.
-        kwargs = conn_cls.call_args.kwargs
-        assert kwargs["user"] == "uid=alice,ou=people,dc=example,dc=com"
-        assert kwargs["password"] == "secret"
+        # _open was called with the formatted DN.
+        first_call = opener.call_args_list[0]
+        assert first_call.args[1] == "uid=alice,ou=people,dc=example,dc=com"
+        assert first_call.args[2] == "secret"
         bind_conn.bind.assert_called_once()
 
-        # Synthetic email when directory does not return a mail attribute.
-        assert info.email.endswith("@ldap.example.com")
+        # Synthetic email is namespaced by channel, not directory host.
+        assert info.email == "alice@corp.ldap.local"
         assert info.username == "alice"
 
     def test_authenticate_raises_on_invalid_credentials(self):
@@ -80,7 +89,7 @@ class TestDirectBind:
         bind_conn = MagicMock()
         bind_conn.bind.return_value = False
 
-        with patch("ldap3.Connection", return_value=bind_conn), patch("ldap3.Server"):
+        with patch.object(cli, "_open", return_value=bind_conn), patch.object(cli, "_server"):
             with pytest.raises(LDAPAuthError):
                 cli.authenticate("alice", "wrong")
 
@@ -88,6 +97,17 @@ class TestDirectBind:
         cli = LDAPClient(_direct_bind_config())
         with pytest.raises(LDAPAuthError):
             cli.authenticate("", "")
+
+    def test_require_email_blocks_users_without_mail(self):
+        cli = LDAPClient(_direct_bind_config(require_email=True))
+
+        bind_conn = MagicMock()
+        bind_conn.bind.return_value = True
+        bind_conn.entries = []
+
+        with patch.object(cli, "_open", return_value=bind_conn), patch.object(cli, "_server"):
+            with pytest.raises(LDAPAuthError):
+                cli.authenticate("alice", "secret")
 
 
 class TestSearchThenBind:
@@ -114,18 +134,18 @@ class TestSearchThenBind:
         user_conn = MagicMock()
         user_conn.bind.return_value = True
 
-        with patch("ldap3.Connection", side_effect=[service_conn, user_conn]) as conn_cls, patch("ldap3.Server"):
+        with patch.object(cli, "_open", side_effect=[service_conn, user_conn]) as opener, patch.object(cli, "_server"):
             info = cli.authenticate("bob", "userpw")
 
-        assert conn_cls.call_count == 2
+        assert opener.call_count == 2
         # Service account first, then user DN.
-        first_call = conn_cls.call_args_list[0].kwargs
-        second_call = conn_cls.call_args_list[1].kwargs
-        assert first_call["user"] == "cn=admin,dc=example,dc=com"
-        assert second_call["user"] == "uid=bob,ou=people,dc=example,dc=com"
-        assert second_call["password"] == "userpw"
+        first_call = opener.call_args_list[0]
+        second_call = opener.call_args_list[1]
+        assert first_call.args[1] == "cn=admin,dc=example,dc=com"
+        assert second_call.args[1] == "uid=bob,ou=people,dc=example,dc=com"
+        assert second_call.args[2] == "userpw"
 
-        # Search filter was injected with escaped username.
+        # Search filter was injected with the escaped username.
         service_conn.search.assert_called_once()
         search_kwargs = service_conn.search.call_args.kwargs
         assert search_kwargs["search_filter"] == "(uid=bob)"
@@ -141,6 +161,36 @@ class TestSearchThenBind:
         service_conn.bind.return_value = True
         service_conn.entries = []
 
-        with patch("ldap3.Connection", return_value=service_conn), patch("ldap3.Server"):
+        with patch.object(cli, "_open", return_value=service_conn), patch.object(cli, "_server"):
             with pytest.raises(LDAPAuthError):
                 cli.authenticate("ghost", "pw")
+
+
+class TestStartTLS:
+    def test_use_tls_triggers_start_tls_before_bind(self):
+        cli = LDAPClient(_direct_bind_config(use_tls=True))
+
+        conn = MagicMock()
+        conn.start_tls.return_value = True
+        conn.bind.return_value = True
+        conn.entries = []
+
+        with patch.object(cli, "_open", return_value=conn), patch.object(cli, "_server"):
+            cli.authenticate("alice", "secret")
+
+        conn.start_tls.assert_called_once()
+        assert conn.start_tls.call_args.args == ()
+        # bind() must run after start_tls() in the same connection.
+        conn.bind.assert_called_once()
+
+    def test_failed_start_tls_aborts_login(self):
+        cli = LDAPClient(_direct_bind_config(use_tls=True))
+
+        conn = MagicMock()
+        conn.start_tls.return_value = False
+
+        with patch.object(cli, "_open", return_value=conn), patch.object(cli, "_server"):
+            with pytest.raises(LDAPAuthError):
+                cli.authenticate("alice", "secret")
+
+        conn.bind.assert_not_called()

@@ -38,12 +38,24 @@ class LDAPClient:
         entry, then re-binds with the user's DN and password.
     """
 
+    DEFAULT_CONNECT_TIMEOUT = 5
+    DEFAULT_RECEIVE_TIMEOUT = 10
+
     def __init__(self, config):
         self.config = config
+        self.channel_id = config.get("channel") or config.get("display_name") or "ldap"
         self.host = config["host"]
         self.port = int(config.get("port", 389))
         self.use_ssl = bool(config.get("use_ssl", False))
         self.use_tls = bool(config.get("use_tls", False))
+
+        # TLS hardening: validate certificates by default. Operators can
+        # disable validation explicitly (e.g. self-signed test directories).
+        self.tls_validate = bool(config.get("tls_validate", True))
+        self.ca_certs_file = config.get("ca_certs_file")
+
+        self.connect_timeout = int(config.get("connect_timeout", self.DEFAULT_CONNECT_TIMEOUT))
+        self.receive_timeout = int(config.get("receive_timeout", self.DEFAULT_RECEIVE_TIMEOUT))
 
         self.bind_dn_template = config.get("bind_dn_template")
         self.bind_user_dn = config.get("bind_user_dn")
@@ -55,22 +67,32 @@ class LDAPClient:
         self.nickname_attr = config.get("nickname_attr", "cn")
         self.username_attr = config.get("username_attr", "uid")
 
+        # When True, refuse to authenticate users whose directory entry has
+        # no email attribute. When False, fall back to a channel-namespaced
+        # synthetic address so that distinct directories cannot collide on
+        # one application account.
+        self.require_email = bool(config.get("require_email", False))
+
         if not self.bind_dn_template and not self.bind_user_dn:
             raise ValueError("LDAP config must define either 'bind_dn_template' or 'bind_user_dn' for search-then-bind.")
 
     def _server(self):
-        from ldap3 import Server, Tls
         import ssl
+
+        from ldap3 import Server, Tls
 
         tls = None
         if self.use_tls or self.use_ssl:
-            tls = Tls(validate=ssl.CERT_NONE)
+            validate = ssl.CERT_REQUIRED if self.tls_validate else ssl.CERT_NONE
+            tls = Tls(validate=validate, ca_certs_file=self.ca_certs_file)
+
         return Server(
             host=self.host,
             port=self.port,
             use_ssl=self.use_ssl,
             tls=tls,
-            get_info="ALL",
+            get_info="NONE",
+            connect_timeout=self.connect_timeout,
         )
 
     def authenticate(self, username, password):
@@ -89,18 +111,22 @@ class LDAPClient:
 
         try:
             user_dn, attrs = self._resolve_user(server, username, password)
-        except LDAPException as e:
+        except LDAPAuthError:
+            raise
+        except LDAPException:
             logging.exception("LDAP directory error")
-            raise LDAPAuthError(f"LDAP error: {e}")
+            raise LDAPAuthError("LDAP directory error.")
 
         email = self._first(attrs.get(self.email_attr))
         nickname = self._first(attrs.get(self.nickname_attr)) or username
         login_name = self._first(attrs.get(self.username_attr)) or username
 
         if not email:
-            # Some directories don't expose mail; fall back to a synthetic one
-            # so that the existing user model (which keys on email) still works.
-            email = f"{login_name}@{self.host}"
+            if self.require_email:
+                raise LDAPAuthError("Directory entry has no email attribute and require_email is enabled.")
+            # Channel-namespaced fallback so two directories using the same
+            # uid do not collapse onto a single application user.
+            email = f"{login_name}@{self.channel_id}.ldap.local"
 
         return UserInfo(
             email=email,
@@ -109,27 +135,39 @@ class LDAPClient:
             avatar_url=None,
         )
 
-    def _resolve_user(self, server, username, password):
+    def _open(self, server, user, password):
+        """Build a Connection with the project-wide timeout and TLS policy."""
         from ldap3 import Connection, SIMPLE
 
+        return Connection(
+            server,
+            user=user,
+            password=password,
+            authentication=SIMPLE,
+            auto_bind=False,
+            receive_timeout=self.receive_timeout,
+        )
+
+    def _bind(self, conn):
+        """Bind the connection, performing StartTLS first when configured."""
+        if self.use_tls and not self.use_ssl:
+            if not conn.start_tls():
+                raise LDAPAuthError("StartTLS negotiation failed.")
+        return conn.bind()
+
+    def _resolve_user(self, server, username, password):
         attrs_wanted = [self.email_attr, self.nickname_attr, self.username_attr]
 
         if self.bind_dn_template:
-            user_dn = self.bind_dn_template.format(username=self._escape(username))
-            conn = Connection(
-                server,
-                user=user_dn,
-                password=password,
-                authentication=SIMPLE,
-                auto_bind=False,
-            )
-            if not conn.bind():
+            user_dn = self.bind_dn_template.format(username=self._escape_rdn(username))
+            conn = self._open(server, user_dn, password)
+            if not self._bind(conn):
                 raise LDAPAuthError("Invalid credentials.")
             try:
                 if self.user_search_base:
                     conn.search(
                         search_base=self.user_search_base,
-                        search_filter=f"(distinguishedName={user_dn})" if "dc=" not in user_dn.lower() else f"({self.username_attr}={self._escape(username)})",
+                        search_filter=f"({self.username_attr}={self._escape_filter(username)})",
                         attributes=attrs_wanted,
                     )
                     entry = conn.entries[0] if conn.entries else None
@@ -141,17 +179,11 @@ class LDAPClient:
             return user_dn, attrs
 
         # search-then-bind
-        service_conn = Connection(
-            server,
-            user=self.bind_user_dn,
-            password=self.bind_user_password,
-            authentication=SIMPLE,
-            auto_bind=False,
-        )
-        if not service_conn.bind():
+        service_conn = self._open(server, self.bind_user_dn, self.bind_user_password)
+        if not self._bind(service_conn):
             raise LDAPAuthError("LDAP service account bind failed.")
         try:
-            search_filter = self.user_search_filter.format(username=self._escape(username))
+            search_filter = self.user_search_filter.format(username=self._escape_filter(username))
             service_conn.search(
                 search_base=self.user_search_base,
                 search_filter=search_filter,
@@ -165,20 +197,14 @@ class LDAPClient:
         finally:
             service_conn.unbind()
 
-        user_conn = Connection(
-            server,
-            user=user_dn,
-            password=password,
-            authentication=SIMPLE,
-            auto_bind=False,
-        )
-        if not user_conn.bind():
+        user_conn = self._open(server, user_dn, password)
+        if not self._bind(user_conn):
             raise LDAPAuthError("Invalid credentials.")
         user_conn.unbind()
         return user_dn, attrs
 
     @staticmethod
-    def _escape(value):
+    def _escape_filter(value):
         # Escape per RFC 4515 to prevent LDAP filter injection.
         replacements = {
             "\\": r"\5c",
@@ -190,6 +216,13 @@ class LDAPClient:
         for ch, rep in replacements.items():
             value = value.replace(ch, rep)
         return value
+
+    @staticmethod
+    def _escape_rdn(value):
+        # RFC 4514 RDN-value escaping for safe interpolation into a DN.
+        from ldap3.utils.dn import escape_rdn
+
+        return escape_rdn(value)
 
     @staticmethod
     def _first(value):

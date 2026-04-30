@@ -110,6 +110,8 @@ export default {
       ldapDescription:
         'Use your directory credentials to sign in.',
       cancel: 'Cancel',
+      passwordEncryptFailed:
+        'Could not encrypt the password. Please reload the page and try again.',
     },
     header: {
       knowledgeBase: 'Dataset',

@@ -70,6 +70,8 @@ export default {
       ldapDescription:
         'Sử dụng thông tin xác thực thư mục của bạn để đăng nhập.',
       cancel: 'Hủy',
+      passwordEncryptFailed:
+        'Không thể mã hóa mật khẩu. Vui lòng tải lại trang và thử lại.',
     },
     header: {
       knowledgeBase: 'Cơ sở kiến thức',

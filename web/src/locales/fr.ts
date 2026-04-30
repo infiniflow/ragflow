@@ -71,6 +71,8 @@ export default {
       ldapDescription:
         "Utilisez vos identifiants d'annuaire pour vous connecter.",
       cancel: 'Annuler',
+      passwordEncryptFailed:
+        'Impossible de chiffrer le mot de passe. Veuillez recharger la page et réessayer.',
     },
     header: {
       knowledgeBase: 'Base de connaissances',

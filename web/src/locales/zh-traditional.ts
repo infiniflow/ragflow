@@ -67,6 +67,7 @@ export default {
       ldapTitle: '使用 {{provider}} 登入',
       ldapDescription: '使用您的目錄憑證進行登入。',
       cancel: '取消',
+      passwordEncryptFailed: '無法加密密碼，請重新載入頁面後再試。',
     },
     header: {
       knowledgeBase: '知識庫',

@@ -98,6 +98,8 @@ export default {
       ldapDescription:
         'Verwenden Sie Ihre Verzeichnis-Anmeldedaten zum Anmelden.',
       cancel: 'Abbrechen',
+      passwordEncryptFailed:
+        'Passwort konnte nicht verschlüsselt werden. Bitte laden Sie die Seite neu und versuchen Sie es erneut.',
     },
     header: {
       knowledgeBase: 'Wissensdatenbank',

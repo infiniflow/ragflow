@@ -26,7 +26,7 @@ import base64
 from quart import make_response, redirect, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from api.apps.auth import get_auth_client
+from api.apps.auth import get_auth_client, infer_channel_type
 from api.apps.auth.ldap import LDAPAuthError, LDAPClient
 from api.db import FileType, UserTenantRole
 from api.db.db_models import TenantLLM
@@ -140,15 +140,13 @@ async def login():
         )
 
 
-def _channel_type(config):
-    declared = str(config.get("type", "")).lower()
-    if declared:
-        return declared
-    if config.get("issuer"):
-        return "oidc"
-    if config.get("host") and (config.get("bind_dn_template") or config.get("bind_user_dn")):
-        return "ldap"
-    return "oauth2"
+def _mask_email(value):
+    if not value or "@" not in value:
+        return "***"
+    local, _, domain = value.partition("@")
+    if not local:
+        return f"***@{domain}"
+    return f"{local[0]}***@{domain}"
 
 
 @manager.route("/auth/login/channels", methods=["GET"])  # noqa: F821
@@ -159,7 +157,7 @@ async def get_login_channels():
     try:
         channels = []
         for channel, config in settings.OAUTH_CONFIG.items():
-            ch_type = _channel_type(config)
+            ch_type = infer_channel_type(config)
             channels.append(
                 {
                     "channel": channel,
@@ -182,7 +180,7 @@ async def oauth_login(channel):
     channel_config = settings.OAUTH_CONFIG.get(channel)
     if not channel_config:
         raise ValueError(f"Invalid channel name: {channel}")
-    if _channel_type(channel_config) == "ldap":
+    if infer_channel_type(channel_config) == "ldap":
         # LDAP is form-based. Bounce back to the login page; the frontend
         # is expected to render an inline form for ldap channels.
         return redirect(f"/login?ldap={channel}")
@@ -237,11 +235,12 @@ async def ldap_login():
     raw_password = json_body.get("password")
 
     channel_config = settings.OAUTH_CONFIG.get(channel)
-    if not channel_config or _channel_type(channel_config) != "ldap":
+    if not channel_config or infer_channel_type(channel_config) != "ldap":
+        logging.warning("LDAP login attempted on unconfigured channel: %s", channel)
         return get_json_result(
             data=False,
             code=RetCode.AUTHENTICATION_ERROR,
-            message=f"LDAP channel '{channel}' is not configured.",
+            message="Authentication failed.",
         )
 
     if not username or not raw_password:
@@ -251,8 +250,11 @@ async def ldap_login():
             message="Username and password are required.",
         )
 
+    # ``decrypt`` returns the base64-encoded form of the original password
+    # (see api/utils/crypt.py docstring). LDAP needs the raw password to
+    # perform the bind, so we have to decode the base64 layer ourselves.
     try:
-        password = decrypt(raw_password)
+        password = base64.b64decode(decrypt(raw_password)).decode("utf-8")
     except BaseException:
         return get_json_result(
             data=False,
@@ -260,17 +262,25 @@ async def ldap_login():
             message="Fail to crypt password",
         )
 
+    # Inject the channel id into a config copy so the LDAPClient can
+    # namespace synthetic emails by channel rather than by host.
+    cfg = dict(channel_config)
+    cfg.setdefault("channel", channel)
+
     try:
-        ldap_cli: LDAPClient = get_auth_client(channel_config)
+        ldap_cli: LDAPClient = get_auth_client(cfg)
         user_info = await asyncio.to_thread(ldap_cli.authenticate, username, password)
-    except LDAPAuthError as e:
+    except LDAPAuthError:
+        # Reason is logged inside the client; surface only a generic message
+        # to the caller so we don't leak directory-existence information.
+        logging.warning("LDAP authentication failed on channel %s", channel)
         return get_json_result(
             data=False,
             code=RetCode.AUTHENTICATION_ERROR,
-            message=str(e),
+            message="Authentication failed.",
         )
-    except Exception as e:
-        logging.exception(e)
+    except Exception:
+        logging.exception("Unexpected LDAP login failure on channel %s", channel)
         return get_json_result(
             data=False,
             code=RetCode.EXCEPTION_ERROR,
@@ -278,9 +288,22 @@ async def ldap_login():
         )
 
     users = UserService.query(email=user_info.email)
-    user_id = get_uuid()
+    if len(users) > 1:
+        # The local database has multiple rows for this LDAP identity;
+        # picking the first one would silently merge accounts. Bail out.
+        logging.error(
+            "Multiple local users matched one LDAP identity (%s) on channel %s",
+            _mask_email(user_info.email),
+            channel,
+        )
+        return get_json_result(
+            data=False,
+            code=RetCode.OPERATING_ERROR,
+            message="Multiple accounts match this directory identity. Please contact the administrator.",
+        )
 
     if not users:
+        user_id = get_uuid()
         try:
             users = user_register(
                 user_id,
@@ -295,14 +318,23 @@ async def ldap_login():
                 },
             )
             if not users:
-                raise Exception(f"Failed to register {user_info.email}")
-        except Exception as e:
+                raise Exception(f"Failed to register {_mask_email(user_info.email)}")
+            logging.info(
+                "Provisioned LDAP user %s on channel %s",
+                _mask_email(user_info.email),
+                channel,
+            )
+        except Exception:
             rollback_user_registration(user_id)
-            logging.exception(e)
+            logging.exception(
+                "Failed to provision LDAP user %s on channel %s",
+                _mask_email(user_info.email),
+                channel,
+            )
             return get_json_result(
                 data=False,
                 code=RetCode.EXCEPTION_ERROR,
-                message=str(e),
+                message="Failed to provision user.",
             )
 
     user = users[0]
@@ -319,6 +351,12 @@ async def ldap_login():
     user.update_time = current_timestamp()
     user.update_date = datetime_format(datetime.now())
     user.save()
+
+    logging.info(
+        "LDAP login succeeded for %s on channel %s",
+        _mask_email(user_info.email),
+        channel,
+    )
 
     return await construct_response(
         data=response_data,

@@ -101,6 +101,8 @@ export default {
       ldapDescription:
         'Usa le tue credenziali della directory per accedere.',
       cancel: 'Annulla',
+      passwordEncryptFailed:
+        'Impossibile cifrare la password. Ricarica la pagina e riprova.',
     },
     header: {
       knowledgeBase: 'Dataset',

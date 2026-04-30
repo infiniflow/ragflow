@@ -105,6 +105,8 @@ export default {
       ldapTitle: '{{provider}} ile giriş yap',
       ldapDescription: 'Giriş için dizin kimlik bilgilerinizi kullanın.',
       cancel: 'İptal',
+      passwordEncryptFailed:
+        'Parola şifrelenemedi. Lütfen sayfayı yenileyip tekrar deneyin.',
     },
     header: {
       knowledgeBase: 'Dataset',

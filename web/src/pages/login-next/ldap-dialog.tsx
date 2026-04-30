@@ -7,6 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import message from '@/components/ui/message';
 import {
   Form,
   FormControl,
@@ -62,10 +63,18 @@ export function LdapDialog({
 
   const onSubmit = async ({ username, password }: Values) => {
     if (!channel) return;
+    const encrypted = rsaPsw(password);
+    if (typeof encrypted !== 'string' || encrypted.length === 0) {
+      // jsencrypt returns false when the public key is missing or the
+      // payload exceeds the key size; fail visibly instead of sending a
+      // boolean to the backend.
+      message.error(t('passwordEncryptFailed'));
+      return;
+    }
     const code = await login({
       channel,
       username: username.trim(),
-      password: rsaPsw(password) as string,
+      password: encrypted,
     });
     if (code === 0) {
       onOpenChange(false);
