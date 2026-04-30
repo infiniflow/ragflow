@@ -10,9 +10,9 @@
   <a href="./README_tzh.md"><img alt="繁體版中文自述文件" src="https://img.shields.io/badge/繁體中文-DFE0E5"></a>
   <a href="./README_ja.md"><img alt="日本語のREADME" src="https://img.shields.io/badge/日本語-DFE0E5"></a>
   <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/한국어-DFE0E5"></a>
+  <a href="./README_fr.md"><img alt="README en Français" src="https://img.shields.io/badge/Français-DFE0E5"></a>
   <a href="./README_id.md"><img alt="Bahasa Indonesia" src="https://img.shields.io/badge/Bahasa Indonesia-DFE0E5"></a>
   <a href="./README_pt_br.md"><img alt="Português(Brasil)" src="https://img.shields.io/badge/Português(Brasil)-DBEDFA"></a>
-  <a href="./README_fr.md"><img alt="README en Français" src="https://img.shields.io/badge/Français-DFE0E5"></a>
   <a href="./README_ar.md"><img alt="README in Arabic" src="https://img.shields.io/badge/Arabic-DFE0E5"></a>
   <a href="./README_tr.md"><img alt="Türkçe README" src="https://img.shields.io/badge/Türkçe-DFE0E5"></a>
 </p>
@@ -22,7 +22,7 @@
         <img src="https://img.shields.io/twitter/follow/infiniflow?logo=X&color=%20%23f5f5f5" alt="seguir no X(Twitter)">
     </a>
     <a href="https://cloud.ragflow.io" target="_blank">
-        <img alt="Badge Estático" src="https://img.shields.io/badge/Online-Demo-4e6b99">
+        <img alt="Badge Estático" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
         <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.25.1">
@@ -39,11 +39,10 @@
 </p>
 
 <h4 align="center">
+  <a href="https://cloud.ragflow.io">Cloud</a> |
   <a href="https://ragflow.io/docs/dev/">Documentação</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/12241">Roadmap</a> |
-  <a href="https://twitter.com/infiniflowai">Twitter</a> |
-  <a href="https://discord.gg/NjYzJD3GM3">Discord</a> |
-  <a href="https://cloud.ragflow.io">Demo</a>
+  <a href="https://discord.gg/NjYzJD3GM3">Discord</a>
 </h4>
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
@@ -58,11 +57,11 @@
 <summary><b>📕 Índice</b></summary>
 
 - 💡 [O que é o RAGFlow?](#-o-que-é-o-ragflow)
-- 🎮 [Demo](#-demo)
+- 🎮 [Primeiros Passos](#-primeiros-passos)
 - 📌 [Últimas Atualizações](#-últimas-atualizações)
 - 🌟 [Principais Funcionalidades](#-principais-funcionalidades)
 - 🔎 [Arquitetura do Sistema](#-arquitetura-do-sistema)
-- 🎬 [Primeiros Passos](#-primeiros-passos)
+- 🎬 [Auto-hospedagem](#-auto-hospedagem)
 - 🔧 [Configurações](#-configurações)
 - 🔧 [Construir uma imagem docker sem incorporar modelos](#-construir-uma-imagem-docker-sem-incorporar-modelos)
 - 🔧 [Construir uma imagem docker incluindo modelos](#-construir-uma-imagem-docker-incluindo-modelos)
@@ -78,9 +77,9 @@
 
 [RAGFlow](https://ragflow.io/) é um mecanismo de [RAG](https://ragflow.io/basics/what-is-rag) (Retrieval-Augmented Generation) open-source líder que fusiona tecnologias RAG de ponta com funcionalidades Agent para criar uma camada contextual superior para LLMs. Oferece um fluxo de trabalho RAG otimizado adaptável a empresas de qualquer escala. Alimentado por [um motor de contexto](https://ragflow.io/basics/what-is-agent-context-engine) convergente e modelos Agent pré-construídos, o RAGFlow permite que desenvolvedores transformem dados complexos em sistemas de IA de alta fidelidade e pronto para produção com excepcional eficiência e precisão.
 
-## 🎮 Demo
+## 🎮 Primeiros Passos
 
-Experimente nossa demo em [https://cloud.ragflow.io](https://cloud.ragflow.io).
+Experimente o nosso serviço na nuvem em [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -146,7 +145,7 @@ Experimente nossa demo em [https://cloud.ragflow.io](https://cloud.ragflow.io).
 <img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
-## 🎬 Primeiros Passos
+## 🎬 Auto-hospedagem
 
 ### 📝 Pré-requisitos
 
