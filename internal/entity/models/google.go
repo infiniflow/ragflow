@@ -46,7 +46,7 @@ func (z *GoogleModel) Name() string {
 	return "google"
 }
 
-func (z *GoogleModel) ChatWithMessages(modelName string, apiConfig *APIConfig, messages []Message, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (z *GoogleModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is nil or empty")
 	}
@@ -119,8 +119,12 @@ func (z *GoogleModel) ChatWithMessages(modelName string, apiConfig *APIConfig, m
 	return &ChatResponse{Answer: &answer}, nil
 }
 
-// ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (z *GoogleModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
+func (z *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
+	}
+
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  *apiConfig.ApiKey,
@@ -129,12 +133,53 @@ func (z *GoogleModel) ChatStreamlyWithSender(modelName, message *string, apiConf
 	if err != nil {
 		return err
 	}
-	contents := []*genai.Content{
-		genai.NewContentFromText(*message, genai.RoleUser),
+
+	// Convert messages to Google SDK format
+	var contents []*genai.Content
+	for _, msg := range messages {
+		var role genai.Role
+		switch msg.Role {
+		case "user":
+			role = genai.RoleUser
+		case "model", "assistant":
+			role = genai.RoleModel
+		default:
+			role = genai.RoleUser
+		}
+
+		// Handle content based on type
+		switch c := msg.Content.(type) {
+		case string:
+			contents = append(contents, genai.NewContentFromText(c, role))
+		case []interface{}:
+			// Multimodal content - group parts within a single content
+			var parts []*genai.Part
+			for _, item := range c {
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					contentType, _ := itemMap["type"].(string)
+					switch contentType {
+					case "text":
+						if text, ok := itemMap["text"].(string); ok {
+							parts = append(parts, genai.NewPartFromText(text))
+						}
+					case "image_url":
+						if imgMap, ok := itemMap["image_url"].(map[string]interface{}); ok {
+							if url, ok := imgMap["url"].(string); ok {
+								parts = append(parts, genai.NewPartFromURI(url, "image/jpeg"))
+							}
+						}
+					}
+				}
+			}
+			if len(parts) > 0 {
+				contents = append(contents, genai.NewContentFromParts(parts, role))
+			}
+		}
 	}
+
 	for response, err := range client.Models.GenerateContentStream(
 		ctx,
-		*modelName,
+		modelName,
 		contents,
 		nil,
 	) {
@@ -145,7 +190,7 @@ func (z *GoogleModel) ChatStreamlyWithSender(modelName, message *string, apiConf
 		content := response.Text()
 
 		var responseContent string
-		if chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+		if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
 			responseContent = response.Candidates[0].Content.Parts[0].Text
 		}
 
@@ -157,7 +202,7 @@ func (z *GoogleModel) ChatStreamlyWithSender(modelName, message *string, apiConf
 		}
 
 		if content != "" {
-			common.Info(fmt.Sprintf("Answer: %s", responseContent))
+			common.Info(fmt.Sprintf("Answer: %s", content))
 			if err = sender(&content, nil); err != nil {
 				return err
 			}

@@ -105,6 +105,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.AIRTABLE]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.WEBDAV]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.ZENDESK]: {
     syncDeletedFiles: true,
   },
@@ -112,6 +115,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.ASANA]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.RSS]: {
     syncDeletedFiles: true,
   },
 };

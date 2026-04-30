@@ -562,7 +562,7 @@ func (s *ChatSessionService) asyncChatSolo(dialog *entity.Chat, session *entity.
 	chatConfig := s.buildChatConfig(dialog, config)
 
 	// Perform chat
-	response, err := chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, chatModel.APIConfig, msgs, chatConfig)
+	response, err := chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, msgs, chatModel.APIConfig, chatConfig)
 	if err != nil {
 		common.Error("asyncChatSolo chat failed", err)
 		return nil, err
@@ -604,26 +604,31 @@ func (s *ChatSessionService) asyncChatSoloStream(dialog *entity.Chat, session *e
 		return
 	}
 
-	// Convert messages to single string for ChatStreamlyWithSender
-	var msgBuilder strings.Builder
+	// Convert messages to []modelModule.Message for ChatStreamlyWithSender
+	var chatMessages []modelModule.Message
 	if systemPrompt != "" {
-		msgBuilder.WriteString("System: " + systemPrompt + "\n")
+		chatMessages = append(chatMessages, modelModule.Message{
+			Role:    "system",
+			Content: systemPrompt,
+		})
 	}
 	for _, msg := range processedMessages {
 		role, _ := msg["role"].(string)
-		content, _ := msg["content"].(string)
-		if role != "" && content != "" && role != "system" {
-			msgBuilder.WriteString(role + ": " + content + "\n")
+		content := msg["content"]
+		if role != "" && content != nil && role != "system" {
+			chatMessages = append(chatMessages, modelModule.Message{
+				Role:    role,
+				Content: content,
+			})
 		}
 	}
-	messageStr := msgBuilder.String()
 
 	// Get ChatConfig directly from dialog and config
 	chatConfig := s.buildChatConfig(dialog, config)
 
 	// Perform streaming chat using ChatStreamlyWithSender
 	fullAnswer := ""
-	err = chatModel.ModelDriver.ChatStreamlyWithSender(chatModel.ModelName, &messageStr, chatModel.APIConfig, chatConfig, func(answer *string, reason *string) error {
+	err = chatModel.ModelDriver.ChatStreamlyWithSender(*chatModel.ModelName, chatMessages, chatModel.APIConfig, chatConfig, func(answer *string, reason *string) error {
 		if reason != nil && *reason != "" {
 			fullAnswer += *reason
 			ans := s.structureAnswer(session, fullAnswer, messageID, session.ID, reference)
