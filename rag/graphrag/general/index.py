@@ -449,7 +449,7 @@ async def run_graphrag_for_kb(
 
 
 async def generate_subgraph(
-    extractor: Extractor,
+    extractor: type[Extractor],
     tenant_id: str,
     kb_id: str,
     doc_id: str,
@@ -560,7 +560,7 @@ async def resolve_entities(
     subgraph_nodes: set[str],
     tenant_id: str,
     kb_id: str,
-    doc_id: str,
+    doc_id: str | None,
     llm_bdl,
     embed_bdl,
     callback,
@@ -595,7 +595,7 @@ async def extract_community(
     graph,
     tenant_id: str,
     kb_id: str,
-    doc_id: str,
+    doc_id: str | None,
     llm_bdl,
     embed_bdl,
     callback,

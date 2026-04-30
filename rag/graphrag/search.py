@@ -22,6 +22,7 @@ import json_repair
 import pandas as pd
 
 from common.misc_utils import get_uuid
+from rag.graphrag.llm_protocol import GraphRAGCompletionLLM, unwrap_graphrag_chat_response
 from rag.graphrag.query_analyze_prompt import PROMPTS
 from rag.graphrag.utils import get_entity_type2samples, get_llm_cache, set_llm_cache, get_relation
 from common.token_utils import num_tokens_from_string
@@ -33,17 +34,18 @@ from common.doc_store.doc_store_base import OrderByExpr
 
 
 class KGSearch(Dealer):
-    async def _chat(self, llm_bdl, system, history, gen_conf):
+    async def _chat(self, llm_bdl: GraphRAGCompletionLLM, system: str, history: list[dict[str, str]], gen_conf: dict):
         response = get_llm_cache(llm_bdl.llm_name, system, history, gen_conf)
         if response:
             return response
         response = await llm_bdl.async_chat(system, history, gen_conf)
+        response = unwrap_graphrag_chat_response(response)
         if response.find("**ERROR**") >= 0:
             raise Exception(response)
         set_llm_cache(llm_bdl.llm_name, system, response, history, gen_conf)
         return response
 
-    async def query_rewrite(self, llm, question, idxnms, kb_ids):
+    async def query_rewrite(self, llm: GraphRAGCompletionLLM, question, idxnms, kb_ids):
         ty2ents = await get_entity_type2samples(idxnms, kb_ids)
         hint_prompt = PROMPTS["minirag_query2kwd"].format(query=question,
                                                           TYPE_POOL=json.dumps(ty2ents, ensure_ascii=False, indent=2))
