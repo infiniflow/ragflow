@@ -33,7 +33,7 @@ def infer_channel_type(config):
     Order: explicit ``type`` field > OIDC discovery (``issuer``) >
     LDAP heuristic (``host`` + a bind option) > generic ``oauth2``.
     """
-    declared = str(config.get("type", "")).lower()
+    declared = str(config.get("type", "")).strip().lower()
     if declared:
         return declared
     if config.get("issuer"):
