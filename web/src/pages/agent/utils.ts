@@ -281,6 +281,13 @@ function transformParserParams(params: ParserFormSchemaType) {
           };
           break;
         case FileType.Doc:
+          filteredSetup = {
+            ...filteredSetup,
+            vlm: { llm_id: cur.vlm?.llm_id },
+            flatten_media_to_text: cur.flatten_media_to_text,
+            remove_header_footer: cur.remove_header_footer || false,
+          };
+          break;
         case FileType.Docx:
           filteredSetup = {
             ...filteredSetup,
