@@ -676,6 +676,12 @@ func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, mod
 
 // ChatToModelWithMessages sends messages to the model with messages array
 func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceName, modelName, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig) (*modelModule.ChatResponse, common.ErrorCode, error) {
+	if apiConfig == nil {
+		apiConfig = &modelModule.APIConfig{}
+	}
+	if modelConfig == nil {
+		modelConfig = &modelModule.ChatConfig{}
+	}
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -730,6 +736,9 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
+		if response == nil {
+			return nil, common.CodeServerError, errors.New("empty chat response")
+		}
 
 		return response, common.CodeSuccess, nil
 	}
@@ -763,6 +772,10 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
+		if response == nil {
+			return nil, common.CodeServerError, errors.New("empty chat response")
+		}
+
 		return response, common.CodeSuccess, nil
 	}
 
@@ -785,6 +798,9 @@ func (m *ModelProviderService) ChatWithMessagesToModelByApiKey(providerName, mod
 	response, err = providerInfo.ModelDriver.ChatWithMessages(modelName, &modelModule.APIConfig{ApiKey: &apiKey}, messages, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
+	}
+	if response == nil {
+		return nil, common.CodeServerError, errors.New("empty chat response")
 	}
 
 	return response.Answer, common.CodeSuccess, nil

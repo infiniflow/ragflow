@@ -180,12 +180,15 @@ func (z *MinimaxModel) Chat(modelName, message *string, apiConfig *APIConfig, mo
 
 // ChatWithMessages sends multiple messages with roles and returns response
 func (z *MinimaxModel) ChatWithMessages(modelName string, apiConfig *APIConfig, messages []Message, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is nil or empty")
+	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -203,7 +206,7 @@ func (z *MinimaxModel) ChatWithMessages(modelName string, apiConfig *APIConfig, 
 	// Build request body
 	reqBody := map[string]interface{}{
 		"model":       modelName,
-		"messages":     apiMessages,
+		"messages":    apiMessages,
 		"stream":      false,
 		"temperature": 1,
 	}

@@ -217,7 +217,7 @@ func (z *VolcEngine) ChatWithMessages(modelName string, apiConfig *APIConfig, me
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
 
@@ -235,7 +235,7 @@ func (z *VolcEngine) ChatWithMessages(modelName string, apiConfig *APIConfig, me
 	// Build request body
 	reqBody := map[string]interface{}{
 		"model":       modelName,
-		"messages":     apiMessages,
+		"messages":    apiMessages,
 		"stream":      false,
 		"temperature": 1,
 	}
@@ -260,7 +260,11 @@ func (z *VolcEngine) ChatWithMessages(modelName string, apiConfig *APIConfig, me
 		if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
 				var thinkingFlag string
-				switch *chatModelConfig.Effort {
+				effort := "medium"
+				if chatModelConfig.Effort != nil {
+					effort = *chatModelConfig.Effort
+				}
+				switch effort {
 				case "none", "minimal":
 					thinkingFlag = "disabled"
 					reqBody["reasoning_effort"] = "minimal"
@@ -277,7 +281,8 @@ func (z *VolcEngine) ChatWithMessages(modelName string, apiConfig *APIConfig, me
 					thinkingFlag = "enabled"
 					reqBody["reasoning_effort"] = "high"
 				default:
-					return nil, fmt.Errorf("invalid effort level")
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = effort
 				}
 				reqBody["thinking"] = map[string]interface{}{
 					"type": thinkingFlag,
@@ -301,7 +306,9 @@ func (z *VolcEngine) ChatWithMessages(modelName string, apiConfig *APIConfig, me
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
 
 	resp, err := z.httpClient.Do(req)
 	if err != nil {

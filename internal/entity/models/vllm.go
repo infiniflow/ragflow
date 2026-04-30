@@ -209,6 +209,12 @@ func (z *VllmModel) ChatWithMessages(modelName string, apiConfig *APIConfig, mes
 
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
 
+	// For qwen/glm models, use async chat endpoint
+	modelType := strings.Split(modelName, "-")[0]
+	if modelType == "qwen" || modelType == "glm" {
+		url = fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.AsyncChat)
+	}
+
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {

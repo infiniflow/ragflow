@@ -113,33 +113,32 @@ func (z *DeepSeekModel) ChatWithMessages(modelName string, apiConfig *APIConfig,
 		if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
 				var thinkingFlag string
-				switch *chatModelConfig.Effort {
+				effort := "high"
+				if chatModelConfig.Effort != nil {
+					effort = *chatModelConfig.Effort
+				}
+				switch effort {
 				case "none":
 					thinkingFlag = "disabled"
 					chatModelConfig.Thinking = nil
-					break
 				case "low":
 					thinkingFlag = "disabled"
 					chatModelConfig.Thinking = nil
-					break
 				case "medium":
 					thinkingFlag = "disabled"
 					chatModelConfig.Thinking = nil
-					break
 				case "high":
 					thinkingFlag = "enabled"
 					reqBody["reasoning_effort"] = "high"
-					break
 				case "default":
 					thinkingFlag = "enabled"
 					reqBody["reasoning_effort"] = "high"
-					break
 				case "max":
 					thinkingFlag = "enabled"
 					reqBody["reasoning_effort"] = "max"
-					break
 				default:
-					return nil, fmt.Errorf("invalid effort level")
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = effort
 				}
 				reqBody["thinking"] = map[string]interface{}{
 					"type": thinkingFlag,

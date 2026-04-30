@@ -114,6 +114,18 @@ func (z *GiteeModel) ChatWithMessages(modelName string, apiConfig *APIConfig, me
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
+
+		if chatModelConfig.Thinking != nil {
+			if *chatModelConfig.Thinking {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "enabled",
+				}
+			} else {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "disabled",
+				}
+			}
+		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -172,8 +184,28 @@ func (z *GiteeModel) ChatWithMessages(modelName string, apiConfig *APIConfig, me
 		return nil, fmt.Errorf("invalid content format")
 	}
 
+	// Handle thinking/reasoning if enabled
+	var reasonContent string
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+		// Try to get reasoning_content directly first
+		if rc, ok := messageMap["reasoning_content"].(string); ok && rc != "" {
+			reasonContent = rc
+			if reasonContent[0] == '\n' {
+				reasonContent = reasonContent[1:]
+			}
+		} else {
+			// Fall back to parsing <think> tags from content
+			reasoning, answer := GetThinkingAndAnswer(chatModelConfig.ModelClass, &content)
+			if reasoning != nil {
+				reasonContent = *reasoning
+				content = *answer
+			}
+		}
+	}
+
 	chatResponse := &ChatResponse{
-		Answer: &content,
+		Answer:        &content,
+		ReasonContent: &reasonContent,
 	}
 
 	return chatResponse, nil

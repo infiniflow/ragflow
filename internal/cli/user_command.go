@@ -1548,26 +1548,18 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	url := "/chat/completions"
 
 	message = strings.TrimSpace(message)
-	var formattedMessage []map[string]interface{}
-
-	// Check if message is JSON (multimodal content)
-	if (strings.HasPrefix(message, "[") && strings.HasSuffix(message, "]")) ||
-		(strings.HasPrefix(message, "{") && strings.HasSuffix(message, "}")) {
-		// Use raw JSON for content
-		formattedMessage = []map[string]interface{}{
-			{
-				"role":    "user",
-				"content": json.RawMessage(message),
-			},
+	var content interface{} = message
+	if strings.HasPrefix(message, "[") && strings.HasSuffix(message, "]") {
+		var parts []map[string]interface{}
+		if err := json.Unmarshal([]byte(message), &parts); err == nil {
+			content = parts
 		}
-	} else {
-		// Simple text content - just use string
-		formattedMessage = []map[string]interface{}{
-			{
-				"role":    "user",
-				"content": message,
-			},
-		}
+	}
+	formattedMessage := []map[string]interface{}{
+		{
+			"role":    "user",
+			"content": content,
+		},
 	}
 
 	payload := map[string]interface{}{

@@ -82,23 +82,27 @@ func (z *GoogleModel) ChatWithMessages(modelName string, apiConfig *APIConfig, m
 		case string:
 			contents = append(contents, genai.NewContentFromText(c, role))
 		case []interface{}:
-			// Multimodal content
+			// Multimodal content - group parts within a single content
+			var parts []*genai.Part
 			for _, item := range c {
 				if itemMap, ok := item.(map[string]interface{}); ok {
 					contentType, _ := itemMap["type"].(string)
 					switch contentType {
 					case "text":
 						if text, ok := itemMap["text"].(string); ok {
-							contents = append(contents, genai.NewContentFromText(text, role))
+							parts = append(parts, genai.NewPartFromText(text))
 						}
 					case "image_url":
 						if imgMap, ok := itemMap["image_url"].(map[string]interface{}); ok {
 							if url, ok := imgMap["url"].(string); ok {
-								contents = append(contents, genai.NewContentFromText(url, role))
+								parts = append(parts, genai.NewPartFromURI(url, "image/jpeg"))
 							}
 						}
 					}
 				}
+			}
+			if len(parts) > 0 {
+				contents = append(contents, genai.NewContentFromParts(parts, role))
 			}
 		}
 	}
