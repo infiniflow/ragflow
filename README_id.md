@@ -57,11 +57,11 @@
 <summary><b>📕 Daftar Isi </b> </summary>
 
 - 💡 [Apa Itu RAGFlow?](#-apa-itu-ragflow)
-- 🎮 [Demo](#-demo)
+- 🎮 [Mulai](#-mulai)
 - 📌 [Pembaruan Terbaru](#-pembaruan-terbaru)
 - 🌟 [Fitur Utama](#-fitur-utama)
 - 🔎 [Arsitektur Sistem](#-arsitektur-sistem)
-- 🎬 [Mulai](#-mulai)
+- 🎬 [Pengelolaan Mandiri](#-pengelolaan-mandiri)
 - 🔧 [Konfigurasi](#-konfigurasi)
 - 🔧 [Membangun Image Docker](#-membangun-docker-image)
 - 🔨 [Meluncurkan aplikasi dari Sumber untuk Pengembangan](#-meluncurkan-aplikasi-dari-sumber-untuk-pengembangan)
@@ -76,9 +76,9 @@
 
 [RAGFlow](https://ragflow.io/) adalah mesin [RAG](https://ragflow.io/basics/what-is-rag) (Retrieval-Augmented Generation) open-source terkemuka yang mengintegrasikan teknologi RAG mutakhir dengan kemampuan Agent untuk menciptakan lapisan kontekstual superior bagi LLM. Menyediakan alur kerja RAG yang efisien dan dapat diadaptasi untuk perusahaan segala skala. Didukung oleh mesin konteks terkonvergensi dan template Agent yang telah dipra-bangun, RAGFlow memungkinkan pengembang mengubah data kompleks menjadi sistem AI kesetiaan-tinggi dan siap-produksi dengan efisiensi dan presisi yang luar biasa.
 
-## 🎮 Demo
+## 🎮 Mulai
 
-Coba demo kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
+Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -144,7 +144,7 @@ Coba demo kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 <img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
-## 🎬 Mulai
+## 🎬 Pengelolaan Mandiri
 
 ### 📝 Prasyarat
 

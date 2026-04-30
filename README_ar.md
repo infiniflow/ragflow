@@ -57,11 +57,11 @@
 <summary><b>📕 جدول المحتويات</b></summary>
 
 - 💡 [ما هو RAGFlow؟](#-what-is-ragflow)
-- 🎮 [Demo](#-demo)
+- 🎮 [ابدأ](#-get-started)
 - 📌 [آخر التحديثات](#-latest-updates)
 - 🌟 [الميزات الرئيسية](#-key-features)
 - 🔎 [بنية النظام](#-system-architecture)
-- 🎬 [ابدأ](#-get-started)
+- 🎬 [الاستضافة الذاتية](#-self-hosting)
 - 🔧 [التكوينات](#-configurations)
 - 🔧 [إنشاء صورة Docker](#-build-a-docker-image)
 - 🔨 [إطلاق الخدمة من المصدر للتطوير](#-launch-service-from-source-for-development)
@@ -76,7 +76,7 @@
 
 يُعد مشروع [RAGFlow](https://ragflow.io/) محركًا رائدًا ومفتوح المصدر للاسترجاع المعزز بالتوليد (<bdi dir="ltr">RAG</bdi>)، ويجمع أحدث تقنيات <bdi dir="ltr">RAG</bdi> مع قدرات الوكلاء لبناء طبقة سياق متقدمة لنماذج <bdi dir="ltr">LLMs</bdi>. يوفّر سير عمل <bdi dir="ltr">RAG</bdi> مبسّطًا وقابلًا للتكيّف مع المؤسسات بمختلف أحجامها. وبالاعتماد على [محرك سياق موحّد](https://ragflow.io/basics/what-is-agent-context-engine) وقوالب وكلاء جاهزة، يتيح <bdi dir="ltr">RAGFlow</bdi> للمطورين تحويل البيانات المعقّدة إلى أنظمة <bdi dir="ltr">AI</bdi> عالية الدقة وجاهزة للإنتاج بكفاءة وموثوقية.
 
-## 🎮 Demo
+## 🎮 ابدأ
 
 جرّب النسخة التجريبية على [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
@@ -144,7 +144,7 @@
 <img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
-## 🎬 ابدأ
+## 🎬 الاستضافة الذاتية
 
 ### 📝 المتطلبات الأساسية
 

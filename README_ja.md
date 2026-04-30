@@ -57,9 +57,9 @@
 
 [RAGFlow](https://ragflow.io/) は、先進的な[RAG](https://ragflow.io/basics/what-is-rag)（Retrieval-Augmented Generation）技術と Agent 機能を融合し、大規模言語モデル（LLM）に優れたコンテキスト層を構築する最先端のオープンソース RAG エンジンです。あらゆる規模の企業に対応可能な合理化された RAG ワークフローを提供し、統合型[コンテキストエンジン](https://ragflow.io/basics/what-is-agent-context-engine)と事前構築されたAgentテンプレートにより、開発者が複雑なデータを驚異的な効率性と精度で高精細なプロダクションレディAIシステムへ変換することを可能にします。
 
-## 🎮 Demo
+## 🎮 はじめに
 
-デモをお試しください：[https://cloud.ragflow.io](https://cloud.ragflow.io)。
+当社のクラウドサービスをぜひお試しください：[https://cloud.ragflow.io](https://cloud.ragflow.io)。
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -125,7 +125,7 @@
 <img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
-## 🎬 初期設定
+## 🎬 セルフホスティング
 
 ### 📝 必要条件
 

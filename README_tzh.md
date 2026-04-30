@@ -57,11 +57,11 @@
 <summary><b>📕 目錄</b></summary>
 
 - 💡 [RAGFlow 是什麼？](#-RAGFlow-是什麼)
-- 🎮 [Demo-試用](#-demo-試用)
+- 🎮 [快速開始](#-快速開始)
 - 📌 [近期更新](#-近期更新)
 - 🌟 [主要功能](#-主要功能)
 - 🔎 [系統架構](#-系統架構)
-- 🎬 [快速開始](#-快速開始)
+- 🎬 [自行架設](#-自行架設)
 - 🔧 [系統配置](#-系統配置)
 - 🔨 [以原始碼啟動服務](#-以原始碼啟動服務)
 - 📚 [技術文檔](#-技術文檔)
@@ -76,9 +76,9 @@
 
 [RAGFlow](https://ragflow.io/) 是一款領先的開源 [RAG](https://ragflow.io/basics/what-is-rag)（Retrieval-Augmented Generation）引擎，通過融合前沿的 RAG 技術與 Agent 能力，為大型語言模型提供卓越的上下文層。它提供可適配任意規模企業的端到端 RAG 工作流，憑藉融合式[上下文引擎](https://ragflow.io/basics/what-is-agent-context-engine)與預置的 Agent 模板，助力開發者以極致效率與精度將複雜數據轉化為高可信、生產級的人工智能系統。
 
-## 🎮 Demo 試用
+## 🎮 快速開始
 
-請登入網址 [https://cloud.ragflow.io](https://cloud.ragflow.io) 試用 demo。
+請登入網址 [https://cloud.ragflow.io](https://cloud.ragflow.io) 試用雲服務。
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -144,7 +144,7 @@
 <img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
-## 🎬 快速開始
+## 🎬 自行架設
 
 ### 📝 前提條件
 

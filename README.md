@@ -57,11 +57,11 @@
 <summary><b>📕 Table of Contents</b></summary>
 
 - 💡 [What is RAGFlow?](#-what-is-ragflow)
-- 🎮 [Demo](#-demo)
+- 🎮 [Get Started](#-get-started)
 - 📌 [Latest Updates](#-latest-updates)
 - 🌟 [Key Features](#-key-features)
 - 🔎 [System Architecture](#-system-architecture)
-- 🎬 [Get Started](#-get-started)
+- 🎬 [Self-hosting](#-self-hosting)
 - 🔧 [Configurations](#-configurations)
 - 🔧 [Build a Docker image](#-build-a-docker-image)
 - 🔨 [Launch service from source for development](#-launch-service-from-source-for-development)
@@ -76,9 +76,9 @@
 
 [RAGFlow](https://ragflow.io/) is a leading open-source Retrieval-Augmented Generation ([RAG](https://ragflow.io/basics/what-is-rag)) engine that fuses cutting-edge RAG with Agent capabilities to create a superior context layer for LLMs. It offers a streamlined RAG workflow adaptable to enterprises of any scale. Powered by a converged [context engine](https://ragflow.io/basics/what-is-agent-context-engine) and pre-built agent templates, RAGFlow enables developers to transform complex data into high-fidelity, production-ready AI systems with exceptional efficiency and precision.
 
-## 🎮 Demo
+## 🎮 Get Started
 
-Try our demo at [https://cloud.ragflow.io](https://cloud.ragflow.io).
+Try our cloud service at [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -144,7 +144,7 @@ releases! 🌟
 <img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
-## 🎬 Get Started
+## 🎬 Self-hosting
 
 ### 📝 Prerequisites
 

@@ -57,11 +57,11 @@
 <summary><b>📕 İçindekiler</b></summary>
 
 - 💡 [RAGFlow Nedir?](#-ragflow-nedir)
-- 🎮 [Demo](#-demo)
+- 🎮 [Başlarken](#-başlarken)
 - 📌 [Son Güncellemeler](#-son-güncellemeler)
 - 🌟 [Temel Özellikler](#-temel-özellikler)
 - 🔎 [Sistem Mimarisi](#-sistem-mimarisi)
-- 🎬 [Başlarken](#-başlarken)
+- 🎬 [Kendi Sunucusunda Barındırma](#-kendi-sunucusunda-barındırma)
 - 🔧 [Yapılandırmalar](#-yapılandırmalar)
 - 🔧 [Docker İmajı Oluşturma](#-docker-i̇majı-oluşturma)
 - 🔨 [Geliştirme İçin Kaynaktan Hizmet Başlatma](#-geliştirme-i̇çin-kaynaktan-hizmet-başlatma)
@@ -76,9 +76,9 @@
 
 [RAGFlow](https://ragflow.io/), derin doküman anlayışına dayalı, açık kaynaklı ve öncü bir Artırılmış Üretim ile Bilgi Erişimi ([RAG](https://ragflow.io/basics/what-is-rag)) motorudur. En son RAG teknolojisini Ajan yetenekleriyle birleştirerek LLM'ler için üstün bir bağlam katmanı oluşturur. Her ölçekteki kuruluşa uyarlanabilir, kolaylaştırılmış bir RAG iş akışı sunar. Yakınsanmış bir [bağlam motoru](https://ragflow.io/basics/what-is-agent-context-engine) ve hazır ajan şablonlarıyla donatılmış RAGFlow, geliştiricilerin karmaşık verileri yüksek doğrulukta, üretime hazır yapay zeka sistemlerine olağanüstü verimlilik ve hassasiyetle dönüştürmesini sağlar.
 
-## 🎮 Demo
+## 🎮 Başlarken
 
-Demomuzu [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyebilirsiniz.
+Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyin.
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -142,7 +142,7 @@ Demomuzu [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyeb
 <img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
-## 🎬 Başlarken
+## 🎬 Kendi Sunucusunda Barındırma
 
 ### 📝 Ön Koşullar
 
