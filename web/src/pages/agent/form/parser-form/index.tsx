@@ -127,6 +127,7 @@ const FileFormatWidgetMap = {
   [FileType.PDF]: PdfFormFields,
   [FileType.Spreadsheet]: SpreadsheetFormFields,
   [FileType.PowerPoint]: PptFormFields,
+  [FileType.Doc]: WordFormFields,
   [FileType.Docx]: WordFormFields,
   [FileType.Video]: VideoFormFields,
   [FileType.Audio]: AudioFormFields,

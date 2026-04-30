@@ -241,6 +241,8 @@ export const initialParserValues = {
       fileFormat: FileType.Doc,
       output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
+      flatten_media_to_text: false,
+      remove_header_footer: false,
     },
     {
       fileFormat: FileType.Docx,

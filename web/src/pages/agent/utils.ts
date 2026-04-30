@@ -280,6 +280,7 @@ function transformParserParams(params: ParserFormSchemaType) {
             fields: cur.fields,
           };
           break;
+        case FileType.Doc:
         case FileType.Docx:
           filteredSetup = {
             ...filteredSetup,

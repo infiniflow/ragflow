@@ -68,7 +68,7 @@ def remove_header_footer_docx_sections(items, header_footer_texts):
 
 
 def remove_header_footer_html_blob(blob):
-    soup = BeautifulSoup(blob, "html5lib")
+    soup = BeautifulSoup(blob, "html.parser")
     for element in soup.find_all(
         lambda tag: tag.name in {"header", "footer"}
         or tag.get("role") in {"banner", "contentinfo"}
