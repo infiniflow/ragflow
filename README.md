@@ -61,7 +61,7 @@
 - 📌 [Latest Updates](#-latest-updates)
 - 🌟 [Key Features](#-key-features)
 - 🔎 [System Architecture](#-system-architecture)
-- 🎬 [Self-hosting](#-self-hosting)
+- 🎬 [Self-Hosting](#-self-hosting)
 - 🔧 [Configurations](#-configurations)
 - 🔧 [Build a Docker image](#-build-a-docker-image)
 - 🔨 [Launch service from source for development](#-launch-service-from-source-for-development)
@@ -144,7 +144,7 @@ releases! 🌟
 <img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
-## 🎬 Self-hosting
+## 🎬 Self-Hosting
 
 ### 📝 Prerequisites
 
