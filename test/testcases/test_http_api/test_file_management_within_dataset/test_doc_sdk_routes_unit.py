@@ -384,7 +384,11 @@ class TestDocRoutesUnit:
         res = _run(module.download_doc("doc-1"))
         assert "API key is invalid" in res["message"]
 
-        monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace()])
+        monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1"), SimpleNamespace(tenant_id="tenant-2")])
+        res = _run(module.download_doc("doc-1"))
+        assert "API key configuration is ambiguous" in res["message"]
+
+        monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
         res = _run(module.download_doc(""))
         assert res["message"] == "Specify document_id please."
 
@@ -393,6 +397,23 @@ class TestDocRoutesUnit:
         assert "not own the document" in res["message"]
 
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc()])
+        kb_query_calls = []
+
+        def _deny_kb_query(**kwargs):
+            kb_query_calls.append(kwargs)
+            return []
+
+        monkeypatch.setattr(module.KnowledgebaseService, "query", _deny_kb_query)
+        monkeypatch.setattr(
+            module.File2DocumentService,
+            "get_storage_address",
+            lambda **_kwargs: (_ for _ in ()).throw(AssertionError("storage lookup must not run before tenant authorization")),
+        )
+        res = _run(module.download_doc("doc-1"))
+        assert res["message"] == "You do not have access to this document."
+        assert kb_query_calls == [{"id": "kb-1", "tenant_id": "tenant-1"}]
+
+        monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [1])
         monkeypatch.setattr(module.File2DocumentService, "get_storage_address", lambda **_kwargs: ("b", "n"))
         _patch_storage(monkeypatch, module, file_stream=b"")
         res = _run(module.download_doc("doc-1"))
