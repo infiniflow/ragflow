@@ -305,6 +305,38 @@ type DefaultModelResponse struct {
 	Models []ModelItem `json:"models,omitempty"`
 }
 
+// GetDefaultModelName returns the full default model ID for a tenant and model type
+// Format: modelName@instanceName@providerName or modelName@providerName
+// Returns empty string if no default model is set
+func (s *TenantService) GetDefaultModelName(tenantID string, modelType entity.ModelType) (string, error) {
+	tenant, err := s.tenantDAO.GetByID(tenantID)
+	if err != nil {
+		return "", err
+	}
+
+	var modelID string
+	switch modelType {
+	case entity.ModelTypeChat:
+		modelID = tenant.LLMID
+	case entity.ModelTypeEmbedding:
+		modelID = tenant.EmbdID
+	case entity.ModelTypeRerank:
+		modelID = tenant.RerankID
+	case entity.ModelTypeSpeech2Text:
+		modelID = tenant.ASRID
+	case entity.ModelTypeImage2Text:
+		modelID = tenant.Img2TxtID
+	case entity.ModelTypeTTS:
+		modelID = *tenant.TTSID
+	case entity.ModelTypeOCR:
+		modelID = tenant.OCRID
+	default:
+		return "", fmt.Errorf("invalid model type: %s", modelType)
+	}
+
+	return modelID, nil
+}
+
 func (s *TenantService) GetModelInfo(tenantID string, defaultModel string, modelType string) (*string, *string, *string, bool, error) {
 	// normally the model string is: modelName@instanceName@providerName, sometimes it's just modelName@providerName
 	// for the 1st case, parse defaultChatModel into three parts

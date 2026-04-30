@@ -35,10 +35,3 @@ const (
 	// ModelTypeOCR optical character recognition model
 	ModelTypeOCR ModelType = "ocr"
 )
-
-// ModelCredentials holds the credentials for a model
-type ModelCredentials struct {
-	ProviderName string
-	ModelName    string
-	APIKey       string
-}
