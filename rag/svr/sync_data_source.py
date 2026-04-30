@@ -1547,10 +1547,18 @@ class DingTalkAITable(SyncBase):
         """
         Sync records from DingTalk AI Table (Notable).
         """
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
         self.connector = DingTalkAITableConnector(
             table_id=self.conf.get("table_id"),
             operator_id=self.conf.get("operator_id"),
-            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+            batch_size=batch_size,
         )
 
         credentials = self.conf.get("credentials", {})
@@ -1562,14 +1570,36 @@ class DingTalkAITable(SyncBase):
         )
 
         poll_start = task.get("poll_range_start")
+        file_list = None
 
         if task.get("reindex") == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
+            end_ts = datetime.now(timezone.utc).timestamp()
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                logging.info(
+                    "DingTalk AI Table: fetching slim snapshot for stale-document reconciliation "
+                    "(connector_id=%s, kb_id=%s, table_id=%s)",
+                    task["connector_id"],
+                    task["kb_id"],
+                    self.conf.get("table_id"),
+                )
+                try:
+                    for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                        file_list.extend(slim_batch)
+                except Exception:
+                    logging.exception(
+                        "DingTalk AI Table slim snapshot failed; continuing without stale-document cleanup "
+                        "(connector_id=%s, kb_id=%s)",
+                        task["connector_id"],
+                        task["kb_id"],
+                    )
+                    file_list = None
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp(),
+                end_ts,
             )
             _begin_info = f"from {poll_start}"
 
@@ -1579,7 +1609,7 @@ class DingTalkAITable(SyncBase):
             task,
         )
 
-        return document_generator
+        return document_generator, file_list
 
 
 class MySQL(SyncBase):

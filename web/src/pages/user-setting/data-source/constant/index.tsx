@@ -105,6 +105,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.AIRTABLE]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.DINGTALK_AI_TABLE]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.WEBDAV]: {
      syncDeletedFiles: true,
   },
