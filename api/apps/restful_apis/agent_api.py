@@ -984,7 +984,15 @@ async def agent_chat_completion(tenant_id):
         async def sse():
             nonlocal canvas
             try:
-                async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+                run_kwargs = {
+                    "query": query,
+                    "files": files,
+                    "user_id": user_id,
+                    "inputs": inputs,
+                }
+                if req.get("chat_template_kwargs") is not None:
+                    run_kwargs["chat_template_kwargs"] = req.get("chat_template_kwargs")
+                async for ans in canvas.run(**run_kwargs):
                     yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
                 commit_ok = CanvasReplicaService.commit_after_run(
