@@ -17,20 +17,26 @@
 from .oauth import OAuthClient
 from .oidc import OIDCClient
 from .github import GithubOAuthClient
+from .ldap import LDAPClient
 
 
 CLIENT_TYPES = {
     "oauth2": OAuthClient,
     "oidc": OIDCClient,
-    "github": GithubOAuthClient
+    "github": GithubOAuthClient,
+    "ldap": LDAPClient,
 }
 
 
-def get_auth_client(config)->OAuthClient:
+def get_auth_client(config):
     channel_type = str(config.get("type", "")).lower()
     if channel_type == "":
         if config.get("issuer"):
             channel_type = "oidc"
+        elif config.get("host") and (
+            config.get("bind_dn_template") or config.get("bind_user_dn")
+        ):
+            channel_type = "ldap"
         else:
             channel_type = "oauth2"
     client_class = CLIENT_TYPES.get(channel_type)

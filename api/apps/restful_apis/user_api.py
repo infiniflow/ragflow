@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import logging
 import string
 import os
@@ -26,6 +27,7 @@ from quart import make_response, redirect, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from api.apps.auth import get_auth_client
+from api.apps.auth.ldap import LDAPAuthError, LDAPClient
 from api.db import FileType, UserTenantRole
 from api.db.db_models import TenantLLM
 from api.db.services.file_service import FileService
@@ -138,6 +140,19 @@ async def login():
         )
 
 
+def _channel_type(config):
+    declared = str(config.get("type", "")).lower()
+    if declared:
+        return declared
+    if config.get("issuer"):
+        return "oidc"
+    if config.get("host") and (
+        config.get("bind_dn_template") or config.get("bind_user_dn")
+    ):
+        return "ldap"
+    return "oauth2"
+
+
 @manager.route("/auth/login/channels", methods=["GET"])  # noqa: F821
 async def get_login_channels():
     """
@@ -146,11 +161,16 @@ async def get_login_channels():
     try:
         channels = []
         for channel, config in settings.OAUTH_CONFIG.items():
+            ch_type = _channel_type(config)
             channels.append(
                 {
                     "channel": channel,
                     "display_name": config.get("display_name", channel.title()),
                     "icon": config.get("icon", "sso"),
+                    "type": ch_type,
+                    # Frontends with form-based flows (LDAP) must not redirect
+                    # the browser to /auth/login/<channel>; this flag tells them.
+                    "form_login": ch_type == "ldap",
                 }
             )
         return get_json_result(data=channels)
@@ -164,12 +184,151 @@ async def oauth_login(channel):
     channel_config = settings.OAUTH_CONFIG.get(channel)
     if not channel_config:
         raise ValueError(f"Invalid channel name: {channel}")
+    if _channel_type(channel_config) == "ldap":
+        # LDAP is form-based. Bounce back to the login page; the frontend
+        # is expected to render an inline form for ldap channels.
+        return redirect(f"/login?ldap={channel}")
     auth_cli = get_auth_client(channel_config)
 
     state = get_uuid()
     session["oauth_state"] = state
     auth_url = auth_cli.get_authorization_url(state)
     return redirect(auth_url)
+
+
+@manager.route("/auth/login/ldap", methods=["POST"])  # noqa: F821
+async def ldap_login():
+    """
+    LDAP login endpoint.
+    ---
+    tags:
+      - User
+    parameters:
+      - in: body
+        name: body
+        description: LDAP login payload.
+        required: true
+        schema:
+          type: object
+          properties:
+            channel:
+              type: string
+              description: Configured LDAP channel name in OAUTH_CONFIG.
+            username:
+              type: string
+              description: LDAP username (uid / sAMAccountName).
+            password:
+              type: string
+              description: RSA-encrypted LDAP password.
+    responses:
+      200:
+        description: Login successful.
+      401:
+        description: Authentication failed.
+    """
+    json_body = await get_request_json()
+    if not json_body:
+        return get_json_result(
+            data=False,
+            code=RetCode.AUTHENTICATION_ERROR,
+            message="Unauthorized!",
+        )
+
+    channel = json_body.get("channel", "ldap")
+    username = (json_body.get("username") or "").strip()
+    raw_password = json_body.get("password")
+
+    channel_config = settings.OAUTH_CONFIG.get(channel)
+    if not channel_config or _channel_type(channel_config) != "ldap":
+        return get_json_result(
+            data=False,
+            code=RetCode.AUTHENTICATION_ERROR,
+            message=f"LDAP channel '{channel}' is not configured.",
+        )
+
+    if not username or not raw_password:
+        return get_json_result(
+            data=False,
+            code=RetCode.AUTHENTICATION_ERROR,
+            message="Username and password are required.",
+        )
+
+    try:
+        password = decrypt(raw_password)
+    except BaseException:
+        return get_json_result(
+            data=False,
+            code=RetCode.SERVER_ERROR,
+            message="Fail to crypt password",
+        )
+
+    try:
+        ldap_cli: LDAPClient = get_auth_client(channel_config)
+        user_info = await asyncio.to_thread(
+            ldap_cli.authenticate, username, password
+        )
+    except LDAPAuthError as e:
+        return get_json_result(
+            data=False,
+            code=RetCode.AUTHENTICATION_ERROR,
+            message=str(e),
+        )
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(
+            data=False,
+            code=RetCode.EXCEPTION_ERROR,
+            message="LDAP login failed.",
+        )
+
+    users = UserService.query(email=user_info.email)
+    user_id = get_uuid()
+
+    if not users:
+        try:
+            users = user_register(
+                user_id,
+                {
+                    "access_token": get_uuid(),
+                    "email": user_info.email,
+                    "avatar": "",
+                    "nickname": user_info.nickname or user_info.username,
+                    "login_channel": channel,
+                    "last_login_time": get_format_time(),
+                    "is_superuser": False,
+                },
+            )
+            if not users:
+                raise Exception(f"Failed to register {user_info.email}")
+        except Exception as e:
+            rollback_user_registration(user_id)
+            logging.exception(e)
+            return get_json_result(
+                data=False,
+                code=RetCode.EXCEPTION_ERROR,
+                message=str(e),
+            )
+
+    user = users[0]
+    if hasattr(user, "is_active") and user.is_active == "0":
+        return get_json_result(
+            data=False,
+            code=RetCode.FORBIDDEN,
+            message="This account has been disabled, please contact the administrator!",
+        )
+
+    response_data = user.to_json()
+    user.access_token = get_uuid()
+    login_user(user)
+    user.update_time = current_timestamp()
+    user.update_date = datetime_format(datetime.now())
+    user.save()
+
+    return await construct_response(
+        data=response_data,
+        auth=user.get_id(),
+        message="Welcome back!",
+    )
 
 
 @manager.route("/auth/oauth/<channel>/callback", methods=["GET"])  # noqa: F821

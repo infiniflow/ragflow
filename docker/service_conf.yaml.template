@@ -143,6 +143,28 @@ user_default_llm:
 #     client_id: "your_client_id"
 #     client_secret: "your_client_secret"
 #     redirect_uri: "https://your-app.com/v1/user/oauth/callback/github"
+#   ldap:
+#     type: "ldap"
+#     icon: "ldap"
+#     display_name: "LDAP"
+#     host: "ldap.example.com"
+#     port: 389
+#     use_ssl: false
+#     use_tls: false
+#     # Direct-bind mode (simple): the supplied username is interpolated into
+#     # the template and used to bind. Comment out the search-then-bind block
+#     # below if you use direct-bind.
+#     bind_dn_template: "uid={username},ou=people,dc=example,dc=com"
+#     # Search-then-bind mode: bind first as a service account, locate the
+#     # user entry, then re-bind with the user's DN.
+#     # bind_user_dn: "cn=admin,dc=example,dc=com"
+#     # bind_user_password: "service_account_password"
+#     # user_search_base: "ou=people,dc=example,dc=com"
+#     # user_search_filter: "(uid={username})"
+#     # Attribute names returned by the directory; defaults shown.
+#     # email_attr: "mail"
+#     # nickname_attr: "cn"
+#     # username_attr: "uid"
 # authentication:
 #  client:
 #    switch: false
