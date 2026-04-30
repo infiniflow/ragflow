@@ -177,6 +177,7 @@ async def _run_workflow_session(
     canvas_category,
     return_trace,
     stream,
+    chat_template_kwargs=None,
 ):
     async def commit_runtime_replica():
         commit_ok = CanvasReplicaService.commit_after_run(
@@ -213,6 +214,14 @@ async def _run_workflow_session(
     final_ans = {}
     trace_items = []
     structured_output = {}
+    run_kwargs = {
+        "query": query,
+        "files": files,
+        "user_id": user_id,
+        "inputs": inputs,
+    }
+    if chat_template_kwargs is not None:
+        run_kwargs["chat_template_kwargs"] = chat_template_kwargs
 
     async def persist_workflow_session():
         if not final_ans:
@@ -237,7 +246,7 @@ async def _run_workflow_session(
             nonlocal full_content, reference, final_ans, trace_items, structured_output
             done_sent = False
             try:
-                async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+                async for ans in canvas.run(**run_kwargs):
                     ans["session_id"] = session_id
                     if ans.get("event") == "message":
                         full_content += ans.get("data", {}).get("content", "")
@@ -285,7 +294,7 @@ async def _run_workflow_session(
         return _build_sse_response(sse())
 
     try:
-        async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+        async for ans in canvas.run(**run_kwargs):
             ans["session_id"] = session_id
             if ans.get("event") == "message":
                 full_content += ans.get("data", {}).get("content", "")
@@ -1258,6 +1267,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             canvas_category=getattr(cvs, "canvas_category", CanvasCategory.Agent),
             return_trace=bool(req.get("return_trace", False)),
             stream=req.get("stream", True),
+            chat_template_kwargs=req.get("chat_template_kwargs"),
         )
 
     if not session_id:
@@ -1404,6 +1414,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             canvas_category=canvas_category,
             return_trace=bool(req.get("return_trace", False)),
             stream=req.get("stream", True),
+            chat_template_kwargs=req.get("chat_template_kwargs"),
         )
 
     return_trace = bool(req.get("return_trace", False))
