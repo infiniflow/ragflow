@@ -76,7 +76,7 @@
 
 [RAGFlow](https://ragflow.io/) est un moteur de [RAG](https://ragflow.io/basics/what-is-rag) (Retrieval-Augmented Generation) open-source de premier plan qui fusionne les technologies RAG de pointe avec des capacités Agent pour créer une couche de contexte supérieure pour les LLM. Il offre un flux de travail RAG rationalisé, adaptable aux entreprises de toute taille. Alimenté par un [moteur de contexte](https://ragflow.io/basics/what-is-agent-context-engine) convergent et des modèles d'agents préconstruits, RAGFlow permet aux développeurs de transformer des données complexes en systèmes d'IA haute-fidélité, prêts pour la production, avec une efficacité et une précision exceptionnelles.
 
-## 🎮 Auto-hébergement
+## 🎮 Démarrage
 
 Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
@@ -142,7 +142,7 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 <img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
-## 🎬 Démarrage
+## 🎬 Auto-hébergement
 
 ### 📝 Prérequis
 
