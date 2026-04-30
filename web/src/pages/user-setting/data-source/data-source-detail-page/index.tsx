@@ -17,9 +17,8 @@ import { FieldValues } from 'react-hook-form';
 import {
   DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
-  DataSourceFormFields,
   getCommonExtraDefaultValues,
-  getCommonExtraFields,
+  getDataSourceFieldsWithExtras,
   mergeDataSourceFormValues,
   useDataSourceInfo,
 } from '../constant';
@@ -166,10 +165,7 @@ const SourceDetailPage = () => {
     if (detail) {
       const fields = [
         ...baseFields,
-        ...DataSourceFormFields[
-          detail.source as keyof typeof DataSourceFormFields
-        ],
-        ...getCommonExtraFields(detail.source),
+        ...getDataSourceFieldsWithExtras(detail.source as any),
         ...customFields,
       ] as FormFieldConfig[];
 

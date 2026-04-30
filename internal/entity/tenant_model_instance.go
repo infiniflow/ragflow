@@ -23,7 +23,7 @@ type TenantModelInstance struct {
 	ProviderID   string `gorm:"column:provider_id;size:32;not null;uniqueIndex:idx_api_key_provider_id" json:"provider_id"`
 	APIKey       string `gorm:"column:api_key;size:512;not null;uniqueIndex:idx_api_key_provider_id" json:"api_key"`
 	Status       string `gorm:"column:status;size:32;default:'active'" json:"status"`
-	Extra        string `gorm:"column:extra;size:512;default:'active'" json:"extra"`
+	Extra        string `gorm:"column:extra;size:512;default:'{}'" json:"extra"`
 	BaseModel
 }
 

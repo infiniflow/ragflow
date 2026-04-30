@@ -24,8 +24,10 @@ from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
     get_error_argument_result,
     get_error_data_result,
+    get_json_result,
     get_result,
 )
+from common.constants import RetCode
 from api.utils.validation_utils import (
     CreateFolderReq,
     DeleteFileReq,
@@ -99,7 +101,7 @@ async def create_or_upload(tenant_id: str = None):
 @manager.route("/files", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-def list_files(tenant_id: str = None):
+async def list_files(tenant_id: str = None):
     """
     List files under a folder.
     ---
@@ -185,10 +187,22 @@ async def delete(tenant_id: str = None):
         return get_error_argument_result(err)
 
     try:
-        success, result = await file_api_service.delete_files(tenant_id, req["ids"])
+        # Get Authorization header to pass to Go backend
+        auth_header = request.headers.get("Authorization", "")
+        success, result = await file_api_service.delete_files(tenant_id, req["ids"], auth_header)
         if success:
             return get_result(data=result)
         else:
+            if isinstance(result, dict):
+                success_count = result.get("success_count", 0)
+                errors = result.get("errors", [])
+                return get_json_result(
+                    code=RetCode.DATA_ERROR,
+                    message=f"Partially deleted {success_count} files with {len(errors)} errors"
+                    if success_count > 0
+                    else f"Deleted files failed with {len(errors)} errors",
+                    data=result,
+                )
             return get_error_data_result(message=result)
     except Exception as e:
         logging.exception(e)
@@ -303,7 +317,7 @@ async def download(tenant_id: str = None, file_id: str = None):
 @manager.route("/files/<file_id>/parent", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-def parent_folder(tenant_id: str = None, file_id: str = None):
+async def parent_folder(tenant_id: str = None, file_id: str = None):
     """
     Get parent folder of a file.
     ---
@@ -334,7 +348,7 @@ def parent_folder(tenant_id: str = None, file_id: str = None):
 @manager.route("/files/<file_id>/ancestors", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-def ancestors(tenant_id: str = None, file_id: str = None):
+async def ancestors(tenant_id: str = None, file_id: str = None):
     """
     Get all ancestor folders of a file.
     ---
@@ -360,5 +374,3 @@ def ancestors(tenant_id: str = None, file_id: str = None):
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
-
-

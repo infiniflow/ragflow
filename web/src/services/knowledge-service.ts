@@ -1,5 +1,5 @@
 import { Authorization } from '@/constants/authorization';
-import { IRenameTag } from '@/interfaces/database/knowledge';
+import { IRenameTag } from '@/interfaces/database/dataset';
 import {
   IFetchDocumentListRequestBody,
   IFetchKnowledgeListRequestParams,
@@ -18,11 +18,9 @@ const {
   documentChangeStatus,
   documentChangeParser,
   documentThumbnails,
-  retrievalTest,
-  documentRun,
+  documentIngest,
   documentUpload,
   webCrawl,
-  knowledgeGraph,
   listTagByKnowledgeIds,
   setMeta,
   getMeta,
@@ -48,8 +46,8 @@ const methods = {
     url: documentChangeStatus,
     method: 'post',
   },
-  documentRun: {
-    url: documentRun,
+  documentIngest: {
+    url: documentIngest,
     method: 'post',
   },
   documentChangeParser: {
@@ -71,14 +69,6 @@ const methods = {
   setMeta: {
     url: setMeta,
     method: 'post',
-  },
-  retrievalTest: {
-    url: retrievalTest,
-    method: 'post',
-  },
-  knowledgeGraph: {
-    url: knowledgeGraph,
-    method: 'get',
   },
   listTagByKnowledgeIds: {
     url: listTagByKnowledgeIds,
@@ -156,6 +146,17 @@ const getAvailableParam = (available?: number) => {
 };
 
 const chunkService = {
+  retrievalTest: async (params: Record<string, any>) => {
+    const datasetId = getDatasetId(params);
+    if (!datasetId) {
+      throw new Error(
+        'dataset_id (or kb_id/knowledge_id) is required for retrievalTest',
+      );
+    }
+    return request.post(api.retrievalTest(datasetId), {
+      data: params,
+    });
+  },
   chunkList: async (params: Record<string, any>) => {
     const datasetId = getDatasetId(params);
     const documentId = getDocumentId(params);
@@ -259,7 +260,7 @@ export function getKnowledgeGraph(knowledgeId: string) {
 }
 
 export function deleteKnowledgeGraph(knowledgeId: string) {
-  return request.delete(api.getKnowledgeGraph(knowledgeId));
+  return request.delete(api.knowledgeGraph(knowledgeId));
 }
 
 export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>
@@ -333,6 +334,12 @@ export const renameDocument = (
   data: { name?: string },
 ) => request.patch(api.documentRename(datasetId, documentId), { data });
 
+export const changeDocumentParser = (
+  datasetId: string,
+  documentId: string,
+  data: { name?: string },
+) => request.patch(api.documentChangeParser(datasetId, documentId), { data });
+
 export const deleteDocument = (datasetId: string, documentIds: string[]) =>
   request.delete(api.documentDelete(datasetId), { data: { ids: documentIds } });
 
@@ -376,6 +383,17 @@ export const updateDocumentMetaDataConfig = ({
   request.put(api.documentUpdateMetaDataConfig(kb_id, doc_id), {
     data: { ...data },
   });
+
+export const changeDocumentsStatus = ({
+  kb_id,
+  doc_ids,
+  status,
+}: {
+  kb_id: string;
+  doc_ids?: string[];
+  status: number;
+}) =>
+  request.post(api.documentChangeStatus(kb_id), { data: { doc_ids, status } });
 
 export const listDataPipelineLogDocument = (
   datasetId: string,

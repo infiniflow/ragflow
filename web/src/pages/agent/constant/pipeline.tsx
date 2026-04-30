@@ -198,6 +198,7 @@ export const initialParserValues = {
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
       flatten_media_to_text: false,
+      remove_header_footer: false,
     },
     {
       fileFormat: FileType.Spreadsheet,
@@ -234,17 +235,21 @@ export const initialParserValues = {
       fileFormat: FileType.Html,
       output_format: TextJsonOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
+      remove_header_footer: false,
     },
     {
       fileFormat: FileType.Doc,
       output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
+      flatten_media_to_text: false,
+      remove_header_footer: false,
     },
     {
       fileFormat: FileType.Docx,
       output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
       flatten_media_to_text: false,
+      remove_header_footer: false,
     },
     {
       fileFormat: FileType.PowerPoint,

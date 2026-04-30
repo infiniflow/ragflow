@@ -16,6 +16,7 @@
 import re
 from io import BytesIO
 
+from bs4 import BeautifulSoup
 from docx import Document
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import (
@@ -32,6 +33,48 @@ def remove_toc(items):
     remove_contents_table(indexed, eng=_is_english(indexed))
     kept_indices = [i for _, i in indexed]
     return [items[i] for i in kept_indices], kept_indices
+
+
+def extract_docx_header_footer_texts(filename=None, binary=None):
+    doc = Document(filename) if binary is None else Document(BytesIO(binary))
+    texts = set()
+    for section in doc.sections:
+        for container in (section.header, section.footer):
+            for paragraph in container.paragraphs:
+                normalized = re.sub(r"\s+", " ", paragraph.text).strip()
+                if normalized:
+                    texts.add(normalized)
+            for table in container.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        normalized = re.sub(r"\s+", " ", cell.text).strip()
+                        if normalized:
+                            texts.add(normalized)
+    return texts
+
+
+def remove_header_footer_docx_sections(items, header_footer_texts):
+    if not header_footer_texts:
+        return items
+
+    filtered = []
+    for item in items:
+        text = _item_text(item)
+        normalized = re.sub(r"\s+", " ", text).strip() if isinstance(text, str) else ""
+        if normalized and normalized in header_footer_texts:
+            continue
+        filtered.append(item)
+    return filtered
+
+
+def remove_header_footer_html_blob(blob):
+    soup = BeautifulSoup(blob, "html.parser")
+    for element in soup.find_all(
+        lambda tag: tag.name in {"header", "footer"}
+        or tag.get("role") in {"banner", "contentinfo"}
+    ):
+        element.decompose()
+    return str(soup).encode("utf-8")
 
 
 def extract_word_outlines(filename, binary=None):

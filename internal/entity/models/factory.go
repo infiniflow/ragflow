@@ -45,8 +45,14 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewGiteeModel(baseURL, urlSuffix), nil
 	case "siliconflow":
 		return NewSiliconflowModel(baseURL, urlSuffix), nil
+	case "google":
+		return NewGoogleModel(baseURL, urlSuffix), nil
 	case "aliyun":
 		return NewAliyunModel(baseURL, urlSuffix), nil
+	case "volcengine":
+		return NewVolcEngine(baseURL, urlSuffix), nil
+	case "vllm":
+		return NewVllmModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
