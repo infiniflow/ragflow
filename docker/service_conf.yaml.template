@@ -161,12 +161,16 @@ user_default_llm:
 #     # Connection-level timeouts (seconds). Defaults: 5 / 10.
 #     # connect_timeout: 5
 #     # receive_timeout: 10
-#     # Direct-bind mode (simple): the supplied username is interpolated into
-#     # the template and used to bind. Comment out the search-then-bind block
-#     # below if you use direct-bind.
+#     # Pick exactly one of the two bind strategies. Setting both will cause
+#     # the LDAPClient to refuse to start so config drift is visible.
+#     #
+#     # Direct-bind: the supplied username is interpolated into the template
+#     # and used to bind directly.
 #     bind_dn_template: "uid={username},ou=people,dc=example,dc=com"
-#     # Search-then-bind mode: bind first as a service account, locate the
-#     # user entry, then re-bind with the user's DN.
+#     # Search-then-bind: bind first as a service account, locate the user
+#     # entry, then re-bind with the user's DN. user_search_base is required
+#     # and bind_user_password must be non-empty (an empty password would
+#     # otherwise become an anonymous bind on most directories).
 #     # bind_user_dn: "cn=admin,dc=example,dc=com"
 #     # bind_user_password: "service_account_password"
 #     # user_search_base: "ou=people,dc=example,dc=com"

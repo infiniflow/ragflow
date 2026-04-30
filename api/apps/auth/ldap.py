@@ -16,8 +16,11 @@
 
 import hashlib
 import logging
+import re
 
 from .oauth import UserInfo
+
+_CHANNEL_ID_SANITIZE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 class LDAPAuthError(Exception):
@@ -49,7 +52,11 @@ class LDAPClient:
         mapping, timeouts). Raises ``ValueError`` when neither
         ``bind_dn_template`` nor ``bind_user_dn`` is set."""
         self.config = config
-        self.channel_id = config.get("channel") or config.get("display_name") or "ldap"
+        raw_channel = config.get("channel") or config.get("display_name") or "ldap"
+        # Sanitise so that the channel id can safely be embedded in the
+        # synthetic email fallback "<uid>@<channel>.ldap.local". Anything
+        # that isn't [A-Za-z0-9._-] becomes "-".
+        self.channel_id = _CHANNEL_ID_SANITIZE.sub("-", raw_channel).strip("-") or "ldap"
         self.host = config["host"]
         self.port = int(config.get("port", 389))
         self.use_ssl = bool(config.get("use_ssl", False))
@@ -81,8 +88,17 @@ class LDAPClient:
 
         if not self.bind_dn_template and not self.bind_user_dn:
             raise ValueError("LDAP config must define either 'bind_dn_template' or 'bind_user_dn' for search-then-bind.")
-        if self.bind_user_dn and not self.bind_dn_template and not self.user_search_base:
+        if self.bind_dn_template and self.bind_user_dn:
+            # Direct-bind takes precedence over search-then-bind. Surface this
+            # rather than silently ignoring half of the config.
+            raise ValueError("LDAP config must use either 'bind_dn_template' (direct bind) or 'bind_user_dn' (search-then-bind), not both.")
+        if self.bind_user_dn and not self.user_search_base:
             raise ValueError("LDAP search-then-bind requires 'user_search_base'.")
+        if self.bind_user_dn and not self.bind_user_password:
+            # ldap3 silently performs an anonymous bind when password is
+            # falsy, which would let an attacker that controls the directory
+            # bypass the service-account check entirely.
+            raise ValueError("LDAP search-then-bind requires a non-empty 'bind_user_password'.")
 
     def _server(self):
         """Build an ``ldap3.Server`` with the configured TLS policy and
@@ -196,10 +212,10 @@ class LDAPClient:
         if self.bind_dn_template:
             user_dn = self.bind_dn_template.format(username=self._escape_rdn(username))
             conn = self._open(server, user_dn, password)
-            if not self._bind(conn):
-                logging.info("LDAP direct bind rejected channel=%s", self.channel_id)
-                raise LDAPAuthError("Invalid credentials.")
             try:
+                if not self._bind(conn):
+                    logging.info("LDAP direct bind rejected channel=%s", self.channel_id)
+                    raise LDAPAuthError("Invalid credentials.")
                 if self.user_search_base:
                     conn.search(
                         search_base=self.user_search_base,
@@ -216,15 +232,17 @@ class LDAPClient:
                 else:
                     attrs = {}
             finally:
+                # Always release the socket — calling unbind on a connection
+                # whose bind() returned False is safe in ldap3.
                 conn.unbind()
             return user_dn, attrs
 
         # search-then-bind
         service_conn = self._open(server, self.bind_user_dn, self.bind_user_password)
-        if not self._bind(service_conn):
-            logging.error("LDAP service account bind failed channel=%s", self.channel_id)
-            raise LDAPAuthError("LDAP service account bind failed.")
         try:
+            if not self._bind(service_conn):
+                logging.error("LDAP service account bind failed channel=%s", self.channel_id)
+                raise LDAPAuthError("LDAP service account bind failed.")
             search_filter = self.user_search_filter.format(username=self._escape_filter(username))
             service_conn.search(
                 search_base=self.user_search_base,
@@ -245,10 +263,12 @@ class LDAPClient:
             service_conn.unbind()
 
         user_conn = self._open(server, user_dn, password)
-        if not self._bind(user_conn):
-            logging.info("LDAP user rebind rejected channel=%s", self.channel_id)
-            raise LDAPAuthError("Invalid credentials.")
-        user_conn.unbind()
+        try:
+            if not self._bind(user_conn):
+                logging.info("LDAP user rebind rejected channel=%s", self.channel_id)
+                raise LDAPAuthError("Invalid credentials.")
+        finally:
+            user_conn.unbind()
         return user_dn, attrs
 
     @staticmethod

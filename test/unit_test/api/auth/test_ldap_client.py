@@ -57,6 +57,26 @@ class TestLDAPClientConfig:
         with pytest.raises(ValueError, match="user_search_base"):
             LDAPClient(cfg)
 
+    def test_search_then_bind_rejects_empty_service_password(self):
+        # An empty service-account password would let ldap3 fall back to
+        # an anonymous bind, silently bypassing service-account auth.
+        cfg = _search_bind_config()
+        cfg["bind_user_password"] = ""
+        with pytest.raises(ValueError, match="bind_user_password"):
+            LDAPClient(cfg)
+
+    def test_rejects_both_bind_strategies(self):
+        cfg = _search_bind_config()
+        cfg["bind_dn_template"] = "uid={username},dc=x"
+        with pytest.raises(ValueError, match="not both"):
+            LDAPClient(cfg)
+
+    def test_channel_id_is_sanitised_for_synthetic_email(self):
+        cfg = _direct_bind_config()
+        cfg["channel"] = "Corp LDAP / Internal"
+        cli = LDAPClient(cfg)
+        assert cli.channel_id == "Corp-LDAP-Internal"
+
     def test_filter_escape_neutralizes_metacharacters(self):
         cli = LDAPClient(_direct_bind_config())
         assert cli._escape_filter("a*b(c)") == r"a\2ab\28c\29"
