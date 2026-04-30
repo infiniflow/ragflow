@@ -1521,6 +1521,14 @@ class MySQL(SyncBase):
     SOURCE_NAME: str = FileSource.MYSQL
 
     async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
         self.connector = RDBMSConnector(
             db_type="mysql",
             host=self.conf.get("host", "localhost"),
@@ -1531,7 +1539,7 @@ class MySQL(SyncBase):
             metadata_columns=self.conf.get("metadata_columns", ""),
             id_column=self.conf.get("id_column") or None,
             timestamp_column=self.conf.get("timestamp_column") or None,
-            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+            batch_size=batch_size,
         )
 
         credentials = self.conf.get("credentials")
@@ -1541,25 +1549,55 @@ class MySQL(SyncBase):
         self.connector.load_credentials(credentials)
         self.connector.validate_connector_settings()
 
+        file_list = None
         if task["reindex"] == "1" or not task["poll_range_start"]:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
             poll_start = task["poll_range_start"]
+            end_ts = datetime.now(timezone.utc).timestamp()
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                logging.info(
+                    "MySQL: fetching slim snapshot for stale-document reconciliation "
+                    "(connector_id=%s, kb_id=%s, database=%s)",
+                    task["connector_id"],
+                    task["kb_id"],
+                    self.conf.get("database"),
+                )
+                try:
+                    for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                        file_list.extend(slim_batch)
+                except Exception:
+                    logging.exception(
+                        "MySQL slim snapshot failed; continuing without stale-document cleanup "
+                        "(connector_id=%s, kb_id=%s)",
+                        task["connector_id"],
+                        task["kb_id"],
+                    )
+                    file_list = None
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp()
+                end_ts,
             )
             _begin_info = f"from {poll_start}"
 
         self.log_connection("MySQL", f"{self.conf.get('host')}:{self.conf.get('database')}", task)
-        return document_generator
+        return document_generator, file_list
 
 
 class PostgreSQL(SyncBase):
     SOURCE_NAME: str = FileSource.POSTGRESQL
 
     async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
         self.connector = RDBMSConnector(
             db_type="postgresql",
             host=self.conf.get("host", "localhost"),
@@ -1570,7 +1608,7 @@ class PostgreSQL(SyncBase):
             metadata_columns=self.conf.get("metadata_columns", ""),
             id_column=self.conf.get("id_column") or None,
             timestamp_column=self.conf.get("timestamp_column") or None,
-            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+            batch_size=batch_size,
         )
 
         credentials = self.conf.get("credentials")
@@ -1580,19 +1618,41 @@ class PostgreSQL(SyncBase):
         self.connector.load_credentials(credentials)
         self.connector.validate_connector_settings()
 
+        file_list = None
         if task["reindex"] == "1" or not task["poll_range_start"]:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
             poll_start = task["poll_range_start"]
+            end_ts = datetime.now(timezone.utc).timestamp()
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                logging.info(
+                    "PostgreSQL: fetching slim snapshot for stale-document reconciliation "
+                    "(connector_id=%s, kb_id=%s, database=%s)",
+                    task["connector_id"],
+                    task["kb_id"],
+                    self.conf.get("database"),
+                )
+                try:
+                    for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                        file_list.extend(slim_batch)
+                except Exception:
+                    logging.exception(
+                        "PostgreSQL slim snapshot failed; continuing without stale-document cleanup "
+                        "(connector_id=%s, kb_id=%s)",
+                        task["connector_id"],
+                        task["kb_id"],
+                    )
+                    file_list = None
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp()
+                end_ts,
             )
             _begin_info = f"from {poll_start}"
 
         self.log_connection("PostgreSQL", f"{self.conf.get('host')}:{self.conf.get('database')}", task)
-        return document_generator
+        return document_generator, file_list
 
 
 func_factory = {
