@@ -132,7 +132,7 @@ class TestDocumentsDeletion:
 
         res = delete_documents(HttpApiAuth, dataset_id, {"ids": document_ids})
         assert res["code"] == 102
-        assert "Document not found" in res["message"]
+        assert "or Document not found" in res["message"]
 
     @pytest.mark.p2
     def test_duplicate_deletion(self, HttpApiAuth, add_documents_func):
@@ -144,6 +144,24 @@ class TestDocumentsDeletion:
         res = list_documents(HttpApiAuth, dataset_id)
         assert len(res["data"]["docs"]) == 3
         assert res["data"]["total"] == 3
+
+    @pytest.mark.p2
+    def test_cross_dataset_deletion_is_blocked(self, HttpApiAuth, add_dataset, add_documents_func, tmp_path):
+        dataset_id, _document_ids = add_documents_func
+        other_dataset_id = add_dataset
+        other_document_id = bulk_upload_documents(HttpApiAuth, other_dataset_id, 1, tmp_path)[0]
+
+        res = delete_documents(HttpApiAuth, dataset_id, {"ids": [other_document_id]})
+        assert res["code"] == 102
+        assert f"These documents do not belong to dataset {dataset_id}" in res["message"]
+
+        res = list_documents(HttpApiAuth, dataset_id)
+        assert len(res["data"]["docs"]) == 3
+        assert res["data"]["total"] == 3
+
+        res = list_documents(HttpApiAuth, other_dataset_id)
+        assert len(res["data"]["docs"]) == 1
+        assert res["data"]["total"] == 1
 
 
 @pytest.mark.p3

@@ -78,7 +78,7 @@ class TestDocumentsDeletion:
         for doc_id in document_ids:
             res = delete_document(WebApiAuth, kb_id, {"ids": [doc_id]})
             assert res["code"] == 102, res
-            assert res["message"] == "Document not found!", res
+            assert "Document not found" in res["message"], res
 
     @pytest.mark.p2
     def test_delete_all(self, WebApiAuth, add_documents_func):

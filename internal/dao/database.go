@@ -147,6 +147,7 @@ func InitDB() error {
 		&entity.EvaluationResult{},
 		&entity.TimeRecord{},
 		&entity.License{},
+		&entity.SkillSearchConfig{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
 		&entity.TenantModelGroupMapping{},

@@ -42,14 +42,9 @@ func (z *DummyModel) Name() string {
 	return "dummy"
 }
 
-// Chat sends a message and returns response
-func (z *DummyModel) Chat(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig) (*ChatResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
 // ChatWithMessages sends multiple messages with roles and returns response
-func (z *DummyModel) ChatWithMessages(modelName string, apiKey *string, messages []Message, modelConfig *ChatConfig) (string, error) {
-	return "", fmt.Errorf("not implemented")
+func (z *DummyModel) ChatWithMessages(modelName string, apiConfig *APIConfig, messages []Message, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	return nil, fmt.Errorf("not implemented")
 }
 
 // ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)

@@ -1061,20 +1061,23 @@ class Asana(SyncBase):
             {"asana_api_token_secret": credentials["asana_api_token_secret"]}
         )
 
-        if task.get("reindex") == "1" or not task.get("poll_range_start"):
+        poll_start = task.get("poll_range_start")
+        file_list = None
+
+        if task.get("reindex") == "1" or not poll_start:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
-            poll_start = task.get("poll_range_start")
-            if poll_start is None:
-                document_generator = self.connector.load_from_state()
-                _begin_info = "totally"
-            else:
-                document_generator = self.connector.poll_source(
-                    poll_start.timestamp(),
-                    datetime.now(timezone.utc).timestamp(),
-                )
-                _begin_info = f"from {poll_start}"
+            end_time = datetime.now(timezone.utc).timestamp()
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                end_time,
+            )
+            _begin_info = f"from {poll_start}"
 
         self.log_connection(
             "Asana",
@@ -1082,7 +1085,7 @@ class Asana(SyncBase):
             task,
         )
 
-        return document_generator
+        return document_generator, file_list
 
 class Github(SyncBase):
     SOURCE_NAME: str = FileSource.GITHUB
@@ -1229,11 +1232,26 @@ class Zendesk(SyncBase):
         self.connector.load_credentials(self.conf["credentials"])
 
         end_time = datetime.now(timezone.utc).timestamp()
+        file_list = None
         if task["reindex"] == "1" or not task.get("poll_range_start"):
             start_time = 0
             _begin_info = "totally"
         else:
             start_time = task["poll_range_start"].timestamp()
+            if self.conf.get("sync_deleted_files"):
+                logging.info(
+                    "[Zendesk] Syncing deleted files via slim snapshot (connector_id=%s)",
+                    task.get("connector_id"),
+                )
+                snapshot_start = time.perf_counter()
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
+                logging.info(
+                    "[Zendesk] Slim snapshot fetched %d docs in %.2f seconds",
+                    len(file_list),
+                    time.perf_counter() - snapshot_start,
+                )
             _begin_info = f"from {task['poll_range_start']}"
 
         raw_batch_size = (
@@ -1295,6 +1313,8 @@ class Zendesk(SyncBase):
 
         self.log_connection("Zendesk", f"subdomain({self.conf['credentials'].get('zendesk_subdomain')})", task)
 
+        if file_list is not None:
+            return wrapper(), file_list
         return wrapper()
 
 
@@ -1412,9 +1432,17 @@ class SeaFile(SyncBase):
 
     async def _generate(self, task: dict):
         conf = self.conf
+        raw_batch_size = conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
         self.connector = SeaFileConnector(
             seafile_url=conf["seafile_url"],
-            batch_size=conf.get("batch_size", INDEX_BATCH_SIZE),
+            batch_size=batch_size,
             include_shared=conf.get("include_shared", True),
             sync_scope=conf.get("sync_scope", SeafileSyncScope.ACCOUNT),
             repo_id=conf.get("repo_id") or None,
@@ -1422,14 +1450,37 @@ class SeaFile(SyncBase):
         )
         self.connector.load_credentials(conf["credentials"])
 
+        file_list = None
         poll_start = task.get("poll_range_start")
         if task["reindex"] == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
+            end_ts = datetime.now(timezone.utc).timestamp()
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                logging.info(
+                    "SeaFile: fetching slim snapshot for stale-document reconciliation "
+                    "(connector_id=%s, kb_id=%s, scope=%s)",
+                    task["connector_id"],
+                    task["kb_id"],
+                    conf.get("sync_scope")
+                    or SeafileSyncScope.ACCOUNT.value,
+                )
+                try:
+                    for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                        file_list.extend(slim_batch)
+                except Exception:
+                    logging.exception(
+                        "SeaFile slim snapshot failed; continuing without stale-document cleanup "
+                        "(connector_id=%s, kb_id=%s)",
+                        task["connector_id"],
+                        task["kb_id"],
+                    )
+                    file_list = None
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp(),
+                end_ts,
             )
             _begin_info = f"from {poll_start}"
 
@@ -1441,7 +1492,7 @@ class SeaFile(SyncBase):
             extra += f" path={conf.get('sync_path')}"
 
         self.log_connection("SeaFile", f"{conf['seafile_url']} (scope={scope}{extra})", task)
-        return document_generator
+        return document_generator, file_list
 
 
 class DingTalkAITable(SyncBase):

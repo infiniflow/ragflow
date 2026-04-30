@@ -7257,7 +7257,9 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "data": {
+        "success_count": 2
+    }
 }
 ```
 
@@ -7265,8 +7267,14 @@ Failure:
 
 ```json
 {
-    "code": 404,
-    "message": "File or Folder not found!"
+    "code": 102,
+    "message": "Partially deleted 1 files with 1 errors",
+    "data": {
+        "success_count": 1,
+        "errors": [
+            "No authorization for file file1"
+        ]
+    }
 }
 ```
 

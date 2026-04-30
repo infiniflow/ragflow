@@ -109,6 +109,7 @@ const (
 	TokenVector
 	TokenSize
 	TokenName // For ALTER PROVIDER <name> NAME <new_name>
+	TokenPool
 	TokenBalance
 	TokenInstance
 	TokenInstances
@@ -152,6 +153,7 @@ const (
 	TokenQuotedString
 	TokenInteger
 	TokenFloat
+	TokenNumber = TokenInteger // Alias for integer tokens in path parsing (e.g., version numbers like 1.0.0)
 
 	// Special
 	TokenSemicolon

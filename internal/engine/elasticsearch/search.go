@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"go.uber.org/zap"
@@ -63,17 +64,28 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 		limit = 30 // default ES size
 	}
 
-	// Build filter clauses (default: available=1, meaning available_int >= 1)
-	// Reference: rag/utils/es_conn.py L60-L78
-	filterClauses := buildFilterClauses(req.KbIDs, 1)
+	// Check if this is a skill index
+	isSkillIndex := len(req.IndexNames) > 0 && strings.HasPrefix(req.IndexNames[0], "skill_")
+
+	// Build filter clauses
+	var filterClauses []map[string]interface{}
+	if isSkillIndex {
+		filterClauses = buildSkillFilterClauses()
+	} else {
+		filterClauses = buildFilterClauses(req.KbIDs, 1)
+	}
+
+	// Add filters from req.Filter
+	if req.Filter != nil && len(req.Filter) > 0 {
+		filterClauses = append(filterClauses, buildFilterFromMap(req.Filter)...)
+	}
 
 	// Build search query body
 	queryBody := make(map[string]interface{})
 
 	// Determine search type from MatchExprs
 	var matchText string
-	var matchDense interface{}
-	var textWeight float64 = 1.0
+	var matchDense *types.MatchDenseExpr
 	var hasVectorMatch bool
 
 	for _, expr := range req.MatchExprs {
@@ -83,59 +95,82 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 		switch e := expr.(type) {
 		case string:
 			matchText = e
+		case *types.MatchTextExpr:
+			matchText = e.MatchingText
 		case *types.MatchDenseExpr:
 			hasVectorMatch = true
 			matchDense = e
-			textWeight = 0.3 // default, should be passed via SimilarityThreshold
 		}
 	}
 
 	var vectorFieldName string
-	if !hasVectorMatch {
+	if !hasVectorMatch || matchDense == nil {
 		// Keyword-only search
-		queryBody["query"] = buildESKeywordQuery(matchText, filterClauses, 1.0)
+		if isSkillIndex {
+			queryBody["query"] = buildSkillKeywordQuery(matchText, filterClauses, 1.0)
+		} else {
+			queryBody["query"] = buildESKeywordQuery(matchText, filterClauses, 1.0)
+		}
 	} else {
 		// Hybrid search: keyword + vector
-		// Calculate text weight (use SimilarityThreshold as text weight if provided)
+		textWeight := 0.7 // default: vector weight = 0.3
+		vectorWeight := 0.3
+		if matchDense.ExtraOptions != nil {
+			if vw, ok := matchDense.ExtraOptions["text_weight"].(float64); ok {
+				textWeight = vw
+			}
+			if vw, ok := matchDense.ExtraOptions["vector_weight"].(float64); ok {
+				vectorWeight = vw
+			}
+		}
 
 		// Build boolean query for text match and filters
-		boolQuery := buildESKeywordQuery(matchText, filterClauses, 1.0)
+		var boolQuery map[string]interface{}
+		if isSkillIndex {
+			boolQuery = buildSkillKeywordQuery(matchText, filterClauses, 1.0)
+		} else {
+			boolQuery = buildESKeywordQuery(matchText, filterClauses, 1.0)
+		}
 		// Add boost to the bool query (as in Python code)
 		if boolMap, ok := boolQuery["bool"].(map[string]interface{}); ok {
 			boolMap["boost"] = textWeight
 		}
+
 		// Build kNN query
-		var vectorData []float64
-		if md, ok := matchDense.(*types.MatchDenseExpr); ok {
-			vectorData = md.EmbeddingData
-			vectorFieldName = md.VectorColumnName
-			k := md.TopN
-			if k <= 0 {
-				k = req.Limit
-			}
-			if k <= 0 {
-				k = 1024
-			}
-			numCandidates := k * 2
-
-			knnQuery := map[string]interface{}{
-				"field":          vectorFieldName,
-				"query_vector":   vectorData,
-				"k":              k,
-				"num_candidates": numCandidates,
-				"filter":         boolQuery,
-				"similarity":     0.0,
-			}
-
-			queryBody["knn"] = knnQuery
-			queryBody["query"] = boolQuery
+		vectorData := matchDense.EmbeddingData
+		vectorFieldName = matchDense.VectorColumnName
+		k := matchDense.TopN
+		if k <= 0 {
+			k = req.Limit
 		}
+		if k <= 0 {
+			k = 1024
+		}
+		numCandidates := k * 2
+
+		similarity := 0.0
+		if matchDense.ExtraOptions != nil {
+			if sim, ok := matchDense.ExtraOptions["similarity"].(float64); ok {
+				similarity = sim
+			}
+		}
+
+		knnQuery := map[string]interface{}{
+			"field":          vectorFieldName,
+			"query_vector":   vectorData,
+			"k":              k,
+			"num_candidates": numCandidates,
+			"similarity":     similarity,
+			"boost":          vectorWeight,
+		}
+
+		queryBody["knn"] = knnQuery
+		queryBody["query"] = boolQuery
 
 		// Add vector column to Source fields (matching Python ES: src.append(f"q_{len(q_vec)}_vec"))
 		// Only modify Source if it was explicitly set by the caller
 		if vectorFieldName != "" && len(req.SelectFields) > 0 {
 			sourceFields := req.SelectFields
-			// Check if vector column already in source
 			found := false
 			for _, f := range sourceFields {
 				if f == vectorFieldName {
@@ -152,6 +187,14 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 
 	queryBody["size"] = limit
 	queryBody["from"] = offset
+
+	// Add sorting if specified
+	if req.OrderBy != nil {
+		sort := parseOrderByExpr(req.OrderBy)
+		if len(sort) > 0 {
+			queryBody["sort"] = sort
+		}
+	}
 
 	// Serialize query
 	var buf bytes.Buffer
@@ -228,7 +271,7 @@ func calculatePagination(page, size, topK int) (int, int) {
 	return offset, RERANK_LIMIT
 }
 
-// buildFilterClauses builds ES filter clauses from kb_ids, doc_ids and available_int
+// buildFilterClauses builds ES filter clauses from kb_ids and available_int
 // Reference: rag/utils/es_conn.py L60-L78
 // When available=0: available_int < 1
 // When available!=0: NOT (available_int < 1)
@@ -272,22 +315,96 @@ func buildFilterClauses(kbIDs []string, available int) []map[string]interface{} 
 	return filters
 }
 
+// buildSkillFilterClauses builds ES filter clauses for skill index
+// Skill index uses 'status' field instead of 'available_int'
+func buildSkillFilterClauses() []map[string]interface{} {
+	// Filter for active skills (status = "1")
+	return []map[string]interface{}{
+		{
+			"term": map[string]interface{}{
+				"status": "1",
+			},
+		},
+	}
+}
+
+// buildFilterFromMap converts a generic filter map to ES filter clauses
+func buildFilterFromMap(filter map[string]interface{}) []map[string]interface{} {
+	var filters []map[string]interface{}
+	for field, value := range filter {
+		switch v := value.(type) {
+		case []string:
+			filters = append(filters, map[string]interface{}{
+				"terms": map[string]interface{}{field: v},
+			})
+		case []interface{}:
+			filters = append(filters, map[string]interface{}{
+				"terms": map[string]interface{}{field: v},
+			})
+		default:
+			filters = append(filters, map[string]interface{}{
+				"term": map[string]interface{}{field: v},
+			})
+		}
+	}
+	return filters
+}
+
 // buildESKeywordQuery builds keyword-only search query for ES
 // Uses query_string if matchText is in query_string format, otherwise uses multi_match
 // boost is applied to the text match clause (query_string or multi_match)
 func buildESKeywordQuery(matchText string, filterClauses []map[string]interface{}, boost float64) map[string]interface{} {
 	var mustClause map[string]interface{}
 
-	// Use query_string for complex queries
-	queryString := map[string]interface{}{
-		"query":                matchText,
-		"fields":               []string{"title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"},
-		"type":                 "best_fields",
-		"minimum_should_match": "30%",
-		"boost":                boost,
+	// Handle wildcard query (match all)
+	if matchText == "*" || matchText == "" {
+		mustClause = map[string]interface{}{
+			"match_all": map[string]interface{}{},
+		}
+	} else {
+		// Use query_string for complex queries
+		queryString := map[string]interface{}{
+			"query":                matchText,
+			"fields":               []string{"title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"},
+			"type":                 "best_fields",
+			"minimum_should_match": "30%",
+			"boost":                boost,
+		}
+		mustClause = map[string]interface{}{
+			"query_string": queryString,
+		}
 	}
-	mustClause = map[string]interface{}{
-		"query_string": queryString,
+
+	return map[string]interface{}{
+		"bool": map[string]interface{}{
+			"must":   mustClause,
+			"filter": filterClauses,
+		},
+	}
+}
+
+// buildSkillKeywordQuery builds keyword-only search query for skill index
+// Skill index uses different field names: name_tks, tags_tks, description_tks, content_tks
+func buildSkillKeywordQuery(matchText string, filterClauses []map[string]interface{}, boost float64) map[string]interface{} {
+	var mustClause map[string]interface{}
+
+	// Handle wildcard query (match all)
+	if matchText == "*" || matchText == "" {
+		mustClause = map[string]interface{}{
+			"match_all": map[string]interface{}{},
+		}
+	} else {
+		// Use query_string for complex queries with skill-specific fields
+		queryString := map[string]interface{}{
+			"query":                matchText,
+			"fields":               []string{"name_tks^10", "tags_tks^5", "description_tks^3", "content_tks^1"},
+			"type":                 "best_fields",
+			"minimum_should_match": "30%",
+			"boost":                boost,
+		}
+		mustClause = map[string]interface{}{
+			"query_string": queryString,
+		}
 	}
 
 	return map[string]interface{}{
@@ -306,16 +423,38 @@ func convertESResponse(esResp *SearchResponse, vectorFieldName string) []map[str
 
 	chunks := make([]map[string]interface{}, len(esResp.Hits.Hits))
 	for i, hit := range esResp.Hits.Hits {
-
-		//// vectorField is list of float64, which need to be converted to float32
-
 		chunks[i] = hit.Source
 		chunks[i]["_score"] = hit.Score
 		chunks[i]["_id"] = hit.ID
-		//vectorField := hit.Source[vectorFieldName]
-		//chunks[i][vectorFieldName] = utility.Float64ToFloat32(vectorField)
 	}
 	return chunks
+}
+
+// parseOrderByExpr parses the OrderBy expression into ES sort format
+func parseOrderByExpr(orderBy *types.OrderByExpr) []map[string]interface{} {
+	if orderBy == nil || len(orderBy.Fields) == 0 {
+		return nil
+	}
+
+	var result []map[string]interface{}
+	for _, field := range orderBy.Fields {
+		direction := "asc"
+		if field.Type == types.SortDesc {
+			direction = "desc"
+		}
+
+		if field.Field == "_score" || field.Field == "score" {
+			result = append(result, map[string]interface{}{
+				"_score": direction,
+			})
+		} else {
+			result = append(result, map[string]interface{}{
+				field.Field: direction,
+			})
+		}
+	}
+
+	return result
 }
 
 // Helper query builder functions (legacy)

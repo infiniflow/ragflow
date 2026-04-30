@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"ragflow/internal/cli"
+	"ragflow/internal/logger"
 )
 
 func main() {
@@ -15,6 +16,15 @@ func main() {
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Initialize logger with appropriate level
+	logLevel := "warn" // Default to warn (quiet mode)
+	if args.Verbose {
+		logLevel = "info"
+	}
+	if err := logger.Init(logLevel); err != nil {
+		fmt.Printf("Warning: Failed to initialize logger: %v\n", err)
 	}
 
 	// Show help and exit
