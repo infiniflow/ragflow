@@ -14,25 +14,22 @@ import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
-import {
-  useFetchKnowledgeBaseConfiguration,
-  useFetchKnowledgeGraph,
-} from '@/hooks/use-knowledge-request';
+import { useFetchKnowledgeGraph } from '@/hooks/use-knowledge-request';
 import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
 
+import { IDataset } from '@/interfaces/database/dataset';
 import { useParams } from 'react-router';
 
 type PropType = {
   refreshCount?: number;
+  dataset: IDataset;
 };
 
-export function SideBar({ refreshCount }: PropType) {
+export function SideBar({ dataset: data }: PropType) {
   const pathName = useSecondPathName();
   const { id } = useParams();
-  // refreshCount: be for avatar img sync update on top left
-  const { data } = useFetchKnowledgeBaseConfiguration({ refreshCount });
   const { data: routerData } = useFetchKnowledgeGraph();
   const { t } = useTranslation();
 
@@ -99,9 +96,9 @@ export function SideBar({ refreshCount }: PropType) {
         >
           <div className="flex justify-between">
             <span>
-              {data.doc_num} {t('knowledgeDetails.files')}
+              {data.document_count} {t('knowledgeDetails.files')}
             </span>
-            <span>{formatBytes(data.size)}</span>
+            <span>{data.size ? formatBytes(data.size) : ''}</span>
           </div>
 
           <div className="mt-0.5">

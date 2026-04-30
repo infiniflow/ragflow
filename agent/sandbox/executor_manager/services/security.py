@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import ast
+import re
 from typing import List, Tuple
 
 from core.logger import logger
@@ -151,6 +152,26 @@ class SecurePythonAnalyzer(ast.NodeVisitor):
         self.generic_visit(node)
 
 
+class SecureJavaScriptAnalyzer:
+    DANGEROUS_PATTERNS = [
+        (re.compile(r"""require\s*\(\s*['"]child_process['"]\s*\)"""), "Require: child_process"),
+        (re.compile(r"""require\s*\(\s*['"]fs['"]\s*\)"""), "Require: fs"),
+        (re.compile(r"""require\s*\(\s*['"]worker_threads['"]\s*\)"""), "Require: worker_threads"),
+        (re.compile(r"""\beval\s*\("""), "Call: eval"),
+        (re.compile(r"""\bFunction\s*\("""), "Call: Function"),
+        (re.compile(r"""\bprocess\s*\.\s*binding\s*\("""), "Call: process.binding"),
+    ]
+
+    @classmethod
+    def analyze(cls, code: str) -> List[Tuple[str, int]]:
+        issues: List[Tuple[str, int]] = []
+        for pattern, description in cls.DANGEROUS_PATTERNS:
+            for match in pattern.finditer(code):
+                lineno = code.count("\n", 0, match.start()) + 1
+                issues.append((description, lineno))
+        return issues
+
+
 def analyze_code_security(code: str, language: SupportLanguage) -> Tuple[bool, List[Tuple[str, int]]]:
     """
     Analyze the provided code string and return whether it's safe and why.
@@ -168,6 +189,9 @@ def analyze_code_security(code: str, language: SupportLanguage) -> Tuple[bool, L
         except Exception as e:
             logger.error(f"[SafeCheck] Python parsing failed: {str(e)}")
             return False, [(f"Parsing Error: {str(e)}", -1)]
-    else:
-        logger.warning(f"[SafeCheck] Unsupported language for security analysis: {language} — defaulting to SAFE (manual review recommended)")
-        return True, [(f"Unsupported language for security analysis: {language} — defaulted to SAFE, manual review recommended", -1)]
+    if language == SupportLanguage.NODEJS:
+        issues = SecureJavaScriptAnalyzer.analyze(code)
+        return len(issues) == 0, issues
+
+    logger.warning(f"[SafeCheck] Unsupported language for security analysis: {language}")
+    return False, [(f"Unsupported language for security analysis: {language}", -1)]

@@ -64,7 +64,7 @@ const FloatingChatWidgetMarkdown = ({
   const isDarkTheme = useIsDarkTheme();
 
   const contentWithCursor = useMemo(() => {
-    let text = content === '' ? t('chat.searching') : content;
+    const text = content === '' ? t('chat.searching') : content;
     const nextText = replaceTextByOldReg(text);
     return pipe(replaceThinkToSection, preprocessLaTeX)(nextText);
   }, [content, t]);

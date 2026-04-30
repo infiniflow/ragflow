@@ -35,6 +35,17 @@ func (p *Parser) parseAdminLoginUser() (*Command, error) {
 	cmd.Params["email"] = email
 
 	p.nextToken()
+	// Optional: PASSWORD 'password'
+	if p.curToken.Type == TokenPassword {
+		p.nextToken()
+		password, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd.Params["password"] = password
+		p.nextToken()
+	}
+
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
@@ -273,30 +284,6 @@ func (p *Parser) parseAdminListDefaultModels() (*Command, error) {
 		p.nextToken()
 	}
 	return NewCommand("list_user_default_models"), nil
-}
-
-func (p *Parser) parseListModelsOfProvider() (*Command, error) {
-	if p.curToken.Type != TokenModels {
-		return nil, fmt.Errorf("expected MODELS")
-	}
-
-	p.nextToken()
-	if p.curToken.Type != TokenFrom {
-		return nil, fmt.Errorf("expected FROM")
-	}
-	p.nextToken()
-	providerName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-	cmd := NewCommand("list_provider_models")
-	cmd.Params["provider_name"] = providerName
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
 }
 
 func (p *Parser) parseCommonListProviders() (*Command, error) {
@@ -713,8 +700,6 @@ func (p *Parser) parseAdminDropCommand() (*Command, error) {
 		return p.parseDropUser()
 	case TokenRole:
 		return p.parseDropRole()
-	case TokenModel:
-		return p.parseDropModelProvider()
 	case TokenDataset:
 		return p.parseDropDataset()
 	case TokenChat:
@@ -1200,35 +1185,36 @@ func (p *Parser) parseAdminSetVariable() (*Command, error) {
 func (p *Parser) parseAdminSetDefault() (*Command, error) {
 	p.nextToken() // consume DEFAULT
 
-	var modelType, modelID string
+	var modelType string
 
 	switch p.curToken.Type {
-	case TokenLLM:
-		modelType = "llm_id"
-	case TokenVLM:
-		modelType = "img2txt_id"
+	case TokenChat:
+		modelType = "chat"
+	case TokenVision:
+		modelType = "vision"
 	case TokenEmbedding:
-		modelType = "embd_id"
-	case TokenReranker:
-		modelType = "reranker_id"
+		modelType = "embedding"
+	case TokenRerank:
+		modelType = "rerank"
 	case TokenASR:
-		modelType = "asr_id"
+		modelType = "asr"
 	case TokenTTS:
-		modelType = "tts_id"
+		modelType = "tts"
+	case TokenOCR:
+		modelType = "ocr"
 	default:
 		return nil, fmt.Errorf("unknown model type: %s", p.curToken.Value)
 	}
 
 	p.nextToken()
-	id, err := p.parseQuotedString()
+	compositeModelName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-	modelID = id
 
 	cmd := NewCommand("set_default_model")
 	cmd.Params["model_type"] = modelType
-	cmd.Params["model_id"] = modelID
+	cmd.Params["composite_model_name"] = compositeModelName
 
 	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
@@ -1267,18 +1253,20 @@ func (p *Parser) parseAdminResetCommand() (*Command, error) {
 
 	var modelType string
 	switch p.curToken.Type {
-	case TokenLLM:
-		modelType = "llm_id"
-	case TokenVLM:
-		modelType = "img2txt_id"
+	case TokenChat:
+		modelType = "chat"
+	case TokenVision:
+		modelType = "vision"
 	case TokenEmbedding:
-		modelType = "embd_id"
-	case TokenReranker:
-		modelType = "reranker_id"
+		modelType = "embedding"
+	case TokenRerank:
+		modelType = "rerank"
 	case TokenASR:
-		modelType = "asr_id"
+		modelType = "asr"
 	case TokenTTS:
-		modelType = "tts_id"
+		modelType = "tts"
+	case TokenOCR:
+		modelType = "ocr"
 	default:
 		return nil, fmt.Errorf("unknown model type: %s", p.curToken.Value)
 	}

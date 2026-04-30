@@ -19,16 +19,171 @@ package infinity
 import (
 	"context"
 	"fmt"
+	"strings"
+
+	"go.uber.org/zap"
+	"ragflow/internal/logger"
 )
 
 // IndexDocument indexes a single document
+// For skill index (tableName starts with "skill_"), uses InsertSkill
+// For regular document index, returns not implemented error
 func (e *infinityEngine) IndexDocument(ctx context.Context, tableName, docID string, doc interface{}) error {
-	return fmt.Errorf("infinity insert not implemented: waiting for official Go SDK")
+	// Check if this is a skill index
+	if strings.HasPrefix(tableName, "skill_") {
+		return e.InsertSkill(ctx, tableName, docID, doc)
+	}
+	return fmt.Errorf("infinity insert not implemented for regular documents: waiting for official Go SDK")
+}
+
+// InsertSkill inserts a skill document into skill index
+// Auto-creates the table if it doesn't exist
+func (e *infinityEngine) InsertSkill(ctx context.Context, tableName, docID string, doc interface{}) error {
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	if err != nil {
+		return fmt.Errorf("failed to get database: %w", err)
+	}
+
+	table, err := db.GetTable(tableName)
+	if err != nil {
+		// Table doesn't exist, try to create it
+		errMsg := strings.ToLower(err.Error())
+		if !strings.Contains(errMsg, "not found") && !strings.Contains(errMsg, "doesn't exist") {
+			return fmt.Errorf("failed to get table %s: %w", tableName, err)
+		}
+
+		// Cannot auto-create skill table without knowing the vector dimension
+		// The table should be created by SkillIndexerService.EnsureIndex before calling this
+		return fmt.Errorf("skill table %s does not exist, please ensure index is initialized first", tableName)
+	}
+
+	// Transform doc to map
+	docMap, ok := doc.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid doc type, expected map[string]interface{}")
+	}
+
+	// Prepare insert data
+	insertDoc := make(map[string]interface{})
+	for k, v := range docMap {
+		insertDoc[k] = v
+	}
+	// Ensure skill_id is set (schema uses skill_id, not id)
+	insertDoc["skill_id"] = docID
+
+	// Delete existing document with same skill_id
+	// Escape single quotes to prevent filter injection
+	docIDEscaped := strings.ReplaceAll(docID, "'", "''")
+	filter := fmt.Sprintf("skill_id = '%s'", docIDEscaped)
+	delResp, delErr := table.Delete(filter)
+	if delErr != nil {
+		logger.Warn(fmt.Sprintf("Failed to delete existing skill document: %v", delErr))
+	} else if delResp.DeletedRows > 0 {
+		logger.Debug(fmt.Sprintf("Deleted %d existing skill document(s)", delResp.DeletedRows))
+	}
+
+	// Insert the document
+	_, err = table.Insert([]map[string]interface{}{insertDoc})
+	if err != nil {
+		return fmt.Errorf("failed to insert skill document into %s: %w", tableName, err)
+	}
+	return nil
 }
 
 // BulkIndex indexes documents in bulk
+// For skill index (tableName starts with "skill_"), uses BulkInsertSkill
+// For regular document index, returns not implemented error
 func (e *infinityEngine) BulkIndex(ctx context.Context, tableName string, docs []interface{}) (interface{}, error) {
-	return nil, fmt.Errorf("infinity bulk insert not implemented: waiting for official Go SDK")
+	// Check if this is a skill index
+	if strings.HasPrefix(tableName, "skill_") {
+		inserted, err := e.BulkInsertSkill(ctx, tableName, docs)
+		return &BulkResponse{Inserted: inserted}, err
+	}
+	return nil, fmt.Errorf("infinity bulk insert not implemented for regular documents: waiting for official Go SDK")
+}
+
+// BulkInsertSkill inserts multiple skill documents in bulk with upsert semantics.
+// For each document, deletes existing rows with the same skill_id before inserting,
+// matching the behavior of InsertSkill. Creates shallow copies of input maps to
+// avoid mutating caller data.
+func (e *infinityEngine) BulkInsertSkill(ctx context.Context, tableName string, docs []interface{}) (int, error) {
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get database: %w", err)
+	}
+
+	table, err := db.GetTable(tableName)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get table %s: %w", tableName, err)
+	}
+
+	// Collect skill_ids for upsert and create shallow copies of docs
+	skillIDs := make([]string, 0, len(docs))
+	insertDocs := make([]map[string]interface{}, 0, len(docs))
+
+	for _, doc := range docs {
+		docMap, ok := doc.(map[string]interface{})
+		if !ok {
+			logger.Warn("Invalid doc type in bulk insert, expected map[string]interface{}")
+			continue
+		}
+
+		// Create shallow copy to avoid mutating caller's map
+		insertDoc := make(map[string]interface{})
+		for k, v := range docMap {
+			insertDoc[k] = v
+		}
+
+		// Ensure skill_id is set if id or skill_id exists in doc
+		var skillID string
+		if id, hasID := docMap["id"]; hasID {
+			skillID = fmt.Sprintf("%v", id)
+			insertDoc["skill_id"] = skillID
+		} else if sid, hasSkillID := docMap["skill_id"]; hasSkillID {
+			skillID = fmt.Sprintf("%v", sid)
+		}
+
+		if skillID != "" {
+			skillIDs = append(skillIDs, skillID)
+		}
+		insertDocs = append(insertDocs, insertDoc)
+	}
+
+	if len(insertDocs) == 0 {
+		logger.Warn("No valid documents to bulk insert", zap.String("tableName", tableName))
+		return 0, nil
+	}
+
+	// Upsert: delete existing documents with same skill_ids before inserting
+	for _, skillID := range skillIDs {
+		// Escape single quotes to prevent filter injection
+		docIDEscaped := strings.ReplaceAll(skillID, "'", "''")
+		filter := fmt.Sprintf("skill_id = '%s'", docIDEscaped)
+		delResp, delErr := table.Delete(filter)
+		if delErr != nil {
+			logger.Warn("Failed to delete existing skill document before bulk insert",
+				zap.String("tableName", tableName),
+				zap.String("skill_id", skillID),
+				zap.Error(delErr))
+		} else if delResp.DeletedRows > 0 {
+			logger.Debug("Deleted existing skill document before bulk insert",
+				zap.String("tableName", tableName),
+				zap.String("skill_id", skillID),
+				zap.Int64("deletedRows", delResp.DeletedRows))
+		}
+	}
+
+	// Insert the documents
+	_, err = table.Insert(insertDocs)
+	if err != nil {
+		return 0, fmt.Errorf("failed to bulk insert skill documents: %w", err)
+	}
+
+	logger.Debug("Bulk upserted skill documents",
+		zap.String("tableName", tableName),
+		zap.Int("count", len(insertDocs)),
+		zap.Int("skillIDs", len(skillIDs)))
+	return len(insertDocs), nil
 }
 
 // BulkResponse bulk operation response
@@ -41,7 +196,44 @@ func (e *infinityEngine) GetDocument(ctx context.Context, tableName, docID strin
 	return nil, fmt.Errorf("infinity get document not implemented: waiting for official Go SDK")
 }
 
-// DeleteDocument deletes a document
+// DeleteDocument deletes a document by ID
 func (e *infinityEngine) DeleteDocument(ctx context.Context, tableName, docID string) error {
-	return fmt.Errorf("infinity delete not implemented: waiting for official Go SDK")
+	if tableName == "" {
+		return fmt.Errorf("table name cannot be empty")
+	}
+	if docID == "" {
+		return fmt.Errorf("document id cannot be empty")
+	}
+
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	if err != nil {
+		return fmt.Errorf("failed to get database: %w", err)
+	}
+
+	table, err := db.GetTable(tableName)
+	if err != nil {
+		return fmt.Errorf("failed to get table: %w", err)
+	}
+
+	// Use filter to delete document by ID
+	// Skill index uses 'skill_id', regular indices use 'id'
+	idField := "id"
+	if strings.HasPrefix(tableName, "skill_") {
+		idField = "skill_id"
+	}
+	// Escape single quotes to prevent filter injection
+	docIDEscaped := strings.ReplaceAll(docID, "'", "''")
+	filter := fmt.Sprintf("%s = '%s'", idField, docIDEscaped)
+	resp, err := table.Delete(filter)
+	if err != nil {
+		return fmt.Errorf("failed to delete document: %w", err)
+	}
+
+	logger.Debug("Deleted document from Infinity",
+		zap.String("tableName", tableName),
+		zap.String("docID", docID),
+		zap.String("idField", idField),
+		zap.Int64("deletedRows", resp.DeletedRows))
+
+	return nil
 }

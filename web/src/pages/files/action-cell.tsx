@@ -49,6 +49,7 @@ export function ActionCell({
 
   const { downloadFile } = useDownloadFile();
   const isFolder = isFolderType(record.type);
+  const isSkillsFolder = isFolder && record.name.toLowerCase() === 'skills';
   const extension = getExtension(record.name);
   const isKnowledgeBase = isKnowledgeBaseType(record.source_type);
 
@@ -76,6 +77,10 @@ export function ActionCell({
   const onRemoveFile = useCallback(() => {
     handleRemoveFile([documentId]);
   }, [handleRemoveFile, documentId]);
+
+  if (isSkillsFolder) {
+    return null;
+  }
 
   return (
     <section className="flex gap-2 items-center text-text-sub-title-invert opacity-0 group-hover:opacity-100 transition-opacity">

@@ -82,6 +82,8 @@ class InfinityConnection(InfinityConnectionBase):
             field = "authors@ft_authors_rag_coarse"
         elif field == "authors_sm_tks":
             field = "authors@ft_authors_rag_fine"
+        elif field == "tag_kwd":
+            field = "tag_kwd@ft_tag_kwd_whitespace__"
         tokens[0] = field
         return "^".join(tokens)
 
@@ -483,7 +485,14 @@ class InfinityConnection(InfinityConnectionBase):
                 table_name = index_name
             else:
                 table_name = f"{index_name}_{knowledgebase_id}"
-            table_instance = db_instance.get_table(table_name)
+            try:
+                table_instance = db_instance.get_table(table_name)
+            except InfinityException as e:
+                # src/common/status.cppm, kTableNotExist = 3022
+                if e.error_code == ErrorCode.TABLE_NOT_EXIST:
+                    self.logger.warning(f"Table {table_name} does not exist, skipping update.")
+                    return False
+                raise
             # if "exists" in condition:
             #    del condition["exists"]
 
@@ -595,6 +604,84 @@ class InfinityConnection(InfinityConnectionBase):
             self.connPool.release_conn(inf_conn)
         return True
 
+    def adjust_chunk_pagerank_fea(
+        self,
+        chunk_id: str,
+        index_name: str,
+        knowledgebase_id: str,
+        delta: int,
+        min_weight: int,
+        max_weight: int,
+        row_id: int | None = None,
+        max_retries: int = 2,
+    ) -> bool:
+        """Adjust pagerank_fea on one chunk row in Infinity.
+
+        Uses row_id for a targeted update when available. If the row_id is
+        stale (concurrent update changed it), re-reads the current row_id and
+        retries up to *max_retries* times.
+        """
+        table_name = f"{index_name}_{knowledgebase_id}"
+        for attempt in range(max_retries + 1):
+            inf_conn = self.connPool.get_conn()
+            try:
+                db_instance = inf_conn.get_database(self.dbName)
+                table_instance = db_instance.get_table(table_name)
+
+                if row_id is None:
+                    df, _ = table_instance.output(
+                        [PAGERANK_FLD, "row_id()"]
+                    ).filter(f"id = '{chunk_id}'").to_df()
+                    if df.empty:
+                        self.logger.warning(
+                            "adjust_chunk_pagerank_fea: chunk %s not found in %s",
+                            chunk_id, table_name,
+                        )
+                        return False
+                    current_weight = int(float(df[PAGERANK_FLD].iloc[0] or 0))
+                    row_id = int(df["row_id"].iloc[0])
+                else:
+                    df, _ = table_instance.output(
+                        [PAGERANK_FLD]
+                    ).filter(f"id = '{chunk_id}'").to_df()
+                    if df.empty:
+                        return False
+                    current_weight = int(float(df[PAGERANK_FLD].iloc[0] or 0))
+
+                new_weight = max(min_weight, min(max_weight, current_weight + delta))
+
+                table_instance.update(
+                    f"_row_id = {row_id}",
+                    {PAGERANK_FLD: new_weight},
+                )
+                self.logger.info(
+                    "adjust_chunk_pagerank_fea(chunk=%s, table=%s): %s -> %s via row_id=%s",
+                    chunk_id, table_name, current_weight, new_weight, row_id,
+                )
+                return True
+
+            except InfinityException as e:
+                if attempt < max_retries:
+                    self.logger.warning(
+                        "adjust_chunk_pagerank_fea stale row_id=%s for chunk %s (attempt %s/%s): %s",
+                        row_id, chunk_id, attempt + 1, max_retries, e,
+                    )
+                    row_id = None
+                    continue
+                self.logger.error(
+                    "adjust_chunk_pagerank_fea failed for chunk %s after %s attempts: %s",
+                    chunk_id, max_retries + 1, e,
+                )
+                return False
+            except Exception as e:
+                self.logger.error(
+                    "adjust_chunk_pagerank_fea error for chunk %s: %s", chunk_id, e,
+                )
+                return False
+            finally:
+                self.connPool.release_conn(inf_conn)
+        return False
+
     """
     Helper functions for search result
     """
@@ -639,6 +726,9 @@ class InfinityConnection(InfinityConnectionBase):
                     res[field] = res["authors"]
 
         column_map = {col.lower(): col for col in res.columns}
+        # row_id() is returned by infinity as "row_id", add mapping for lookup
+        if "row_id()" in fields_all and "row_id" in column_map:
+            column_map["row_id()"] = column_map["row_id"]
         matched_columns = {column_map[col.lower()]: col for col in fields_all if col.lower() in column_map}
         none_columns = [col for col in fields_all if col.lower() not in column_map]
 
