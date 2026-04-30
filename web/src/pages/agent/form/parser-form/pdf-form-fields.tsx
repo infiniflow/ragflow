@@ -15,6 +15,7 @@ import {
   LanguageFormField,
   LargeModelFormField,
   ParserMethodFormField,
+  RemoveHeaderFooterFormField,
   RmdirFormField,
   TwoColumnCheckFormField,
 } from './common-form-fields';
@@ -104,6 +105,7 @@ export function PdfFormFields({ prefix }: CommonProps) {
     <>
       <TwoColumnCheckFormField prefix={prefix} />
       <RmdirFormField prefix={prefix} />
+      <RemoveHeaderFooterFormField prefix={prefix} />
       <ParserMethodFormField prefix={prefix}></ParserMethodFormField>
       <FlattenMediaToTextFormField prefix={prefix} />
       {!flattenMediaToText && (

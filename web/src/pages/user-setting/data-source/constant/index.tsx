@@ -106,6 +106,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.WEBDAV]: {
+     syncDeletedFiles: true,
+  },
+  [DataSourceKey.SEAFILE]: {
     syncDeletedFiles: true,
   },
 };

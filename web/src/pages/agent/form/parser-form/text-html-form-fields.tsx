@@ -4,6 +4,7 @@ import { useWatch } from 'react-hook-form';
 import {
   FlattenMediaToTextFormField,
   LargeModelFormField,
+  RemoveHeaderFooterFormField,
   RmdirFormField,
 } from './common-form-fields';
 import { CommonProps } from './interface';
@@ -32,5 +33,10 @@ export function TextMarkdownFormFields({ prefix }: CommonProps) {
 }
 
 export function HtmlFormFields({ prefix }: CommonProps) {
-  return <RmdirFormField prefix={prefix} />;
+  return (
+    <>
+      <RmdirFormField prefix={prefix} />
+      <RemoveHeaderFooterFormField prefix={prefix} />
+    </>
+  );
 }

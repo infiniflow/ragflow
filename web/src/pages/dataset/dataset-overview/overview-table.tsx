@@ -116,13 +116,19 @@ export const getFileLogsTableColumns = (
             <div className="bg-accent-primary-5 w-6 h-6 rounded-full flex items-center justify-center">
               <MonitorUp className="text-accent-primary" size={16} />
             </div>
-          ) : (
+          ) : dataSourceInfo[
+              row.original.source_from as keyof typeof dataSourceInfo
+            ] ? (
             <div className="w-6 h-6 flex items-center justify-center">
               {
                 dataSourceInfo[
                   row.original.source_from as keyof typeof dataSourceInfo
                 ].icon
               }
+            </div>
+          ) : (
+            <div className="w-6 h-6 flex items-center justify-center">
+              <MonitorUp className="text-accent-primary" size={16} />
             </div>
           )}
         </div>
@@ -290,7 +296,8 @@ export const getDatasetLogsTableColumns = (
       header: t('processingType'),
       cell: ({ row }) => (
         <div className="flex items-center gap-2 text-text-primary">
-          {ProcessingType.knowledgeGraph === row.original.task_type && (
+          {(ProcessingType.knowledgeGraph === row.original.task_type ||
+            row.original.task_type === 'GraphRAG') && (
             <IconFontFill
               name={`knowledgegraph`}
               className="text-text-secondary"
