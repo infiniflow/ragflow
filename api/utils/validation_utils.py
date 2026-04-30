@@ -18,7 +18,6 @@ import math
 import pathlib
 import re
 from collections import Counter
-import string
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -638,19 +637,17 @@ class CreateDatasetReq(Base):
         """Validate pipeline_id as 32-char lowercase hex string if provided.
 
         Rules:
-        - None or empty string: treat as None (not set)
-        - Must be exactly length 32
-        - Must contain only hex digits (0-9a-fA-F); normalized to lowercase
+            - None or empty string: treat as None (not set)
+            - Must be exactly length 32
+            - Must contain only hex digits (0-9a-fA-F); normalized to lowercase
         """
         if v is None:
             return None
+
         if v == "":
             return None
-        if len(v) != 32:
-            raise PydanticCustomError("format_invalid", "pipeline_id must be 32 hex characters")
-        if any(ch not in string.hexdigits for ch in v):
-            raise PydanticCustomError("format_invalid", "pipeline_id must be hexadecimal")
-        return v.lower()
+
+        return validate_uuid1_hex(v)
 
     @model_validator(mode="after")
     def validate_parser_dependency(self) -> "CreateDatasetReq":
