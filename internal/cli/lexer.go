@@ -108,7 +108,7 @@ func (l *Lexer) NextToken() Token {
 		tok.Type = TokenEOF
 		tok.Value = ""
 	default:
-		if isLetter(l.ch) {
+		if isLetter(l.ch) || l.ch == '_' {
 			ident := l.readIdentifier()
 			return l.lookupIdent(ident)
 		} else if isDigit(l.ch) {
@@ -415,6 +415,10 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenDocument, Value: ident}
 	case "TAGS":
 		return Token{Type: TokenTag, Value: ident}
+	case "REGION":
+		return Token{Type: TokenRegion, Value: ident}
+	case "URL":
+		return Token{Type: TokenURL, Value: ident}
 	case "LOG":
 		return Token{Type: TokenLog, Value: ident}
 	case "LEVEL":

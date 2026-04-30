@@ -34,22 +34,21 @@ func NewDummyModel(baseURL map[string]string, urlSuffix URLSuffix) *DummyModel {
 	}
 }
 
+func (z *DummyModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
+}
+
 func (z *DummyModel) Name() string {
 	return "dummy"
 }
 
-// Chat sends a message and returns response
-func (z *DummyModel) Chat(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig) (*ChatResponse, error) {
+// ChatWithMessages sends multiple messages with roles and returns response
+func (z *DummyModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-// ChatWithMessages sends multiple messages with roles and returns response
-func (z *DummyModel) ChatWithMessages(modelName string, apiKey *string, messages []Message, modelConfig *ChatConfig) (string, error) {
-	return "", fmt.Errorf("not implemented")
-}
-
-// ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (z *DummyModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
+func (z *DummyModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("not implemented")
 }
 

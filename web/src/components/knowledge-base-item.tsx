@@ -1,6 +1,6 @@
 import { DocumentParserType } from '@/constants/knowledge';
 import { useFetchKnowledgeList } from '@/hooks/use-knowledge-request';
-import { IKnowledge } from '@/interfaces/database/knowledge';
+import { IDataset } from '@/interfaces/database/dataset';
 import { useBuildQueryVariableOptions } from '@/pages/agent/hooks/use-get-begin-query';
 import { toLower } from 'lodash';
 import { useMemo } from 'react';
@@ -35,7 +35,7 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
   const nextOptions = useMemo(() => {
     const datasetListMap = datasetListOrigin
       .filter((x) => x.chunk_method !== DocumentParserType.Tag)
-      .map((item: IKnowledge) => {
+      .map((item: IDataset) => {
         return {
           label: item.name,
           icon: () => (

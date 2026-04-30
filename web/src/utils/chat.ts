@@ -52,8 +52,8 @@ export const buildMessageUuidWithRole = (
 // the last valid delimiter and avoid cutting at the first \] or \) inside the
 // equation (e.g. \frac{1}{|y|} or \right]).
 
-const BLOCK_MATH_RE = /\\\[([\s\S]*)(?<![a-zA-Z])\\\]/g;
-const INLINE_MATH_RE = /\\\(([\s\S]*)(?<![a-zA-Z])\\\)/g;
+const BLOCK_MATH_RE = /\\\[([\s\S]*?)(?<![a-zA-Z])\\\]/g;
+const INLINE_MATH_RE = /\\\(([\s\S]*?)(?<![a-zA-Z])\\\)/g;
 
 export const preprocessLaTeX = (content: string) => {
   const blockProcessedContent = content.replace(

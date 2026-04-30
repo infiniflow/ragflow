@@ -81,11 +81,11 @@ export default {
   fetchPipelineDatasetLogs: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions`,
   runIndex: (datasetId: string, indexType: string) =>
-    `${restAPIv1}/datasets/${datasetId}/index?type=${indexType}`,
+    `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
   traceIndex: (datasetId: string, indexType: string) =>
-    `${restAPIv1}/datasets/${datasetId}/index?type=${indexType}`,
+    `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
   unbindPipelineTask: (datasetId: string, indexType: string, wipe?: boolean) =>
-    `${restAPIv1}/datasets/${datasetId}/${indexType}${wipe === false ? '?wipe=false' : ''}`,
+    `${restAPIv1}/datasets/${datasetId}/${indexType.toLowerCase()}${wipe === false ? '?wipe=false' : ''}`,
   pipelineRerun: `${webAPI}/canvas/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
@@ -333,4 +333,13 @@ export default {
   adminGetSandboxConfig: `${restAPIv1}/admin/sandbox/config`,
   adminSetSandboxConfig: `${restAPIv1}/admin/sandbox/config`,
   adminTestSandboxConnection: `${restAPIv1}/admin/sandbox/test`,
+
+  // Skill spaces
+  skillSpaces: `${restAPIv1}/skills/spaces`,
+  skillSpace: (spaceId: string) => `${restAPIv1}/skills/spaces/${spaceId}`,
+  skillSpaceByFolder: `${restAPIv1}/skills/space/by-folder`,
+  skillConfig: `${restAPIv1}/skills/config`,
+  skillSearch: `${restAPIv1}/skills/search`,
+  skillIndex: `${restAPIv1}/skills/index`,
+  skillReindex: `${restAPIv1}/skills/reindex`,
 };

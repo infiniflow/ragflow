@@ -1,5 +1,5 @@
 import { Authorization } from '@/constants/authorization';
-import { IRenameTag } from '@/interfaces/database/knowledge';
+import { IRenameTag } from '@/interfaces/database/dataset';
 import {
   IFetchDocumentListRequestBody,
   IFetchKnowledgeListRequestParams,
@@ -268,7 +268,7 @@ export function getKnowledgeGraph(knowledgeId: string) {
 }
 
 export function deleteKnowledgeGraph(knowledgeId: string) {
-  return request.delete(api.getKnowledgeGraph(knowledgeId));
+  return request.delete(api.knowledgeGraph(knowledgeId));
 }
 
 export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>

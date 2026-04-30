@@ -244,6 +244,8 @@ class ESConnection(ESConnectionBase):
                                   "mode": "avg", "numeric_type": "double"}
                 elif field.endswith("_int") or field.endswith("_flt"):
                     order_info = {"order": order, "unmapped_type": "float"}
+                elif field == "id":
+                    continue # id as "text", not a "keyword", order by it will cause error
                 else:
                     order_info = {"order": order, "unmapped_type": "text"}
                 orders.append({field: order_info})

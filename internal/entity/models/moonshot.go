@@ -52,56 +52,73 @@ func NewMoonshotModel(baseURL map[string]string, urlSuffix URLSuffix) *MoonshotM
 	}
 }
 
+func (z *MoonshotModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
+}
+
 func (z *MoonshotModel) Name() string {
 	return "moonshot"
 }
 
-// Chat sends a message and returns response
-func (k *MoonshotModel) Chat(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if message == nil {
-		return nil, fmt.Errorf("message is nil")
+func (k *MoonshotModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("messages is empty")
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
 
 	url := fmt.Sprintf("%s/%s", k.BaseURL[region], k.URLSuffix.Chat)
 
+	// Convert messages to the format expected by API
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
 	// Build request body
 	reqBody := map[string]interface{}{
-		"model": modelName,
-		"messages": []map[string]string{
-			{"role": "user", "content": *message},
-		},
-		"stream": false,
+		"model":       modelName,
+		"messages":    apiMessages,
+		"stream":      false,
+		"temperature": 1,
 	}
 
-	if chatModelConfig.Stream != nil {
-		reqBody["stream"] = *chatModelConfig.Stream
-	}
+	if chatModelConfig != nil {
+		if chatModelConfig.Stream != nil {
+			reqBody["stream"] = *chatModelConfig.Stream
+		}
 
-	if chatModelConfig.MaxTokens != nil {
-		reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-	}
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		}
 
-	if chatModelConfig.TopP != nil {
-		reqBody["top_p"] = *chatModelConfig.TopP
-	}
+		if chatModelConfig.Temperature != nil {
+			reqBody["temperature"] = *chatModelConfig.Temperature
+		}
 
-	if chatModelConfig.Stop != nil {
-		reqBody["stop"] = *chatModelConfig.Stop
-	}
+		if chatModelConfig.TopP != nil {
+			reqBody["top_p"] = *chatModelConfig.TopP
+		}
 
-	if chatModelConfig.Thinking != nil {
-		if *chatModelConfig.Thinking {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "enabled",
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
+		if chatModelConfig.Stop != nil {
+			reqBody["stop"] = *chatModelConfig.Stop
+		}
+
+		if chatModelConfig.Thinking != nil {
+			if *chatModelConfig.Thinking {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "enabled",
+				}
+			} else {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "disabled",
+				}
 			}
 		}
 	}
@@ -117,7 +134,9 @@ func (k *MoonshotModel) Chat(modelName, message *string, apiConfig *APIConfig, c
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
 
 	resp, err := k.httpClient.Do(req)
 	if err != nil {
@@ -161,7 +180,7 @@ func (k *MoonshotModel) Chat(modelName, message *string, apiConfig *APIConfig, c
 	}
 
 	var reasonContent string
-	if chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
 		reasonContent, ok = messageMap["reasoning_content"].(string)
 		if !ok {
 			return nil, fmt.Errorf("invalid content format")
@@ -180,13 +199,12 @@ func (k *MoonshotModel) Chat(modelName, message *string, apiConfig *APIConfig, c
 	return chatResponse, nil
 }
 
-// ChatWithMessages sends multiple messages with roles and returns response
-func (k *MoonshotModel) ChatWithMessages(modelName string, apiKey *string, messages []Message, chatModelConfig *ChatConfig) (string, error) {
-	return "", fmt.Errorf("%s, ChatWithMessages not implemented", k.Name())
-}
+// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
+func (k *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
+	}
 
-// ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (k *MoonshotModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	var region = "default"
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
@@ -194,13 +212,20 @@ func (k *MoonshotModel) ChatStreamlyWithSender(modelName, message *string, apiCo
 
 	url := fmt.Sprintf("%s/chat/completions", k.BaseURL[region])
 
+	// Convert messages to API format
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
-		"model": modelName,
-		"messages": []map[string]string{
-			{"role": "user", "content": *message},
-		},
-		"stream": true,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   true,
 	}
 
 	if chatModelConfig.Stream != nil {
