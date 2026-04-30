@@ -501,6 +501,9 @@ export default {
       tavilyApiKeyHelp: '取得方法はこちら',
       crossLanguage: 'クロス言語検索',
       crossLanguageTip: `1つ以上の言語を選択すると、その言語でも検索します。未選択の場合は元の言語で検索します。`,
+      includeDocumentMetadata: 'ドキュメントのメタデータを含める',
+      includeDocumentMetadataTip:
+        '取得したドキュメントのメタデータを、モデルに送信する知識コンテキストに含めるかどうかを指定します。',
       createChat: 'チャットを作成',
       metadata: 'メタデータ',
       metadataTip:

@@ -120,6 +120,7 @@ class _DummyDialogRecord:
                 "system": "Answer with {knowledge}",
                 "parameters": [{"key": "knowledge", "optional": False}],
                 "prologue": "hello",
+                "include_document_metadata": True,
                 "quote": True,
             },
             "similarity_threshold": 0.2,
@@ -925,6 +926,70 @@ def test_chat_session_create_and_update_guard_matrix_unit(monkeypatch):
     monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_args, **_kwargs: False)
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
     assert res["message"] == "Session not found!"
+
+
+@pytest.mark.p2
+def test_session_completion_preserves_prompt_metadata_toggle_unit(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+    captured = {}
+
+    _set_request_json(
+        monkeypatch,
+        module,
+        {
+            "messages": [{"role": "user", "content": "What does the dataset say?", "id": "msg-1"}],
+            "stream": False,
+        },
+    )
+
+    class _Conversation:
+        def __init__(self):
+            self.id = "session-1"
+            self.dialog_id = "chat-1"
+            self.message = []
+            self.reference = []
+
+        def to_dict(self):
+            return {
+                "id": self.id,
+                "dialog_id": self.dialog_id,
+                "message": self.message,
+                "reference": self.reference,
+            }
+
+    async def _async_chat(dia, msg, _stream=True, **_req):
+        captured["include_document_metadata"] = dia.prompt_config.get("include_document_metadata")
+        captured["messages"] = msg
+        yield {"answer": "stub answer", "reference": {}, "final": True}
+
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, _Conversation()))
+    monkeypatch.setattr(
+        module.DialogService,
+        "get_by_id",
+        lambda _id: (
+            True,
+            SimpleNamespace(
+                tenant_id="tenant-1",
+                llm_id="glm-4",
+                llm_setting={},
+                prompt_config={
+                    "system": "Answer with {knowledge}",
+                    "parameters": [{"key": "knowledge", "optional": False}],
+                    "include_document_metadata": False,
+                },
+            ),
+        ),
+    )
+    monkeypatch.setattr(module, "async_chat", _async_chat)
+    monkeypatch.setattr(module, "structure_answer", lambda _conv, ans, _message_id, _session_id: ans)
+    monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_args, **_kwargs: True)
+
+    res = _run(module.session_completion("chat-1", "session-1"))
+
+    assert res["code"] == 0
+    assert res["data"]["answer"] == "stub answer"
+    assert captured["include_document_metadata"] is False
+    assert captured["messages"][0]["content"] == "What does the dataset say?"
 
 
 @pytest.mark.p2

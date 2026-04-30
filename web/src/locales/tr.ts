@@ -925,6 +925,9 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       crossLanguage: 'Çapraz dil araması',
       crossLanguagePlaceholder: 'Değer seçin',
       crossLanguageTip: `Çapraz dil araması için bir veya daha fazla dil seçin. Hiçbir dil seçilmezse sistem orijinal sorguyla arama yapar.`,
+      includeDocumentMetadata: 'Belge meta verilerini dahil et',
+      includeDocumentMetadataTip:
+        'Alınan belgelerin meta verilerinin modele gönderilen bilgi bağlamına dahil edilip edilmeyeceğini belirler.',
       createChat: 'Sohbet oluştur',
       metadata: 'Meta veri',
       metadataTip:

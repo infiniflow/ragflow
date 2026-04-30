@@ -879,6 +879,9 @@ The above is the content you need to summarize.`,
       tavilyApiKeyHelp: 'Как да го получите?',
       crossLanguage: 'Крос-езиково търсене',
       crossLanguageTip: `Изберете един или повече езици за крос-езиково търсене. Ако не е избран език, системата търси с оригиналната заявка.`,
+      includeDocumentMetadata: 'Включи метаданните на документа',
+      includeDocumentMetadataTip:
+        'Дали да се включват метаданните на извлечените документи в контекста на знанието, изпращан към модела.',
       createChat: 'Създай чат',
       metadata: 'Метаданни',
       metadataTip:

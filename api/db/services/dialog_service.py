@@ -32,7 +32,7 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle
-from common.metadata_utils import apply_meta_data_filter
+from common.metadata_utils import apply_meta_data_filter, is_metadata_filter_enabled
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from common.time_utils import current_timestamp, datetime_format
@@ -583,7 +583,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     if prompt_config.get("cross_languages"):
         questions = [await cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
 
-    if dialog.meta_data_filter:
+    if is_metadata_filter_enabled(dialog.meta_data_filter):
+        logging.debug("Metadata filter enabled for chat retrieval; applying filter.")
         metas = DocMetadataService.get_flatted_meta_by_kbs(dialog.kb_ids)
         attachments = await apply_meta_data_filter(
             dialog.meta_data_filter,
@@ -592,6 +593,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             chat_mdl,
             attachments,
         )
+    else:
+        logging.debug("Metadata filter disabled/empty for chat retrieval; skipping filter.")
 
     if prompt_config.get("keyword", False):
         questions[-1] = questions[-1] + "," + await keyword_extraction(chat_mdl, questions[-1])
@@ -675,7 +678,11 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
 
-    knowledges = kb_prompt(kbinfos, max_tokens)
+    knowledges = kb_prompt(
+        kbinfos,
+        max_tokens,
+        include_document_metadata=prompt_config.get("include_document_metadata", True),
+    )
     logging.debug("{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
 
     retrieval_ts = timer()
@@ -1431,9 +1438,12 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     max_tokens = chat_mdl.max_length
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
 
-    if meta_data_filter:
+    if is_metadata_filter_enabled(meta_data_filter):
+        logging.debug("Metadata filter enabled for ask retrieval; applying filter.")
         metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
+    else:
+        logging.debug("Metadata filter disabled/empty for ask retrieval; skipping filter.")
 
     kbinfos = await retriever.retrieval(
         question=question,
@@ -1451,7 +1461,11 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         rank_feature=label_question(question, kbs)
     )
 
-    knowledges = kb_prompt(kbinfos, max_tokens)
+    knowledges = kb_prompt(
+        kbinfos,
+        max_tokens,
+        include_document_metadata=search_config.get("include_document_metadata", True),
+    )
     sys_prompt = PROMPT_JINJA_ENV.from_string(ASK_SUMMARY).render(knowledge="\n".join(knowledges))
 
     msg = [{"role": "user", "content": question}]
@@ -1517,9 +1531,12 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         rerank_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.RERANK, rerank_id)
         rerank_mdl = LLMBundle(tenant_id, rerank_model_config)
 
-    if meta_data_filter:
+    if is_metadata_filter_enabled(meta_data_filter):
+        logging.debug("Metadata filter enabled for mindmap retrieval; applying filter.")
         metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
+    else:
+        logging.debug("Metadata filter disabled/empty for mindmap retrieval; skipping filter.")
 
     ranks = await settings.retriever.retrieval(
         question=question,
