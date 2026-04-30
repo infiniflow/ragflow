@@ -990,6 +990,13 @@ class Moodle(SyncBase):
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
+            # Freeze the poll end time BEFORE the slim snapshot so that the
+            # snapshot and the poll cover the same point in time. Without
+            # this, a module created between the snapshot and the poll
+            # could be polled as new and at the same time be missing from
+            # the slim list, which would mark it as stale and delete it.
+            end_ts = datetime.now(timezone.utc).timestamp()
+
             if self.conf.get("sync_deleted_files"):
                 file_list = []
                 try:
@@ -1005,7 +1012,7 @@ class Moodle(SyncBase):
                     file_list = None
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp(),
+                end_ts,
             )
             _begin_info = f"from {poll_start}"
 
