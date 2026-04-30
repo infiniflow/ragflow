@@ -109,9 +109,9 @@ func FormatTimeToString(t *time.Time, format string) interface{} {
 }
 
 // ConvertHexToPositionIntArray converts hex string to position int array (grouped by 5)
-func ConvertHexToPositionIntArray(hexStr string) interface{} {
+func ConvertHexToPositionIntArray(hexStr string) (interface{}, error) {
 	if hexStr == "" {
-		return nil
+		return nil, nil
 	}
 
 	parts := strings.Split(hexStr, "_")
@@ -122,16 +122,16 @@ func ConvertHexToPositionIntArray(hexStr string) interface{} {
 		}
 		val, err := strconv.ParseInt(part, 16, 64)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("failed to parse hex part %q: %w", part, err)
 		}
 		if val < math.MinInt || val > math.MaxInt {
-			continue
+			return nil, fmt.Errorf("hex part %q overflows int range", part)
 		}
 		intVals = append(intVals, int(val))
 	}
 
 	if len(intVals) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// Group by 5 elements
@@ -144,7 +144,7 @@ func ConvertHexToPositionIntArray(hexStr string) interface{} {
 		result = append(result, intVals[i:end])
 	}
 
-	return result
+	return result, nil
 }
 
 // ConvertPositionIntArrayToHex converts position_int list (2D) to hex string
@@ -168,9 +168,9 @@ func ConvertPositionIntArrayToHex(list []interface{}) string {
 }
 
 // ConvertHexToIntArray converts hex string to int array (split by "_")
-func ConvertHexToIntArray(hexStr string) interface{} {
+func ConvertHexToIntArray(hexStr string) (interface{}, error) {
 	if hexStr == "" {
-		return nil
+		return nil, nil
 	}
 
 	parts := strings.Split(hexStr, "_")
@@ -181,18 +181,18 @@ func ConvertHexToIntArray(hexStr string) interface{} {
 		}
 		val, err := strconv.ParseInt(part, 16, 64)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("failed to parse hex part %q: %w", part, err)
 		}
 		if val < math.MinInt || val > math.MaxInt {
-			continue
+			return nil, fmt.Errorf("hex part %q overflows int range", part)
 		}
 		result = append(result, int(val))
 	}
 
 	if len(result) == 0 {
-		return nil
+		return nil, nil
 	}
-	return result
+	return result, nil
 }
 
 // ConvertIntArrayToHex converts int array to hex string

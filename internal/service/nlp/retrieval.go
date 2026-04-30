@@ -582,7 +582,10 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 	}
 
 	// Build Field map
-	fieldMap := s.docEngine.GetFields(searchResult.Chunks, nil)
+	fieldMap, err := s.docEngine.GetFields(searchResult.Chunks, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get fields: %w", err)
+	}
 
 	// Build Aggregation
 	aggregation := s.docEngine.GetAggregation(searchResult.Chunks, "docnm_kwd")

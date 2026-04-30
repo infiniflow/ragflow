@@ -493,7 +493,9 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 			// Skill index uses different schema
 			// so we skip the document-specific field mappings
 			if !isSkillIndex {
-				GetFields(chunks, nil)
+				if _, err := GetFields(chunks, nil); err != nil {
+					return nil, fmt.Errorf("failed to get fields: %w", err)
+				}
 			} else {
 				// For skill index, only handle ROW_ID -> row_id() mapping
 				for _, chunk := range chunks {

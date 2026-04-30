@@ -59,7 +59,7 @@ type DocEngine interface {
 	BulkIndex(ctx context.Context, indexName string, docs []interface{}) (interface{}, error)
 
 	// Utility functions for search result processing
-	GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{}
+	GetFields(chunks []map[string]interface{}, fields []string) (map[string]map[string]interface{}, error)
 	GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{}
 	GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string
 	GetDocIDs(chunks []map[string]interface{}) []string

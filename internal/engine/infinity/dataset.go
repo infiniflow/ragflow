@@ -341,19 +341,27 @@ func (e *infinityEngine) InsertDataset(ctx context.Context, chunks []map[string]
 
 	// Delete existing rows with matching IDs
 	if len(insertChunks) > 0 {
-		idList := make([]string, len(insertChunks))
-		for i, chunk := range insertChunks {
-			idStr := fmt.Sprint(chunk["id"])
-			idStr = strings.ReplaceAll(strings.ReplaceAll(idStr, `\`, `\\`), `'`, `\'`)
-			idList[i] = fmt.Sprintf("'%s'", idStr)
+		var idList []string
+		for _, chunk := range insertChunks {
+			rawID, ok := chunk["id"]
+			if !ok {
+				continue
+			}
+			idStr, ok := rawID.(string)
+			if !ok {
+				idStr = fmt.Sprint(rawID)
+			}
+			idList = append(idList, fmt.Sprintf("'%s'", escapeFilterValue(idStr)))
 		}
-		filter := fmt.Sprintf("id IN (%s)", strings.Join(idList, ", "))
-		logger.Debug(fmt.Sprintf("Deleting existing rows with filter: %s", filter))
-		delResp, delErr := table.Delete(filter)
-		if delErr != nil {
-			logger.Warn(fmt.Sprintf("Failed to delete existing rows: %v", delErr))
-		} else {
-			logger.Info(fmt.Sprintf("Deleted %d existing rows", delResp.DeletedRows))
+		if len(idList) > 0 {
+			filter := fmt.Sprintf("id IN (%s)", strings.Join(idList, ", "))
+			logger.Debug(fmt.Sprintf("Deleting existing rows with filter: %s", filter))
+			delResp, delErr := table.Delete(filter)
+			if delErr != nil {
+				logger.Warn(fmt.Sprintf("Failed to delete existing rows: %v", delErr))
+			} else {
+				logger.Info(fmt.Sprintf("Deleted %d existing rows", delResp.DeletedRows))
+			}
 		}
 	}
 

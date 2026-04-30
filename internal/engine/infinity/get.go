@@ -161,7 +161,11 @@ func (e *infinityEngine) GetChunk(ctx context.Context, tableName, chunkID string
 	}
 
 	if posVal, ok := chunk["position_int"].(string); ok {
-		chunk["position_int"] = utility.ConvertHexToPositionIntArray(posVal)
+		posArr, err := utility.ConvertHexToPositionIntArray(posVal)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert position_int for chunk %s: %w", chunkID, err)
+		}
+		chunk["position_int"] = posArr
 	} else {
 		chunk["position_int"] = []interface{}{}
 	}
@@ -172,10 +176,10 @@ func (e *infinityEngine) GetChunk(ctx context.Context, tableName, chunkID string
 // GetFields applies field mappings to chunks and returns a dict keyed by chunk ID.
 // Equivalent to Python's get_fields() in infinity_conn.py.
 // When fields is nil/empty, returns all fields from chunks.
-func GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
+func GetFields(chunks []map[string]interface{}, fields []string) (map[string]map[string]interface{}, error) {
 	result := make(map[string]map[string]interface{})
 	if len(chunks) == 0 {
-		return result
+		return result, nil
 	}
 
 	// If fields is provided, create a set for lookup
@@ -236,13 +240,21 @@ func GetFields(chunks []map[string]interface{}, fields []string) map[string]map[
 
 		// position_int: convert from hex string to array format (grouped by 5)
 		if val, ok := chunk["position_int"].(string); ok {
-			chunk["position_int"] = utility.ConvertHexToPositionIntArray(val)
+			posArr, err := utility.ConvertHexToPositionIntArray(val)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert position_int for chunk %v: %w", chunk["id"], err)
+			}
+			chunk["position_int"] = posArr
 		}
 
 		// Convert page_num_int and top_int from hex string to array
 		for _, colName := range []string{"page_num_int", "top_int"} {
 			if val, ok := chunk[colName].(string); ok && val != "" {
-				chunk[colName] = utility.ConvertHexToIntArray(val)
+				intArr, err := utility.ConvertHexToIntArray(val)
+				if err != nil {
+					return nil, fmt.Errorf("failed to convert %s for chunk %v: %w", colName, chunk["id"], err)
+				}
+				chunk[colName] = intArr
 			}
 		}
 
@@ -294,10 +306,10 @@ func GetFields(chunks []map[string]interface{}, fields []string) map[string]map[
 		}
 	}
 
-	return result
+	return result, nil
 }
 
 // GetFields is a method wrapper for infinityEngine to satisfy DocEngine interface
-func (e *infinityEngine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
+func (e *infinityEngine) GetFields(chunks []map[string]interface{}, fields []string) (map[string]map[string]interface{}, error) {
 	return GetFields(chunks, fields)
 }
