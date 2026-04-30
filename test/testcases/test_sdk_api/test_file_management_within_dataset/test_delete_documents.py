@@ -26,8 +26,8 @@ class TestDocumentsDeletion:
         [
             ({"ids": None}, "should either provide doc ids or set delete_all(true), dataset:", 3),
             ({"ids": []}, "should either provide doc ids or set delete_all(true), dataset:", 3),
-            ({"ids": ["invalid_id"]}, "Field: <ids> - Message: <Invalid UUID1 format> - Value: <['invalid_id']>", 3),
-            ({"ids": ["\n!?。；！？\"'"]}, "Field: <ids> - Message: <Invalid UUID1 format> - Value:", 3),
+            ({"ids": ["invalid_id"]}, "These documents do not belong to dataset", 3),
+            ({"ids": ["\n!?。；！？\"'"]}, "These documents do not belong to dataset", 3),
             ("not json", "must be a mapping", 3),
             (lambda r: {"ids": r[:1]}, "", 2),
             (lambda r: {"ids": r}, "", 0),
@@ -69,7 +69,7 @@ class TestDocumentsDeletion:
 
         with pytest.raises(Exception) as exception_info:
             dataset.delete_documents(**payload)
-        assert "Field: <ids> - Message: <Invalid UUID1 format> - Value: <" in str(exception_info.value), str(exception_info.value)
+        assert "These documents do not belong to dataset" in str(exception_info.value), str(exception_info.value)
 
         documents = dataset.list_documents()
         assert len(documents) == 3, str(documents)
