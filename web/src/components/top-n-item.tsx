@@ -7,11 +7,17 @@ interface SimilaritySliderFormFieldProps {
   max?: number;
 }
 
-export const topnSchema = {
-  top_n: z.number().optional(),
-};
+export const DEFAULT_TOP_N_MAX = 200;
 
-export function TopNFormField({ max = 30 }: SimilaritySliderFormFieldProps) {
+export const createTopNSchema = (max = DEFAULT_TOP_N_MAX) => ({
+  top_n: z.number().max(max).optional(),
+});
+
+export const topnSchema = createTopNSchema();
+
+export function TopNFormField({
+  max = DEFAULT_TOP_N_MAX,
+}: SimilaritySliderFormFieldProps) {
   const { t } = useTranslate('chat');
 
   return (
