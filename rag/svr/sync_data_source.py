@@ -1217,12 +1217,68 @@ class IMAP(SyncBase):
         credentials_provider = StaticCredentialsProvider(tenant_id=task["tenant_id"], connector_name=DocumentSource.IMAP, credential_json=self.conf["credentials"])
         self.connector.set_credentials_provider(credentials_provider)
         end_time = datetime.now(timezone.utc).timestamp()
+        try:
+            poll_range_days = float(self.conf.get("poll_range", 30))
+        except (TypeError, ValueError):
+            poll_range_days = 30
+        default_initial_sync_start = end_time - poll_range_days * 24 * 60 * 60
         if task["reindex"] == "1" or not task["poll_range_start"]:
-            start_time = end_time - self.conf.get("poll_range",30) * 24 * 60 * 60
+            start_time = default_initial_sync_start
             _begin_info = "totally"
         else:
             start_time = task["poll_range_start"].timestamp()
             _begin_info = f"from {task['poll_range_start']}"
+
+        if task["reindex"] == "1":
+            initial_sync_start = default_initial_sync_start
+            should_persist_initial_start = True
+        else:
+            initial_sync_start = self.conf.get("imap_initial_sync_start")
+            should_persist_initial_start = initial_sync_start is None
+            try:
+                initial_sync_start = float(initial_sync_start)
+            except (TypeError, ValueError):
+                initial_sync_start = (
+                    0 if task["poll_range_start"] else default_initial_sync_start
+                )
+                should_persist_initial_start = True
+
+        if should_persist_initial_start:
+            updated_conf = copy.deepcopy(self.conf)
+            updated_conf["imap_initial_sync_start"] = initial_sync_start
+            try:
+                ConnectorService.update_by_id(
+                    task["connector_id"], {"config": updated_conf}
+                )
+                self.conf = updated_conf
+            except Exception:
+                logging.exception(
+                    "Failed to persist IMAP initial sync start for connector %s",
+                    task["connector_id"],
+                )
+
+        file_list = None
+        if (
+            task["reindex"] != "1"
+            and task["poll_range_start"]
+            and self.conf.get("sync_deleted_files")
+        ):
+            file_list = []
+            try:
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync(
+                    start=initial_sync_start,
+                    end=end_time,
+                ):
+                    file_list.extend(slim_batch)
+            except Exception:
+                logging.exception(
+                    "IMAP slim snapshot failed; continuing without stale-document cleanup "
+                    "(connector_id=%s, kb_id=%s)",
+                    task["connector_id"],
+                    task["kb_id"],
+                )
+                file_list = None
+
         raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
         try:
             batch_size = int(raw_batch_size)
@@ -1267,7 +1323,7 @@ class IMAP(SyncBase):
             f"host({self.conf['imap_host']}) port({self.conf['imap_port']}) user({self.conf['credentials']['imap_username']}) folder({self.conf['imap_mailbox']})",
             task,
         )
-        return wrapper()
+        return wrapper(), file_list
 
 class Zendesk(SyncBase):
 
