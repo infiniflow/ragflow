@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import math
 import pathlib
 import re
@@ -166,7 +167,7 @@ def validate_and_parse_request_args(request: Request, validator: type[BaseModel]
         try:
             args["ext"] = json.loads(args["ext"])
         except json.JSONDecodeError:
-            pass  # Keep the string and let validation handle the error
+            logging.debug("Failed to decode query arg 'ext' as JSON; passing raw value to validator")
 
     try:
         if extras is not None:
@@ -341,6 +342,7 @@ class RaptorConfig(Base):
     threshold: Annotated[float, Field(default=0.1, ge=0.0, le=1.0)]
     max_cluster: Annotated[int, Field(default=64, ge=1, le=1024)]
     random_seed: Annotated[int, Field(default=0, ge=0)]
+    scope: Annotated[Literal["file", "dataset"], Field(default="file")]
     auto_disable_for_structured_data: Annotated[bool, Field(default=True)]
     ext: Annotated[dict, Field(default={})]
 
@@ -361,18 +363,17 @@ class ParentChildConfig(Base):
 class AutoMetadataField(Base):
     """Schema for a single auto-metadata field configuration."""
 
-    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255), Field(...)]
-    type: Annotated[Literal["string", "list", "time"], Field(...)]
+    key: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255), Field(...)]
+    type: Annotated[Literal["string", "list", "time", "number"], Field(...)]
     description: Annotated[str | None, Field(default=None, max_length=65535)]
-    examples: Annotated[list[str] | None, Field(default=None)]
-    restrict_values: Annotated[bool, Field(default=False)]
+    enum: Annotated[list[str] | None, Field(default=None)]
 
 
 class AutoMetadataConfig(Base):
     """Top-level auto-metadata configuration attached to a dataset."""
 
-    enabled: Annotated[bool, Field(default=True)]
-    fields: Annotated[list[AutoMetadataField], Field(default_factory=list)]
+    metadata: Annotated[list[AutoMetadataField], Field(default_factory=list)]
+    built_in_metadata: Annotated[list[AutoMetadataField], Field(default_factory=list)]
 
 
 class ParserConfig(Base):
@@ -810,6 +811,31 @@ class DeleteReq(Base):
 class DeleteDatasetReq(DeleteReq): ...
 
 
+class DeleteDocumentReq(DeleteReq):
+    @field_validator("ids", mode="after")
+    @classmethod
+    def validate_ids(cls, v_list: list[str] | None) -> list[str] | None:
+        """
+        Validate document IDs without enforcing UUIDv1.
+
+        Connector-backed documents can use non-UUID identifiers, so we only
+        enforce uniqueness here and leave existence checks to the delete API.
+        """
+        if v_list is None:
+            return None
+
+        duplicates = [item for item, count in Counter(v_list).items() if count > 1]
+        if duplicates:
+            duplicates_str = ", ".join(duplicates)
+            raise PydanticCustomError(
+                "duplicate_uuids",
+                "Duplicate ids: '{duplicate_ids}'",
+                {"duplicate_ids": duplicates_str},
+            )
+
+        return v_list
+
+
 class SearchDatasetReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -827,9 +853,6 @@ class SearchDatasetReq(BaseModel):
     rerank_id: Annotated[str | None, Field(default=None)]
     tenant_rerank_id: Annotated[str | None, Field(default=None)]
     meta_data_filter: Annotated[dict | None, Field(default=None)]
-
-
-class DeleteDocumentReq(DeleteReq): ...
 
 
 class BaseListReq(BaseModel):

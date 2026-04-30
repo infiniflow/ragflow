@@ -199,6 +199,14 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
 
+	// For local deployed models
+	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
+		newURL := map[string]string{
+			region: baseURL,
+		}
+		providerInfo.ModelDriver = providerInfo.ModelDriver.NewInstance(newURL)
+	}
+
 	return providerInfo.ModelDriver.ListModels(apiConfig)
 }
 
@@ -478,13 +486,70 @@ func (m *ModelProviderService) DropProviderInstances(providerName, userID string
 	}
 
 	for _, instanceName := range instances {
-		count, err := m.modelInstanceDAO.DeleteByProviderIDAndInstanceName(provider.ID, instanceName)
+		// Get model instance
+		var tenantModelInstance *entity.TenantModelInstance
+		tenantModelInstance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+		if err != nil {
+			return common.CodeServerError, err
+		}
+
+		// Delete all models of this instance
+		var count int64 = 0
+		count, err = m.modelDAO.DeleteByProviderIDAndInstanceID(provider.ID, tenantModelInstance.ID)
+		if err != nil {
+			return common.CodeServerError, err
+		}
+
+		// Delete model instance
+		count, err = m.modelInstanceDAO.DeleteByProviderIDAndInstanceName(provider.ID, instanceName)
 		if err != nil {
 			return common.CodeServerError, err
 		}
 
 		if count == 0 {
 			return common.CodeNotFound, errors.New("provider instance not found")
+		}
+	}
+
+	return common.CodeSuccess, nil
+}
+
+func (m *ModelProviderService) DropInstanceModels(providerName, instanceName, userID string, models []string) (common.ErrorCode, error) {
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	var modelInstance *entity.TenantModelInstance
+	modelInstance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	for _, modelName := range models {
+		// Delete all models of this instance
+		var count int64 = 0
+		count, err = m.modelDAO.DeleteByProviderIDAndInstanceIDAndModelName(provider.ID, modelInstance.ID, modelName)
+		if err != nil {
+			return common.CodeServerError, err
+		}
+
+		if count == 0 {
+			return common.CodeNotFound, fmt.Errorf("model: %s not found", modelName)
 		}
 	}
 
@@ -617,7 +682,14 @@ func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, mod
 	return common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName, userID, message string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig) (*modelModule.ChatResponse, common.ErrorCode, error) {
+// ChatToModelWithMessages sends messages to the model with messages array
+func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceName, modelName, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig) (*modelModule.ChatResponse, common.ErrorCode, error) {
+	if apiConfig == nil {
+		apiConfig = &modelModule.APIConfig{}
+	}
+	if modelConfig == nil {
+		modelConfig = &modelModule.ChatConfig{}
+	}
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -668,9 +740,12 @@ func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName
 		apiConfig.ApiKey = &instance.APIKey
 
 		var response *modelModule.ChatResponse
-		response, err = providerInfo.ModelDriver.Chat(&modelName, &message, apiConfig, modelConfig)
+		response, err = providerInfo.ModelDriver.ChatWithMessages(modelName, messages, apiConfig, modelConfig)
 		if err != nil {
 			return nil, common.CodeServerError, err
+		}
+		if response == nil {
+			return nil, common.CodeServerError, errors.New("empty chat response")
 		}
 
 		return response, common.CodeSuccess, nil
@@ -701,10 +776,14 @@ func (m *ModelProviderService) ChatToModel(providerName, instanceName, modelName
 		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
 		var response *modelModule.ChatResponse
-		response, err = newProviderInfo.Chat(&modelName, &message, apiConfig, modelConfig)
+		response, err = newProviderInfo.ChatWithMessages(modelName, messages, apiConfig, modelConfig)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
+		if response == nil {
+			return nil, common.CodeServerError, errors.New("empty chat response")
+		}
+
 		return response, common.CodeSuccess, nil
 	}
 
@@ -723,17 +802,20 @@ func (m *ModelProviderService) ChatWithMessagesToModelByApiKey(providerName, mod
 		return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
 	}
 
-	var response string
-	response, err = providerInfo.ModelDriver.ChatWithMessages(modelName, &apiKey, messages, nil)
+	var response *modelModule.ChatResponse
+	response, err = providerInfo.ModelDriver.ChatWithMessages(modelName, messages, &modelModule.APIConfig{ApiKey: &apiKey}, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
+	if response == nil {
+		return nil, common.CodeServerError, errors.New("empty chat response")
+	}
 
-	return &response, common.CodeSuccess, nil
+	return response.Answer, common.CodeSuccess, nil
 }
 
 // ChatToModelStreamWithSender streams chat response directly via sender function (best performance, no channel)
-func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, message string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
+func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -757,7 +839,7 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		return common.CodeServerError, err
 	}
 
-	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+	modelInfo, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
 	if err != nil {
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo == nil {
@@ -779,12 +861,42 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
-		// Direct call with sender function
-		err = providerInfo.ModelDriver.ChatStreamlyWithSender(&modelName, &message, apiConfig, modelConfig, sender)
+		err = providerInfo.ModelDriver.ChatStreamlyWithSender(modelName, messages, apiConfig, modelConfig, sender)
 		if err != nil {
 			return common.CodeServerError, err
 		}
 
+		return common.CodeSuccess, nil
+	}
+
+	if modelInfo.Status == "active" {
+		// For local deployed models
+		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+		if providerInfo == nil {
+			return common.CodeNotFound, errors.New("provider not found")
+		}
+
+		var extra map[string]string
+		err = json.Unmarshal([]byte(instance.Extra), &extra)
+		if err != nil {
+			return common.CodeServerError, err
+		}
+
+		region := extra["region"]
+		apiConfig.Region = &region
+		apiConfig.ApiKey = &instance.APIKey
+
+		modelConfig.ModelClass = &providerInfo.Class
+
+		newURL := map[string]string{
+			region: extra["base_url"],
+		}
+		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
+
+		err = newProviderInfo.ChatStreamlyWithSender(modelName, messages, apiConfig, modelConfig, sender)
+		if err != nil {
+			return common.CodeServerError, err
+		}
 		return common.CodeSuccess, nil
 	}
 
@@ -865,16 +977,16 @@ func (m *ModelProviderService) GetModelByName(modelName string, tenantID string)
 
 // GetEmbeddingModel returns an EmbeddingModel wrapper for the given tenant
 func (m *ModelProviderService) GetEmbeddingModel(tenantID, compositeModelName string) (*modelModule.EmbeddingModel, error) {
-	driver, modelName, apiConfig, err := m.getModelConfig(tenantID, compositeModelName)
+	driver, modelName, apiConfig, maxTokens, err := m.getModelConfig(tenantID, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewEmbeddingModel(driver, &modelName, apiConfig), nil
+	return modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens), nil
 }
 
 // GetRerankModel returns a RerankModel wrapper for the given tenant
 func (m *ModelProviderService) GetRerankModel(tenantID, compositeModelName string) (*modelModule.RerankModel, error) {
-	driver, modelName, apiConfig, err := m.getModelConfig(tenantID, compositeModelName)
+	driver, modelName, apiConfig, _, err := m.getModelConfig(tenantID, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
@@ -883,7 +995,7 @@ func (m *ModelProviderService) GetRerankModel(tenantID, compositeModelName strin
 
 // GetChatModel returns a ChatModel wrapper for the given tenant
 func (m *ModelProviderService) GetChatModel(tenantID, compositeModelName string) (*modelModule.ChatModel, error) {
-	driver, modelName, apiConfig, err := m.getModelConfig(tenantID, compositeModelName)
+	driver, modelName, apiConfig, _, err := m.getModelConfig(tenantID, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
@@ -891,12 +1003,12 @@ func (m *ModelProviderService) GetChatModel(tenantID, compositeModelName string)
 }
 
 type AddCustomModelRequest struct {
-	ProviderName string `json:"provider_name"`
-	InstanceName string `json:"instance_name"`
-	ModelName    string `json:"model_name"`
-	ModelType    string `json:"model_type"`
-	MaxTokens    int    `json:"max_tokens"`
-	Thinking     *bool  `json:"thinking"`
+	ProviderName string   `json:"provider_name"`
+	InstanceName string   `json:"instance_name"`
+	ModelName    string   `json:"model_name"`
+	ModelTypes   []string `json:"model_types"`
+	MaxTokens    int      `json:"max_tokens"`
+	Thinking     *bool    `json:"thinking"`
 }
 
 func (m *ModelProviderService) AddCustomModel(request *AddCustomModelRequest, userID string) (common.ErrorCode, error) {
@@ -938,6 +1050,7 @@ func (m *ModelProviderService) AddCustomModel(request *AddCustomModelRequest, us
 	if request.Thinking != nil {
 		extra["thinking"] = *request.Thinking
 	}
+	extra["model_types"] = request.ModelTypes
 	// convert extra to string
 	extraByte, err := json.Marshal(extra)
 	if err != nil {
@@ -948,7 +1061,7 @@ func (m *ModelProviderService) AddCustomModel(request *AddCustomModelRequest, us
 	model := &entity.TenantModel{
 		ID:         modelID,
 		ModelName:  request.ModelName,
-		ModelType:  request.ModelType,
+		ModelType:  request.ModelTypes[0],
 		ProviderID: provider.ID,
 		InstanceID: instance.ID,
 		Status:     "active",
@@ -963,20 +1076,20 @@ func (m *ModelProviderService) AddCustomModel(request *AddCustomModelRequest, us
 	return common.CodeSuccess, nil
 }
 
-// getModelConfig returns the model driver, model name, and API config for a model
-func (m *ModelProviderService) getModelConfig(tenantID, compositeModelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+// getModelConfig returns the model driver, model name, API config, and max tokens for a model
+func (m *ModelProviderService) getModelConfig(tenantID, compositeModelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	modelName, instanceName, providerName, err := parseModelName(compositeModelName)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, "", nil, 0, err
 	}
 
 	// Check if provider exists
 	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, "", nil, 0, err
 	}
 	if provider == nil {
-		return nil, "", nil, fmt.Errorf("provider %s not found", providerName)
+		return nil, "", nil, 0, fmt.Errorf("provider %s not found", providerName)
 	}
 
 	if instanceName == "" {
@@ -985,47 +1098,42 @@ func (m *ModelProviderService) getModelConfig(tenantID, compositeModelName strin
 
 	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, "", nil, 0, err
 	}
 	if instance == nil {
-		return nil, "", nil, fmt.Errorf("instance %s not found for provider %s", instanceName, providerName)
-	}
-
-	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
-	if err != nil {
-		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
-		if providerInfo == nil {
-			return nil, "", nil, fmt.Errorf("provider %s not found", providerName)
-		}
-
-		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
-		if err != nil {
-			return nil, "", nil, fmt.Errorf("provider %s model %s not found", providerName, modelName)
-		}
-
-		var extra map[string]string
-		err = json.Unmarshal([]byte(instance.Extra), &extra)
-		if err != nil {
-			return nil, "", nil, err
-		}
-		region := extra["region"]
-
-		apiConfig := &modelModule.APIConfig{ApiKey: &instance.APIKey, Region: &region}
-		return providerInfo.ModelDriver, modelName, apiConfig, nil
+		return nil, "", nil, 0, fmt.Errorf("instance %s not found for provider %s", instanceName, providerName)
 	}
 
 	var extra map[string]string
 	err = json.Unmarshal([]byte(instance.Extra), &extra)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, "", nil, 0, err
 	}
 	region := extra["region"]
 
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 	if providerInfo == nil {
-		return nil, "", nil, fmt.Errorf("provider %s not found", providerName)
+		return nil, "", nil, 0, fmt.Errorf("provider %s not found", providerName)
+	}
+
+	// Get model info to extract max_tokens
+	modelInfo, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+	maxTokens := 0
+	if err == nil && modelInfo != nil {
+		maxTokens = modelInfo.MaxTokens
+	}
+
+	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+	if err != nil {
+		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		if err != nil {
+			return nil, "", nil, 0, fmt.Errorf("provider %s model %s not found", providerName, modelName)
+		}
+
+		apiConfig := &modelModule.APIConfig{ApiKey: &instance.APIKey, Region: &region}
+		return providerInfo.ModelDriver, modelName, apiConfig, maxTokens, nil
 	}
 
 	apiConfig := &modelModule.APIConfig{ApiKey: &instance.APIKey, Region: &region}
-	return providerInfo.ModelDriver, modelName, apiConfig, nil
+	return providerInfo.ModelDriver, modelName, apiConfig, maxTokens, nil
 }

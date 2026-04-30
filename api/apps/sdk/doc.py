@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from io import BytesIO
 
 from quart import request, send_file
@@ -35,6 +36,18 @@ from rag.nlp import search
 from rag.prompts.generator import cross_languages, keyword_extraction
 
 MAXIMUM_OF_UPLOADING_FILES = 256
+
+
+from api.utils.reference_metadata_utils import (
+    enrich_chunks_with_document_metadata,
+    resolve_reference_metadata_preferences,
+)
+
+def _resolve_reference_metadata(req: dict, search_config: dict | None = None):
+    return resolve_reference_metadata_preferences(req, search_config)
+
+def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields=None) -> None:
+    enrich_chunks_with_document_metadata(chunks, metadata_fields)
 
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
@@ -436,6 +449,8 @@ async def retrieval_test(tenant_id):
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
+    if top <= 0:
+        return get_error_data_result("`top_k` must be greater than 0")
     highlight_val = req.get("highlight", None)
     if highlight_val is None:
         highlight = False
@@ -448,6 +463,7 @@ async def retrieval_test(tenant_id):
             return get_error_data_result("`highlight` should be a boolean")
     else:
         return get_error_data_result("`highlight` should be a boolean")
+    include_metadata, metadata_fields = _resolve_reference_metadata(req)
     try:
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
@@ -505,6 +521,15 @@ async def retrieval_test(tenant_id):
 
         for c in ranks["chunks"]:
             c.pop("vector", None)
+
+        if include_metadata:
+            logging.info(
+                "sdk.retrieval reference_metadata enabled dataset_ids=%s fields=%s chunks=%s",
+                kb_ids,
+                sorted(metadata_fields) if metadata_fields else None,
+                len(ranks["chunks"]),
+            )
+            enrich_chunks_with_document_metadata(ranks["chunks"], metadata_fields)
 
         ##rename keys
         renamed_chunks = []
