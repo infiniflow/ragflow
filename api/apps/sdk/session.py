@@ -44,6 +44,10 @@ from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, keyword_extraction
 from common.constants import RetCode, LLMType
 from common import settings
+from api.utils.reference_metadata_utils import (
+    enrich_chunks_with_document_metadata,
+    resolve_reference_metadata_preferences,
+)
 
 
 @token_required
@@ -327,6 +331,7 @@ async def retrieval_test_embedded():
     tenant_id = objs[0].tenant_id
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
+    search_config = {}
 
     async def _retrieval():
         nonlocal similarity_threshold, vector_similarity_weight, top, rerank_id
@@ -337,8 +342,11 @@ async def retrieval_test_embedded():
         meta_data_filter = {}
         chat_mdl = None
         if req.get("search_id", ""):
-            search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
-            meta_data_filter = search_config.get("meta_data_filter", {})
+            nonlocal search_config
+            detail = SearchService.get_detail(req.get("search_id", ""))
+            if detail:
+                search_config = detail.get("search_config", {})
+                meta_data_filter = search_config.get("meta_data_filter", {})
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_id = search_config.get("chat_id", "")
                 if chat_id:
@@ -414,6 +422,11 @@ async def retrieval_test_embedded():
 
         for c in ranks["chunks"]:
             c.pop("vector", None)
+
+        include_metadata, metadata_fields = _resolve_reference_metadata(req, search_config)
+        if include_metadata:
+            enrich_chunks_with_document_metadata(ranks["chunks"], metadata_fields)
+
         ranks["labels"] = labels
 
         return get_json_result(data=ranks)
@@ -529,3 +542,6 @@ async def mindmap():
         return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)
 
+
+def _resolve_reference_metadata(req, search_config=None):
+    return resolve_reference_metadata_preferences(req, search_config)
