@@ -984,19 +984,40 @@ class Moodle(SyncBase):
 
         # Determine the time range for synchronization based on reindex or poll_range_start
         poll_start = task.get("poll_range_start")
+        file_list = None
 
         if task["reindex"] == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
+            # Freeze the poll end time BEFORE the slim snapshot so that the
+            # snapshot and the poll cover the same point in time. Without
+            # this, a module created between the snapshot and the poll
+            # could be polled as new and at the same time be missing from
+            # the slim list, which would mark it as stale and delete it.
+            end_ts = datetime.now(timezone.utc).timestamp()
+
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                try:
+                    for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                        file_list.extend(slim_batch)
+                except Exception:
+                    logging.exception(
+                        "Moodle slim snapshot failed; skipping stale-document cleanup "
+                        "(connector_id=%s, kb_id=%s)",
+                        task.get("connector_id"),
+                        task.get("kb_id"),
+                    )
+                    file_list = None
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp(),
+                end_ts,
             )
             _begin_info = f"from {poll_start}"
 
         self.log_connection("Moodle", self.conf["moodle_url"], task)
-        return document_generator
+        return document_generator, file_list
 
 
 class BOX(SyncBase):
