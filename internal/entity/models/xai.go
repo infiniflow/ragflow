@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/logger"
 	"strings"
 	"time"
 )
@@ -53,7 +52,7 @@ func NewXAIModel(baseURL map[string]string, urlSuffix URLSuffix) *XAIModel {
 }
 
 func (z *XAIModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return nil
+	return NewXAIModel(baseURL, z.URLSuffix)
 }
 
 func (z *XAIModel) Name() string {
@@ -90,11 +89,10 @@ func (z *XAIModel) ChatWithMessages(modelName string, messages []Message, apiCon
 		"temperature": 1,
 	}
 
+	// Note: do NOT propagate chatModelConfig.Stream into the request body
+	// here. ChatWithMessages parses a single JSON response, so SSE/stream
+	// must always be off for this code path.
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
 		if chatModelConfig.MaxTokens != nil {
 			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
 		}
@@ -193,6 +191,10 @@ func (z *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 		return fmt.Errorf("messages is empty")
 	}
 
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return fmt.Errorf("api key is required")
+	}
+
 	var region = "default"
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
@@ -262,11 +264,13 @@ func (z *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// SSE parsing: read line by line
+	// SSE parsing: read line by line. The default bufio.Scanner buffer
+	// is 64KB, which can be too small for long SSE chunks. Bump it to
+	// 1MB so we never silently truncate a long data: line.
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
-		logger.Info(line)
 
 		// SSE data line starts with "data:"
 		if !strings.HasPrefix(line, "data:") {
@@ -322,13 +326,17 @@ func (z *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 		}
 	}
 
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
+	}
+
 	// Send the [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
+	if err := sender(&endOfStream, nil); err != nil {
 		return err
 	}
 
-	return scanner.Err()
+	return nil
 }
 
 // Encode encodes a list of texts into embeddings. xAI does not expose a
@@ -339,6 +347,10 @@ func (z *XAIModel) Encode(modelName *string, texts []string, apiConfig *APIConfi
 
 // ListModels returns the list of model ids visible to the API key.
 func (z *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
 	var region = "default"
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
