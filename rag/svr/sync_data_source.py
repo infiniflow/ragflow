@@ -901,20 +901,53 @@ class WebDAV(SyncBase):
     SOURCE_NAME: str = FileSource.WEBDAV
 
     async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
         self.connector = WebDAVConnector(
             base_url=self.conf["base_url"],
-            remote_path=self.conf.get("remote_path", "/")
+            remote_path=self.conf.get("remote_path", "/"),
+            batch_size=batch_size,
         )
         self.connector.set_allow_images(self.conf.get("allow_images", False))
         self.connector.load_credentials(self.conf["credentials"])
 
+        file_list = None
         if task["reindex"] == "1" or not task["poll_range_start"]:
             document_batch_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
-            start_ts = task["poll_range_start"].timestamp()
             end_ts = datetime.now(timezone.utc).timestamp()
-            document_batch_generator = self.connector.poll_source(start_ts, end_ts)
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                logging.info(
+                    "WebDAV: fetching slim snapshot for stale-document reconciliation "
+                    "(connector_id=%s, kb_id=%s, base_url=%s, path=%s)",
+                    task["connector_id"],
+                    task["kb_id"],
+                    self.conf["base_url"],
+                    self.conf.get("remote_path", "/"),
+                )
+                try:
+                    for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                        file_list.extend(slim_batch)
+                except Exception:
+                    logging.exception(
+                        "WebDAV slim snapshot failed; continuing without stale-document cleanup "
+                        "(connector_id=%s, kb_id=%s)",
+                        task["connector_id"],
+                        task["kb_id"],
+                    )
+                    file_list = None
+            document_batch_generator = self.connector.poll_source(
+                task["poll_range_start"].timestamp(),
+                end_ts,
+            )
             _begin_info = "from {}".format(task["poll_range_start"])
 
         self.log_connection("WebDAV", f"{self.conf['base_url']}(path: {self.conf.get('remote_path', '/')})", task)
@@ -923,7 +956,7 @@ class WebDAV(SyncBase):
             for document_batch in document_batch_generator:
                 yield document_batch
 
-        return wrapper()
+        return wrapper(), file_list
 
 
 class Moodle(SyncBase):

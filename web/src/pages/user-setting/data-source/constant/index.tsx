@@ -108,6 +108,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.DINGTALK_AI_TABLE]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.WEBDAV]: {
+     syncDeletedFiles: true,
+  },
   [DataSourceKey.ZENDESK]: {
     syncDeletedFiles: true,
   },
