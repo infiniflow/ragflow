@@ -172,6 +172,22 @@ def _get_web_client_config(credentials: dict[str, Any]) -> dict[str, Any]:
     return {"web": web_section}
 
 
+def _exchange_google_web_oauth_code(
+    client_config: dict[str, Any],
+    scopes: list[str],
+    redirect_uri: str,
+    code: str,
+    code_verifier: str | None,
+) -> Flow:
+    flow = Flow.from_client_config(client_config, scopes=scopes)
+    flow.redirect_uri = redirect_uri
+    fetch_token_kwargs: dict[str, Any] = {"code": code}
+    if code_verifier:
+        fetch_token_kwargs["code_verifier"] = code_verifier
+    flow.fetch_token(**fetch_token_kwargs)
+    return flow
+
+
 async def _render_web_oauth_popup(flow_id: str, success: bool, message: str, source="drive"):
     status = "success" if success else "error"
     auto_close = "window.close();" if success else ""
@@ -267,6 +283,7 @@ async def start_google_web_oauth():
         "user_id": current_user.id,
         "client_config": client_config,
         "redirect_uri": redirect_uri,
+        "code_verifier": flow.code_verifier,
         "created_at": int(time.time()),
     }
     REDIS_CONN.set_obj(_web_state_cache_key(flow_id, source), cache_payload, WEB_FLOW_TTL_SECS)
@@ -298,6 +315,7 @@ async def google_gmail_web_oauth_callback():
     state_obj = json.loads(state_cache)
     client_config = state_obj.get("client_config")
     redirect_uri = state_obj.get("redirect_uri", GMAIL_WEB_OAUTH_REDIRECT_URI)
+    code_verifier = state_obj.get("code_verifier")
     if not client_config:
         REDIS_CONN.delete(_web_state_cache_key(state_id, source))
         return await _render_web_oauth_popup(state_id, False, "Authorization session was invalid. Please retry.", source)
@@ -311,10 +329,13 @@ async def google_gmail_web_oauth_callback():
         return await _render_web_oauth_popup(state_id, False, "Missing authorization code from Google.", source)
 
     try:
-        # TODO(google-oauth): branch scopes/redirect_uri based on source_type (drive vs gmail)
-        flow = Flow.from_client_config(client_config, scopes=GOOGLE_SCOPES[DocumentSource.GMAIL])
-        flow.redirect_uri = redirect_uri
-        flow.fetch_token(code=code)
+        flow = _exchange_google_web_oauth_code(
+            client_config=client_config,
+            scopes=GOOGLE_SCOPES[DocumentSource.GMAIL],
+            redirect_uri=redirect_uri,
+            code=code,
+            code_verifier=code_verifier,
+        )
     except Exception as exc:  # pragma: no cover - defensive
         logging.exception("Failed to exchange Google OAuth code: %s", exc)
         REDIS_CONN.delete(_web_state_cache_key(state_id, source))
@@ -349,6 +370,7 @@ async def google_drive_web_oauth_callback():
     state_obj = json.loads(state_cache)
     client_config = state_obj.get("client_config")
     redirect_uri = state_obj.get("redirect_uri", GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI)
+    code_verifier = state_obj.get("code_verifier")
     if not client_config:
         REDIS_CONN.delete(_web_state_cache_key(state_id, source))
         return await _render_web_oauth_popup(state_id, False, "Authorization session was invalid. Please retry.", source)
@@ -362,10 +384,13 @@ async def google_drive_web_oauth_callback():
         return await _render_web_oauth_popup(state_id, False, "Missing authorization code from Google.", source)
 
     try:
-        # TODO(google-oauth): branch scopes/redirect_uri based on source_type (drive vs gmail)
-        flow = Flow.from_client_config(client_config, scopes=GOOGLE_SCOPES[DocumentSource.GOOGLE_DRIVE])
-        flow.redirect_uri = redirect_uri
-        flow.fetch_token(code=code)
+        flow = _exchange_google_web_oauth_code(
+            client_config=client_config,
+            scopes=GOOGLE_SCOPES[DocumentSource.GOOGLE_DRIVE],
+            redirect_uri=redirect_uri,
+            code=code,
+            code_verifier=code_verifier,
+        )
     except Exception as exc:  # pragma: no cover - defensive
         logging.exception("Failed to exchange Google OAuth code: %s", exc)
         REDIS_CONN.delete(_web_state_cache_key(state_id, source))

@@ -156,7 +156,7 @@ export default function Dataset() {
               </p>
             </div>
           }
-          preChildren={<Generate disabled={!(dataSetData.chunk_num > 0)} />}
+          preChildren={<Generate disabled={!(dataSetData.chunk_count > 0)} />}
           // preChildren={
           //   <Button
           //     variant={'ghost'}

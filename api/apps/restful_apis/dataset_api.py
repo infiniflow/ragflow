@@ -24,6 +24,7 @@ from api.utils.validation_utils import (
     CreateDatasetReq,
     DeleteDatasetReq,
     ListDatasetReq,
+    SearchDatasetReq,
     UpdateDatasetReq,
     validate_and_parse_json_request,
     validate_and_parse_request_args,
@@ -78,7 +79,7 @@ def get_flattened_metadata(tenant_id):
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def create(tenant_id: str=None):
+async def create(tenant_id: str = None):
     """
     Create a new dataset.
     ---
@@ -476,7 +477,36 @@ async def rename_tag(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route('/datasets/<dataset_id>/graph/search', methods=['GET'])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/search", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def search(tenant_id, dataset_id):
+    """Search (retrieval test) within a dataset.
+
+    POST /api/v1/datasets/<dataset_id>/search
+    JSON body: {"question": str (required), "doc_ids": list[str], "top_k": int, "page": int, "size": int,
+               "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool,
+               "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict}
+    Success: {"code": 0, "data": {"chunks": [...], "total": int, "labels": [...]}}
+    Errors: ARGUMENT_ERROR (101) for invalid payload; DATA_ERROR (102) for access denied or internal errors.
+    """
+    req, err = await validate_and_parse_json_request(request, SearchDatasetReq)
+    if err is not None:
+        return get_error_argument_result(err)
+    try:
+        success, result = await dataset_api_service.search(dataset_id, tenant_id, req)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        if "not_found" in str(e):
+            return get_error_data_result(message="No chunk found! Check the chunk status please!")
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/graph/search", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def knowledge_graph(tenant_id, dataset_id):
@@ -485,17 +515,35 @@ async def knowledge_graph(tenant_id, dataset_id):
         if success:
             return get_result(data=result)
         else:
-            return get_result(
-                data=False,
-                message=result,
-                code=RetCode.AUTHENTICATION_ERROR
-            )
+            return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route('/datasets/<dataset_id>/graph', methods=['DELETE'])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/graph", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def get_knowledge_graph(tenant_id, dataset_id):
+    """Get the knowledge graph of a dataset.
+
+    GET /api/v1/datasets/<dataset_id>/graph
+    Query params: optional filter params.
+    Success: {"code": 0, "data": {...}}
+    Errors: AUTHENTICATION_ERROR for access denied; DATA_ERROR for internal errors.
+    """
+    try:
+        success, result = await dataset_api_service.get_knowledge_graph(dataset_id, tenant_id)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/graph", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 def delete_knowledge_graph(tenant_id, dataset_id):
@@ -504,11 +552,7 @@ def delete_knowledge_graph(tenant_id, dataset_id):
         if success:
             return get_result(data=result)
         else:
-            return get_result(
-                data=False,
-                message=result,
-                code=RetCode.AUTHENTICATION_ERROR
-            )
+            return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -519,6 +563,7 @@ def delete_knowledge_graph(tenant_id, dataset_id):
 @add_tenant_id_to_kwargs
 async def run_index(tenant_id, dataset_id):
     index_type = request.args.get("type", "")
+    index_type = index_type.lower()
     try:
         success, result = dataset_api_service.run_index(dataset_id, tenant_id, index_type)
         if success:
@@ -537,6 +582,7 @@ async def run_index(tenant_id, dataset_id):
 @add_tenant_id_to_kwargs
 def trace_index(tenant_id, dataset_id):
     index_type = request.args.get("type", "")
+    index_type = index_type.lower()
     try:
         success, result = dataset_api_service.trace_index(dataset_id, tenant_id, index_type)
         if success:
@@ -554,6 +600,7 @@ def trace_index(tenant_id, dataset_id):
 @login_required
 @add_tenant_id_to_kwargs
 def delete_index(tenant_id, dataset_id, index_type):
+    index_type = index_type.lower()
     if index_type not in dataset_api_service._VALID_INDEX_TYPES:
         return get_error_argument_result(f"Invalid index type '{index_type}'")
     try:
@@ -596,9 +643,9 @@ def list_ingestion_logs(tenant_id, dataset_id):
         operation_status = request.args.getlist("operation_status")
         create_date_from = request.args.get("create_date_from", None)
         create_date_to = request.args.get("create_date_to", None)
-        success, result = dataset_api_service.list_ingestion_logs(
-            dataset_id, tenant_id, page, page_size, orderby, desc, operation_status, create_date_from, create_date_to
-        )
+        log_type = request.args.get("log_type", "dataset")
+        keywords = request.args.get("keywords", None)
+        success, result = dataset_api_service.list_ingestion_logs(dataset_id, tenant_id, page, page_size, orderby, desc, operation_status, create_date_from, create_date_to, log_type, keywords)
         if success:
             return get_result(data=result)
         else:
@@ -703,6 +750,7 @@ async def update_auto_metadata(tenant_id, dataset_id):
           type: object
     """
     from api.utils.validation_utils import AutoMetadataConfig
+
     cfg, err = await validate_and_parse_json_request(request, AutoMetadataConfig)
     if err is not None:
         return get_error_argument_result(err)
