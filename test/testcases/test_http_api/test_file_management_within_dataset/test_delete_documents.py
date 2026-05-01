@@ -47,11 +47,11 @@ class TestDocumentsDeletion:
         [
             ({}, 102, "should either provide doc ids or set delete_all(true), dataset", 3),
             ({"ids": []}, 102, "should either provide doc ids or set delete_all(true), dataset", 3),
-            ({"ids": ["invalid_id"]}, 101, "Field: <ids> - Message: <Invalid UUID1 format> - Value: <['invalid_id']>", 3),
+            ({"ids": ["invalid_id"]}, 102, "These documents do not belong to dataset", 3),
             (
                 {"ids": ["\n!?。；！？\"'"]},
-                101,
-                "Field: <ids> - Message: <Invalid UUID1 format> - Value:",
+                102,
+                "These documents do not belong to dataset",
                 3,
             ),
             (
@@ -117,8 +117,8 @@ class TestDocumentsDeletion:
         if callable(payload):
             payload = payload(document_ids)
         res = delete_documents(HttpApiAuth, dataset_id, payload)
-        assert res["code"] == 101
-        assert "Field: <ids> - Message: <Invalid UUID1 format> - Value" in res["message"]
+        assert res["code"] == 102
+        assert "These documents do not belong to dataset" in res["message"]
 
         res = list_documents(HttpApiAuth, dataset_id)
         assert len(res["data"]["docs"]) == 3

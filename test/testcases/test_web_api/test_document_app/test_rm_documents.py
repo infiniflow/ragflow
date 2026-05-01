@@ -49,7 +49,7 @@ class TestDocumentsDeletion:
             ({}, 102, "should either provide doc ids or set delete_all(true), dataset:", 3),
             ({"invalid_key":[]}, 101, "Field: <invalid_key> - Message: <Extra inputs are not permitted> - Value: <[]>", 3),
             ({"ids": ""}, 101, "Field: <ids> - Message: <Input should be a valid list> - Value: <>", 3),
-            ({"ids": ["invalid_id"]}, 101, "Field: <ids> - Message: <Invalid UUID1 format> - Value:", 3),
+            ({"ids": ["invalid_id"]}, 102, "These documents do not belong to dataset", 3),
             ("not json", 101, "Invalid request payload: expected object, got str", 3),
             (lambda r: {"ids": r[0]}, 101, "Field: <ids> - Message: <Input should be a valid list> - Value", 3),
             (lambda r: {"ids": r}, 0, "", 0),

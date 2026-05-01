@@ -40,6 +40,13 @@ import styles from './index.module.less';
 
 const getChunkIndex = (match: string) => parseCitationIndex(match);
 
+const formatMetadataValue = (value: unknown) => {
+  if (Array.isArray(value)) return value.join(', ');
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+};
+
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
 const MarkdownContent = ({
   reference,
@@ -174,6 +181,21 @@ const MarkdownContent = ({
               className={classNames(styles.chunkContentText)}
               dir="auto"
             ></div>
+            {chunkItem?.document_metadata &&
+              Object.keys(chunkItem.document_metadata).length > 0 && (
+                <section className="space-y-1 border border-border-default rounded p-2">
+                  {Object.entries(chunkItem.document_metadata).map(
+                    ([key, value]) => (
+                      <div key={key} className="text-xs">
+                        <span className="text-text-secondary">{key}:</span>{' '}
+                        <span className="text-text-primary">
+                          {formatMetadataValue(value)}
+                        </span>
+                      </div>
+                    ),
+                  )}
+                </section>
+              )}
             {documentId && (
               <section className="flex gap-1">
                 {fileThumbnail ? (

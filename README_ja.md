@@ -69,6 +69,7 @@
 
 ## 🔥 最新情報
 
+- 2026-04-24 DeepSeek v4 をサポート。
 - 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — OpenClaw経由でRAGFlowデータセットにアクセスする公式スキルを提供。
 - 2025-12-26 AIエージェントの「メモリ」機能をサポート。
 - 2025-11-19 Gemini 3 Proをサポートしています。

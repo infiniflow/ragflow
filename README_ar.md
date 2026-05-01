@@ -88,8 +88,9 @@
 
 ## 🔥 آخر التحديثات
 
-- 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — توفر مهارة رسمية للوصول إلى مجموعات بيانات RAGFlow عبر OpenClaw.
-- 2025-12-26 يدعم ميزة "Memory" لوكلاء الذكاء الاصطناعي.
+- 24-04-2026 يدعم DeepSeek v4.
+- 24-03-2026 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — توفر مهارة رسمية للوصول إلى مجموعات بيانات RAGFlow عبر OpenClaw.
+- 26-12-2025 يدعم ميزة "Memory" لوكلاء الذكاء الاصطناعي.
 - 11-11-2025 يدعم Gemini 3 Pro.
 - 12-11-2025 يدعم مزامنة البيانات من Confluence، S3، Notion، Discord، Google Drive.
 - 23-10-2025 يدعم MinerU وDocling كطرق لتحليل المستندات.

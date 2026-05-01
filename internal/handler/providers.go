@@ -828,24 +828,6 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 
 	// Check if it's a stream request
 	if req.Stream {
-		// Streaming with multimodal messages not yet supported
-		hasMultimodal := false
-		for _, msg := range req.Messages {
-			if content, ok := msg["content"]; ok {
-				if _, isArray := content.([]interface{}); isArray {
-					hasMultimodal = true
-					break
-				}
-			}
-		}
-		if hasMultimodal {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": "Streaming with multimodal messages not yet supported",
-			})
-			return
-		}
-
 		// Set SSE headers
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
@@ -876,8 +858,16 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 			return nil
 		}
 
+		// Convert []map[string]interface{} to []models.Message
+		messages := make([]models.Message, len(req.Messages))
+		for i, msg := range req.Messages {
+			role, _ := msg["role"].(string)
+			content := msg["content"]
+			messages[i] = models.Message{Role: role, Content: content}
+		}
+
 		// Stream response using sender function (best performance, no channel)
-		errorCode, err := h.modelProviderService.ChatToModelStreamWithSender(*req.ProviderName, *req.InstanceName, *req.ModelName, userID, req.Messages[0]["content"].(string), &apiConfig, &chatConfig, sender)
+		errorCode, err := h.modelProviderService.ChatToModelStreamWithSender(*req.ProviderName, *req.InstanceName, *req.ModelName, userID, messages, &apiConfig, &chatConfig, sender)
 
 		if errorCode != common.CodeSuccess {
 			c.SSEvent("error", err.Error())
