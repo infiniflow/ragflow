@@ -169,10 +169,11 @@ func (dao *KnowledgebaseDAO) GetByTenantIDs(tenantIDs []string, userID string, p
 		query = query.Where("knowledgebase.parser_id = ?", parserID)
 	}
 
+	orderCol := sanitizeKnowledgebaseJoinedOrderBy(orderby)
 	if desc {
-		query = query.Order("knowledgebase." + orderby + " DESC")
+		query = query.Order("knowledgebase." + orderCol + " DESC")
 	} else {
-		query = query.Order("knowledgebase." + orderby + " ASC")
+		query = query.Order("knowledgebase." + orderCol + " ASC")
 	}
 
 	if err := query.Count(&total).Error; err != nil {
@@ -456,10 +457,11 @@ func (dao *KnowledgebaseDAO) GetList(tenantIDs []string, userID string, pageNumb
 		query = query.Where("name = ?", name)
 	}
 
+	orderCol := sanitizeKnowledgebasePlainOrderBy(orderby)
 	if desc {
-		query = query.Order(orderby + " DESC")
+		query = query.Order(orderCol + " DESC")
 	} else {
-		query = query.Order(orderby + " ASC")
+		query = query.Order(orderCol + " ASC")
 	}
 
 	if err := query.Count(&total).Error; err != nil {
