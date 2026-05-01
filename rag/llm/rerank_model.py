@@ -407,14 +407,14 @@ class HuggingfaceRerank(Base):
     _FACTORY_NAME = "HuggingFace"
 
     @staticmethod
-    def post(query: str, texts: list, url="127.0.0.1"):
+    def post(query: str, texts: list, url: str):
         exc = None
         scores = [0 for _ in range(len(texts))]
         batch_size = 8
         for i in range(0, len(texts), batch_size):
             try:
                 res = requests.post(
-                    f"http://{url}/rerank", headers={"Content-Type": "application/json"}, json={"query": query, "texts": texts[i : i + batch_size], "raw_scores": False, "truncate": True}
+                    f"{url}/rerank", headers={"Content-Type": "application/json"}, json={"query": query, "texts": texts[i : i + batch_size], "raw_scores": False, "truncate": True}
                 )
 
                 for o in res.json():
