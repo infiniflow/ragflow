@@ -415,7 +415,14 @@ class HuggingfaceRerank(Base):
         for i in range(0, len(texts), batch_size):
             try:
                 res = requests.post(
-                    f"{url}/rerank", headers={"Content-Type": "application/json"}, json={"query": query, "texts": texts[i : i + batch_size], "raw_scores": False, "truncate": True}
+                endpoint = (url or "").rstrip("/")
+                if not endpoint.endswith("/rerank"):
+                    endpoint = f"{endpoint}/rerank"
+                res = requests.post(
+                    endpoint,
+                    headers={"Content-Type": "application/json"},
+                    json={"query": query, "texts": texts[i : i + batch_size], "raw_scores": False, "truncate": True},
+                )
                 )
 
                 for o in res.json():
