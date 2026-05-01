@@ -2,9 +2,7 @@ FROM python:3.11-slim-bookworm
 
 ARG NEED_MIRROR=1
 
-
 COPY --from=ghcr.io/astral-sh/uv:0.7.5 /uv /uvx /bin/
-ENV UV_INDEX_URL = if [ "$NEED_MIRROR" = 1 ]; then echo "https://pypi.tuna.tsinghua.edu.cn/simple"; else echo "https://pypi.org/simple"; fi
 ENV MPLBACKEND=Agg
 ENV MPLCONFIGDIR=/tmp/matplotlib
 ENV MATPLOTLIBRC=/usr/local/etc/matplotlibrc
