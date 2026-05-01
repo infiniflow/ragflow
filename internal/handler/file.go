@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"ragflow/internal/common"
@@ -155,7 +156,7 @@ func (h *FileHandler) GetRootFolder(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/file/parent_folder [get]
 func (h *FileHandler) GetParentFolder(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
@@ -169,8 +170,12 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 	}
 
 	// Get parent folder
-	parentFolder, err := h.fileService.GetParentFolder(fileID)
+	parentFolder, err := h.fileService.GetParentFolder(user.ID, fileID)
 	if err != nil {
+		if errors.Is(err, service.ErrNoAuthorization) {
+			jsonError(c, common.CodeUnauthorized, err.Error())
+			return
+		}
 		jsonError(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -192,7 +197,7 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/file/all_parent_folder [get]
 func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
@@ -206,8 +211,12 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 	}
 
 	// Get all parent folders
-	parentFolders, err := h.fileService.GetAllParentFolders(fileID)
+	parentFolders, err := h.fileService.GetAllParentFolders(user.ID, fileID)
 	if err != nil {
+		if errors.Is(err, service.ErrNoAuthorization) {
+			jsonError(c, common.CodeUnauthorized, err.Error())
+			return
+		}
 		jsonError(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -229,7 +238,7 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/files/{id}/ancestors [get]
 func (h *FileHandler) GetFileAncestors(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
@@ -241,8 +250,12 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 		return
 	}
 
-	parentFolders, err := h.fileService.GetAllParentFolders(fileID)
+	parentFolders, err := h.fileService.GetAllParentFolders(user.ID, fileID)
 	if err != nil {
+		if errors.Is(err, service.ErrNoAuthorization) {
+			jsonError(c, common.CodeUnauthorized, err.Error())
+			return
+		}
 		jsonError(c, common.CodeServerError, err.Error())
 		return
 	}

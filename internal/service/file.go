@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -40,6 +41,9 @@ type FileService struct {
 	fileDAO          *dao.FileDAO
 	file2DocumentDAO *dao.File2DocumentDAO
 }
+
+// ErrNoAuthorization indicates the current user cannot access the target file.
+var ErrNoAuthorization = errors.New("No authorization.")
 
 // NewFileService create file service
 func NewFileService() *FileService {
@@ -214,10 +218,14 @@ func (s *FileService) fileInfoToResponse(info *FileInfo) map[string]interface{} 
 }
 
 // GetParentFolder gets parent folder of a file
-func (s *FileService) GetParentFolder(fileID string) (map[string]interface{}, error) {
-	// Check if file exists
-	if _, err := s.fileDAO.GetByID(fileID); err != nil {
+func (s *FileService) GetParentFolder(uid, fileID string) (map[string]interface{}, error) {
+	// Check if file exists and validate permission
+	file, err := s.fileDAO.GetByID(fileID)
+	if err != nil {
 		return nil, err
+	}
+	if !s.checkFileTeamPermission(file, uid) {
+		return nil, ErrNoAuthorization
 	}
 
 	// Get parent folder
@@ -230,10 +238,14 @@ func (s *FileService) GetParentFolder(fileID string) (map[string]interface{}, er
 }
 
 // GetAllParentFolders gets all parent folders in path
-func (s *FileService) GetAllParentFolders(fileID string) ([]map[string]interface{}, error) {
-	// Check if file exists
-	if _, err := s.fileDAO.GetByID(fileID); err != nil {
+func (s *FileService) GetAllParentFolders(uid, fileID string) ([]map[string]interface{}, error) {
+	// Check if file exists and validate permission
+	file, err := s.fileDAO.GetByID(fileID)
+	if err != nil {
 		return nil, err
+	}
+	if !s.checkFileTeamPermission(file, uid) {
+		return nil, ErrNoAuthorization
 	}
 
 	// Get all parent folders
@@ -919,7 +931,7 @@ func (s *FileService) GetFileContent(uid, fileID string) (*entity.File, error) {
 		return nil, fmt.Errorf("Document not found!")
 	}
 	if !s.checkFileTeamPermission(file, uid) {
-		return nil, fmt.Errorf("No authorization.")
+		return nil, ErrNoAuthorization
 	}
 	return file, nil
 }
