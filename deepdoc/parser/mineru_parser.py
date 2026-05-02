@@ -460,6 +460,7 @@ class MinerUParser(RAGFlowPdfParser):
     ) -> str:
         poll_url = f"{options.api_base_url.rstrip('/')}/api/v4/extract-results/batch/{batch_id}"
         headers = self._build_official_headers(options.api_token)
+        start_time = time.time()
         deadline = time.time() + max(int(options.poll_timeout), 30)
         interval = max(int(options.poll_interval), 1)
 
@@ -495,8 +496,27 @@ class MinerUParser(RAGFlowPdfParser):
                     callback(0.55 + 0.25 * ratio, f"[MinerU] official_v4 running {extracted_pages}/{total_pages}")
                 else:
                     callback(0.50, f"[MinerU] official_v4 state: {state or 'pending'}")
+            else:
+                if state == "running":
+                    progress_info = result.get("extract_progress") or {}
+                    extracted_pages = progress_info.get("extracted_pages") or 0
+                    total_pages = progress_info.get("total_pages") or 0
+                    ratio = min(max(extracted_pages / total_pages, 0.0), 1.0) if total_pages else 0.0
+                    self.logger.info(
+                        f"[MinerU] official_v4 running {extracted_pages}/{total_pages} "
+                        f"ratio={ratio:.2f} batch_id={batch_id}"
+                    )
+                else:
+                    self.logger.info(
+                        f"[MinerU] official_v4 poll state={state or 'pending'} batch_id={batch_id}"
+                    )
 
             if time.time() >= deadline:
+                elapsed = int(time.time() - start_time)
+                self.logger.warning(
+                    f"[MinerU] official_v4 polling timeout after {options.poll_timeout}s "
+                    f"(elapsed={elapsed}s) batch_id={batch_id}"
+                )
                 raise TimeoutError(f"[MinerU] official_v4 polling timeout after {options.poll_timeout}s")
             time.sleep(interval)
 
@@ -906,6 +926,9 @@ class MinerUParser(RAGFlowPdfParser):
         try:
             access_mode = MinerUAccessMode(access_mode_raw)
         except ValueError:
+            self.logger.warning(
+                f"[MinerU] Invalid mineru_access_mode='{access_mode_raw}', fallback to self_hosted."
+            )
             access_mode = MinerUAccessMode.SELF_HOSTED
 
         def _safe_int(value, default: int) -> int:
