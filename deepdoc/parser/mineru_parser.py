@@ -818,16 +818,23 @@ class MinerUParser(RAGFlowPdfParser):
                         break
 
         if not json_file:
-            for glob_pattern in ("**/*_content_list.json", "**/content_list.json"):
+            direct_candidates = []
+            for glob_pattern in ("*_content_list.json", "content_list.json"):
                 for candidate in sorted(output_dir.glob(glob_pattern), key=lambda x: len(str(x))):
                     self.logger.info(f"[MinerU] Trying generic content_list path: {candidate}")
                     attempted.append(candidate)
-                    if candidate.exists():
-                        subdir = candidate.parent
-                        json_file = candidate
-                        break
-                if json_file:
-                    break
+                    if candidate.exists() and candidate.parent == output_dir:
+                        direct_candidates.append(candidate)
+
+            # Avoid binding to another job's output by only accepting a single direct candidate.
+            if len(direct_candidates) == 1:
+                json_file = direct_candidates[0]
+                subdir = json_file.parent
+            elif len(direct_candidates) > 1:
+                raise FileNotFoundError(
+                    f"[MinerU] Ambiguous output file candidates for '{file_stem}': "
+                    + ", ".join(str(p) for p in direct_candidates[:10])
+                )
 
         if not json_file:
             raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(p) for p in attempted)}")
