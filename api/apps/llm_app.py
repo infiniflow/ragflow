@@ -224,13 +224,13 @@ async def add_llm():
         if isinstance(req.get("api_key"), dict):
             structured_api_key = req.get("api_key") or {}
             logging.info(
-                "add_llm: MinerU structured api_key received keys=%s has_provider_order=%s",
+                "add_llm: MinerU structured api_key received keys=%s has_mineru_fields=%s",
                 sorted(structured_api_key.keys()),
-                "provider_order" in structured_api_key,
+                any(k.startswith("mineru_") for k in structured_api_key.keys()),
             )
-            api_key = json.dumps(req.get("api_key", {}))
+            api_key = json.dumps(structured_api_key)
         else:
-            api_key = apikey_json(["api_key", "provider_order"])
+            api_key = apikey_json(["api_key"])
 
     elif factory == "PaddleOCR":
         api_key = apikey_json(["api_key", "provider_order"])

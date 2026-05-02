@@ -275,13 +275,43 @@ class MinerUParser(RAGFlowPdfParser):
                 return False, reason
 
             probe_url = f"{resolved_base_url}/api/v4/extract/task"
-            headers = {"Authorization": f"Bearer {resolved_token}"}
-            ok, status_code = self._is_http_endpoint_reachable(probe_url, headers=headers)
-            if not ok:
+            headers = {
+                "Authorization": f"Bearer {resolved_token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+            probe_payload = {
+                "url": "https://cdn-mineru.openxlab.org.cn/demo/example.pdf",
+                "model_version": self.mineru_model_version or "vlm",
+            }
+            try:
+                response = requests.post(probe_url, headers=headers, json=probe_payload, timeout=30)
+            except requests.RequestException as exc:
                 reason = f"[MinerU] Official v4 endpoint not reachable: {probe_url}"
+                self.logger.warning(f"{reason}. exception={exc}")
+                return False, reason
+
+            status_code = response.status_code
+            if status_code in (401, 403):
+                reason = "[MinerU] Official v4 token invalid or unauthorized."
+                self.logger.warning(f"{reason} status={status_code} url={probe_url}")
+                return False, reason
+            if status_code == 404:
+                reason = f"[MinerU] Official v4 endpoint not found: {probe_url}"
                 self.logger.warning(reason)
                 return False, reason
-            self.logger.info(f"[MinerU] official_v4 endpoint reachable={ok} status={status_code} url={probe_url}")
+            if status_code >= 500:
+                reason = f"[MinerU] Official v4 endpoint not reachable: {probe_url}"
+                self.logger.warning(f"{reason} status={status_code}")
+                return False, reason
+            if status_code >= 400:
+                reason = f"[MinerU] Official v4 test request rejected: HTTP {status_code}"
+                self.logger.warning(f"{reason} url={probe_url} body={response.text[:256]}")
+                return False, reason
+
+            self.logger.info(
+                f"[MinerU] official_v4 test request accepted status={status_code} url={probe_url}"
+            )
             return True, ""
 
         valid_backends = ["pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine", "vlm-mlx-engine", "vlm-vllm-async-engine", "vlm-lmdeploy-engine"]
