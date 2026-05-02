@@ -53,10 +53,26 @@ class MinerUOcrModel(Base, MinerUParser):
             # lower-case keys (UI), upper-case MINERU_* (env auto-provision), env vars
             return config.get(key, config.get(env_key, os.environ.get(env_key, default)))
 
+        def _to_int(value: Any, default: int) -> int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return default
+
+        self.mineru_access_mode = _resolve_config("mineru_access_mode", "MINERU_ACCESS_MODE", "self_hosted")
         self.mineru_api = _resolve_config("mineru_apiserver", "MINERU_APISERVER", "")
         self.mineru_output_dir = _resolve_config("mineru_output_dir", "MINERU_OUTPUT_DIR", "")
         self.mineru_backend = _resolve_config("mineru_backend", "MINERU_BACKEND", "pipeline")
         self.mineru_server_url = _resolve_config("mineru_server_url", "MINERU_SERVER_URL", "")
+        self.mineru_api_base_url = _resolve_config(
+            "mineru_api_base_url",
+            "MINERU_API_BASE_URL",
+            self.mineru_api or "https://mineru.net",
+        )
+        self.mineru_api_token = _resolve_config("mineru_api_token", "MINERU_API_TOKEN", "")
+        self.mineru_model_version = _resolve_config("mineru_model_version", "MINERU_MODEL_VERSION", "vlm")
+        self.mineru_poll_interval = _to_int(_resolve_config("mineru_poll_interval", "MINERU_POLL_INTERVAL", 3), 3)
+        self.mineru_poll_timeout = _to_int(_resolve_config("mineru_poll_timeout", "MINERU_POLL_TIMEOUT", 300), 300)
         self.mineru_delete_output = bool(int(_resolve_config("mineru_delete_output", "MINERU_DELETE_OUTPUT", 1)))
 
         # Redact sensitive config keys before logging
@@ -68,12 +84,28 @@ class MinerUOcrModel(Base, MinerUParser):
                 redacted_config[k] = v
         logging.info(f"Parsed MinerU config (sensitive fields redacted): {redacted_config}")
 
-        MinerUParser.__init__(self, mineru_api=self.mineru_api, mineru_server_url=self.mineru_server_url)
+        MinerUParser.__init__(
+            self,
+            mineru_api=self.mineru_api,
+            mineru_server_url=self.mineru_server_url,
+            access_mode=self.mineru_access_mode,
+            api_base_url=self.mineru_api_base_url,
+            api_token=self.mineru_api_token,
+            model_version=self.mineru_model_version,
+            poll_interval=self.mineru_poll_interval,
+            poll_timeout=self.mineru_poll_timeout,
+        )
 
     def check_available(self, backend: Optional[str] = None, server_url: Optional[str] = None) -> tuple[bool, str]:
         backend = backend or self.mineru_backend
         server_url = server_url or self.mineru_server_url
-        return self.check_installation(backend=backend, server_url=server_url)
+        return self.check_installation(
+            backend=backend,
+            server_url=server_url,
+            access_mode=self.mineru_access_mode,
+            api_base_url=self.mineru_api_base_url,
+            api_token=self.mineru_api_token,
+        )
 
     def parse_pdf(self, filepath: str, binary=None, callback=None, parse_method: str = "raw", **kwargs):
         ok, reason = self.check_available()
@@ -90,6 +122,12 @@ class MinerUOcrModel(Base, MinerUParser):
             server_url=self.mineru_server_url,
             delete_output=self.mineru_delete_output,
             parse_method=parse_method,
+            mineru_access_mode=self.mineru_access_mode,
+            mineru_api_base_url=self.mineru_api_base_url,
+            mineru_api_token=self.mineru_api_token,
+            mineru_model_version=self.mineru_model_version,
+            mineru_poll_interval=self.mineru_poll_interval,
+            mineru_poll_timeout=self.mineru_poll_timeout,
             **kwargs,
         )
         return sections, tables

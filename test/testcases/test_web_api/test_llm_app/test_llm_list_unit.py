@@ -615,6 +615,23 @@ def test_add_llm_factory_specific_key_assembly_unit(monkeypatch):
     assert json.loads(openrouter["api_key"]) == {"api_key": "or-key", "provider_order": "a,b"}
     mineru = _run_case("MinerU", extra={"api_key": "m-key", "provider_order": "p1"})
     assert json.loads(mineru["api_key"]) == {"api_key": "m-key", "provider_order": "p1"}
+    mineru_structured = _run_case(
+        "MinerU",
+        extra={
+            "api_key": {
+                "mineru_access_mode": "official_v4",
+                "mineru_api_base_url": "https://mineru.net",
+                "mineru_api_token": "mnr-token",
+                "mineru_model_version": "vlm",
+            }
+        },
+    )
+    assert json.loads(mineru_structured["api_key"]) == {
+        "mineru_access_mode": "official_v4",
+        "mineru_api_base_url": "https://mineru.net",
+        "mineru_api_token": "mnr-token",
+        "mineru_model_version": "vlm",
+    }
     paddle = _run_case("PaddleOCR", extra={"api_key": "p-key", "provider_order": "p2"})
     assert json.loads(paddle["api_key"]) == {"api_key": "p-key", "provider_order": "p2"}
 

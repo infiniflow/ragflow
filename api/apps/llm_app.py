@@ -221,7 +221,10 @@ async def add_llm():
         api_key = apikey_json(["api_key", "provider_order"])
 
     elif factory == "MinerU":
-        api_key = apikey_json(["api_key", "provider_order"])
+        if isinstance(req.get("api_key"), dict):
+            api_key = json.dumps(req.get("api_key", {}))
+        else:
+            api_key = apikey_json(["api_key", "provider_order"])
 
     elif factory == "PaddleOCR":
         api_key = apikey_json(["api_key", "provider_order"])
