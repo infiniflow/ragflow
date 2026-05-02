@@ -222,6 +222,12 @@ async def add_llm():
 
     elif factory == "MinerU":
         if isinstance(req.get("api_key"), dict):
+            structured_api_key = req.get("api_key") or {}
+            logging.info(
+                "add_llm: MinerU structured api_key received keys=%s has_provider_order=%s",
+                sorted(structured_api_key.keys()),
+                "provider_order" in structured_api_key,
+            )
             api_key = json.dumps(req.get("api_key", {}))
         else:
             api_key = apikey_json(["api_key", "provider_order"])

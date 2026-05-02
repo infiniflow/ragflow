@@ -240,7 +240,7 @@ class MinerUParser(RAGFlowPdfParser):
     def _is_http_endpoint_reachable(url, timeout=10, headers=None):
         try:
             response = requests.get(url, timeout=timeout, allow_redirects=True, headers=headers)
-            return response.status_code < 500, response.status_code
+            return response.ok, response.status_code
         except Exception:
             return False, None
 

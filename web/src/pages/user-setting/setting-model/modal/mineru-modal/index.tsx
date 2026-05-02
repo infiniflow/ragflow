@@ -42,7 +42,7 @@ const FormSchema = z.object({
   ]),
   mineru_server_url: z.string().url().optional(),
   mineru_api_base_url: z.string().url().optional(),
-  mineru_api_token: z.string().optional(),
+  mineru_api_token: z.string().trim().optional(),
   mineru_model_version: z.enum(['pipeline', 'vlm', 'MinerU-HTML']).optional(),
   mineru_poll_interval: z.coerce.number().int().min(1).max(60).optional(),
   mineru_poll_timeout: z.coerce.number().int().min(30).max(3600).optional(),
