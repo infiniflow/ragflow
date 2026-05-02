@@ -45,6 +45,10 @@ if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
 
 
+OFFICIAL_V4_MAX_FILE_BYTES = 200 * 1024 * 1024
+OFFICIAL_V4_MAX_PAGES = 200
+
+
 class MinerUContentType(StrEnum):
     IMAGE = "image"
     TABLE = "table"
@@ -319,8 +323,12 @@ class MinerUParser(RAGFlowPdfParser):
                     return False, reason
 
             probe_code = probe_body.get("code")
-            if probe_code is not None and probe_code != 0:
-                reason = f"[MinerU] Official v4 test request rejected: code={probe_code}"
+            if probe_code != 0:
+                reason = (
+                    "[MinerU] Official v4 test request rejected: missing application code"
+                    if probe_code is None
+                    else f"[MinerU] Official v4 test request rejected: code={probe_code}"
+                )
                 self.logger.warning(
                     f"{reason} msg={probe_body.get('msg')} trace_id={probe_body.get('trace_id')} url={probe_url}"
                 )
@@ -552,6 +560,29 @@ class MinerUParser(RAGFlowPdfParser):
             raise RuntimeError("[MinerU] official_v4 requires api_token")
         if not options.api_base_url:
             raise RuntimeError("[MinerU] official_v4 requires api_base_url")
+
+        file_size = os.path.getsize(pdf_file_path)
+        if file_size > OFFICIAL_V4_MAX_FILE_BYTES:
+            err_msg = (
+                "[MinerU] official_v4 only supports PDFs up to "
+                f"{int(OFFICIAL_V4_MAX_FILE_BYTES / 1024 / 1024)} MB, got {file_size} bytes"
+            )
+            if callback:
+                callback(-1, err_msg)
+            raise RuntimeError(err_msg)
+
+        page_count = len(self.page_images) if getattr(self, "page_images", None) else None
+        if page_count is None:
+            with pdfplumber.open(pdf_file_path) as pdf:
+                page_count = len(pdf.pages)
+        if page_count > OFFICIAL_V4_MAX_PAGES:
+            err_msg = (
+                "[MinerU] official_v4 only supports PDFs up to "
+                f"{OFFICIAL_V4_MAX_PAGES} pages, got {page_count} pages"
+            )
+            if callback:
+                callback(-1, err_msg)
+            raise RuntimeError(err_msg)
 
         pdf_file_name = Path(pdf_file_path).stem.strip()
         upload_name = f"{pdf_file_name}.pdf"
