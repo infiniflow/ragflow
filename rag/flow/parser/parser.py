@@ -391,6 +391,7 @@ class Parser(ProcessBase):
                 callback=self.callback,
                 parse_method="pipeline",
                 lang=conf.get("lang", "Chinese"),
+                parser_config=conf,
             )
             bboxes = []
             for line in lines or []:

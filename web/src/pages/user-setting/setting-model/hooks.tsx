@@ -694,13 +694,25 @@ export const useSubmitMinerU = () => {
       if (!isVerify) {
         setSaveLoading(true);
       }
+      const accessMode = payload.mineru_access_mode || 'self_hosted';
       const cfg: any = {
-        ...payload,
+        mineru_access_mode: accessMode,
         mineru_delete_output:
           (payload.mineru_delete_output ?? true) ? '1' : '0',
       };
-      if (payload.mineru_backend !== 'vlm-http-client') {
-        delete cfg.mineru_server_url;
+      if (accessMode === 'official_v4') {
+        cfg.mineru_api_base_url = payload.mineru_api_base_url;
+        cfg.mineru_api_token = payload.mineru_api_token;
+        cfg.mineru_model_version = payload.mineru_model_version || 'vlm';
+        cfg.mineru_poll_interval = Number(payload.mineru_poll_interval || 3);
+        cfg.mineru_poll_timeout = Number(payload.mineru_poll_timeout || 300);
+      } else {
+        cfg.mineru_apiserver = payload.mineru_apiserver;
+        cfg.mineru_output_dir = payload.mineru_output_dir;
+        cfg.mineru_backend = payload.mineru_backend;
+        if (payload.mineru_backend === 'vlm-http-client') {
+          cfg.mineru_server_url = payload.mineru_server_url;
+        }
       }
       const req: IAddLlmRequestBody = {
         llm_factory: LLMFactory.MinerU,

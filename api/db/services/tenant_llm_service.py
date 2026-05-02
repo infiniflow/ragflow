@@ -242,7 +242,7 @@ class TenantLLMService(CommonService):
 
     @classmethod
     def _collect_mineru_env_config(cls) -> dict | None:
-        cfg = MINERU_DEFAULT_CONFIG
+        cfg = dict(MINERU_DEFAULT_CONFIG)
         found = False
         for key in MINERU_ENV_KEYS:
             val = os.environ.get(key)

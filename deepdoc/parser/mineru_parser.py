@@ -21,6 +21,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import zipfile
 from dataclasses import dataclass
 from io import BytesIO
@@ -42,6 +43,10 @@ from common.constants import MAXIMUM_PAGE_NUMBER
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
+
+
+OFFICIAL_V4_MAX_FILE_BYTES = 200 * 1024 * 1024
+OFFICIAL_V4_MAX_PAGES = 200
 
 
 class MinerUContentType(StrEnum):
@@ -123,10 +128,18 @@ class MinerUParseMethod(StrEnum):
     OCR = "ocr"  # Use OCR method for image-based PDFs
 
 
+class MinerUAccessMode(StrEnum):
+    """MinerU service access mode."""
+
+    SELF_HOSTED = "self_hosted"
+    OFFICIAL_V4 = "official_v4"
+
+
 @dataclass
 class MinerUParseOptions:
     """Options for MinerU PDF parsing."""
 
+    access_mode: MinerUAccessMode = MinerUAccessMode.SELF_HOSTED
     backend: MinerUBackend = MinerUBackend.PIPELINE
     lang: Optional[MinerULanguage] = None  # language for OCR (pipeline backend only)
     method: MinerUParseMethod = MinerUParseMethod.AUTO
@@ -135,12 +148,34 @@ class MinerUParseOptions:
     parse_method: str = "raw"
     formula_enable: bool = True
     table_enable: bool = True
+    api_base_url: str = "https://mineru.net"
+    api_token: str = ""
+    model_version: str = "vlm"
+    poll_interval: int = 3
+    poll_timeout: int = 300
 
 
 class MinerUParser(RAGFlowPdfParser):
-    def __init__(self, mineru_path: str = "mineru", mineru_api: str = "", mineru_server_url: str = ""):
+    def __init__(
+        self,
+        mineru_path: str = "mineru",
+        mineru_api: str = "",
+        mineru_server_url: str = "",
+        access_mode: str = "self_hosted",
+        api_base_url: str = "https://mineru.net",
+        api_token: str = "",
+        model_version: str = "vlm",
+        poll_interval: int = 3,
+        poll_timeout: int = 300,
+    ):
         self.mineru_api = mineru_api.rstrip("/")
         self.mineru_server_url = mineru_server_url.rstrip("/")
+        self.mineru_access_mode = access_mode or MinerUAccessMode.SELF_HOSTED
+        self.mineru_api_base_url = (api_base_url or "https://mineru.net").rstrip("/")
+        self.mineru_api_token = (api_token or "").strip()
+        self.mineru_model_version = model_version or "vlm"
+        self.mineru_poll_interval = poll_interval
+        self.mineru_poll_timeout = poll_timeout
         self.outlines = []
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -205,8 +240,104 @@ class MinerUParser(RAGFlowPdfParser):
         except Exception:
             return False
 
-    def check_installation(self, backend: str = "pipeline", server_url: Optional[str] = None) -> tuple[bool, str]:
+    @staticmethod
+    def _is_http_endpoint_reachable(url, timeout=10, headers=None):
+        try:
+            response = requests.get(url, timeout=timeout, allow_redirects=True, headers=headers)
+            return response.ok, response.status_code
+        except Exception:
+            return False, None
+
+    def check_installation(
+        self,
+        backend: str = "pipeline",
+        server_url: Optional[str] = None,
+        access_mode: Optional[str] = None,
+        api_base_url: Optional[str] = None,
+        api_token: Optional[str] = None,
+    ) -> tuple[bool, str]:
         reason = ""
+
+        resolved_mode = access_mode or self.mineru_access_mode
+        try:
+            mode = MinerUAccessMode(resolved_mode)
+        except ValueError:
+            reason = f"[MinerU] Invalid access mode '{resolved_mode}'."
+            self.logger.warning(reason)
+            return False, reason
+
+        if mode == MinerUAccessMode.OFFICIAL_V4:
+            resolved_base_url = (api_base_url or self.mineru_api_base_url or "").rstrip("/")
+            resolved_token = (api_token or self.mineru_api_token or "").strip()
+            if not resolved_base_url:
+                reason = "[MinerU] MINERU_API_BASE_URL not configured for official_v4."
+                self.logger.warning(reason)
+                return False, reason
+            if not resolved_token:
+                reason = "[MinerU] MINERU_API_TOKEN not configured for official_v4."
+                self.logger.warning(reason)
+                return False, reason
+
+            probe_url = f"{resolved_base_url}/api/v4/extract/task"
+            headers = {
+                "Authorization": f"Bearer {resolved_token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+            probe_payload = {
+                "url": "https://cdn-mineru.openxlab.org.cn/demo/example.pdf",
+                "model_version": self.mineru_model_version or "vlm",
+            }
+            try:
+                response = requests.post(probe_url, headers=headers, json=probe_payload, timeout=30)
+            except requests.RequestException as exc:
+                reason = f"[MinerU] Official v4 endpoint not reachable: {probe_url}"
+                self.logger.warning(f"{reason}. exception={exc}")
+                return False, reason
+
+            status_code = response.status_code
+            if status_code in (401, 403):
+                reason = "[MinerU] Official v4 token invalid or unauthorized."
+                self.logger.warning(f"{reason} status={status_code} url={probe_url}")
+                return False, reason
+            if status_code == 404:
+                reason = f"[MinerU] Official v4 endpoint not found: {probe_url}"
+                self.logger.warning(reason)
+                return False, reason
+            if status_code >= 500:
+                reason = f"[MinerU] Official v4 endpoint not reachable: {probe_url}"
+                self.logger.warning(f"{reason} status={status_code}")
+                return False, reason
+            if status_code >= 400:
+                reason = f"[MinerU] Official v4 test request rejected: HTTP {status_code}"
+                self.logger.warning(f"{reason} url={probe_url} body={response.text[:256]}")
+                return False, reason
+
+            probe_body = {}
+            if response.content:
+                try:
+                    probe_body = response.json()
+                except ValueError:
+                    reason = "[MinerU] Official v4 test request returned invalid JSON response."
+                    self.logger.warning(f"{reason} status={status_code} url={probe_url}")
+                    return False, reason
+
+            probe_code = probe_body.get("code")
+            if probe_code != 0:
+                reason = (
+                    "[MinerU] Official v4 test request rejected: missing application code"
+                    if probe_code is None
+                    else f"[MinerU] Official v4 test request rejected: code={probe_code}"
+                )
+                self.logger.warning(
+                    f"{reason} msg={probe_body.get('msg')} trace_id={probe_body.get('trace_id')} url={probe_url}"
+                )
+                return False, reason
+
+            self.logger.info(
+                f"[MinerU] official_v4 test request accepted status={status_code} code={probe_code} url={probe_url}"
+            )
+            return True, ""
 
         valid_backends = ["pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine", "vlm-mlx-engine", "vlm-vllm-async-engine", "vlm-lmdeploy-engine"]
         if backend not in valid_backends:
@@ -248,6 +379,8 @@ class MinerUParser(RAGFlowPdfParser):
     def _run_mineru(
         self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None
     ) -> Path:
+        if options.access_mode == MinerUAccessMode.OFFICIAL_V4:
+            return self._run_mineru_official_v4(input_path, output_dir, options, callback)
         return self._run_mineru_api(input_path, output_dir, options, callback)
 
     def _run_mineru_api(
@@ -321,6 +454,197 @@ class MinerUParser(RAGFlowPdfParser):
             return Path(output_path)
         except requests.RequestException as e:
             raise RuntimeError(f"[MinerU] api failed with exception {e}")
+
+    @staticmethod
+    def _build_official_headers(api_token: str):
+        return {
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+    @staticmethod
+    def _pick_extract_result(extract_results: list[dict], file_name: str) -> dict:
+        if not extract_results:
+            return {}
+        if len(extract_results) == 1:
+            return extract_results[0]
+        normalized = Path(file_name).name
+        for item in extract_results:
+            result_name = Path(str(item.get("file_name", ""))).name
+            if result_name == normalized:
+                return item
+        return extract_results[0]
+
+    def _poll_official_batch_result(
+        self,
+        batch_id: str,
+        upload_name: str,
+        options: MinerUParseOptions,
+        callback: Optional[Callable] = None,
+    ) -> str:
+        poll_url = f"{options.api_base_url.rstrip('/')}/api/v4/extract-results/batch/{batch_id}"
+        headers = self._build_official_headers(options.api_token)
+        start_time = time.time()
+        deadline = time.time() + max(int(options.poll_timeout), 30)
+        interval = max(int(options.poll_interval), 1)
+
+        while True:
+            response = requests.get(poll_url, headers=headers, timeout=30)
+            response.raise_for_status()
+            payload = response.json() if response.content else {}
+
+            if payload.get("code", -1) != 0:
+                raise RuntimeError(f"[MinerU] official_v4 poll failed: {payload.get('msg', 'unknown error')}")
+
+            data = payload.get("data") or {}
+            extract_results = data.get("extract_result") or []
+            result = self._pick_extract_result(extract_results, upload_name)
+            state = str(result.get("state", "")).lower()
+
+            if state == "done":
+                full_zip_url = result.get("full_zip_url", "")
+                if not full_zip_url:
+                    raise RuntimeError("[MinerU] official_v4 done but full_zip_url missing")
+                return full_zip_url
+
+            if state == "failed":
+                err_msg = result.get("err_msg") or payload.get("msg") or "unknown error"
+                raise RuntimeError(f"[MinerU] official_v4 parse failed: {err_msg}")
+
+            if callback:
+                if state == "running":
+                    progress_info = result.get("extract_progress") or {}
+                    extracted_pages = progress_info.get("extracted_pages") or 0
+                    total_pages = progress_info.get("total_pages") or 0
+                    ratio = min(max(extracted_pages / total_pages, 0.0), 1.0) if total_pages else 0.0
+                    callback(0.55 + 0.25 * ratio, f"[MinerU] official_v4 running {extracted_pages}/{total_pages}")
+                else:
+                    callback(0.50, f"[MinerU] official_v4 state: {state or 'pending'}")
+            else:
+                if state == "running":
+                    progress_info = result.get("extract_progress") or {}
+                    extracted_pages = progress_info.get("extracted_pages") or 0
+                    total_pages = progress_info.get("total_pages") or 0
+                    ratio = min(max(extracted_pages / total_pages, 0.0), 1.0) if total_pages else 0.0
+                    self.logger.info(
+                        f"[MinerU] official_v4 running {extracted_pages}/{total_pages} "
+                        f"ratio={ratio:.2f} batch_id={batch_id}"
+                    )
+                else:
+                    self.logger.info(
+                        f"[MinerU] official_v4 poll state={state or 'pending'} batch_id={batch_id}"
+                    )
+
+            if time.time() >= deadline:
+                elapsed = int(time.time() - start_time)
+                self.logger.warning(
+                    f"[MinerU] official_v4 polling timeout after {options.poll_timeout}s "
+                    f"(elapsed={elapsed}s) batch_id={batch_id}"
+                )
+                raise TimeoutError(f"[MinerU] official_v4 polling timeout after {options.poll_timeout}s")
+            time.sleep(interval)
+
+    def _run_mineru_official_v4(
+        self,
+        input_path: Path,
+        output_dir: Path,
+        options: MinerUParseOptions,
+        callback: Optional[Callable] = None,
+    ) -> Path:
+        pdf_file_path = str(input_path)
+        if not os.path.exists(pdf_file_path):
+            raise RuntimeError(f"[MinerU] PDF file not exists: {pdf_file_path}")
+
+        if not options.api_token:
+            raise RuntimeError("[MinerU] official_v4 requires api_token")
+        if not options.api_base_url:
+            raise RuntimeError("[MinerU] official_v4 requires api_base_url")
+
+        file_size = os.path.getsize(pdf_file_path)
+        if file_size > OFFICIAL_V4_MAX_FILE_BYTES:
+            err_msg = (
+                "[MinerU] official_v4 only supports PDFs up to "
+                f"{int(OFFICIAL_V4_MAX_FILE_BYTES / 1024 / 1024)} MB, got {file_size} bytes"
+            )
+            if callback:
+                callback(-1, err_msg)
+            raise RuntimeError(err_msg)
+
+        page_count = len(self.page_images) if getattr(self, "page_images", None) else None
+        if page_count is None:
+            with pdfplumber.open(pdf_file_path) as pdf:
+                page_count = len(pdf.pages)
+        if page_count > OFFICIAL_V4_MAX_PAGES:
+            err_msg = (
+                "[MinerU] official_v4 only supports PDFs up to "
+                f"{OFFICIAL_V4_MAX_PAGES} pages, got {page_count} pages"
+            )
+            if callback:
+                callback(-1, err_msg)
+            raise RuntimeError(err_msg)
+
+        pdf_file_name = Path(pdf_file_path).stem.strip()
+        upload_name = f"{pdf_file_name}.pdf"
+        output_path = tempfile.mkdtemp(prefix=f"{pdf_file_name}_{options.model_version}_", dir=str(output_dir))
+        output_zip_path = os.path.join(str(output_dir), f"{Path(output_path).name}.zip")
+
+        create_url = f"{options.api_base_url.rstrip('/')}/api/v4/file-urls/batch"
+        headers = self._build_official_headers(options.api_token)
+        create_payload = {
+            "files": [{"name": upload_name}],
+            "model_version": options.model_version,
+            "enable_formula": options.formula_enable,
+            "enable_table": options.table_enable,
+            "language": options.lang.value if options.lang else None,
+        }
+        if options.method == MinerUParseMethod.OCR:
+            create_payload["files"][0]["is_ocr"] = True
+        elif options.method == MinerUParseMethod.TXT:
+            create_payload["files"][0]["is_ocr"] = False
+
+        create_payload = {k: v for k, v in create_payload.items() if v is not None}
+        self.logger.info(f"[MinerU] official_v4 create batch: {create_url}")
+        if callback:
+            callback(0.20, "[MinerU] official_v4 create upload task")
+
+        response = requests.post(create_url, headers=headers, json=create_payload, timeout=30)
+        response.raise_for_status()
+        body = response.json() if response.content else {}
+        if body.get("code", -1) != 0:
+            raise RuntimeError(f"[MinerU] official_v4 create batch failed: {body.get('msg', 'unknown error')}")
+
+        batch_data = body.get("data") or {}
+        batch_id = batch_data.get("batch_id")
+        file_urls = batch_data.get("file_urls") or []
+        if not batch_id or not file_urls:
+            raise RuntimeError("[MinerU] official_v4 create batch returned incomplete data")
+
+        if callback:
+            callback(0.30, "[MinerU] official_v4 uploading file")
+        with open(pdf_file_path, "rb") as pdf_file:
+            upload_resp = requests.put(file_urls[0], data=pdf_file, timeout=1800)
+        if not upload_resp.ok:
+            raise RuntimeError(f"[MinerU] official_v4 upload failed: HTTP {upload_resp.status_code}")
+
+        if callback:
+            callback(0.40, "[MinerU] official_v4 polling result")
+        full_zip_url = self._poll_official_batch_result(batch_id, upload_name, options, callback)
+
+        if callback:
+            callback(0.75, "[MinerU] official_v4 downloading parse zip")
+        with requests.get(full_zip_url, timeout=1800, stream=True) as zip_resp:
+            zip_resp.raise_for_status()
+            with open(output_zip_path, "wb") as f:
+                zip_resp.raw.decode_content = True
+                shutil.copyfileobj(zip_resp.raw, f)
+
+        self.logger.info(f"[MinerU] official_v4 unzip to {output_path}...")
+        self._extract_zip_no_root(output_zip_path, output_path, None)
+        if callback:
+            callback(0.80, f"[MinerU] official_v4 unzip to {output_path}")
+
+        return Path(output_path)
 
     def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         self.page_from = page_from
@@ -562,6 +886,25 @@ class MinerUParser(RAGFlowPdfParser):
                         break
 
         if not json_file:
+            direct_candidates = []
+            for glob_pattern in ("*_content_list.json", "content_list.json"):
+                for candidate in sorted(output_dir.glob(glob_pattern), key=lambda x: len(str(x))):
+                    self.logger.info(f"[MinerU] Trying generic content_list path: {candidate}")
+                    attempted.append(candidate)
+                    if candidate.exists() and candidate.parent == output_dir:
+                        direct_candidates.append(candidate)
+
+            # Avoid binding to another job's output by only accepting a single direct candidate.
+            if len(direct_candidates) == 1:
+                json_file = direct_candidates[0]
+                subdir = json_file.parent
+            elif len(direct_candidates) > 1:
+                raise FileNotFoundError(
+                    f"[MinerU] Ambiguous output file candidates for '{file_stem}': "
+                    + ", ".join(str(p) for p in direct_candidates[:10])
+                )
+
+        if not json_file:
             raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(p) for p in attempted)}")
 
         with open(json_file, "r", encoding="utf-8") as f:
@@ -627,11 +970,31 @@ class MinerUParser(RAGFlowPdfParser):
         created_tmp_dir = False
 
         parser_cfg = kwargs.get('parser_config', {})
+        access_mode_raw = kwargs.get('mineru_access_mode', self.mineru_access_mode or MinerUAccessMode.SELF_HOSTED)
+        try:
+            access_mode = MinerUAccessMode(access_mode_raw)
+        except ValueError:
+            self.logger.warning(
+                f"[MinerU] Invalid mineru_access_mode='{access_mode_raw}', fallback to self_hosted."
+            )
+            access_mode = MinerUAccessMode.SELF_HOSTED
+
+        def _safe_int(value, default: int) -> int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return default
+
         lang = parser_cfg.get('mineru_lang') or kwargs.get('lang', 'English')
         mineru_lang_code = LANGUAGE_TO_MINERU_MAP.get(lang, 'ch')  # Defaults to Chinese if not matched
         mineru_method_raw_str = parser_cfg.get('mineru_parse_method', 'auto')
         enable_formula = parser_cfg.get('mineru_formula_enable', True)
         enable_table = parser_cfg.get('mineru_table_enable', True)
+        model_version = kwargs.get('mineru_model_version', self.mineru_model_version or 'vlm')
+        api_base_url = kwargs.get('mineru_api_base_url', self.mineru_api_base_url or 'https://mineru.net')
+        api_token = kwargs.get('mineru_api_token', self.mineru_api_token or '')
+        poll_interval = _safe_int(kwargs.get('mineru_poll_interval', self.mineru_poll_interval), 3)
+        poll_timeout = _safe_int(kwargs.get('mineru_poll_timeout', self.mineru_poll_timeout), 300)
 
         # remove spaces, or mineru crash, and _read_output fail too
         file_path = Path(filepath)
@@ -672,6 +1035,7 @@ class MinerUParser(RAGFlowPdfParser):
 
         try:
             options = MinerUParseOptions(
+                access_mode=access_mode,
                 backend=MinerUBackend(backend),
                 lang=MinerULanguage(mineru_lang_code),
                 method=MinerUParseMethod(mineru_method_raw_str),
@@ -680,12 +1044,17 @@ class MinerUParser(RAGFlowPdfParser):
                 parse_method=parse_method,
                 formula_enable=enable_formula,
                 table_enable=enable_table,
+                api_base_url=api_base_url,
+                api_token=api_token,
+                model_version=model_version,
+                poll_interval=poll_interval,
+                poll_timeout=poll_timeout,
             )
             final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback)
             outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)
             self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
             if callback:
-                callback(0.75, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
+                callback(0.85, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
 
             return self._transfer_to_sections(outputs, parse_method), self._transfer_to_tables(outputs)
         finally:
