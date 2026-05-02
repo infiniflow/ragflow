@@ -1054,7 +1054,7 @@ class MinerUParser(RAGFlowPdfParser):
             outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)
             self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
             if callback:
-                callback(0.75, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
+                callback(0.85, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
 
             return self._transfer_to_sections(outputs, parse_method), self._transfer_to_tables(outputs)
         finally:
