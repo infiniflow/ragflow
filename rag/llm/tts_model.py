@@ -28,6 +28,7 @@ from abc import ABC
 from datetime import datetime
 from time import mktime
 from typing import Annotated, Literal
+import logging
 from urllib.parse import urlencode
 from wsgiref.handlers import format_date_time
 
@@ -448,6 +449,16 @@ class DeerAPITTS(OpenAITTS):
         if not base_url:
             base_url = "https://api.deerapi.com/v1"
         super().__init__(key, model_name, base_url, **kwargs)
+
+
+class FuturMixTTS(OpenAITTS):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name, base_url="https://futurmix.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+        logging.info("[FuturMix] TTS initialized with model %s", model_name)
 
 
 class StepFunTTS(OpenAITTS):

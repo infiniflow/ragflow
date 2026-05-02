@@ -22,7 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	ce "ragflow/internal/cli/contextengine"
+	ce "ragflow/internal/cli/filesystem"
 	"strings"
 	"time"
 )
@@ -1545,14 +1545,29 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	effort := cmd.Params["effort"].(string)
 	verbosity := cmd.Params["verbosity"].(string)
 
-	url := fmt.Sprintf("/chat/completions")
+	url := "/chat/completions"
+
+	message = strings.TrimSpace(message)
+	var content interface{} = message
+	if strings.HasPrefix(message, "[") && strings.HasSuffix(message, "]") {
+		var parts []map[string]interface{}
+		if err := json.Unmarshal([]byte(message), &parts); err == nil {
+			content = parts
+		}
+	}
+	formattedMessage := []map[string]interface{}{
+		{
+			"role":    "user",
+			"content": content,
+		},
+	}
 
 	payload := map[string]interface{}{
 		"provider_name": providerName,
 		"instance_name": instanceName,
 		"model_name":    modelName,
-		"message":       message,
-		"stream":        stream, // use stream API
+		"messages":      formattedMessage,
+		"stream":        stream,
 		"thinking":      thinking,
 	}
 
@@ -1818,6 +1833,36 @@ func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
 
 // Context related commands
 
+// CECat handles the cat command - shows content using Context Engine
+func (c *RAGFlowClient) CECat(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	path, ok := cmd.Params["path"].(string)
+	if !ok {
+		return nil, fmt.Errorf("fail to convert 'path' to string")
+	}
+
+	// Execute cat command through Filesystem Engine
+	ctx := context.Background()
+	content, err := c.ContextEngine.Cat(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to response
+	var response ContextCatResponse
+	response.OutputFormat = c.OutputFormat
+	response.Code = 0
+	response.Content = string(content)
+
+	return &response, nil
+}
+
 // CEList handles the ls command - lists nodes using Context Engine
 func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
 	// Get path from command params, default to "datasets"
@@ -1838,7 +1883,7 @@ func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
 		opts.Offset = offset
 	}
 
-	// Execute list command through Context Engine
+	// Execute list command through Filesystem Engine
 	ctx := context.Background()
 	result, err := c.ContextEngine.List(ctx, path, opts)
 	if err != nil {
@@ -1877,7 +1922,7 @@ func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
 		opts.Recursive = recursive
 	}
 
-	// Execute search command through Context Engine
+	// Execute search command through Filesystem Engine
 	ctx := context.Background()
 	result, err := c.ContextEngine.Search(ctx, path, opts)
 	if err != nil {

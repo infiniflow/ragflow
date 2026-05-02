@@ -88,6 +88,7 @@ Demomuzu [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyeb
 
 ## 🔥 Son Güncellemeler
 
+- 2026-04-24 DeepSeek v4 desteği.
 - 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — OpenClaw üzerinden RAGFlow veri setlerine erişmek için resmi bir skill sağlar.
 - 2025-12-26 Yapay zeka ajanı için 'Bellek' desteği eklendi.
 - 2025-11-19 Gemini 3 Pro desteği eklendi.
