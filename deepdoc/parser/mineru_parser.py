@@ -309,8 +309,25 @@ class MinerUParser(RAGFlowPdfParser):
                 self.logger.warning(f"{reason} url={probe_url} body={response.text[:256]}")
                 return False, reason
 
+            probe_body = {}
+            if response.content:
+                try:
+                    probe_body = response.json()
+                except ValueError:
+                    reason = "[MinerU] Official v4 test request returned invalid JSON response."
+                    self.logger.warning(f"{reason} status={status_code} url={probe_url}")
+                    return False, reason
+
+            probe_code = probe_body.get("code")
+            if probe_code is not None and probe_code != 0:
+                reason = f"[MinerU] Official v4 test request rejected: code={probe_code}"
+                self.logger.warning(
+                    f"{reason} msg={probe_body.get('msg')} trace_id={probe_body.get('trace_id')} url={probe_url}"
+                )
+                return False, reason
+
             self.logger.info(
-                f"[MinerU] official_v4 test request accepted status={status_code} url={probe_url}"
+                f"[MinerU] official_v4 test request accepted status={status_code} code={probe_code} url={probe_url}"
             )
             return True, ""
 
@@ -576,7 +593,7 @@ class MinerUParser(RAGFlowPdfParser):
             callback(0.30, "[MinerU] official_v4 uploading file")
         with open(pdf_file_path, "rb") as pdf_file:
             upload_resp = requests.put(file_urls[0], data=pdf_file, timeout=1800)
-        if upload_resp.status_code not in (200, 201):
+        if not upload_resp.ok:
             raise RuntimeError(f"[MinerU] official_v4 upload failed: HTTP {upload_resp.status_code}")
 
         if callback:
