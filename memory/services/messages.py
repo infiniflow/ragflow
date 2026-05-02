@@ -63,7 +63,7 @@ class MessageService:
         return settings.msgStoreConn.delete(condition, index, memory_id)
 
     @classmethod
-    def list_message(cls, uid: str, memory_id: str, agent_ids: List[str]=None, keywords: str=None, page: int=1, page_size: int=50):
+    def list_message(cls, uid: str, memory_id: str, agent_ids: List[str]=None, keywords: str=None, page: int=1, page_size: int=50, memory_types: List[str]=None):
         index = index_name(uid)
         filter_dict = {}
         if agent_ids:
@@ -79,7 +79,7 @@ class MessageService:
         res, total_count = settings.msgStoreConn.search(
             select_fields=select_fields,
             highlight_fields=[],
-            condition={**filter_dict, "message_type": MemoryType.RAW.name.lower()},
+            condition={**filter_dict, "message_type": memory_types if memory_types else MemoryType.RAW.name.lower()},
             match_expressions=[], order_by=order_by,
             offset=(page-1)*page_size, limit=page_size,
             index_names=index, memory_ids=[memory_id], agg_fields=[], hide_forgotten=False
@@ -118,12 +118,14 @@ class MessageService:
         }
 
     @classmethod
-    def get_recent_messages(cls, uid_list: List[str], memory_ids: List[str], agent_id: str, session_id: str, limit: int):
+    def get_recent_messages(cls, uid_list: List[str], memory_ids: List[str], agent_id: str, session_id: str, limit: int, memory_types: List[str]=None):
         index_names = [index_name(uid) for uid in uid_list]
         condition_dict = {
             "agent_id": agent_id,
             "session_id": session_id
         }
+        if memory_types:
+            condition_dict["message_type"] = memory_types
         order_by = OrderByExpr()
         order_by.desc("valid_at")
         res, total_count = settings.msgStoreConn.search(
@@ -147,11 +149,13 @@ class MessageService:
         return list(doc_mapping.values())
 
     @classmethod
-    def search_message(cls, memory_ids: List[str], condition_dict: dict, uid_list: List[str], match_expressions:list[MatchExpr], top_n: int):
+    def search_message(cls, memory_ids: List[str], condition_dict: dict, uid_list: List[str], match_expressions:list[MatchExpr], top_n: int, memory_types: List[str]=None):
         index_names = [index_name(uid) for uid in uid_list]
         # filter only valid messages by default
         if "status" not in condition_dict:
             condition_dict["status"] = 1
+        if memory_types:
+            condition_dict["message_type"] = memory_types
 
         order_by = OrderByExpr()
         order_by.desc("valid_at")

@@ -168,9 +168,11 @@ async def get_memory_messages(memory_id):
     keywords = keywords.strip()
     page = int(args.get("page", 1))
     page_size = int(args.get("page_size", 50))
+    memory_type = args.get("memory_type", "")
+    memory_types = [t.strip() for t in memory_type.split(",") if t.strip()] or None
     try:
         res = await memory_api_service.get_memory_messages(
-            memory_id, agent_ids, keywords, page, page_size
+            memory_id, agent_ids, keywords, page, page_size, memory_types=memory_types
         )
         return get_json_result(message=True, data=res)
     except NotFoundException as not_found_exception:
@@ -255,6 +257,9 @@ async def search_message():
     session_id = args.get("session_id", "")
     user_id = args.get("user_id", "")
 
+    memory_type = args.get("memory_type", "")
+    memory_types = [t.strip() for t in memory_type.split(",") if t.strip()] or None
+
     filter_dict = {
         "memory_id": memory_ids,
         "agent_id": agent_id,
@@ -267,7 +272,7 @@ async def search_message():
         "keywords_similarity_weight": keywords_similarity_weight,
         "top_n": top_n
     }
-    res = await memory_api_service.search_message(filter_dict, params)
+    res = await memory_api_service.search_message(filter_dict, params, memory_types=memory_types)
     return get_json_result(message=True, data=res)
 
 @manager.route("/messages", methods=["GET"]) # noqa: F821
@@ -280,10 +285,12 @@ async def get_messages():
     agent_id = args.get("agent_id", "")
     session_id = args.get("session_id", "")
     limit = int(args.get("limit", 10))
+    memory_type = args.get("memory_type", "")
+    memory_types = [t.strip() for t in memory_type.split(",") if t.strip()] or None
     if not memory_ids:
         return get_error_argument_result("memory_ids is required.")
     try:
-        res = await memory_api_service.get_messages(memory_ids, agent_id, session_id, limit)
+        res = await memory_api_service.get_messages(memory_ids, agent_id, session_id, limit, memory_types=memory_types)
         return get_json_result(message=True, data=res)
     except Exception as e:
         logging.error(e)
