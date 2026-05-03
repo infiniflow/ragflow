@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
+from common.data_source import utils as _ds_utils
 from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
     ConnectorValidationError,
@@ -43,19 +44,21 @@ _MOCK_DNS_ADDRINFO = [(2, 1, 6, "", ("93.184.216.34", 0))]
 
 @contextmanager
 def _mocked_rest_api_requests_and_dns():
-    """Block real DNS/TCP in CI: mock SSRF getaddrinfo and both ``rl_requests`` bindings.
+    """Block real DNS/TCP: mock SSRF getaddrinfo and HTTP at the class layer.
 
-    ``RestAPIConnector`` does ``from common.data_source.utils import rl_requests``; patching
-    only ``rest_api_connector.rl_requests`` is not always enough across import/retry paths,
-    so the same ``MagicMock`` replaces both module attributes for the duration of the test.
+    `RestAPIConnector` calls `rl_requests.get` / `.post` on
+    `utils._RateLimitedRequest`. Replacing only module-level `rl_requests` is not
+    reliable everywhere (import/rebind quirks), so we patch the class methods
+    that wrap `requests.get` / `requests.post` and avoid retry backoff delays.
     """
     mock_rl = MagicMock()
     with patch(
         "common.data_source.rest_api_connector.socket.getaddrinfo",
         return_value=_MOCK_DNS_ADDRINFO,
-    ), patch("common.data_source.utils.rl_requests", mock_rl), patch(
-        "common.data_source.rest_api_connector.rl_requests",
-        mock_rl,
+    ), patch.object(_ds_utils._RateLimitedRequest, "get", mock_rl.get), patch.object(
+        _ds_utils._RateLimitedRequest,
+        "post",
+        mock_rl.post,
     ):
         yield mock_rl
 
