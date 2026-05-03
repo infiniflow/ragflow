@@ -9,7 +9,7 @@ mysql:
   user: 'root'
   password: 'infini_rag_flow'
   host: 'localhost'
-  port: 3306
+  port: 5455
   max_connections: 900
   stale_timeout: 300
   max_allowed_packet: 1073741824
