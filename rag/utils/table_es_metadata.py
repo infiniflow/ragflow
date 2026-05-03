@@ -42,6 +42,19 @@ def merge_table_parser_config_from_kb(task: dict) -> dict:
     return out
 
 
+def table_parser_strip_doc_metadata_keys(eff_parser_config: dict) -> frozenset[str]:
+    """
+    Table manual mode stores per-column values under document metadata keys equal to the
+    CSV column name. On reparse, strip these keys from existing metadata before merging
+    a fresh aggregate so columns switched to vectorize-only (or removed) do not persist.
+    """
+    names = eff_parser_config.get("table_column_names")
+    if names:
+        return frozenset(str(n).strip() for n in names if n is not None and str(n).strip())
+    roles = eff_parser_config.get("table_column_roles") or {}
+    return frozenset(str(k).strip() for k in roles if k is not None and str(k).strip())
+
+
 def _field_map_typed_key_for_column(field_map: dict, col: str) -> str | None:
     """Map CSV column name to ES typed field key (field_map: typed_key -> display name)."""
     if not field_map or not col:

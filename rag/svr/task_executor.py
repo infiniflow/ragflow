@@ -79,7 +79,11 @@ from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.exceptions import TaskCanceledException
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
-from rag.utils.table_es_metadata import aggregate_table_manual_doc_metadata, merge_table_parser_config_from_kb
+from rag.utils.table_es_metadata import (
+    aggregate_table_manual_doc_metadata,
+    merge_table_parser_config_from_kb,
+    table_parser_strip_doc_metadata_keys,
+)
 
 BATCH_SIZE = 64
 
@@ -1284,28 +1288,26 @@ async def do_handle_task(task):
                 try:
                     agg = aggregate_table_manual_doc_metadata(chunks, task)
                     logging.debug(f"[TABLE_META_DEBUG] aggregated metadata: {agg}")
-                    if not agg:
-                        logging.debug(
-                            "[TABLE_META_DEBUG] skip update_document_metadata: empty aggregate (see logs above)"
+                    strip_keys = table_parser_strip_doc_metadata_keys(eff_pc)
+                    existing = DocMetadataService.get_document_metadata(task_doc_id)
+                    existing = existing if isinstance(existing, dict) else {}
+                    preserved = {k: v for k, v in existing.items() if k not in strip_keys}
+                    merged = update_metadata_to(dict(preserved), agg)
+                    logging.debug(
+                        f"[TABLE_META_DEBUG] calling update_document_metadata for doc_id={task_doc_id}, "
+                        f"meta_fields keys={list(merged.keys())}, "
+                        f"table_strip_key_count={len(strip_keys)}, agg_keys={list(agg.keys())}"
+                    )
+                    try:
+                        DocMetadataService.update_document_metadata(task_doc_id, merged)
+                        logging.debug("[TABLE_META_DEBUG] update_document_metadata succeeded")
+                    except Exception as ue:
+                        logging.error(
+                            "update_document_metadata failed (table parser, doc_id=%s): %s",
+                            task_doc_id,
+                            ue,
+                            exc_info=True,
                         )
-                    if agg:
-                        existing = DocMetadataService.get_document_metadata(task_doc_id)
-                        existing = existing if isinstance(existing, dict) else {}
-                        merged = update_metadata_to(dict(existing), agg)
-                        logging.debug(
-                            f"[TABLE_META_DEBUG] calling update_document_metadata for doc_id={task_doc_id}, "
-                            f"meta_fields keys={list(merged.keys())}"
-                        )
-                        try:
-                            DocMetadataService.update_document_metadata(task_doc_id, merged)
-                            logging.debug("[TABLE_META_DEBUG] update_document_metadata succeeded")
-                        except Exception as ue:
-                            logging.error(
-                                "update_document_metadata failed (table parser, doc_id=%s): %s",
-                                task_doc_id,
-                                ue,
-                                exc_info=True,
-                            )
                 except Exception as e:
                     logging.exception(
                         "Table parser document metadata aggregation failed (doc_id=%s): %s",

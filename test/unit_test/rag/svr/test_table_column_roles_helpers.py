@@ -22,6 +22,7 @@ from rag.utils.table_es_metadata import (
     _probe_es_typed_key_for_column,
     _resolve_es_chunk_field_key,
     merge_table_parser_config_from_kb,
+    table_parser_strip_doc_metadata_keys,
 )
 
 
@@ -115,3 +116,17 @@ class TestMergeTableParserConfigFromKb:
         }
         merged = merge_table_parser_config_from_kb(task)
         assert merged == {"foo": 1}  # no table_* keys copied from kb without kb_parser_config keys
+
+
+class TestTableParserStripDocMetadataKeys:
+    def test_uses_table_column_names_when_present(self):
+        eff = {"table_column_names": ["Region", " SKU "]}
+        assert table_parser_strip_doc_metadata_keys(eff) == frozenset({"Region", "SKU"})
+
+    def test_falls_back_to_role_keys_when_no_names(self):
+        eff = {"table_column_roles": {"x": "metadata", "y": "vectorize"}}
+        assert table_parser_strip_doc_metadata_keys(eff) == frozenset({"x", "y"})
+
+    def test_empty_names_falls_back_to_roles(self):
+        eff = {"table_column_names": [], "table_column_roles": {"only": "both"}}
+        assert table_parser_strip_doc_metadata_keys(eff) == frozenset({"only"})
