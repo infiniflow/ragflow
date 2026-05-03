@@ -414,7 +414,7 @@ export default {
       assistantAvatar: 'Avatar trợ lý',
       language: 'Ngôn ngữ',
       emptyResponse: 'Phản hồi trống',
-      emptyResponseTip: `Nếu không tìm thấy gì với câu hỏi của người dùng trong cơ sở kiến thức, nó sẽ sử dụng điều này làm câu trả lời. Nếu bạn muốn LLM đưa ra ý kiến ​​riêng của mình khi không tìm thấy gì, hãy để trống.`,
+      emptyResponseTip: `Nếu không tìm thấy gì với câu hỏi của người dùng trong cơ sở kiến thức, nó sẽ sử dụng điều này làm câu trả lời. Nếu bạn muốn LLM đưa ra ý kiến riêng của mình khi không tìm thấy gì, hãy để trống.`,
       setAnOpener: 'Đặt lời mở đầu',
       setAnOpenerInitial: `Xin chào! Tôi là trợ lý của bạn, tôi có thể giúp gì cho bạn?`,
       setAnOpenerTip: 'Bạn muốn chào đón khách hàng của mình như thế nào?',

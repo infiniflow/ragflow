@@ -295,9 +295,11 @@ const FloatingChatWidgetMarkdown = ({
         className="text-sm leading-relaxed space-y-2 prose-sm max-w-full"
         components={
           {
-            p: ({ children, node, ...props }: any) => (
-              <p {...props}>{children}</p>
-            ),
+            p: (props: any) => {
+              const { children, node, ...rest } = props;
+              void node;
+              return <p {...rest}>{children}</p>;
+            },
             'custom-typography': ({ children }: { children: string }) =>
               renderReference(children),
             code(props: any) {

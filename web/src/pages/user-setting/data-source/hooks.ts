@@ -8,6 +8,7 @@ import dataSourceService, {
   deleteDataSource,
   featchDataSourceDetail,
   getDataSourceLogs,
+  testDataSource,
 } from '@/services/data-source-service';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
@@ -212,4 +213,29 @@ export const useDataSourceRebuild = () => {
     [id],
   );
   return { handleRebuild };
+};
+
+export const useTestDataSource = () => {
+  const [currentQueryParameters] = useSearchParams();
+  const id = currentQueryParameters.get('id');
+  const [loading, setLoading] = useState(false);
+
+  const handleTest = useCallback(async () => {
+    if (!id) return;
+    setLoading(true);
+    try {
+      const { data } = await testDataSource(id);
+      if (data.code === 0) {
+        message.success(t('setting.restApiTestSuccess'));
+      } else {
+        message.error(data.message || t('setting.restApiTestFailed'));
+      }
+    } catch {
+      message.error(t('setting.restApiTestFailed'));
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  return { loading, handleTest };
 };

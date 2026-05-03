@@ -41,7 +41,9 @@ from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
+from common.constants import FileSource, TaskStatus
 from common.config_utils import show_configs
+from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source import (
     BlobStorageConnector,
     RSSConnector,
@@ -58,9 +60,8 @@ from common.data_source import (
     SeaFileConnector,
     RDBMSConnector,
     DingTalkAITableConnector,
+    RestAPIConnector,
 )
-from common.constants import FileSource, TaskStatus
-from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.models import ConnectorFailure, SeafileSyncScope
 from common.data_source.webdav_connector import WebDAVConnector
 from common.data_source.confluence_connector import ConfluenceConnector
@@ -70,6 +71,7 @@ from common.data_source.github.connector import GithubConnector
 from common.data_source.gitlab_connector import GitlabConnector
 from common.data_source.bitbucket.connector import BitbucketConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
+from common.data_source.exceptions import ConnectorValidationError
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
@@ -1660,6 +1662,33 @@ class PostgreSQL(SyncBase):
         return document_generator
 
 
+class REST_API(SyncBase):
+    SOURCE_NAME: str = FileSource.REST_API
+
+    async def _generate(self, task: dict):
+        try:
+            cfg = RestAPIConnector.parse_storage_config(self.conf)
+        except ConnectorValidationError as exc:
+            raise ValueError(str(exc)) from exc
+
+        self.connector = RestAPIConnector.from_parsed_config(cfg)
+        self.connector.load_credentials(self.conf.get("credentials") or {})
+
+        poll_start = task.get("poll_range_start")
+        if task.get("reindex") == "1" or poll_start is None:
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
+            begin_info = f"from {poll_start}"
+
+        logging.info("Connect to REST API: %s %s %s", self.conf.get("method", "GET"), self.conf.get("url"), begin_info)
+        return document_generator
+
+
 func_factory = {
     FileSource.RSS: RSS,
     FileSource.S3: S3,
@@ -1690,6 +1719,7 @@ func_factory = {
     FileSource.MYSQL: MySQL,
     FileSource.POSTGRESQL: PostgreSQL,
     FileSource.DINGTALK_AI_TABLE: DingTalkAITable,
+    FileSource.REST_API: REST_API,
 }
 
 

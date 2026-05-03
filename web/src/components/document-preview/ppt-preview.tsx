@@ -41,7 +41,7 @@ export const PptPreviewer: React.FC<PptPreviewerProps> = ({
         });
         pptxPrviewer.preview(arrayBuffer);
       }
-    } catch (err) {
+    } catch {
       message.error('ppt parse failed');
     }
   };
