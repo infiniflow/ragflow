@@ -514,10 +514,12 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                 merged_table_column_names.append(col)
 
     logging.debug(f"Field map (merged across sheets): {merged_field_map}")
-    KnowledgebaseService.update_parser_config(
-        kwargs["kb_id"],
-        {"field_map": merged_field_map, "table_column_names": merged_table_column_names},
-    )
+    kb_id = kwargs.get("kb_id")
+    if kb_id:
+        KnowledgebaseService.update_parser_config(
+            kb_id,
+            {"field_map": merged_field_map, "table_column_names": merged_table_column_names},
+        )
 
     eng = lang.lower() == "english"  # is_english(txts)
     for spec in sheet_specs:
