@@ -1,13 +1,18 @@
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { Node, OnBeforeDelete } from '@xyflow/react';
 import { Operator } from '../constant';
-import useGraphStore from '../store';
+import useGraphStore, { collectDeletionNodeIds } from '../store';
 import { deleteAllDownstreamAgentsAndTool } from '../utils/delete-node';
 
 const UndeletableNodes = [Operator.Begin, Operator.IterationStart];
 
 export function useBeforeDelete() {
-  const { getOperatorTypeFromId, getNode } = useGraphStore((state) => state);
+  const {
+    getOperatorTypeFromId,
+    getNode,
+    nodes: graphNodes,
+    edges: graphEdges,
+  } = useGraphStore((state) => state);
 
   const agentPredicate = (node: Node) => {
     return getOperatorTypeFromId(node.id) === Operator.Agent;
@@ -33,7 +38,20 @@ export function useBeforeDelete() {
       return true;
     });
 
-    const toBeDeletedEdges = edges.filter((edge) => {
+    toBeDeletedNodes
+      .filter((node) => node.data?.label === Operator.Iteration)
+      .forEach((node) => {
+        collectDeletionNodeIds(graphNodes, node.id)
+          .filter((nodeId) => nodeId !== node.id)
+          .forEach((nodeId) => {
+            const currentNode = getNode(nodeId);
+            if (currentNode && toBeDeletedNodes.every((x) => x.id !== nodeId)) {
+              toBeDeletedNodes.push(currentNode);
+            }
+          });
+      });
+
+    let toBeDeletedEdges = edges.filter((edge) => {
       const sourceType = getOperatorTypeFromId(edge.source) as Operator;
       const downStreamNodes = nodes.filter((x) => x.id === edge.target);
 
@@ -71,6 +89,15 @@ export function useBeforeDelete() {
         });
       }, []);
     }
+
+    const toBeDeletedNodeIdSet = new Set(
+      toBeDeletedNodes.map((node) => node.id),
+    );
+    toBeDeletedEdges = graphEdges.filter(
+      (edge) =>
+        toBeDeletedNodeIdSet.has(edge.source) ||
+        toBeDeletedNodeIdSet.has(edge.target),
+    );
 
     return {
       nodes: toBeDeletedNodes,
