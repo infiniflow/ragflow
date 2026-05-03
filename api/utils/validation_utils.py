@@ -824,6 +824,31 @@ class DeleteReq(Base):
 class DeleteDatasetReq(DeleteReq): ...
 
 
+class DeleteDocumentReq(DeleteReq):
+    @field_validator("ids", mode="after")
+    @classmethod
+    def validate_ids(cls, v_list: list[str] | None) -> list[str] | None:
+        """
+        Validate document IDs without enforcing UUIDv1.
+
+        Connector-backed documents can use non-UUID identifiers, so we only
+        enforce uniqueness here and leave existence checks to the delete API.
+        """
+        if v_list is None:
+            return None
+
+        duplicates = [item for item, count in Counter(v_list).items() if count > 1]
+        if duplicates:
+            duplicates_str = ", ".join(duplicates)
+            raise PydanticCustomError(
+                "duplicate_uuids",
+                "Duplicate ids: '{duplicate_ids}'",
+                {"duplicate_ids": duplicates_str},
+            )
+
+        return v_list
+
+
 class SearchDatasetReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -841,9 +866,6 @@ class SearchDatasetReq(BaseModel):
     rerank_id: Annotated[str | None, Field(default=None)]
     tenant_rerank_id: Annotated[str | None, Field(default=None)]
     meta_data_filter: Annotated[dict | None, Field(default=None)]
-
-
-class DeleteDocumentReq(DeleteReq): ...
 
 
 class BaseListReq(BaseModel):
