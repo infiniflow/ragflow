@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -36,6 +37,40 @@ from common.data_source.rest_api_connector import (
 # ---------------------------------------------------------------------------
 
 VALID_URL = "https://api.example.com/v1/items"
+
+_MOCK_DNS_ADDRINFO = [(2, 1, 6, "", ("93.184.216.34", 0))]
+
+
+@contextmanager
+def _mocked_rest_api_requests_and_dns():
+    """Block real DNS/TCP in CI: mock SSRF getaddrinfo and both ``rl_requests`` bindings.
+
+    ``RestAPIConnector`` does ``from common.data_source.utils import rl_requests``; patching
+    only ``rest_api_connector.rl_requests`` is not always enough across import/retry paths,
+    so the same ``MagicMock`` replaces both module attributes for the duration of the test.
+    """
+    mock_rl = MagicMock()
+    with patch(
+        "common.data_source.rest_api_connector.socket.getaddrinfo",
+        return_value=_MOCK_DNS_ADDRINFO,
+    ), patch("common.data_source.utils.rl_requests", mock_rl), patch(
+        "common.data_source.rest_api_connector.rl_requests",
+        mock_rl,
+    ):
+        yield mock_rl
+
+
+def _make_paged_connector(**overrides) -> RestAPIConnector:
+    defaults = dict(
+        url=VALID_URL,
+        content_fields=["title"],
+        pagination_type=PaginationType.PAGE,
+        pagination_config={"page_param": "page"},
+        max_pages=100,
+        request_delay=0,
+    )
+    defaults.update(overrides)
+    return RestAPIConnector(**defaults)
 
 
 def _make_connector(**overrides) -> RestAPIConnector:
@@ -423,100 +458,88 @@ class TestDocumentCreation:
 class TestPaginationBehavior:
     """Test pagination iteration with mocked HTTP responses."""
 
-    @patch("common.data_source.rest_api_connector.socket.getaddrinfo",
-           return_value=[(2, 1, 6, "", ("93.184.216.34", 0))])
-    def _make_paged_connector(self, _dns, **overrides):
-        defaults = dict(
-            url=VALID_URL,
-            content_fields=["title"],
-            pagination_type=PaginationType.PAGE,
-            pagination_config={"page_param": "page"},
-            max_pages=100,
-            request_delay=0,
-        )
-        defaults.update(overrides)
-        return RestAPIConnector(**defaults)
-
-    @patch("common.data_source.rest_api_connector.rl_requests")
-    def test_page_pagination_increments(self, mock_rl):
+    def test_page_pagination_increments(self):
         """Page-based pagination should increment the page param."""
-        page1 = _mock_response({"items": [{"title": "A"}, {"title": "B"}]})
-        page2 = _mock_response({"items": []})
-        mock_rl.get.side_effect = [page1, page2]
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            page1 = _mock_response({"items": [{"title": "A"}, {"title": "B"}]})
+            page2 = _mock_response({"items": []})
+            mock_rl.get.side_effect = [page1, page2]
 
-        c = self._make_paged_connector()
-        items = list(c._iter_items())
-        assert len(items) == 2
-        assert mock_rl.get.call_count == 2
+            c = _make_paged_connector()
+            items = list(c._iter_items())
+            assert len(items) == 2
+            assert mock_rl.get.call_count == 2
 
-    @patch("common.data_source.rest_api_connector.rl_requests")
-    def test_offset_pagination_increments(self, mock_rl):
+    def test_offset_pagination_increments(self):
         """Offset-based pagination should increment offset by limit."""
-        page1 = _mock_response({"items": [{"title": "A"}]})
-        page2 = _mock_response({"items": []})
-        mock_rl.get.side_effect = [page1, page2]
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            page1 = _mock_response({"items": [{"title": "A"}]})
+            page2 = _mock_response({"items": []})
+            mock_rl.get.side_effect = [page1, page2]
 
-        with patch("common.data_source.rest_api_connector.socket.getaddrinfo",
-                    return_value=[(2, 1, 6, "", ("93.184.216.34", 0))]):
             c = _make_connector(
                 pagination_type=PaginationType.OFFSET,
-                pagination_config={"offset_param": "offset", "limit_param": "limit", "limit": 10},
+                pagination_config={
+                    "offset_param": "offset",
+                    "limit_param": "limit",
+                    "limit": 10,
+                },
                 request_delay=0,
             )
-        items = list(c._iter_items())
-        assert len(items) == 1
+            items = list(c._iter_items())
+            assert len(items) == 1
 
-    @patch("common.data_source.rest_api_connector.rl_requests")
-    def test_stops_on_empty_results(self, mock_rl):
+    def test_stops_on_empty_results(self):
         """Pagination stops when empty items are returned."""
-        mock_rl.get.return_value = _mock_response({"items": []})
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            mock_rl.get.return_value = _mock_response({"items": []})
 
-        c = self._make_paged_connector()
-        items = list(c._iter_items())
-        assert items == []
-        assert mock_rl.get.call_count == 1
+            c = _make_paged_connector()
+            items = list(c._iter_items())
+            assert items == []
+            assert mock_rl.get.call_count == 1
 
-    @patch("common.data_source.rest_api_connector.rl_requests")
-    def test_stops_when_fewer_items_than_page_size(self, mock_rl):
+    def test_stops_when_fewer_items_than_page_size(self):
         """Pagination stops when fewer items than page_size are returned."""
-        page1 = _mock_response({"items": [{"title": "A"}]})
-        mock_rl.get.return_value = page1
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            page1 = _mock_response({"items": [{"title": "A"}]})
+            mock_rl.get.return_value = page1
 
-        c = self._make_paged_connector(
-            pagination_config={"page_param": "page", "page_size": 10},
-        )
-        items = list(c._iter_items())
-        assert len(items) == 1
-        assert mock_rl.get.call_count == 1
+            c = _make_paged_connector(
+                pagination_config={"page_param": "page", "page_size": 10},
+            )
+            items = list(c._iter_items())
+            assert len(items) == 1
+            assert mock_rl.get.call_count == 1
 
-    @patch("common.data_source.rest_api_connector.rl_requests")
-    def test_max_pages_cap(self, mock_rl):
+    def test_max_pages_cap(self):
         """Pagination respects the max_pages safety cap."""
-        mock_rl.get.return_value = _mock_response(
-            {"items": [{"title": "A"}, {"title": "B"}]}
-        )
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            mock_rl.get.return_value = _mock_response(
+                {"items": [{"title": "A"}, {"title": "B"}]}
+            )
 
-        c = self._make_paged_connector(
-            max_pages=3,
-            pagination_config={"page_param": "page", "page_size": 2},
-        )
-        list(c._iter_items())
-        assert mock_rl.get.call_count == 3
+            c = _make_paged_connector(
+                max_pages=3,
+                pagination_config={"page_param": "page", "page_size": 2},
+            )
+            list(c._iter_items())
+            assert mock_rl.get.call_count == 3
 
-    @patch("common.data_source.rest_api_connector.time.sleep")
-    @patch("common.data_source.rest_api_connector.rl_requests")
-    def test_request_delay_applied(self, mock_rl, mock_sleep):
+    def test_request_delay_applied(self):
         """request_delay should cause a sleep between pages."""
-        page1 = _mock_response({"items": [{"title": "A"}, {"title": "B"}]})
-        page2 = _mock_response({"items": []})
-        mock_rl.get.side_effect = [page1, page2]
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            with patch("common.data_source.rest_api_connector.time.sleep") as mock_sleep:
+                page1 = _mock_response({"items": [{"title": "A"}, {"title": "B"}]})
+                page2 = _mock_response({"items": []})
+                mock_rl.get.side_effect = [page1, page2]
 
-        c = self._make_paged_connector(
-            pagination_config={"page_param": "page", "page_size": 2},
-        )
-        c.request_delay = 1.5
-        list(c._iter_items())
-        mock_sleep.assert_called_once_with(1.5)
+                c = _make_paged_connector(
+                    pagination_config={"page_param": "page", "page_size": 2},
+                )
+                c.request_delay = 1.5
+                list(c._iter_items())
+                mock_sleep.assert_called_once_with(1.5)
 
 
 # ===================================================================== #
@@ -526,57 +549,56 @@ class TestPaginationBehavior:
 class TestNonRetriableErrors:
     """Test that HTTP errors are classified correctly in _fetch_page."""
 
-    @patch("common.data_source.rest_api_connector.socket.getaddrinfo",
-           return_value=[(2, 1, 6, "", ("93.184.216.34", 0))])
-    def _make_test_connector(self, _dns):
-        c = _make_connector(request_delay=0)
-        c.load_credentials({})
-        return c
-
-    @patch("common.data_source.rest_api_connector.rl_requests")
-    def test_401_raises_credential_error(self, mock_rl):
+    def test_401_raises_credential_error(self):
         """401 should raise ConnectorMissingCredentialError immediately."""
-        mock_rl.get.return_value = _mock_response({}, status_code=401)
-        c = self._make_test_connector()
-        with pytest.raises(ConnectorMissingCredentialError):
-            c._fetch_page({})
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            mock_rl.get.return_value = _mock_response({}, status_code=401)
+            c = _make_connector(request_delay=0)
+            c.load_credentials({})
+            with pytest.raises(ConnectorMissingCredentialError):
+                c._fetch_page({})
 
-    @patch("common.data_source.rest_api_connector.rl_requests")
-    def test_403_raises_credential_error(self, mock_rl):
+    def test_403_raises_credential_error(self):
         """403 should raise ConnectorMissingCredentialError immediately."""
-        mock_rl.get.return_value = _mock_response({}, status_code=403)
-        c = self._make_test_connector()
-        with pytest.raises(ConnectorMissingCredentialError):
-            c._fetch_page({})
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            mock_rl.get.return_value = _mock_response({}, status_code=403)
+            c = _make_connector(request_delay=0)
+            c.load_credentials({})
+            with pytest.raises(ConnectorMissingCredentialError):
+                c._fetch_page({})
 
-    @patch("common.data_source.rest_api_connector.rl_requests")
-    def test_404_raises_validation_error(self, mock_rl):
+    def test_404_raises_validation_error(self):
         """404 should raise ConnectorValidationError (no retry)."""
-        mock_rl.get.return_value = _mock_response({}, status_code=404)
-        c = self._make_test_connector()
-        with pytest.raises(ConnectorValidationError, match="non-retriable"):
-            c._fetch_page({})
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            mock_rl.get.return_value = _mock_response({}, status_code=404)
+            c = _make_connector(request_delay=0)
+            c.load_credentials({})
+            with pytest.raises(ConnectorValidationError, match="non-retriable"):
+                c._fetch_page({})
 
-    @patch("common.data_source.rest_api_connector.rl_requests")
-    def test_400_raises_validation_error(self, mock_rl):
+    def test_400_raises_validation_error(self):
         """400 should raise ConnectorValidationError (no retry)."""
-        mock_rl.get.return_value = _mock_response({}, status_code=400)
-        c = self._make_test_connector()
-        with pytest.raises(ConnectorValidationError, match="non-retriable"):
-            c._fetch_page({})
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            mock_rl.get.return_value = _mock_response({}, status_code=400)
+            c = _make_connector(request_delay=0)
+            c.load_credentials({})
+            with pytest.raises(ConnectorValidationError, match="non-retriable"):
+                c._fetch_page({})
 
-    @patch("common.data_source.rest_api_connector.rl_requests")
-    def test_500_triggers_retry(self, mock_rl):
+    def test_500_triggers_retry(self):
         """500 should raise HTTPError (which the retry decorator catches)."""
-        mock_rl.get.return_value = _mock_response({}, status_code=500)
-        c = self._make_test_connector()
-        with pytest.raises(requests.HTTPError):
-            c._fetch_page({})
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            mock_rl.get.return_value = _mock_response({}, status_code=500)
+            c = _make_connector(request_delay=0)
+            c.load_credentials({})
+            with pytest.raises(requests.HTTPError):
+                c._fetch_page({})
 
-    @patch("common.data_source.rest_api_connector.rl_requests")
-    def test_429_triggers_retry(self, mock_rl):
+    def test_429_triggers_retry(self):
         """429 should raise HTTPError (retriable, not ConnectorValidationError)."""
-        mock_rl.get.return_value = _mock_response({}, status_code=429)
-        c = self._make_test_connector()
-        with pytest.raises(requests.HTTPError):
-            c._fetch_page({})
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            mock_rl.get.return_value = _mock_response({}, status_code=429)
+            c = _make_connector(request_delay=0)
+            c.load_credentials({})
+            with pytest.raises(requests.HTTPError):
+                c._fetch_page({})
