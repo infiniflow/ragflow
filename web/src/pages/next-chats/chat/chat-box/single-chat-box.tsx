@@ -58,7 +58,23 @@ export function SingleChatBox({
   useEffect(() => {
     const messages = conversation?.messages;
     if (Array.isArray(messages)) {
-      setDerivedMessages(messages);
+      setDerivedMessages((prevMessages) => {
+        // Preserve uploaded file objects from local state that the server doesn't
+        // persist (e.g. File instances). Build a map of message id → files from
+        // the current local state so they survive when server data is applied.
+        const filesMap = new Map(
+          prevMessages
+            .filter((m) => m.files?.length)
+            .map((m) => [m.id, m.files]),
+        );
+        if (filesMap.size === 0) {
+          return messages;
+        }
+        return messages.map((m) => ({
+          ...m,
+          files: filesMap.get(m.id) ?? m.files,
+        }));
+      });
     }
   }, [conversation?.messages, setDerivedMessages]);
 
