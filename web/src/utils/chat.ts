@@ -59,6 +59,8 @@ export const preprocessLaTeX = (content: string) => {
   const normalizedContent = content
     .replace(/\\\\\[/g, '\\[')
     .replace(/\\\\\(/g, '\\(')
+    .replace(/\\\\\]/g, '\\]')
+    .replace(/\\\\\)/g, '\\)')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&');
