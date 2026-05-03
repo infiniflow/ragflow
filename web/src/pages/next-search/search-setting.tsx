@@ -217,9 +217,8 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
     control: formMethods.control,
     name: 'search_config.reference_metadata.include',
   });
-  const { data: metadataKeys } = useFetchKnowledgeMetadataKeys(
-    selectedKbIds || [],
-  );
+  const { data: metadataKeys, loading: metadataKeysLoading } =
+    useFetchKnowledgeMetadataKeys(selectedKbIds || []);
   const metadataFieldOptions = useMemo(() => {
     return (metadataKeys || []).map((key) => ({
       label: key,
@@ -233,6 +232,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
     );
     if (
       referenceMetadataEnabled &&
+      !metadataKeysLoading &&
       Array.isArray(currentFields) &&
       currentFields.length > 0 &&
       metadataKeys
@@ -252,7 +252,13 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         undefined,
       );
     }
-  }, [selectedKbIds, metadataKeys, referenceMetadataEnabled, formMethods]);
+  }, [
+    selectedKbIds,
+    metadataKeys,
+    metadataKeysLoading,
+    referenceMetadataEnabled,
+    formMethods,
+  ]);
 
   // Reset top_k to 1024 only when user actively disables rerank (from true to false)
   const prevRerankEnabled = useRef<boolean | undefined>(undefined);

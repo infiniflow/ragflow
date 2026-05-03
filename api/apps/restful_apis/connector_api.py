@@ -159,7 +159,11 @@ async def test_connector(connector_id):
     credentials = config.get("credentials") or {}
 
     try:
-        RestAPIConnector.validate_config(config=config, credentials=credentials)
+        await asyncio.to_thread(
+            RestAPIConnector.validate_config,
+            config=config,
+            credentials=credentials,
+        )
     except (ConnectorValidationError, ConnectorMissingCredentialError) as exc:
         return get_json_result(
             code=RetCode.DATA_ERROR,

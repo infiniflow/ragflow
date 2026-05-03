@@ -1365,8 +1365,12 @@ Example: Virtual Hosted Style`,
         'Delay in seconds between consecutive page requests. Helps avoid rate limiting from the API. Set to 0 to disable.',
       restApiValidationApiKeyRequired:
         'API key is required when Auth Type is API Key (Header).',
+      restApiValidationApiKeyHeaderNameRequired:
+        'API key header name is required when Auth Type is API Key (Header).',
       restApiValidationBearerTokenRequired:
         'Bearer token is required when Auth Type is Bearer Token.',
+      restApiValidationBasicUsernameRequired:
+        'Username is required when Auth Type is Basic Auth.',
       restApiValidationBasicPasswordRequired:
         'Password is required when Auth Type is Basic Auth.',
       restApiTestConnection: 'Test connection',

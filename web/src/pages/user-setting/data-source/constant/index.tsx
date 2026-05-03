@@ -1138,6 +1138,15 @@ export const DataSourceFormFields = {
       placeholder: 'X-API-Key',
       shouldRender: (values: any) =>
         values?.config?.auth_type === 'api_key_header',
+      customValidate: (val: string, values: any) => {
+        if (
+          values?.config?.auth_type === 'api_key_header' &&
+          !(val != null && String(val).trim())
+        ) {
+          return t('setting.restApiValidationApiKeyHeaderNameRequired');
+        }
+        return true;
+      },
     },
     {
       label: 'API Key Value',
@@ -1172,6 +1181,15 @@ export const DataSourceFormFields = {
       type: FormFieldType.Text,
       required: false,
       shouldRender: (values: any) => values?.config?.auth_type === 'basic',
+      customValidate: (val: string, values: any) => {
+        if (
+          values?.config?.auth_type === 'basic' &&
+          !(val != null && String(val).trim())
+        ) {
+          return t('setting.restApiValidationBasicUsernameRequired');
+        }
+        return true;
+      },
     },
     {
       label: 'Password',
@@ -1707,6 +1725,7 @@ export const DataSourceFormDefaultValues = {
       pagination_config: {},
       poll_timestamp_field: '',
       request_body: '',
+      max_pages: 1000,
       request_delay: 0.5,
       show_advanced: false,
       credentials: {

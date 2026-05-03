@@ -953,7 +953,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
             val = self._get_typed_field_value(field_path, item)
             if val is None:
                 continue
-            name = re.sub(r"\[\d+\]|\[\*\]", "", field_path.split(".")[-1]) or field_path
+            name = re.sub(r"\[\d+\]|\[\*\]", "", field_path).replace(".", "_")
             values[name] = self._coerce_to_text(val)
 
         try:
