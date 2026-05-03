@@ -54,12 +54,51 @@ from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, Order
 
 _T = TypeVar("_T")
 
-_META_RETRY_MAX = int(os.getenv("INFINITY_META_RETRY_MAX", "5"))
-_META_RETRY_BASE_DELAY_MS = int(os.getenv("INFINITY_META_RETRY_BASE_DELAY_MS", "50"))
+# Infinity error code 9003 is raised on RocksDB transaction contention. It is
+# not in the SDK's ErrorCode enum yet, so we keep the literal here.
+_INFINITY_RESOURCE_BUSY_CODE = 9003
+
+
+def _int_env(name: str, default: int) -> int:
+    """Read an int from the environment without crashing on bad input.
+
+    A misconfigured ``INFINITY_META_RETRY_MAX=`` (empty value) or non-numeric
+    string would otherwise raise ``ValueError`` at module import time and
+    take down every backend worker. We log and fall back to the default
+    instead.
+    """
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logging.getLogger(__name__).warning(
+            "Ignoring invalid %s=%r, falling back to %d", name, raw, default,
+        )
+        return default
+
+
+_META_RETRY_MAX = _int_env("INFINITY_META_RETRY_MAX", 5)
+_META_RETRY_BASE_DELAY_MS = _int_env("INFINITY_META_RETRY_BASE_DELAY_MS", 50)
 
 
 def _is_meta_contention_error(exc: BaseException) -> bool:
-    """True iff the exception describes a RocksDB metadata-counter contention."""
+    """Return True iff ``exc`` is the RocksDB metadata-counter "Resource busy".
+
+    Prefer the numeric error code when the SDK exposes one — substring matching
+    on ``str(exc)`` is the fallback for older SDKs that surface only a tuple
+    or a plain string. Both surfaces are observed in the wild today.
+    """
+    code = getattr(exc, "error_code", None)
+    if code is None:
+        # Some Infinity SDK paths raise a plain ``Exception((9003, "..."))``
+        # whose ``args[0]`` carries the code.
+        args = getattr(exc, "args", None)
+        if args and isinstance(args, tuple) and args:
+            code = args[0]
+    if code == _INFINITY_RESOURCE_BUSY_CODE:
+        return True
     msg = str(exc)
     return "Resource busy" in msg and "rocksdb" in msg.lower()
 
@@ -74,8 +113,10 @@ def _retry_on_meta_contention(
 ) -> _T:
     """Run ``operation`` and retry on RocksDB "Resource busy" errors.
 
-    Exponential backoff with ±50% jitter to avoid thundering-herd when many
-    workers retry simultaneously.
+    Exponential backoff with ±50% jitter to avoid a thundering herd when many
+    workers retry simultaneously. Any exception that does not match
+    :func:`_is_meta_contention_error` is re-raised immediately so genuine
+    failures still surface fast.
     """
     log = logger or logging.getLogger(__name__)
     last_exc: BaseException | None = None
@@ -460,12 +501,12 @@ class InfinityConnectionBase(DocStoreConnection):
         """
         table_name = index_name
         inf_conn = self.connPool.get_conn()
-        inf_db = _retry_on_meta_contention(
-            f"create_database({self.dbName})",
-            lambda: inf_conn.create_database(self.dbName, ConflictType.Ignore),
-            logger=self.logger,
-        )
         try:
+            inf_db = _retry_on_meta_contention(
+                f"create_database({self.dbName})",
+                lambda: inf_conn.create_database(self.dbName, ConflictType.Ignore),
+                logger=self.logger,
+            )
             fp_mapping = os.path.join(get_project_base_directory(), "conf", "doc_meta_infinity_mapping.json")
             if not os.path.exists(fp_mapping):
                 self.logger.error(f"Document metadata mapping file not found at {fp_mapping}")
@@ -505,14 +546,14 @@ class InfinityConnectionBase(DocStoreConnection):
             except Exception as e:
                 self.logger.warning(f"Failed to create index on kb_id for {table_name}: {e}")
 
-            self.connPool.release_conn(inf_conn)
             self.logger.debug(f"INFINITY created document metadata table {table_name} with secondary indexes")
             return True
 
         except Exception as e:
-            self.connPool.release_conn(inf_conn)
             self.logger.exception(f"Error creating document metadata table {table_name}: {e}")
             return False
+        finally:
+            self.connPool.release_conn(inf_conn)
 
     def delete_idx(self, index_name: str, dataset_id: str):
         if index_name.startswith("ragflow_doc_meta_"):
