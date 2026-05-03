@@ -415,7 +415,7 @@ const useGraphStore = create<RFState>()(
               edge.source !== id &&
               edge.target !== id &&
               !children.some(
-                (child) => edge.source === child.id && edge.target === child.id,
+                (child) => edge.source === child.id || edge.target === child.id,
               ),
           ),
         });
