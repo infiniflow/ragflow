@@ -104,7 +104,7 @@ class TestAggregateTableManualDocMetadata:
             "parser_config": {},
             "kb_parser_config": {
                 "table_column_mode": "manual",
-                "table_column_roles": {"country": "vectorize"},
+                "table_column_roles": {"country": "indexing"},
                 "table_column_names": ["country"],
             },
         }
@@ -132,7 +132,7 @@ class TestAggregateTableManualDocMetadata:
             "parser_config": {},
             "kb_parser_config": {
                 "table_column_mode": "manual",
-                "table_column_roles": {"country": "vectorize"},
+                "table_column_roles": {"country": "indexing"},
                 "table_column_names": ["country", "city"],
                 "field_map": {"city_tks": "city"},
             },

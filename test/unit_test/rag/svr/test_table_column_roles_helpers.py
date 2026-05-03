@@ -124,7 +124,7 @@ class TestTableParserStripDocMetadataKeys:
         assert table_parser_strip_doc_metadata_keys(eff) == frozenset({"Region", "SKU"})
 
     def test_falls_back_to_role_keys_when_no_names(self):
-        eff = {"table_column_roles": {"x": "metadata", "y": "vectorize"}}
+        eff = {"table_column_roles": {"x": "metadata", "y": "indexing"}}
         assert table_parser_strip_doc_metadata_keys(eff) == frozenset({"x", "y"})
 
     def test_empty_names_falls_back_to_roles(self):

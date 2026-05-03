@@ -13,9 +13,14 @@ import { ConfigurationFormContainer } from '../configuration-form-container';
 
 const ROLE_OPTIONS = [
   { value: 'both', labelKey: 'tableColumnRoleBoth' },
-  { value: 'vectorize', labelKey: 'tableColumnRoleVectorize' },
+  { value: 'indexing', labelKey: 'tableColumnRoleIndexing' },
   { value: 'metadata', labelKey: 'tableColumnRoleMetadata' },
 ] as const;
+
+function selectTableColumnRoleValue(raw: string | undefined): string {
+  if (!raw) return 'both';
+  return raw === 'vectorize' ? 'indexing' : raw;
+}
 
 export function TableConfiguration() {
   const form = useFormContext();
@@ -120,9 +125,9 @@ export function TableConfiguration() {
                 </FormLabel>
                 <FormControl>
                   <Select
-                    value={
-                      (tableColumnRoles && tableColumnRoles[col]) || 'both'
-                    }
+                    value={selectTableColumnRoleValue(
+                      tableColumnRoles && tableColumnRoles[col],
+                    )}
                     onValueChange={(value) => handleRoleChange(col, value)}
                   >
                     <SelectTrigger className="w-[160px]">

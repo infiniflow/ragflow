@@ -46,7 +46,7 @@ def table_parser_strip_doc_metadata_keys(eff_parser_config: dict) -> frozenset[s
     """
     Table manual mode stores per-column values under document metadata keys equal to the
     CSV column name. On reparse, strip these keys from existing metadata before merging
-    a fresh aggregate so columns switched to vectorize-only (or removed) do not persist.
+    a fresh aggregate so columns switched to indexing-only (or removed) do not persist.
     """
     names = eff_parser_config.get("table_column_names")
     if names:
@@ -280,8 +280,9 @@ def aggregate_table_manual_doc_metadata(chunks: list, task: dict) -> dict:
 
     for col, vals in acc.items():
         logging.debug(
-            f"[TABLE_META_DEBUG] Column '{col}' values found (count={len(vals)}): "
-            f"{vals[:20]}{'...' if len(vals) > 20 else ''}"
+            "[TABLE_META_DEBUG] Column '%s' values found (count=%d)",
+            col,
+            len(vals),
         )
 
     out = {}

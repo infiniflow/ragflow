@@ -109,12 +109,12 @@ def test_chunk_auto_mode_all_columns_in_text_and_stored(mock_update_kb: MagicMoc
     assert "title_raw" in first and "country_raw" in first
 
 
-def test_chunk_manual_mode_vectorize_only(mock_update_kb: MagicMock):
+def test_chunk_manual_mode_indexing_only(mock_update_kb: MagicMock):
     parser_config = {
         "table_column_mode": "manual",
         "table_column_roles": {
-            "title": "vectorize",
-            "content": "vectorize",
+            "title": "indexing",
+            "content": "indexing",
             "row_id": "metadata",
             "country": "metadata",
             "category": "metadata",
@@ -133,6 +133,26 @@ def test_chunk_manual_mode_vectorize_only(mock_update_kb: MagicMock):
     assert "content_raw" not in first
     assert "country_raw" in first and "category_raw" in first
     assert "row_id_long" in first
+
+
+def test_chunk_manual_mode_legacy_vectorize_role(mock_update_kb: MagicMock):
+    """Stored configs may still use role *vectorize*; chunking treats it like *indexing*."""
+    parser_config = {
+        "table_column_mode": "manual",
+        "table_column_roles": {
+            "title": "vectorize",
+            "content": "indexing",
+            "row_id": "metadata",
+            "country": "metadata",
+            "category": "metadata",
+        },
+    }
+    chunks = _run_chunk(parser_config, mock_update_kb)
+    first = chunks[0]
+    cww = first["content_with_weight"]
+    assert "- title:" in cww and "Earthquake" in cww
+    assert "- content:" in cww and "Konya" in cww
+    assert "- country:" not in cww
 
 
 def test_chunk_manual_mode_metadata_only(mock_update_kb: MagicMock):
@@ -171,7 +191,7 @@ def test_chunk_manual_mode_partial_roles_default_to_both(mock_update_kb: MagicMo
     parser_config = {
         "table_column_mode": "manual",
         "table_column_roles": {
-            "title": "vectorize",
+            "title": "indexing",
             "country": "metadata",
         },
     }

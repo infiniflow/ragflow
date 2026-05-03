@@ -532,7 +532,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
         for ii, row in df.iterrows():
             _debug_row_idx += 1
             d = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
-            text_fields = []  # vectorize + both -> content_with_weight
+            text_fields = []  # indexing + both -> content_with_weight
             stored = {}  # metadata + both -> chunk_data (Infinity) or typed fields (ES)
             for j in range(len(clmns)):
                 if row[clmns[j]] is None:
@@ -545,7 +545,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                 role = column_roles.get(col_name, "both")
                 if _debug_row_idx == 1:
                     logger.debug(f"[TABLE_PARSER_DEBUG] Column '{col_name}' -> role '{role}'")
-                if role in ("vectorize", "both"):
+                if role in ("indexing", "vectorize", "both"):
                     text_fields.append((col_name, row[col_name]))
                 if role in ("metadata", "both"):
                     if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
