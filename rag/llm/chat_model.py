@@ -30,11 +30,12 @@ import openai
 from openai import AsyncOpenAI, OpenAI
 from strenum import StrEnum
 
+from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.nlp import is_chinese, is_english
 
-from common.misc_utils import thread_pool_exec
+
 class LLMErrorCode(StrEnum):
     ERROR_RATE_LIMIT = "RATE_LIMIT_EXCEEDED"
     ERROR_AUTHENTICATION = "AUTH_ERROR"
@@ -77,9 +78,6 @@ def _apply_model_family_policies(
         sanitized_kwargs["extra_body"] = {"enable_thinking": False}
 
     if backend == "base":
-        # GPT-5 and GPT-5.1 endpoints in this path have inconsistent generation-param support.
-        if "gpt-5" in model_name_lower:
-            sanitized_gen_conf = {}
         return sanitized_gen_conf, sanitized_kwargs
 
     if backend == "litellm":
@@ -151,14 +149,11 @@ class Base(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
-        model_name_lower = (self.model_name or "").lower()
         gen_conf, _ = _apply_model_family_policies(
             self.model_name,
             backend="base",
             gen_conf=gen_conf,
         )
-        if "gpt-5" in model_name_lower:
-            return gen_conf
 
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
@@ -1214,6 +1209,34 @@ class AvianChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
+class AstraflowChat(Base):
+    _FACTORY_NAME = "Astraflow"
+
+    def __init__(self, key, model_name, base_url="https://api-us-ca.umodelverse.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api-us-ca.umodelverse.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class AstraflowCNChat(Base):
+    _FACTORY_NAME = "Astraflow-CN"
+
+    def __init__(self, key, model_name, base_url="https://api.modelverse.cn/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.modelverse.cn/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class FuturMixChat(Base):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name, base_url="https://futurmix.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+        logging.info("[FuturMix] Chat initialized with model %s", model_name)
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -1308,6 +1331,9 @@ class LiteLLMBase(ABC):
 
         gen_conf.pop("max_tokens", None)
         return gen_conf
+
+    def _need_reasoning_content_back(self) -> bool:
+        return self.provider == SupportedLiteLLMProvider.DeepSeek
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
         hist = list(history) if history else []
@@ -1443,23 +1469,24 @@ class LiteLLMBase(ABC):
     def _verbose_tool_use(self, name, args, res):
         return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
 
-    def _append_history(self, hist, tool_call, tool_res):
-        hist.append(
-            {
-                "role": "assistant",
-                "tool_calls": [
-                    {
-                        "index": tool_call.index,
-                        "id": tool_call.id,
-                        "function": {
-                            "name": tool_call.function.name,
-                            "arguments": tool_call.function.arguments,
-                        },
-                        "type": "function",
+    def _append_history(self, hist, tool_call, tool_res, reasoning_content=None):
+        assistant_msg = {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "index": tool_call.index,
+                    "id": tool_call.id,
+                    "function": {
+                        "name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments,
                     },
-                ],
-            }
-        )
+                    "type": "function",
+                },
+            ],
+        }
+        if reasoning_content:
+            assistant_msg["reasoning_content"] = reasoning_content
+        hist.append(assistant_msg)
         try:
             if isinstance(tool_res, dict):
                 tool_res = json.dumps(tool_res, ensure_ascii=False)
@@ -1467,13 +1494,13 @@ class LiteLLMBase(ABC):
             hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})
         return hist
 
-    def _append_history_batch(self, hist, results):
+    def _append_history_batch(self, hist, results, reasoning_content=None):
         """
         Append a batch of tool calls to history following the OpenAI protocol:
         one assistant message containing all tool_calls, followed by one tool message per call.
         results: list of (tool_call, name, args, result, error)
         """
-        hist.append({
+        assistant_msg = {
             "role": "assistant",
             "tool_calls": [
                 {
@@ -1484,7 +1511,10 @@ class LiteLLMBase(ABC):
                 }
                 for tc, _, _, _, _ in results
             ],
-        })
+        }
+        if reasoning_content:
+            assistant_msg["reasoning_content"] = reasoning_content
+        hist.append(assistant_msg)
         for tc, _, _, result, err in results:
             if err:
                 content = str(err)
@@ -1529,11 +1559,13 @@ class LiteLLMBase(ABC):
                         raise Exception(f"500 response structure error. Response: {response}")
 
                     message = response.choices[0].message
+                    reasoning_content = None
+                    if self._need_reasoning_content_back():
+                        reasoning_content = getattr(message, "reasoning_content", None) or getattr(message, "reasoning", None)
 
                     if not hasattr(message, "tool_calls") or not message.tool_calls:
-                        _reasoning = getattr(message, "reasoning_content", None) or getattr(message, "reasoning", None)
-                        if _reasoning:
-                            ans += f"<think>{_reasoning}</think>"
+                        if reasoning_content:
+                            ans += f"<think>{reasoning_content}</think>"
                         ans += message.content or ""
                         if response.choices[0].finish_reason == "length":
                             ans = self._length_stop(ans)
@@ -1554,7 +1586,11 @@ class LiteLLMBase(ABC):
 
                     logging.info(f"Response tool_calls={message.tool_calls}")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in message.tool_calls])
-                    history = self._append_history_batch(history, results)
+                    history = self._append_history_batch(
+                        history,
+                        results,
+                        reasoning_content=reasoning_content if self._need_reasoning_content_back() else None,
+                    )
                     for tc, name, args, result, err in results:
                         ans += self._verbose_tool_use(name, args, err if err else result)
 
@@ -1587,6 +1623,7 @@ class LiteLLMBase(ABC):
             try:
                 for _round in range(self.max_rounds + 1):
                     reasoning_start = False
+                    reasoning_content = ""
                     logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
 
                     completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
@@ -1621,6 +1658,8 @@ class LiteLLMBase(ABC):
 
                         _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
                         if _reasoning:
+                            if self._need_reasoning_content_back():
+                                reasoning_content += _reasoning
                             ans = ""
                             if not reasoning_start:
                                 reasoning_start = True
@@ -1669,7 +1708,11 @@ class LiteLLMBase(ABC):
                             args = {}
                         yield self._verbose_tool_use(tc.function.name, args, "Begin to call...")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
-                    history = self._append_history_batch(history, results)
+                    history = self._append_history_batch(
+                        history,
+                        results,
+                        reasoning_content=reasoning_content if self._need_reasoning_content_back() else None,
+                    )
                     for tc, name, args, result, err in results:
                         yield self._verbose_tool_use(name, args, err if err else result)
 

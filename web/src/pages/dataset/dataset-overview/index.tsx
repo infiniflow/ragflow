@@ -17,7 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { RunningStatus } from '../dataset/constant';
 import { LogTabs } from './dataset-common';
 import { DatasetFilter } from './dataset-filter';
-import { useFetchFileLogList, useFetchOverviewTital } from './hook';
+import { useFetchFileLogList, useFetchOverviewTotal } from './hook';
 import { DocumentLog, IFileLogItem } from './interface';
 import FileLogsTable from './overview-table';
 
@@ -133,10 +133,10 @@ const FileLogsPage: FC = () => {
       failed: 0,
     },
   });
-  const { data: topData } = useFetchOverviewTital();
+  const { data: topData } = useFetchOverviewTotal();
   const {
     pagination: { total: fileTotal },
-  } = useFetchDocumentList();
+  } = useFetchDocumentList(false);
 
   useEffect(() => {
     setTopAllData((prev) => {
@@ -220,7 +220,6 @@ const FileLogsPage: FC = () => {
   }, [active, t]);
 
   const tableList = useMemo(() => {
-    console.log('tableList', tableOriginData);
     if (tableOriginData && tableOriginData.logs?.length) {
       return tableOriginData.logs.map((item) => {
         return {

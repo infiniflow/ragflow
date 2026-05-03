@@ -32,12 +32,12 @@ export const TimelineNodeObj = {
     title: 'Context Generator',
     icon: <LucideFileStack className="size-[1em]" />,
   },
-  [TimelineNodeType.titleSplitter]: {
-    title: 'Title Splitter',
+  [TimelineNodeType.titleChunker]: {
+    title: 'Title Chunker',
     icon: <LucideHeading className="size-[1em]" />,
   },
-  [TimelineNodeType.characterSplitter]: {
-    title: 'Character Splitter',
+  [TimelineNodeType.tokenChunker]: {
+    title: 'Token Chunker',
     icon: <LucideBlocks className="size-[1em]" />,
   },
   [TimelineNodeType.tokenizer]: {
@@ -55,7 +55,6 @@ export interface TimelineDataFlowProps {
 const TimelineDataFlow = ({
   activeFunc,
   activeId,
-  data,
   timelineNodes,
 }: TimelineDataFlowProps) => {
   // const [timelineNodeArr,setTimelineNodeArr] = useState<ITimelineNodeObj & {id: number | string}>()

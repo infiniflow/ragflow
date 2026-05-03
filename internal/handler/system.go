@@ -48,7 +48,7 @@ func (h *SystemHandler) Ping(c *gin.Context) {
 	c.String(http.StatusOK, "pong")
 }
 
-// Health health check
+// Health check
 func (h *SystemHandler) Health(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"status": "ok",
@@ -164,6 +164,9 @@ func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 		})
 		return
 	}
+
+	config := server.GetConfig()
+	config.Log.Level = req.Level
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,

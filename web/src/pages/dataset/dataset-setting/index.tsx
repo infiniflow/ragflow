@@ -12,9 +12,9 @@ import {
 import Divider from '@/components/ui/divider';
 import { Form } from '@/components/ui/form';
 import { FormLayout } from '@/constants/form';
-import { DocumentParserType } from '@/constants/knowledge';
+import { DocumentParserType, ParseType } from '@/constants/knowledge';
 import { PermissionRole } from '@/constants/permission';
-import { IConnector, IKnowledge } from '@/interfaces/database/knowledge';
+import { IConnector, IDataset } from '@/interfaces/database/dataset';
 import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { IDataSourceBase } from '@/pages/user-setting/data-source/interface';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -43,8 +43,8 @@ const enum DocumentType {
 }
 export const DataSetContext = createContext<{
   loading: boolean;
-  knowledgeDetails: IKnowledge;
-}>({ loading: false, knowledgeDetails: {} as IKnowledge });
+  knowledgeDetails: IDataset;
+}>({ loading: false, knowledgeDetails: {} as IDataset });
 
 const initialEntityTypes = [
   'organization',
@@ -111,7 +111,7 @@ export default function DatasetSettings() {
         llm_id: '',
       },
       pipeline_id: '',
-      parse_type: 1,
+      parse_type: ParseType.BuiltIn,
       pagerank: 0,
       connectors: [],
     },
@@ -127,7 +127,6 @@ export default function DatasetSettings() {
     useState<IGenerateLogButtonProps>();
 
   useEffect(() => {
-    console.log('🚀 ~ DatasetSettings ~ knowledgeDetails:', knowledgeDetails);
     if (knowledgeDetails) {
       // const data: IDataPipelineNodeProps = {
       //   id: knowledgeDetails.pipeline_id,
@@ -137,15 +136,16 @@ export default function DatasetSettings() {
       // };
       // setPipelineData(data);
 
-      const source_data: IDataSourceNodeProps[] =
-        knowledgeDetails?.connectors?.map((connector) => {
-          return {
-            ...connector,
-            icon:
-              dataSourceInfo[connector.source as keyof typeof dataSourceInfo]
-                ?.icon || '',
-          };
-        });
+      const source_data: IDataSourceNodeProps[] = (
+        knowledgeDetails?.connectors ?? []
+      ).map((connector: IConnector) => {
+        return {
+          ...connector,
+          icon:
+            dataSourceInfo[connector.source as keyof typeof dataSourceInfo]
+              ?.icon || '',
+        };
+      });
 
       setSourceData(source_data);
 
@@ -157,7 +157,10 @@ export default function DatasetSettings() {
         finish_at: knowledgeDetails.raptor_task_finish_at,
         task_id: knowledgeDetails.raptor_task_id,
       } as IGenerateLogButtonProps);
-      form.setValue('parse_type', knowledgeDetails.pipeline_id ? 2 : 1);
+      form.setValue(
+        'parse_type',
+        knowledgeDetails.pipeline_id ? ParseType.Pipeline : ParseType.BuiltIn,
+      );
       form.setValue('pipeline_id', knowledgeDetails.pipeline_id || '');
     }
   }, [knowledgeDetails, form]);
@@ -216,7 +219,9 @@ export default function DatasetSettings() {
   const parseType = useWatch({
     control: form.control,
     name: 'parse_type',
-    defaultValue: knowledgeDetails.pipeline_id ? 2 : 1,
+    defaultValue: knowledgeDetails.pipeline_id
+      ? ParseType.Pipeline
+      : ParseType.BuiltIn,
   });
   const selectedTag = useWatch({
     name: 'chunk_method',
@@ -224,7 +229,7 @@ export default function DatasetSettings() {
   });
 
   useEffect(() => {
-    if (parseType === 1) {
+    if (parseType === ParseType.BuiltIn) {
       form.setValue('pipeline_id', '');
     } else {
       form.setValue('chunk_method', DocumentParserType.Naive);
@@ -236,7 +241,6 @@ export default function DatasetSettings() {
       const connectors = sourceData?.filter((connector) => {
         return connector.id !== data.id;
       });
-      console.log('🚀 ~ DatasetSettings ~ connectors:', connectors);
       setSourceData(connectors as IDataSourceNodeProps[]);
       form.setValue('connectors', connectors || []);
       // form.setValue('pipeline_name', data.name || '');
@@ -304,13 +308,13 @@ export default function DatasetSettings() {
                       {t('knowledgeConfiguration.dataPipeline')}
                     </div>
                     <ParseTypeItem line={1} name="parse_type" />
-                    {parseType === 1 && (
+                    {parseType === ParseType.BuiltIn && (
                       <ChunkMethodItem
                         line={1}
                         name="chunk_method"
                       ></ChunkMethodItem>
                     )}
-                    {parseType === 2 && (
+                    {parseType === ParseType.Pipeline && (
                       <DataFlowSelect
                         isMult={false}
                         showToDataPipeline={true}
@@ -320,7 +324,7 @@ export default function DatasetSettings() {
                     )}
 
                     {/* <Divider /> */}
-                    {parseType === 1 && <ChunkMethodForm />}
+                    {parseType === ParseType.BuiltIn && <ChunkMethodForm />}
 
                     {/* <LinkDataPipeline
                     data={pipelineData}
@@ -372,7 +376,9 @@ export default function DatasetSettings() {
           </DataSetContext.Provider>
 
           <div className="flex-1 p-5 overflow-auto">
-            {parseType === 1 && <ChunkMethodLearnMore parserId={selectedTag} />}
+            {parseType === ParseType.BuiltIn && (
+              <ChunkMethodLearnMore parserId={selectedTag} />
+            )}
           </div>
         </CardContent>
       </Card>

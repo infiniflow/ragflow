@@ -8,7 +8,6 @@ import { getAuthorization } from '@/utils/authorization-util';
 import { chain, sum } from 'lodash';
 import { Loader2, Mic, Square } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useIsDarkTheme } from '../theme-provider';
 import { Input } from './input';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
 
@@ -18,7 +17,6 @@ const VoiceVisualizer = ({ isRecording }: { isRecording: boolean }) => {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
-  const isDark = useIsDarkTheme();
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -256,7 +254,7 @@ export const AudioButton = ({
       formData.append('file', audioFile);
       formData.append('stream', 'false');
 
-      const response = await fetch(api.sequence2txt, {
+      const response = await fetch(api.chatsTranscriptions, {
         method: 'POST',
         headers: {
           [Authorization]: getAuthorization(),
@@ -340,7 +338,7 @@ export const AudioButton = ({
           <div className="relative">
             <Popover
               open={popoverOpen}
-              onOpenChange={(open) => {
+              onOpenChange={() => {
                 setPopoverOpen(true);
               }}
             >

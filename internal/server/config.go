@@ -179,6 +179,7 @@ type MinioConfig struct {
 	Password   string `mapstructure:"password"`    // Secret key
 	Secure     bool   `mapstructure:"secure"`      // Use HTTPS
 	Verify     bool   `mapstructure:"verify"`      // Verify SSL certificates
+	Region     string `mapstructure:"region"`      // optional
 	Bucket     string `mapstructure:"bucket"`      // Default bucket (optional)
 	PrefixPath string `mapstructure:"prefix_path"` // Path prefix (optional)
 }
@@ -448,6 +449,9 @@ func FromEnvironments() error {
 	// Minio
 	minioIP := strings.ToLower(os.Getenv("MINIO_IP"))
 	if minioIP != "" {
+		if globalConfig.StorageEngine.Minio == nil {
+			return fmt.Errorf("Minio config not found")
+		}
 		_, port, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
 		if err != nil {
 			return fmt.Errorf("Error parsing host address %s: %v\n", globalConfig.StorageEngine.Minio.Host, err)
@@ -458,11 +462,22 @@ func FromEnvironments() error {
 	minioPort := strings.ToLower(os.Getenv("MINIO_PORT"))
 	// println(fmt.Sprintf("MINIO ip and port from env: %s:%s", minioIP, minioPort))
 	if minioPort != "" {
+		if globalConfig.StorageEngine.Minio == nil {
+			return fmt.Errorf("Minio config not found")
+		}
 		ip, _, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
 		if err != nil {
 			return fmt.Errorf("Error parsing host address %s: %v\n", globalConfig.StorageEngine.Minio.Host, err)
 		}
 		globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", ip, minioPort)
+	}
+
+	minioRegion := strings.ToLower(os.Getenv("MINIO_REGION"))
+	if minioRegion != "" {
+		if globalConfig.StorageEngine.Minio == nil {
+			return fmt.Errorf("Minio config not found")
+		}
+		globalConfig.StorageEngine.Minio.Region = minioRegion
 	}
 
 	// Language
@@ -591,20 +606,26 @@ func FromConfigFile(configPath string) error {
 	}
 
 	// Map doc_engine section to DocEngineConfig
-	if globalConfig != nil && globalConfig.DocEngine.Type == "" {
-		if v.IsSet("doc_engine") {
-			docEngineConfig := v.Sub("doc_engine")
-			if docEngineConfig != nil {
-				globalConfig.DocEngine.Type = EngineType(docEngineConfig.GetString("type"))
+	if globalConfig != nil {
+		// First, ensure engine type is set
+		if globalConfig.DocEngine.Type == "" {
+			if v.IsSet("doc_engine") {
+				docEngineConfig := v.Sub("doc_engine")
+				if docEngineConfig != nil {
+					globalConfig.DocEngine.Type = EngineType(docEngineConfig.GetString("type"))
+				}
 			}
 		}
-		// Also check legacy es section for backward compatibility
+
+		// Map es section from top-level (service_conf.yaml format)
 		if v.IsSet("es") {
 			esConfig := v.Sub("es")
 			if esConfig != nil {
+				// Set default engine type if not set
 				if globalConfig.DocEngine.Type == "" {
 					globalConfig.DocEngine.Type = EngineElasticsearch
 				}
+				// Always populate ES config if es section exists
 				if globalConfig.DocEngine.ES == nil {
 					globalConfig.DocEngine.ES = &ElasticsearchConfig{
 						Hosts:    esConfig.GetString("hosts"),
@@ -614,17 +635,23 @@ func FromConfigFile(configPath string) error {
 				}
 			}
 		}
+
+		// Map infinity section from top-level (service_conf.yaml format)
 		if v.IsSet("infinity") {
 			infConfig := v.Sub("infinity")
 			if infConfig != nil {
+				// Set default engine type if not set
 				if globalConfig.DocEngine.Type == "" {
 					globalConfig.DocEngine.Type = EngineInfinity
 				}
+				// Always populate Infinity config if infinity section exists
 				if globalConfig.DocEngine.Infinity == nil {
 					globalConfig.DocEngine.Infinity = &InfinityConfig{
-						URI:          infConfig.GetString("uri"),
-						PostgresPort: infConfig.GetInt("postgres_port"),
-						DBName:       infConfig.GetString("db_name"),
+						URI:                    infConfig.GetString("uri"),
+						PostgresPort:           infConfig.GetInt("postgres_port"),
+						DBName:                 infConfig.GetString("db_name"),
+						MappingFileName:        infConfig.GetString("mapping_file_name"),
+						DocMetaMappingFileName: infConfig.GetString("doc_meta_mapping_file_name"),
 					}
 				}
 			}
@@ -644,6 +671,7 @@ func FromConfigFile(configPath string) error {
 						Secure:     minioConfig.GetBool("secure"),
 						PrefixPath: minioConfig.GetString("prefix_path"),
 						Verify:     minioConfig.GetBool("verify"),
+						Region:     minioConfig.GetString("region"),
 						Bucket:     minioConfig.GetString("bucket"),
 					}
 				}

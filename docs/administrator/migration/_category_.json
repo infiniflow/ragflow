@@ -1,0 +1,8 @@
+{
+  "label": "Migration",
+  "position": 2,
+  "link": {
+    "type": "generated-index",
+    "description": "Guides for data migration, official and third-party."
+  }
+}

@@ -28,12 +28,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
-            (
-                RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
-            ),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
+            (RAGFlowHttpApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
@@ -48,12 +44,7 @@ class TestUpdatedChunk:
         "payload, expected_code, expected_message",
         [
             pytest.param({"content": None}, 0, "", marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6509")),
-            pytest.param(
-                {"content": ""},
-                100,
-                """APIRequestFailedError(\'Error code: 400, with error text {"error":{"code":"1213","message":"未正常接收到prompt参数。"}}\')""",
-                marks=pytest.mark.skip(reason="issues/6541"),
-            ),
+            ({"content": ""}, 102, "`content` is required"),
             pytest.param(
                 {"content": 1},
                 100,
@@ -61,12 +52,7 @@ class TestUpdatedChunk:
                 marks=pytest.mark.skip,
             ),
             ({"content": "update chunk"}, 0, ""),
-            pytest.param(
-                {"content": " "},
-                100,
-                """APIRequestFailedError(\'Error code: 400, with error text {"error":{"code":"1213","message":"未正常接收到prompt参数。"}}\')""",
-                marks=pytest.mark.skip(reason="issues/6541"),
-            ),
+            ({"content": " "}, 102, "`content` is required"),
             ({"content": "\n!?。；！？\"'"}, 0, ""),
         ],
     )

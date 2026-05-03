@@ -3,10 +3,10 @@ import { IMessage, IReference } from '@/interfaces/database/chat';
 import { isEmpty } from 'lodash';
 
 export const buildAgentMessageItemReference = (
-  conversation: { message: IMessage[]; reference: IReference[] },
+  conversation: { messages: IMessage[]; reference: IReference[] },
   message: IMessage,
 ) => {
-  const assistantMessages = conversation.message?.filter(
+  const assistantMessages = conversation.messages?.filter(
     (x) => x.role === MessageType.Assistant,
   );
   const referenceIndex = assistantMessages.findIndex(

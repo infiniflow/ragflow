@@ -145,7 +145,8 @@ class Agent(LLM, ToolBase):
         self._param.function_name = self._id.split("-->")[-1]
         m = super().get_meta()
         if hasattr(self._param, "user_prompt") and self._param.user_prompt:
-            m["function"]["parameters"]["properties"]["user_prompt"] = self._param.user_prompt
+            # Keep the JSON schema valid; user_prompt is a string field, not a schema node.
+            m["function"]["parameters"]["properties"]["user_prompt"]["default"] = self._param.user_prompt
         return m
 
     def get_input_form(self) -> dict[str, dict]:
@@ -249,9 +250,6 @@ class Agent(LLM, ToolBase):
             self.set_output("_ERROR", error)
             return
 
-        attachment_content = self._collect_tool_attachment_content(existing_text=ans)
-        if attachment_content:
-            ans += "\n\n" + attachment_content
         artifact_md = self._collect_tool_artifact_markdown(existing_text=ans)
         if artifact_md:
             ans += "\n\n" + artifact_md
@@ -289,10 +287,6 @@ class Agent(LLM, ToolBase):
             answer += delta
 
         if not need2cite or cited:
-            attachment_content = self._collect_tool_attachment_content(existing_text=answer)
-            if attachment_content:
-                yield "\n\n" + attachment_content
-                answer += "\n\n" + attachment_content
             artifact_md = self._collect_tool_artifact_markdown(existing_text=answer)
             if artifact_md:
                 yield "\n\n" + artifact_md
@@ -307,10 +301,6 @@ class Agent(LLM, ToolBase):
                 return
             yield delta
             cited_answer += delta
-        attachment_content = self._collect_tool_attachment_content(existing_text=cited_answer)
-        if attachment_content:
-            yield "\n\n" + attachment_content
-            cited_answer += "\n\n" + attachment_content
         artifact_md = self._collect_tool_artifact_markdown(existing_text=cited_answer)
         if artifact_md:
             yield "\n\n" + artifact_md
@@ -345,21 +335,6 @@ class Agent(LLM, ToolBase):
                 else:
                     md_parts.append(f"[Download {art['name']}]({url})")
         return "\n\n".join(md_parts)
-
-    def _collect_tool_attachment_content(self, existing_text: str = "") -> str:
-        text_parts = []
-        for tool_obj in self.tools.values():
-            if not hasattr(tool_obj, "_param") or not hasattr(tool_obj._param, "outputs"):
-                continue
-            content_meta = tool_obj._param.outputs.get("_ATTACHMENT_CONTENT", {})
-            content = content_meta.get("value") if isinstance(content_meta, dict) else None
-            if not content or not isinstance(content, str):
-                continue
-            content = content.strip()
-            if not content or content in existing_text:
-                continue
-            text_parts.append(content)
-        return "\n\n".join(text_parts)
 
     def reset(self, only_output=False):
         """

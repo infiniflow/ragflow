@@ -13,26 +13,23 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+import math
+import pathlib
+import re
 from collections import Counter
 import string
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from quart import Request
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    StringConstraints,
-    ValidationError,
-    field_validator,
-    model_validator,
-    ValidationInfo
-)
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator, model_validator, ValidationInfo
 from pydantic_core import PydanticCustomError
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
-from api.constants import DATASET_NAME_LIMIT
+from api.constants import DATASET_NAME_LIMIT, FILE_NAME_LEN_LIMIT
+from api.db import FileType
+from common.constants import RetCode
 
 
 async def validate_and_parse_json_request(
@@ -165,12 +162,13 @@ def validate_and_parse_request_args(request: Request, validator: type[BaseModel]
     args = request.args.to_dict(flat=True)
 
     # Handle ext parameter: parse JSON string to dict if it's a string
-    if 'ext' in args and isinstance(args['ext'], str):
+    if "ext" in args and isinstance(args["ext"], str):
         import json
+
         try:
-            args['ext'] = json.loads(args['ext'])
+            args["ext"] = json.loads(args["ext"])
         except json.JSONDecodeError:
-            pass  # Keep the string and let validation handle the error
+            logging.debug("Failed to decode query arg 'ext' as JSON; passing raw value to validator")
 
     try:
         if extras is not None:
@@ -345,6 +343,7 @@ class RaptorConfig(Base):
     threshold: Annotated[float, Field(default=0.1, ge=0.0, le=1.0)]
     max_cluster: Annotated[int, Field(default=64, ge=1, le=1024)]
     random_seed: Annotated[int, Field(default=0, ge=0)]
+    scope: Annotated[Literal["file", "dataset"], Field(default="file")]
     auto_disable_for_structured_data: Annotated[bool, Field(default=True)]
     ext: Annotated[dict, Field(default={})]
 
@@ -357,21 +356,25 @@ class GraphragConfig(Base):
     resolution: Annotated[bool, Field(default=False)]
 
 
+class ParentChildConfig(Base):
+    use_parent_child: Annotated[bool, Field(default=False)]
+    children_delimiter: Annotated[str, Field(default=r"\n", min_length=1)]
+
+
 class AutoMetadataField(Base):
     """Schema for a single auto-metadata field configuration."""
 
-    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255), Field(...)]
-    type: Annotated[Literal["string", "list", "time"], Field(...)]
+    key: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255), Field(...)]
+    type: Annotated[Literal["string", "list", "time", "number"], Field(...)]
     description: Annotated[str | None, Field(default=None, max_length=65535)]
-    examples: Annotated[list[str] | None, Field(default=None)]
-    restrict_values: Annotated[bool, Field(default=False)]
+    enum: Annotated[list[str] | None, Field(default=None)]
 
 
 class AutoMetadataConfig(Base):
     """Top-level auto-metadata configuration attached to a dataset."""
 
-    enabled: Annotated[bool, Field(default=True)]
-    fields: Annotated[list[AutoMetadataField], Field(default_factory=list)]
+    metadata: Annotated[list[AutoMetadataField], Field(default_factory=list)]
+    built_in_metadata: Annotated[list[AutoMetadataField], Field(default_factory=list)]
 
 
 class ParserConfig(Base):
@@ -382,6 +385,7 @@ class ParserConfig(Base):
     graphrag: Annotated[GraphragConfig, Field(default_factory=lambda: GraphragConfig(use_graphrag=False))]
     html4excel: Annotated[bool, Field(default=False)]
     layout_recognize: Annotated[str, Field(default="DeepDOC")]
+    parent_child: Annotated[ParentChildConfig, Field(default_factory=lambda: ParentChildConfig(use_parent_child=False))]
     raptor: Annotated[RaptorConfig, Field(default_factory=lambda: RaptorConfig(use_raptor=False))]
     tag_kb_ids: Annotated[list[str], Field(default_factory=list)]
     topn_tags: Annotated[int, Field(default=1, ge=1, le=10)]
@@ -389,6 +393,63 @@ class ParserConfig(Base):
     task_page_size: Annotated[int | None, Field(default=None, ge=1)]
     pages: Annotated[list[list[int]] | None, Field(default=None)]
     ext: Annotated[dict, Field(default={})]
+
+
+class UpdateDocumentReq(Base):
+    """
+    Request model for updating a document.
+
+    This model validates the request parameters for updating a document,
+    including name, chunk method, enabled status, and other metadata.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+    name: Annotated[str | None, Field(default=None, max_length=65535)]
+    chunk_method: Annotated[str | None, Field(default=None, max_length=65535)]
+    pipeline_id: Annotated[str | None, Field(default=None, max_length=65535)]
+    enabled: Annotated[int | None, Field(default=None, ge=0, le=1)]
+    chunk_count: Annotated[int | None, Field(default=None, ge=0)]
+    token_count: Annotated[int | None, Field(default=None, ge=0)]
+    progress: Annotated[float | None, Field(default=None, ge=0.0, le=1.0)]
+    parser_config: Annotated[ParserConfig | None, Field(default=None)]
+    meta_fields: Annotated[dict | None, Field(default={})]
+
+    @field_validator("chunk_method", mode="after")
+    @classmethod
+    def validate_document_chunk_method(cls, chunk_method: str | None):
+        if chunk_method:
+            # Validate chunk method if present
+            valid_chunk_method = {"naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one", "knowledge_graph", "email", "tag"}
+            if chunk_method not in valid_chunk_method:
+                raise PydanticCustomError("format_invalid", "`chunk_method` {chunk_method} doesn't exist", {"chunk_method": chunk_method})
+
+        return chunk_method
+
+    @field_validator("enabled", mode="after")
+    @classmethod
+    def validate_document_enabled(cls, enabled: str | None):
+        if enabled:
+            converted = int(enabled)
+            if converted < 0 or converted > 1:
+                raise PydanticCustomError("format_invalid", "`enabled` value invalid, only accept 0 or 1 but is {enabled}", {"enabled": enabled})
+
+        return enabled
+
+    @field_validator("meta_fields", mode="after")
+    @classmethod
+    def validate_document_meta_fields(cls, meta_fields: dict | None):
+        if meta_fields is None:
+            return None
+
+        if not isinstance(meta_fields, dict):
+            raise PydanticCustomError("format_invalid", "Only dictionary type supported")
+        for k, v in meta_fields.items():
+            if isinstance(v, list):
+                if not all(isinstance(i, (str, int, float)) for i in v):
+                    raise PydanticCustomError("format_invalid", "The type is not supported in list: {v}", {"v": v})
+            elif not isinstance(v, (str, int, float)):
+                raise PydanticCustomError("format_invalid", "The type is not supported: {v}", {"v": v})
+        return meta_fields
 
 
 class CreateDatasetReq(Base):
@@ -643,8 +704,7 @@ class CreateDatasetReq(Base):
     @classmethod
     def validate_chunk_method(cls, v: Any, handler, info: ValidationInfo) -> Any:
         """Wrap validation to unify error messages, including type errors (e.g. list)."""
-        allowed = {"naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table",
-                   "tag", "resume"}
+        allowed = {"naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "resume"}
         error_msg = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
         try:
             # Run inner validation (type checking)
@@ -754,6 +814,50 @@ class DeleteReq(Base):
 class DeleteDatasetReq(DeleteReq): ...
 
 
+class DeleteDocumentReq(DeleteReq):
+    @field_validator("ids", mode="after")
+    @classmethod
+    def validate_ids(cls, v_list: list[str] | None) -> list[str] | None:
+        """
+        Validate document IDs without enforcing UUIDv1.
+
+        Connector-backed documents can use non-UUID identifiers, so we only
+        enforce uniqueness here and leave existence checks to the delete API.
+        """
+        if v_list is None:
+            return None
+
+        duplicates = [item for item, count in Counter(v_list).items() if count > 1]
+        if duplicates:
+            duplicates_str = ", ".join(duplicates)
+            raise PydanticCustomError(
+                "duplicate_uuids",
+                "Duplicate ids: '{duplicate_ids}'",
+                {"duplicate_ids": duplicates_str},
+            )
+
+        return v_list
+
+
+class SearchDatasetReq(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    question: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1), Field(...)]
+    doc_ids: Annotated[list[str], Field(default=[])]
+    page: Annotated[int, Field(default=1, ge=1)]
+    size: Annotated[int, Field(default=30, ge=1)]
+    top_k: Annotated[int, Field(default=1024, ge=1)]
+    similarity_threshold: Annotated[float, Field(default=0.0, ge=0.0, le=1.0)]
+    vector_similarity_weight: Annotated[float, Field(default=0.3, ge=0.0, le=1.0)]
+    use_kg: Annotated[bool, Field(default=False)]
+    cross_languages: Annotated[list[str], Field(default=[])]
+    keyword: Annotated[bool, Field(default=False)]
+    search_id: Annotated[str | None, Field(default=None)]
+    rerank_id: Annotated[str | None, Field(default=None)]
+    tenant_rerank_id: Annotated[str | None, Field(default=None)]
+    meta_data_filter: Annotated[dict | None, Field(default=None)]
+
+
 class BaseListReq(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -777,6 +881,7 @@ class ListDatasetReq(BaseListReq):
 
 # ---- File Management Request Models ----
 
+
 class CreateFolderReq(Base):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255), Field(...)]
     parent_id: Annotated[str | None, Field(default=None)]
@@ -792,7 +897,7 @@ class MoveFileReq(Base):
     dest_file_id: Annotated[str | None, Field(default=None)]
     new_name: Annotated[str | None, StringConstraints(strip_whitespace=True, min_length=1, max_length=255), Field(default=None)]
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def check_operation(self):
         if not self.dest_file_id and not self.new_name:
             raise ValueError("At least one of dest_file_id or new_name must be provided")
@@ -810,3 +915,87 @@ class ListFileReq(BaseModel):
     page_size: Annotated[int, Field(default=15, ge=1, le=100)]
     orderby: Annotated[str, Field(default="create_time")]
     desc: Annotated[bool, Field(default=True)]
+
+
+def validate_immutable_fields(update_doc_req: UpdateDocumentReq, doc):
+    """
+    Validate that immutable fields have not been changed.
+
+    Checks that fields like chunk_count, token_count, and progress
+    cannot be modified directly by the user.
+
+    Args:
+        update_doc_req: The validated update document request.
+        doc: The document model from the database.
+
+    Returns:
+        A tuple of (error_message, error_code) if validation fails,
+        or (None, None) if validation passes.
+    """
+    if update_doc_req.chunk_count and update_doc_req.chunk_count != int(getattr(doc, "chunk_num", -1)):
+        return "Can't change `chunk_count`.", RetCode.DATA_ERROR
+
+    if update_doc_req.token_count and update_doc_req.token_count != int(getattr(doc, "token_num", -1)):
+        return "Can't change `token_count`.", RetCode.DATA_ERROR
+
+    if update_doc_req.progress:
+        progress_from_db = float(getattr(doc, "progress", -1.0))
+        # should not use "==" to compare two float values
+        if not math.isclose(update_doc_req.progress, progress_from_db):
+            return "Can't change `progress`.", RetCode.DATA_ERROR
+
+    return None, None
+
+
+def validate_document_name(req_doc_name: str, doc, docs_from_name):
+    """
+    Validate document name update.
+
+    Checks that the new document name is valid:
+    - Must be a string
+    - Must not exceed the file name length limit
+    - File extension cannot be changed
+    - Must not duplicate an existing document name in the same dataset.
+
+    Args:
+        req_doc_name: The new document name to validate.
+        doc: The document model from the database.
+        docs_from_name: Query result for documents with the new name.
+
+    Returns:
+        A tuple of (error_message, error_code) if validation fails,
+        or (None, None) if validation passes.
+    """
+    if not isinstance(req_doc_name, str):
+        return f"AttributeError('{type(req_doc_name).__name__}' object has no attribute 'encode')", RetCode.EXCEPTION_ERROR
+    if len(req_doc_name.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
+        return f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", RetCode.ARGUMENT_ERROR
+    if pathlib.Path(req_doc_name.lower()).suffix != pathlib.Path(doc.name.lower()).suffix:
+        return "The extension of file can't be changed", RetCode.ARGUMENT_ERROR
+
+    for d in docs_from_name:
+        if d.name == req_doc_name:
+            return "Duplicated document name in the same dataset.", RetCode.DATA_ERROR
+    return None, None
+
+
+def validate_chunk_method(doc, chunk_method=None):
+    """
+    Validate chunk method update.
+
+    Checks if the chunk method is valid for the given document,
+    particularly for visual documents or specific file types.
+
+    Args:
+        doc: The document model from the database.
+        chunk_method: The chunk method to validate.
+
+    Returns:
+        A tuple of (error_message, error_code) if validation fails,
+        or (None, None) if validation passes.
+    """
+    if chunk_method is not None and len(chunk_method) == 0:  # will not be detected in UpdateDocumentReq
+        return "`chunk_method` (empty string) is not valid", RetCode.DATA_ERROR
+    if doc.type == FileType.VISUAL or re.search(r"\.(ppt|pptx|pages)$", doc.name):
+        return "Not supported yet!", RetCode.DATA_ERROR
+    return None, None

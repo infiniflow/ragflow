@@ -17,8 +17,10 @@ import { FieldValues } from 'react-hook-form';
 import {
   DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
-  DataSourceFormFields,
   DataSourceKey,
+  getCommonExtraDefaultValues,
+  getDataSourceFieldsWithExtras,
+  mergeDataSourceFormValues,
   useDataSourceInfo,
 } from '../constant';
 import {
@@ -143,7 +145,7 @@ const SourceDetailPage = () => {
     ];
   }, [detail, runSchedule]);
 
-  const { addLoading, handleAddOk } = useAddDataSource();
+  const { addLoading, handleAddOk } = useAddDataSource({ isEdit: true });
   const { loading: testLoading, handleTest } = useTestDataSource();
 
   const onSubmit = useCallback(() => {
@@ -166,9 +168,7 @@ const SourceDetailPage = () => {
     if (detail) {
       const fields = [
         ...baseFields,
-        ...DataSourceFormFields[
-          detail.source as keyof typeof DataSourceFormFields
-        ],
+        ...getDataSourceFieldsWithExtras(detail.source as any),
         ...customFields,
       ] as FormFieldConfig[];
 
@@ -182,12 +182,14 @@ const SourceDetailPage = () => {
       setFields(newFields);
 
       const defaultValueTemp = {
-        ...(DataSourceFormDefaultValues[
-          detail?.source as keyof typeof DataSourceFormDefaultValues
-        ] as FieldValues),
-        ...detail,
+        ...mergeDataSourceFormValues(
+          DataSourceFormDefaultValues[
+            detail?.source as keyof typeof DataSourceFormDefaultValues
+          ] as FieldValues,
+          getCommonExtraDefaultValues(),
+          detail as FieldValues,
+        ),
       };
-      console.log('defaultValue', defaultValueTemp);
       setDefaultValues(defaultValueTemp);
     }
   }, [detail, customFields, onSubmit]);

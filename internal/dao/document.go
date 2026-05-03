@@ -62,6 +62,11 @@ func (dao *DocumentDAO) Update(document *entity.Document) error {
 	return DB.Save(document).Error
 }
 
+// UpdateByID updates document by ID with the given fields
+func (dao *DocumentDAO) UpdateByID(id string, updates map[string]interface{}) error {
+	return DB.Model(&entity.Document{}).Where("id = ?", id).Updates(updates).Error
+}
+
 // Delete delete document
 func (dao *DocumentDAO) Delete(id string) error {
 	return DB.Delete(&entity.Document{}, "id = ?", id).Error
@@ -115,4 +120,21 @@ func (dao *DocumentDAO) GetAllDocIDsByKBIDs(kbIDs []string) ([]map[string]string
 		result[i] = map[string]string{"id": doc.ID, "kb_id": doc.KbID}
 	}
 	return result, nil
+}
+
+// GetByIDs retrieves documents by multiple IDs
+func (dao *DocumentDAO) GetByIDs(ids []string) ([]*entity.Document, error) {
+	var documents []*entity.Document
+	err := DB.Where("id IN ?", ids).Find(&documents).Error
+	if err != nil {
+		return nil, err
+	}
+	return documents, nil
+}
+
+// CountByTenantID counts documents by tenant ID
+func (dao *DocumentDAO) CountByTenantID(tenantID string) (int64, error) {
+	var count int64
+	err := DB.Model(&entity.Document{}).Where("created_by = ?", tenantID).Count(&count).Error
+	return count, err
 }

@@ -21,10 +21,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
-	"syscall"
-	"unsafe"
+
+	"golang.org/x/term"
 )
 
 // LoginUserInteractive performs interactive login with username and password
@@ -54,10 +53,10 @@ func (c *RAGFlowClient) LoginUserInteractive(username, password string) error {
 		return fmt.Errorf("server is down")
 	}
 
-	// Check response - admin returns JSON with message "PONG", user returns plain "pong"
+	// Check response - admin returns JSON with message "pong", user returns plain "pong"
 	resJSON, err := resp.JSON()
 	if err == nil {
-		// Admin mode returns {"code":0,"message":"PONG"}
+		// Admin mode returns {"code":0,"message":"pong"}
 		if msg, ok := resJSON["message"].(string); !ok || msg != "pong" {
 			fmt.Println("Server is down")
 			return fmt.Errorf("server is down")
@@ -74,7 +73,7 @@ func (c *RAGFlowClient) LoginUserInteractive(username, password string) error {
 	if password == "" {
 		fmt.Printf("password for %s: ", username)
 		var err error
-		password, err = readPassword()
+		password, err = ReadPassword()
 		if err != nil {
 			return fmt.Errorf("failed to read password: %w", err)
 		}
@@ -121,10 +120,10 @@ func (c *RAGFlowClient) LoginUser(cmd *Command) error {
 		return fmt.Errorf("server is down")
 	}
 
-	// Check response - admin returns JSON with message "PONG", user returns plain "pong"
+	// Check response - admin returns JSON with message "pong", user returns plain "pong"
 	resJSON, err := resp.JSON()
 	if err == nil {
-		// Admin mode returns {"code":0,"message":"PONG"}
+		// Admin mode returns {"code":0,"message":"pong"}
 		if msg, ok := resJSON["message"].(string); !ok || msg != "pong" {
 			fmt.Println("Server is down")
 			return fmt.Errorf("server is down")
@@ -146,7 +145,7 @@ func (c *RAGFlowClient) LoginUser(cmd *Command) error {
 	if !ok {
 		// Get password from user input (hidden)
 		fmt.Printf("password for %s: ", email)
-		password, err = readPassword()
+		password, err = ReadPassword()
 		if err != nil {
 			return fmt.Errorf("failed to read password: %w", err)
 		}
@@ -336,6 +335,45 @@ func (c *RAGFlowClient) ListModels(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+func (c *RAGFlowClient) ListSupportedModels(cmd *Command) (ResponseIf, error) {
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider_name not provided")
+	}
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance_name not provided")
+	}
+
+	var endPoint string
+	if c.ServerType == "admin" {
+		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s/models?supported=true", providerName, instanceName)
+	} else {
+		endPoint = fmt.Sprintf("/providers/%s/instances/%s/models?supported=true", providerName, instanceName)
+	}
+
+	resp, err := c.HTTPClient.Request("GET", endPoint, true, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list models: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to list models: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 func (c *RAGFlowClient) ShowModel(cmd *Command) (ResponseIf, error) {
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
@@ -374,50 +412,157 @@ func (c *RAGFlowClient) ShowModel(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// readPassword reads password from terminal without echoing
-func readPassword() (string, error) {
-	// Check if stdin is a terminal by trying to get terminal size
-	if isTerminal() {
-		// Use stty to disable echo
-		cmd := exec.Command("stty", "-echo")
-		cmd.Stdin = os.Stdin
-		if err := cmd.Run(); err != nil {
-			// Fallback: read normally
-			return readPasswordFallback()
-		}
-		defer func() {
-			// Re-enable echo
-			cmd := exec.Command("stty", "echo")
-			cmd.Stdin = os.Stdin
-			cmd.Run()
-		}()
+func (c *RAGFlowClient) SetDefaultModel(cmd *Command) (ResponseIf, error) {
 
-		reader := bufio.NewReader(os.Stdin)
-		password, err := reader.ReadString('\n')
-		fmt.Println() // New line after password input
-		if err != nil {
-			return "", err
-		}
-		return strings.TrimSpace(password), nil
+	modelType, ok := cmd.Params["model_type"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model_type not provided")
 	}
 
-	// Fallback for non-terminal input (e.g., piped input)
-	return readPasswordFallback()
+	compositeModelName, ok := cmd.Params["composite_model_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model_name not provided")
+	}
+
+	var providerName, instanceName, modelName string
+	names := strings.Split(compositeModelName, "/")
+	if len(names) != 3 {
+		return nil, fmt.Errorf("model name must be in format 'provider/instance/model'")
+	}
+	providerName = names[0]
+	instanceName = names[1]
+	modelName = names[2]
+
+	payload := map[string]interface{}{
+		"model_type":     modelType,
+		"model_provider": providerName,
+		"model_instance": instanceName,
+		"model_name":     modelName,
+	}
+
+	resp, err := c.HTTPClient.Request("PATCH", "/models", true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set default model: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to set default model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to set default model: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
 }
 
-// isTerminal checks if stdin is a terminal
-func isTerminal() bool {
-	var termios syscall.Termios
-	_, _, err := syscall.Syscall6(syscall.SYS_IOCTL, os.Stdin.Fd(), syscall.TCGETS, uintptr(unsafe.Pointer(&termios)), 0, 0, 0)
-	return err == 0
+func (c *RAGFlowClient) ResetDefaultModel(cmd *Command) (ResponseIf, error) {
+
+	modelType, ok := cmd.Params["model_type"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model_type not provided")
+	}
+
+	payload := map[string]interface{}{
+		"model_type": modelType,
+	}
+
+	resp, err := c.HTTPClient.Request("PATCH", "/models", true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reset default model: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to reset default model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to reset default model: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) ListDefaultModels(cmd *Command) (ResponseIf, error) {
+	resp, err := c.HTTPClient.Request("GET", "/models", true, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list default models: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list default models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to list default models: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// readPassword reads password from terminal without echoing
+func ReadPassword() (string, error) {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return ReadPasswordFallback()
+	}
+
+	fmt.Print("Password: ")
+	passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println()
+
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(passwordBytes)), nil
 }
 
 // readPasswordFallback reads password as plain text (fallback mode)
-func readPasswordFallback() (string, error) {
+func ReadPasswordFallback() (string, error) {
+	fmt.Print("Password (will be visible): ")
 	reader := bufio.NewReader(os.Stdin)
 	password, err := reader.ReadString('\n')
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(password), nil
+}
+
+// FlattenMap recursively flattens a nested map into dot-notation keys
+func FlattenMap(data map[string]interface{}, prefix string, result *[]map[string]interface{}) {
+	for key, value := range data {
+		// Build the current key path
+		currentKey := key
+		if prefix != "" {
+			currentKey = prefix + "." + key
+		}
+
+		// Check if the value is another nested map
+		if nestedMap, ok := value.(map[string]interface{}); ok {
+			// Recursively process the nested map
+			FlattenMap(nestedMap, currentKey, result)
+		} else {
+			// Leaf node: append to result slice
+			resultItem := map[string]interface{}{
+				"key":   currentKey,
+				"value": value,
+			}
+			*result = append(*result, resultItem)
+		}
+	}
 }

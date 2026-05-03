@@ -23,16 +23,16 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"unicode/utf8"
 
 	"github.com/peterh/liner"
-	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 
-	"ragflow/internal/cli/contextengine"
+	"ragflow/internal/cli/filesystem"
 )
 
 // ConfigFile represents the rf.yml configuration file structure
@@ -54,17 +54,19 @@ const (
 
 // ConnectionArgs holds the parsed command line arguments
 type ConnectionArgs struct {
-	Host         string
-	Port         int
-	Password     string
-	APIToken     string
-	UserName     string
-	Command      string   // Original command string (for SQL mode)
-	CommandArgs  []string // Split command arguments (for ContextEngine mode)
-	IsSQLMode    bool     // true=SQL mode (quoted), false=ContextEngine mode (unquoted)
-	ShowHelp     bool
-	AdminMode    bool
-	OutputFormat OutputFormat // Output format: table, plain, json
+	Host           string
+	Port           int
+	Password       string
+	APIToken       string
+	UserName       string
+	ConfigFilePath string   // Path to the config file (e.g., rf.yml)
+	Command        *string  // Original command string (for SQL mode)
+	CommandArgs    []string // Split command arguments (for ContextEngine mode)
+	IsSQLMode      bool     // true=SQL mode (quoted), false= ContextEngine mode (unquoted)
+	ShowHelp       bool
+	AdminMode      bool
+	OutputFormat   OutputFormat // Output format: table, plain, json
+	Verbose        bool         // Enable verbose logging
 }
 
 // LoadDefaultConfigFile reads the rf.yml file from current directory if it exists
@@ -125,9 +127,10 @@ func parseHostPort(hostPort string) (string, int, error) {
 
 // ParseConnectionArgs parses command line arguments similar to Python's parse_connection_args
 func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
-	// First, scan args to check for help, config file, and admin mode
+	// First, scan args to check for help, config file, admin mode, and verbose flag
 	var configFilePath string
 	var adminMode bool = false
+	var verboseMode bool = false
 	foundCommand := false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -139,9 +142,16 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 		}
 		// Only process --help as global help if it's before any command
 		if !foundCommand && (arg == "--help" || arg == "-help") {
-			return &ConnectionArgs{ShowHelp: true}, nil
+			return &ConnectionArgs{ShowHelp: true, Verbose: verboseMode}, nil
 		} else if (arg == "-f" || arg == "--config") && i+1 < len(args) {
 			configFilePath = args[i+1]
+			// Convert to absolute path immediately
+			if !filepath.IsAbs(configFilePath) {
+				absPath, err := filepath.Abs(configFilePath)
+				if err == nil {
+					configFilePath = absPath
+				}
+			}
 			i++
 		} else if (arg == "-o" || arg == "--output") && i+1 < len(args) {
 			// -o/--output is allowed with config file, skip it and its value
@@ -149,6 +159,8 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 			continue
 		} else if arg == "--admin" {
 			adminMode = true
+		} else if arg == "-v" || arg == "--verbose" {
+			verboseMode = true
 		}
 	}
 
@@ -159,7 +171,10 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 	// Parse arguments manually to support both short and long forms
 	// and to handle priority: command line > config file > defaults
 
-	result := &ConnectionArgs{}
+	result := &ConnectionArgs{
+		Verbose:        verboseMode,
+		ConfigFilePath: configFilePath,
+	}
 
 	if !adminMode {
 		// Only user mode read config file
@@ -257,6 +272,8 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 				}
 				i++
 			}
+		case "-v", "--verbose":
+			result.Verbose = true
 		case "--admin", "-admin":
 			result.AdminMode = true
 		case "--help", "-help":
@@ -312,13 +329,15 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 		if len(nonFlagArgs) == 1 && looksLikeSQL(nonFlagArgs[0]) {
 			// SQL mode: single argument that looks like SQL
 			result.IsSQLMode = true
-			result.Command = nonFlagArgs[0]
+			command := nonFlagArgs[0]
+			result.Command = &command
 		} else {
 			// ContextEngine mode: multiple arguments
 			result.IsSQLMode = false
 			result.CommandArgs = nonFlagArgs
 			// Also store joined version for backward compatibility
-			result.Command = strings.Join(nonFlagArgs, " ")
+			command := strings.Join(nonFlagArgs, " ")
+			result.Command = &command
 		}
 	}
 
@@ -332,7 +351,8 @@ func looksLikeSQL(s string) bool {
 		"LIST ", "SHOW ", "CREATE ", "DROP ", "ALTER ",
 		"LOGIN ", "REGISTER ", "PING", "GRANT ", "REVOKE ",
 		"SET ", "UNSET ", "UPDATE ", "DELETE ", "INSERT ",
-		"SELECT ", "DESCRIBE ", "EXPLAIN ",
+		"SELECT ", "DESCRIBE ", "EXPLAIN ", "ADD ", "ENABLE ", "DISABLE ", "CHAT ", "USE", "THINK",
+		"REMOVE ",
 	}
 	for _, prefix := range sqlPrefixes {
 		if strings.HasPrefix(s, prefix) {
@@ -355,6 +375,7 @@ Options:
   -p, --password string  Password for authentication
   -f, --config string    Path to config file (YAML format)
   -o, --output string    Output format: table, plain, json (search defaults to json)
+  -v, --verbose          Enable verbose logging (shows debug info)
   --admin, -admin        Run in admin mode
   --help                 Show this help message
 
@@ -383,7 +404,11 @@ Configuration File:
 
 Commands:
   SQL commands (use quotes): "LIST USERS", "CREATE USER 'email' 'password'", etc.
-  Context Engine commands (no quotes): ls datasets, search "keyword", cat path, etc.
+  Filesystem commands (no quotes): ls datasets, search "keyword", cat path, etc.
+  Skill commands:
+    install-skill <space> <path|url> [options]  Install a skill from local path or remote URL
+    uninstall-skill <space> <skill-name>         Remove an installed skill
+    search skills -q <query> [--space space1]   Search skills in a space
   If no command is provided, CLI runs in interactive mode.`)
 }
 
@@ -396,13 +421,13 @@ const historyFileName = ".ragflow_cli_history"
 
 // CLI represents the command line interface
 type CLI struct {
-	client        *RAGFlowClient
-	contextEngine *contextengine.Engine
-	prompt        string
-	running       bool
-	line          *liner.State
-	args          *ConnectionArgs
-	outputFormat  OutputFormat // Output format
+	client         *RAGFlowClient
+	contextEngine  *filesystem.Engine
+	prompt         string
+	running        bool
+	line           *liner.State
+	args           *ConnectionArgs
+	outputFormat   OutputFormat // Output format
 }
 
 // NewCLI creates a new CLI instance
@@ -461,10 +486,11 @@ func NewCLIWithArgs(args *ConnectionArgs) (*CLI, error) {
 		prompt = "RAGFlow(admin)> "
 	}
 
-	// Create context engine and register providers
-	engine := contextengine.NewEngine()
-	engine.RegisterProvider(contextengine.NewDatasetProvider(&httpClientAdapter{client: client.HTTPClient}))
-	engine.RegisterProvider(contextengine.NewFileProvider(&httpClientAdapter{client: client.HTTPClient}))
+	// Create filesystem engine and register providers
+	engine := filesystem.NewEngine()
+	engine.RegisterProvider(filesystem.NewDatasetProvider(&httpClientAdapter{client: client.HTTPClient}))
+	engine.RegisterProvider(filesystem.NewFileProvider(&httpClientAdapter{client: client.HTTPClient}))
+	engine.RegisterProvider(filesystem.NewSkillProvider(&httpClientAdapter{client: client.HTTPClient}))
 
 	return &CLI{
 		prompt:        prompt,
@@ -480,28 +506,13 @@ func NewCLIWithArgs(args *ConnectionArgs) (*CLI, error) {
 func (c *CLI) Run() error {
 	// If username is provided without password, prompt for password
 	if c.args != nil && c.args.UserName != "" && c.args.Password == "" && c.args.APIToken == "" {
-		// Allow 3 attempts for password verification
 		maxAttempts := 3
 		for attempt := 1; attempt <= maxAttempts; attempt++ {
-			var input string
-			var err error
+			fmt.Print("Please input your password: ")
 
-			// Check if terminal supports password masking
-			if term.IsTerminal(int(os.Stdin.Fd())) {
-				input, err = c.line.PasswordPrompt("Please input your password: ")
-			} else {
-				// Terminal doesn't support password masking, use regular prompt
-				fmt.Println("Warning: This terminal does not support secure password input")
-				input, err = c.line.Prompt("Please input your password (will be visible): ")
-			}
-			if err != nil {
-				fmt.Printf("Error reading input: %v\n", err)
-				return err
-			}
+			password, err := ReadPassword()
 
-			input = strings.TrimSpace(input)
-
-			if input == "" {
+			if password == "" {
 				if attempt < maxAttempts {
 					fmt.Println("Password cannot be empty, please try again")
 					continue
@@ -509,8 +520,7 @@ func (c *CLI) Run() error {
 				return errors.New("no password provided after 3 attempts")
 			}
 
-			// Set the password for verification
-			c.args.Password = input
+			c.args.Password = password
 
 			if err = c.VerifyAuth(); err != nil {
 				if attempt < maxAttempts {
@@ -520,7 +530,6 @@ func (c *CLI) Run() error {
 				return fmt.Errorf("authentication failed after %d attempts: %v", maxAttempts, err)
 			}
 
-			// Authentication successful
 			break
 		}
 	}
@@ -565,12 +574,37 @@ func (c *CLI) Run() error {
 			c.line.AppendHistory(input)
 		}
 
-		if err = c.execute(input); err != nil {
+		if err = c.executeNew(input); err != nil {
 			fmt.Printf("CLI error: %v\n", err)
 		}
 	}
 
 	return nil
+}
+
+func (c *CLI) executeNew(input string) error {
+	p := NewParser(input)
+	cmd, err := p.Parse(c.args.AdminMode)
+	if err != nil {
+		return err
+	}
+
+	if cmd == nil {
+		return nil
+	}
+
+	// Handle meta commands
+	if cmd.Type == "meta" {
+		return c.handleMetaCommand(cmd)
+	}
+
+	// Execute the command using the client
+	var result ResponseIf
+	result, err = c.client.ExecuteCommand(cmd)
+	if result != nil {
+		result.PrintOut()
+	}
+	return err
 }
 
 func (c *CLI) execute(input string) error {
@@ -589,7 +623,7 @@ func (c *CLI) execute(input string) error {
 		}
 	}
 
-	// Check if we should use SQL mode or ContextEngine mode
+	// Check if we should use SQL mode or Filesystem mode
 	isSQLMode := false
 	if c.args != nil && len(c.args.CommandArgs) > 0 {
 		// Non-interactive mode: use pre-determined mode from args
@@ -619,12 +653,12 @@ func (c *CLI) execute(input string) error {
 		return err
 	}
 
-	// ContextEngine mode: execute context engine command
-	return c.executeContextEngine(input)
+	// Filesystem mode: execute filesystem command
+	return c.executeFilesystem(input)
 }
 
-// executeContextEngine executes a Context Engine command
-func (c *CLI) executeContextEngine(input string) error {
+// executeFilesystem executes a Filesystem command
+func (c *CLI) executeFilesystem(input string) error {
 	// Parse input into arguments
 	var args []string
 	if c.args != nil && len(c.args.CommandArgs) > 0 {
@@ -632,23 +666,23 @@ func (c *CLI) executeContextEngine(input string) error {
 		args = c.args.CommandArgs
 	} else {
 		// Interactive mode: parse input
-		args = parseContextEngineArgs(input)
+		args = parseFilesystemArgs(input)
 	}
 
 	if len(args) == 0 {
 		return fmt.Errorf("no command provided")
 	}
 
-	// Check if we have a context engine
+	// Check if we have a filesystem engine
 	if c.contextEngine == nil {
-		return fmt.Errorf("context engine not available")
+		return fmt.Errorf("filesystem engine not available")
 	}
 
 	cmdType := args[0]
 	cmdArgs := args[1:]
 
-	// Build context engine command
-	var ceCmd *contextengine.Command
+	// Build filesystem command
+	var ceCmd *filesystem.Command
 
 	switch cmdType {
 	case "ls", "list":
@@ -661,8 +695,8 @@ func (c *CLI) executeContextEngine(input string) error {
 			// Help was printed
 			return nil
 		}
-		ceCmd = &contextengine.Command{
-			Type: contextengine.CommandList,
+		ceCmd = &filesystem.Command{
+			Type: filesystem.CommandList,
 			Path: listOpts.Path,
 			Params: map[string]interface{}{
 				"limit": listOpts.Limit,
@@ -684,8 +718,45 @@ func (c *CLI) executeContextEngine(input string) error {
 		if len(searchOpts.Dirs) > 0 {
 			searchPath = searchOpts.Dirs[0]
 		}
-		ceCmd = &contextengine.Command{
-			Type: contextengine.CommandSearch,
+		// Check if searching skills (supports: "skills" or "skills/space1")
+		if searchPath == "skills" || strings.HasPrefix(searchPath, "skills/") {
+			// Parse space ID from path (e.g., "skills/space1" -> "space1")
+			spaceID := "default"
+			if strings.HasPrefix(searchPath, "skills/") {
+				spaceID = strings.TrimPrefix(searchPath, "skills/")
+				if spaceID == "" {
+					spaceID = "default"
+				}
+			}
+			// Get skill provider and perform search
+			provider := c.contextEngine.GetProvider("skills")
+			if provider == nil {
+				return fmt.Errorf("skill provider not available")
+			}
+			skillProvider, ok := provider.(*filesystem.SkillProvider)
+			if !ok {
+				return fmt.Errorf("invalid skill provider type")
+			}
+			pageSize := searchOpts.TopK
+			if pageSize <= 0 {
+				pageSize = 10
+			}
+			searchOptions := &filesystem.SearchOptions{
+				Query:  searchOpts.Query,
+				Limit:  pageSize,
+				Offset: 0,
+				TopK:   pageSize,
+			}
+			result, err := skillProvider.Search(context.Background(), spaceID, searchOptions)
+			if err != nil {
+				return err
+			}
+			// Print skill search results with full details
+			c.printSkillSearchResults(result, c.outputFormat)
+			return nil
+		}
+		ceCmd = &filesystem.Command{
+			Type: filesystem.CommandSearch,
 			Path: searchPath,
 			Params: map[string]interface{}{
 				"query":     searchOpts.Query,
@@ -707,12 +778,70 @@ func (c *CLI) executeContextEngine(input string) error {
 			fmt.Println("(empty file)")
 		} else if isBinaryContent(content) {
 			return fmt.Errorf("cannot display binary file content")
-		} else {
-			fmt.Println(string(content))
 		}
+
+		fmt.Println(string(content))
 		return nil
+	case "install-skill":
+		// Get the file provider and skill provider from the engine
+		fileProvider, ok := c.contextEngine.GetProvider("files").(*filesystem.FileProvider)
+		if !ok {
+			return fmt.Errorf("file provider not available")
+		}
+		skillProvider := c.contextEngine.GetProvider("skills")
+		if skillProvider == nil {
+			return fmt.Errorf("skill provider not available")
+		}
+		// Create adapter for HTTPClient
+		httpAdapter := &httpClientAdapter{client: c.client.HTTPClient}
+		cmd := filesystem.NewInstallSkillCommand(httpAdapter, fileProvider, skillProvider)
+		return cmd.Execute(cmdArgs)
+	case "uninstall-skill":
+		skillProvider := c.contextEngine.GetProvider("skills")
+		if skillProvider == nil {
+			return fmt.Errorf("skill provider not available")
+		}
+		fileProvider := c.contextEngine.GetProvider("files")
+		if fileProvider == nil {
+			return fmt.Errorf("file provider not available")
+		}
+		// Create adapter for HTTPClient
+		httpAdapter := &httpClientAdapter{client: c.client.HTTPClient}
+		fileProv, _ := fileProvider.(*filesystem.FileProvider)
+		cmd := filesystem.NewUninstallSkillCommand(httpAdapter, skillProvider, fileProv)
+		return cmd.Execute(cmdArgs)
+	case "add-skill":
+		fmt.Println("⚠ Warning: 'add-skill' is deprecated. Use 'install-skill' instead.")
+		// Forward to install-skill
+		fileProvider, ok := c.contextEngine.GetProvider("files").(*filesystem.FileProvider)
+		if !ok {
+			return fmt.Errorf("file provider not available")
+		}
+		skillProvider := c.contextEngine.GetProvider("skills")
+		if skillProvider == nil {
+			return fmt.Errorf("skill provider not available")
+		}
+		httpAdapter := &httpClientAdapter{client: c.client.HTTPClient}
+		cmd := filesystem.NewInstallSkillCommand(httpAdapter, fileProvider, skillProvider)
+		return cmd.Execute(cmdArgs)
+	case "delete-skill":
+		fmt.Println("⚠ Warning: 'delete-skill' is deprecated. Use 'uninstall-skill' instead.")
+		// Forward to uninstall-skill
+		skillProvider := c.contextEngine.GetProvider("skills")
+		if skillProvider == nil {
+			return fmt.Errorf("skill provider not available")
+		}
+		fileProvider := c.contextEngine.GetProvider("files")
+		if fileProvider == nil {
+			return fmt.Errorf("file provider not available")
+		}
+		httpAdapter := &httpClientAdapter{client: c.client.HTTPClient}
+		fileProv, _ := fileProvider.(*filesystem.FileProvider)
+		cmd := filesystem.NewUninstallSkillCommand(httpAdapter, skillProvider, fileProv)
+		return cmd.Execute(cmdArgs)
+
 	default:
-		return fmt.Errorf("unknown context engine command: %s", cmdType)
+		return fmt.Errorf("unknown filesystem command: %s", cmdType)
 	}
 
 	// Execute the command
@@ -724,23 +853,23 @@ func (c *CLI) executeContextEngine(input string) error {
 	// Print result
 	// For search command, default to JSON format if not explicitly set to plain/table
 	format := c.outputFormat
-	if ceCmd.Type == contextengine.CommandSearch && format != OutputFormatPlain && format != OutputFormatTable {
+	if ceCmd.Type == filesystem.CommandSearch && format != OutputFormatPlain && format != OutputFormatTable {
 		format = OutputFormatJSON
 	}
 	// Get limit for list command
 	limit := 0
-	if ceCmd.Type == contextengine.CommandList {
+	if ceCmd.Type == filesystem.CommandList {
 		if l, ok := ceCmd.Params["limit"].(int); ok {
 			limit = l
 		}
 	}
-	c.printContextEngineResult(result, ceCmd.Type, format, limit)
+	c.printFilesystemResult(result, ceCmd.Type, format, limit)
 	return nil
 }
 
-// parseContextEngineArgs parses Context Engine command arguments
+// parseFilesystemArgs parses Filesystem command arguments
 // Supports simple space-separated args and quoted strings
-func parseContextEngineArgs(input string) []string {
+func parseFilesystemArgs(input string) []string {
 	var args []string
 	var current strings.Builder
 	inQuote := false
@@ -782,14 +911,14 @@ func parseContextEngineArgs(input string) []string {
 	return args
 }
 
-// printContextEngineResult prints the result of a context engine command
-func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType contextengine.CommandType, format OutputFormat, limit int) {
+// printFilesystemResult prints the result of a filesystem command
+func (c *CLI) printFilesystemResult(result *filesystem.Result, cmdType filesystem.CommandType, format OutputFormat, limit int) {
 	if result == nil {
 		return
 	}
 
 	switch cmdType {
-	case contextengine.CommandList:
+	case filesystem.CommandList:
 		if len(result.Nodes) == 0 {
 			fmt.Println("(empty)")
 			return
@@ -826,7 +955,7 @@ func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType con
 			fmt.Printf("\n... and %d more (use -n to show more)\n", result.Total-limit)
 		}
 		fmt.Printf("Total: %d\n", result.Total)
-	case contextengine.CommandSearch:
+	case filesystem.CommandSearch:
 		if len(result.Nodes) == 0 {
 			if format == OutputFormatJSON {
 				fmt.Println("[]")
@@ -923,10 +1052,100 @@ func (c *CLI) printContextEngineResult(result *contextengine.Result, cmdType con
 			fmt.Println(sep)
 			fmt.Printf("Total: %d\n", result.Total)
 		}
-	case contextengine.CommandCat:
+	case filesystem.CommandCat:
 		// Cat output is handled differently - it returns []byte, not *Result
 		// This case should not be reached in normal flow since Cat returns []byte directly
 		fmt.Println("Content retrieved")
+	}
+}
+
+// printSkillSearchResults prints skill search results with full details
+func (c *CLI) printSkillSearchResults(result *filesystem.Result, format OutputFormat) {
+	if result == nil || len(result.Nodes) == 0 {
+		if format == OutputFormatJSON {
+			fmt.Println("[]")
+		} else {
+			fmt.Println("No skills found")
+		}
+		return
+	}
+
+	// Skill search result structure
+	type skillSearchResult struct {
+		SkillID     string   `json:"skill_id"`
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		Tags        string   `json:"tags"`
+		Score       float64  `json:"score"`
+		BM25Score   float64  `json:"bm25_score"`
+		VectorScore float64  `json:"vector_score"`
+	}
+
+	results := make([]skillSearchResult, 0, len(result.Nodes))
+	for _, node := range result.Nodes {
+		// Extract metadata
+		skillID := ""
+		if id, ok := node.Metadata["skill_id"].(string); ok {
+			skillID = id
+		}
+		description := ""
+		if desc, ok := node.Metadata["description"].(string); ok {
+			description = desc
+		}
+		tags := ""
+		if t, ok := node.Metadata["tags"].([]string); ok {
+			tags = strings.Join(t, ", ")
+		}
+		var score, bm25Score, vectorScore float64
+		if s, ok := node.Metadata["score"].(float64); ok {
+			score = s
+		}
+		if b, ok := node.Metadata["bm25_score"].(float64); ok {
+			bm25Score = b
+		}
+		if v, ok := node.Metadata["vector_score"].(float64); ok {
+			vectorScore = v
+		}
+
+		results = append(results, skillSearchResult{
+			SkillID:     skillID,
+			Name:        node.Name,
+			Description: description,
+			Tags:        tags,
+			Score:       score,
+			BM25Score:   bm25Score,
+			VectorScore: vectorScore,
+		})
+	}
+
+	if format == OutputFormatJSON {
+		jsonData, err := json.MarshalIndent(results, "", "  ")
+		if err != nil {
+			fmt.Printf("Error marshaling JSON: %v\n", err)
+			return
+		}
+		fmt.Println(string(jsonData))
+	} else if format == OutputFormatPlain {
+		fmt.Printf("Found %d skill(s):\n", len(results))
+		for _, sr := range results {
+			fmt.Printf("\nName: %s\n", sr.Name)
+			fmt.Printf("Skill ID: %s\n", sr.SkillID)
+			fmt.Printf("Description: %s\n", sr.Description)
+			fmt.Printf("Tags: %s\n", sr.Tags)
+			fmt.Printf("Score: %.6f (BM25: %.6f, Vector: %.6f)\n", sr.Score, sr.BM25Score, sr.VectorScore)
+		}
+	} else {
+		// Table format
+		fmt.Printf("Found %d skill(s):\n", len(results))
+		fmt.Println()
+		for _, sr := range results {
+			fmt.Printf("Name:        %s\n", sr.Name)
+			fmt.Printf("Skill ID:    %s\n", sr.SkillID)
+			fmt.Printf("Description: %s\n", sr.Description)
+			fmt.Printf("Tags:        %s\n", sr.Tags)
+			fmt.Printf("Score:       %.6f (BM25: %.6f, Vector: %.6f)\n", sr.Score, sr.BM25Score, sr.VectorScore)
+			fmt.Println()
+		}
 	}
 }
 
@@ -997,6 +1216,7 @@ Meta Commands:
 
 Commands (User Mode):
   LOGIN USER 'email';                                    - Login as user
+  LOGIN USER 'email' PASSWORD 'pwd';                     - Login as user with password
   REGISTER USER 'name' AS 'nickname' PASSWORD 'pwd';     - Register new user
   SHOW VERSION;                                          - Show version info
   PING;                                                  - Ping server
@@ -1008,17 +1228,21 @@ Commands (User Mode):
   LIST TOKENS;                                           - List API tokens
   LIST PROVIDERS;                                        - List available LLM providers
   CREATE TOKEN;                                          - Create new API token
-  CREATE PROVIDER 'name';                                - Create a provider without API key
-  CREATE PROVIDER 'name' 'api_key';                      - Create a provider with API key
+  ADD PROVIDER 'name';                                - Create a provider without API key
+  ADD PROVIDER 'name' 'api_key';                      - Create a provider with API key
   DROP TOKEN 'token_value';                              - Delete an API token
-  DROP PROVIDER 'name';                                  - Delete a provider
+  DELETE PROVIDER 'name';                                  - Delete a provider
   SET TOKEN 'token_value';                               - Set and validate API token
   SHOW TOKEN;                                            - Show current API token
   SHOW PROVIDER 'name';                                  - Show provider details
+  SHOW CURRENT MODEL;                                    - Show current model settings
   UNSET TOKEN;                                           - Remove current API token
   ALTER PROVIDER 'name' NAME 'new_name';                 - Rename a provider
+  USE MODEL 'provider/instance/model';                   - Set current model for chat
+  CHAT 'message';                                        - Chat using current model
+  CHAT 'provider/instance/model' 'message';              - Chat with specified model
 
-Context Engine Commands (no quotes):
+Filesystem Commands (no quotes):
   ls [path]                    - List resources
                                  e.g., ls                   - List root (providers and folders)
                                  e.g., ls datasets          - List all datasets
@@ -1033,7 +1257,7 @@ Context Engine Commands (no quotes):
 
 Examples:
   ragflow_cli -f rf.yml "LIST USERS"           # SQL mode (with quotes)
-  ragflow_cli -f rf.yml ls datasets            # Context Engine mode (no quotes)
+  ragflow_cli -f rf.yml ls datasets            # Filesystem mode (no quotes)
   ragflow_cli -f rf.yml ls files               # List files in root
   ragflow_cli -f rf.yml cat datasets           # Error: datasets is a directory
   ragflow_cli -f rf.yml ls files/myfolder      # List folder contents
@@ -1071,12 +1295,12 @@ func RunInteractive() error {
 }
 
 // RunSingleCommand executes a single command and exits
-func (c *CLI) RunSingleCommand(command string) error {
+func (c *CLI) RunSingleCommand(command *string) error {
 	// Ensure cleanup is called on exit to restore terminal settings
 	defer c.Cleanup()
 
 	// Execute the command
-	if err := c.execute(command); err != nil {
+	if err := c.execute(*command); err != nil {
 		return err
 	}
 	return nil
@@ -1138,7 +1362,7 @@ type ListCommandOptions struct {
 }
 
 // parseSearchCommandArgs parses search command arguments
-// Format: search [-d dir1] [-d dir2] ... -q query [-k top_k] [-t threshold]
+// Format: search <query> [path] [-n number]
 //
 //	search -h|--help (shows help)
 func parseSearchCommandArgs(args []string) (*SearchCommandOptions, error) {
@@ -1157,77 +1381,45 @@ func parseSearchCommandArgs(args []string) (*SearchCommandOptions, error) {
 	}
 
 	// Parse arguments
+	// Format: search <query> [path] [-n number]
 	i := 0
 	for i < len(args) {
 		arg := args[i]
 
-		switch arg {
-		case "-d", "--dir":
-			if i+1 >= len(args) {
-				return nil, fmt.Errorf("missing value for %s flag", arg)
-			}
-			opts.Dirs = append(opts.Dirs, args[i+1])
-			i += 2
-		case "-q", "--query":
-			if i+1 >= len(args) {
-				return nil, fmt.Errorf("missing value for %s flag", arg)
-			}
-			opts.Query = args[i+1]
-			i += 2
-		case "-k", "--top-k":
+		// Handle -n flag for number of results
+		if arg == "-n" || arg == "--number" {
 			if i+1 >= len(args) {
 				return nil, fmt.Errorf("missing value for %s flag", arg)
 			}
 			topK, err := strconv.Atoi(args[i+1])
 			if err != nil {
-				return nil, fmt.Errorf("invalid top-k value: %s", args[i+1])
+				return nil, fmt.Errorf("invalid number value: %s", args[i+1])
 			}
 			opts.TopK = topK
 			i += 2
-		case "-t", "--threshold":
-			if i+1 >= len(args) {
-				return nil, fmt.Errorf("missing value for %s flag", arg)
-			}
-			threshold, err := strconv.ParseFloat(args[i+1], 64)
-			if err != nil {
-				return nil, fmt.Errorf("invalid threshold value: %s", args[i+1])
-			}
-			opts.Threshold = threshold
-			i += 2
-		default:
-			// If it doesn't start with -, it might be a positional argument
-			if !strings.HasPrefix(arg, "-") {
-				// For backwards compatibility: if no -q flag and this is the last arg, treat as query
-				if opts.Query == "" && i == len(args)-1 {
-					opts.Query = arg
-				} else if opts.Query == "" && len(args) > 0 && i < len(args)-1 {
-					// Old format: search [path] query
-					// Treat first non-flag as path, rest as query
-					opts.Dirs = append(opts.Dirs, arg)
-					// Join remaining args as query
-					remainingArgs := args[i+1:]
-					queryParts := []string{}
-					for _, part := range remainingArgs {
-						if !strings.HasPrefix(part, "-") {
-							queryParts = append(queryParts, part)
-						}
-					}
-					opts.Query = strings.Join(queryParts, " ")
-					break
-				}
-			} else {
-				return nil, fmt.Errorf("unknown flag: %s", arg)
-			}
-			i++
+			continue
 		}
+
+		// If it starts with -, it's an unknown flag
+		if strings.HasPrefix(arg, "-") {
+			return nil, fmt.Errorf("unknown flag: %s", arg)
+		}
+
+		// Non-flag arguments: first is query, second is path
+		if opts.Query == "" {
+			opts.Query = arg
+		} else if len(opts.Dirs) == 0 {
+			opts.Dirs = append(opts.Dirs, arg)
+		}
+		i++
 	}
 
 	// Validate required parameters
 	if opts.Query == "" {
-		return nil, fmt.Errorf("query is required (use -q or --query)")
+		return nil, fmt.Errorf("query is required")
 	}
 
-	// If no directories specified, search in all datasets (empty path means all)
+	// If no path specified, default to "datasets"
 	if len(opts.Dirs) == 0 {
 		opts.Dirs = []string{"datasets"}
 	}
@@ -1237,30 +1429,34 @@ func parseSearchCommandArgs(args []string) (*SearchCommandOptions, error) {
 
 // printSearchHelp prints help for the search command
 func printSearchHelp() {
-	help := `Search command usage: search [options]
+	help := `Search command usage: search <query> [path] [-n number]
 
-Search for content in datasets. Currently only supports searching in datasets.
+Search for content in datasets or skills.
+
+Arguments:
+  <query>                Search query (required)
+                         Example: "machine learning"
+  [path]                 Path to search in (default: datasets)
+                         Supports:
+                           - 'datasets' (all datasets)
+                           - 'datasets/<kb_name>' (specific dataset)
+                           - 'skills' (default skill space)
+                           - 'skills/<space_name>' (specific skill space)
+                         Example: skills/space1
 
 Options:
-  -d, --dir <path>       Directory to search in (can be specified multiple times)
-                         Currently only supports paths under 'datasets/'
-                         Example: -d datasets/kb1 -d datasets/kb2
-  -q, --query <query>    Search query (required)
-                         Example: -q "machine learning"
-  -k, --top-k <number>   Number of top results to return (default: 10)
-                         Example: -k 20
-  -t, --threshold <num>  Similarity threshold, 0.0-1.0 (default: 0.2)
-                         Example: -t 0.5
+  -n, --number <num>     Number of results to return (default: 10)
+                         Example: -n 20
   -h, --help             Show this help message
 
 Output:
   Default output format is JSON. Use --output plain or --output table for other formats.
 
 Examples:
-  search -d datasets/kb1 -q "neural networks"       # Search in kb1 (JSON output)
-  search -d datasets/kb1 -q "AI" --output plain     # Search with plain text output
-  search -q "data mining"                           # Search all datasets
-  search -q "RAG" -k 20 -t 0.5                      # Return 20 results with threshold 0.5
+  search "neural networks"                          # Search all datasets
+  search "AI" datasets/kb1                          # Search in kb1
+  search "RAG" skills/space1 -n 20                    # Search skills in hub1, return 20 results
+  search "data processing" skills                   # Search skills (default space)
 `
 	fmt.Println(help)
 }

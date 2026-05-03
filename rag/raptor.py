@@ -91,7 +91,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             return response
         embds, _ = await thread_pool_exec(self._embd_model.encode, [txt])
         if len(embds) < 1 or len(embds[0]) < 1:
-            raise Exception("Embedding error: ")
+            raise Exception("Embedding error: empty embeddings returned")
         embds = embds[0]
         await thread_pool_exec(set_embed_cache, self._embd_model.llm_name, txt, embds)
         return embds
@@ -111,7 +111,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
     async def __call__(self, chunks, random_state, callback=None, task_id: str = ""):
         if len(chunks) <= 1:
-            return []
+            return [], []
         chunks = [(s, a) for s, a in chunks if s and a is not None and len(a) > 0]
         layers = [(0, len(chunks))]
         start, end = 0, len(chunks)
@@ -212,4 +212,4 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             start = end
             end = len(chunks)
 
-        return chunks
+        return chunks, layers

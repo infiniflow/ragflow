@@ -57,6 +57,10 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         reasoning: false,
         cross_languages: [],
         toc_enhance: false,
+        reference_metadata: {
+          include: false,
+          fields: undefined,
+        },
       },
       top_n: 8,
       similarity_threshold: 0.2,
@@ -74,6 +78,14 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       values,
       'llm_setting.',
     );
+    const referenceMetadata = nextValues?.prompt_config?.reference_metadata;
+    if (
+      referenceMetadata &&
+      Array.isArray(referenceMetadata.fields) &&
+      referenceMetadata.fields.length === 0
+    ) {
+      referenceMetadata.fields = undefined;
+    }
 
     updateChat({
       chatId: id!,
@@ -101,8 +113,20 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     const llmSettingEnabledValues = setLLMSettingEnabledValues(
       data.llm_setting,
     );
+    const referenceMetadata = data?.prompt_config?.reference_metadata;
+    const normalizedReferenceMetadata =
+      referenceMetadata &&
+      Array.isArray(referenceMetadata.fields) &&
+      referenceMetadata.fields.length === 0
+        ? { ...referenceMetadata, fields: undefined }
+        : referenceMetadata;
+
     const nextData = {
       ...data,
+      prompt_config: {
+        ...data.prompt_config,
+        reference_metadata: normalizedReferenceMetadata,
+      },
       ...llmSettingEnabledValues,
     };
 
@@ -158,7 +182,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
                 onSubmit={form.handleSubmit(onSubmit, onInvalid)}
                 className="flex-1 flex flex-col min-h-0"
               >
-                <ScrollArea>
+                <ScrollArea viewportClassName="[&>div]:!block">
                   <section className="p-5 space-y-6 overflow-auto flex-1 min-h-0">
                     <ChatBasicSetting></ChatBasicSetting>
                     <Separator />

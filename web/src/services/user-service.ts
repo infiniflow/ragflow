@@ -7,18 +7,17 @@ const {
   logout,
   register,
   setting,
-  user_info,
-  tenant_info,
-  factories_list,
-  llm_list,
-  my_llm,
-  set_api_key,
-  set_tenant_info,
-  add_llm,
-  delete_llm,
-  enable_llm,
+  userInfo,
+  tenantInfo,
+  factoriesList,
+  llmList,
+  myLlm,
+  setApiKey,
+  setTenantInfo,
+  addLlm,
+  deleteLlm,
+  enableLlm,
   deleteFactory,
-  getSystemStatus,
   getSystemVersion,
   getSystemTokenList,
   removeSystemToken,
@@ -34,7 +33,7 @@ const methods = {
   },
   logout: {
     url: logout,
-    method: 'get',
+    method: 'post',
   },
   register: {
     url: register,
@@ -42,51 +41,47 @@ const methods = {
   },
   setting: {
     url: setting,
-    method: 'post',
+    method: 'patch',
   },
-  user_info: {
-    url: user_info,
+  userInfo: {
+    url: userInfo,
     method: 'get',
   },
-  get_tenant_info: {
-    url: tenant_info,
+  getTenantInfo: {
+    url: tenantInfo,
     method: 'get',
   },
-  set_tenant_info: {
-    url: set_tenant_info,
-    method: 'post',
+  setTenantInfo: {
+    url: setTenantInfo,
+    method: 'patch',
   },
-  factories_list: {
-    url: factories_list,
+  factoriesList: {
+    url: factoriesList,
     method: 'get',
   },
-  llm_list: {
-    url: llm_list,
+  llmList: {
+    url: llmList,
     method: 'get',
   },
-  my_llm: {
-    url: my_llm,
+  myLlm: {
+    url: myLlm,
     method: 'get',
   },
-  set_api_key: {
-    url: set_api_key,
+  setApiKey: {
+    url: setApiKey,
     method: 'post',
   },
-  add_llm: {
-    url: add_llm,
+  addLlm: {
+    url: addLlm,
     method: 'post',
   },
-  delete_llm: {
-    url: delete_llm,
+  deleteLlm: {
+    url: deleteLlm,
     method: 'post',
   },
-  enable_llm: {
-    url: enable_llm,
+  enableLlm: {
+    url: enableLlm,
     method: 'post',
-  },
-  getSystemStatus: {
-    url: getSystemStatus,
-    method: 'get',
   },
   getSystemVersion: {
     url: getSystemVersion,
@@ -128,9 +123,9 @@ const methods = {
 
 const userService = registerServer<keyof typeof methods>(methods, request);
 
-export const getLoginChannels = () => request.get(api.login_channels);
+export const getLoginChannels = () => request.get(api.loginChannels);
 export const loginWithChannel = (channel: string) =>
-  (window.location.href = api.login_channel(channel));
+  (window.location.href = api.loginChannel(channel));
 
 export const listTenantUser = (tenantId: string) =>
   request.get(api.listTenantUser(tenantId));
@@ -144,11 +139,14 @@ export const deleteTenantUser = ({
 }: {
   tenantId: string;
   userId: string;
-}) => request.delete(api.deleteTenantUser(tenantId, userId));
+}) =>
+  request.delete(api.deleteTenantUser(tenantId), {
+    data: { userId },
+  });
 
 export const listTenant = () => request.get(api.listTenant);
 
 export const agreeTenant = (tenantId: string) =>
-  request.put(api.agreeTenant(tenantId));
+  request.patch(api.agreeTenant(tenantId));
 
 export default userService;

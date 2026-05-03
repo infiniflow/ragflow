@@ -4,6 +4,7 @@ import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
 import dataSourceService, {
   dataSourceRebuild,
   dataSourceResume,
+  dataSourceUpdate,
   deleteDataSource,
   featchDataSourceDetail,
   getDataSourceLogs,
@@ -47,7 +48,7 @@ export const useListDataSource = () => {
 
   const updatedDataSourceTemplates = useMemo(() => {
     const categorizedData = categorizeDataBySource(list || []);
-    let sourceList: Array<IDataSorceInfo & { list: Array<IDataSourceBase> }> =
+    const sourceList: Array<IDataSorceInfo & { list: Array<IDataSourceBase> }> =
       [];
     Object.keys(categorizedData).forEach((key: string) => {
       const k = key as DataSourceKey;
@@ -69,7 +70,7 @@ export const useListDataSource = () => {
   return { list, categorizedList: updatedDataSourceTemplates, isFetching };
 };
 
-export const useAddDataSource = () => {
+export const useAddDataSource = ({ isEdit = false }: { isEdit?: boolean }) => {
   const [addSource, setAddSource] = useState<IDataSorceInfo | undefined>(
     undefined,
   );
@@ -91,7 +92,9 @@ export const useAddDataSource = () => {
   const handleAddOk = useCallback(
     async (data: any) => {
       setAddLoading(true);
-      const { data: res } = await dataSourceService.dataSourceSet(data);
+      const { data: res } = isEdit
+        ? await dataSourceUpdate(data.id, data)
+        : await dataSourceService.dataSourceSet(data);
       console.log('🚀 ~ handleAddOk ~ code:', res.code);
       if (res.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['data-source'] });
@@ -227,7 +230,7 @@ export const useTestDataSource = () => {
       } else {
         message.error(data.message || t('setting.restApiTestFailed'));
       }
-    } catch (error) {
+    } catch {
       message.error(t('setting.restApiTestFailed'));
     } finally {
       setLoading(false);

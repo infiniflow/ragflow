@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"ragflow/internal/entity/models"
 	"strings"
 )
 
@@ -56,6 +57,18 @@ type Reasoning struct {
 	Budget  *ReasoningBudget `json:"-"`
 	Effort  *ReasoningEffort `json:"-"`
 	RawType string           `json:"type"`
+}
+
+// Reasoning represents the reasoning capability (can be one of three types)
+type ClearReasoningContent struct {
+	DefaultValue    bool     `json:"default_value"`
+	SupportedModels []string `json:"supported_models"`
+}
+
+// Reasoning represents the reasoning capability (can be one of three types)
+type Thinking struct {
+	DefaultValue    bool     `json:"default_value"`
+	SupportedModels []string `json:"supported_models"`
 }
 
 // UnmarshalJSON custom unmarshal for Reasoning
@@ -129,24 +142,36 @@ type Multimodal struct {
 
 // Features represents all features of a model
 type Features struct {
-	Multimodal *Multimodal `json:"multimodal,omitempty"`
-	Reasoning  *Reasoning  `json:"reasoning,omitempty"`
+	Multimodal    *Multimodal            `json:"multimodal,omitempty"`
+	Reasoning     *Reasoning             `json:"reasoning,omitempty"`
+	Thinking      *Thinking              `json:"thinking,omitempty"`
+	ClearThinking *ClearReasoningContent `json:"clear_thinking,omitempty"`
+}
+
+type ModelThinking struct {
+	DefaultValue  bool `json:"default_value"`
+	ClearThinking bool `json:"clear_thinking"`
 }
 
 // Model represents a single LLM model
 type Model struct {
-	Name       string   `json:"name"`
-	MaxTokens  int      `json:"max_tokens"`
-	ModelTypes []string `json:"model_types"`
-	Features   Features `json:"features"`
+	Name         string         `json:"name"`
+	MaxTokens    int            `json:"max_tokens"`
+	ModelTypes   []string       `json:"model_types"`
+	Thinking     *ModelThinking `json:"thinking"`
+	Class        *string        `json:"class"`
+	ModelTypeMap map[string]bool
 }
 
 // Provider represents an LLM provider
 type Provider struct {
-	Name   string  `json:"name"`
-	Tags   string  `json:"tags"`
-	URL    string  `json:"url"`
-	Models []Model `json:"models"`
+	Name        string            `json:"name"`
+	URL         map[string]string `json:"url"`
+	URLSuffix   models.URLSuffix  `json:"url_suffix"`
+	Models      []*Model          `json:"models"`
+	Features    Features          `json:"features"`
+	Class       string            `json:"class"`
+	ModelDriver models.ModelDriver
 }
 
 // ProviderManager manages provider and model operations
@@ -171,6 +196,8 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 		return nil, fmt.Errorf("error reading directory %s: %w", dirPath, err)
 	}
 
+	modelFactory := models.NewModelFactory()
+
 	// Iterate through all files
 	for _, file := range files {
 		// Skip directories
@@ -187,7 +214,8 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 		filePath := filepath.Join(dirPath, file.Name())
 
 		// Read the file
-		data, err := os.ReadFile(filePath)
+		var data []byte
+		data, err = os.ReadFile(filePath)
 		if err != nil {
 			return nil, fmt.Errorf("error reading file %s: %w", filePath, err)
 		}
@@ -196,6 +224,27 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 		var provider Provider
 		if err = json.Unmarshal(data, &provider); err != nil {
 			return nil, fmt.Errorf("error parsing JSON from file %s: %w", filePath, err)
+		}
+
+		for _, model := range provider.Models {
+			// if the prefix of mode.Name is matched with keys of modelSupportThinking
+			if provider.Class == "" {
+				pos := strings.Index(model.Name, "-")
+				modelClass := model.Name[0:pos]
+				model.Class = &modelClass
+			} else {
+				model.Class = &provider.Name
+			}
+
+			model.ModelTypeMap = make(map[string]bool)
+			for _, modelType := range model.ModelTypes {
+				model.ModelTypeMap[modelType] = true
+			}
+		}
+
+		provider.ModelDriver, err = modelFactory.CreateModelDriver(provider.Name, provider.URL, provider.URLSuffix)
+		if err != nil {
+			return nil, fmt.Errorf("error creating model driver for provider %s: %w", provider.Name, err)
 		}
 
 		// Add to providers list
@@ -217,10 +266,24 @@ func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 	var providers []map[string]interface{}
 
 	for _, provider := range pm.Providers {
+
+		modelTypeSet := make(map[string]struct{})
+		for _, model := range provider.Models {
+			for _, modelType := range model.ModelTypes {
+				modelTypeSet[modelType] = struct{}{}
+			}
+		}
+
+		var modelTypes []string
+		for modelType := range modelTypeSet {
+			modelTypes = append(modelTypes, modelType)
+		}
+
 		providerData := map[string]interface{}{
-			"name": provider.Name,
-			"tags": provider.Tags,
-			"url":  provider.URL,
+			"name":        provider.Name,
+			"url":         provider.URL,
+			"model_types": modelTypes,
+			"url_suffix":  provider.URLSuffix,
 		}
 		providers = append(providers, providerData)
 	}
@@ -235,14 +298,13 @@ func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 // 2. Show specific provider information (including base_url)
 func (pm *ProviderManager) GetProviderByName(providerName string) (map[string]interface{}, error) {
 
-	provider := pm.findProvider(providerName)
+	provider := pm.FindProvider(providerName)
 	if provider == nil {
 		return nil, fmt.Errorf("provider '%s' not found", providerName)
 	}
 
 	providerInfo := map[string]interface{}{
 		"name":         provider.Name,
-		"tags":         provider.Tags,
 		"base_url":     provider.URL,
 		"total_models": len(provider.Models),
 	}
@@ -252,31 +314,30 @@ func (pm *ProviderManager) GetProviderByName(providerName string) (map[string]in
 
 // 3. List models under a specific provider
 func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interface{}, error) {
-	provider := pm.findProvider(providerName)
+	provider := pm.FindProvider(providerName)
 	if provider == nil {
 		return nil, fmt.Errorf("provider '%s' not found", providerName)
 	}
 
-	models := []map[string]interface{}{}
+	modelList := []map[string]interface{}{}
 	for _, model := range provider.Models {
 		modelData := map[string]interface{}{
 			"name":        model.Name,
 			"max_tokens":  model.MaxTokens,
 			"model_types": model.ModelTypes,
-			"features":    getFeaturesMap(model.Features),
 		}
-		models = append(models, modelData)
+		modelList = append(modelList, modelData)
 	}
 
-	if len(models) == 0 {
+	if len(modelList) == 0 {
 		return nil, fmt.Errorf("no models found")
 	}
 
-	return models, nil
+	return modelList, nil
 }
 
 func (pm *ProviderManager) GetModelByName(providerName, modelName string) (*Model, error) {
-	provider := pm.findProvider(providerName)
+	provider := pm.FindProvider(providerName)
 	if provider == nil {
 		return nil, fmt.Errorf("provider '%s' not found", providerName)
 	}
@@ -287,6 +348,39 @@ func (pm *ProviderManager) GetModelByName(providerName, modelName string) (*Mode
 	return model, nil
 }
 
+func (pm *ProviderManager) GetModelUrl(providerName, modelName, modelType string) (*string, *string, error) {
+	provider := pm.FindProvider(providerName)
+	if provider == nil {
+		return nil, nil, fmt.Errorf("provider '%s' not found", providerName)
+	}
+	model := pm.findModel(provider, modelName)
+	if model == nil {
+		return nil, nil, fmt.Errorf("model '%s' not found", modelName)
+	}
+
+	if !model.ModelTypeMap[modelType] {
+		return nil, nil, fmt.Errorf("model '%s' does not support model type '%s'", modelName, modelType)
+	}
+
+	switch modelType {
+	case "chat":
+		url := fmt.Sprintf("%s%s", provider.URL, provider.URLSuffix.Chat)
+		return &url, nil, nil
+	case "async_chat":
+		chatUrl := fmt.Sprintf("%s%s", provider.URL, provider.URLSuffix.AsyncChat)
+		resultUrl := fmt.Sprintf("%s%s", provider.URL, provider.URLSuffix.AsyncResult)
+		return &chatUrl, &resultUrl, nil
+	case "embedding":
+		url := fmt.Sprintf("%s%s", provider.URL, provider.URLSuffix.Embedding)
+		return &url, nil, nil
+	case "rerank":
+		url := fmt.Sprintf("%s%s", provider.URL, provider.URLSuffix.Rerank)
+		return &url, nil, nil
+	default:
+		return nil, nil, fmt.Errorf("model '%s' does not support model type '%s'", modelName, modelType)
+	}
+}
+
 // 4. Search specific model information with filtering by max_tokens or type
 func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filterBy string, filterValue interface{}) ModelResponse {
 	resp := ModelResponse{
@@ -295,7 +389,7 @@ func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filte
 		Message: "success",
 	}
 
-	provider := pm.findProvider(providerName)
+	provider := pm.FindProvider(providerName)
 	if provider == nil {
 		resp.Code = 404
 		resp.Message = fmt.Sprintf("Provider '%s' not found", providerName)
@@ -338,7 +432,7 @@ func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filte
 			"name":        model.Name,
 			"max_tokens":  model.MaxTokens,
 			"model_types": model.ModelTypes,
-			"features":    getFeaturesMap(model.Features),
+			//"features":    getFeaturesMap(model.Features),
 		}
 
 		if filterBy != "" && filterValue != nil {
@@ -362,20 +456,20 @@ func (pm *ProviderManager) SearchByFeature(featureType string) ModelResponse {
 		Message: "success",
 	}
 
-	for _, provider := range pm.Providers {
-		for _, model := range provider.Models {
-			if modelHasFeature(model.Features, featureType) {
-				modelData := map[string]interface{}{
-					"provider":    provider.Name,
-					"name":        model.Name,
-					"max_tokens":  model.MaxTokens,
-					"model_types": model.ModelTypes,
-					"features":    getFeaturesMap(model.Features),
-				}
-				resp.Data = append(resp.Data, modelData)
-			}
-		}
-	}
+	//for _, provider := range pm.Providers {
+	//	for _, model := range provider.Models {
+	//		if modelHasFeature(model.Features, featureType) {
+	//			modelData := map[string]interface{}{
+	//				"provider":    provider.Name,
+	//				"name":        model.Name,
+	//				"max_tokens":  model.MaxTokens,
+	//				"model_types": model.ModelTypes,
+	//				"features":    getFeaturesMap(model.Features),
+	//			}
+	//			resp.Data = append(resp.Data, modelData)
+	//		}
+	//	}
+	//}
 
 	if len(resp.Data) == 0 {
 		resp.Code = 404
@@ -401,7 +495,7 @@ func (pm *ProviderManager) SearchByType(modelType string) ModelResponse {
 					"name":        model.Name,
 					"max_tokens":  model.MaxTokens,
 					"model_types": model.ModelTypes,
-					"features":    getFeaturesMap(model.Features),
+					//"features":    getFeaturesMap(model.Features),
 				}
 				resp.Data = append(resp.Data, modelData)
 			}
@@ -414,6 +508,26 @@ func (pm *ProviderManager) SearchByType(modelType string) ModelResponse {
 	}
 
 	return resp
+}
+
+func GetFeatures(model *Model) []string {
+	var features []string
+	if model.Thinking != nil {
+		features = append(features, "thinking")
+	}
+	return features
+}
+
+func ConvertToFeaturesMap(model *Model) map[string]interface{} {
+	featuresMap := make(map[string]interface{})
+	if model.Thinking != nil {
+		thinkingMap := map[string]interface{}{
+			"default_value":   model.Thinking.DefaultValue,
+			"clear_reasoning": model.Thinking.ClearThinking,
+		}
+		featuresMap["thinking"] = thinkingMap
+	}
+	return featuresMap
 }
 
 // Helper: Get features map for response
@@ -481,7 +595,7 @@ func modelHasFeature(features Features, featureType string) bool {
 }
 
 // Helper: Find provider by name
-func (pm *ProviderManager) findProvider(name string) *Provider {
+func (pm *ProviderManager) FindProvider(name string) *Provider {
 	for i := range pm.Providers {
 		if strings.EqualFold(pm.Providers[i].Name, name) {
 			return &pm.Providers[i]
@@ -494,7 +608,7 @@ func (pm *ProviderManager) findProvider(name string) *Provider {
 func (pm *ProviderManager) findModel(provider *Provider, modelName string) *Model {
 	for i := range provider.Models {
 		if strings.EqualFold(provider.Models[i].Name, modelName) {
-			return &provider.Models[i]
+			return provider.Models[i]
 		}
 	}
 	return nil

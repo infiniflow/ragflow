@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 from typing import Any
+
 from .base import Base
 from .document import Document
 
@@ -66,6 +67,7 @@ class DataSet(Base):
     def list_documents(
         self,
         id: str | None = None,
+        ids: list[str] | None = None,
         name: str | None = None,
         keywords: str | None = None,
         page: int = 1,
@@ -75,6 +77,10 @@ class DataSet(Base):
         create_time_from: int = 0,
         create_time_to: int = 0,
     ):
+        # Validate that id and ids are not used together
+        if id and ids:
+            raise ValueError("Cannot use both 'id' and 'ids' parameters at the same time.")
+
         params = {
             "id": id,
             "name": name,
@@ -86,6 +92,10 @@ class DataSet(Base):
             "create_time_from": create_time_from,
             "create_time_to": create_time_to,
         }
+        # Handle ids parameter - convert to multiple query params
+        if ids:
+            for doc_id in ids:
+                params.append(("ids", doc_id))
         res = self.get(f"/datasets/{self.id}/documents", params=params)
         res = res.json()
         documents = []
@@ -100,8 +110,7 @@ class DataSet(Base):
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
-        
-    
+
     def _get_documents_status(self, document_ids):
         import time
         terminal_states = {"DONE", "FAIL", "CANCEL"}
@@ -156,7 +165,7 @@ class DataSet(Base):
         """
         Retrieve auto-metadata configuration for a dataset via SDK.
         """
-        res = self.get(f"/datasets/{self.id}/auto_metadata")
+        res = self.get(f"/datasets/{self.id}/metadata/config")
         res = res.json()
         if res.get("code") == 0:
             return res["data"]
@@ -166,7 +175,7 @@ class DataSet(Base):
         """
         Update auto-metadata configuration for a dataset via SDK.
         """
-        res = self.put(f"/datasets/{self.id}/auto_metadata", config)
+        res = self.put(f"/datasets/{self.id}/metadata/config", config)
         res = res.json()
         if res.get("code") == 0:
             return res["data"]

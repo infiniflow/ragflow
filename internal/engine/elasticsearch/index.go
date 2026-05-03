@@ -22,30 +22,43 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 )
 
-// CreateIndex creates an index
-func (e *elasticsearchEngine) CreateIndex(ctx context.Context, indexName, datasetID string, vectorSize int, parserID string) error {
-	// Elasticsearch doesn't support vector_size or parser_id in the same way
-	// Build mapping for ES (if needed)
-	// TODO
-	mapping := map[string]interface{}{
-		"dataset_id": datasetID,
-	}
-
+// CreateDataset creates an index
+func (e *elasticsearchEngine) CreateDataset(ctx context.Context, indexName, datasetID string, vectorSize int, parserID string) error {
 	if indexName == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}
 
 	// Check if index already exists
-	exists, err := e.IndexExists(ctx, indexName)
+	exists, err := e.TableExists(ctx, indexName)
 	if err != nil {
 		return fmt.Errorf("failed to check index existence: %w", err)
 	}
 	if exists {
 		return fmt.Errorf("index '%s' already exists", indexName)
+	}
+
+	// Load mapping based on index type
+	var mapping map[string]interface{}
+	if datasetID == "skill" {
+		// Load skill-specific mapping
+		skillMapping, err := loadSkillMapping()
+		if err != nil {
+			return fmt.Errorf("failed to load skill mapping: %w", err)
+		}
+		mapping = skillMapping
+	} else {
+		// Default mapping for dataset
+		mapping = map[string]interface{}{
+			"settings": map[string]interface{}{
+				"number_of_shards":   1,
+				"number_of_replicas": 0,
+			},
+		}
 	}
 
 	// Prepare request body
@@ -71,7 +84,12 @@ func (e *elasticsearchEngine) CreateIndex(ctx context.Context, indexName, datase
 	defer res.Body.Close()
 
 	if res.IsError() {
-		return fmt.Errorf("elasticsearch returned error: %s", res.Status())
+		bodyBytes, _ := io.ReadAll(res.Body)
+		reason := extractErrorReason(bodyBytes)
+		if reason != "" {
+			return fmt.Errorf("elasticsearch error: %s", reason)
+		}
+		return fmt.Errorf("elasticsearch returned error: %s, body: %s", res.Status(), string(bodyBytes))
 	}
 
 	// Parse response
@@ -88,14 +106,165 @@ func (e *elasticsearchEngine) CreateIndex(ctx context.Context, indexName, datase
 	return nil
 }
 
-// DeleteIndex deletes an index
-func (e *elasticsearchEngine) DeleteIndex(ctx context.Context, indexName string) error {
+// loadSkillMapping loads the skill index mapping from config file
+func loadSkillMapping() (map[string]interface{}, error) {
+	// Try multiple possible locations for the mapping file
+	possiblePaths := []string{
+		"conf/skill_es_mapping.json",
+		"../conf/skill_es_mapping.json",
+		"/app/conf/skill_es_mapping.json",
+	}
+
+	var data []byte
+	var err error
+	for _, path := range possiblePaths {
+		data, err = os.ReadFile(path)
+		if err == nil {
+			break
+		}
+	}
+
+	if err != nil {
+		// Fallback to default skill mapping if file not found
+		return getDefaultSkillMapping(), nil
+	}
+
+	var mapping map[string]interface{}
+	if err := json.Unmarshal(data, &mapping); err != nil {
+		return nil, fmt.Errorf("failed to parse skill mapping: %w", err)
+	}
+
+	return mapping, nil
+}
+
+// getDefaultSkillMapping returns the default skill index mapping
+func getDefaultSkillMapping() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"index": map[string]interface{}{
+				"number_of_shards":   1,
+				"number_of_replicas": 0,
+				"refresh_interval":   "1000ms",
+			},
+		},
+		"mappings": map[string]interface{}{
+			"dynamic": false,
+			"properties": map[string]interface{}{
+				"skill_id": map[string]interface{}{
+					"type":  "keyword",
+					"store": true,
+				},
+				"name": map[string]interface{}{
+					"type":  "text",
+					"index": false,
+					"store": true,
+				},
+				"name_tks": map[string]interface{}{
+					"type":     "text",
+					"analyzer": "whitespace",
+					"store":    true,
+				},
+				"tags": map[string]interface{}{
+					"type":  "text",
+					"index": false,
+					"store": true,
+				},
+				"tags_tks": map[string]interface{}{
+					"type":     "text",
+					"analyzer": "whitespace",
+					"store":    true,
+				},
+				"description": map[string]interface{}{
+					"type":  "text",
+					"index": false,
+					"store": true,
+				},
+				"description_tks": map[string]interface{}{
+					"type":     "text",
+					"analyzer": "whitespace",
+					"store":    true,
+				},
+				"content": map[string]interface{}{
+					"type":  "text",
+					"index": false,
+					"store": true,
+				},
+				"content_tks": map[string]interface{}{
+					"type":     "text",
+					"analyzer": "whitespace",
+					"store":    true,
+				},
+				"q_3072_vec": map[string]interface{}{
+					"type":       "dense_vector",
+					"dims":       3072,
+					"index":      true,
+					"similarity": "cosine",
+				},
+				"q_2560_vec": map[string]interface{}{
+					"type":       "dense_vector",
+					"dims":       2560,
+					"index":      true,
+					"similarity": "cosine",
+				},
+				"q_1536_vec": map[string]interface{}{
+					"type":       "dense_vector",
+					"dims":       1536,
+					"index":      true,
+					"similarity": "cosine",
+				},
+				"q_1024_vec": map[string]interface{}{
+					"type":       "dense_vector",
+					"dims":       1024,
+					"index":      true,
+					"similarity": "cosine",
+				},
+				"q_768_vec": map[string]interface{}{
+					"type":       "dense_vector",
+					"dims":       768,
+					"index":      true,
+					"similarity": "cosine",
+				},
+				"q_512_vec": map[string]interface{}{
+					"type":       "dense_vector",
+					"dims":       512,
+					"index":      true,
+					"similarity": "cosine",
+				},
+				"q_256_vec": map[string]interface{}{
+					"type":       "dense_vector",
+					"dims":       256,
+					"index":      true,
+					"similarity": "cosine",
+				},
+				"version": map[string]interface{}{
+					"type":  "keyword",
+					"store": true,
+				},
+				"status": map[string]interface{}{
+					"type":  "keyword",
+					"store": true,
+				},
+				"create_time": map[string]interface{}{
+					"type":  "long",
+					"store": true,
+				},
+				"update_time": map[string]interface{}{
+					"type":  "long",
+					"store": true,
+				},
+			},
+		},
+	}
+}
+
+// DropTable deletes an index
+func (e *elasticsearchEngine) DropTable(ctx context.Context, indexName string) error {
 	if indexName == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}
 
 	// Check if index exists
-	exists, err := e.IndexExists(ctx, indexName)
+	exists, err := e.TableExists(ctx, indexName)
 	if err != nil {
 		return fmt.Errorf("failed to check index existence: %w", err)
 	}
@@ -115,14 +284,19 @@ func (e *elasticsearchEngine) DeleteIndex(ctx context.Context, indexName string)
 	defer res.Body.Close()
 
 	if res.IsError() {
+		bodyBytes, _ := io.ReadAll(res.Body)
+		reason := extractErrorReason(bodyBytes)
+		if reason != "" {
+			return fmt.Errorf("elasticsearch error: %s", reason)
+		}
 		return fmt.Errorf("elasticsearch returned error: %s", res.Status())
 	}
 
 	return nil
 }
 
-// IndexExists checks if index exists
-func (e *elasticsearchEngine) IndexExists(ctx context.Context, indexName string) (bool, error) {
+// TableExists checks if index exists
+func (e *elasticsearchEngine) TableExists(ctx context.Context, indexName string) (bool, error) {
 	if indexName == "" {
 		return false, fmt.Errorf("index name cannot be empty")
 	}
@@ -143,11 +317,16 @@ func (e *elasticsearchEngine) IndexExists(ctx context.Context, indexName string)
 		return false, nil
 	}
 
+	bodyBytes, _ := io.ReadAll(res.Body)
+	reason := extractErrorReason(bodyBytes)
+	if reason != "" {
+		return false, fmt.Errorf("elasticsearch error: %s", reason)
+	}
 	return false, fmt.Errorf("elasticsearch returned error: %s", res.Status())
 }
 
-// CreateDocMetaIndex creates the document metadata index
-func (e *elasticsearchEngine) CreateDocMetaIndex(ctx context.Context, indexName string) error {
+// CreateMetadata creates the document metadata index
+func (e *elasticsearchEngine) CreateMetadata(ctx context.Context, indexName string) error {
 	// TODO
 	return nil
 }
@@ -162,4 +341,23 @@ func (e *elasticsearchEngine) InsertDataset(ctx context.Context, documents []map
 func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, documents []map[string]interface{}, tenantID string) ([]string, error) {
 	// TODO
 	return []string{}, nil
+}
+
+
+// UpdateDataset updates a chunk by condition
+func (e *elasticsearchEngine) UpdateDataset(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, tableNamePrefix string, knowledgebaseID string) error {
+	// TODO
+	return nil
+}
+
+// UpdateMetadata updates document metadata in tenant's metadata index
+func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, kbID string, metaFields map[string]interface{}, tenantID string) error {
+	// TODO
+	return nil
+}
+
+// Delete deletes rows from either a dataset index or metadata index
+func (e *elasticsearchEngine) Delete(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
+	// TODO
+	return 0, nil
 }

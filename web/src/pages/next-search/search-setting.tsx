@@ -1,6 +1,6 @@
 // src/pages/next-search/search-setting.tsx
 
-import { AvatarUpload } from '@/components/avatar-upload';
+import AvatarNameDescription from '@/components/avatar-name-description';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import {
   LlmSettingFieldItems,
@@ -22,10 +22,11 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { MultiSelect } from '@/components/ui/multi-select';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
+import { useFetchKnowledgeMetadataKeys } from '@/hooks/use-knowledge-request';
 import {
   useComposeLlmOptionsByModelTypes,
   useSelectLlmOptionsByModelType,
@@ -45,10 +46,6 @@ import {
   IllmSettingProps,
   useUpdateSearch,
 } from '../next-searches/hooks';
-// import {
-//   LlmSettingFieldItems,
-//   LlmSettingSchema,
-// } from './search-setting-aisummery-config';
 
 interface SearchSettingProps {
   open: boolean;
@@ -73,9 +70,23 @@ const SearchSettingFormSchema = z
       use_rerank: z.boolean(),
       top_k: z.number(),
       summary: z.boolean(),
-      llm_setting: z.object(LlmSettingSchema),
+      llm_setting: z.object({
+        ...LlmSettingSchema,
+        parameter: z.string().optional(),
+      }),
       related_search: z.boolean(),
       query_mindmap: z.boolean(),
+      doc_ids: z.array(z.string()),
+      chat_id: z.string(),
+      highlight: z.boolean(),
+      keyword: z.boolean(),
+      chat_settingcross_languages: z.array(z.string()),
+      reference_metadata: z
+        .object({
+          include: z.boolean().optional(),
+          fields: z.array(z.string()).optional(),
+        })
+        .optional(),
       ...MetadataFilterSchema,
     }),
   })
@@ -135,7 +146,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         chat_id: search_config?.chat_id || '',
         llm_setting: {
           llm_id: search_config?.chat_id || '',
-          parameter: llm_setting?.parameter,
+          parameter: llm_setting?.parameter || '',
           temperature: llm_setting?.temperature || 0,
           top_p: llm_setting?.top_p || 0,
           frequency_penalty: llm_setting?.frequency_penalty || 0,
@@ -153,6 +164,14 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         related_search: search_config?.related_search || false,
         query_mindmap: search_config?.query_mindmap || false,
         meta_data_filter: search_config?.meta_data_filter,
+        reference_metadata: {
+          include: search_config?.reference_metadata?.include || false,
+          fields:
+            search_config?.reference_metadata?.fields &&
+            search_config.reference_metadata.fields.length > 0
+              ? search_config.reference_metadata.fields
+              : undefined,
+        },
       },
     });
   }, [data, search_config, llm_setting, formMethods, descriptionDefaultValue]);
@@ -190,6 +209,50 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
     control: formMethods.control,
     name: 'search_config.summary',
   });
+  const selectedKbIds = useWatch({
+    control: formMethods.control,
+    name: 'search_config.kb_ids',
+  });
+  const referenceMetadataEnabled = useWatch({
+    control: formMethods.control,
+    name: 'search_config.reference_metadata.include',
+  });
+  const { data: metadataKeys } = useFetchKnowledgeMetadataKeys(
+    selectedKbIds || [],
+  );
+  const metadataFieldOptions = useMemo(() => {
+    return (metadataKeys || []).map((key) => ({
+      label: key,
+      value: key,
+    }));
+  }, [metadataKeys]);
+
+  useEffect(() => {
+    const currentFields = formMethods.getValues(
+      'search_config.reference_metadata.fields',
+    );
+    if (
+      referenceMetadataEnabled &&
+      Array.isArray(currentFields) &&
+      currentFields.length > 0 &&
+      metadataKeys
+    ) {
+      const validFields = currentFields.filter((field) =>
+        metadataKeys.includes(field),
+      );
+      if (validFields.length !== currentFields.length) {
+        formMethods.setValue(
+          'search_config.reference_metadata.fields',
+          validFields,
+        );
+      }
+    } else if (!referenceMetadataEnabled) {
+      formMethods.setValue(
+        'search_config.reference_metadata.fields',
+        undefined,
+      );
+    }
+  }, [selectedKbIds, metadataKeys, referenceMetadataEnabled, formMethods]);
 
   // Reset top_k to 1024 only when user actively disables rerank (from true to false)
   const prevRerankEnabled = useRef<boolean | undefined>(undefined);
@@ -224,11 +287,22 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         frequency_penalty: llm_setting.frequency_penalty,
         presence_penalty: llm_setting.presence_penalty,
       } as IllmSettingProps;
+      const referenceMetadata = other_config.reference_metadata;
+      const normalizedReferenceMetadata = referenceMetadata
+        ? {
+            ...referenceMetadata,
+            ...(Array.isArray(referenceMetadata.fields) &&
+            referenceMetadata.fields.length === 0
+              ? { fields: undefined }
+              : {}),
+          }
+        : referenceMetadata;
 
       await updateSearch({
         ...other_formdata,
         search_config: {
           ...other_config,
+          reference_metadata: normalizedReferenceMetadata,
           chat_id: llm_setting.llm_id,
           vector_similarity_weight: 1 - vector_similarity_weight,
           rerank_id: use_rerank ? rerank_id : '',
@@ -246,7 +320,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
   return (
     <div
       className={cn(
-        'text-text-primary border p-4 pb-12 rounded-lg',
+        'text-text-primary border-l-0.5 p-4 pb-12',
         {
           'animate-fade-in-right': open,
           'animate-fade-out-right': !open,
@@ -254,7 +328,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         width0,
         className,
       )}
-      style={{ maxHeight: 'calc(100dvh - 170px)' }}
     >
       <div className="flex justify-between items-center text-base mb-8">
         <div className="text-text-primary">{t('search.searchSettings')}</div>
@@ -279,69 +352,68 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
             )}
             className="space-y-6"
           >
-            {/* Name */}
-            <FormField
-              control={formMethods.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    <span className="text-destructive mr-1"> *</span>
-                    {t('search.name')}
-                  </FormLabel>
-                  <FormControl>
-                    <Input placeholder={t('search.name')} {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            {/* Avatar */}
-            <FormField
-              control={formMethods.control}
-              name="avatar"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('search.avatar')}</FormLabel>
-                  <FormControl>
-                    <AvatarUpload {...field}></AvatarUpload>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            {/* Description */}
-            <FormField
-              control={formMethods.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('search.description')}</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder={descriptionDefaultValue}
-                      {...field}
-                      onFocus={() => {
-                        if (field.value === descriptionDefaultValue) {
-                          field.onChange('');
-                        }
-                      }}
-                      onBlur={() => {
-                        if (field.value === '') {
-                          field.onChange(descriptionDefaultValue);
-                        }
-                      }}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <AvatarNameDescription avatarField="avatar" />
+
             <KnowledgeBaseFormField
               name="search_config.kb_ids"
               required
             ></KnowledgeBaseFormField>
             <MetadataFilter prefix="search_config."></MetadataFilter>
+            <FormField
+              control={formMethods.control}
+              name="search_config.reference_metadata.include"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={(value) => {
+                        field.onChange(value);
+                        if (!value) {
+                          formMethods.setValue(
+                            'search_config.reference_metadata.fields',
+                            undefined,
+                          );
+                        }
+                      }}
+                    />
+                  </FormControl>
+                  <FormLabel tooltip="Display document metadata (e.g., title, page number, upload date) alongside retrieved text chunks">
+                    Show chunk metadata
+                  </FormLabel>
+                </FormItem>
+              )}
+            />
+            {referenceMetadataEnabled && (
+              <FormField
+                control={formMethods.control}
+                name="search_config.reference_metadata.fields"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel tooltip="Select which metadata fields to display with each chunk">
+                      Metadata fields
+                    </FormLabel>
+                    <FormControl className="bg-bg-input">
+                      <MultiSelect
+                        options={metadataFieldOptions}
+                        onValueChange={field.onChange}
+                        showSelectAll={false}
+                        placeholder="Please select"
+                        maxCount={20}
+                        defaultValue={
+                          Array.isArray(field.value) ? field.value : []
+                        }
+                        value={Array.isArray(field.value) ? field.value : []}
+                        name={field.name}
+                        ref={field.ref}
+                        onBlur={field.onBlur}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
             <SimilaritySliderFormField
               isTooltipShown
               similarityName="search_config.similarity_threshold"

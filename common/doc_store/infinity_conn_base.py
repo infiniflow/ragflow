@@ -173,7 +173,15 @@ class InfinityConnectionBase(DocStoreConnection):
 
         cond = list()
         for k, v in condition.items():
-            if not isinstance(k, str) or not v:
+            if not isinstance(k, str):
+                continue
+            if k == "available_int":
+                if v == 0:
+                    cond.append("available_int=0")
+                elif v == 1:
+                    cond.append("available_int=1")
+                continue
+            if not v:
                 continue
             if self.field_keyword(k):
                 if isinstance(v, list):
@@ -187,7 +195,8 @@ class InfinityConnectionBase(DocStoreConnection):
                         strInCond = f"({strInCond})"
                         cond.append(strInCond)
                 else:
-                    cond.append(f"filter_fulltext('{self.convert_matching_field(k)}', '{v}')")
+                    escaped_v = str(v).replace("'", "''")
+                    cond.append(f"filter_fulltext('{self.convert_matching_field(k)}', '{escaped_v}')")
             elif isinstance(v, list):
                 inCond = list()
                 for item in v:
@@ -206,7 +215,8 @@ class InfinityConnectionBase(DocStoreConnection):
                         if kk == "exists":
                             cond.append("NOT (%s)" % exists(vv))
             elif isinstance(v, str):
-                cond.append(f"{k}='{v}'")
+                escaped_v = v.replace("'", "''")
+                cond.append(f"{k}='{escaped_v}'")
             elif k == "exists":
                 cond.append(exists(v))
             else:
@@ -225,6 +235,8 @@ class InfinityConnectionBase(DocStoreConnection):
                 schema.append("SCORE")
             elif field_name == "similarity()":  # Workaround: fix schema is changed to similarity()
                 schema.append("SIMILARITY")
+            elif field_name == "row_id()":  # Workaround: fix schema - Infinity returns "row_id" not "row_id()"
+                schema.append("row_id")
             else:
                 schema.append(field_name)
         return pd.DataFrame(columns=schema)
@@ -268,7 +280,8 @@ class InfinityConnectionBase(DocStoreConnection):
             fp_mapping = os.path.join(get_project_base_directory(), "conf", self.mapping_file_name)
             if not os.path.exists(fp_mapping):
                 raise Exception(f"Mapping file not found at {fp_mapping}")
-            schema = json.load(open(fp_mapping))
+            with open(fp_mapping) as f:
+                schema = json.load(f)
 
             if parser_id is not None:
                 from common.constants import ParserType
@@ -488,17 +501,29 @@ class InfinityConnectionBase(DocStoreConnection):
         return len(res)
 
     def get_doc_ids(self, res: tuple[pd.DataFrame, int] | pd.DataFrame) -> list[str]:
+        # Extract DataFrame from result
         if isinstance(res, tuple):
-            res = res[0]
-        return list(res["id"])
+            df, count = res
+            if count == 0:
+                return []
+        else:
+            df = res
+        return list(df["id"])
 
     @abstractmethod
     def get_fields(self, res: tuple[pd.DataFrame, int] | pd.DataFrame, fields: list[str]) -> dict[str, dict]:
         raise NotImplementedError("Not implemented")
 
     def get_highlight(self, res: tuple[pd.DataFrame, int] | pd.DataFrame, keywords: list[str], field_name: str):
+        # Extract DataFrame from result
         if isinstance(res, tuple):
-            res = res[0]
+            df, _ = res
+        else:
+            df = res
+
+        if df.empty or field_name not in df.columns:
+            return {}
+
         ans = {}
         num_rows = len(res)
         column_id = res["id"]

@@ -64,7 +64,7 @@ const FloatingChatWidgetMarkdown = ({
   const isDarkTheme = useIsDarkTheme();
 
   const contentWithCursor = useMemo(() => {
-    let text = content === '' ? t('chat.searching') : content;
+    const text = content === '' ? t('chat.searching') : content;
     const nextText = replaceTextByOldReg(text);
     return pipe(replaceThinkToSection, preprocessLaTeX)(nextText);
   }, [content, t]);
@@ -295,9 +295,7 @@ const FloatingChatWidgetMarkdown = ({
         className="text-sm leading-relaxed space-y-2 prose-sm max-w-full"
         components={
           {
-            p: ({ children, node, ...props }: any) => (
-              <p {...props}>{children}</p>
-            ),
+            p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
             'custom-typography': ({ children }: { children: string }) =>
               renderReference(children),
             code(props: any) {
