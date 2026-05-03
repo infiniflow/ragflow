@@ -63,15 +63,15 @@ class RAGFlowAzureSpnBlob:
         self.conn = None
 
     def health(self):
-        _bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
-        f = self.conn.create_file(fnm)
+        bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
+        f = self.conn.create_file(f"{bucket}/{fnm}")
         f.append_data(binary, offset=0, length=len(binary))
         return f.flush_data(len(binary))
 
     def put(self, bucket, fnm, binary, tenant_id=None):
         for _ in range(3):
             try:
-                f = self.conn.create_file(fnm)
+                f = self.conn.create_file(f"{bucket}/{fnm}")
                 f.append_data(binary, offset=0, length=len(binary))
                 return f.flush_data(len(binary))
             except Exception:
@@ -83,14 +83,14 @@ class RAGFlowAzureSpnBlob:
 
     def rm(self, bucket, fnm):
         try:
-            self.conn.delete_file(fnm)
+            self.conn.delete_file(f"{bucket}/{fnm}")
         except Exception:
             logging.exception(f"Fail rm {bucket}/{fnm}")
 
     def get(self, bucket, fnm):
         for _ in range(1):
             try:
-                client = self.conn.get_file_client(fnm)
+                client = self.conn.get_file_client(f"{bucket}/{fnm}")
                 r = client.download_file()
                 return r.read()
             except Exception:
@@ -101,7 +101,7 @@ class RAGFlowAzureSpnBlob:
 
     def obj_exist(self, bucket, fnm):
         try:
-            client = self.conn.get_file_client(fnm)
+            client = self.conn.get_file_client(f"{bucket}/{fnm}")
             return client.exists()
         except Exception:
             logging.exception(f"Fail put {bucket}/{fnm}")
@@ -110,7 +110,7 @@ class RAGFlowAzureSpnBlob:
     def get_presigned_url(self, bucket, fnm, expires):
         for _ in range(10):
             try:
-                return self.conn.get_presigned_url("GET", bucket, fnm, expires)
+                return self.conn.get_presigned_url("GET", f"{bucket}/{fnm}", expires)
             except Exception:
                 logging.exception(f"fail get {bucket}/{fnm}")
                 self.__open__()
