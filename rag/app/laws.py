@@ -95,7 +95,7 @@ class Docx(DocxParser):
 
 class Pdf(PdfParser):
     def __init__(self):
-        self.model_speciess = ParserType.LAWS.value
+        self.model_species = ParserType.LAWS.value
         super().__init__()
 
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None):
