@@ -127,7 +127,5 @@ def _thread_pool_executor():
 
 async def thread_pool_exec(func, *args, **kwargs):
     loop = asyncio.get_running_loop()
-    if kwargs:
-        func = functools.partial(func, *args, **kwargs)
-        return await loop.run_in_executor(_thread_pool_executor(), func)
-    return await loop.run_in_executor(_thread_pool_executor(), func, *args)
+    wrapped_func = functools.partial(func, *args, **kwargs)
+    return await loop.run_in_executor(_thread_pool_executor(), wrapped_func)
