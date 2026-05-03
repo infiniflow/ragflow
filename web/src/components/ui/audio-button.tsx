@@ -271,11 +271,9 @@ export const AudioButton = ({
       //   throw new Error('ReadableStream not supported in this browser');
       // }
 
-      console.log('Response:', response);
       const { data, code } = await response.json();
       if (code === 0 && data && data.text) {
         setTranscript(data.text);
-        console.log('Transcript:', data.text);
         onOk?.(data.text);
       }
       setPopoverOpen(false);
@@ -338,8 +336,8 @@ export const AudioButton = ({
           <div className="relative">
             <Popover
               open={popoverOpen}
-              onOpenChange={() => {
-                setPopoverOpen(true);
+              onOpenChange={(open) => {
+                setPopoverOpen(open);
               }}
             >
               <PopoverTrigger asChild>

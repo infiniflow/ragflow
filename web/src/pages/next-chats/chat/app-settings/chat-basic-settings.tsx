@@ -27,13 +27,20 @@ export default function ChatBasicSetting() {
   const form = useFormContext();
   const emptyResponseValue = form.watch('prompt_config.empty_response');
   const prologueValue = form.watch('prompt_config.prologue');
-  const kbIds = (useWatch({ control: form.control, name: 'dataset_ids' }) ||
-    []) as string[];
+  const rawDatasetIds = useWatch({
+    control: form.control,
+    name: 'dataset_ids',
+  });
+  const kbIds = useMemo(
+    () => (rawDatasetIds || []) as string[],
+    [rawDatasetIds],
+  );
   const metadataInclude = useWatch({
     control: form.control,
     name: 'prompt_config.reference_metadata.include',
   });
-  const { data: metadataKeys } = useFetchKnowledgeMetadataKeys(kbIds);
+  const { data: metadataKeys, loading: metadataKeysLoading } =
+    useFetchKnowledgeMetadataKeys(kbIds);
   const metadataFieldOptions = useMemo(() => {
     return (metadataKeys || []).map((key) => ({
       label: key,
@@ -47,6 +54,7 @@ export default function ChatBasicSetting() {
     );
     if (
       metadataInclude &&
+      !metadataKeysLoading &&
       Array.isArray(currentFields) &&
       currentFields.length > 0 &&
       metadataKeys
@@ -60,7 +68,7 @@ export default function ChatBasicSetting() {
     } else if (!metadataInclude) {
       form.setValue('prompt_config.reference_metadata.fields', undefined);
     }
-  }, [kbIds, metadataKeys, metadataInclude, form]);
+  }, [kbIds, metadataKeys, metadataKeysLoading, metadataInclude, form]);
 
   return (
     <div className="space-y-8">

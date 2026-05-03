@@ -47,7 +47,12 @@ def _restore_common_data_source_package() -> None:
     for key in keys:
         del sys.modules[key]
     importlib.invalidate_caches()
-    importlib.import_module("common.data_source")
+    try:
+        importlib.import_module("common.data_source")
+    except Exception as exc:  # pragma: no cover
+        raise ImportError(
+            "conftest: failed to restore real common.data_source package"
+        ) from exc
 
 
 _restore_common_data_source_package()

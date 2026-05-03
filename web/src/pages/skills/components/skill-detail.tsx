@@ -103,9 +103,11 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
   const [versionFiles, setVersionFiles] = useState<SkillFileEntry[]>([]);
   const [versionLoading, setVersionLoading] = useState(false);
 
-  // Check if skill has multiple versions
-  const hasVersions = skill?.versions && skill.versions.length > 0;
-  const availableVersions = skill?.versions || [];
+  const availableVersions = useMemo(
+    () => skill?.versions ?? [],
+    [skill?.versions],
+  );
+  const hasVersions = availableVersions.length > 0;
 
   // Reset state when skill changes or drawer opens/closes
   useEffect(() => {
@@ -128,20 +130,14 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
       setSelectedFile(null);
       setFileContent('');
     }
-  }, [
-    open,
-    skill?.id,
-    hasVersions,
-    skill?.metadata?.version,
-    availableVersions,
-  ]);
+  }, [open, skill, hasVersions, availableVersions]);
 
   const resolvedVersion = useMemo(() => {
     if (!skill) return '';
     return (
       selectedVersion || skill.metadata?.version || skill.versions?.[0] || ''
     );
-  }, [selectedVersion, skill?.id, skill?.metadata?.version, skill?.versions]);
+  }, [selectedVersion, skill]);
 
   // Load files when version or skill changes
   useEffect(() => {
@@ -204,16 +200,7 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
     return () => {
       isActive = false;
     };
-  }, [
-    skill?.id,
-    skill?.source_type,
-    skill?.metadata?.version,
-    skill?.versions,
-    (skill as any)?._folderId,
-    skill?.files,
-    resolvedVersion,
-    getVersionFiles,
-  ]);
+  }, [skill, resolvedVersion, getVersionFiles]);
 
   // Use version files if available, otherwise use skill.files
   const currentFiles = useMemo(() => {
@@ -247,8 +234,8 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
           skill,
         );
         setFileContent(content || '');
-      } catch {
-        console.error('Failed to load file content');
+      } catch (error) {
+        console.error('Failed to load file content', error);
       } finally {
         setLoading(false);
       }
@@ -274,7 +261,7 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
         handleSelect({ id: targetFile.path } as TreeDataItem);
       }
     }
-  }, [open, skill?.id, currentFiles.length]);
+  }, [open, skill, currentFiles, handleSelect, selectedFile]);
 
   const renderFileContent = () => {
     if (!selectedFile) {

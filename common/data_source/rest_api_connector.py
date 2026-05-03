@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlparse, urlunparse
 import ipaddress
 import socket
 import requests
-from pydantic import BaseModel, Field, HttpUrl, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, ValidationError, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,8 @@ def _text_to_dict(v: Any) -> Dict[str, str]:
 
 class RestAPIConnectorConfig(BaseModel):
     """Validated schema for the REST API connector configuration."""
+
+    model_config = ConfigDict(extra="ignore")
 
     url: HttpUrl
     method: str = "GET"
@@ -356,6 +358,55 @@ class RestAPIConnector(LoadConnector, PollConnector):
     # -- Config validation (test connection) --------------------------------
 
     @classmethod
+    def parse_storage_config(cls, raw: Dict[str, Any]) -> RestAPIConnectorConfig:
+        """Parse connector config as stored on the connector row (no network I/O).
+
+        ``credentials`` live under ``raw`` but are excluded from the schema and
+        must be applied via ``load_credentials`` separately.
+        """
+        body = {k: v for k, v in raw.items() if k != "credentials"}
+        try:
+            cfg = RestAPIConnectorConfig(**body)
+        except ValidationError as exc:
+            raise ConnectorValidationError(f"Invalid REST API config: {exc}") from exc
+        cfg.normalized_method()
+        cfg.normalized_auth_type()
+        cfg.normalized_pagination_type()
+        cfg.ensure_required_fields()
+        return cfg
+
+    @classmethod
+    def from_parsed_config(
+        cls,
+        cfg: RestAPIConnectorConfig,
+        *,
+        max_pages: Optional[int] = None,
+    ) -> RestAPIConnector:
+        """Build a connector from validated config (``__init__`` runs SSRF validation)."""
+        return cls(
+            url=str(cfg.url),
+            method=cfg.normalized_method(),
+            headers=cfg.headers,
+            query_params=cfg.query_params,
+            auth_type=cfg.normalized_auth_type(),
+            auth_config=cfg.auth_config,
+            items_path=cfg.items_path,
+            id_field=cfg.id_field,
+            content_fields=cfg.content_fields,
+            metadata_fields=cfg.metadata_fields,
+            pagination_type=cfg.normalized_pagination_type(),
+            pagination_config=cfg.pagination_config,
+            poll_timestamp_field=cfg.poll_timestamp_field,
+            batch_size=cfg.batch_size,
+            max_pages=max_pages if max_pages is not None else cfg.max_pages,
+            request_delay=cfg.request_delay,
+            request_body=cfg.request_body,
+            field_type_hints=cfg.field_type_hints,
+            field_default_values=cfg.field_default_values,
+            content_template=cfg.content_template,
+        )
+
+    @classmethod
     def validate_config(
         cls,
         config: Dict[str, Any],
@@ -374,41 +425,12 @@ class RestAPIConnector(LoadConnector, PollConnector):
         Raises:
             ConnectorValidationError: On schema or connectivity failure.
         """
-        try:
-            cfg = RestAPIConnectorConfig(**config)
-        except ValidationError as exc:
-            raise ConnectorValidationError(f"Invalid REST API config: {exc}") from exc
-
-        cfg.normalized_method()
-        cfg.normalized_auth_type()
-        cfg.normalized_pagination_type()
-        cfg.ensure_required_fields()
+        cfg = cls.parse_storage_config(config)
+        validation_cap = min(cfg.max_pages, 10)
+        connector = cls.from_parsed_config(cfg, max_pages=validation_cap)
 
         if credentials is None and cfg.auth_type != AuthType.NONE:
             return cfg
-
-        connector = cls(
-            url=str(cfg.url),
-            method=cfg.normalized_method(),
-            headers=cfg.headers,
-            query_params=cfg.query_params,
-            auth_type=cfg.normalized_auth_type(),
-            auth_config=cfg.auth_config,
-            items_path=cfg.items_path,
-            id_field=cfg.id_field,
-            content_fields=cfg.content_fields,
-            metadata_fields=cfg.metadata_fields,
-            pagination_type=cfg.normalized_pagination_type(),
-            pagination_config=cfg.pagination_config,
-            poll_timestamp_field=cfg.poll_timestamp_field,
-            batch_size=cfg.batch_size,
-            max_pages=min(cfg.max_pages, 10),
-            request_delay=cfg.request_delay,
-            request_body=cfg.request_body,
-            field_type_hints=cfg.field_type_hints,
-            field_default_values=cfg.field_default_values,
-            content_template=cfg.content_template,
-        )
 
         if credentials is not None:
             connector.load_credentials(credentials)
@@ -538,7 +560,24 @@ class RestAPIConnector(LoadConnector, PollConnector):
 
     def _page_iter_for_validation(self) -> Iterable[Mapping[str, Any]]:
         """Single-page iterator used for connectivity checks."""
-        response_json = self._fetch_page(params={})
+        params: Dict[str, Any] = {}
+        if self.pagination_type == PaginationType.PAGE:
+            page = int(self.pagination_config.get("start_page", 1))
+            per_page = self._resolve_page_size()
+            self._apply_page_pagination(params, page, per_page)
+        elif self.pagination_type == PaginationType.OFFSET:
+            per_page = self._resolve_page_size()
+            offset = int(self.pagination_config.get("start_offset", 0))
+            limit = int(self.pagination_config.get("limit", per_page))
+            if limit <= 0:
+                limit = per_page
+            self._apply_offset_pagination(params, offset, limit)
+        elif self.pagination_type == PaginationType.CURSOR:
+            cursor = self.pagination_config.get("initial_cursor")
+            if cursor is not None:
+                self._apply_cursor_pagination(params, cursor)
+
+        response_json = self._fetch_page(params=params)
         for item in self._extract_items(response_json):
             yield item
 

@@ -133,7 +133,7 @@ def rm_connector(connector_id):
     return get_json_result(data=True)
 
 
-@manager.route("/<connector_id>/test", methods=["POST"])  # noqa: F821
+@manager.route("/connectors/<connector_id>/test", methods=["POST"])  # noqa: F821
 @login_required
 async def test_connector(connector_id):
     """Validate connector configuration without persisting changes or triggering sync.

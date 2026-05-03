@@ -364,47 +364,6 @@ export const getCommonExtraDefaultValues = () => ({
   },
 });
 
-export const getDataSourceFieldsWithExtras = (
-  source?: DataSourceKey,
-): FormFieldConfig[] => {
-  if (!source) {
-    return [];
-  }
-
-  const sourceFields =
-    DataSourceFormFields[source as keyof typeof DataSourceFormFields] || [];
-  const extraFields = getCommonExtraFields(source);
-
-  if (source !== DataSourceKey.JIRA) {
-    return [...sourceFields, ...extraFields];
-  }
-
-  const modeFieldIndex = sourceFields.findIndex(
-    (field) => field.name === 'config.is_cloud',
-  );
-  if (modeFieldIndex < 0) {
-    return [...sourceFields, ...extraFields];
-  }
-
-  const sharedFields = sourceFields.slice(0, modeFieldIndex);
-  const modeFields = sourceFields.slice(modeFieldIndex);
-
-  const sharedCheckboxFieldIndex = sharedFields.findIndex(
-    (field) => field.type === FormFieldType.Checkbox,
-  );
-
-  if (sharedCheckboxFieldIndex < 0) {
-    return [...sharedFields, ...extraFields, ...modeFields];
-  }
-
-  return [
-    ...sharedFields.slice(0, sharedCheckboxFieldIndex),
-    ...sharedFields.slice(sharedCheckboxFieldIndex),
-    ...extraFields,
-    ...modeFields,
-  ];
-};
-
 export const DataSourceFormFields = {
   [DataSourceKey.RSS]: [
     {
@@ -1143,6 +1102,22 @@ export const DataSourceFormFields = {
       tooltip: t('setting.restApiQueryParamsTip'),
     },
     {
+      label: 'Items Path',
+      name: 'config.items_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '$.items',
+      tooltip: t('setting.restApiItemsPathTip'),
+    },
+    {
+      label: 'ID Field',
+      name: 'config.id_field',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id',
+      tooltip: t('setting.restApiIdFieldTip'),
+    },
+    {
       label: 'Auth Type',
       name: 'config.auth_type',
       type: FormFieldType.Select,
@@ -1742,4 +1717,45 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
+};
+
+export const getDataSourceFieldsWithExtras = (
+  source?: DataSourceKey,
+): FormFieldConfig[] => {
+  if (!source) {
+    return [];
+  }
+
+  const sourceFields =
+    DataSourceFormFields[source as keyof typeof DataSourceFormFields] || [];
+  const extraFields = getCommonExtraFields(source);
+
+  if (source !== DataSourceKey.JIRA) {
+    return [...sourceFields, ...extraFields];
+  }
+
+  const modeFieldIndex = sourceFields.findIndex(
+    (field) => field.name === 'config.is_cloud',
+  );
+  if (modeFieldIndex < 0) {
+    return [...sourceFields, ...extraFields];
+  }
+
+  const sharedFields = sourceFields.slice(0, modeFieldIndex);
+  const modeFields = sourceFields.slice(modeFieldIndex);
+
+  const sharedCheckboxFieldIndex = sharedFields.findIndex(
+    (field) => field.type === FormFieldType.Checkbox,
+  );
+
+  if (sharedCheckboxFieldIndex < 0) {
+    return [...sharedFields, ...extraFields, ...modeFields];
+  }
+
+  return [
+    ...sharedFields.slice(0, sharedCheckboxFieldIndex),
+    ...sharedFields.slice(sharedCheckboxFieldIndex),
+    ...extraFields,
+    ...modeFields,
+  ];
 };

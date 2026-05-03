@@ -60,9 +60,6 @@ from common.data_source import (
     DingTalkAITableConnector,
     RestAPIConnector,
 )
-from common.data_source.rest_api_connector import _DEFAULT_MAX_PAGES
-from common.constants import FileSource, TaskStatus
-from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.models import ConnectorFailure, SeafileSyncScope
 from common.data_source.webdav_connector import WebDAVConnector
 from common.data_source.confluence_connector import ConfluenceConnector
@@ -72,6 +69,7 @@ from common.data_source.github.connector import GithubConnector
 from common.data_source.gitlab_connector import GitlabConnector
 from common.data_source.bitbucket.connector import BitbucketConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
+from common.data_source.exceptions import ConnectorValidationError
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
@@ -1666,34 +1664,12 @@ class REST_API(SyncBase):
     SOURCE_NAME: str = FileSource.REST_API
 
     async def _generate(self, task: dict):
-        def _csv_to_list(value: Any) -> list[str]:
-            if isinstance(value, str):
-                return [v.strip() for v in value.split(",") if v.strip()]
-            return value or []
+        try:
+            cfg = RestAPIConnector.parse_storage_config(self.conf)
+        except ConnectorValidationError as exc:
+            raise ValueError(str(exc)) from exc
 
-        self.connector = RestAPIConnector(
-            url=self.conf["url"],
-            method=self.conf.get("method", "GET"),
-            headers=self.conf.get("headers") or {},
-            query_params=self.conf.get("query_params") or {},
-            auth_type=self.conf.get("auth_type", "none"),
-            auth_config=self.conf.get("auth_config") or {},
-            items_path=self.conf.get("items_path"),
-            id_field=self.conf.get("id_field"),
-            content_fields=_csv_to_list(self.conf.get("content_fields")),
-            metadata_fields=_csv_to_list(self.conf.get("metadata_fields")),
-            pagination_type=self.conf.get("pagination_type", "none"),
-            pagination_config=self.conf.get("pagination_config") or {},
-            poll_timestamp_field=self.conf.get("poll_timestamp_field"),
-            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
-            max_pages=self.conf.get("max_pages", _DEFAULT_MAX_PAGES),
-            request_delay=float(self.conf.get("request_delay", 0.5)),
-            request_body=self.conf.get("request_body"),
-            field_type_hints=self.conf.get("field_type_hints") or {},
-            field_default_values=self.conf.get("field_default_values") or {},
-            content_template=self.conf.get("content_template"),
-        )
-
+        self.connector = RestAPIConnector.from_parsed_config(cfg)
         self.connector.load_credentials(self.conf.get("credentials") or {})
 
         poll_start = task.get("poll_range_start")
