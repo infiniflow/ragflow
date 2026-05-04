@@ -175,6 +175,96 @@ def test_load_user_api_token_fallback_and_fallback_exception(monkeypatch, caplog
 
 
 @pytest.mark.p2
+def test_load_user_session_fallback(monkeypatch, caplog):
+    quart_app, apps_module = _load_apps_module(monkeypatch)
+
+    valid_token = "a" * 32
+    valid_user = SimpleNamespace(id="user-1", email="oidc@example.com", access_token=valid_token)
+    invalid_token_user = SimpleNamespace(id="user-1", email="oidc@example.com", access_token="INVALID_deadbeef")
+    short_token_user = SimpleNamespace(id="user-1", email="oidc@example.com", access_token="too-short")
+
+    async def _case():
+        # No Authorization header but a valid session: helper resolves the user.
+        async with quart_app.test_request_context("/"):
+            from quart import session
+
+            session["_user_id"] = "user-1"
+            monkeypatch.setattr(apps_module.UserService, "query", lambda **_kw: [valid_user])
+            assert apps_module._load_user() is valid_user
+
+        # Malformed bearer header still falls back to session.
+        async with quart_app.test_request_context("/", headers={"Authorization": "Bearer"}):
+            from quart import session
+
+            session["_user_id"] = "user-1"
+            monkeypatch.setattr(apps_module.UserService, "query", lambda **_kw: [valid_user])
+            assert apps_module._load_user() is valid_user
+
+        # Logout-revoked tokens (INVALID_ prefix) are rejected even with a session.
+        async with quart_app.test_request_context("/"):
+            from quart import session
+
+            session["_user_id"] = "user-1"
+            monkeypatch.setattr(apps_module.UserService, "query", lambda **_kw: [invalid_token_user])
+            assert apps_module._load_user() is None
+
+        # Short tokens are rejected (matches the JWT-path length floor).
+        async with quart_app.test_request_context("/"):
+            from quart import session
+
+            session["_user_id"] = "user-1"
+            monkeypatch.setattr(apps_module.UserService, "query", lambda **_kw: [short_token_user])
+            assert apps_module._load_user() is None
+
+        # No session and no header → still None.
+        async with quart_app.test_request_context("/"):
+            assert apps_module._load_user() is None
+
+        # Database errors during the session lookup are swallowed and logged.
+        async with quart_app.test_request_context("/"):
+            from quart import session
+
+            session["_user_id"] = "user-1"
+
+            def _raise(**_kw):
+                raise RuntimeError("db down")
+
+            monkeypatch.setattr(apps_module.UserService, "query", _raise)
+            with caplog.at_level(logging.ERROR):
+                assert apps_module._load_user() is None
+
+    _run(_case())
+    assert "load_user from session failed" in caplog.text
+
+
+@pytest.mark.p2
+def test_load_user_session_fallback_after_token_paths_fail(monkeypatch):
+    """JWT-decode failures and API-token exhaustion must still fall through
+    to the session and return the user, not None."""
+    quart_app, apps_module = _load_apps_module(monkeypatch)
+
+    valid_token = "b" * 32
+    valid_user = SimpleNamespace(id="user-1", email="oidc@example.com", access_token=valid_token)
+
+    def _raise_decode(_self, _auth):
+        raise RuntimeError("jwt decode boom")
+
+    monkeypatch.setattr(apps_module.Serializer, "loads", _raise_decode)
+    monkeypatch.setattr(apps_module.APIToken, "query", lambda **_kw: [])
+
+    async def _case():
+        # JWT decode fails AND API-token query returns nothing → session wins.
+        async with quart_app.test_request_context("/", headers={"Authorization": "Bearer junk"}):
+            from quart import session
+
+            session["_user_id"] = "user-1"
+            monkeypatch.setattr(apps_module.UserService, "query", lambda **_kw: [valid_user])
+            assert apps_module._load_user() is valid_user
+
+    _run(_case())
+
+
+@pytest.mark.p2
 def test_login_required_timing_and_login_user_inactive(monkeypatch, caplog):
     quart_app, apps_module = _load_apps_module(monkeypatch)
 
@@ -226,6 +316,7 @@ def test_logout_user_not_found_and_unauthorized_handlers(monkeypatch):
             assert "Not Found:" in payload["message"]
 
         async with quart_app.test_request_context("/protected"):
+
             @apps_module.login_required
             async def _protected():
                 return {"ok": True}
