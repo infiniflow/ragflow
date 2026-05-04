@@ -31,6 +31,7 @@ import { z } from 'zod';
 import { BgSvg } from './bg';
 import FlipCard3D, { FlipFaceContext } from './card';
 import './index.less';
+import { LdapDialog } from './ldap-dialog';
 
 type LoginFormContentProps = {
   isLoginPage: boolean;
@@ -40,8 +41,19 @@ type LoginFormContentProps = {
   onCheck: (params: any) => Promise<void>;
   changeTitle: () => void;
   registerEnabled: boolean;
-  channels: { channel: string; icon?: string; display_name: string }[];
-  handleLoginWithChannel: (channel: string) => void;
+  channels: {
+    channel: string;
+    icon?: string;
+    display_name: string;
+    type?: string;
+    form_login?: boolean;
+  }[];
+  handleLoginWithChannel: (channel: {
+    channel: string;
+    type?: string;
+    display_name: string;
+    form_login?: boolean;
+  }) => void;
   t: ReturnType<typeof useTranslation>['t'];
   disablePasswordLogin?: boolean;
 };
@@ -190,7 +202,7 @@ function LoginFormContent({
               <Button
                 variant={'transparent'}
                 key={item.channel}
-                onClick={() => handleLoginWithChannel(item.channel)}
+                onClick={() => handleLoginWithChannel(item)}
                 style={{ marginTop: 10 }}
                 className={disablePasswordLogin ? 'w-full' : ''}
               >
@@ -262,6 +274,11 @@ const Login = () => {
   const { config } = useSystemConfig();
   const registerEnabled = config?.registerEnabled !== 0;
 
+  const [ldapChannel, setLdapChannel] = useState<{
+    channel: string;
+    display_name: string;
+  } | null>(null);
+
   const { isLogin } = useAuth();
   useEffect(() => {
     if (isLogin) {
@@ -269,8 +286,17 @@ const Login = () => {
     }
   }, [isLogin, navigate]);
 
-  const handleLoginWithChannel = async (channel: string) => {
-    await loginWithChannel(channel);
+  const handleLoginWithChannel = async (item: {
+    channel: string;
+    type?: string;
+    display_name: string;
+    form_login?: boolean;
+  }) => {
+    if (item.form_login || item.type === 'ldap') {
+      setLdapChannel({ channel: item.channel, display_name: item.display_name });
+      return;
+    }
+    await loginWithChannel(item.channel);
   };
 
   const changeTitle = () => {
@@ -395,6 +421,14 @@ const Login = () => {
           </FlipCard3D>
         </div>
       </div>
+      <LdapDialog
+        open={!!ldapChannel}
+        channel={ldapChannel?.channel ?? null}
+        displayName={ldapChannel?.display_name}
+        onOpenChange={(open) => {
+          if (!open) setLdapChannel(null);
+        }}
+      />
     </>
   );
 };

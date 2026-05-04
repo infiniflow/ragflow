@@ -65,6 +65,14 @@ export default {
       description:
         'Inscrivez-vous gratuitement pour explorer la technologie RAG. Créez des bases de connaissances et des IA pour booster votre activité.',
       review: 'sur plus de 500 avis',
+      usernameLabel: "Nom d'utilisateur",
+      usernamePlaceholder: "Veuillez saisir votre nom d'utilisateur",
+      ldapTitle: 'Se connecter avec {{provider}}',
+      ldapDescription:
+        "Utilisez vos identifiants d'annuaire pour vous connecter.",
+      cancel: 'Annuler',
+      passwordEncryptFailed:
+        'Impossible de chiffrer le mot de passe. Veuillez recharger la page et réessayer.',
     },
     header: {
       knowledgeBase: 'Base de connaissances',

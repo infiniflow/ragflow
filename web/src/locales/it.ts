@@ -95,6 +95,14 @@ export default {
       description:
         'Registrati gratuitamente per esplorare la migliore tecnologia RAG. Crea basi di conoscenza e IA per potenziare il tuo business.',
       review: 'da oltre 500 recensioni',
+      usernameLabel: 'Nome utente',
+      usernamePlaceholder: 'Inserisci il nome utente',
+      ldapTitle: 'Accedi con {{provider}}',
+      ldapDescription:
+        'Usa le tue credenziali della directory per accedere.',
+      cancel: 'Annulla',
+      passwordEncryptFailed:
+        'Impossibile cifrare la password. Ricarica la pagina e riprova.',
     },
     header: {
       knowledgeBase: 'Dataset',

@@ -13,19 +13,22 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
+import base64
+import binascii
 import logging
-import string
 import os
 import re
 import secrets
+import string
 import time
 from datetime import datetime
-import base64
 
 from quart import make_response, redirect, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from api.apps.auth import get_auth_client
+from api.apps.auth import get_auth_client, infer_channel_type
+from api.apps.auth.ldap import LDAPAuthError, LDAPClient
 from api.db import FileType, UserTenantRole
 from api.db.db_models import TenantLLM
 from api.db.services.file_service import FileService
@@ -114,7 +117,7 @@ async def login():
 
     user = UserService.query_user(email, password)
 
-    if user and hasattr(user, 'is_active') and user.is_active == "0":
+    if user and hasattr(user, "is_active") and user.is_active == "0":
         return get_json_result(
             data=False,
             code=RetCode.FORBIDDEN,
@@ -138,6 +141,17 @@ async def login():
         )
 
 
+def _mask_email(value):
+    """Reduce ``value`` to ``"<first-char>***@<domain>"`` for log redaction
+    so directory-side identifiers don't end up in plaintext logs."""
+    if not value or "@" not in value:
+        return "***"
+    local, _, domain = value.partition("@")
+    if not local:
+        return f"***@{domain}"
+    return f"{local[0]}***@{domain}"
+
+
 @manager.route("/auth/login/channels", methods=["GET"])  # noqa: F821
 async def get_login_channels():
     """
@@ -146,11 +160,16 @@ async def get_login_channels():
     try:
         channels = []
         for channel, config in settings.OAUTH_CONFIG.items():
+            ch_type = infer_channel_type(config)
             channels.append(
                 {
                     "channel": channel,
                     "display_name": config.get("display_name", channel.title()),
                     "icon": config.get("icon", "sso"),
+                    "type": ch_type,
+                    # Frontends with form-based flows (LDAP) must not redirect
+                    # the browser to /auth/login/<channel>; this flag tells them.
+                    "form_login": ch_type == "ldap",
                 }
             )
         return get_json_result(data=channels)
@@ -164,12 +183,192 @@ async def oauth_login(channel):
     channel_config = settings.OAUTH_CONFIG.get(channel)
     if not channel_config:
         raise ValueError(f"Invalid channel name: {channel}")
+    if infer_channel_type(channel_config) == "ldap":
+        # LDAP is form-based. Bounce back to the login page; the frontend
+        # is expected to render an inline form for ldap channels.
+        return redirect(f"/login?ldap={channel}")
     auth_cli = get_auth_client(channel_config)
 
     state = get_uuid()
     session["oauth_state"] = state
     auth_url = auth_cli.get_authorization_url(state)
     return redirect(auth_url)
+
+
+@manager.route("/auth/login/ldap", methods=["POST"])  # noqa: F821
+async def ldap_login():
+    """
+    LDAP login endpoint.
+    ---
+    tags:
+      - User
+    parameters:
+      - in: body
+        name: body
+        description: LDAP login payload.
+        required: true
+        schema:
+          type: object
+          properties:
+            channel:
+              type: string
+              description: Configured LDAP channel name in OAUTH_CONFIG.
+            username:
+              type: string
+              description: LDAP username (uid / sAMAccountName).
+            password:
+              type: string
+              description: RSA-encrypted LDAP password.
+    responses:
+      200:
+        description: Login successful.
+      401:
+        description: Authentication failed.
+    """
+    json_body = await get_request_json()
+    if not json_body:
+        return get_json_result(
+            data=False,
+            code=RetCode.AUTHENTICATION_ERROR,
+            message="Unauthorized!",
+        )
+
+    channel = json_body.get("channel", "ldap")
+    username = (json_body.get("username") or "").strip()
+    raw_password = json_body.get("password")
+
+    channel_config = settings.OAUTH_CONFIG.get(channel)
+    if not channel_config or infer_channel_type(channel_config) != "ldap":
+        logging.warning("LDAP login attempted on unconfigured channel: %s", channel)
+        return get_json_result(
+            data=False,
+            code=RetCode.AUTHENTICATION_ERROR,
+            message="Authentication failed.",
+        )
+
+    if not username or not raw_password:
+        return get_json_result(
+            data=False,
+            code=RetCode.AUTHENTICATION_ERROR,
+            message="Username and password are required.",
+        )
+
+    # ``decrypt`` returns the base64-encoded form of the original password
+    # (see api/utils/crypt.py docstring). LDAP needs the raw password to
+    # perform the bind, so we have to decode the base64 layer ourselves.
+    try:
+        password = base64.b64decode(decrypt(raw_password)).decode("utf-8")
+    except (ValueError, TypeError, UnicodeDecodeError, binascii.Error) as e:
+        logging.warning("LDAP password decode failed (%s)", type(e).__name__)
+        return get_json_result(
+            data=False,
+            code=RetCode.SERVER_ERROR,
+            message="Fail to crypt password",
+        )
+
+    # Inject the channel id into a config copy so the LDAPClient can
+    # namespace synthetic emails by channel rather than by host. Always
+    # overwrite — a stale "channel" value left in the config would put two
+    # LDAP providers on the same synthetic-email namespace.
+    cfg = dict(channel_config)
+    cfg["channel"] = channel
+
+    try:
+        ldap_cli: LDAPClient = get_auth_client(cfg)
+        user_info = await asyncio.to_thread(ldap_cli.authenticate, username, password)
+    except LDAPAuthError:
+        # Reason is logged inside the client; surface only a generic message
+        # to the caller so we don't leak directory-existence information.
+        logging.warning("LDAP authentication failed on channel %s", channel)
+        return get_json_result(
+            data=False,
+            code=RetCode.AUTHENTICATION_ERROR,
+            message="Authentication failed.",
+        )
+    except Exception:
+        logging.exception("Unexpected LDAP login failure on channel %s", channel)
+        return get_json_result(
+            data=False,
+            code=RetCode.EXCEPTION_ERROR,
+            message="LDAP login failed.",
+        )
+
+    users = UserService.query(email=user_info.email)
+    if len(users) > 1:
+        # The local database has multiple rows for this LDAP identity;
+        # picking the first one would silently merge accounts. Bail out.
+        logging.error(
+            "Multiple local users matched one LDAP identity (%s) on channel %s",
+            _mask_email(user_info.email),
+            channel,
+        )
+        return get_json_result(
+            data=False,
+            code=RetCode.OPERATING_ERROR,
+            message="Multiple accounts match this directory identity. Please contact the administrator.",
+        )
+
+    if not users:
+        user_id = get_uuid()
+        try:
+            users = user_register(
+                user_id,
+                {
+                    "access_token": get_uuid(),
+                    "email": user_info.email,
+                    "avatar": "",
+                    "nickname": user_info.nickname or user_info.username,
+                    "login_channel": channel,
+                    "last_login_time": get_format_time(),
+                    "is_superuser": False,
+                },
+            )
+            if not users:
+                raise Exception(f"Failed to register {_mask_email(user_info.email)}")
+            logging.info(
+                "Provisioned LDAP user %s on channel %s",
+                _mask_email(user_info.email),
+                channel,
+            )
+        except Exception:
+            rollback_user_registration(user_id)
+            logging.exception(
+                "Failed to provision LDAP user %s on channel %s",
+                _mask_email(user_info.email),
+                channel,
+            )
+            return get_json_result(
+                data=False,
+                code=RetCode.EXCEPTION_ERROR,
+                message="Failed to provision user.",
+            )
+
+    user = users[0]
+    if hasattr(user, "is_active") and user.is_active == "0":
+        return get_json_result(
+            data=False,
+            code=RetCode.FORBIDDEN,
+            message="This account has been disabled, please contact the administrator!",
+        )
+
+    response_data = user.to_json()
+    user.access_token = get_uuid()
+    login_user(user)
+    user.update_time = current_timestamp()
+    user.update_date = datetime_format(datetime.now())
+    user.save()
+
+    logging.info(
+        "LDAP login succeeded for %s on channel %s",
+        _mask_email(user_info.email),
+        channel,
+    )
+
+    return await construct_response(
+        data=response_data,
+        auth=user.get_id(),
+        message="Welcome back!",
+    )
 
 
 @manager.route("/auth/oauth/<channel>/callback", methods=["GET"])  # noqa: F821
@@ -256,7 +455,7 @@ async def oauth_callback(channel):
         # User exists, try to log in
         user = users[0]
         user.access_token = get_uuid()
-        if user and hasattr(user, 'is_active') and user.is_active == "0":
+        if user and hasattr(user, "is_active") and user.is_active == "0":
             return redirect("/?error=user_inactive")
 
         login_user(user)
@@ -637,7 +836,7 @@ async def forget_get_captcha():
     - Generate an image captcha and cache it in Redis under key captcha:{email} with TTL = OTP_TTL_SECONDS.
     - Returns the captcha as a PNG image.
     """
-    email = (request.args.get("email") or "")
+    email = request.args.get("email") or ""
     if not email:
         return get_json_result(data=False, code=RetCode.ARGUMENT_ERROR, message="email is required")
 
@@ -648,9 +847,10 @@ async def forget_get_captcha():
     # Generate captcha text
     allowed = string.ascii_uppercase + string.digits
     captcha_text = "".join(secrets.choice(allowed) for _ in range(OTP_LENGTH))
-    REDIS_CONN.set(captcha_key(email), captcha_text, 60) # Valid for 60 seconds
+    REDIS_CONN.set(captcha_key(email), captcha_text, 60)  # Valid for 60 seconds
 
     from captcha.image import ImageCaptcha
+
     image = ImageCaptcha(width=300, height=120, font_sizes=[50, 60, 70])
     img_bytes = image.generate(captcha_text).read()
     response = await make_response(img_bytes)
@@ -800,15 +1000,15 @@ async def forget_reset_password():
     - auto login
     - clear verified flag
     """
-    
+
     req = await get_request_json()
     email = req.get("email") or ""
     new_pwd = req.get("new_password")
     new_pwd2 = req.get("confirm_new_password")
 
     new_pwd_base64 = decrypt(new_pwd)
-    new_pwd_string = base64.b64decode(new_pwd_base64).decode('utf-8')
-    new_pwd2_string = base64.b64decode(decrypt(new_pwd2)).decode('utf-8')
+    new_pwd_string = base64.b64decode(new_pwd_base64).decode("utf-8")
+    new_pwd2_string = base64.b64decode(decrypt(new_pwd2)).decode("utf-8")
 
     if not REDIS_CONN.get(_verified_key(email)):
         return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="email not verified")
@@ -822,7 +1022,7 @@ async def forget_reset_password():
     users = UserService.query_user_by_email(email=email)
     if not users:
         return get_json_result(data=False, code=RetCode.DATA_ERROR, message="invalid email")
-    
+
     user = users[0]
     try:
         UserService.update_user_password(user.id, new_pwd_base64)
@@ -838,5 +1038,3 @@ async def forget_reset_password():
 
     msg = "Password reset successful. Logged in."
     return await construct_response(data=user.to_json(), auth=user.get_id(), message=msg)
-
-

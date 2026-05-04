@@ -62,6 +62,12 @@ export default {
       description:
         '免費註冊以探索頂級 RAG 技術。創建知識庫和人工智能來增強您的業務',
       review: '來自 500 多條評論',
+      usernameLabel: '使用者名稱',
+      usernamePlaceholder: '請輸入使用者名稱',
+      ldapTitle: '使用 {{provider}} 登入',
+      ldapDescription: '使用您的目錄憑證進行登入。',
+      cancel: '取消',
+      passwordEncryptFailed: '無法加密密碼，請重新載入頁面後再試。',
     },
     header: {
       knowledgeBase: '知識庫',

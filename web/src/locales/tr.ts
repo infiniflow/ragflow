@@ -100,6 +100,13 @@ export default {
         'En iyi RAG teknolojisini keşfetmek için ücretsiz kaydolun. İşinizi güçlendirmek için datasets ve yapay zekalar oluşturun.',
       review: '500+ değerlendirmeden',
       seeAll: 'Tümünü gör',
+      usernameLabel: 'Kullanıcı adı',
+      usernamePlaceholder: 'Lütfen kullanıcı adını girin',
+      ldapTitle: '{{provider}} ile giriş yap',
+      ldapDescription: 'Giriş için dizin kimlik bilgilerinizi kullanın.',
+      cancel: 'İptal',
+      passwordEncryptFailed:
+        'Parola şifrelenemedi. Lütfen sayfayı yenileyip tekrar deneyin.',
     },
     header: {
       knowledgeBase: 'Dataset',
