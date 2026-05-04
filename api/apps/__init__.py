@@ -99,19 +99,25 @@ def _load_user_from_session():
     Authorization header from localStorage on the first 401, so post-redirect
     requests can arrive with no header at all — we still want to honour the
     server-side session in that window.
+
+    The same access-token validity rules used by the JWT path are applied
+    here so that tokens revoked by ``logout`` (which rewrites the column to
+    ``INVALID_<hex>``) or shortened by data corruption can't keep a stale
+    session authenticated.
     """
     user_id = session.get("_user_id")
     if not user_id:
         return None
     try:
         users = UserService.query(id=user_id, status=StatusEnum.VALID.value)
-    except Exception as e:
-        logging.warning(f"load_user from session got exception {e}")
+    except Exception:
+        logging.exception("load_user from session failed")
         return None
     if not users:
         return None
     user = users[0]
-    if not user.access_token or not user.access_token.strip():
+    access_token = str(user.access_token or "").strip()
+    if not access_token or len(access_token) < 32 or access_token.startswith("INVALID_"):
         return None
     g.user = user
     return user
