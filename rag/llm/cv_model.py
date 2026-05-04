@@ -437,7 +437,8 @@ class Zhipu4V(GptV4):
             del gen_conf["frequency_penalty"]
         return gen_conf
 
-    def _request(self, msg, stream, gen_conf={}):
+    def _request(self, msg, stream, gen_conf=None):
+        gen_conf = dict(gen_conf or {})
         response = requests.post(
             self.base_url,
             json={"model": self.model_name, "messages": msg, "stream": stream, **gen_conf},
@@ -1035,7 +1036,8 @@ class NvidiaCV(Base):
             total_token_count_from_response(response),
         )
 
-    def _request(self, msg, gen_conf={}):
+    def _request(self, msg, gen_conf=None):
+        gen_conf = dict(gen_conf or {})
         response = requests.post(
             url=self.base_url,
             headers={
