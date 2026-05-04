@@ -238,6 +238,33 @@ def test_load_user_session_fallback(monkeypatch, caplog):
 
 
 @pytest.mark.p2
+def test_load_user_session_fallback_after_token_paths_fail(monkeypatch):
+    """JWT-decode failures and API-token exhaustion must still fall through
+    to the session and return the user, not None."""
+    quart_app, apps_module = _load_apps_module(monkeypatch)
+
+    valid_token = "b" * 32
+    valid_user = SimpleNamespace(id="user-1", email="oidc@example.com", access_token=valid_token)
+
+    def _raise_decode(_self, _auth):
+        raise RuntimeError("jwt decode boom")
+
+    monkeypatch.setattr(apps_module.Serializer, "loads", _raise_decode)
+    monkeypatch.setattr(apps_module.APIToken, "query", lambda **_kw: [])
+
+    async def _case():
+        # JWT decode fails AND API-token query returns nothing → session wins.
+        async with quart_app.test_request_context("/", headers={"Authorization": "Bearer junk"}):
+            from quart import session
+
+            session["_user_id"] = "user-1"
+            monkeypatch.setattr(apps_module.UserService, "query", lambda **_kw: [valid_user])
+            assert apps_module._load_user() is valid_user
+
+    _run(_case())
+
+
+@pytest.mark.p2
 def test_login_required_timing_and_login_user_inactive(monkeypatch, caplog):
     quart_app, apps_module = _load_apps_module(monkeypatch)
 

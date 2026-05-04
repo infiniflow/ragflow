@@ -119,6 +119,7 @@ def _load_user_from_session():
     access_token = str(user.access_token or "").strip()
     if not access_token or len(access_token) < 32 or access_token.startswith("INVALID_"):
         return None
+    logging.debug("Authenticated request via session fallback for user_id=%s", user_id)
     g.user = user
     return user
 
