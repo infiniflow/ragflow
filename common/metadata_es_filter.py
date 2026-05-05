@@ -1,0 +1,493 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+"""Translate RAGflow document-metadata filter lists into Elasticsearch DSL.
+
+The legacy ``common.metadata_utils.meta_filter`` evaluates user-defined
+metadata conditions in Python after loading every document's metadata into
+memory. That works for small knowledge bases but degrades badly past a few
+thousand documents. This module produces an equivalent ES bool query so the
+filtering can be pushed down to the search engine.
+
+Operators handled here mirror ``meta_filter`` exactly. When a filter cannot be
+translated (unknown operator, malformed value, list-typed input that the
+in-memory code special-cases) the translator raises
+:class:`UnsupportedMetaFilter` so callers fall back to the in-memory path
+without silently changing semantics.
+"""
+
+from __future__ import annotations
+
+import ast
+import re
+from dataclasses import dataclass, field
+from typing import Any, Dict, Iterable, List, Optional, Sequence
+
+# Field prefix in the doc-metadata ES index. Every user metadata key lives at
+# ``meta_fields.<key>`` thanks to the dynamic object mapping in
+# ``conf/doc_meta_es_mapping.json``.
+META_FIELDS_PREFIX = "meta_fields"
+
+# Strict ``YYYY-MM-DD`` recogniser, kept consistent with the legacy in-memory
+# path. Mismatched-type comparisons (string vs date, list vs scalar) fall back
+# to in-memory semantics rather than guess at the right ES coercion.
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+# Operators that the legacy filter exposes. Anything outside this set is a bug
+# elsewhere; surface it instead of silently no-op'ing.
+SUPPORTED_OPERATORS: frozenset[str] = frozenset(
+    {
+        "=",
+        "≠",
+        ">",
+        "<",
+        "≥",
+        "≤",
+        "in",
+        "not in",
+        "contains",
+        "not contains",
+        "start with",
+        "end with",
+        "empty",
+        "not empty",
+    }
+)
+
+# ES range comparators keyed by RAGflow operator.
+_RANGE_OPS: Dict[str, str] = {
+    ">": "gt",
+    "<": "lt",
+    "≥": "gte",
+    "≤": "lte",
+}
+
+
+class UnsupportedMetaFilter(Exception):
+    """Raised when a metadata filter cannot be expressed as ES DSL.
+
+    Carries the filter that failed so callers can log a precise reason and the
+    in-memory fallback can pick up unchanged.
+    """
+
+    def __init__(self, reason: str, filter_clause: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.filter_clause = filter_clause
+
+
+@dataclass
+class TranslatedFilter:
+    """A single user filter rendered as one or more ES bool clauses.
+
+    A clause that wants the field to be present (``≠``, ``not in``, range,
+    ``not contains``) goes into ``must`` so the negation does not accidentally
+    match documents missing the key. ``must_not`` carries the actual rejection.
+    Pure positive filters (``=``, ``contains``, ``in``, ``exists``) fill
+    ``must`` only.
+    """
+
+    must: List[Dict[str, Any]] = field(default_factory=list)
+    must_not: List[Dict[str, Any]] = field(default_factory=list)
+
+    def to_clauses(self) -> List[Dict[str, Any]]:
+        """Collapse to the ES clauses this filter contributes to a parent bool."""
+        if not self.must and not self.must_not:
+            return []
+        if not self.must_not:
+            return list(self.must)
+        # Wrap so that negative semantics survive being OR'd with siblings.
+        return [{"bool": {"must": list(self.must), "must_not": list(self.must_not)}}]
+
+
+@dataclass
+class MetaFilterPushdownPlan:
+    """Composed ES bool query body for an entire RAGflow filter request."""
+
+    logic: str
+    translated: List[TranslatedFilter] = field(default_factory=list)
+
+    def is_empty(self) -> bool:
+        return not self.translated
+
+    def to_query(self, kb_ids: Sequence[str]) -> Dict[str, Any]:
+        """Render the full ES query body, scoped to the given KB ids.
+
+        The KB filter is always a ``terms`` clause so the query can serve any
+        number of knowledge bases without rewriting the caller.
+        """
+        kb_clause = {"terms": {"kb_id": list(kb_ids)}}
+
+        if self.is_empty():
+            return {"query": {"bool": {"filter": [kb_clause]}}}
+
+        sub_clauses = [t.to_clauses() for t in self.translated]
+        flat_clauses: List[Dict[str, Any]] = [c for group in sub_clauses for c in group]
+
+        if self.logic == "or":
+            inner = {
+                "bool": {
+                    "should": flat_clauses,
+                    "minimum_should_match": 1,
+                }
+            }
+        else:
+            inner = {"bool": {"must": flat_clauses}}
+
+        return {
+            "query": {
+                "bool": {
+                    "filter": [kb_clause, inner],
+                }
+            }
+        }
+
+
+class MetaFilterTranslator:
+    """Translate one user filter clause at a time into ES DSL fragments.
+
+    Stateless aside from configuration; safe to instantiate once per request
+    or share at module scope.
+    """
+
+    def __init__(self, prefix: str = META_FIELDS_PREFIX) -> None:
+        self.prefix = prefix
+
+    def field_name(self, key: str) -> str:
+        """Compose the dotted ES field path for a user metadata key."""
+        return f"{self.prefix}.{key}"
+
+    def translate(self, flt: Dict[str, Any]) -> TranslatedFilter:
+        """Translate a single filter dict into ES bool clauses.
+
+        Raises ``UnsupportedMetaFilter`` for malformed input or operator/value
+        combinations the legacy in-memory path treats as a special case (e.g.
+        list-of-strings membership in ``in``/``not in``).
+        """
+        op = flt.get("op")
+        key = flt.get("key")
+        value = flt.get("value")
+
+        if not key or not isinstance(key, str):
+            raise UnsupportedMetaFilter("filter is missing a string key", flt)
+        if op not in SUPPORTED_OPERATORS:
+            raise UnsupportedMetaFilter(f"unknown operator {op!r}", flt)
+
+        field_path = self.field_name(key)
+
+        if op == "empty":
+            return self._translate_empty(field_path)
+        if op == "not empty":
+            return self._translate_not_empty(field_path)
+        if op == "=":
+            return self._translate_equal(field_path, value, flt)
+        if op == "≠":
+            return self._translate_not_equal(field_path, value, flt)
+        if op in _RANGE_OPS:
+            return self._translate_range(field_path, op, value, flt)
+        if op == "in":
+            return self._translate_in(field_path, value, flt)
+        if op == "not in":
+            return self._translate_not_in(field_path, value, flt)
+        if op == "contains":
+            return self._translate_contains(field_path, value, flt)
+        if op == "not contains":
+            return self._translate_not_contains(field_path, value, flt)
+        if op == "start with":
+            return self._translate_start_with(field_path, value, flt)
+        if op == "end with":
+            return self._translate_end_with(field_path, value, flt)
+
+        # Unreachable: SUPPORTED_OPERATORS gate above covers every branch.
+        raise UnsupportedMetaFilter(f"no handler for operator {op!r}", flt)
+
+    def _translate_empty(self, field_path: str) -> TranslatedFilter:
+        # "empty" matches documents whose value is missing OR equals "" — same
+        # falsy semantics the in-memory ``not input`` check enforces.
+        return TranslatedFilter(
+            must=[
+                {
+                    "bool": {
+                        "should": [
+                            {"bool": {"must_not": [{"exists": {"field": field_path}}]}},
+                            {"term": {field_path: ""}},
+                        ],
+                        "minimum_should_match": 1,
+                    }
+                }
+            ]
+        )
+
+    def _translate_not_empty(self, field_path: str) -> TranslatedFilter:
+        return TranslatedFilter(
+            must=[{"exists": {"field": field_path}}],
+            must_not=[{"term": {field_path: ""}}],
+        )
+
+    def _translate_equal(self, field_path: str, value: Any, flt: Dict[str, Any]) -> TranslatedFilter:
+        coerced = _coerce_scalar(value, flt)
+        return TranslatedFilter(must=[_term_or_match(field_path, coerced)])
+
+    def _translate_not_equal(self, field_path: str, value: Any, flt: Dict[str, Any]) -> TranslatedFilter:
+        coerced = _coerce_scalar(value, flt)
+        return TranslatedFilter(
+            must=[{"exists": {"field": field_path}}],
+            must_not=[_term_or_match(field_path, coerced)],
+        )
+
+    def _translate_range(self, field_path: str, op: str, value: Any, flt: Dict[str, Any]) -> TranslatedFilter:
+        coerced = _coerce_range_value(value, flt)
+        return TranslatedFilter(
+            must=[
+                {"exists": {"field": field_path}},
+                {"range": {field_path: {_RANGE_OPS[op]: coerced}}},
+            ]
+        )
+
+    def _translate_in(self, field_path: str, value: Any, flt: Dict[str, Any]) -> TranslatedFilter:
+        members = _csv_or_list(value, flt)
+        return TranslatedFilter(must=[{"terms": {field_path: members}}])
+
+    def _translate_not_in(self, field_path: str, value: Any, flt: Dict[str, Any]) -> TranslatedFilter:
+        members = _csv_or_list(value, flt)
+        return TranslatedFilter(
+            must=[{"exists": {"field": field_path}}],
+            must_not=[{"terms": {field_path: members}}],
+        )
+
+    def _translate_contains(self, field_path: str, value: Any, flt: Dict[str, Any]) -> TranslatedFilter:
+        text = _coerce_string(value, flt)
+        return TranslatedFilter(must=[_wildcard(field_path, f"*{_escape_wildcard(text)}*")])
+
+    def _translate_not_contains(self, field_path: str, value: Any, flt: Dict[str, Any]) -> TranslatedFilter:
+        text = _coerce_string(value, flt)
+        return TranslatedFilter(
+            must=[{"exists": {"field": field_path}}],
+            must_not=[_wildcard(field_path, f"*{_escape_wildcard(text)}*")],
+        )
+
+    def _translate_start_with(self, field_path: str, value: Any, flt: Dict[str, Any]) -> TranslatedFilter:
+        text = _coerce_string(value, flt)
+        return TranslatedFilter(must=[{"prefix": {field_path: {"value": text, "case_insensitive": True}}}])
+
+    def _translate_end_with(self, field_path: str, value: Any, flt: Dict[str, Any]) -> TranslatedFilter:
+        text = _coerce_string(value, flt)
+        return TranslatedFilter(must=[_wildcard(field_path, f"*{_escape_wildcard(text)}")])
+
+
+def build_meta_filter_query(
+    filters: Sequence[Dict[str, Any]],
+    logic: str,
+    kb_ids: Sequence[str],
+    translator: Optional[MetaFilterTranslator] = None,
+) -> Dict[str, Any]:
+    """Top-level helper: translate every filter and render the ES query body.
+
+    Raises ``UnsupportedMetaFilter`` if any filter cannot be expressed.
+    """
+    plan = plan_pushdown(filters, logic, translator=translator)
+    return plan.to_query(kb_ids)
+
+
+def plan_pushdown(
+    filters: Sequence[Dict[str, Any]],
+    logic: str,
+    translator: Optional[MetaFilterTranslator] = None,
+) -> MetaFilterPushdownPlan:
+    """Translate every filter in turn, building a single composed plan.
+
+    Separated from ``build_meta_filter_query`` so callers can inspect or
+    augment the plan before binding it to a KB scope.
+    """
+    if logic not in {"and", "or"}:
+        raise UnsupportedMetaFilter(f"unknown logic {logic!r}")
+
+    t = translator or MetaFilterTranslator()
+    plan = MetaFilterPushdownPlan(logic=logic)
+    for flt in filters:
+        plan.translated.append(t.translate(flt))
+    return plan
+
+
+def is_pushdown_supported(filters: Sequence[Dict[str, Any]]) -> bool:
+    """Cheap pre-check: do all filters look translatable without coercion?
+
+    Used by the routing layer to skip the heavier ``plan_pushdown`` call when
+    the request obviously needs the in-memory fallback.
+    """
+    for flt in filters:
+        op = flt.get("op")
+        if op not in SUPPORTED_OPERATORS:
+            return False
+        if not isinstance(flt.get("key"), str) or not flt.get("key"):
+            return False
+    return True
+
+
+def extract_doc_ids(es_response: Dict[str, Any]) -> List[str]:
+    """Pull doc IDs out of an ES search response shaped like ``{hits:{hits:[...]}}``.
+
+    Tolerates both the dict-typed ES 7+ response and the dict-coerced
+    ``ObjectApiResponse`` returned by the elasticsearch python client.
+    """
+    hits_root = es_response.get("hits") if isinstance(es_response, dict) else None
+    if not hits_root:
+        # ``ObjectApiResponse`` is dict-like; ``.get`` works at both levels.
+        try:
+            hits_root = es_response["hits"]
+        except Exception:
+            return []
+
+    raw_hits: Iterable[Dict[str, Any]]
+    if isinstance(hits_root, dict):
+        raw_hits = hits_root.get("hits", []) or []
+    else:
+        raw_hits = []
+
+    out: List[str] = []
+    for hit in raw_hits:
+        if not isinstance(hit, dict):
+            continue
+        # ``id`` is mirrored into ``_source`` by the metadata writer; ``_id``
+        # is the canonical identifier. Prefer ``_id`` so renames in the source
+        # field name don't break us.
+        doc_id = hit.get("_id")
+        if not doc_id:
+            source = hit.get("_source") or {}
+            doc_id = source.get("id") or source.get("doc_id")
+        if doc_id:
+            out.append(str(doc_id))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Value coercion helpers
+# ---------------------------------------------------------------------------
+
+
+def _coerce_scalar(value: Any, flt: Dict[str, Any]) -> Any:
+    """Mirror the legacy ``ast.literal_eval`` then ``str.lower()`` flow.
+
+    The in-memory filter parses values as Python literals when possible (so
+    ``"5"`` becomes ``5``) and lower-cases strings. For ES ``term`` queries we
+    need the same coercion or numeric data won't match.
+    """
+    if value is None:
+        raise UnsupportedMetaFilter("scalar comparison value is None", flt)
+    if isinstance(value, (list, dict)):
+        raise UnsupportedMetaFilter("scalar comparison value is non-scalar", flt)
+
+    s = str(value).strip()
+    if _DATE_RE.match(s):
+        return s
+    try:
+        parsed = ast.literal_eval(s)
+    except Exception:
+        parsed = s
+    if isinstance(parsed, str):
+        return parsed.lower()
+    if isinstance(parsed, (int, float, bool)):
+        return parsed
+    return s.lower()
+
+
+def _coerce_range_value(value: Any, flt: Dict[str, Any]) -> Any:
+    """Range comparisons accept dates verbatim and numbers parsed via literal_eval.
+
+    Strings that aren't numeric or ISO dates are pushed through as-is — ES
+    will compare them lexically against keyword fields, which is the same
+    behaviour as the in-memory ``input >= value`` Python comparison after the
+    original ``ast.literal_eval`` failure path.
+    """
+    if value is None:
+        raise UnsupportedMetaFilter("range comparison value is None", flt)
+    s = str(value).strip()
+    if _DATE_RE.match(s):
+        return s
+    try:
+        parsed = ast.literal_eval(s)
+    except Exception:
+        return s
+    if isinstance(parsed, (int, float)):
+        return parsed
+    return s
+
+
+def _coerce_string(value: Any, flt: Dict[str, Any]) -> str:
+    """String operators (contains/start with/end with) need a non-empty string."""
+    if value is None:
+        raise UnsupportedMetaFilter("string-operator value is None", flt)
+    if isinstance(value, (list, dict)):
+        raise UnsupportedMetaFilter("string-operator value must be a scalar", flt)
+    s = str(value)
+    if not s:
+        raise UnsupportedMetaFilter("string-operator value is empty", flt)
+    return s
+
+
+def _csv_or_list(value: Any, flt: Dict[str, Any]) -> List[Any]:
+    """``in`` / ``not in`` accept either a real list or a comma-separated string.
+
+    The legacy in-memory path applies ``ast.literal_eval`` to the value too.
+    Mirror that for parity, then trim whitespace and lower-case any strings.
+    """
+    if value is None:
+        raise UnsupportedMetaFilter("membership value is None", flt)
+
+    if isinstance(value, (list, tuple)):
+        members = list(value)
+    elif isinstance(value, str):
+        try:
+            parsed = ast.literal_eval(value)
+        except Exception:
+            parsed = value
+        if isinstance(parsed, (list, tuple)):
+            members = list(parsed)
+        else:
+            members = [m.strip() for m in value.split(",") if m.strip()]
+    else:
+        members = [value]
+
+    if not members:
+        raise UnsupportedMetaFilter("membership value resolved to empty list", flt)
+
+    normalised: List[Any] = []
+    for m in members:
+        if isinstance(m, str):
+            normalised.append(m.lower().strip())
+        else:
+            normalised.append(m)
+    return normalised
+
+
+def _term_or_match(field_path: str, value: Any) -> Dict[str, Any]:
+    """``term`` works for both keyword and numeric values once coerced."""
+    return {"term": {field_path: value}}
+
+
+def _wildcard(field_path: str, pattern: str) -> Dict[str, Any]:
+    return {
+        "wildcard": {
+            field_path: {
+                "value": pattern,
+                "case_insensitive": True,
+            }
+        }
+    }
+
+
+def _escape_wildcard(text: str) -> str:
+    """Escape the two ES wildcard metacharacters so user input stays literal."""
+    return text.replace("\\", "\\\\").replace("*", "\\*").replace("?", "\\?")

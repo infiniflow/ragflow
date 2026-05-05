@@ -623,6 +623,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             questions[-1],
             chat_mdl,
             attachments,
+            kb_ids=dialog.kb_ids,
         )
 
     if prompt_config.get("keyword", False):
@@ -1503,7 +1504,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
 
     if meta_data_filter:
         metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
-        doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
+        doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids, kb_ids=kb_ids)
 
     kbinfos = await retriever.retrieval(
         question=question,
@@ -1596,7 +1597,7 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
 
     if meta_data_filter:
         metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
-        doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
+        doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids, kb_ids=kb_ids)
 
     ranks = await settings.retriever.retrieval(
         question=question,

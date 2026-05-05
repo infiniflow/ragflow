@@ -179,6 +179,7 @@ class Retrieval(ToolBase, ABC):
                 chat_mdl,
                 doc_ids,
                 _resolve_manual_filter if self._param.meta_data_filter.get("method") == "manual" else None,
+                kb_ids=kb_ids,
             )
 
         if self._param.cross_languages:
