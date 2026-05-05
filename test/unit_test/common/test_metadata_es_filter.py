@@ -67,18 +67,25 @@ def test_not_equal_requires_field_to_exist(translator):
     [(">", "gt"), ("<", "lt"), ("≥", "gte"), ("≤", "lte")],
 )
 def test_range_operator_translation(translator, op, es_key):
-    # Pure-positive filters return their must clauses directly so the parent
-    # bool can collapse them under a single ``must`` array.
+    # Multi-clause positive filters wrap into a single bool so OR-logic
+    # parents can't match on just the ``exists`` half of the range.
     clauses = translator.translate({"key": "score", "op": op, "value": "10"}).to_clauses()
     assert clauses == [
-        {"exists": {"field": _field("score")}},
-        {"range": {_field("score"): {es_key: 10}}},
+        {
+            "bool": {
+                "must": [
+                    {"exists": {"field": _field("score")}},
+                    {"range": {_field("score"): {es_key: 10}}},
+                ]
+            }
+        }
     ]
 
 
 def test_range_passes_iso_date_through_unparsed(translator):
     clauses = translator.translate({"key": "published", "op": "≥", "value": "2025-01-15"}).to_clauses()
-    assert clauses[1] == {"range": {_field("published"): {"gte": "2025-01-15"}}}
+    range_clause = clauses[0]["bool"]["must"][1]
+    assert range_clause == {"range": {_field("published"): {"gte": "2025-01-15"}}}
 
 
 def test_in_operator_csv_value_lowercased(translator):
@@ -251,12 +258,36 @@ def test_plan_emits_must_clauses_for_and_logic():
     bool_root = body["query"]["bool"]
     assert bool_root["filter"][0] == {"terms": {"kb_id": ["kb1"]}}
     inner = bool_root["filter"][1]["bool"]
-    # ``=`` contributes one clause; ``>`` contributes two (exists + range).
-    # All three end up under ``must`` because the parent logic is "and".
     assert "must" in inner
+    # Each translated filter contributes exactly one clause to the parent bool:
+    # ``=`` is a single ``term``; ``>`` is wrapped into one atomic ``bool``.
+    assert len(inner["must"]) == 2
     assert {"term": {_field("tag"): "alpha"}} in inner["must"]
-    assert {"exists": {"field": _field("score")}} in inner["must"]
-    assert {"range": {_field("score"): {"gt": 5}}} in inner["must"]
+    range_wrap = {
+        "bool": {
+            "must": [
+                {"exists": {"field": _field("score")}},
+                {"range": {_field("score"): {"gt": 5}}},
+            ]
+        }
+    }
+    assert range_wrap in inner["must"]
+
+
+def test_range_filter_under_or_stays_atomic():
+    """An OR'd range must not split into independent ``exists`` + ``range`` should branches."""
+    body = build_meta_filter_query(
+        [
+            {"key": "tag", "op": "=", "value": "alpha"},
+            {"key": "score", "op": ">", "value": "5"},
+        ],
+        logic="or",
+        kb_ids=["kb1"],
+    )
+    should = body["query"]["bool"]["filter"][1]["bool"]["should"]
+    # Two filters → two should branches, not three or four.
+    assert len(should) == 2
+    assert {"term": {_field("tag"): "alpha"}} in should
 
 
 def test_plan_emits_should_clauses_for_or_logic():
@@ -283,7 +314,13 @@ def test_empty_filter_list_returns_kb_only_query():
 
 
 def test_negative_filter_in_or_logic_keeps_negation_scope():
-    """Wrapping ``≠`` in an OR should not let the ``must_not`` swallow other branches."""
+    """Wrapping ``≠`` in an OR should not let the ``must_not`` swallow other branches.
+
+    ``≠`` is rejected by :func:`is_pushdown_supported` for multi-value safety, so
+    this test exercises the translator directly to confirm the per-filter
+    wrapping invariant. The same shape protects ``not contains`` (which IS
+    pushed down) from leaking its ``must_not`` into a parent should.
+    """
     body = build_meta_filter_query(
         [
             {"key": "tag", "op": "=", "value": "alpha"},
@@ -320,6 +357,27 @@ def test_pushdown_check_rejects_unknown_op():
 
 def test_pushdown_check_rejects_missing_key():
     assert not is_pushdown_supported([{"op": "=", "value": "v"}])
+
+
+@pytest.mark.parametrize("op", ["≠", "not in"])
+def test_pushdown_check_rejects_multivalue_unsafe_negatives(op):
+    """Negatives that diverge on multi-valued fields force the in-memory fallback."""
+    assert not is_pushdown_supported([{"key": "tag", "op": op, "value": "x"}])
+
+
+def test_pushdown_check_one_unsafe_op_rejects_whole_request():
+    """Mixing one unsafe op with safe ones still falls back, preserving correctness."""
+    assert not is_pushdown_supported(
+        [
+            {"key": "tag", "op": "=", "value": "v"},
+            {"key": "tag", "op": "≠", "value": "w"},
+        ]
+    )
+
+
+def test_pushdown_check_accepts_not_contains():
+    """``not contains`` stays in push-down; ``all(not contains)`` ≡ ``not any(contains)``."""
+    assert is_pushdown_supported([{"key": "tag", "op": "not contains", "value": "x"}])
 
 
 # ---------------------------------------------------------------------------

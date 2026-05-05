@@ -165,12 +165,13 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
 
 async def apply_meta_data_filter(
     meta_data_filter: dict | None,
-    metas: dict,
-    question: str,
+    metas: dict | None = None,
+    question: str = "",
     chat_mdl: Any = None,
     base_doc_ids: list[str] | None = None,
     manual_value_resolver: Callable[[dict], dict] | None = None,
     kb_ids: list[str] | None = None,
+    metas_loader: Callable[[], dict] | None = None,
 ) -> list[str] | None:
     """
     Apply metadata filtering rules and return the filtered doc_ids.
@@ -187,6 +188,13 @@ async def apply_meta_data_filter(
     remains the fallback so callers without a KB scope, or backends without
     push-down support, behave exactly as before.
 
+    ``metas`` may be supplied eagerly or via ``metas_loader``. The loader is
+    only invoked when the metadata dict is actually needed — i.e. for the LLM
+    context in ``auto`` / ``semi_auto`` modes, or as the in-memory fallback
+    when push-down can't service a request. ``manual`` mode that lands on the
+    push-down path therefore skips the expensive
+    ``get_flatted_meta_by_kbs`` round-trip entirely.
+
     Returns:
         list of doc_ids, ["-999"] when manual filters yield no result, or None
         when auto/semi_auto filters return empty.
@@ -200,16 +208,27 @@ async def apply_meta_data_filter(
 
     method = meta_data_filter.get("method")
 
+    # Memoised metadata loader. ``_get_metas`` materialises the dict at most
+    # once per call; downstream branches that never reach an in-memory eval
+    # leave the loader untouched.
+    cached_metas: dict | None = metas
+
+    def _get_metas() -> dict:
+        nonlocal cached_metas
+        if cached_metas is None:
+            cached_metas = metas_loader() if metas_loader else {}
+        return cached_metas
+
     def _evaluate(conditions: list[dict], logic: str) -> list[str]:
         """Run conditions through ES push-down when possible, in-memory otherwise."""
         if conditions and kb_ids:
             pushed = _try_meta_pushdown(kb_ids, conditions, logic)
             if pushed is not None:
                 return pushed
-        return meta_filter(metas, conditions, logic)
+        return meta_filter(_get_metas(), conditions, logic)
 
     if method == "auto":
-        filters: dict = await gen_meta_filter(chat_mdl, metas, question)
+        filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question)
         doc_ids.extend(_evaluate(filters["conditions"], filters.get("logic", "and")))
         if not doc_ids:
             return None
@@ -227,7 +246,8 @@ async def apply_meta_data_filter(
                     constraints[key] = op
 
         if selected_keys:
-            filtered_metas = {key: metas[key] for key in selected_keys if key in metas}
+            current_metas = _get_metas()
+            filtered_metas = {key: current_metas[key] for key in selected_keys if key in current_metas}
             if filtered_metas:
                 filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
                 doc_ids.extend(_evaluate(filters["conditions"], filters.get("logic", "and")))

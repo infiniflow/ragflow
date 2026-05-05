@@ -74,6 +74,17 @@ _RANGE_OPS: Dict[str, str] = {
     "≤": "lte",
 }
 
+# Negative operators that diverge from ``meta_filter`` on multi-valued metadata
+# fields. The in-memory path checks each value bucket independently, so a doc
+# whose field is ``[a, b]`` matches ``≠ a`` (because the ``b`` bucket satisfies
+# the predicate). ``must_not term: a`` in ES would exclude that doc outright.
+# Without a cheap way to prove a field is single-valued at query time we refuse
+# push-down for these operators and let the in-memory fallback handle them.
+# ``not contains`` is not in this set: ``all(not contains)`` is equivalent to
+# ``not any(contains)``, so ``must_not wildcard *X*`` matches the legacy
+# semantics on both single- and multi-valued fields.
+MULTIVALUE_UNSAFE_NEGATIVE_OPS: frozenset[str] = frozenset({"≠", "not in"})
+
 
 class UnsupportedMetaFilter(Exception):
     """Raised when a metadata filter cannot be expressed as ES DSL.
@@ -103,12 +114,23 @@ class TranslatedFilter:
     must_not: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_clauses(self) -> List[Dict[str, Any]]:
-        """Collapse to the ES clauses this filter contributes to a parent bool."""
+        """Collapse to the ES clauses this filter contributes to a parent bool.
+
+        Always emits a single atomic clause when there is anything to emit:
+        a multi-clause ``must`` (e.g. range = ``exists`` + ``range``) gets
+        wrapped in its own ``bool`` so an OR-logic parent ``should`` can't
+        match on just one half of the filter. A pure single positive clause
+        is returned unwrapped because there is nothing to break apart.
+        """
         if not self.must and not self.must_not:
             return []
         if not self.must_not:
-            return list(self.must)
-        # Wrap so that negative semantics survive being OR'd with siblings.
+            if len(self.must) == 1:
+                return list(self.must)
+            # Multi-clause positive filter — keep it atomic for OR parents.
+            return [{"bool": {"must": list(self.must)}}]
+        # Negative semantics always need wrapping so they survive being OR'd
+        # with siblings.
         return [{"bool": {"must": list(self.must), "must_not": list(self.must_not)}}]
 
 
@@ -326,10 +348,17 @@ def is_pushdown_supported(filters: Sequence[Dict[str, Any]]) -> bool:
 
     Used by the routing layer to skip the heavier ``plan_pushdown`` call when
     the request obviously needs the in-memory fallback.
+
+    Operators in :data:`MULTIVALUE_UNSAFE_NEGATIVE_OPS` are rejected here so a
+    single such filter forces the whole request to in-memory evaluation, which
+    is the only place we can replicate the per-bucket semantics over
+    multi-valued metadata fields.
     """
     for flt in filters:
         op = flt.get("op")
         if op not in SUPPORTED_OPERATORS:
+            return False
+        if op in MULTIVALUE_UNSAFE_NEGATIVE_OPS:
             return False
         if not isinstance(flt.get("key"), str) or not flt.get("key"):
             return False
