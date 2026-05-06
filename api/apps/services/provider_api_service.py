@@ -18,8 +18,6 @@ import logging
 from common.constants import LLMType, StatusEnum, ActiveStatusEnum
 from common.misc_utils import get_uuid
 from common.settings import FACTORY_LLM_INFOS
-from api.db.db_models import TenantLLM
-from api.db.services.llm_service import LLMService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
