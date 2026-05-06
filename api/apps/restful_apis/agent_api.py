@@ -929,11 +929,12 @@ async def agent_chat_completion(tenant_id, agent_id=None):
 
     if not session_id:
         # Without session state, run against the runtime replica that tracks draft edits.
-        query = req.get("query", "")
+        query = req.get("query", "") or req.get("question", "")
         files = req.get("files", [])
         inputs = req.get("inputs", {})
         runtime_user_id = req.get("user_id") or tenant_id
         user_id = str(runtime_user_id)
+        custom_header = req.get("custom_header", "")
         if not await thread_pool_exec(UserCanvasService.accessible, agent_id, tenant_id):
             return get_json_result(
                 data=False,
@@ -993,7 +994,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             return get_json_result(data={"message_id": task_id})
 
         try:
-            canvas = Canvas(dsl_str, str(tenant_id), canvas_id=agent_id)
+            canvas = Canvas(dsl_str, str(tenant_id), canvas_id=agent_id, custom_header=custom_header)
         except Exception as exc:
             return server_error_response(exc)
 
