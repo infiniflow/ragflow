@@ -49,6 +49,8 @@ from api.utils.reference_metadata_utils import (
     resolve_reference_metadata_preferences,
 )
 
+logger = logging.getLogger(__name__)
+
 
 @token_required
 async def create_agent_session(tenant_id, agent_id):
@@ -155,6 +157,14 @@ async def chatbot_completions(dialog_id):
     tenant_id = objs[0].tenant_id
     dialogs = DialogService.query(id=dialog_id, tenant_id=tenant_id, status=StatusEnum.VALID.value)
     if not dialogs:
+        logger.warning(
+            "Denied chatbot access: reason=%s tenant_id=%s dialog_id=%s user_id=%s session_id=%s",
+            "no access to this chatbot",
+            tenant_id,
+            dialog_id,
+            req.get("user_id"),
+            req.get("session_id"),
+        )
         return get_error_data_result(message="Authentication error: no access to this chatbot!")
 
     if "quote" not in req:
@@ -185,6 +195,14 @@ async def chatbots_inputs(dialog_id):
     tenant_id = objs[0].tenant_id
     dialogs = DialogService.query(id=dialog_id, tenant_id=tenant_id, status=StatusEnum.VALID.value)
     if not dialogs:
+        logger.warning(
+            "Denied chatbot access: reason=%s tenant_id=%s dialog_id=%s user_id=%s session_id=%s",
+            "no access to this chatbot",
+            tenant_id,
+            dialog_id,
+            request.args.get("user_id"),
+            request.args.get("session_id"),
+        )
         return get_error_data_result(message="Authentication error: no access to this chatbot!")
     dialog = dialogs[0]
 
