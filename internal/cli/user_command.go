@@ -19,8 +19,10 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	netUrl "net/url"
 	"os"
 	ce "ragflow/internal/cli/filesystem"
 	"strings"
@@ -1514,6 +1516,14 @@ func (c *RAGFlowClient) EnableOrDisableModel(cmd *Command, status string) (Respo
 	return &result, nil
 }
 
+func isValidURL(str string) bool {
+	u, err := netUrl.Parse(str)
+	if err != nil {
+		return false
+	}
+	return u.Scheme != "" && u.Host != ""
+}
+
 func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
@@ -1539,7 +1549,102 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
 	}
 
-	message := cmd.Params["message"].(string)
+	formattedMessages := []map[string]interface{}{}
+
+	messages, ok := cmd.Params["messages"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("messages not provided")
+	}
+	contents := []map[string]interface{}{}
+	if len(messages) > 0 {
+		for _, message := range messages {
+			contents = append(contents, map[string]interface{}{
+				"type": "text",
+				"text": message,
+			})
+		}
+
+	}
+
+	images, ok := cmd.Params["images"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("images not provided")
+	}
+	if len(images) > 0 {
+		for _, image := range images {
+			if isValidURL(image) {
+				contents = append(contents, map[string]interface{}{
+					"type": "image_url",
+					"image_url": map[string]string{
+						"url": image,
+					},
+				})
+			} else {
+				// image is a path, read the file and turn it into base64
+				imageContent, err := os.ReadFile(image)
+				if err != nil {
+					return nil, fmt.Errorf("failed to read image: %w", err)
+				}
+				contents = append(contents, map[string]interface{}{
+					"type": "image_file",
+					"image_file": map[string]interface{}{
+						"content": base64.StdEncoding.EncodeToString(imageContent),
+					},
+				})
+			}
+		}
+	}
+
+	videos, ok := cmd.Params["videos"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("images not provided")
+	}
+	if len(videos) > 0 {
+		for _, video := range videos {
+			if isValidURL(video) {
+				contents = append(contents, map[string]interface{}{
+					"type": "video_url",
+					"video_url": map[string]interface{}{
+						"url": video,
+					},
+				})
+			} else {
+				return nil, fmt.Errorf("invalid video URL: %s", video)
+			}
+		}
+	}
+
+	//audios, ok := cmd.Params["audios"].([]string)
+	//if !ok {
+	//	return nil, fmt.Errorf("images not provided")
+	//}
+
+	files, ok := cmd.Params["files"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("images not provided")
+	}
+
+	if len(files) > 0 {
+		for _, file := range files {
+			if isValidURL(file) {
+				contents = append(contents, map[string]interface{}{
+					"type": "file_url",
+					"file_url": map[string]interface{}{
+						"url": file,
+					},
+				})
+			} else {
+				return nil, fmt.Errorf("invalid file URL: %s", file)
+			}
+		}
+	}
+
+	formattedText := map[string]interface{}{
+		"role":    "user",
+		"content": contents,
+	}
+	formattedMessages = append(formattedMessages, formattedText)
+
 	thinking := cmd.Params["thinking"].(bool)
 	stream := cmd.Params["stream"].(bool)
 	effort := cmd.Params["effort"].(string)
@@ -1547,26 +1652,26 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 
 	url := "/chat/completions"
 
-	message = strings.TrimSpace(message)
-	var content interface{} = message
-	if strings.HasPrefix(message, "[") && strings.HasSuffix(message, "]") {
-		var parts []map[string]interface{}
-		if err := json.Unmarshal([]byte(message), &parts); err == nil {
-			content = parts
-		}
-	}
-	formattedMessage := []map[string]interface{}{
-		{
-			"role":    "user",
-			"content": content,
-		},
-	}
+	//message = strings.TrimSpace(message)
+	//var content interface{} = message
+	//if strings.HasPrefix(message, "[") && strings.HasSuffix(message, "]") {
+	//	var parts []map[string]interface{}
+	//	if err := json.Unmarshal([]byte(message), &parts); err == nil {
+	//		content = parts
+	//	}
+	//}
+	//formattedMessage := []map[string]interface{}{
+	//	{
+	//		"role":    "user",
+	//		"content": content,
+	//	},
+	//}
 
 	payload := map[string]interface{}{
 		"provider_name": providerName,
 		"instance_name": instanceName,
 		"model_name":    modelName,
-		"messages":      formattedMessage,
+		"messages":      formattedMessages,
 		"stream":        stream,
 		"thinking":      thinking,
 	}
