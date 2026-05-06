@@ -69,6 +69,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.GMAIL]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.IMAP]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.CONFLUENCE]: {
     syncDeletedFiles: true,
   },
@@ -103,6 +106,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.AIRTABLE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.DINGTALK_AI_TABLE]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.WEBDAV]: {

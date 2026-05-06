@@ -160,7 +160,7 @@ def test_session_module_streaming_and_helper_paths_unit(monkeypatch):
     assert calls[0][2]["session_id"] == "session-chat"
     assert calls[0][2]["temperature"] == 0.2
     assert calls[0][3] is True
-    assert calls[1][1] == "/agents/chat/completion"
+    assert calls[1][1] == "/agents/chat/completions"
     assert calls[1][2]["agent_id"] == "agent-1"
     assert calls[1][2]["query"] == "hello agent"
     assert calls[1][2]["session_id"] == "session-agent"

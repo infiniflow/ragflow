@@ -86,7 +86,7 @@ func (k *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 		"model":       modelName,
 		"messages":    apiMessages,
 		"stream":      false,
-		"temperature": 1,
+		"temperature": 0.6,
 	}
 
 	if chatModelConfig != nil {
