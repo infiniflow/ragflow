@@ -23,7 +23,7 @@ import tempfile
 import threading
 import time
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import BytesIO
 from os import PathLike
 from pathlib import Path
@@ -47,6 +47,7 @@ if LOCK_KEY_pdfplumber not in sys.modules:
 
 OFFICIAL_V4_MAX_FILE_BYTES = 200 * 1024 * 1024
 OFFICIAL_V4_MAX_PAGES = 200
+OFFICIAL_V4_MAX_TRANSIENT_POLL_ERRORS = 3
 
 
 class MinerUContentType(StrEnum):
@@ -149,7 +150,7 @@ class MinerUParseOptions:
     formula_enable: bool = True
     table_enable: bool = True
     api_base_url: str = "https://mineru.net"
-    api_token: str = ""
+    api_token: str = field(default="", repr=False)
     model_version: str = "vlm"
     poll_interval: int = 3
     poll_timeout: int = 300
@@ -256,6 +257,7 @@ class MinerUParser(RAGFlowPdfParser):
         api_base_url: Optional[str] = None,
         api_token: Optional[str] = None,
     ) -> tuple[bool, str]:
+        """Validate MinerU connectivity and config for selected access mode."""
         reason = ""
 
         resolved_mode = access_mode or self.mineru_access_mode
@@ -379,6 +381,7 @@ class MinerUParser(RAGFlowPdfParser):
     def _run_mineru(
         self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None
     ) -> Path:
+        """Dispatch parse execution to self-hosted API or official v4 flow."""
         if options.access_mode == MinerUAccessMode.OFFICIAL_V4:
             return self._run_mineru_official_v4(input_path, output_dir, options, callback)
         return self._run_mineru_api(input_path, output_dir, options, callback)
@@ -418,8 +421,11 @@ class MinerUParser(RAGFlowPdfParser):
         elif self.mineru_server_url:
             data["server_url"] = self.mineru_server_url
 
+        safe_options = dict(options.__dict__)
+        if safe_options.get("api_token"):
+            safe_options["api_token"] = "***REDACTED***"
         self.logger.info(f"[MinerU] request {data=}")
-        self.logger.info(f"[MinerU] request {options=}")
+        self.logger.info(f"[MinerU] request options={safe_options}")
 
         headers = {"Accept": "application/json"}
         try:
@@ -457,6 +463,7 @@ class MinerUParser(RAGFlowPdfParser):
 
     @staticmethod
     def _build_official_headers(api_token: str):
+        """Build request headers for MinerU official v4 API."""
         return {
             "Authorization": f"Bearer {api_token}",
             "Content-Type": "application/json",
@@ -465,6 +472,7 @@ class MinerUParser(RAGFlowPdfParser):
 
     @staticmethod
     def _pick_extract_result(extract_results: list[dict], file_name: str) -> dict:
+        """Pick the extract_result entry matching the uploaded file name."""
         if not extract_results:
             return {}
         if len(extract_results) == 1:
@@ -483,15 +491,51 @@ class MinerUParser(RAGFlowPdfParser):
         options: MinerUParseOptions,
         callback: Optional[Callable] = None,
     ) -> str:
+        """Poll official batch result until done/failed/timeout.
+
+        Transient timeout/connection/5xx errors are retried to reduce false
+        failures for long-running remote OCR jobs.
+        """
         poll_url = f"{options.api_base_url.rstrip('/')}/api/v4/extract-results/batch/{batch_id}"
         headers = self._build_official_headers(options.api_token)
         start_time = time.time()
         deadline = time.time() + max(int(options.poll_timeout), 30)
         interval = max(int(options.poll_interval), 1)
+        transient_error_count = 0
 
         while True:
-            response = requests.get(poll_url, headers=headers, timeout=30)
-            response.raise_for_status()
+            try:
+                response = requests.get(poll_url, headers=headers, timeout=30)
+                response.raise_for_status()
+            except requests.RequestException as exc:
+                status_code = getattr(getattr(exc, "response", None), "status_code", None)
+                is_transient = isinstance(exc, (requests.Timeout, requests.ConnectionError)) or (
+                    isinstance(status_code, int) and status_code >= 500
+                )
+                if (
+                    is_transient
+                    and transient_error_count < OFFICIAL_V4_MAX_TRANSIENT_POLL_ERRORS
+                    and time.time() < deadline
+                ):
+                    transient_error_count += 1
+                    self.logger.warning(
+                        f"[MinerU] official_v4 poll transient error retry "
+                        f"{transient_error_count}/{OFFICIAL_V4_MAX_TRANSIENT_POLL_ERRORS} "
+                        f"batch_id={batch_id} error={exc}"
+                    )
+                    if callback:
+                        callback(
+                            0.50,
+                            "[MinerU] official_v4 transient poll error, retrying "
+                            f"({transient_error_count}/{OFFICIAL_V4_MAX_TRANSIENT_POLL_ERRORS})",
+                        )
+                    time.sleep(interval)
+                    continue
+
+                status_hint = f" status={status_code}" if status_code is not None else ""
+                raise RuntimeError(f"[MinerU] official_v4 poll request failed{status_hint}: {exc}") from exc
+
+            transient_error_count = 0
             payload = response.json() if response.content else {}
 
             if payload.get("code", -1) != 0:
@@ -552,14 +596,23 @@ class MinerUParser(RAGFlowPdfParser):
         options: MinerUParseOptions,
         callback: Optional[Callable] = None,
     ) -> Path:
+        """Run official v4 parse workflow: create, upload, poll, download."""
         pdf_file_path = str(input_path)
         if not os.path.exists(pdf_file_path):
             raise RuntimeError(f"[MinerU] PDF file not exists: {pdf_file_path}")
 
         if not options.api_token:
-            raise RuntimeError("[MinerU] official_v4 requires api_token")
+            err_msg = "[MinerU] official_v4 requires api_token"
+            self.logger.warning(err_msg)
+            if callback:
+                callback(-1, err_msg)
+            raise RuntimeError(err_msg)
         if not options.api_base_url:
-            raise RuntimeError("[MinerU] official_v4 requires api_base_url")
+            err_msg = "[MinerU] official_v4 requires api_base_url"
+            self.logger.warning(err_msg)
+            if callback:
+                callback(-1, err_msg)
+            raise RuntimeError(err_msg)
 
         file_size = os.path.getsize(pdf_file_path)
         if file_size > OFFICIAL_V4_MAX_FILE_BYTES:
@@ -567,6 +620,7 @@ class MinerUParser(RAGFlowPdfParser):
                 "[MinerU] official_v4 only supports PDFs up to "
                 f"{int(OFFICIAL_V4_MAX_FILE_BYTES / 1024 / 1024)} MB, got {file_size} bytes"
             )
+            self.logger.warning(err_msg)
             if callback:
                 callback(-1, err_msg)
             raise RuntimeError(err_msg)
@@ -580,6 +634,7 @@ class MinerUParser(RAGFlowPdfParser):
                 "[MinerU] official_v4 only supports PDFs up to "
                 f"{OFFICIAL_V4_MAX_PAGES} pages, got {page_count} pages"
             )
+            self.logger.warning(err_msg)
             if callback:
                 callback(-1, err_msg)
             raise RuntimeError(err_msg)
@@ -890,8 +945,15 @@ class MinerUParser(RAGFlowPdfParser):
                 for candidate in sorted(output_dir.glob(glob_pattern), key=lambda x: len(str(x))):
                     self.logger.info(f"[MinerU] Trying generic content_list path: {candidate}")
                     attempted.append(candidate)
-                    if candidate.exists() and candidate.parent == output_dir:
-                        direct_candidates.append(candidate)
+                    if not (candidate.exists() and candidate.parent == output_dir):
+                        continue
+                    if candidate.name not in allowed_names:
+                        self.logger.info(
+                            f"[MinerU] Skip unrelated direct candidate: {candidate.name}, "
+                            f"expected one of {sorted(allowed_names)}"
+                        )
+                        continue
+                    direct_candidates.append(candidate)
 
             # Avoid binding to another job's output by only accepting a single direct candidate.
             if len(direct_candidates) == 1:
