@@ -42,7 +42,7 @@ from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, keyword_extraction
-from common.constants import RetCode, LLMType
+from common.constants import RetCode, LLMType, StatusEnum
 from common import settings
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
@@ -153,7 +153,7 @@ async def chatbot_completions(dialog_id):
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
     tenant_id = objs[0].tenant_id
-    dialogs = DialogService.query(id=dialog_id, tenant_id=tenant_id)
+    dialogs = DialogService.query(id=dialog_id, tenant_id=tenant_id, status=StatusEnum.VALID.value)
     if not dialogs:
         return get_error_data_result(message="Authentication error: no access to this chatbot!")
 
@@ -183,7 +183,7 @@ async def chatbots_inputs(dialog_id):
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
     tenant_id = objs[0].tenant_id
-    dialogs = DialogService.query(id=dialog_id, tenant_id=tenant_id)
+    dialogs = DialogService.query(id=dialog_id, tenant_id=tenant_id, status=StatusEnum.VALID.value)
     if not dialogs:
         return get_error_data_result(message="Authentication error: no access to this chatbot!")
     dialog = dialogs[0]
