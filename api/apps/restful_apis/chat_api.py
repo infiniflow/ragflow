@@ -608,6 +608,15 @@ async def bulk_delete_chats():
             if not ids:
                 return get_json_result(data={})
         else:
+            # keep backward compatibility, DELETE with chat_id in request body
+            chat_id = req.get("chat_id")
+            if chat_id:
+                try:
+                    if not DialogService.update_by_id(chat_id, {"status": StatusEnum.INVALID.value}):
+                        return get_data_error_result(message=f"Failed to delete chat {chat_id}")
+                    return get_json_result(data=True)
+                except Exception as ex:
+                    return server_error_response(ex)
             return get_json_result(data={})
 
     errors = []
@@ -1017,7 +1026,7 @@ async def recommendation():
 @manager.route("/chat/completions", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("messages")
-async def session_completion():
+async def session_completion(chat_id_in_arg=""):
     req = await get_request_json()
     msg = []
     for m in req["messages"]:
@@ -1028,6 +1037,7 @@ async def session_completion():
         msg.append(m)
     message_id = msg[-1].get("id") if msg else None
     chat_id = req.pop("chat_id", "") or ""
+    chat_id = chat_id or chat_id_in_arg
     session_id = req.pop("session_id", "") or ""
     chat_model_id = req.pop("llm_id", "")
 

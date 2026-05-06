@@ -315,7 +315,10 @@ export const useSendAgentMessage = ({
 
         params.files = uploadResponseList;
 
-        params.session_id = sessionId || exploreSessionId;
+        // Prefer the session selected by the outer page state.
+        // The hook keeps its own session cache for streamed replies, but that cache
+        // can lag behind when the user switches sessions in Explore.
+        params.session_id = exploreSessionId || sessionId;
         if (releaseMode) {
           params.release = releaseMode;
         }

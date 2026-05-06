@@ -170,6 +170,16 @@ class ESConnection(ESConnectionBase):
                     bool_query.filter.append(
                         Q("bool", must_not=Q("range", available_int={"lt": 1})))
                 continue
+            if k == "id":
+                if not v:
+                    continue
+                if isinstance(v, list):
+                    bool_query.filter.append(
+                        Q("bool", should=[Q("terms", id=v), Q("terms", _id=v)], minimum_should_match=1))
+                elif isinstance(v, str) or isinstance(v, int):
+                    bool_query.filter.append(
+                        Q("bool", should=[Q("term", id=v), Q("term", _id=v)], minimum_should_match=1))
+                continue
             if not v:
                 continue
             if isinstance(v, list):
@@ -234,6 +244,8 @@ class ESConnection(ESConnectionBase):
                                   "mode": "avg", "numeric_type": "double"}
                 elif field.endswith("_int") or field.endswith("_flt"):
                     order_info = {"order": order, "unmapped_type": "float"}
+                elif field == "id":
+                    continue # id as "text", not a "keyword", order by it will cause error
                 else:
                     order_info = {"order": order, "unmapped_type": "text"}
                 orders.append({field: order_info})

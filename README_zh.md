@@ -25,7 +25,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.25.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.25.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -88,8 +88,9 @@
 
 ## 🔥 近期更新
 
+- 2026-04-24 支持 DeepSeek v4.
 - 2026-03-24 发布 [RAGFlow 官方 Skill](https://clawhub.ai/yingfeng/ragflow-skill) — 提供官方 Skill 以通过 OpenClaw 访问 RAGFlow 数据集。
-- 2025-12-26 支持AI代理的"记忆"功能。
+- 2025-12-26 支持 AI 代理的"记忆"功能。
 - 2025-11-19 支持 Gemini 3 Pro。
 - 2025-11-12 支持从 Confluence、S3、Notion、Discord、Google Drive 进行数据同步。
 - 2025-10-23 支持 MinerU 和 Docling 作为文档解析方法。
@@ -192,12 +193,12 @@
 > 请注意，目前官方提供的所有 Docker 镜像均基于 x86 架构构建，并不提供基于 ARM64 的 Docker 镜像。
 > 如果你的操作系统是 ARM64 架构，请参考[这篇文档](https://ragflow.io/docs/dev/build_docker_image)自行构建 Docker 镜像。
 
-   > 运行以下命令会自动下载 RAGFlow Docker 镜像 `v0.25.0`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.25.0` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。
+   > 运行以下命令会自动下载 RAGFlow Docker 镜像 `v0.25.1`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.25.1` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。
 
    ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.25.0
+   # git checkout v0.25.1
    # 可选：使用稳定版本标签（查看发布：https://github.com/infiniflow/ragflow/releases）
    # 这一步确保代码中的 entrypoint.sh 文件与 Docker 镜像的版本保持一致。
 

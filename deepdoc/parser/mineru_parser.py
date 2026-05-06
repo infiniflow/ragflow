@@ -37,6 +37,8 @@ from strenum import StrEnum
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from deepdoc.parser.utils import extract_pdf_outlines
 
+from common.constants import MAXIMUM_PAGE_NUMBER
+
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
@@ -320,7 +322,7 @@ class MinerUParser(RAGFlowPdfParser):
         except requests.RequestException as e:
             raise RuntimeError(f"[MinerU] api failed with exception {e}")
 
-    def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=600, callback=None):
+    def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         self.page_from = page_from
         self.page_to = page_to
         try:

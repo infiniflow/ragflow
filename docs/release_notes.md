@@ -9,6 +9,33 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.25.1
+
+Released on April 29, 2026.
+
+### Improvements
+
+- API refactoring and unification: Standardizes web APIs to RESTful conventions across all endpoints, unifying document creation and indexing flows while maintaining backward compatibility.
+- Parsing optimizations: Adds [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf) PDF parser backend. [#14097](https://github.com/infiniflow/ragflow/pull/14097)
+- Introduces lazy loading and chunked parsing for large PDFs (&gt;50 pages), significantly reducing memory footprint. [#14385](https://github.com/infiniflow/ragflow/pull/14385)
+
+### Data source
+
+Enables synchronizing deleted files in Bitbucket, Gmail, Google Drive, and Airtable.
+
+### Model support
+
+- DeepSeek v4
+
+### Model providers
+
+- UCloud
+
+### Bug fixes
+
+- Metadata visibility issues during v0.24.0 to v0.25.0 upgrades.
+- Duplicate chat output.
+
 ## v0.25.0
 
 Released on April 21, 2026.

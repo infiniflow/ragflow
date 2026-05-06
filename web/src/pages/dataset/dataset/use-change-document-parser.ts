@@ -16,11 +16,12 @@ export const useChangeDocumentParser = () => {
 
   const onChangeParserOk = useCallback(
     async (parserConfigInfo: IChangeParserRequestBody) => {
-      if (record?.id) {
+      if (record?.id && record?.dataset_id) {
         const ret = await setDocumentParser({
           parserId: parserConfigInfo.parser_id,
           pipelineId: parserConfigInfo.pipeline_id,
           documentId: record?.id,
+          datasetId: record?.dataset_id,
           parserConfig: parserConfigInfo.parser_config,
         });
         if (ret === 0) {
@@ -28,7 +29,7 @@ export const useChangeDocumentParser = () => {
         }
       }
     },
-    [record?.id, setDocumentParser, hideChangeParserModal],
+    [record?.id, record?.dataset_id, setDocumentParser, hideChangeParserModal],
   );
 
   const handleShowChangeParserModal = useCallback(

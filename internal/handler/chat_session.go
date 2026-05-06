@@ -200,7 +200,8 @@ type CompletionRequest struct {
 	ConversationID   string                   `json:"conversation_id" binding:"required"`
 	Messages         []map[string]interface{} `json:"messages" binding:"required"`
 	LLMID            string                   `json:"llm_id,omitempty"`
-	Stream           bool                     `json:"stream,omitempty"`
+	Stream           *bool                    `json:"stream,omitempty"`
+	Thinking         *bool                    `json:"thinking,omitempty"`
 	Temperature      float64                  `json:"temperature,omitempty"`
 	TopP             float64                  `json:"top_p,omitempty"`
 	FrequencyPenalty float64                  `json:"frequency_penalty,omitempty"`
@@ -252,6 +253,12 @@ func (h *ChatSessionHandler) Completion(c *gin.Context) {
 	if req.MaxTokens != 0 {
 		chatModelConfig["max_tokens"] = req.MaxTokens
 	}
+	if req.Stream != nil {
+		chatModelConfig["stream"] = *req.Stream
+	}
+	if req.Thinking != nil {
+		chatModelConfig["thinking"] = *req.Thinking
+	}
 
 	// Process messages - filter out system messages and initial assistant messages
 	var processedMessages []map[string]interface{}
@@ -276,7 +283,7 @@ func (h *ChatSessionHandler) Completion(c *gin.Context) {
 	}
 
 	// Call service
-	if req.Stream {
+	if req.Stream != nil && *req.Stream {
 		// Streaming response
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
