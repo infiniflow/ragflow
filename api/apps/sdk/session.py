@@ -152,19 +152,23 @@ async def chatbot_completions(dialog_id):
     objs = APIToken.query(beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
+    tenant_id = objs[0].tenant_id
+    dialogs = DialogService.query(id=dialog_id, tenant_id=tenant_id)
+    if not dialogs:
+        return get_error_data_result(message="Authentication error: no access to this chatbot!")
 
     if "quote" not in req:
         req["quote"] = False
 
     if req.get("stream", True):
-        resp = Response(iframe_completion(dialog_id, **req), mimetype="text/event-stream")
+        resp = Response(iframe_completion(dialog_id, tenant_id=tenant_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
         resp.headers.add_header("X-Accel-Buffering", "no")
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
 
-    async for answer in iframe_completion(dialog_id, **req):
+    async for answer in iframe_completion(dialog_id, tenant_id=tenant_id, **req):
         return get_result(data=answer)
 
     return None
@@ -178,10 +182,11 @@ async def chatbots_inputs(dialog_id):
     objs = APIToken.query(beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
-
-    e, dialog = DialogService.get_by_id(dialog_id)
-    if not e:
-        return get_error_data_result(f"Can't find dialog by ID: {dialog_id}")
+    tenant_id = objs[0].tenant_id
+    dialogs = DialogService.query(id=dialog_id, tenant_id=tenant_id)
+    if not dialogs:
+        return get_error_data_result(message="Authentication error: no access to this chatbot!")
+    dialog = dialogs[0]
 
     return get_result(
         data={

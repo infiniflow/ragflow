@@ -201,9 +201,14 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
             break
         yield answer
 
-async def async_iframe_completion(dialog_id, question, session_id=None, stream=True, **kwargs):
-    e, dia = DialogService.get_by_id(dialog_id)
-    assert e, "Dialog not found"
+async def async_iframe_completion(dialog_id, question, session_id=None, stream=True, tenant_id=None, **kwargs):
+    if tenant_id:
+        dia = DialogService.query(id=dialog_id, tenant_id=tenant_id, status=StatusEnum.VALID.value)
+        assert dia, "Dialog not found"
+        dia = dia[0]
+    else:
+        e, dia = DialogService.get_by_id(dialog_id)
+        assert e, "Dialog not found"
     if not session_id:
         session_id = get_uuid()
         conv = {
@@ -228,6 +233,7 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
         session_id = session_id
         e, conv = API4ConversationService.get_by_id(session_id)
         assert e, "Session not found!"
+        assert conv.dialog_id == dialog_id, "Session does not belong to this dialog"
 
     if not conv.message:
         conv.message = []
