@@ -5,6 +5,7 @@ import {
   FlattenMediaToTextFormField,
   LargeModelFormField,
   OutputFormatFormFieldProps,
+  RemoveHeaderFooterFormField,
   RmdirFormField,
 } from './common-form-fields';
 import { buildFieldNameWithPrefix } from './utils';
@@ -20,6 +21,7 @@ export function WordFormFields({ prefix }: OutputFormatFormFieldProps) {
   return (
     <>
       <RmdirFormField prefix={prefix} />
+      <RemoveHeaderFooterFormField prefix={prefix} />
       <FlattenMediaToTextFormField prefix={prefix} />
       {!flattenMediaToText && (
         <LargeModelFormField

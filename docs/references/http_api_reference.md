@@ -4486,15 +4486,8 @@ Asks a specified agent a question to start an AI-powered conversation.
 
 Uses a single completion endpoint for all agent conversations.
 
-- Standard mode: send `agent_id` with `query`.
-- OpenAI-compatible mode: send the same endpoint with `"openai-compatible": true`.
-
-:::tip NOTE
-
-- Older agent completion routes have been removed. Use only `/api/v1/agents/chat/completion`.
-- In standard streaming mode, not all responses include a reference, as this depends on the workflow result.
-- In streaming mode, the server terminates the stream with `[DONE]`.
-
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/agents/{agent_id}/completions` is deprecated. Please use `POST /api/v1/agents/chat/completion` instead.
 :::
 
 #### Request
@@ -7257,7 +7250,9 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "data": {
+        "success_count": 2
+    }
 }
 ```
 
@@ -7265,8 +7260,14 @@ Failure:
 
 ```json
 {
-    "code": 404,
-    "message": "File or Folder not found!"
+    "code": 102,
+    "message": "Partially deleted 1 files with 1 errors",
+    "data": {
+        "success_count": 1,
+        "errors": [
+            "No authorization for file file1"
+        ]
+    }
 }
 ```
 
@@ -7428,6 +7429,10 @@ or
 **POST** `/api/v1/files/link-to-datasets`
 
 Converts files to documents and links them to specified datasets.
+
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/file/convert` is deprecated. Please use this endpoint instead.
+:::
 
 #### Request
 

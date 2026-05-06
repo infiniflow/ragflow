@@ -15,25 +15,26 @@ Released on April 29, 2026.
 
 ### Improvements
 
-- API refactoring and unification: Migrated web apis to RESTful architecture across all endpoints. unified document creation and indexing flows while maintaining backward compatibility for legacy apis.
-- Parsing optimizations: Integrated opendataloader pdf backend and improved docling routing. implemented lazy loading and chunking for large pdfs to reduce memory usage.
-- Introduced lazy loading and chunked parsing for large pdfs to significantly lower the memory footprint.
+- API refactoring and unification: Standardizes web APIs to RESTful conventions across all endpoints, unifying document creation and indexing flows while maintaining backward compatibility.
+- Parsing optimizations: Adds [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf) PDF parser backend. [#14097](https://github.com/infiniflow/ragflow/pull/14097)
+- Introduces lazy loading and chunked parsing for large PDFs (&gt;50 pages), significantly reducing memory footprint. [#14385](https://github.com/infiniflow/ragflow/pull/14385)
 
 ### Data source
 
-Added bitbucket, gmail, google drive, and airtable with automated file deletion synchronization.
+Enables synchronizing deleted files in Bitbucket, Gmail, Google Drive, and Airtable.
 
 ### Model support
 
 - DeepSeek v4
 
-### Model provider
+### Model providers
 
 - UCloud
 
 ### Bug fixes
 
-Resolved metadata visibility issues during v0.24.0 to v0.25.0 upgrades and fixed duplicate chat output.
+- Metadata visibility issues during v0.24.0 to v0.25.0 upgrades.
+- Duplicate chat output.
 
 ## v0.25.0
 

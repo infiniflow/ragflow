@@ -22,13 +22,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"regexp"
 	"strconv"
 	"strings"
 
-	infinity "github.com/infiniflow/infinity-go-sdk"
-	"ragflow/internal/logger"
 	"ragflow/internal/utility"
+
+	infinity "github.com/infiniflow/infinity-go-sdk"
 
 	"go.uber.org/zap"
 )
@@ -36,14 +37,28 @@ import (
 // CreateDataset creates a table in Infinity
 // indexName is the table name prefix (e.g., "ragflow_<tenant_id>")
 // The full table name is built as "{indexName}_{datasetID}"
+// For skill index (datasetID="skill"), tableName is just indexName and uses skill_infinity_mapping.json
 func (e *infinityEngine) CreateDataset(ctx context.Context, indexName, datasetID string, vectorSize int, parserID string) error {
 	vecSize := vectorSize
 
-	// Build full table name: {indexName}_{datasetID}
-	tableName := fmt.Sprintf("%s_%s", indexName, datasetID)
+	// Determine table name and mapping file based on index type
+	var tableName string
+	var mappingFile string
+
+	if datasetID == "skill" {
+		// Skill index: table name is just indexName (e.g., "skill_abc123_def456")
+		tableName = indexName
+		mappingFile = "skill_infinity_mapping.json"
+		common.Info("Creating skill index table", zap.String("tableName", tableName), zap.String("mappingFile", mappingFile))
+	} else {
+		// Regular document index: table name is {indexName}_{datasetID}
+		tableName = fmt.Sprintf("%s_%s", indexName, datasetID)
+		mappingFile = e.mappingFileName
+		common.Info("Creating regular index table", zap.String("tableName", tableName), zap.String("mappingFile", mappingFile))
+	}
 
 	// Use configured schema
-	fpMapping := filepath.Join(utility.GetProjectRoot(), "conf", e.mappingFileName)
+	fpMapping := filepath.Join(utility.GetProjectRoot(), "conf", mappingFile)
 
 	schemaData, err := os.ReadFile(fpMapping)
 	if err != nil {
@@ -61,54 +76,90 @@ func (e *infinityEngine) CreateDataset(ctx context.Context, indexName, datasetID
 		return fmt.Errorf("Failed to get database: %w", err)
 	}
 
+	// Determine vector column name
+	vectorColName := fmt.Sprintf("q_%d_vec", vecSize)
+
 	// Check if table already exists
 	exists, err := e.TableExists(ctx, tableName)
 	if err != nil {
 		return fmt.Errorf("Failed to check if table exists: %w", err)
 	}
+
+	var table *infinity.Table
 	if exists {
-		return fmt.Errorf("table '%s' already exists", tableName)
-	}
-
-	// Build column definitions (preserving JSON order)
-	var columns infinity.TableSchema
-	for _, fieldName := range schema.Keys {
-		fieldInfo := schema.Fields[fieldName]
-		col := infinity.ColumnDefinition{
-			Name:     fieldName,
-			DataType: fieldInfo.Type,
-			Default:  fieldInfo.Default,
-			// Comment:  fieldInfo.Comment,
+		// Table exists, open it and check if vector column needs to be added
+		common.Info("Table already exists, checking for vector column", zap.String("tableName", tableName))
+		table, err = db.GetTable(tableName)
+		if err != nil {
+			return fmt.Errorf("Failed to open existing table %s: %w", tableName, err)
 		}
-		columns = append(columns, &col)
-	}
 
-	// Add vector column
-	vectorColName := fmt.Sprintf("q_%d_vec", vecSize)
-	columns = append(columns, &infinity.ColumnDefinition{
-		Name:     vectorColName,
-		DataType: fmt.Sprintf("vector,%d,float", vecSize),
-	})
+		// Check if vector column exists (for embedding model changes)
+		colExists, err := e.columnExists(table, vectorColName)
+		if err != nil {
+			common.Warn("Failed to check column existence", zap.String("column", vectorColName), zap.Error(err))
+		}
 
-	// Add chunk_data column for table parser
-	if parserID == "table" {
+		// Add new vector column if it doesn't exist (handles embedding model change)
+		if !colExists {
+			common.Info("Adding new vector column for embedding model change", zap.String("column", vectorColName), zap.Int("size", vecSize))
+			addColSchema := infinity.TableSchema{
+				&infinity.ColumnDefinition{
+					Name:     vectorColName,
+					DataType: fmt.Sprintf("vector,%d,float", vecSize),
+				},
+			}
+			if _, err := table.AddColumns(addColSchema); err != nil {
+				common.Error("Failed to add vector column "+vectorColName, err)
+				return fmt.Errorf("Failed to add vector column %s: %w", vectorColName, err)
+			}
+			common.Info("Successfully added vector column", zap.String("column", vectorColName))
+		}
+	} else {
+		// Table doesn't exist, create it with vector column in the initial schema
+		common.Info(fmt.Sprintf("Creating table with vector column: %s with dimension %d", vectorColName, vecSize))
+
+		// Build column definitions (preserving JSON order)
+		var columns infinity.TableSchema
+		for _, fieldName := range schema.Keys {
+			fieldInfo := schema.Fields[fieldName]
+			col := infinity.ColumnDefinition{
+				Name:     fieldName,
+				DataType: fieldInfo.Type,
+				Default:  fieldInfo.Default,
+				// Comment:  fieldInfo.Comment,
+			}
+			columns = append(columns, &col)
+		}
+
+		// Add vector column
 		columns = append(columns, &infinity.ColumnDefinition{
-			Name:     "chunk_data",
-			DataType: "json",
-			Default:  "{}",
+			Name:     vectorColName,
+			DataType: fmt.Sprintf("vector,%d,float", vecSize),
 		})
+
+		// Add chunk_data column for table parser
+		if parserID == "table" {
+			columns = append(columns, &infinity.ColumnDefinition{
+				Name:     "chunk_data",
+				DataType: "json",
+				Default:  "{}",
+			})
+		}
+
+		// Create table
+		table, err = db.CreateTable(tableName, columns, infinity.ConflictTypeIgnore)
+		if err != nil {
+			return fmt.Errorf("Failed to create table: %w", err)
+		}
+		common.Debug("Infinity created table", zap.String("tableName", tableName))
 	}
 
-	// Create table
-	table, err := db.CreateTable(tableName, columns, infinity.ConflictTypeIgnore)
-	if err != nil {
-		return fmt.Errorf("Failed to create table: %w", err)
-	}
-	logger.Debug("Infinity created table", zap.String("tableName", tableName))
-
-	// Create HNSW index on vector column
+	// Create HNSW index on vector column with unique name based on vector size
+	// Use unique index name to avoid conflict when embedding model changes
+	vectorIndexName := fmt.Sprintf("q_%d_vec_idx", vecSize)
 	_, err = table.CreateIndex(
-		"q_vec_idx",
+		vectorIndexName,
 		infinity.NewIndexInfo(vectorColName, infinity.IndexTypeHnsw, map[string]string{
 			"M":               "16",
 			"ef_construction": "50",
@@ -119,8 +170,9 @@ func (e *infinityEngine) CreateDataset(ctx context.Context, indexName, datasetID
 		"",
 	)
 	if err != nil {
-		return fmt.Errorf("Failed to create HNSW index: %w", err)
+		return fmt.Errorf("Failed to create HNSW index %s: %w", vectorIndexName, err)
 	}
+	common.Info("Created vector index", zap.String("indexName", vectorIndexName), zap.String("column", vectorColName))
 
 	// Create full-text indexes for varchar fields with analyzers
 	for _, fieldName := range schema.Keys {
@@ -204,7 +256,7 @@ func (e *infinityEngine) CreateDataset(ctx context.Context, indexName, datasetID
 // Delete existing rows with matching IDs before insert
 func (e *infinityEngine) InsertDataset(ctx context.Context, chunks []map[string]interface{}, tableNamePrefix string, knowledgebaseID string) ([]string, error) {
 	tableName := fmt.Sprintf("%s_%s", tableNamePrefix, knowledgebaseID)
-	logger.Info("InfinityConnection.InsertDataset called", zap.String("tableName", tableName), zap.Int("chunkCount", len(chunks)))
+	common.Info("InfinityConnection.InsertDataset called", zap.String("tableName", tableName), zap.Int("chunkCount", len(chunks)))
 
 	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {
@@ -295,12 +347,12 @@ func (e *infinityEngine) InsertDataset(ctx context.Context, chunks []map[string]
 			idList[i] = fmt.Sprintf("'%v'", chunk["id"])
 		}
 		filter := fmt.Sprintf("id IN (%s)", strings.Join(idList, ", "))
-		logger.Debug(fmt.Sprintf("Deleting existing rows with filter: %s", filter))
+		common.Debug(fmt.Sprintf("Deleting existing rows with filter: %s", filter))
 		delResp, delErr := table.Delete(filter)
 		if delErr != nil {
-			logger.Warn(fmt.Sprintf("Failed to delete existing rows: %v", delErr))
+			common.Warn(fmt.Sprintf("Failed to delete existing rows: %v", delErr))
 		} else {
-			logger.Info(fmt.Sprintf("Deleted %d existing rows", delResp.DeletedRows))
+			common.Info(fmt.Sprintf("Deleted %d existing rows", delResp.DeletedRows))
 		}
 	}
 
@@ -310,7 +362,7 @@ func (e *infinityEngine) InsertDataset(ctx context.Context, chunks []map[string]
 		return nil, fmt.Errorf("Failed to insert chunks to dataset: %w", err)
 	}
 
-	logger.Info("InfinityConnection.InsertDataset result", zap.String("tableName", tableName), zap.Int("count", len(insertChunks)))
+	common.Info("InfinityConnection.InsertDataset result", zap.String("tableName", tableName), zap.Int("count", len(insertChunks)))
 	return []string{}, nil
 }
 
@@ -318,7 +370,7 @@ func (e *infinityEngine) InsertDataset(ctx context.Context, chunks []map[string]
 // Table name format: {tableNamePrefix}_{knowledgebaseID}
 func (e *infinityEngine) UpdateDataset(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, tableNamePrefix string, knowledgebaseID string) error {
 	tableName := fmt.Sprintf("%s_%s", tableNamePrefix, knowledgebaseID)
-	logger.Info("InfinityConnection.UpdateDataset called", zap.String("tableName", tableName), zap.Any("condition", condition))
+	common.Info("InfinityConnection.UpdateDataset called", zap.String("tableName", tableName), zap.Any("condition", condition))
 
 	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {
@@ -397,7 +449,7 @@ func (e *infinityEngine) UpdateDataset(ctx context.Context, condition map[string
 		// Query rows to be updated
 		queryResult, err := table.Output(colToRemove).Filter(filter).ToResult()
 		if err != nil {
-			logger.Warn(fmt.Sprintf("Failed to query rows for remove operation: %v", err))
+			common.Warn(fmt.Sprintf("Failed to query rows for remove operation: %v", err))
 		} else {
 			qr, ok := queryResult.(*infinity.QueryResult)
 			if ok && len(qr.Data) > 0 {
@@ -440,10 +492,10 @@ func (e *infinityEngine) UpdateDataset(ctx context.Context, condition map[string
 				for colName, valueToIDs := range removeOpt {
 					for newVal, ids := range valueToIDs {
 						idFilter := filter + " AND id IN (" + strings.Join(ids, ", ") + ")"
-						logger.Info(fmt.Sprintf("INFINITY remove update: table=%s, idFilter=%s, column=%s, newValue=%v", tableName, idFilter, colName, newVal))
+						common.Info(fmt.Sprintf("INFINITY remove update: table=%s, idFilter=%s, column=%s, newValue=%v", tableName, idFilter, colName, newVal))
 						_, err := table.Update(idFilter, map[string]interface{}{colName: newVal})
 						if err != nil {
-							logger.Warn(fmt.Sprintf("Failed to remove value from column %s: %v", colName, err))
+							common.Warn(fmt.Sprintf("Failed to remove value from column %s: %v", colName, err))
 						}
 					}
 				}
@@ -452,13 +504,13 @@ func (e *infinityEngine) UpdateDataset(ctx context.Context, condition map[string
 	}
 
 	// Execute the main update
-	logger.Info(fmt.Sprintf("INFINITY update: table=%s, filter=%s, newValue=%v", tableName, filter, newValue))
+	common.Info(fmt.Sprintf("INFINITY update: table=%s, filter=%s, newValue=%v", tableName, filter, newValue))
 	_, err = table.Update(filter, newValue)
 	if err != nil {
 		return fmt.Errorf("Failed to update chunks: %w", err)
 	}
 
-	logger.Info("InfinityConnection.UpdateDataset completes", zap.String("tableName", tableName))
+	common.Info("InfinityConnection.UpdateDataset completes", zap.String("tableName", tableName))
 	return nil
 }
 

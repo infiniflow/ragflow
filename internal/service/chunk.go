@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/server"
@@ -30,8 +31,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
-	"ragflow/internal/logger"
-
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
@@ -106,9 +105,9 @@ type RetrievalTestResponse struct {
 //  7. knowledge graph retrieval (not implemented)
 //  8. Apply retrieval by children to group child chunks under parent chunks
 func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (*RetrievalTestResponse, error) {
-	logger.Info("RetrievalTest started", zap.String("userID", userID), zap.Any("kbID", req.KbID), zap.String("question", req.Question))
+	common.Info("RetrievalTest started", zap.String("userID", userID), zap.Any("kbID", req.KbID), zap.String("question", req.Question))
 
-	logger.Debug(fmt.Sprintf("RetrievalTest request:\n"+
+	common.Debug(fmt.Sprintf("RetrievalTest request:\n"+
 		"    kbID=%v\n"+
 		"    question=%s\n"+
 		"    page=%v, size=%v\n"+
@@ -156,7 +155,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	if len(tenants) == 0 {
 		return nil, fmt.Errorf("user has no accessible tenants")
 	}
-	logger.Debug("Retrieved user tenants from database", zap.String("userID", userID), zap.Int("tenantCount", len(tenants)))
+	common.Debug("Retrieved user tenants from database", zap.String("userID", userID), zap.Int("tenantCount", len(tenants)))
 
 	var tenantIDs []string
 	var kbRecords []*entity.Knowledgebase
@@ -165,7 +164,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		for _, tenant := range tenants {
 			kb, err := s.kbDAO.GetByIDAndTenantID(kbID, tenant.TenantID)
 			if err == nil && kb != nil {
-				logger.Debug("Found knowledge base in database",
+				common.Debug("Found knowledge base in database",
 					zap.String("kbID", kbID),
 					zap.String("tenantID", tenant.TenantID),
 					zap.String("kbName", kb.Name),
@@ -193,21 +192,21 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 
 	// Determine meta_data_filter
 	var chatID string
-	var creds *entity.ModelCredentials
+	var chatModelForFilter *models.ChatModel
 	filter := req.Filter
 
 	if req.SearchID != nil && *req.SearchID != "" {
 		// If search_id is set, get meta_data_filter and chat_id from search_config
 		searchDetail, err := s.searchService.GetDetail(*req.SearchID)
 		if err != nil {
-			logger.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", *req.SearchID), zap.Error(err))
+			common.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", *req.SearchID), zap.Error(err))
 		} else if searchConfig, ok := searchDetail["search_config"].(entity.JSONMap); ok && searchConfig != nil {
 			if searchMetaFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
 				filter = searchMetaFilter
 			}
 			chatID, _ = searchConfig["chat_id"].(string)
 		} else {
-			logger.Warn("No search_config found in search detail", zap.String("searchID", *req.SearchID))
+			common.Warn("No search_config found in search detail", zap.String("searchID", *req.SearchID))
 		}
 	}
 
@@ -217,28 +216,32 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		if method == "auto" || method == "semi_auto" {
 			modelProviderSvc := NewModelProviderService()
 			if chatID != "" {
-				// Use chat_id from search_config
-				creds, err = modelProviderSvc.GetModelByName(chatID, tenantIDs[0])
+				// Use chat_id from search_config (it's actually the model name)
+				chatModelForFilter, err = modelProviderSvc.GetChatModel(tenantIDs[0], chatID)
 				if err != nil {
-					logger.Warn("Failed to get chat model from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(err))
+					common.Warn("Failed to get chat model from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(err))
 				} else {
-					logger.Info("Fetched chat model (from search_config) for metadata filter",
+					common.Info("Fetched chat model (from search_config) for metadata filter",
 						zap.String("chatID", chatID),
-						zap.String("tenantID", tenantIDs[0]),
-						zap.String("providerName", creds.ProviderName),
-						zap.String("modelName", creds.ModelName))
+						zap.String("tenantID", tenantIDs[0]))
 				}
 			}
-			// If no chatID from search_config, or creds not found, use tenant default
-			if creds == nil {
-				creds, err = modelProviderSvc.GetDefaultModel(entity.ModelTypeChat, tenantIDs[0])
-				if err != nil {
-					logger.Warn("Failed to get tenant default chat model for meta_data_filter", zap.Error(err))
+
+      // If no chatID from search_config, or chatModel not found, use tenant default
+			if chatModelForFilter == nil {
+				tenantSvc := NewTenantService()
+				modelName, err := tenantSvc.GetDefaultModelName(tenantIDs[0], entity.ModelTypeChat)
+				if err != nil || modelName == "" {
+					common.Warn("Failed to get tenant default chat model name for meta_data_filter", zap.Error(err))
 				} else {
-					logger.Info("Fetched chat model (tenant default) for metadata filter",
-						zap.String("tenantID", tenantIDs[0]),
-						zap.String("providerName", creds.ProviderName),
-						zap.String("modelName", creds.ModelName))
+					chatModelForFilter, err = modelProviderSvc.GetChatModel(tenantIDs[0], modelName)
+					if err != nil {
+						common.Warn("Failed to get chat model for meta_data_filter", zap.Error(err))
+					} else {
+						common.Info("Fetched chat model (tenant default) for metadata filter",
+							zap.String("tenantID", tenantIDs[0]),
+							zap.String("modelName", modelName))
+					}
 				}
 			}
 		}
@@ -252,54 +255,60 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		metadataSvc := NewMetadataService()
 		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(kbIDs)
 		if err != nil {
-			logger.Warn("Failed to get flatted metadata", zap.Error(err))
+			common.Warn("Failed to get flatted metadata", zap.Error(err))
 		} else {
-			logger.Info("metadata filter conditions", zap.Any("filter", filter))
-			filteredDocIDs, _ := ApplyMetaDataFilter(ctx, filter, flattedMeta, req.Question, creds, req.DocIDs)
+			common.Info("metadata filter conditions", zap.Any("filter", filter))
+			filteredDocIDs, _ := ApplyMetaDataFilter(ctx, filter, flattedMeta, req.Question, chatModelForFilter, req.DocIDs)
 			docIDs = filteredDocIDs
-			logger.Info("ApplyMetaDataFilter result", zap.Strings("docIDs", docIDs))
+			common.Info("ApplyMetaDataFilter result", zap.Strings("docIDs", docIDs))
 		}
 	}
 
 	// Apply cross_languages and keyword extraction with tenant default chat model
 	modifiedQuestion := req.Question
+	var chatModel *models.ChatModel
 
 	// Get chat model for cross_languages and keyword_extraction
 	if len(req.CrossLanguages) > 0 || (req.Keyword != nil && *req.Keyword) {
+		tenantSvc := NewTenantService()
 		modelProviderSvc := NewModelProviderService()
-		creds, err = modelProviderSvc.GetDefaultModel(entity.ModelTypeChat, tenantIDs[0])
-		if err != nil {
-			logger.Warn("Failed to get default chat model for LLM transformations", zap.Error(err))
+		modelName, err := tenantSvc.GetDefaultModelName(tenantIDs[0], "chat")
+		if err != nil || modelName == "" {
+			common.Warn("Failed to get default chat model name for LLM transformations", zap.Error(err))
 		} else {
-			logger.Info("Fetched chat model (tenant default) for cross_languages/keyword_extraction",
-				zap.String("tenantID", tenantIDs[0]),
-				zap.String("providerName", creds.ProviderName),
-				zap.String("modelName", creds.ModelName))
+			chatModel, err = modelProviderSvc.GetChatModel(tenantIDs[0], modelName)
+			if err != nil {
+				common.Warn("Failed to get chat model for LLM transformations", zap.Error(err))
+			} else {
+				common.Info("Fetched chat model (tenant default) for cross_languages/keyword_extraction",
+					zap.String("tenantID", tenantIDs[0]),
+					zap.String("modelName", modelName))
+			}
 		}
 	}
 
 	// Apply cross_languages on the question (translate question)
-	if creds != nil && len(req.CrossLanguages) > 0 {
-		translated, err := CrossLanguages(ctx, creds, req.Question, req.CrossLanguages)
+	if chatModel != nil && len(req.CrossLanguages) > 0 {
+		translated, err := CrossLanguages(ctx, chatModel, req.Question, req.CrossLanguages)
 		if err != nil {
-			logger.Warn("Failed to translate question", zap.Error(err))
+			common.Warn("Failed to translate question", zap.Error(err))
 		} else {
 			modifiedQuestion = translated
 		}
 	}
 
 	// Apply keyword extraction on the question (append keywords to question)
-	if creds != nil && req.Keyword != nil && *req.Keyword {
-		extractedKeywords, err := KeywordExtraction(ctx, creds, modifiedQuestion, 3)
+	if chatModel != nil && req.Keyword != nil && *req.Keyword {
+		extractedKeywords, err := KeywordExtraction(ctx, chatModel, modifiedQuestion, 3)
 		if err != nil {
-			logger.Warn("Failed to extract keywords from question", zap.Error(err))
+			common.Warn("Failed to extract keywords from question", zap.Error(err))
 		} else if extractedKeywords != "" {
 			modifiedQuestion = modifiedQuestion + " " + extractedKeywords
 		}
 	}
 
 	if modifiedQuestion != req.Question {
-		logger.Info("Modified question after transformations",
+		common.Info("Modified question after transformations",
 			zap.String("originalQuestion", req.Question),
 			zap.String("modifiedQuestion", modifiedQuestion),
 			zap.Strings("crossLanguages", req.CrossLanguages),
@@ -309,7 +318,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	// Get tag-based rank features via LabelQuestion
 	metadataSvc := NewMetadataService()
 	labels := metadataSvc.LabelQuestion(modifiedQuestion, kbRecords)
-	logger.Debug("LabelQuestion result", zap.Any("labels", labels))
+	common.Debug("LabelQuestion result", zap.Any("labels", labels))
 
 	// Determine embedding model
 	var embdID string
@@ -346,7 +355,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
-	logger.Info("Fetched embedding model for retrieval",
+	common.Info("Fetched embedding model for retrieval",
 		zap.String("tenantID", tenantIDs[0]),
 		zap.String("embdID", embdID))
 
@@ -376,7 +385,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	}
 
 	if rerankModel != nil {
-		logger.Info("Fetched rerank model",
+		common.Info("Fetched rerank model",
 			zap.String("tenantID", tenantIDs[0]),
 			zap.String("rerankCompositeName", rerankCompositeName))
 	}
@@ -407,7 +416,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	// Handle knowledge graph retrieval
 	// TODO: KG retrieval requires GraphRAG infrastructure which is not yet implemented in Go
 	if req.UseKG != nil && *req.UseKG {
-		logger.Warn("use_kg is not yet implemented in Go - skipping KG retrieval")
+		common.Warn("use_kg is not yet implemented in Go - skipping KG retrieval")
 	}
 
 	// Apply retrieval_by_children - aggregate child chunks into parent chunks
@@ -418,7 +427,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		delete(filteredChunks[i], "vector")
 	}
 
-	logger.Info("RetrievalTest completed", zap.String("userID", userID), zap.Any("kbID", req.KbID), zap.String("question", req.Question), zap.Int64("chunkCount", int64(len(filteredChunks))))
+	common.Info("RetrievalTest completed", zap.String("userID", userID), zap.Any("kbID", req.KbID), zap.String("question", req.Question), zap.Int64("chunkCount", int64(len(filteredChunks))))
 
 	return &RetrievalTestResponse{
 		Chunks:  filteredChunks,

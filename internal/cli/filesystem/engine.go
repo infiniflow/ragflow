@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package contextengine
+package filesystem
 
 import (
 	stdctx "context"
@@ -23,13 +23,13 @@ import (
 	"time"
 )
 
-// Engine is the core of the Context Engine
+// Engine is the core of the Virtual Filesystem
 // It manages providers and routes commands to the appropriate provider
 type Engine struct {
 	providers []Provider
 }
 
-// NewEngine creates a new Context Engine
+// NewEngine creates a new Virtual Filesystem Engine
 func NewEngine() *Engine {
 	return &Engine{
 		providers: make([]Provider, 0),
@@ -136,6 +136,8 @@ func (e *Engine) List(ctx stdctx.Context, path string, opts *ListOptions) (*Resu
 // 2. Top-level folders from files provider (file_manager)
 func (e *Engine) listRoot(ctx stdctx.Context, opts *ListOptions) (*Result, error) {
 	nodes := make([]*Node, 0)
+	// Track names to avoid duplicates
+	seen := make(map[string]bool)
 
 	// Add built-in providers first (like datasets)
 	for _, p := range e.providers {
@@ -152,6 +154,7 @@ func (e *Engine) listRoot(ctx stdctx.Context, opts *ListOptions) (*Result, error
 				"description": p.Description(),
 			},
 		})
+		seen[p.Name()] = true
 	}
 
 	// Add top-level folders from files provider (file_manager)
@@ -161,6 +164,11 @@ func (e *Engine) listRoot(ctx stdctx.Context, opts *ListOptions) (*Result, error
 			for _, node := range filesResult.Nodes {
 				// Only add folders (directories), not files
 				if node.Type == NodeTypeDirectory {
+					// Skip if already added by a provider
+					if seen[node.Name] {
+						continue
+					}
+					seen[node.Name] = true
 					// Ensure path doesn't have /files/ prefix for display
 					node.Path = strings.TrimPrefix(node.Path, "files/")
 					node.Path = strings.TrimPrefix(node.Path, "/")
@@ -180,6 +188,16 @@ func (e *Engine) listRoot(ctx stdctx.Context, opts *ListOptions) (*Result, error
 func (e *Engine) getFileProvider() Provider {
 	for _, p := range e.providers {
 		if p.Name() == "files" {
+			return p
+		}
+	}
+	return nil
+}
+
+// GetProvider returns a provider by name
+func (e *Engine) GetProvider(name string) Provider {
+	for _, p := range e.providers {
+		if p.Name() == name {
 			return p
 		}
 	}

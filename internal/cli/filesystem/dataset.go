@@ -14,9 +14,10 @@
 //  limitations under the License.
 //
 
-package contextengine
+package filesystem
 
 import (
+	"io"
 	stdctx "context"
 	"encoding/json"
 	"fmt"
@@ -36,6 +37,7 @@ type HTTPResponse struct {
 // HTTPClientInterface defines the interface needed from HTTPClient
 type HTTPClientInterface interface {
 	Request(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*HTTPResponse, error)
+	UploadMultipart(path string, contentType string, body io.Reader) error
 }
 
 // DatasetProvider handles datasets and their documents
@@ -508,7 +510,7 @@ func (p *DatasetProvider) listDocuments(ctx stdctx.Context, datasetName string, 
 	}
 
 	var apiResp struct {
-		Code    int                      `json:"code"`
+		Code    int `json:"code"`
 		Data    struct {
 			Docs []map[string]interface{} `json:"docs"`
 		} `json:"data"`

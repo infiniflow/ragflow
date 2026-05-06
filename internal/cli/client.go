@@ -18,7 +18,9 @@ package cli
 
 import (
 	"fmt"
-	ce "ragflow/internal/cli/contextengine"
+	"io"
+
+	ce "ragflow/internal/cli/filesystem"
 )
 
 // PasswordPromptFunc is a function type for password input
@@ -41,7 +43,6 @@ type RAGFlowClient struct {
 	CurrentModel   *CurrentModel      // Current model configuration
 }
 
-// NewRAGFlowClient creates a new RAGFlow client
 func NewRAGFlowClient(serverType string) *RAGFlowClient {
 	httpClient := NewHTTPClient()
 	// Set port from configuration file based on server type
@@ -68,6 +69,8 @@ func (c *RAGFlowClient) initContextEngine() {
 
 	// Register providers
 	engine.RegisterProvider(ce.NewDatasetProvider(&httpClientAdapter{c.HTTPClient}))
+	engine.RegisterProvider(ce.NewFileProvider(&httpClientAdapter{c.HTTPClient}))
+	engine.RegisterProvider(ce.NewSkillProvider(&httpClientAdapter{c.HTTPClient}))
 
 	c.ContextEngine = engine
 }
@@ -99,6 +102,10 @@ func (a *httpClientAdapter) Request(method, path string, useAPIBase bool, authKi
 		Headers:    resp.Headers,
 		Duration:   resp.Duration,
 	}, nil
+}
+
+func (a *httpClientAdapter) UploadMultipart(path string, contentType string, body io.Reader) error {
+	return a.client.UploadMultipart(path, contentType, body)
 }
 
 // ExecuteCommand executes a parsed command
@@ -288,14 +295,10 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "remove_chunks":
 		return c.RemoveChunks(cmd)
 	// ContextEngine commands
-	case "context_list":
-		return c.ContextList(cmd)
-	case "context_cat":
-		return c.ContextCat(cmd)
-	case "context_search":
-		return c.ContextSearch(cmd)
 	case "ce_ls":
 		return c.CEList(cmd)
+	case "ce_cat":
+		return c.CECat(cmd)
 	case "ce_search":
 		return c.CESearch(cmd)
 	// TODO: Implement other commands

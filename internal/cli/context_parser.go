@@ -24,7 +24,7 @@ import (
 func (p *Parser) parseContextListCommand() (*Command, error) {
 	p.nextToken() // consume LS
 
-	cmd := NewCommand("context_list")
+	cmd := NewCommand("ce_ls")
 
 	if p.curToken.Type == TokenEOF {
 		cmd.Params["path"] = "."
@@ -70,7 +70,7 @@ func (p *Parser) parseContextCatCommand() (*Command, error) {
 		return nil, fmt.Errorf("expect a filename")
 	}
 
-	cmd := NewCommand("context_cat")
+	cmd := NewCommand("ce_cat")
 	if p.curToken.Type == TokenIdentifier {
 		for p.curToken.Type != TokenEOF {
 			if p.curToken.Type != TokenIdentifier {
@@ -114,7 +114,7 @@ func (p *Parser) parseContextCatCommand() (*Command, error) {
 func (p *Parser) parseContextSearchCommand() (*Command, error) {
 	p.nextToken() // consume SEARCH
 
-	cmd := NewCommand("context_search")
+	cmd := NewCommand("ce_search")
 
 	for p.curToken.Type != TokenEOF {
 		if p.curToken.Type == TokenDash {

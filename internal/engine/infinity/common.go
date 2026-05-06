@@ -21,9 +21,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
-
-	"ragflow/internal/logger"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
 )
@@ -46,7 +45,7 @@ func (e *infinityEngine) Delete(ctx context.Context, condition map[string]interf
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
-		logger.Warn(fmt.Sprintf("Table %s does not exist, skipping delete", tableName))
+		common.Warn(fmt.Sprintf("Table %s does not exist, skipping delete", tableName))
 		return 0, nil
 	}
 
@@ -199,7 +198,7 @@ func existsCondition(field string, tableColumns map[string]struct {
 }) string {
 	col, colOk := tableColumns[field]
 	if !colOk {
-		logger.Warn(fmt.Sprintf("Column '%s' not found in table columns", field))
+		common.Warn(fmt.Sprintf("Column '%s' not found in table columns", field))
 		return fmt.Sprintf("%s!=null", field)
 	}
 	if strings.Contains(strings.ToLower(col.Type), "char") {
@@ -311,4 +310,28 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 		return "1=1"
 	}
 	return strings.Join(conditions, " AND ")
+}
+
+// columnExists checks if a column exists in the table
+func (e *infinityEngine) columnExists(table *infinity.Table, columnName string) (bool, error) {
+	colsResp, err := table.ShowColumns()
+	if err != nil {
+		return false, err
+	}
+
+	result, ok := colsResp.(*infinity.QueryResult)
+	if !ok {
+		return false, fmt.Errorf("unexpected response type: %T", colsResp)
+	}
+
+	// ShowColumns returns a result set where Data contains arrays of column values
+	if nameArr, ok := result.Data["name"]; ok {
+		for i := 0; i < len(nameArr); i++ {
+			colName, _ := nameArr[i].(string)
+			if colName == columnName {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
