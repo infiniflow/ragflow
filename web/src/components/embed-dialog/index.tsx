@@ -109,6 +109,9 @@ const normalizeHexColor = (value: string | undefined, fallback: string) => {
     : fallback;
 };
 
+/**
+ * Builds the embed code preview and customization UI for shared chat and agent widgets.
+ */
 function EmbedDialog({
   hideModal,
   token = '',

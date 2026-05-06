@@ -71,6 +71,9 @@ import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
 import WebhookSheet from './webhook-sheet';
 
+/**
+ * Standardizes dropdown menu item styling for agent management actions.
+ */
 function AgentDropdownMenuItem({
   children,
   ...props
@@ -84,6 +87,9 @@ function AgentDropdownMenuItem({
 
 const AgentWidgetSettingsGlobalKey = 'sys.widget_settings';
 
+/**
+ * Displays the agent editor and persists agent-scoped widget defaults in DSL globals.
+ */
 export default function Agent() {
   const { id } = useParams();
   const isPipeline = useIsPipeline();

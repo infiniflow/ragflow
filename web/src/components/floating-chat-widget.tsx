@@ -15,12 +15,18 @@ import {
 } from '../pages/next-chats/hooks/use-send-shared-message';
 import FloatingChatWidgetMarkdown from './floating-chat-widget-markdown';
 
+/**
+ * Normalizes a hex color input and falls back to a safe default when invalid.
+ */
 const normalizeHexColor = (value: string | null, fallback: string) => {
   return value && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)
     ? value
     : fallback;
 };
 
+/**
+ * Darkens a hex color to derive hover and gradient variants for the widget chrome.
+ */
 const darkenHexColor = (hexColor: string, amount = 0.12) => {
   const normalizedHex = hexColor.replace('#', '');
   const expandedHex =
@@ -48,6 +54,9 @@ const darkenHexColor = (hexColor: string, amount = 0.12) => {
     .join('')}`;
 };
 
+/**
+ * Accepts a footer link from the widget query string and returns a safe HTTP(S) URL.
+ */
 const normalizeWidgetFooterLink = (value: string | null) => {
   const normalizedValue = value?.trim();
 
@@ -72,6 +81,9 @@ const normalizeWidgetFooterLink = (value: string | null) => {
   return undefined;
 };
 
+/**
+ * Renders the embeddable floating chat widget and applies URL-driven widget settings.
+ */
 const FloatingChatWidget = () => {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
