@@ -64,7 +64,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
     factory_info_mapping = {f["name"]: f for f in FACTORY_LLM_INFOS}
     for name in factory_names:
         if factory_info_mapping.get(name):
-            factory_info = factory_info_mapping["name"]
+            factory_info = factory_info_mapping[name]
             model_types = sorted(set(
                 llm["model_type"]
                 for llm in factory_info.get("llm", [])

@@ -17,7 +17,7 @@ import logging
 
 from quart import request
 
-from api.apps import login_required, current_user
+from api.apps import login_required
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
     get_error_argument_result,
@@ -110,11 +110,11 @@ async def add_provider(tenant_id: str = None):
     provider_name = data["provider_name"]
 
     try:
-        success, err = provider_api_service.add_provider(tenant_id, provider_name)
+        success, msg = provider_api_service.add_provider(tenant_id, provider_name)
         if success:
-            return get_result()
+            return get_result(message=msg)
         else:
-            return get_error_data_result(message=err)
+            return get_error_data_result(message=msg)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -187,11 +187,11 @@ def delete_provider(tenant_id: str = None, provider_name: str = None):
           type: object
     """
     try:
-        success, err = provider_api_service.delete_provider(tenant_id, provider_name)
+        success, msg = provider_api_service.delete_provider(tenant_id, provider_name)
         if success:
-            return get_result()
+            return get_result(message=msg)
         else:
-            return get_error_data_result(message=err)
+            return get_error_data_result(message=msg)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -335,11 +335,11 @@ async def create_provider_instance(tenant_id: str = None, provider_name: str = N
     api_key = data["api_key"]
 
     try:
-        success, err = provider_api_service.create_provider_instance(tenant_id, provider_name, instance_name, api_key)
+        success, msg = provider_api_service.create_provider_instance(tenant_id, provider_name, instance_name, api_key)
         if success:
-            return get_result()
+            return get_result(message=msg)
         else:
-            return get_error_data_result(message=err)
+            return get_error_data_result(message=msg)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -484,11 +484,11 @@ async def drop_provider_instances(tenant_id: str = None, provider_name: str = No
         return get_error_argument_result(message="instances is required")
 
     try:
-        success, err = provider_api_service.drop_provider_instances(tenant_id, provider_name, instances)
+        success, msg = provider_api_service.drop_provider_instances(tenant_id, provider_name, instances)
         if success:
-            return get_result()
+            return get_result(message=msg)
         else:
-            return get_error_data_result(message=err)
+            return get_error_data_result(message=msg)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -611,11 +611,11 @@ async def enable_or_disable_model(tenant_id: str = None, provider_name: str = No
         return get_error_argument_result(message="status must be 'active' or 'inactive'")
 
     try:
-        success, err = provider_api_service.update_model_status(tenant_id, provider_name, instance_name, model_name, status)
+        success, msg = provider_api_service.update_model_status(tenant_id, provider_name, instance_name, model_name, status)
         if success:
-            return get_result()
+            return get_result(message=msg)
         else:
-            return get_error_data_result(message=err)
+            return get_error_data_result(message=msg)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")

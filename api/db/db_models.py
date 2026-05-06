@@ -1352,7 +1352,7 @@ class TenantModelInstance(DataBaseModel):
     provider_id = CharField(max_length=32, null=False, index=False)
     api_key = CharField(max_length=512, null=False, index=False, help_text="API key")
     status = CharField(max_length=32, default="active", index=False)
-    extra = CharField(max_length=512, default="active", index=False)
+    extra = CharField(max_length=512, default="{}", index=False)
 
     class Meta:
         db_table = "tenant_model_instance"

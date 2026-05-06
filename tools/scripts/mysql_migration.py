@@ -331,8 +331,8 @@ class TenantModelProviderStage(MigrationStage):
             for tenant_id, llm_factory in batch:
                 record_id = self.generate_uuid()
                 values.append(f"('{record_id}', '{llm_factory}', '{tenant_id}', "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}), "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}))")
+                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
+                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}))")
             
             insert_sql = f"""
                 INSERT INTO tenant_model_provider 
@@ -495,8 +495,8 @@ class TenantModelInstanceStage(MigrationStage):
                 status_val = status if status else "active"
                 values.append(f"('{record_id}', '{instance_name}', '{provider_id}', "
                             f"'{api_key_escaped}', '{status_val}', "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}), "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}))")
+                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
+                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}))")
 
             insert_sql = f"""
                 INSERT INTO tenant_model_instance 
@@ -518,6 +518,7 @@ class TenantModelInstanceStage(MigrationStage):
             provider_id VARCHAR(32) NOT NULL,
             api_key VARCHAR(512) NOT NULL,
             status VARCHAR(32) DEFAULT 'active',
+            extra VARCHAR(512) DEFAULT '{}',
             create_time BIGINT,
             create_date DATETIME,
             update_time BIGINT,
@@ -679,8 +680,8 @@ class TenantModelStage(MigrationStage):
                 status_val = status if status else "active"
                 values.append(f"('{record_id}', '{model_name_escaped}', '{provider_id}', "
                             f"'{instance_id}', '{model_type_escaped}', '{status_val}', "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}), "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}))")
+                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
+                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}))")
 
             insert_sql = f"""
                 INSERT INTO tenant_model 
