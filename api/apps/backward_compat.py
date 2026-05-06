@@ -26,6 +26,7 @@ Deprecated APIs and their replacements:
 - POST /api/v1/chats_openai/{chat_id}/chat/completions -> POST /api/v1/openai/{chat_id}/chat/completions
 - PUT /api/v1/chats/{chat_id}/sessions/{session_id} -> PATCH /api/v1/chats/{chat_id}/sessions/{session_id}
 - DELETE /api/v1/chats -> DELETE /api/v1/chats/{chat_id} (with body)
+- POST /api/v1/file/convert -> POST /api/v1/files/link-to-datasets
 - GET /api/v1/file/* -> GET /api/v1/files*
 - POST /api/v1/file/* -> POST /api/v1/files*
 - POST /api/v1/sessions/related_questions -> POST /api/v1/chat/recommandation
@@ -36,7 +37,7 @@ import logging
 from quart import Blueprint, request
 
 from api.apps import login_required
-from api.apps.restful_apis import chat_api, file_api, chunk_api, openai_api, document_api
+from api.apps.restful_apis import chat_api, file_api, file2document_api, chunk_api, openai_api, document_api
 from api.apps.restful_apis import agent_api
 from api.apps.services import file_api_service
 from api.utils.api_utils import get_data_error_result, get_json_result, add_tenant_id_to_kwargs
@@ -238,6 +239,22 @@ async def deprecated_file_upload(tenant_id=None):
     )
     # Forward to the new API implementation
     return await file_api.create_or_upload(tenant_id=tenant_id)
+
+
+@manager.route("/file/convert", methods=["POST"])
+@login_required
+async def deprecated_file_convert():
+    """
+    Deprecated: Use POST /api/v1/files/link-to-datasets instead.
+
+    Old path: POST /api/v1/file/convert
+    New path: POST /api/v1/files/link-to-datasets
+    """
+    logging.warning(
+        "API endpoint /api/v1/file/convert is deprecated. "
+        "Please use POST /api/v1/files/link-to-datasets instead."
+    )
+    return await file2document_api.convert()
 
 
 @manager.route("/file/mv", methods=["POST"])

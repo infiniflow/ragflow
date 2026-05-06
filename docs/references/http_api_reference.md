@@ -7430,6 +7430,10 @@ or
 
 Converts files to documents and links them to specified datasets.
 
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/file/convert` is deprecated. Please use this endpoint instead.
+:::
+
 #### Request
 
 - Method: POST
