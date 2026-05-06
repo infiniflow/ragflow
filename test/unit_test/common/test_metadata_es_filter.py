@@ -41,13 +41,47 @@ def _field(key: str) -> str:
 
 
 def test_equal_translates_to_term_with_lowercased_value(translator):
+    """String equality runs against ``.keyword`` so multi-word phrases match.
+
+    Querying the analyzed parent field with ``term`` only matches docs whose
+    inverted index contains the literal phrase token, which never happens for
+    multi-word values. The ``.keyword`` sub-field stores the unmodified string,
+    and ``case_insensitive: true`` keeps the lower-cased compare semantics from
+    the in-memory ``meta_filter``.
+    """
     clauses = translator.translate({"key": "tag", "op": "=", "value": "Alpha"}).to_clauses()
-    assert clauses == [{"term": {_field("tag"): "alpha"}}]
+    assert clauses == [
+        {"term": {_field("tag") + ".keyword": {"value": "alpha", "case_insensitive": True}}}
+    ]
 
 
 def test_equal_parses_numeric_literal(translator):
+    """Numeric values stay on the parent path — no ``.keyword`` sub-field exists for ``long``."""
     clauses = translator.translate({"key": "score", "op": "=", "value": "5"}).to_clauses()
     assert clauses == [{"term": {_field("score"): 5}}]
+
+
+def test_equal_multiword_uses_keyword_subfield(translator):
+    """Regression for qinling0210's report: multi-word string values must match.
+
+    Before the keyword-routing fix this emitted
+    ``term: meta_fields.author = "alice wonderland"`` against an analyzed text
+    field, which never matched (inverted index only contained per-token
+    entries). Routing through ``.keyword`` preserves the full phrase.
+    """
+    clauses = translator.translate(
+        {"key": "author", "op": "=", "value": "Alice Wonderland"}
+    ).to_clauses()
+    assert clauses == [
+        {
+            "term": {
+                _field("author") + ".keyword": {
+                    "value": "alice wonderland",
+                    "case_insensitive": True,
+                }
+            }
+        }
+    ]
 
 
 def test_not_equal_requires_field_to_exist(translator):
@@ -56,7 +90,9 @@ def test_not_equal_requires_field_to_exist(translator):
         {
             "bool": {
                 "must": [{"exists": {"field": _field("tag")}}],
-                "must_not": [{"term": {_field("tag"): "alpha"}}],
+                "must_not": [
+                    {"term": {_field("tag") + ".keyword": {"value": "alpha", "case_insensitive": True}}}
+                ],
             }
         }
     ]
@@ -88,14 +124,34 @@ def test_range_passes_iso_date_through_unparsed(translator):
     assert range_clause == {"range": {_field("published"): {"gte": "2025-01-15"}}}
 
 
+def _string_terms_should(field_path: str, members):
+    """``in``/``not in`` over string members expands per-element so each ``term``
+    can carry ``case_insensitive`` (``terms`` does not accept that flag)."""
+    return {
+        "bool": {
+            "should": [
+                {"term": {field_path + ".keyword": {"value": m, "case_insensitive": True}}}
+                for m in members
+            ],
+            "minimum_should_match": 1,
+        }
+    }
+
+
 def test_in_operator_csv_value_lowercased(translator):
     clauses = translator.translate({"key": "status", "op": "in", "value": "Active,Pending"}).to_clauses()
-    assert clauses == [{"terms": {_field("status"): ["active", "pending"]}}]
+    assert clauses == [_string_terms_should(_field("status"), ["active", "pending"])]
 
 
 def test_in_operator_python_list_literal(translator):
     clauses = translator.translate({"key": "status", "op": "in", "value": "['Open', 'Closed']"}).to_clauses()
-    assert clauses == [{"terms": {_field("status"): ["open", "closed"]}}]
+    assert clauses == [_string_terms_should(_field("status"), ["open", "closed"])]
+
+
+def test_in_operator_numeric_members_keep_terms(translator):
+    """All-numeric member lists keep the cheaper ``terms`` form on the parent path."""
+    clauses = translator.translate({"key": "year", "op": "in", "value": "[2024, 2025]"}).to_clauses()
+    assert clauses == [{"terms": {_field("year"): [2024, 2025]}}]
 
 
 def test_not_in_negates_with_existence_guard(translator):
@@ -104,7 +160,7 @@ def test_not_in_negates_with_existence_guard(translator):
         {
             "bool": {
                 "must": [{"exists": {"field": _field("status")}}],
-                "must_not": [{"terms": {_field("status"): ["active", "pending"]}}],
+                "must_not": [_string_terms_should(_field("status"), ["active", "pending"])],
             }
         }
     ]
@@ -115,7 +171,7 @@ def test_contains_uses_case_insensitive_wildcard(translator):
     assert clauses == [
         {
             "wildcard": {
-                _field("version"): {
+                _field("version") + ".keyword": {
                     "value": "*earth*",
                     "case_insensitive": True,
                 }
@@ -126,7 +182,7 @@ def test_contains_uses_case_insensitive_wildcard(translator):
 
 def test_contains_escapes_user_wildcards(translator):
     clauses = translator.translate({"key": "title", "op": "contains", "value": "a*b?c"}).to_clauses()
-    pattern = clauses[0]["wildcard"][_field("title")]["value"]
+    pattern = clauses[0]["wildcard"][_field("title") + ".keyword"]["value"]
     assert pattern == "*a\\*b\\?c*"
 
 
@@ -139,7 +195,7 @@ def test_not_contains_negates_with_exists(translator):
                 "must_not": [
                     {
                         "wildcard": {
-                            _field("version"): {
+                            _field("version") + ".keyword": {
                                 "value": "*earth*",
                                 "case_insensitive": True,
                             }
@@ -153,12 +209,14 @@ def test_not_contains_negates_with_exists(translator):
 
 def test_start_with_uses_prefix(translator):
     clauses = translator.translate({"key": "name", "op": "start with", "value": "pre"}).to_clauses()
-    assert clauses == [{"prefix": {_field("name"): {"value": "pre", "case_insensitive": True}}}]
+    assert clauses == [
+        {"prefix": {_field("name") + ".keyword": {"value": "pre", "case_insensitive": True}}}
+    ]
 
 
 def test_end_with_uses_trailing_wildcard(translator):
     clauses = translator.translate({"key": "file", "op": "end with", "value": ".pdf"}).to_clauses()
-    pattern = clauses[0]["wildcard"][_field("file")]["value"]
+    pattern = clauses[0]["wildcard"][_field("file") + ".keyword"]["value"]
     assert pattern == "*.pdf"
 
 
@@ -169,7 +227,7 @@ def test_empty_matches_missing_or_blank(translator):
             "bool": {
                 "should": [
                     {"bool": {"must_not": [{"exists": {"field": _field("notes")}}]}},
-                    {"term": {_field("notes"): ""}},
+                    {"term": {_field("notes") + ".keyword": ""}},
                 ],
                 "minimum_should_match": 1,
             }
@@ -183,7 +241,7 @@ def test_not_empty_requires_exists_and_excludes_blank(translator):
         {
             "bool": {
                 "must": [{"exists": {"field": _field("notes")}}],
-                "must_not": [{"term": {_field("notes"): ""}}],
+                "must_not": [{"term": {_field("notes") + ".keyword": ""}}],
             }
         }
     ]
@@ -262,7 +320,10 @@ def test_plan_emits_must_clauses_for_and_logic():
     # Each translated filter contributes exactly one clause to the parent bool:
     # ``=`` is a single ``term``; ``>`` is wrapped into one atomic ``bool``.
     assert len(inner["must"]) == 2
-    assert {"term": {_field("tag"): "alpha"}} in inner["must"]
+    expected_tag_term = {
+        "term": {_field("tag") + ".keyword": {"value": "alpha", "case_insensitive": True}}
+    }
+    assert expected_tag_term in inner["must"]
     range_wrap = {
         "bool": {
             "must": [
@@ -287,7 +348,9 @@ def test_range_filter_under_or_stays_atomic():
     should = body["query"]["bool"]["filter"][1]["bool"]["should"]
     # Two filters → two should branches, not three or four.
     assert len(should) == 2
-    assert {"term": {_field("tag"): "alpha"}} in should
+    assert {
+        "term": {_field("tag") + ".keyword": {"value": "alpha", "case_insensitive": True}}
+    } in should
 
 
 def test_plan_emits_should_clauses_for_or_logic():
@@ -331,7 +394,9 @@ def test_negative_filter_in_or_logic_keeps_negation_scope():
     )
     inner = body["query"]["bool"]["filter"][1]["bool"]
     should = inner["should"]
-    assert should[0] == {"term": {_field("tag"): "alpha"}}
+    assert should[0] == {
+        "term": {_field("tag") + ".keyword": {"value": "alpha", "case_insensitive": True}}
+    }
     # The ≠ branch is wrapped so its must_not does not bleed into the OR set.
     assert "bool" in should[1]
     assert "must_not" in should[1]["bool"]

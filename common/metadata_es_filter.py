@@ -237,14 +237,17 @@ class MetaFilterTranslator:
 
     def _translate_empty(self, field_path: str) -> TranslatedFilter:
         # "empty" matches documents whose value is missing OR equals "" — same
-        # falsy semantics the in-memory ``not input`` check enforces.
+        # falsy semantics the in-memory ``not input`` check enforces. The
+        # blank-string check has to target ``.keyword`` because the analyzed
+        # text field drops empty values during tokenisation, leaving no token
+        # for ``term: ""`` to match.
         return TranslatedFilter(
             must=[
                 {
                     "bool": {
                         "should": [
                             {"bool": {"must_not": [{"exists": {"field": field_path}}]}},
-                            {"term": {field_path: ""}},
+                            {"term": {_keyword_path(field_path): ""}},
                         ],
                         "minimum_should_match": 1,
                     }
@@ -255,7 +258,7 @@ class MetaFilterTranslator:
     def _translate_not_empty(self, field_path: str) -> TranslatedFilter:
         return TranslatedFilter(
             must=[{"exists": {"field": field_path}}],
-            must_not=[{"term": {field_path: ""}}],
+            must_not=[{"term": {_keyword_path(field_path): ""}}],
         )
 
     def _translate_equal(self, field_path: str, value: Any, flt: Dict[str, Any]) -> TranslatedFilter:
@@ -280,13 +283,13 @@ class MetaFilterTranslator:
 
     def _translate_in(self, field_path: str, value: Any, flt: Dict[str, Any]) -> TranslatedFilter:
         members = _csv_or_list(value, flt)
-        return TranslatedFilter(must=[{"terms": {field_path: members}}])
+        return TranslatedFilter(must=[_terms_string_or_numeric(field_path, members)])
 
     def _translate_not_in(self, field_path: str, value: Any, flt: Dict[str, Any]) -> TranslatedFilter:
         members = _csv_or_list(value, flt)
         return TranslatedFilter(
             must=[{"exists": {"field": field_path}}],
-            must_not=[{"terms": {field_path: members}}],
+            must_not=[_terms_string_or_numeric(field_path, members)],
         )
 
     def _translate_contains(self, field_path: str, value: Any, flt: Dict[str, Any]) -> TranslatedFilter:
@@ -302,7 +305,9 @@ class MetaFilterTranslator:
 
     def _translate_start_with(self, field_path: str, value: Any, flt: Dict[str, Any]) -> TranslatedFilter:
         text = _coerce_string(value, flt)
-        return TranslatedFilter(must=[{"prefix": {field_path: {"value": text, "case_insensitive": True}}}])
+        return TranslatedFilter(
+            must=[{"prefix": {_keyword_path(field_path): {"value": text, "case_insensitive": True}}}]
+        )
 
     def _translate_end_with(self, field_path: str, value: Any, flt: Dict[str, Any]) -> TranslatedFilter:
         text = _coerce_string(value, flt)
@@ -501,15 +506,68 @@ def _csv_or_list(value: Any, flt: Dict[str, Any]) -> List[Any]:
     return normalised
 
 
+def _keyword_path(field_path: str) -> str:
+    """Sub-field used for exact-match string queries.
+
+    Dynamic mapping under ``meta_fields`` indexes string values as ``text``
+    with a ``.keyword`` multi-field. ``term``/``terms``/``prefix``/``wildcard``
+    against the analyzed parent breaks for any multi-word value because the
+    inverted index stores per-token entries, not the original phrase. Routing
+    string queries through ``<field>.keyword`` keeps semantics aligned with the
+    in-memory ``meta_filter`` (full-string compare after lower-casing).
+    """
+    return f"{field_path}.keyword"
+
+
 def _term_or_match(field_path: str, value: Any) -> Dict[str, Any]:
-    """``term`` works for both keyword and numeric values once coerced."""
+    """Exact-match clause that respects how dynamic mapping indexes the value.
+
+    String values target the ``.keyword`` sub-field with ``case_insensitive``
+    so phrase values still match (the in-memory path lower-cases before
+    comparing). Numeric / bool values target the parent path because numeric
+    fields have no ``.keyword`` sub-field under default dynamic mapping.
+    """
+    if isinstance(value, str):
+        return {
+            "term": {
+                _keyword_path(field_path): {
+                    "value": value,
+                    "case_insensitive": True,
+                }
+            }
+        }
     return {"term": {field_path: value}}
 
 
+def _terms_string_or_numeric(field_path: str, members: List[Any]) -> Dict[str, Any]:
+    """``in``/``not in`` payload that mirrors ``_term_or_match`` per element.
+
+    ES ``terms`` does not accept ``case_insensitive``, so for string members we
+    expand into a ``bool: should`` of case-insensitive ``term`` queries on the
+    keyword sub-field. Pure-numeric / bool member lists keep the cheaper
+    ``terms`` form on the parent path.
+    """
+    if all(not isinstance(m, str) for m in members):
+        return {"terms": {field_path: members}}
+    return {
+        "bool": {
+            "should": [_term_or_match(field_path, m) for m in members],
+            "minimum_should_match": 1,
+        }
+    }
+
+
 def _wildcard(field_path: str, pattern: str) -> Dict[str, Any]:
+    """Wildcard runs against ``.keyword`` so the original phrase is searched.
+
+    ``wildcard`` against an analyzed text field walks per-token entries, which
+    drops phrase context (``Alice Wonderland`` becomes tokens ``alice``,
+    ``wonderland``). The ``.keyword`` sub-field preserves the full original
+    string, matching the in-memory ``str.find`` semantics.
+    """
     return {
         "wildcard": {
-            field_path: {
+            _keyword_path(field_path): {
                 "value": pattern,
                 "case_insensitive": True,
             }
