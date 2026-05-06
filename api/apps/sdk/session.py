@@ -170,7 +170,30 @@ async def chatbot_completions(dialog_id):
     if "quote" not in req:
         req["quote"] = False
 
+    def _validate_iframe_access():
+        if req.get("session_id"):
+            exists, conv = API4ConversationService.get_by_id(req.get("session_id"))
+            if not exists:
+                raise AssertionError("Session not found!")
+            if conv.dialog_id != dialog_id:
+                raise AssertionError("Session does not belong to this dialog")
+            if tenant_id and conv.user_id and conv.user_id != tenant_id:
+                raise AssertionError("Session does not belong to this tenant")
+
     if req.get("stream", True):
+        try:
+            _validate_iframe_access()
+        except AssertionError:
+            logger.warning(
+                "Denied chatbot completion stream: reason=%s tenant_id=%s dialog_id=%s user_id=%s session_id=%s",
+                "no access to this chatbot",
+                tenant_id,
+                dialog_id,
+                req.get("user_id"),
+                req.get("session_id"),
+            )
+            return get_error_data_result(message="Authentication error: no access to this chatbot!")
+
         resp = Response(iframe_completion(dialog_id, tenant_id=tenant_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
@@ -178,8 +201,20 @@ async def chatbot_completions(dialog_id):
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
 
-    async for answer in iframe_completion(dialog_id, tenant_id=tenant_id, **req):
-        return get_result(data=answer)
+    try:
+        _validate_iframe_access()
+        async for answer in iframe_completion(dialog_id, tenant_id=tenant_id, **req):
+            return get_result(data=answer)
+    except AssertionError:
+        logger.warning(
+            "Denied chatbot completion: reason=%s tenant_id=%s dialog_id=%s user_id=%s session_id=%s",
+            "no access to this chatbot",
+            tenant_id,
+            dialog_id,
+            req.get("user_id"),
+            req.get("session_id"),
+        )
+        return get_error_data_result(message="Authentication error: no access to this chatbot!")
 
     return None
 
