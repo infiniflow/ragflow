@@ -1,19 +1,3 @@
-//
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
-//
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-//
-
 package models
 
 import (
@@ -28,16 +12,16 @@ import (
 	"time"
 )
 
-// AliyunModel implements ModelDriver for Aliyun
-type AliyunModel struct {
+// OllamaModel implements ModelDriver for Ollama AI
+type OllamaModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	httpClient *http.Client
 }
 
-// NewAliyunModel creates a new Aliyun model instance
-func NewAliyunModel(baseURL map[string]string, urlSuffix URLSuffix) *AliyunModel {
-	return &AliyunModel{
+// NewOllamaModel creates a new Ollama AI model instance
+func NewOllamaModel(baseURL map[string]string, urlSuffix URLSuffix) *OllamaModel {
+	return &OllamaModel{
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
@@ -52,27 +36,45 @@ func NewAliyunModel(baseURL map[string]string, urlSuffix URLSuffix) *AliyunModel
 	}
 }
 
-func (z *AliyunModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return nil
+func (o OllamaModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return &OllamaModel{
+		BaseURL:   baseURL,
+		URLSuffix: o.URLSuffix,
+		httpClient: &http.Client{
+			Timeout: 120 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:     90 * time.Second,
+				DisableCompression:  false,
+			},
+		},
+	}
 }
 
-func (z *AliyunModel) Name() string {
-	return "siliconflow"
+func (o OllamaModel) Name() string {
+	return "ollama"
 }
 
-func (z *AliyunModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (o OllamaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if len(messages) == 0 {
-		return nil, fmt.Errorf("messages is empty")
+		return nil, fmt.Errorf("message is nil")
 	}
 
 	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil {
+	if apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Chat)
 
-	// Convert messages to the format expected by API
+	// For qwen/glm models, use async chat endpoint
+	modelType := strings.Split(modelName, "_")[0]
+	if modelType == "qwen" || modelType == "glm" {
+		url = fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.AsyncChat)
+	}
+
+	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
 		apiMessages[i] = map[string]interface{}{
@@ -112,9 +114,13 @@ func (z *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 
 		if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
-				reqBody["enable_thinking"] = true
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "enabled",
+				}
 			} else {
-				reqBody["enable_thinking"] = false
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "disabled",
+				}
 			}
 		}
 	}
@@ -124,17 +130,15 @@ func (z *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := o.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -142,7 +146,7 @@ func (z *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -170,33 +174,22 @@ func (z *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("invalid message format")
 	}
 
-	answer, ok := messageMap["content"].(string)
+	content, ok := messageMap["content"].(string)
 	if !ok {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid content format")
-		}
-		// if first char of reasonContent is \n remove the '\n'
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
-		}
-	}
+	thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelClass, &content)
 
 	chatResponse := &ChatResponse{
-		Answer:        &answer,
-		ReasonContent: &reasonContent,
+		Answer:        answer,
+		ReasonContent: thinking,
 	}
 
 	return chatResponse, nil
 }
 
-// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-func (z *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (o OllamaModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
@@ -206,9 +199,13 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Chat)
+	modelType := strings.Split(modelName, "-")[0]
+	if modelType == "qwen" || modelType == "glm" {
+		url = fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.AsyncChat)
+	}
 
-	// Convert messages to API format
+	// Convert messages to API format (supporting multimodal content)
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
 		apiMessages[i] = map[string]interface{}{
@@ -219,41 +216,44 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      true,
-		"temperature": 1,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   true,
 	}
 
-	if chatModelConfig.Stream != nil {
-		reqBody["stream"] = *chatModelConfig.Stream
+	if modelConfig.Stream != nil {
+		reqBody["stream"] = *modelConfig.Stream
 	}
 
-	if chatModelConfig.MaxTokens != nil {
-		reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+	if modelConfig.MaxTokens != nil {
+		reqBody["max_tokens"] = *modelConfig.MaxTokens
 	}
 
-	if chatModelConfig.Temperature != nil {
-		reqBody["temperature"] = *chatModelConfig.Temperature
+	if modelConfig.Temperature != nil {
+		reqBody["temperature"] = *modelConfig.Temperature
 	}
 
-	if chatModelConfig.DoSample != nil {
-		reqBody["do_sample"] = *chatModelConfig.DoSample
+	if modelConfig.DoSample != nil {
+		reqBody["do_sample"] = *modelConfig.DoSample
 	}
 
-	if chatModelConfig.TopP != nil {
-		reqBody["top_p"] = *chatModelConfig.TopP
+	if modelConfig.TopP != nil {
+		reqBody["top_p"] = *modelConfig.TopP
 	}
 
-	if chatModelConfig.Stop != nil {
-		reqBody["stop"] = *chatModelConfig.Stop
+	if modelConfig.Stop != nil {
+		reqBody["stop"] = *modelConfig.Stop
 	}
 
-	if chatModelConfig.Thinking != nil {
-		if *chatModelConfig.Thinking {
-			reqBody["enable_thinking"] = true
+	if modelConfig.Thinking != nil {
+		if *modelConfig.Thinking {
+			reqBody["thinking"] = map[string]interface{}{
+				"type": "enabled",
+			}
 		} else {
-			reqBody["enable_thinking"] = false
+			reqBody["thinking"] = map[string]interface{}{
+				"type": "disabled",
+			}
 		}
 	}
 
@@ -270,7 +270,7 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := o.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -321,16 +321,16 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 			continue
 		}
 
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
+		reasoningContent, ok := delta["reasoning_content"].(string)
+		if ok && reasoningContent != "" {
+			if err := sender(nil, &reasoningContent); err != nil {
 				return err
 			}
 		}
 
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
+		content, ok := delta["content"].(string)
+		if ok && content != "" {
+			if err := sender(&content, nil); err != nil {
 				return err
 			}
 		}
@@ -350,42 +350,23 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	return scanner.Err()
 }
 
-// Encode encodes a list of texts into embeddings
-func (z *AliyunModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (o OllamaModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+	return nil, fmt.Errorf("no such method")
 }
 
-// Rerank calculates similarity scores between query and texts
-func (z *AliyunModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
-	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
+func (o OllamaModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("no such method")
 }
 
-type AliyunModelItem struct {
-	ModelName    string `json:"model_name"`
-	BaseCapacity int    `json:"base_capacity"`
-}
-
-type AliyunModelOutput struct {
-	Models   []AliyunModelItem `json:"models"`
-	PageNo   int               `json:"page_no"`
-	PageSize int               `json:"page_size"`
-	Total    int               `json:"total"`
-}
-
-type AliyunModelList struct {
-	RequestID string            `json:"request_id"`
-	Output    AliyunModelOutput `json:"output"`
-}
-
-func (z *AliyunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (o OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
+
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Models)
 
-	// Build request body
 	reqBody := map[string]interface{}{}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -401,7 +382,7 @@ func (z *AliyunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := o.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -417,28 +398,26 @@ func (z *AliyunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// Parse response
-	var modelList AliyunModelList
-	if err = json.Unmarshal(body, &modelList); err != nil {
+	var result map[string]interface{}
+	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	var models []string
-	for _, model := range modelList.Output.Models {
-		modelName := model.ModelName
+	// convert result["data"] to []map[string]interface{}
+	models := make([]string, 0)
+	for _, model := range result["data"].([]interface{}) {
+		modelMap := model.(map[string]interface{})
+		modelName := modelMap["id"].(string)
 		models = append(models, modelName)
 	}
 
 	return models, nil
 }
 
-func (z *AliyunModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (o OllamaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("no such method")
 }
 
-func (z *AliyunModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := z.ListModels(apiConfig)
-	if err != nil {
-		return err
-	}
-	return nil
+func (o OllamaModel) CheckConnection(apiConfig *APIConfig) error {
+	return fmt.Errorf("no such method")
 }

@@ -4486,15 +4486,8 @@ Asks a specified agent a question to start an AI-powered conversation.
 
 Uses a single completion endpoint for all agent conversations.
 
-- Standard mode: send `agent_id` with `query`.
-- OpenAI-compatible mode: send the same endpoint with `"openai-compatible": true`.
-
-:::tip NOTE
-
-- Older agent completion routes have been removed. Use only `/api/v1/agents/chat/completion`.
-- In standard streaming mode, not all responses include a reference, as this depends on the workflow result.
-- In streaming mode, the server terminates the stream with `[DONE]`.
-
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/agents/{agent_id}/completions` is deprecated. Please use `POST /api/v1/agents/chat/completion` instead.
 :::
 
 #### Request
