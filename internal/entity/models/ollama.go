@@ -1,19 +1,3 @@
-//
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
-//
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-//
-
 package models
 
 import (
@@ -23,21 +7,21 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/common"
+	"ragflow/internal/logger"
 	"strings"
 	"time"
 )
 
-// VllmModel implements ModelDriver for Vllm AI
-type VllmModel struct {
+// OllamaModel implements ModelDriver for Ollama AI
+type OllamaModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	httpClient *http.Client
 }
 
-// NewVllmModel creates a new Vllm AI model instance
-func NewVllmModel(baseURL map[string]string, urlSuffix URLSuffix) *VllmModel {
-	return &VllmModel{
+// NewOllamaModel creates a new Ollama AI model instance
+func NewOllamaModel(baseURL map[string]string, urlSuffix URLSuffix) *OllamaModel {
+	return &OllamaModel{
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
@@ -52,10 +36,10 @@ func NewVllmModel(baseURL map[string]string, urlSuffix URLSuffix) *VllmModel {
 	}
 }
 
-func (z *VllmModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &VllmModel{
+func (o OllamaModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return &OllamaModel{
 		BaseURL:   baseURL,
-		URLSuffix: z.URLSuffix,
+		URLSuffix: o.URLSuffix,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 			Transport: &http.Transport{
@@ -68,14 +52,13 @@ func (z *VllmModel) NewInstance(baseURL map[string]string) ModelDriver {
 	}
 }
 
-func (z *VllmModel) Name() string {
-	return "vllm"
+func (o OllamaModel) Name() string {
+	return "ollama"
 }
 
-// ChatWithMessages sends multiple messages with roles and returns response
-func (z *VllmModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (o OllamaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if len(messages) == 0 {
-		return nil, fmt.Errorf("messages is empty")
+		return nil, fmt.Errorf("message is nil")
 	}
 
 	var region = "default"
@@ -83,12 +66,12 @@ func (z *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Chat)
 
 	// For qwen/glm models, use async chat endpoint
-	modelType := strings.Split(modelName, "-")[0]
+	modelType := strings.Split(modelName, "_")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.AsyncChat)
+		url = fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.AsyncChat)
 	}
 
 	// Convert messages to API format
@@ -147,7 +130,7 @@ func (z *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -155,7 +138,7 @@ func (z *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := o.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -163,7 +146,7 @@ func (z *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -206,8 +189,7 @@ func (z *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	return chatResponse, nil
 }
 
-// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-func (z *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (o OllamaModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
@@ -217,10 +199,10 @@ func (z *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message,
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Chat)
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.AsyncChat)
+		url = fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.AsyncChat)
 	}
 
 	// Convert messages to API format (supporting multimodal content)
@@ -288,7 +270,7 @@ func (z *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message,
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := o.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -303,7 +285,7 @@ func (z *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message,
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		common.Info(line)
+		logger.Info(line)
 
 		// SSE data line starts with "data:"
 		if !strings.HasPrefix(line, "data:") {
@@ -368,19 +350,22 @@ func (z *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message,
 	return scanner.Err()
 }
 
-// Encode encodes a list of texts into embeddings
-func (z *VllmModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
-	return nil, fmt.Errorf("not implemented")
+func (o OllamaModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+	return nil, fmt.Errorf("no such method")
 }
 
-func (z *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (o OllamaModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+	return nil, fmt.Errorf("no such method")
+}
+
+func (o OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
 
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Models)
 
 	reqBody := map[string]interface{}{}
 
@@ -397,7 +382,7 @@ func (z *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := o.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -429,15 +414,10 @@ func (z *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return models, nil
 }
 
-func (z *VllmModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (o OllamaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
-func (z *VllmModel) CheckConnection(apiConfig *APIConfig) error {
+func (o OllamaModel) CheckConnection(apiConfig *APIConfig) error {
 	return fmt.Errorf("no such method")
-}
-
-// Rerank calculates similarity scores between query and texts
-func (z *VllmModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
-	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }
