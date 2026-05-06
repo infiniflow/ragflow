@@ -433,7 +433,7 @@ def get_agent_component_input_form(agent_id, component_id, tenant_id):
         exists, user_canvas = UserCanvasService.get_by_id(agent_id)
         if not exists:
             return get_data_error_result(message="canvas not found.")
-        if not UserCanvasService.accessible(agent_id, tenant_id):
+        if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
             return get_json_result(
                 data=False,
                 message="Only owner of canvas authorized for this operation.",
@@ -594,7 +594,7 @@ def get_agent_logs(agent_id, message_id, tenant_id):
 @login_required
 @add_tenant_id_to_kwargs
 def delete_agent(agent_id, tenant_id):
-    if not UserCanvasService.accessible(agent_id, tenant_id):
+    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
         return get_json_result(
             data=False,
             message="Only owner of canvas authorized for this operation.",
@@ -626,7 +626,7 @@ async def update_agent(agent_id, tenant_id):
     if req.get("title") is not None:
         req["title"] = req["title"].strip()
 
-    if not UserCanvasService.accessible(agent_id, tenant_id):
+    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
         return get_json_result(
             data=False,
             message="Only owner of canvas authorized for this operation.",
@@ -935,7 +935,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
         runtime_user_id = req.get("user_id") or tenant_id
         user_id = str(runtime_user_id)
         custom_header = req.get("custom_header", "")
-        if not UserCanvasService.accessible(agent_id, tenant_id):
+        if not await thread_pool_exec(UserCanvasService.accessible, agent_id, tenant_id):
             return get_json_result(
                 data=False,
                 message="Only owner of canvas authorized for this operation.",
