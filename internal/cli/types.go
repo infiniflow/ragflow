@@ -81,6 +81,10 @@ const (
 	TokenDefault
 	TokenChats
 	TokenChat
+	TokenMessage
+	TokenImage
+	TokenVideo
+	TokenAudio
 	TokenStream
 	TokenFiles
 	TokenAs
@@ -109,7 +113,6 @@ const (
 	TokenVector
 	TokenSize
 	TokenName // For ALTER PROVIDER <name> NAME <new_name>
-	TokenPool
 	TokenBalance
 	TokenInstance
 	TokenInstances
