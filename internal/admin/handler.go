@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/logger"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
@@ -1220,7 +1219,7 @@ func (h *Handler) HandleNoRoute(c *gin.Context) {
 
 // GetLogLevel returns the current log level
 func (h *Handler) GetLogLevel(c *gin.Context) {
-	level := logger.GetLevel()
+	level := common.GetLevel()
 	success(c, gin.H{"level": level}, "")
 }
 
@@ -1237,7 +1236,7 @@ func (h *Handler) SetLogLevel(c *gin.Context) {
 		return
 	}
 
-	if err := logger.SetLevel(req.Level); err != nil {
+	if err := common.SetLevel(req.Level); err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
 	}
