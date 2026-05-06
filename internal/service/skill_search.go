@@ -27,7 +27,6 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
-	"ragflow/internal/logger"
 	"ragflow/internal/utility"
 	"strings"
 
@@ -144,7 +143,7 @@ func (s *SkillSearchService) UpdateConfig(req *UpdateConfigRequest) (map[string]
 		// Config exists, clean up any other active records for this tenant+space
 		// to ensure only one active config per tenant+space
 		if err := s.configDAO.DeleteAllByTenantSpaceExceptID(req.TenantID, req.SpaceID, config.ID); err != nil {
-			logger.Warn("Failed to clean up duplicate configs", zap.Error(err))
+			common.Warn("Failed to clean up duplicate configs", zap.Error(err))
 		}
 	}
 
@@ -224,18 +223,18 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 
 	// Check if index exists before searching
 	indexName := getSkillIndexName(req.TenantID, req.SpaceID)
-	logger.Debug("Searching skills", zap.String("indexName", indexName), zap.String("query", req.Query))
+	common.Debug("Searching skills", zap.String("indexName", indexName), zap.String("query", req.Query))
 
 	indexExists, err := docEngine.TableExists(ctx, indexName)
 	if err != nil {
-		logger.Error("Failed to check index existence", err)
+		common.Error("Failed to check index existence", err)
 		return nil, common.CodeOperatingError, fmt.Errorf("failed to check index existence: %w", err)
 	}
-	logger.Debug("Index existence check", zap.String("indexName", indexName), zap.Bool("exists", indexExists))
+	common.Debug("Index existence check", zap.String("indexName", indexName), zap.Bool("exists", indexExists))
 	if !indexExists {
 		// Return empty result if index doesn't exist (no skills indexed yet)
 		// This allows listing skills via file system API as fallback
-		logger.Warn("Skill index does not exist, returning empty result", zap.String("indexName", indexName), zap.String("tenantID", req.TenantID), zap.String("spaceID", req.SpaceID))
+		common.Warn("Skill index does not exist, returning empty result", zap.String("indexName", indexName), zap.String("tenantID", req.TenantID), zap.String("spaceID", req.SpaceID))
 		return &SearchResponse{
 			Skills:     []entity.SkillSearchResult{},
 			Total:      0,
@@ -286,7 +285,7 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 		searchType = "vector"
 		results, err = s.vectorSearch(ctx, docEngine, indexName, req.Query, config, req.TenantID)
 		if err != nil {
-			logger.Warn("Vector search failed, falling back to keyword search", zap.Error(err))
+			common.Warn("Vector search failed, falling back to keyword search", zap.Error(err))
 			searchType = "keyword"
 			results, err = s.keywordSearch(ctx, docEngine, indexName, req.Query, config, config.SimilarityThreshold, req.SortBy, req.SortOrder)
 		}
@@ -301,7 +300,7 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 	}
 
 	if err != nil {
-		logger.Error("Skill search failed", err)
+		common.Error("Skill search failed", err)
 		return nil, common.CodeOperatingError, fmt.Errorf("search failed: %w", err)
 	}
 
@@ -374,12 +373,12 @@ func (s *SkillSearchService) vectorSearch(ctx context.Context, docEngine engine.
 	// Get embedding for query
 	vector, err := s.getEmbedding(ctx, query, config.EmbdID, tenantID)
 	if err != nil {
-		logger.Warn("Vector search: failed to get embedding, will fallback to keyword search",
+		common.Warn("Vector search: failed to get embedding, will fallback to keyword search",
 			zap.String("embdID", config.EmbdID),
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to get embedding: %w", err)
 	}
-	logger.Debug("Vector search: successfully got embedding",
+	common.Debug("Vector search: successfully got embedding",
 		zap.String("embdID", config.EmbdID),
 		zap.Int("dimension", len(vector)))
 
@@ -418,20 +417,20 @@ func (s *SkillSearchService) vectorSearch(ctx context.Context, docEngine engine.
 
 	searchResult, err := docEngine.Search(ctx, searchReq)
 	if err != nil {
-		logger.Warn("Vector search: search execution failed",
+		common.Warn("Vector search: search execution failed",
 			zap.String("indexName", indexName),
 			zap.Error(err))
 		return nil, err
 	}
 
 	results := s.convertChunksToResults(searchResult.Chunks, config.SimilarityThreshold)
-	logger.Debug("Vector search: completed",
+	common.Debug("Vector search: completed",
 		zap.Int("totalChunks", len(searchResult.Chunks)),
 		zap.Int("filteredResults", len(results)))
 
 	// If no results, return error to trigger fallback
 	if len(results) == 0 {
-		logger.Info("Vector search: no results found, will fallback to keyword search",
+		common.Info("Vector search: no results found, will fallback to keyword search",
 			zap.String("indexName", indexName),
 			zap.String("query", query))
 		return nil, fmt.Errorf("vector search returned no results")
@@ -451,19 +450,19 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 			"description^3",
 			"content^1",
 		},
-		TopN:         int(config.TopK),
+		TopN: int(config.TopK),
 	}
 
 	// Get embedding for query
 	vector, err := s.getEmbedding(ctx, query, config.EmbdID, tenantID)
 	if err != nil {
-		logger.Warn("Hybrid search: failed to get embedding, falling back to keyword search",
+		common.Warn("Hybrid search: failed to get embedding, falling back to keyword search",
 			zap.String("embdID", config.EmbdID),
 			zap.Error(err))
 		// Fallback to keyword search with analyzed query
 		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchExpr, config)
 	}
-	logger.Debug("Hybrid search: successfully got embedding",
+	common.Debug("Hybrid search: successfully got embedding",
 		zap.String("embdID", config.EmbdID),
 		zap.Int("dimension", len(vector)))
 
@@ -500,20 +499,20 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 
 	searchResult, err := docEngine.Search(ctx, searchReq)
 	if err != nil {
-		logger.Warn("Hybrid search: search execution failed, falling back to keyword search",
+		common.Warn("Hybrid search: search execution failed, falling back to keyword search",
 			zap.String("indexName", indexName),
 			zap.Error(err))
 		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchExpr, config)
 	}
 
 	results := s.convertChunksToResults(searchResult.Chunks, config.SimilarityThreshold)
-	logger.Debug("Hybrid search completed",
+	common.Debug("Hybrid search completed",
 		zap.Int("totalChunks", len(searchResult.Chunks)),
 		zap.Int("filteredResults", len(results)))
 
 	// If no results, fallback to keyword search
 	if len(results) == 0 {
-		logger.Info("Hybrid search: no results found, falling back to keyword search",
+		common.Info("Hybrid search: no results found, falling back to keyword search",
 			zap.String("indexName", indexName),
 			zap.String("query", query))
 		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchExpr, config)
@@ -524,7 +523,7 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 
 // executeKeywordSearch executes a keyword search (used for fallback)
 func (s *SkillSearchService) executeKeywordSearch(ctx context.Context, docEngine engine.DocEngine, indexName, query string, matchExpr *types.MatchTextExpr, config *entity.SkillSearchConfig) ([]entity.SkillSearchResult, error) {
-	logger.Debug("Executing fallback keyword search",
+	common.Debug("Executing fallback keyword search",
 		zap.String("indexName", indexName),
 		zap.String("query", query))
 
@@ -537,12 +536,12 @@ func (s *SkillSearchService) executeKeywordSearch(ctx context.Context, docEngine
 
 	searchResult, err := docEngine.Search(ctx, searchReq)
 	if err != nil {
-		logger.Error("Keyword search fallback failed", err)
+		common.Error("Keyword search fallback failed", err)
 		return nil, err
 	}
 
 	results := s.convertChunksToResults(searchResult.Chunks, config.SimilarityThreshold)
-	logger.Debug("Keyword search fallback completed",
+	common.Debug("Keyword search fallback completed",
 		zap.Int("totalChunks", len(searchResult.Chunks)),
 		zap.Int("results", len(results)))
 
@@ -624,21 +623,21 @@ func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interfac
 			createTime = ctVal
 		}
 
-	// Extract version
-	version := getString(chunk, "version")
+		// Extract version
+		version := getString(chunk, "version")
 
-	result := entity.SkillSearchResult{
-		SkillID:     skillID,
-		FolderID:    folderID,
-		Name:        name,
-		Description: description,
-		Tags:        tags,
-		Score:       score,
-		BM25Score:   bm25Score,
-		VectorScore: vectorScore,
-		CreateTime:  createTime,
-		Version:     version,
-	}
+		result := entity.SkillSearchResult{
+			SkillID:     skillID,
+			FolderID:    folderID,
+			Name:        name,
+			Description: description,
+			Tags:        tags,
+			Score:       score,
+			BM25Score:   bm25Score,
+			VectorScore: vectorScore,
+			CreateTime:  createTime,
+			Version:     version,
+		}
 
 		// Keep only the highest scored result for each skill
 		if existing, ok := skillMap[skillKey]; !ok || score > existing.Score {
@@ -724,8 +723,6 @@ func normalizeSpaceID(spaceID string) string {
 	}
 	return spaceID
 }
-
-
 
 func getString(m map[string]interface{}, key string) string {
 	if v, ok := m[key].(string); ok {
@@ -962,14 +959,14 @@ func (s *SkillSearchService) buildOrderBy(sortBy, sortOrder string, isEmptyQuery
 
 	// Map frontend field names to backend field names
 	fieldMapping := map[string]string{
-		"name":         "name",
-		"update_time":  "update_time",
-		"create_time":  "create_time",
-		"updateTime":   "update_time",
-		"createTime":   "create_time",
-		"relevance":    "", // Empty means sort by score/relevance
-		"updated_at":   "update_time",
-		"created_at":   "create_time",
+		"name":        "name",
+		"update_time": "update_time",
+		"create_time": "create_time",
+		"updateTime":  "update_time",
+		"createTime":  "create_time",
+		"relevance":   "", // Empty means sort by score/relevance
+		"updated_at":  "update_time",
+		"created_at":  "create_time",
 	}
 
 	backendField, ok := fieldMapping[sortBy]

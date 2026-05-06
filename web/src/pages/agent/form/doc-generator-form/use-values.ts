@@ -1,5 +1,5 @@
+import { type Node } from '@xyflow/react';
 import { useMemo } from 'react';
-import { Node } from 'reactflow';
 import { initialDocGeneratorValues } from '../../constant';
 
 export const useValues = (node?: Node) => {

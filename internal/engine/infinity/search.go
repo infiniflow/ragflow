@@ -30,8 +30,6 @@ import (
 	"strings"
 	"unicode"
 
-	"ragflow/internal/logger"
-
 	infinity "github.com/infiniflow/infinity-go-sdk"
 	"go.uber.org/zap"
 )
@@ -40,8 +38,8 @@ import (
 // It supports three matching types: MatchTextExpr (full-text), MatchDenseExpr (vector), and FusionExpr (combined).
 // If no match expressions are provided, Search relies solely on filter (e.g., doc_id, available_int) to find results.
 func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
-	logger.Debug("Search in Infinity started", zap.Any("indexNames", req.IndexNames))
-	if logger.IsDebugEnabled() {
+	common.Debug("Search in Infinity started", zap.Any("indexNames", req.IndexNames))
+	if common.IsDebugEnabled() {
 		// Format match expressions for logging
 		var matchExprsStr string
 		for i, expr := range req.MatchExprs {
@@ -56,7 +54,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 				matchExprsStr += fmt.Sprintf("    [%d] unknown type\n", i)
 			}
 		}
-		logger.Debug(fmt.Sprintf("Search request:\n"+
+		common.Debug(fmt.Sprintf("Search request:\n"+
 			"    indexNames=%v\n"+
 			"    KbIDs=%v\n"+
 			"    offset=%d, limit=%d\n"+
@@ -298,12 +296,12 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 			if matchText != nil && len(matchText.Fields) > 0 {
 				textFields = matchText.Fields
 			} else if isSkillIndex {
-			textFields = []string{
-				"name^10",
-				"tags^5",
-				"description^3",
-				"content^1",
-			}
+				textFields = []string{
+					"name^10",
+					"tags^5",
+					"description^3",
+					"content^1",
+				}
 			} else {
 				textFields = []string{
 					"title_tks^10",
@@ -352,7 +350,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 
 				table = table.MatchText(fields, questionText, textTopN, extraOptions)
 
-				logger.Debug(fmt.Sprintf(
+				common.Debug(fmt.Sprintf(
 					"MatchTextExpr:\n"+
 						"    fields=%s\n"+
 						"    matching_text=%s\n"+
@@ -386,14 +384,14 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 					vectorTopN = int(matchDense.TopN)
 				}
 
-			denseFilterStr := filterStr
-			if denseFilterStr == "" {
-				if isSkillIndex {
-					denseFilterStr = "status='1'"
-				} else {
-					denseFilterStr = "available_int=1"
+				denseFilterStr := filterStr
+				if denseFilterStr == "" {
+					if isSkillIndex {
+						denseFilterStr = "status='1'"
+					} else {
+						denseFilterStr = "available_int=1"
+					}
 				}
-			}
 
 				if hasTextMatch && fusionExpr == nil {
 					fieldsStr := strings.Join(convertedFields, ",")
@@ -405,7 +403,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 					"filter":    denseFilterStr,
 				}
 
-				logger.Debug("MatchDense for hybrid search",
+				common.Debug("MatchDense for hybrid search",
 					zap.String("fieldName", fieldName),
 					zap.String("distanceType", distanceType),
 					zap.Int("topN", vectorTopN),
@@ -430,7 +428,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 					}
 				}
 
-				logger.Debug("Applying Fusion for hybrid search",
+				common.Debug("Applying Fusion for hybrid search",
 					zap.String("method", fusionMethod),
 					zap.Int("topN", fusionTopK),
 					zap.Any("params", fusionParams))
@@ -453,7 +451,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 
 			// Add filter when there's no text/vector match (like metadata queries)
 			if !hasTextMatch && !hasVectorMatch && filterStr != "" {
-				logger.Debug(fmt.Sprintf("Adding filter for no-match query: %s", filterStr))
+				common.Debug(fmt.Sprintf("Adding filter for no-match query: %s", filterStr))
 				table = table.Filter(filterStr)
 			}
 
@@ -469,7 +467,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 			// Execute query
 			df, err := table.ToDataFrame()
 			if err != nil {
-				logger.Warn("Infinity query failed",
+				common.Warn("Infinity query failed",
 					zap.String("tableName", tableName),
 					zap.Bool("hasTextMatch", hasTextMatch),
 					zap.Bool("hasVectorMatch", hasVectorMatch),
@@ -547,7 +545,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 		allResults = allResults[:pageSize]
 	}
 
-	logger.Debug("Search in Infinity completed", zap.Int("returnedRows", len(allResults)), zap.Int64("totalHits", totalHits))
+	common.Debug("Search in Infinity completed", zap.Int("returnedRows", len(allResults)), zap.Int64("totalHits", totalHits))
 
 	return &types.SearchResult{
 		Chunks: allResults,
@@ -647,10 +645,10 @@ func convertMatchingField(fieldWeightStr string) string {
 		"authors_sm_tks":      "authors@ft_authors_rag_fine",
 		"tag_kwd":             "tag_kwd@ft_tag_kwd_whitespace__",
 		// Skill index fields
-		"name":               "name@ft_name_rag_coarse",
-		"tags":               "tags@ft_tags_rag_coarse",
-		"description":        "description@ft_description_rag_coarse",
-		"content":            "content@ft_content_rag_coarse",
+		"name":        "name@ft_name_rag_coarse",
+		"tags":        "tags@ft_tags_rag_coarse",
+		"description": "description@ft_description_rag_coarse",
+		"content":     "content@ft_content_rag_coarse",
 	}
 
 	if newField, ok := fieldMapping[field]; ok {
