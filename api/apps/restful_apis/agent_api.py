@@ -848,7 +848,7 @@ async def test_db_connection():
 @manager.route("/agents/chat/completion", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def agent_chat_completion(tenant_id):
+async def agent_chat_completion(tenant_id, agent_id=None):
     # This endpoint serves two execution modes:
     # 1. Draft/runtime execution without session state. The request runs against the caller's
     #    runtime replica, which is populated from the editable canvas state.
@@ -865,7 +865,7 @@ async def agent_chat_completion(tenant_id):
     # - Regular mode emits internal agent events.
     # - openai-compatible mode reshapes the same execution into an OpenAI-like wire format.
     req = await get_request_json()
-    agent_id = req.get("agent_id")
+    agent_id = agent_id or req.get("agent_id")
     openai_compatible = bool(req.get("openai-compatible", False))
     if not agent_id:
         return get_json_result(
