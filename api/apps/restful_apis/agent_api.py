@@ -941,11 +941,27 @@ async def agent_chat_completion(tenant_id, agent_id=None):
                 code=RetCode.OPERATING_ERROR,
             )
 
+        _, cvs = await thread_pool_exec(UserCanvasService.get_by_id, agent_id)
+        if not cvs:
+            return get_data_error_result(message="canvas not found.")
+
         replica_payload = CanvasReplicaService.load_for_run(
             canvas_id=agent_id,
             tenant_id=str(tenant_id),
             runtime_user_id=user_id,
         )
+        if not replica_payload:
+            try:
+                replica_payload = CanvasReplicaService.bootstrap(
+                    canvas_id=agent_id,
+                    tenant_id=str(tenant_id),
+                    runtime_user_id=user_id,
+                    dsl=cvs.dsl,
+                    canvas_category=getattr(cvs, "canvas_category", CanvasCategory.Agent),
+                    title=getattr(cvs, "title", ""),
+                )
+            except ValueError as exc:
+                return get_data_error_result(message=str(exc))
         if not replica_payload:
             return get_data_error_result(message="canvas replica not found, please fetch the agent first.")
 
@@ -954,7 +970,6 @@ async def agent_chat_completion(tenant_id, agent_id=None):
         canvas_category = replica_payload.get("canvas_category", CanvasCategory.Agent)
         dsl_str = json.dumps(replica_dsl, ensure_ascii=False)
 
-        _, cvs = await thread_pool_exec(UserCanvasService.get_by_id, agent_id)
         if cvs.canvas_category == CanvasCategory.DataFlow:
             task_id = get_uuid()
             Pipeline(
