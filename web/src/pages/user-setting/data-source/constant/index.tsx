@@ -69,6 +69,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.GMAIL]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.IMAP]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.CONFLUENCE]: {
     syncDeletedFiles: true,
   },
