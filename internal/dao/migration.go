@@ -18,6 +18,7 @@ package dao
 
 import (
 	"fmt"
+	"ragflow/internal/entity"
 	"ragflow/internal/logger"
 	"strings"
 
@@ -49,6 +50,16 @@ func RunMigrations(db *gorm.DB) error {
 	// Modify column types that AutoMigrate may not handle correctly
 	if err := modifyColumnTypes(db); err != nil {
 		return fmt.Errorf("failed to modify column types: %w", err)
+	}
+
+	// Create skill search tables
+	if err := migrateSkillSearchTables(db); err != nil {
+		return fmt.Errorf("failed to migrate skill search tables: %w", err)
+	}
+
+	// Create skill space tables
+	if err := migrateSkillSpaceTables(db); err != nil {
+		return fmt.Errorf("failed to migrate skill space tables: %w", err)
 	}
 
 	logger.Info("All manual migrations completed successfully")
@@ -312,4 +323,154 @@ func addColumnIfNotExists(db *gorm.DB, tableName, columnName, columnDef string) 
 		zap.String("column", columnName))
 	sql := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", tableName, columnName, columnDef)
 	return db.Exec(sql).Error
+}
+
+// migrateSkillSearchTables creates skill search related tables
+func migrateSkillSearchTables(db *gorm.DB) error {
+	// Create skill_search_configs table only
+	if !db.Migrator().HasTable("skill_search_configs") {
+		logger.Info("Creating skill_search_configs table...")
+		sql := `
+		CREATE TABLE IF NOT EXISTS skill_search_configs (
+			id VARCHAR(32) PRIMARY KEY,
+			tenant_id VARCHAR(32) NOT NULL,
+			space_id VARCHAR(128) NOT NULL DEFAULT 'default',
+			embd_id VARCHAR(128) NOT NULL,
+			vector_similarity_weight FLOAT DEFAULT 0.3,
+			similarity_threshold FLOAT DEFAULT 0.2,
+			field_config JSON,
+			rerank_id VARCHAR(128),
+			tenant_rerank_id BIGINT,
+			top_k BIGINT DEFAULT 10,
+			index_version VARCHAR(32) DEFAULT '1.0.0',
+			status VARCHAR(1) DEFAULT '1',
+			create_time BIGINT,
+			update_time DATETIME,
+			INDEX idx_tenant_id (tenant_id),
+			INDEX idx_space_id (space_id),
+			UNIQUE INDEX idx_tenant_space_embd (tenant_id, space_id, embd_id)
+		)
+		`
+		if err := db.Exec(sql).Error; err != nil {
+			logger.Warn("Failed to create skill_search_configs table with MySQL dialect, trying generic", zap.Error(err))
+			if err := db.AutoMigrate(&entity.SkillSearchConfig{}); err != nil {
+				return err
+			}
+			// AutoMigrate doesn't create unique indexes, so create them explicitly
+			logger.Info("Creating unique indexes for skill_search_configs...")
+			if err := db.Exec(`ALTER TABLE skill_search_configs ADD UNIQUE INDEX idx_tenant_space_embd (tenant_id, space_id, embd_id)`).Error; err != nil {
+				return fmt.Errorf("failed to create unique index idx_tenant_space_embd: %w", err)
+			}
+		}
+	} else {
+		// Add space_id for existing installations.
+		if err := addColumnIfNotExists(db, "skill_search_configs", "space_id", "VARCHAR(128) NOT NULL DEFAULT 'default'"); err != nil {
+			return fmt.Errorf("failed to add space_id column to skill_search_configs: %w", err)
+		}
+
+		// Drop legacy unique index (tenant_id, embd_id) to allow per-space configs.
+		var legacyIndexExists int64
+		db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+			WHERE TABLE_NAME = 'skill_search_configs' AND INDEX_NAME = 'idx_tenant_embd'`).Scan(&legacyIndexExists)
+		if legacyIndexExists > 0 {
+			logger.Info("Dropping legacy unique index idx_tenant_embd from skill_search_configs...")
+			if err := db.Exec(`ALTER TABLE skill_search_configs DROP INDEX idx_tenant_embd`).Error; err != nil {
+				return fmt.Errorf("failed to drop legacy unique index idx_tenant_embd: %w", err)
+			}
+		}
+
+		// Table exists, check if unique index exists
+		var indexExists int64
+		db.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+			WHERE TABLE_NAME = 'skill_search_configs' AND INDEX_NAME = 'idx_tenant_space_embd'`).Scan(&indexExists)
+		if indexExists == 0 {
+			logger.Info("Adding unique index idx_tenant_space_embd to skill_search_configs...")
+			if err := db.Exec(`ALTER TABLE skill_search_configs 
+				ADD UNIQUE INDEX idx_tenant_space_embd (tenant_id, space_id, embd_id)`).Error; err != nil {
+				return fmt.Errorf("failed to add unique index idx_tenant_space_embd: %w", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// migrateSkillSpaceTables creates skill space related tables
+func migrateSkillSpaceTables(db *gorm.DB) error {
+	if !db.Migrator().HasTable("skill_spaces") {
+		logger.Info("Creating skill_spaces table...")
+		sql := `
+		CREATE TABLE IF NOT EXISTS skill_spaces (
+			id VARCHAR(32) PRIMARY KEY,
+			tenant_id VARCHAR(32) NOT NULL,
+			name VARCHAR(128) NOT NULL,
+			folder_id VARCHAR(32) NOT NULL,
+			description TEXT,
+			embd_id VARCHAR(128),
+			rerank_id VARCHAR(128),
+			top_k INT DEFAULT 10,
+			status VARCHAR(1) DEFAULT '1',
+			create_time BIGINT,
+			update_time DATETIME,
+			INDEX idx_tenant_id (tenant_id),
+			UNIQUE INDEX idx_tenant_name_status (tenant_id, name, status)
+		)
+		`
+		if err := db.Exec(sql).Error; err != nil {
+			logger.Warn("Failed to create skill_spaces table with MySQL dialect, trying generic", zap.Error(err))
+			// Try with AutoMigrate as fallback
+			if err := db.AutoMigrate(&entity.SkillSpace{}); err != nil {
+				return err
+			}
+			// AutoMigrate doesn't create unique indexes, so create them explicitly
+			logger.Info("Creating unique indexes for skill_spaces...")
+			if err := db.Exec(`ALTER TABLE skill_spaces ADD UNIQUE INDEX idx_tenant_name_status (tenant_id, name, status)`).Error; err != nil {
+				return fmt.Errorf("failed to create unique index idx_tenant_name_status: %w", err)
+			}
+		}
+	} else {
+		// Migrate existing table: add status column first, then update index
+		if err := addColumnIfNotExists(db, "skill_spaces", "status", "VARCHAR(1) NOT NULL DEFAULT '1'"); err != nil {
+			return fmt.Errorf("failed to add status column to skill_spaces: %w", err)
+		}
+		// Migrate index after status column exists
+		if err := migrateSkillSpaceIndex(db); err != nil {
+			return fmt.Errorf("failed to migrate skill_space index: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// migrateSkillSpaceIndex migrates the unique index to include status
+func migrateSkillSpaceIndex(db *gorm.DB) error {
+	// Check if old index exists and drop it
+	var oldIndexExists int64
+	db.Raw(`
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+		WHERE TABLE_NAME = 'skill_spaces' AND INDEX_NAME = 'idx_tenant_name'
+	`).Scan(&oldIndexExists)
+	
+	if oldIndexExists > 0 {
+		logger.Info("Dropping old idx_tenant_name index from skill_spaces...")
+		if err := db.Exec(`DROP INDEX idx_tenant_name ON skill_spaces`).Error; err != nil {
+			return fmt.Errorf("failed to drop old index idx_tenant_name: %w", err)
+		}
+	}
+	
+	// Check if new index exists
+	var newIndexExists int64
+	db.Raw(`
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+		WHERE TABLE_NAME = 'skill_spaces' AND INDEX_NAME = 'idx_tenant_name_status'
+	`).Scan(&newIndexExists)
+	
+	if newIndexExists == 0 {
+		logger.Info("Creating new idx_tenant_name_status index on skill_spaces...")
+		if err := db.Exec(`CREATE UNIQUE INDEX idx_tenant_name_status ON skill_spaces(tenant_id, name, status)`).Error; err != nil {
+			return fmt.Errorf("failed to create unique index idx_tenant_name_status: %w", err)
+		}
+	}
+	
+	return nil
 }

@@ -627,17 +627,14 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         nonlocal mdl
         return mdl.encode([truncate(c, mdl.max_length - 10) for c in txts])
 
-    cnts_ = np.array([])
+    cnts_batches = []
     for i in range(0, len(cnts), settings.EMBEDDING_BATCH_SIZE):
         async with embed_limiter:
             vts, c = await thread_pool_exec(batch_encode, cnts[i: i + settings.EMBEDDING_BATCH_SIZE])
-        if len(cnts_) == 0:
-            cnts_ = vts
-        else:
-            cnts_ = np.concatenate((cnts_, vts), axis=0)
+        cnts_batches.append(vts)
         tk_count += c
         callback(prog=0.7 + 0.2 * (i + 1) / len(cnts), msg="")
-    cnts = cnts_
+    cnts = np.vstack(cnts_batches) if cnts_batches else np.array([])
     filename_embd_weight = parser_config.get("filename_embd_weight", 0.1)  # due to the db support none value
     if not filename_embd_weight:
         filename_embd_weight = 0.1
@@ -720,21 +717,19 @@ async def run_dataflow(task: dict):
                 nonlocal embedding_model
                 return embedding_model.encode([truncate(c, embedding_model.max_length - 10) for c in txts])
 
-            vects = np.array([])
+            vects_batches = []
             texts = [o.get("questions", o.get("summary", o["text"])) for o in chunks]
             delta = 0.20 / (len(texts) // settings.EMBEDDING_BATCH_SIZE + 1)
             prog = 0.8
             for i in range(0, len(texts), settings.EMBEDDING_BATCH_SIZE):
                 async with embed_limiter:
                     vts, c = await thread_pool_exec(batch_encode, texts[i: i + settings.EMBEDDING_BATCH_SIZE])
-                if len(vects) == 0:
-                    vects = vts
-                else:
-                    vects = np.concatenate((vects, vts), axis=0)
+                vects_batches.append(vts)
                 embedding_token_consumption += c
                 prog += delta
                 if i % (len(texts) // settings.EMBEDDING_BATCH_SIZE / 100 + 1) == 1:
                     set_progress(task_id, prog=prog, msg=f"{i + 1} / {len(texts) // settings.EMBEDDING_BATCH_SIZE}")
+            vects = np.vstack(vects_batches) if vects_batches else np.array([])
 
             assert len(vects) == len(chunks)
             for i, ck in enumerate(chunks):

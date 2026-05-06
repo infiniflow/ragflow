@@ -98,6 +98,7 @@ export const util = {
     return data.map((item) => {
       return {
         key: item.field,
+        type: item.valueType?.toLowerCase(),
         description: item.description,
         enum: item.values,
       };

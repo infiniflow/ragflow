@@ -38,6 +38,7 @@ type Router struct {
 	searchHandler        *handler.SearchHandler
 	fileHandler          *handler.FileHandler
 	memoryHandler        *handler.MemoryHandler
+	skillSearchHandler   *handler.SkillSearchHandler
 	providerHandler      *handler.ProviderHandler
 }
 
@@ -58,6 +59,7 @@ func NewRouter(
 	searchHandler *handler.SearchHandler,
 	fileHandler *handler.FileHandler,
 	memoryHandler *handler.MemoryHandler,
+	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
 ) *Router {
 	return &Router{
@@ -76,6 +78,7 @@ func NewRouter(
 		searchHandler:        searchHandler,
 		fileHandler:          fileHandler,
 		memoryHandler:        memoryHandler,
+		skillSearchHandler:   skillSearchHandler,
 		providerHandler:      providerHandler,
 	}
 }
@@ -164,16 +167,38 @@ func (r *Router) Setup(engine *gin.Engine) {
 				memory.GET("/:memory_id", r.memoryHandler.GetMemoryMessages)
 			}
 
-			// TODO: Message routes - Implementation pending - depends on CanvasService, TaskService and embedding engine
-			// message := v1.Group("/messages")
-			// {
-			// 	message.POST("", r.memoryHandler.AddMessage)
-			// 	message.DELETE("/:memory_id/:message_id", r.memoryHandler.ForgetMessage)
-			// 	message.PUT("/:memory_id/:message_id", r.memoryHandler.UpdateMessage)
-			// 	message.GET("/search", r.memoryHandler.SearchMessage)
-			// 	message.GET("", r.memoryHandler.GetMessages)
-			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
-			// }
+		// TODO: Message routes - Implementation pending - depends on CanvasService, TaskService and embedding engine
+		// message := v1.Group("/messages")
+		// {
+		// 	message.POST("", r.memoryHandler.AddMessage)
+		// 	message.DELETE("/:memory_id/:message_id", r.memoryHandler.ForgetMessage)
+		// 	message.PUT("/:memory_id/:message_id", r.memoryHandler.UpdateMessage)
+		// 	message.GET("/search", r.memoryHandler.SearchMessage)
+		// 	message.GET("", r.memoryHandler.GetMessages)
+		// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
+		// }
+
+		// Skill search routes
+		skills := v1.Group("/skills")
+		{
+			// Skill Space management
+			skills.GET("/spaces", r.skillSearchHandler.ListSpaces)
+			skills.POST("/spaces", r.skillSearchHandler.CreateSpace)
+			skills.GET("/spaces/:space_id", r.skillSearchHandler.GetSpace)
+			skills.PUT("/spaces/:space_id", r.skillSearchHandler.UpdateSpace)
+			skills.DELETE("/spaces/:space_id", r.skillSearchHandler.DeleteSpace)
+			skills.GET("/space/by-folder", r.skillSearchHandler.GetSpaceByFolder)
+
+			// Skill search config
+			skills.GET("/config", r.skillSearchHandler.GetConfig)
+			skills.POST("/config", r.skillSearchHandler.UpdateConfig)
+
+			// Skill search and indexing
+			skills.POST("/search", r.skillSearchHandler.Search)
+			skills.POST("/index", r.skillSearchHandler.IndexSkills)
+			skills.DELETE("/index", r.skillSearchHandler.DeleteSkillIndex)
+			skills.POST("/reindex", r.skillSearchHandler.Reindex)
+		}
 
 			chats := v1.Group("/chats")
 			{
@@ -181,16 +206,16 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.GET("/:chat_id", r.chatHandler.GetChat)
 			}
 
-			searches := v1.Group("/searches")
-			{
-				searches.GET("", r.searchHandler.ListSearches)
-				searches.POST("", r.searchHandler.CreateSearch)
-				searches.GET("/:search_id", r.searchHandler.GetSearch)
-				searches.PUT("/:search_id", r.searchHandler.UpdateSearch)
-				searches.DELETE("/:search_id", r.searchHandler.DeleteSearch)
-			}
+		searches := v1.Group("/searches")
+		{
+			searches.GET("", r.searchHandler.ListSearches)
+			searches.POST("", r.searchHandler.CreateSearch)
+			searches.GET("/:search_id", r.searchHandler.GetSearch)
+			searches.PUT("/:search_id", r.searchHandler.UpdateSearch)
+			searches.DELETE("/:search_id", r.searchHandler.DeleteSearch)
+		}
 
-			file := v1.Group("/files")
+		file := v1.Group("/files")
 			{
 				file.POST("", r.fileHandler.UploadFile)
 				file.GET("", r.fileHandler.ListFiles)
@@ -219,6 +244,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
 				provider.PATCH("/:provider_name/instances/:instance_name/models/*model_name", r.providerHandler.EnableOrDisableModel)
 				provider.POST("/:provider_name/instances/:instance_name/models", r.providerHandler.AddCustomModel)
+				provider.DELETE("/:provider_name/instances/:instance_name/models", r.providerHandler.DropInstanceModels)
 				v1.POST("/chat/completions", r.providerHandler.ChatToModel)
 			}
 

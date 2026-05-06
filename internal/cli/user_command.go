@@ -22,7 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	ce "ragflow/internal/cli/contextengine"
+	ce "ragflow/internal/cli/filesystem"
 	"strings"
 	"time"
 )
@@ -1383,6 +1383,56 @@ func (c *RAGFlowClient) DropProviderInstance(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+// DropInstanceModel deletes a provider instance, only works for local deployed model
+// DROP MODEL <name> FROM <provider_name> <instance_name>
+func (c *RAGFlowClient) DropInstanceModel(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance name not provided")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	modelName, ok := cmd.Params["model_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model name not provided")
+	}
+
+	payload := map[string]interface{}{
+		"models": []string{modelName},
+	}
+
+	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
+
+	resp, err := c.HTTPClient.Request("DELETE", url, true, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to drop instance: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to drop instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("drop instance failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 func (c *RAGFlowClient) ListInstanceModels(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
@@ -1495,14 +1545,29 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	effort := cmd.Params["effort"].(string)
 	verbosity := cmd.Params["verbosity"].(string)
 
-	url := fmt.Sprintf("/chat/completions")
+	url := "/chat/completions"
+
+	message = strings.TrimSpace(message)
+	var content interface{} = message
+	if strings.HasPrefix(message, "[") && strings.HasSuffix(message, "]") {
+		var parts []map[string]interface{}
+		if err := json.Unmarshal([]byte(message), &parts); err == nil {
+			content = parts
+		}
+	}
+	formattedMessage := []map[string]interface{}{
+		{
+			"role":    "user",
+			"content": content,
+		},
+	}
 
 	payload := map[string]interface{}{
 		"provider_name": providerName,
 		"instance_name": instanceName,
 		"model_name":    modelName,
-		"message":       message,
-		"stream":        stream, // use stream API
+		"messages":      formattedMessage,
+		"stream":        stream,
 		"thinking":      thinking,
 	}
 
@@ -1722,7 +1787,7 @@ func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
 	}
 
 	// chat, vision, embedding, rerank, tts, asr, ocr
-	modelType, ok := cmd.Params["model_type"].(string)
+	modelTypes, ok := cmd.Params["model_types"].([]string)
 	if !ok {
 		return nil, fmt.Errorf("model type not provided")
 	}
@@ -1738,7 +1803,7 @@ func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
 		"provider_name": providerName,
 		"instance_name": instanceName,
 		"model_name":    modelName,
-		"model_type":    modelType,
+		"model_types":   modelTypes,
 		"max_tokens":    maxTokens,
 	}
 
@@ -1768,6 +1833,36 @@ func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
 
 // Context related commands
 
+// CECat handles the cat command - shows content using Context Engine
+func (c *RAGFlowClient) CECat(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	path, ok := cmd.Params["path"].(string)
+	if !ok {
+		return nil, fmt.Errorf("fail to convert 'path' to string")
+	}
+
+	// Execute cat command through Filesystem Engine
+	ctx := context.Background()
+	content, err := c.ContextEngine.Cat(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to response
+	var response ContextCatResponse
+	response.OutputFormat = c.OutputFormat
+	response.Code = 0
+	response.Content = string(content)
+
+	return &response, nil
+}
+
 // CEList handles the ls command - lists nodes using Context Engine
 func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
 	// Get path from command params, default to "datasets"
@@ -1788,7 +1883,7 @@ func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
 		opts.Offset = offset
 	}
 
-	// Execute list command through Context Engine
+	// Execute list command through Filesystem Engine
 	ctx := context.Background()
 	result, err := c.ContextEngine.List(ctx, path, opts)
 	if err != nil {
@@ -1827,7 +1922,7 @@ func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
 		opts.Recursive = recursive
 	}
 
-	// Execute search command through Context Engine
+	// Execute search command through Filesystem Engine
 	ctx := context.Background()
 	result, err := c.ContextEngine.Search(ctx, path, opts)
 	if err != nil {

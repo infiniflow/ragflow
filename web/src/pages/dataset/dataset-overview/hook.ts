@@ -6,7 +6,6 @@ import {
 import {
   getKnowledgeBasicInfo,
   listDataPipelineLogDocument,
-  listPipelineDatasetLogs,
 } from '@/services/knowledge-service';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
@@ -41,10 +40,7 @@ const useFetchFileLogList = () => {
     LogTabs.FILE_LOGS,
   );
   const knowledgeBaseId = searchParams.get('id') || id;
-  const fetchFunc =
-    active === LogTabs.DATASET_LOGS
-      ? listPipelineDatasetLogs
-      : listDataPipelineLogDocument;
+  const logType = active === LogTabs.DATASET_LOGS ? 'dataset' : 'file';
   const { data } = useQuery<IFileLogList>({
     queryKey: [
       'fileLogList',
@@ -62,12 +58,16 @@ const useFetchFileLogList = () => {
     },
     enabled: true,
     queryFn: async () => {
-      const { data: res = {} } = await fetchFunc(knowledgeBaseId || '', {
-        page: pagination.current,
-        page_size: pagination.pageSize,
-        keywords: searchString,
-        ...filterValue,
-      });
+      const { data: res = {} } = await listDataPipelineLogDocument(
+        knowledgeBaseId || '',
+        {
+          page: pagination.current,
+          page_size: pagination.pageSize,
+          keywords: searchString,
+          log_type: logType,
+          ...filterValue,
+        },
+      );
       return res.data || [];
     },
   });

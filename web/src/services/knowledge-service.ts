@@ -24,6 +24,7 @@ const {
   listTagByKnowledgeIds,
   setMeta,
   getMeta,
+  getMetaKeys,
   retrievalTestShare,
 } = api;
 
@@ -79,6 +80,10 @@ const methods = {
   },
   getMeta: {
     url: getMeta,
+    method: 'get',
+  },
+  getMetaKeys: {
+    url: getMetaKeys,
     method: 'get',
   },
   retrievalTestShare: {
@@ -255,7 +260,7 @@ export function getKnowledgeGraph(knowledgeId: string) {
 }
 
 export function deleteKnowledgeGraph(knowledgeId: string) {
-  return request.delete(api.getKnowledgeGraph(knowledgeId));
+  return request.delete(api.knowledgeGraph(knowledgeId));
 }
 
 export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>

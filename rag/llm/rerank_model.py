@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import logging
 from abc import ABC
 from urllib.parse import urljoin
 
@@ -520,6 +521,17 @@ class JiekouAIRerank(JinaRerank):
         if not base_url:
             base_url = "https://api.jiekou.ai/openai/v1/rerank"
         super().__init__(key, model_name, base_url)
+
+
+class FuturMixRerank(OpenAI_APIRerank):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name, base_url="https://futurmix.ai/v1/rerank"):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1/rerank"
+        super().__init__(key, model_name, base_url)
+        logging.info("[FuturMix] Rerank initialized with model %s", model_name)
+
 
 class RAGconRerank(Base):
     """

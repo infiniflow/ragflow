@@ -270,7 +270,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         if res and pdf_parser and getattr(pdf_parser, "outlines", None):
             res[0]["__outline__"] = [
                 {"title": title, "depth": depth}
-                for title, depth in pdf_parser.outlines
+                for title, depth, *_ in pdf_parser.outlines
             ]
         return res
 

@@ -158,6 +158,7 @@ def _load_file_api_module(monkeypatch):
     api_utils_mod.get_error_argument_result = lambda message: {"code": 400, "data": None, "message": message}
     api_utils_mod.get_error_data_result = lambda message: {"code": 500, "data": None, "message": message}
     api_utils_mod.get_result = lambda data=None: {"code": 0, "data": data, "message": ""}
+    api_utils_mod.get_json_result = lambda code=0, message="success", data=None: {"code": code, "data": data, "message": message}
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
     validation_mod = ModuleType("api.utils.validation_utils")
@@ -337,5 +338,4 @@ def test_parent_and_ancestors_use_new_routes(monkeypatch):
     assert parent_res["data"]["parent_folder"]["id"] == "parent1"
     assert ancestors_res["code"] == 0
     assert ancestors_res["data"]["parent_folders"][0]["id"] == "root"
-
 

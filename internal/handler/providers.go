@@ -682,7 +682,7 @@ func (h *ProviderHandler) AddCustomModel(c *gin.Context) {
 		return
 	}
 
-	if req.ModelType == "" {
+	if req.ModelTypes == nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "Model type is required",
@@ -707,15 +707,63 @@ func (h *ProviderHandler) AddCustomModel(c *gin.Context) {
 
 }
 
+type DropInstanceModelRequest struct {
+	Models []string `json:"models" binding:"required"`
+}
+
+func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	var req DropInstanceModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	_, err := h.modelProviderService.DropInstanceModels(providerName, instanceName, userID, req.Models)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+	})
+}
+
 type ChatToModelRequest struct {
-	ProviderName *string `json:"provider_name"`
-	InstanceName *string `json:"instance_name"`
-	ModelName    *string `json:"model_name"`
-	Message      string  `json:"message" binding:"required"`
-	Stream       bool    `json:"stream"`
-	Thinking     bool    `json:"thinking"`
-	Effort       *string `json:"effort"`
-	Verbosity    *string `json:"verbosity"`
+	ProviderName *string                  `json:"provider_name"`
+	InstanceName *string                  `json:"instance_name"`
+	ModelName    *string                  `json:"model_name"`
+	Messages     []map[string]interface{} `json:"messages"`
+	Stream       bool                     `json:"stream"`
+	Thinking     bool                     `json:"thinking"`
+	Effort       *string                  `json:"effort"`
+	Verbosity    *string                  `json:"verbosity"`
 }
 
 func (h *ProviderHandler) ChatToModel(c *gin.Context) {
@@ -768,6 +816,7 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	chatConfig := models.ChatConfig{
 		Thinking:    &req.Thinking,
 		Stream:      &req.Stream,
+		Vision:      nil,
 		Stop:        &[]string{},
 		DoSample:    nil,
 		MaxTokens:   nil,
@@ -809,8 +858,16 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 			return nil
 		}
 
+		// Convert []map[string]interface{} to []models.Message
+		messages := make([]models.Message, len(req.Messages))
+		for i, msg := range req.Messages {
+			role, _ := msg["role"].(string)
+			content := msg["content"]
+			messages[i] = models.Message{Role: role, Content: content}
+		}
+
 		// Stream response using sender function (best performance, no channel)
-		errorCode, err := h.modelProviderService.ChatToModelStreamWithSender(*req.ProviderName, *req.InstanceName, *req.ModelName, userID, req.Message, &apiConfig, &chatConfig, sender)
+		errorCode, err := h.modelProviderService.ChatToModelStreamWithSender(*req.ProviderName, *req.InstanceName, *req.ModelName, userID, messages, &apiConfig, &chatConfig, sender)
 
 		if errorCode != common.CodeSuccess {
 			c.SSEvent("error", err.Error())
@@ -819,7 +876,19 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	}
 
 	// Non-stream response
-	response, errorCode, err := h.modelProviderService.ChatToModel(*req.ProviderName, *req.InstanceName, *req.ModelName, userID, req.Message, &apiConfig, &chatConfig)
+	var response *models.ChatResponse
+	var errorCode common.ErrorCode
+	var err error
+
+	// Convert []map[string]interface{} to []models.Message
+	messages := make([]models.Message, len(req.Messages))
+	for i, msg := range req.Messages {
+		role, _ := msg["role"].(string)
+		content := msg["content"]
+		messages[i] = models.Message{Role: role, Content: content}
+	}
+	response, errorCode, err = h.modelProviderService.ChatToModelWithMessages(*req.ProviderName, *req.InstanceName, *req.ModelName, userID, messages, &apiConfig, &chatConfig)
+
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    errorCode,

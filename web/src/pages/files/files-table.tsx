@@ -41,6 +41,7 @@ import { formatDate } from '@/utils/date';
 import { pick } from 'lodash';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router';
 import { ActionCell } from './action-cell';
 import { useHandleConnectToKnowledge, useRenameCurrentFile } from './hooks';
 import { KnowledgeCell } from './knowledge-cell';
@@ -48,6 +49,8 @@ import { LinkToDatasetDialog } from './link-to-dataset-dialog';
 import { UseMoveDocumentShowType } from './use-move-file';
 import { useNavigateToOtherFolder } from './use-navigate-to-folder';
 import { isFolderType, isKnowledgeBaseType } from './util';
+
+declare const __API_PROXY_SCHEME__: string;
 
 type FilesTableProps = Pick<
   ReturnType<typeof useFetchFileList>,
@@ -76,6 +79,7 @@ export function FilesTable({
     keyPrefix: 'fileManager',
   });
   const navigateToOtherFolder = useNavigateToOtherFolder();
+  const navigate = useNavigate();
   const {
     connectToKnowledgeVisible,
     hideConnectToKnowledgeModal,
@@ -92,6 +96,44 @@ export function FilesTable({
     initialFileName,
     fileRenameLoading,
   } = useRenameCurrentFile();
+
+  // Check if skills feature is enabled (only in hybrid or go mode)
+  const isSkillsEnabled = useMemo(() => {
+    const scheme =
+      typeof __API_PROXY_SCHEME__ !== 'undefined'
+        ? __API_PROXY_SCHEME__
+        : 'python';
+    return scheme === 'hybrid' || scheme === 'go';
+  }, []);
+
+  // Sort files with skills folder first, then by time
+  // Filter out skills folder if not in hybrid/go mode
+  const sortedFiles = useMemo(() => {
+    if (!files) return [];
+
+    // Filter out skills folder if feature is disabled
+    const filteredFiles = isSkillsEnabled
+      ? files
+      : files.filter((file) => {
+          const isSkills =
+            isFolderType(file.type) && file.name.toLowerCase() === 'skills';
+          return !isSkills;
+        });
+
+    return [...filteredFiles].sort((a, b) => {
+      const aIsSkills =
+        isFolderType(a.type) && a.name.toLowerCase() === 'skills';
+      const bIsSkills =
+        isFolderType(b.type) && b.name.toLowerCase() === 'skills';
+
+      // Skills folder always comes first
+      if (aIsSkills && !bIsSkills) return -1;
+      if (!aIsSkills && bIsSkills) return 1;
+
+      // Then sort by create_time desc (newest first)
+      return (b.create_time || 0) - (a.create_time || 0);
+    });
+  }, [files, isSkillsEnabled]);
 
   const columns: ColumnDef<IFile>[] = [
     {
@@ -141,9 +183,12 @@ export function FilesTable({
         const type = row.original.type;
         const id = row.original.id;
         const isFolder = isFolderType(type);
+        const isSkillsFolder = isFolder && name.toLowerCase() === 'skills';
 
         const handleNameClick = () => {
-          if (isFolder) {
+          if (isSkillsFolder) {
+            navigate('/files/skills');
+          } else if (isFolder) {
             navigateToOtherFolder(id);
           }
         };
@@ -156,7 +201,7 @@ export function FilesTable({
                 onClick={handleNameClick}
                 className="max-w-full p-0 flex justify-start gap-2 text-text-primary"
               >
-                <FileIcon name={name} type={type} />
+                <FileIcon name={name} type={isSkillsFolder ? 'skills' : type} />
 
                 <span className="truncate">{name}</span>
               </Button>
@@ -250,7 +295,7 @@ export function FilesTable({
   }, [pagination]);
 
   const table = useReactTable({
-    data: files || [],
+    data: sortedFiles,
     columns,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -263,7 +308,13 @@ export function FilesTable({
     getRowId: (row) => row.id, // Use file ID instead of row index
     manualPagination: true, //we're doing manual "server-side" pagination
     enableRowSelection(row) {
-      return !isKnowledgeBaseType(row.original.source_type);
+      const name = row.original.name;
+      const type = row.original.type;
+      const isSkillsFolder =
+        isFolderType(type) && name.toLowerCase() === 'skills';
+      // Skills folder is not selectable when enabled (it's a special entry)
+      // When disabled, it's already filtered out
+      return !isKnowledgeBaseType(row.original.source_type) && !isSkillsFolder;
     },
     state: {
       sorting,

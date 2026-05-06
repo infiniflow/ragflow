@@ -70,11 +70,10 @@ def add_dataset_with_metadata(HttpApiAuth):
         headers={"Content-Type": "application/json"},
         auth=HttpApiAuth,
         json={
-            "enabled": False,
-            "fields": [
-                {"name": "character", "type": "string", "description": "Historical figure name"},
-                {"name": "era", "type": "string", "description": "Historical era"},
-                {"name": "achievements", "type": "list", "description": "Major achievements"},
+            "metadata": [
+                {"key": "character", "type": "string", "description": "Historical figure name"},
+                {"key": "era", "type": "string", "description": "Historical era"},
+                {"key": "achievements", "type": "list", "description": "Major achievements"},
             ]
         }
     ).json()
