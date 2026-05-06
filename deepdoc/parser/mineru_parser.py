@@ -1074,7 +1074,15 @@ class MinerUParser(RAGFlowPdfParser):
         created_tmp_dir = False
 
         parser_cfg = kwargs.get('parser_config', {})
-        access_mode_raw = kwargs.get('mineru_access_mode', self.mineru_access_mode or MinerUAccessMode.SELF_HOSTED)
+        if not isinstance(parser_cfg, dict):
+            parser_cfg = {}
+
+        def _resolve_option(key: str, default):
+            if key in parser_cfg:
+                return parser_cfg.get(key)
+            return kwargs.get(key, default)
+
+        access_mode_raw = _resolve_option('mineru_access_mode', self.mineru_access_mode or MinerUAccessMode.SELF_HOSTED)
         try:
             access_mode = MinerUAccessMode(access_mode_raw)
         except ValueError:
@@ -1094,11 +1102,11 @@ class MinerUParser(RAGFlowPdfParser):
         mineru_method_raw_str = parser_cfg.get('mineru_parse_method', 'auto')
         enable_formula = parser_cfg.get('mineru_formula_enable', True)
         enable_table = parser_cfg.get('mineru_table_enable', True)
-        model_version = kwargs.get('mineru_model_version', self.mineru_model_version or 'vlm')
-        api_base_url = kwargs.get('mineru_api_base_url', self.mineru_api_base_url or 'https://mineru.net')
-        api_token = kwargs.get('mineru_api_token', self.mineru_api_token or '')
-        poll_interval = _safe_int(kwargs.get('mineru_poll_interval', self.mineru_poll_interval), 3)
-        poll_timeout = _safe_int(kwargs.get('mineru_poll_timeout', self.mineru_poll_timeout), 300)
+        model_version = _resolve_option('mineru_model_version', self.mineru_model_version or 'vlm')
+        api_base_url = _resolve_option('mineru_api_base_url', self.mineru_api_base_url or 'https://mineru.net')
+        api_token = _resolve_option('mineru_api_token', self.mineru_api_token or '')
+        poll_interval = _safe_int(_resolve_option('mineru_poll_interval', self.mineru_poll_interval), 3)
+        poll_timeout = _safe_int(_resolve_option('mineru_poll_timeout', self.mineru_poll_timeout), 300)
 
         # remove spaces, or mineru crash, and _read_output fail too
         file_path = Path(filepath)
