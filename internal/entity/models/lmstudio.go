@@ -12,16 +12,16 @@ import (
 	"time"
 )
 
-// OllamaModel implements ModelDriver for Ollama AI
-type OllamaModel struct {
+// LmStudioModel implements ModelDriver for lm-studio
+type LmStudioModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
 	httpClient *http.Client
 }
 
-// NewOllamaModel creates a new Ollama AI model instance
-func NewOllamaModel(baseURL map[string]string, urlSuffix URLSuffix) *OllamaModel {
-	return &OllamaModel{
+// NewLmStudioModel
+func NewLmStudioModel(baseURL map[string]string, urlSuffix URLSuffix) *LmStudioModel {
+	return &LmStudioModel{
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
@@ -36,10 +36,10 @@ func NewOllamaModel(baseURL map[string]string, urlSuffix URLSuffix) *OllamaModel
 	}
 }
 
-func (o *OllamaModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &OllamaModel{
+func (l *LmStudioModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return &LmStudioModel{
 		BaseURL:   baseURL,
-		URLSuffix: o.URLSuffix,
+		URLSuffix: l.URLSuffix,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 			Transport: &http.Transport{
@@ -52,13 +52,14 @@ func (o *OllamaModel) NewInstance(baseURL map[string]string) ModelDriver {
 	}
 }
 
-func (o *OllamaModel) Name() string {
-	return "ollama"
+func (l *LmStudioModel) Name() string {
+	return "lmstudio"
 }
 
-func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+// ChatWithMessages sends multiple messages with roles and returns response
+func (l *LmStudioModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if len(messages) == 0 {
-		return nil, fmt.Errorf("message is nil")
+		return nil, fmt.Errorf("messages is empty")
 	}
 
 	var region = "default"
@@ -66,12 +67,12 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", l.BaseURL[region], l.URLSuffix.Chat)
 
 	// For qwen/glm models, use async chat endpoint
-	modelType := strings.Split(modelName, "_")[0]
+	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.AsyncChat)
+		url = fmt.Sprintf("%s/%s", l.BaseURL[region], l.URLSuffix.AsyncChat)
 	}
 
 	// Convert messages to API format
@@ -130,7 +131,7 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -138,7 +139,7 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := l.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -146,11 +147,11 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("API request failed with status %d: %s :%s", resp.StatusCode, string(body), messages[0].Content)
 	}
 
 	// Parse response
@@ -189,7 +190,8 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 	return chatResponse, nil
 }
 
-func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
+func (l *LmStudioModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
@@ -199,10 +201,10 @@ func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", l.BaseURL[region], l.URLSuffix.Chat)
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.AsyncChat)
+		url = fmt.Sprintf("%s/%s", l.BaseURL[region], l.URLSuffix.AsyncChat)
 	}
 
 	// Convert messages to API format (supporting multimodal content)
@@ -270,7 +272,7 @@ func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := l.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -350,22 +352,22 @@ func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	return scanner.Err()
 }
 
-func (o *OllamaModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+func (l *LmStudioModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
-func (o *OllamaModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+func (l *LmStudioModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
-func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+// ListModels list supported models
+func (l *LmStudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
-
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", l.BaseURL[region], l.URLSuffix.Models)
 
 	reqBody := map[string]interface{}{}
 
@@ -382,7 +384,7 @@ func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := l.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -390,7 +392,7 @@ func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -403,7 +405,7 @@ func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// convert result["data"] to []map[string]interface{}
+	// convert result["data"] 2 []map[string]interface{}
 	models := make([]string, 0)
 	for _, model := range result["data"].([]interface{}) {
 		modelMap := model.(map[string]interface{})
@@ -414,10 +416,10 @@ func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return models, nil
 }
 
-func (o *OllamaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (l *LmStudioModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
-func (o *OllamaModel) CheckConnection(apiConfig *APIConfig) error {
+func (l *LmStudioModel) CheckConnection(apiConfig *APIConfig) error {
 	return fmt.Errorf("no such method")
 }
