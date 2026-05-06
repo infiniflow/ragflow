@@ -846,6 +846,7 @@ async def test_db_connection():
 
 
 @manager.route("/agents/chat/completion", methods=["POST"])  # noqa: F821
+@manager.route("/agents/chat/completions", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def agent_chat_completion(tenant_id, agent_id=None):

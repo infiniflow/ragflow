@@ -161,7 +161,7 @@ export default {
   completionUrl: `${restAPIv1}/chat/completions`,
   chatsTts: `${restAPIv1}/chat/audio/speech`,
   searchCompletion: (searchId: string) =>
-    `${restAPIv1}/searches/${searchId}/completion`,
+    `${restAPIv1}/searches/${searchId}/completions`,
   chatsMindmap: `${restAPIv1}/chat/mindmap`,
   chatsRelatedQuestions: `${restAPIv1}/chat/recommendation`,
 
@@ -192,7 +192,7 @@ export default {
   createAgent: `${restAPIv1}/agents`,
   updateAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
-  agentChatCompletion: `${restAPIv1}/agents/chat/completion`,
+  agentChatCompletion: `${restAPIv1}/agents/chat/completions`,
   resetAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}/reset`,
   testDbConnect: `${restAPIv1}/agents/test_db_connection`,
   getInputElements: `${webAPI}/canvas/input_elements`,

@@ -403,14 +403,14 @@ async def deprecated_file_upload_info():
 @add_tenant_id_to_kwargs
 async def deprecated_agent_completions(agent_id, tenant_id=None):
     """
-    Deprecated: Use POST /api/v1/agents/chat/completion instead.
+    Deprecated: Use POST /api/v1/agents/chat/completions instead.
 
     Old path: POST /api/v1/agents/{agent_id}/completions
-    New path: POST /api/v1/agents/chat/completion
+    New path: POST /api/v1/agents/chat/completions
     """
     logging.warning(
         "API endpoint /api/v1/agents/%s/completions is deprecated. "
-        "Please use /api/v1/agents/chat/completion instead.",
+        "Please use /api/v1/agents/chat/completions instead.",
         agent_id,
     )
     return await agent_api.agent_chat_completion(tenant_id=tenant_id, agent_id=agent_id)

@@ -383,7 +383,7 @@ def delete_all_agent_sessions(auth, agent_id, *, page_size=1000):
 
 
 def agent_completions(auth, agent_id, payload=None):
-    url = f"{HOST_ADDRESS}{AGENT_API_URL}/chat/completion"
+    url = f"{HOST_ADDRESS}{AGENT_API_URL}/chat/completions"
     body = {"agent_id": agent_id}
     if payload:
         body.update(payload)
