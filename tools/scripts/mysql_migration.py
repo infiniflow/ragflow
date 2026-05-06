@@ -492,7 +492,7 @@ class TenantModelInstanceStage(MigrationStage):
                 record_id = self.generate_uuid()
                 instance_name = llm_factory.replace("'", "''") if llm_factory else ""
                 api_key_escaped = api_key.replace("'", "''") if api_key else ""
-                status_val = status if status else "active"
+                status_val = "active" if status in ["1", "active", "enable"] else "inactive"
                 values.append(f"('{record_id}', '{instance_name}', '{provider_id}', "
                             f"'{api_key_escaped}', '{status_val}', "
                             f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
@@ -677,7 +677,7 @@ class TenantModelStage(MigrationStage):
                 record_id = self.generate_uuid()
                 model_name_escaped = llm_name.replace("'", "''") if llm_name else ""
                 model_type_escaped = model_type.replace("'", "''") if model_type else ""
-                status_val = status if status else "active"
+                status_val = "active" if status in ["1", "active", "enable"] else "inactive"
                 values.append(f"('{record_id}', '{model_name_escaped}', '{provider_id}', "
                             f"'{instance_id}', '{model_type_escaped}', '{status_val}', "
                             f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
@@ -705,6 +705,7 @@ class TenantModelStage(MigrationStage):
             instance_id VARCHAR(32) NOT NULL,
             model_type VARCHAR(32) NOT NULL,
             status VARCHAR(32) DEFAULT 'active',
+            extra VARCHAR(1024) DEFAULT '{}',
             create_time BIGINT,
             create_date DATETIME,
             update_time BIGINT,

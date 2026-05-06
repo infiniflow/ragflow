@@ -1368,6 +1368,7 @@ class TenantModel(DataBaseModel):
     instance_id = CharField(max_length=32, null=False, index=True)
     model_type = CharField(max_length=32, null=False, index=False, help_text="Model type")
     status = CharField(max_length=32, default="active", index=False)
+    extra = CharField(max_length=1024, default="{}", index=False)
 
     class Meta:
         db_table = "tenant_model"
