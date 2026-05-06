@@ -55,6 +55,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewVllmModel(baseURL, urlSuffix), nil
 	case "xai":
 		return NewXAIModel(baseURL, urlSuffix), nil
+	case "lmstudio":
+		return NewLmStudioModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

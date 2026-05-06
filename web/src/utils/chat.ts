@@ -56,14 +56,25 @@ const BLOCK_MATH_RE = /\\\[([\s\S]*?)(?<![a-zA-Z])\\\]/g;
 const INLINE_MATH_RE = /\\\(([\s\S]*?)(?<![a-zA-Z])\\\)/g;
 
 export const preprocessLaTeX = (content: string) => {
-  const blockProcessedContent = content.replace(
+  const normalizedContent = content
+    .replace(/\\\\\[/g, '\\[')
+    .replace(/\\\\\(/g, '\\(')
+    .replace(/\\\\\]/g, '\\]')
+    .replace(/\\\\\)/g, '\\)')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+
+  const blockProcessedContent = normalizedContent.replace(
     BLOCK_MATH_RE,
     (_, equation) => `$$${equation}$$`,
   );
+
   const inlineProcessedContent = blockProcessedContent.replace(
     INLINE_MATH_RE,
     (_, equation) => `$${equation}$`,
   );
+
   return inlineProcessedContent;
 };
 
