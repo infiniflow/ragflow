@@ -1057,6 +1057,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       light: 'Light',
       dark: 'Dark',
       enableStreaming: 'Enable streaming responses',
+      muteWidget: 'Mute widget sounds',
       comingSoon: 'Coming soon',
       fullScreenTitle: 'Full embed',
       fullScreenDescription:
