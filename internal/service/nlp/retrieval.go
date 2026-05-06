@@ -20,11 +20,11 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/logger"
 	"sort"
 	"strings"
 
@@ -128,7 +128,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	page := req.Page
 	globalOffset := (page - 1) * pageSize
 	searchPage := globalOffset/rerankLimit + 1
-	logger.Debug("Retrieval rerank params", zap.Int("page", req.Page), zap.Int("pageSize", pageSize),
+	common.Debug("Retrieval rerank params", zap.Int("page", req.Page), zap.Int("pageSize", pageSize),
 		zap.Int("searchPage", searchPage), zap.Int("rerankLimit", rerankLimit), zap.Int("globalOffset", globalOffset))
 
 	// Execute search via Search()
@@ -225,7 +225,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		}
 		pageIdx = validIdx[begin:end]
 	}
-	logger.Debug("Pagination result info", zap.Int("totalValid", len(validIdx)), zap.Int("begin", begin),
+	common.Debug("Pagination result info", zap.Int("totalValid", len(validIdx)), zap.Int("begin", begin),
 		zap.Int("end", end), zap.Int("chunkCount", len(pageIdx)))
 
 	// Build chunks for pageIdx, transforms raw search results into the API response format
@@ -651,7 +651,7 @@ func (r *RetrievalSearchRequest) GetFilters() map[string]interface{} {
 
 // RetrievalByChildren aggregates child chunks into parent chunks
 func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, docEngine engine.DocEngine, ctx context.Context) []map[string]interface{} {
-	logger.Info("RetrievalByChildren started", zap.Int("chunks", len(chunks)), zap.Strings("tenantIDs", tenantIDs))
+	common.Info("RetrievalByChildren started", zap.Int("chunks", len(chunks)), zap.Strings("tenantIDs", tenantIDs))
 
 	indexNames := buildIndexNames(tenantIDs)
 	if len(chunks) == 0 || len(indexNames) == 0 {
@@ -677,7 +677,7 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 	}
 
 	if len(momChunks) == 0 {
-		logger.Info("RetrievalByChildren finished", zap.Int("momChunks", len(momChunks)), zap.Int("resultChunks", len(chunks)))
+		common.Info("RetrievalByChildren finished", zap.Int("momChunks", len(momChunks)), zap.Int("resultChunks", len(chunks)))
 		return chunks
 	}
 
@@ -696,7 +696,7 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 
 		parent, err := docEngine.GetChunk(ctx, indexNames[0], momID, kbIDs)
 		if err != nil {
-			logger.Warn("Failed to get parent chunk", zap.String("momID", momID), zap.Error(err))
+			common.Warn("Failed to get parent chunk", zap.String("momID", momID), zap.Error(err))
 			continue
 		}
 		parentMap, ok := parent.(map[string]interface{})
@@ -784,7 +784,7 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 		}
 	}
 
-	logger.Info("RetrievalByChildren finished", zap.Int("momChunks", len(momChunks)), zap.Int("resultChunks", len(remainingChunks)))
+	common.Info("RetrievalByChildren finished", zap.Int("momChunks", len(momChunks)), zap.Int("resultChunks", len(remainingChunks)))
 	return remainingChunks
 }
 
@@ -871,7 +871,7 @@ func (s *RetrievalService) PruneDeletedChunks(result *RetrievalSearchResult) (*R
 	}
 
 	if removed > 0 {
-		logger.Warn("Pruned stale chunks whose documents no longer exist", zap.Int("removed", removed))
+		common.Warn("Pruned stale chunks whose documents no longer exist", zap.Int("removed", removed))
 	}
 
 	return &RetrievalSearchResult{

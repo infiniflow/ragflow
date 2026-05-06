@@ -29,5 +29,8 @@ def normalize_layout_recognizer(layout_recognizer_raw: Any) -> tuple[Any, str | 
         elif lowered.endswith("@paddleocr"):
             parser_model_name = layout_recognizer_raw.rsplit("@", 1)[0]
             layout_recognizer = "PaddleOCR"
+        elif lowered.endswith("@opendataloader"):
+            parser_model_name = layout_recognizer_raw.rsplit("@", 1)[0]
+            layout_recognizer = "OpenDataLoader"
 
     return layout_recognizer, parser_model_name
