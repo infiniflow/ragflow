@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import time
+import logging
 from uuid import uuid4
 from common.constants import StatusEnum
 from api.db.db_models import Conversation, DB
@@ -24,6 +25,9 @@ from common.misc_utils import get_uuid
 import json
 
 from rag.prompts.generator import chunks_format
+
+
+logger = logging.getLogger(__name__)
 
 
 class ConversationService(CommonService):
@@ -204,7 +208,15 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
 async def async_iframe_completion(dialog_id, question, session_id=None, stream=True, tenant_id=None, **kwargs):
     if tenant_id:
         dia = DialogService.query(id=dialog_id, tenant_id=tenant_id, status=StatusEnum.VALID.value)
-        assert dia, "Dialog not found"
+        if not dia:
+            logger.warning(
+                "Dialog lookup failed for tenant-scoped iframe completion: "
+                "tenant_id=%s dialog_id=%s required_status=%s",
+                tenant_id,
+                dialog_id,
+                StatusEnum.VALID.value,
+            )
+            raise AssertionError("Dialog not found")
         dia = dia[0]
     else:
         e, dia = DialogService.get_by_id(dialog_id)
