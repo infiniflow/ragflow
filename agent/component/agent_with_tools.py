@@ -277,10 +277,13 @@ class Agent(LLM, ToolBase):
                 return
             if delta.find("**ERROR**") >= 0:
                 if self.get_exception_default_value():
-                    self.set_output("content", self.get_exception_default_value())
-                    yield self.get_exception_default_value()
+                    fallback = self.get_exception_default_value()
+                    self.set_output("content", fallback)
+                    yield fallback
                 else:
                     self.set_output("_ERROR", delta)
+                    self.set_output("content", delta)
+                    yield delta
                 return
             if not need2cite or cited:
                 yield delta

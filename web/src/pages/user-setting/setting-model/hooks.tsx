@@ -228,6 +228,7 @@ export const useSubmitOllama = () => {
         api_base: detailedData.api_base || '',
         max_tokens: detailedData.max_tokens || 8192,
         api_key: '',
+        is_tools: detailedData.is_tools || false,
       };
       setInitialValues(initialVals);
     } else {

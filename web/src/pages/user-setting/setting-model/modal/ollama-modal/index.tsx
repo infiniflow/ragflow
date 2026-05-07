@@ -115,6 +115,7 @@ const OllamaModal = ({
     const getOptions = (factory: string) => {
       return optionsMap[factory as LLMFactory] || optionsMap.Default;
     };
+    const defaultToolCallEnabled = initialValues?.is_tools ?? false;
 
     const baseFields: FormFieldConfig[] = [
       {
@@ -177,6 +178,20 @@ const OllamaModal = ({
       },
     ];
 
+    baseFields.push({
+      name: 'is_tools',
+      label: t('enableToolCall'),
+      type: FormFieldType.Switch,
+      required: false,
+      dependencies: ['model_type'],
+      shouldRender: (formValues: any) => {
+        const modelType = formValues?.model_type;
+        return modelType === 'chat' || modelType === 'image2text';
+      },
+      tooltip: t('enableToolCallTip'),
+      defaultValue: defaultToolCallEnabled,
+    });
+
     // Add provider_order field only for OpenRouter
     if (llmFactory === 'OpenRouter') {
       baseFields.push({
@@ -214,14 +229,18 @@ const OllamaModal = ({
         api_key: '',
         vision: initialValues.model_type === 'image2text',
         provider_order: initialValues.provider_order || '',
+        is_tools: initialValues.is_tools || false,
       };
     }
     return {
       model_type:
-        llmFactory in optionsMap
-          ? optionsMap[llmFactory as LLMFactory]?.at(0)?.value
-          : 'embedding',
+        llmFactory === LLMFactory.Ollama || llmFactory === LLMFactory.VLLM
+          ? 'chat'
+          : llmFactory in optionsMap
+            ? optionsMap[llmFactory as LLMFactory]?.at(0)?.value
+            : 'embedding',
       vision: false,
+      is_tools: false,
     };
   }, [editMode, initialValues, llmFactory]);
 
@@ -232,6 +251,7 @@ const OllamaModal = ({
       values.model_type === 'chat' && values.vision
         ? 'image2text'
         : values.model_type;
+    const supportsToolCall = modelType === 'chat' || modelType === 'image2text';
 
     const data: IAddLlmRequestBody & { provider_order?: string } = {
       llm_factory: llmFactory,
@@ -241,6 +261,9 @@ const OllamaModal = ({
       api_key: values.api_key as string,
       max_tokens: values.max_tokens as number,
     };
+    if (supportsToolCall) {
+      data.is_tools = Boolean(values.is_tools);
+    }
 
     // Add provider_order only if it exists (for OpenRouter)
     if (values.provider_order) {

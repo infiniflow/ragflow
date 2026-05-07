@@ -1036,6 +1036,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       Verify: '验证',
       keyValid: '你的 API 密钥有效。',
       keyInvalid: '你的 API 密钥无效。',
+      enableToolCall: '启用工具调用',
+      enableToolCallTip: '当所选模型类型支持工具调用时，允许该模型调用工具。',
       deleteModel: '删除模型',
       modelEmptyTip: '暂无可用模型,<br>请先在右侧面板添加模型。',
       sourceEmptyTip: '暂未添加任何数据源，请从下方选择一个进行连接。',

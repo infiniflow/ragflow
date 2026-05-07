@@ -34,6 +34,42 @@ class LLMFactoriesService(CommonService):
 class TenantLLMService(CommonService):
     model = TenantLLM
 
+    @staticmethod
+    def _decode_api_key_config(raw_api_key: str) -> tuple[str, bool | None, str | None]:
+        if not raw_api_key:
+            return raw_api_key, None, None
+
+        try:
+            parsed = json.loads(raw_api_key)
+        except Exception:
+            return raw_api_key, None, None
+
+        if not isinstance(parsed, dict):
+            return raw_api_key, None, None
+
+        is_tools = bool(parsed["is_tools"]) if "is_tools" in parsed else None
+        if set(parsed.keys()) <= {"api_key", "is_tools"}:
+            return parsed.get("api_key", ""), is_tools, None
+
+        return parsed.get("api_key", raw_api_key), is_tools, raw_api_key
+
+    @staticmethod
+    def _encode_api_key_config(raw_api_key: str, is_tools: bool | None) -> str:
+        if is_tools is None:
+            return raw_api_key
+
+        try:
+            parsed = json.loads(raw_api_key or "{}")
+        except Exception:
+            parsed = None
+
+        if isinstance(parsed, dict):
+            payload = dict(parsed)
+            payload["is_tools"] = bool(is_tools)
+            return json.dumps(payload)
+
+        return json.dumps({"api_key": raw_api_key or "", "is_tools": bool(is_tools)})
+
     @classmethod
     @DB.connection_context()
     def get_api_key(cls, tenant_id, model_name, model_type=None):
@@ -123,6 +159,12 @@ class TenantLLMService(CommonService):
             model_config = cls.get_api_key(tenant_id, mdlnm, llm_type)
         if model_config:
             model_config = model_config.to_dict()
+            api_key, is_tools, api_key_payload = cls._decode_api_key_config(model_config.get("api_key", ""))
+            model_config["api_key"] = api_key
+            if api_key_payload is not None:
+                model_config["api_key_payload"] = api_key_payload
+            if is_tools is not None:
+                model_config["is_tools"] = is_tools
         elif llm_type == LLMType.EMBEDDING and fid == "Builtin" and "tei-" in os.getenv("COMPOSE_PROFILES", "") and mdlnm == os.getenv("TEI_MODEL", ""):
             embedding_cfg = settings.EMBEDDING_CFG
             model_config = {"llm_factory": "Builtin", "api_key": embedding_cfg["api_key"], "llm_name": mdlnm, "api_base": embedding_cfg["base_url"]}
@@ -132,7 +174,7 @@ class TenantLLMService(CommonService):
         llm = LLMService.query(llm_name=mdlnm) if not fid else LLMService.query(llm_name=mdlnm, fid=fid)
         if not llm and fid:  # for some cases seems fid mismatch
             llm = LLMService.query(llm_name=mdlnm)
-        if llm:
+        if "is_tools" not in model_config and llm:
             model_config["is_tools"] = llm[0].is_tools
         return model_config
 
@@ -142,35 +184,36 @@ class TenantLLMService(CommonService):
         if not model_config:
             raise LookupError("Model config is required")
         kwargs.update({"provider": model_config["llm_factory"]})
+        api_key = model_config.get("api_key_payload", model_config["api_key"])
         if model_config["model_type"] == LLMType.EMBEDDING.value:
             if model_config["llm_factory"] not in EmbeddingModel:
                 return None
-            return EmbeddingModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"])
+            return EmbeddingModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"])
 
         elif model_config["model_type"] == LLMType.RERANK:
             if model_config["llm_factory"] not in RerankModel:
                 return None
-            return RerankModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"])
+            return RerankModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"])
 
         elif model_config["model_type"] == LLMType.IMAGE2TEXT.value:
             if model_config["llm_factory"] not in CvModel:
                 return None
-            return CvModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"], lang, base_url=model_config["api_base"], **kwargs)
+            return CvModel[model_config["llm_factory"]](api_key, model_config["llm_name"], lang, base_url=model_config["api_base"], **kwargs)
 
         elif model_config["model_type"] == LLMType.CHAT.value:
             if model_config["llm_factory"] not in ChatModel:
                 return None
-            return ChatModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"], **kwargs)
+            return ChatModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"], **kwargs)
 
         elif model_config["model_type"] == LLMType.SPEECH2TEXT:
             if model_config["llm_factory"] not in Seq2txtModel:
                 return None
-            return Seq2txtModel[model_config["llm_factory"]](key=model_config["api_key"], model_name=model_config["llm_name"], lang=lang, base_url=model_config["api_base"])
+            return Seq2txtModel[model_config["llm_factory"]](key=api_key, model_name=model_config["llm_name"], lang=lang, base_url=model_config["api_base"])
         elif model_config["model_type"] == LLMType.TTS:
             if model_config["llm_factory"] not in TTSModel:
                 return None
             return TTSModel[model_config["llm_factory"]](
-                model_config["api_key"],
+                api_key,
                 model_config["llm_name"],
                 base_url=model_config["api_base"],
             )
@@ -179,7 +222,7 @@ class TenantLLMService(CommonService):
             if model_config["llm_factory"] not in OcrModel:
                 return None
             return OcrModel[model_config["llm_factory"]](
-                key=model_config["api_key"],
+                key=api_key,
                 model_name=model_config["llm_name"],
                 base_url=model_config.get("api_base", ""),
                 **kwargs,
