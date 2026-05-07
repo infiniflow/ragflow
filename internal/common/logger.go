@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package logger
+package common
 
 import (
 	"fmt"
