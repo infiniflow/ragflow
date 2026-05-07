@@ -29,6 +29,8 @@ from common.misc_utils import get_uuid
 from api.db import FileType
 from api.db.services.document_service import DocumentService
 
+logger = logging.getLogger(__name__)
+
 
 def _convert_files(file_ids, kb_ids, user_id):
     """Synchronous worker: delete old docs and insert new ones for the given file/kb pairs."""
@@ -89,6 +91,13 @@ async def convert():
         # Validate all files exist before starting any work
         for file_id in file_ids:
             if not files_set.get(file_id):
+                logger.warning(
+                    "user_id=%s resource_type=file resource_id=%s action=validate_file_lookup result=not_found file_ids=%s kb_ids=%s",
+                    current_user.id,
+                    file_id,
+                    file_ids,
+                    kb_ids,
+                )
                 return get_data_error_result(message="File not found!")
 
         # Validate all kb_ids exist before scheduling background work
@@ -96,6 +105,13 @@ async def convert():
         for kb_id in kb_ids:
             e, kb = KnowledgebaseService.get_by_id(kb_id)
             if not e:
+                logger.warning(
+                    "user_id=%s resource_type=dataset resource_id=%s action=validate_dataset_lookup result=not_found file_ids=%s kb_ids=%s",
+                    current_user.id,
+                    kb_id,
+                    file_ids,
+                    kb_ids,
+                )
                 return get_data_error_result(message="Can't find this dataset!")
             kb_map[kb_id] = kb
 
@@ -112,12 +128,33 @@ async def convert():
         for file_id in all_file_ids:
             e, file = FileService.get_by_id(file_id)
             if not e or not file:
+                logger.warning(
+                    "user_id=%s resource_type=file resource_id=%s action=validate_expanded_file_lookup result=not_found file_ids=%s kb_ids=%s",
+                    user_id,
+                    file_id,
+                    file_ids,
+                    kb_ids,
+                )
                 return get_data_error_result(message="File not found!")
             if not check_file_team_permission(file, user_id):
+                logger.warning(
+                    "user_id=%s resource_type=file resource_id=%s action=authorize_file result=denied file_ids=%s kb_ids=%s",
+                    user_id,
+                    file_id,
+                    file_ids,
+                    kb_ids,
+                )
                 return get_data_error_result(message="No authorization.")
 
-        for kb in kb_map.values():
+        for kb_id, kb in kb_map.items():
             if not check_kb_team_permission(kb, user_id):
+                logger.warning(
+                    "user_id=%s resource_type=dataset resource_id=%s action=authorize_dataset result=denied file_ids=%s kb_ids=%s",
+                    user_id,
+                    kb_id,
+                    file_ids,
+                    kb_ids,
+                )
                 return get_data_error_result(message="No authorization.")
 
         # Run the blocking DB work in a thread so the event loop is not blocked.
@@ -127,6 +164,12 @@ async def convert():
         future = loop.run_in_executor(None, _convert_files, all_file_ids, kb_ids, user_id)
         future.add_done_callback(
             lambda f: logging.error("_convert_files failed: %s", f.exception()) if f.exception() else None
+        )
+        logger.info(
+            "user_id=%s resource_type=file_to_dataset_link resource_id=batch action=schedule_convert result=scheduled file_ids=%s kb_ids=%s",
+            user_id,
+            all_file_ids,
+            kb_ids,
         )
         return get_json_result(data=True)
     except Exception as e:
