@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/server"
@@ -153,8 +154,15 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	variables := server.GetVariables()
-	secretKey := variables.SecretKey
+	secretKey, err := server.GetSecretKey(cache.Get())
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": fmt.Sprintf("Failed to get secret key: %s", err.Error()),
+		})
+		return
+	}
+
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{

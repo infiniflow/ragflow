@@ -53,20 +53,20 @@ func (dao *ChatSessionDAO) DeleteByID(id string) error {
 	return DB.Where("id = ?", id).Delete(&entity.ChatSession{}).Error
 }
 
-// ListByDialogID lists chat sessions by dialog ID
-func (dao *ChatSessionDAO) ListByDialogID(dialogID string) ([]*entity.ChatSession, error) {
+// ListByChatID lists chat sessions by chat ID
+func (dao *ChatSessionDAO) ListByChatID(chatID string) ([]*entity.ChatSession, error) {
 	var convs []*entity.ChatSession
-	err := DB.Where("dialog_id = ?", dialogID).
+	err := DB.Where("dialog_id = ?", chatID).
 		Order("create_time DESC").
 		Find(&convs).Error
 	return convs, err
 }
 
 // CheckDialogExists checks if a dialog exists with given tenant_id and dialog_id
-func (dao *ChatSessionDAO) CheckDialogExists(tenantID, dialogID string) (bool, error) {
+func (dao *ChatSessionDAO) CheckDialogExists(tenantID, chatID string) (bool, error) {
 	var count int64
 	err := DB.Model(&entity.Chat{}).
-		Where("tenant_id = ? AND id = ? AND status = ?", tenantID, dialogID, "1").
+		Where("tenant_id = ? AND id = ? AND status = ?", tenantID, chatID, "1").
 		Count(&count).Error
 	if err != nil {
 		return false, err
@@ -75,9 +75,9 @@ func (dao *ChatSessionDAO) CheckDialogExists(tenantID, dialogID string) (bool, e
 }
 
 // GetDialogByID gets dialog by ID
-func (dao *ChatSessionDAO) GetDialogByID(dialogID string) (*entity.Chat, error) {
+func (dao *ChatSessionDAO) GetDialogByID(chatID string) (*entity.Chat, error) {
 	var dialog entity.Chat
-	err := DB.Where("id = ? AND status = ?", dialogID, "1").First(&dialog).Error
+	err := DB.Where("id = ? AND status = ?", chatID, "1").First(&dialog).Error
 	if err != nil {
 		return nil, err
 	}

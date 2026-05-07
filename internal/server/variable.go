@@ -30,7 +30,7 @@ import (
 // Variables holds all runtime variables that can be changed during system operation
 // Unlike Config, these can be modified at runtime
 type Variables struct {
-	SecretKey string `json:"secret_key"`
+	//SecretKey string `json:"secret_key"`
 }
 
 // VariableStore interface for persistent storage (e.g., Redis)
@@ -62,19 +62,20 @@ func InitVariables(store VariableStore) error {
 	variablesOnce.Do(func() {
 		globalVariables = &Variables{}
 
-		generatedKey, err := utility.GenerateSecretKey()
-		if err != nil {
-			initErr = fmt.Errorf("failed to generate secret key: %w", err)
-		}
-
-		// Initialize SecretKey
-		secretKey, err := GetOrCreateKey(store, SecretKeyRedisKey, generatedKey)
-		if err != nil {
-			initErr = fmt.Errorf("failed to initialize secret key: %w", err)
-		} else {
-			globalVariables.SecretKey = secretKey
-			common.Info("Secret key initialized from store")
-		}
+		//// secret key
+		//generatedKey, err := utility.GenerateSecretKey()
+		//if err != nil {
+		//	initErr = fmt.Errorf("failed to generate secret key: %w", err)
+		//}
+		//
+		//// Initialize SecretKey
+		//secretKey, err := GetOrCreateKey(store, SecretKeyRedisKey, generatedKey)
+		//if err != nil {
+		//	initErr = fmt.Errorf("failed to initialize secret key: %w", err)
+		//} else {
+		//	globalVariables.SecretKey = secretKey
+		//	common.Info("Secret key initialized from store")
+		//}
 
 		common.Info("Server variables initialized successfully")
 	})
@@ -82,31 +83,39 @@ func InitVariables(store VariableStore) error {
 }
 
 // GetVariables returns the global variables instance
-func GetVariables() *Variables {
-	variablesMu.RLock()
-	defer variablesMu.RUnlock()
-	return globalVariables
-}
+//func GetVariables() *Variables {
+//	variablesMu.RLock()
+//	defer variablesMu.RUnlock()
+//	return globalVariables
+//}
 
 // GetSecretKey returns the current secret key
-func GetSecretKey() string {
-	variablesMu.RLock()
-	defer variablesMu.RUnlock()
-	if globalVariables == nil {
-		return DefaultSecretKey
+func GetSecretKey(store VariableStore) (string, error) {
+	if globalConfig.Server.SecretKey != nil {
+		return *globalConfig.Server.SecretKey, nil
 	}
-	return globalVariables.SecretKey
+
+	generatedKey, err := utility.GenerateSecretKey()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate secret key: %w", err)
+	}
+
+	secretKey, err := GetOrCreateKey(store, SecretKeyRedisKey, generatedKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to get secret key: %w", err)
+	}
+	return secretKey, nil
 }
 
 // SetSecretKey updates the secret key at runtime
-func SetSecretKey(key string) {
-	variablesMu.Lock()
-	defer variablesMu.Unlock()
-	if globalVariables != nil {
-		globalVariables.SecretKey = key
-		common.Info("Secret key updated at runtime")
-	}
-}
+//func SetSecretKey(key string) {
+//	variablesMu.Lock()
+//	defer variablesMu.Unlock()
+//	if globalVariables != nil {
+//		globalVariables.SecretKey = key
+//		common.Info("Secret key updated at runtime")
+//	}
+//}
 
 // GetOrCreateKey gets a key from store, or creates it if not exists
 // - If key exists in store, returns the stored value
@@ -178,7 +187,7 @@ func RefreshVariables(store VariableStore) error {
 		return err
 	}
 	if secretKey != "" {
-		globalVariables.SecretKey = secretKey
+		//globalVariables.SecretKey = secretKey
 		common.Info("Secret key refreshed from store")
 	}
 
@@ -244,9 +253,9 @@ func SaveToStorage(store VariableStore) error {
 	}
 
 	// Save SecretKey
-	if !store.Set(SecretKeyRedisKey, globalVariables.SecretKey, SecretKeyTTL) {
-		return fmt.Errorf("failed to save secret key to store")
-	}
+	//if !store.Set(SecretKeyRedisKey, globalVariables.SecretKey, SecretKeyTTL) {
+	//	return fmt.Errorf("failed to save secret key to store")
+	//}
 
 	common.Info("Variables saved to storage")
 	return nil

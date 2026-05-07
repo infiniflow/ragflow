@@ -39,7 +39,6 @@ async def ping():
     return "pong", 200
 
 @manager.route("/system/version", methods=["GET"])  # noqa: F821
-@login_required
 def version():
     """
     Get the current version of the application.

@@ -174,7 +174,8 @@ def _get_or_create_secret_key():
 
     generated_key = secrets.token_hex(32)
     secret_key = REDIS_CONN.get_or_create_secret_key("ragflow:system:secret_key", generated_key)
-    logging.warning("SECURITY WARNING: Using auto-generated SECRET_KEY.")
+    if generated_key == secret_key:
+        logging.warning("SECURITY WARNING: Using auto-generated SECRET_KEY.")
     return secret_key
 
 class StorageFactory:

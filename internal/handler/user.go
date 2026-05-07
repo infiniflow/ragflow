@@ -19,6 +19,7 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"ragflow/internal/server/local"
@@ -72,8 +73,15 @@ func (h *UserHandler) Register(c *gin.Context) {
 		return
 	}
 
-	variables := server.GetVariables()
-	secretKey := variables.SecretKey
+	secretKey, err := server.GetSecretKey(cache.Get())
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": fmt.Sprintf("Failed to get secret key: %s", err.Error()),
+			"data":    false,
+		})
+		return
+	}
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -129,8 +137,15 @@ func (h *UserHandler) Login(c *gin.Context) {
 	}
 
 	// Sign the access_token using itsdangerous (compatible with Python)
-	variables := server.GetVariables()
-	secretKey := variables.SecretKey
+	secretKey, err := server.GetSecretKey(cache.Get())
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": fmt.Sprintf("Failed to get secret key: %s", err.Error()),
+			"data":    false,
+		})
+		return
+	}
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -197,8 +212,15 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		return
 	}
 
-	variables := server.GetVariables()
-	secretKey := variables.SecretKey
+	secretKey, err := server.GetSecretKey(cache.Get())
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": fmt.Sprintf("Failed to get secret key: %s", err.Error()),
+			"data":    false,
+		})
+		return
+	}
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
