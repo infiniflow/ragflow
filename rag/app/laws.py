@@ -165,7 +165,9 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         if name in ["tcadp", "docling", "mineru", "paddleocr"]:
             parser_config["chunk_token_num"] = 0
 
-        for txt, poss in raw_sections:
+        for sec in raw_sections:
+            txt = sec[0]
+            poss = sec[-1] if len(sec) >= 2 else ""
             sections.append(txt + poss)
 
         callback(0.8, "Finish parsing.")

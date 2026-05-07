@@ -226,7 +226,9 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
         callback(0.8, "Finish parsing.")
 
-        for pn, (txt, img) in enumerate(sections):
+        for pn, sec in enumerate(sections):
+            txt = sec[0]
+            img = sec[-1] if len(sec) >= 2 else None
             d = copy.deepcopy(doc)
             pn += from_page
             if not is_image_like(img):

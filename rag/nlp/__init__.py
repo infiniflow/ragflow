@@ -934,6 +934,9 @@ def tree_merge(bull, sections, depth):
     if isinstance(sections[0], type("")):
         sections = [(s, "") for s in sections]
 
+    # Normalize to 2-tuples for consistent unpacking
+    sections = [(s[0], s[-1] if len(s) >= 2 else "") for s in sections if s[0]]
+
     # filter out position information in pdf sections
     sections = [(t, o) for t, o in sections if
                 t and len(t.split("@")[0].strip()) > 1 and not re.match(r"[0-9]+$", t.split("@")[0].strip())]
@@ -982,6 +985,8 @@ def hierarchical_merge(bull, sections, depth):
         return []
     if isinstance(sections[0], type("")):
         sections = [(s, "") for s in sections]
+    # Normalize to 2-tuples for consistent unpacking
+    sections = [(s[0], s[-1] if len(s) >= 2 else "") for s in sections if s[0]]
     sections = [(t, o) for t, o in sections if
                 t and len(t.split("@")[0].strip()) > 1 and not re.match(r"[0-9]+$", t.split("@")[0].strip())]
     bullets_size = len(BULLET_PATTERN[bull])
@@ -1075,6 +1080,8 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
         sections = [sections]
     if isinstance(sections[0], str):
         sections = [(s, "") for s in sections]
+    # Normalize to 2-tuples for consistent unpacking
+    sections = [(s[0], s[-1] if len(s) >= 2 else "") for s in sections if s[0]]
     cks = [""]
     tk_nums = [0]
 
