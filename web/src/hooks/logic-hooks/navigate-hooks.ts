@@ -52,7 +52,7 @@ export const useNavigatePage = () => {
 
   const navigateToDataFile = useCallback(
     (id: string) => () => {
-      navigate(`${Routes.DatasetBase}${Routes.DatasetBase}/${id}`);
+      navigate(`${Routes.DatasetBase}${Routes.Files}/${id}`);
     },
     [navigate],
   );
