@@ -92,7 +92,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	engine.GET("/v1/system/ping", r.systemHandler.Ping)
 	engine.GET("/api/v1/system/config", r.systemHandler.GetConfig)
 	engine.GET("/v1/system/configs", r.systemHandler.GetConfigs)
-	engine.GET("/v1/system/version", r.systemHandler.GetVersion)
+	engine.GET("/api/v1/system/version", r.systemHandler.GetVersion)
 	engine.POST("/v1/user/register", r.userHandler.Register)
 	// User login channels endpoint
 	engine.GET("/api/v1/auth/login/channels", r.userHandler.GetLoginChannels)
@@ -130,14 +130,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				auth.GET("/logout", r.userHandler.Logout)
 			}
 
-			// User routes
-			//users := v1.Group("/users")
-			//{
-			//	users.POST("/register", r.userHandler.Register)
-			//	users.POST("/login", r.userHandler.Login)
-			//	users.GET("", r.userHandler.ListUsers)
-			//	users.GET("/:id", r.userHandler.GetUserByID)
-			//}
+			// Users routes
+			users := v1.Group("/users")
+			{
+				users.GET("/me", r.userHandler.Info)
+			}
 
 			// Document routes
 			documents := v1.Group("/documents")
@@ -263,7 +260,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			system := v1.Group("/system")
 			{
-				system.GET("/version", r.systemHandler.GetVersion)
 				system.GET("/configs", r.systemHandler.GetConfigs)
 				log := system.Group("/log")
 				{
