@@ -29,6 +29,23 @@ from rag.utils.base64_image import test_image
 from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel, OcrModel, Seq2txtModel
 
 
+def _resolve_my_llm_is_tools(o_dict: dict) -> bool:
+    decode_api_key_config = getattr(TenantLLMService, "_decode_api_key_config", None)
+    if callable(decode_api_key_config):
+        _, is_tools, _ = decode_api_key_config(o_dict.get("api_key", ""))
+        if is_tools is not None:
+            return bool(is_tools)
+
+    try:
+        base_name, fid = TenantLLMService.split_model_name_and_factory(o_dict["llm_name"])
+        llm_cfg = LLMService.query(llm_name=base_name, fid=fid) if fid else LLMService.query(llm_name=base_name)
+        if not llm_cfg and fid:
+            llm_cfg = LLMService.query(llm_name=base_name)
+        return bool(llm_cfg[0].is_tools) if llm_cfg else False
+    except Exception:
+        return False
+
+
 @manager.route("/factories", methods=["GET"])  # noqa: F821
 @login_required
 def factories():
@@ -428,18 +445,6 @@ def my_llms():
                 if o_dict["llm_factory"] not in res:
                     res[o_dict["llm_factory"]] = {"tags": factory_tags, "llm": []}
 
-                _, is_tools, _ = TenantLLMService._decode_api_key_config(o_dict.get("api_key", ""))
-                if is_tools is None:
-                    try:
-                        base_name, fid = TenantLLMService.split_model_name_and_factory(o_dict["llm_name"])
-                        llm_cfg = LLMService.query(llm_name=base_name, fid=fid) if fid else LLMService.query(llm_name=base_name)
-                        if not llm_cfg and fid:
-                            llm_cfg = LLMService.query(llm_name=base_name)
-                        is_tools = llm_cfg[0].is_tools if llm_cfg else False
-                    except Exception:
-                        is_tools = False
-                is_tools = bool(is_tools)
-
                 res[o_dict["llm_factory"]]["llm"].append(
                     {
                         "id": o_dict["id"],
@@ -449,7 +454,7 @@ def my_llms():
                         "api_base": o_dict["api_base"] or "",
                         "max_tokens": o_dict["max_tokens"] or 8192,
                         "status": o_dict["status"] or "1",
-                        "is_tools": is_tools,
+                        "is_tools": _resolve_my_llm_is_tools(o_dict),
                     }
                 )
         else:
