@@ -15,18 +15,18 @@ export const useRenameDocument = () => {
 
   const onRenameOk = useCallback(
     async (name: string) => {
-      if (record?.id && record?.kb_id) {
+      if (record?.id && record?.dataset_id) {
         const ret = await saveName({
           documentId: record.id,
           name,
-          kbId: record.kb_id,
+          kbId: record.dataset_id,
         });
         if (ret === 0) {
           hideRenameModal();
         }
       }
     },
-    [record?.id, record?.kb_id, saveName, hideRenameModal],
+    [record?.id, record?.dataset_id, saveName, hideRenameModal],
   );
 
   const handleShow = useCallback(

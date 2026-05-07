@@ -73,14 +73,12 @@ class BuiltinEmbed(Base):
         batch_size = 16
         # TEI is able to auto truncate inputs according to https://github.com/huggingface/text-embeddings-inference.
         token_count = 0
-        ress = None
+        batches = []
         for i in range(0, len(texts), batch_size):
             embeddings, token_count_delta = self._model.encode(texts[i : i + batch_size])
             token_count += token_count_delta
-            if ress is None:
-                ress = embeddings
-            else:
-                ress = np.concatenate((ress, embeddings), axis=0)
+            batches.append(embeddings)
+        ress = np.vstack(batches) if batches else np.array([])
         return ress, token_count
 
     def encode_queries(self, text: str):
@@ -159,6 +157,34 @@ class AzureEmbed(OpenAIEmbed):
         api_version = json.loads(key).get("api_version", "2024-02-01")
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
         self.model_name = model_name
+
+
+class AstraflowEmbed(OpenAIEmbed):
+    _FACTORY_NAME = "Astraflow"
+
+    def __init__(self, key, model_name, base_url="https://api-us-ca.umodelverse.ai/v1"):
+        if not base_url:
+            base_url = "https://api-us-ca.umodelverse.ai/v1"
+        super().__init__(key, model_name, base_url)
+
+
+class AstraflowCNEmbed(OpenAIEmbed):
+    _FACTORY_NAME = "Astraflow-CN"
+
+    def __init__(self, key, model_name, base_url="https://api.modelverse.cn/v1"):
+        if not base_url:
+            base_url = "https://api.modelverse.cn/v1"
+        super().__init__(key, model_name, base_url)
+
+
+class FuturMixEmbed(OpenAIEmbed):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name="text-embedding-3-small", base_url="https://futurmix.ai/v1"):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name, base_url)
+        logging.info("[FuturMix] Embedding initialized with model %s", model_name)
 
 
 class BaiChuanEmbed(OpenAIEmbed):

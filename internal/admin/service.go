@@ -30,8 +30,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/entity"
-	"ragflow/internal/logger"
-
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 	"regexp"
@@ -215,7 +213,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 	// Rollback helper function
 	rollbackTx := func() {
 		if rbErr := tx.Rollback(); rbErr.Error != nil {
-			logger.Error("failed to rollback transaction", rbErr.Error)
+			common.Error("failed to rollback transaction", rbErr.Error)
 		}
 	}
 
@@ -294,11 +292,11 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 	// 4. Create tenant LLM configurations
 	tenantLLMs, err := s.getInitTenantLLM(userID)
 	if err != nil {
-		logger.Warn("failed to get init tenant LLM configs", zap.Error(err))
+		common.Warn("failed to get init tenant LLM configs", zap.Error(err))
 		// Continue without LLM configs - not a critical error
 	} else if len(tenantLLMs) > 0 {
 		if err := tx.Create(&tenantLLMs).Error; err != nil {
-			logger.Warn("failed to create tenant LLM configs", zap.Error(err))
+			common.Warn("failed to create tenant LLM configs", zap.Error(err))
 			// Continue without LLM configs - not a critical error
 		}
 	}
@@ -332,7 +330,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	logger.Info("Create user success with tenant and related data", zap.String("username", username))
+	common.Info("Create user success with tenant and related data", zap.String("username", username))
 
 	return map[string]interface{}{
 		"id":           user.ID,
@@ -381,7 +379,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 	for _, factoryConfig := range uniqueFactories {
 		llms, err := s.llmDAO.GetByFactory(factoryConfig.Factory)
 		if err != nil {
-			logger.Warn("failed to get LLMs for factory", zap.String("factory", factoryConfig.Factory), zap.Error(err))
+			common.Warn("failed to get LLMs for factory", zap.String("factory", factoryConfig.Factory), zap.Error(err))
 			continue
 		}
 
@@ -544,7 +542,7 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 	// Get user-tenant relations
 	tenants, err := s.userTenantDAO.GetByUserIDAll(user.ID)
 	if err != nil {
-		logger.Warn("failed to get user-tenant relations", zap.Error(err))
+		common.Warn("failed to get user-tenant relations", zap.Error(err))
 	}
 
 	// Find owned tenant (role = "owner")
@@ -565,7 +563,7 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 	// Rollback helper function
 	rollbackTx := func() {
 		if rbErr := tx.Rollback(); rbErr.Error != nil {
-			logger.Error("failed to rollback transaction", rbErr.Error)
+			common.Error("failed to rollback transaction", rbErr.Error)
 		}
 	}
 
@@ -575,14 +573,14 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 		// 1. Get knowledge base IDs
 		kbIDs, err := s.kbDAO.GetKBIDsByTenantIDSimple(ownedTenantID)
 		if err != nil {
-			logger.Warn("failed to get knowledge base IDs", zap.Error(err))
+			common.Warn("failed to get knowledge base IDs", zap.Error(err))
 		}
 
 		if len(kbIDs) > 0 {
 			// 2. Get document IDs
 			docIDs, err := s.documentDAO.GetAllDocIDsByKBIDs(kbIDs)
 			if err != nil {
-				logger.Warn("failed to get document IDs", zap.Error(err))
+				common.Warn("failed to get document IDs", zap.Error(err))
 			}
 
 			// 3. Delete tasks by document IDs
@@ -592,58 +590,58 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 					docIDList[i] = d["id"]
 				}
 				if delErr := tx.Unscoped().Where("doc_id IN ?", docIDList).Delete(&entity.Task{}); delErr.Error != nil {
-					logger.Warn("failed to delete tasks", zap.Error(delErr.Error))
+					common.Warn("failed to delete tasks", zap.Error(delErr.Error))
 				}
 			}
 
 			// 4. Delete documents
 			if delErr := tx.Unscoped().Where("kb_id IN ?", kbIDs).Delete(&entity.Document{}); delErr.Error != nil {
-				logger.Warn("failed to delete documents", zap.Error(delErr.Error))
+				common.Warn("failed to delete documents", zap.Error(delErr.Error))
 			}
 
 			// 5. Delete knowledge bases
 			if delErr := tx.Unscoped().Where("id IN ?", kbIDs).Delete(&entity.Knowledgebase{}); delErr.Error != nil {
-				logger.Warn("failed to delete knowledge bases", zap.Error(delErr.Error))
+				common.Warn("failed to delete knowledge bases", zap.Error(delErr.Error))
 			}
 		}
 
 		// 6. Delete files
 		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&entity.File{}); delErr.Error != nil {
-			logger.Warn("failed to delete files", zap.Error(delErr.Error))
+			common.Warn("failed to delete files", zap.Error(delErr.Error))
 		}
 
 		// 7. Delete user canvas (agents)
 		if delErr := tx.Unscoped().Where("user_id = ?", ownedTenantID).Delete(&entity.UserCanvas{}); delErr.Error != nil {
-			logger.Warn("failed to delete user canvas", zap.Error(delErr.Error))
+			common.Warn("failed to delete user canvas", zap.Error(delErr.Error))
 		}
 
 		// 8. Get dialog IDs
 		var dialogIDs []string
 		if pluckErr := tx.Model(&entity.Chat{}).Where("tenant_id = ?", ownedTenantID).Pluck("id", &dialogIDs); pluckErr.Error != nil {
-			logger.Warn("failed to get dialog IDs", zap.Error(pluckErr.Error))
+			common.Warn("failed to get dialog IDs", zap.Error(pluckErr.Error))
 		}
 
 		// 9. Delete chat sessions
 		if len(dialogIDs) > 0 {
 			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.ChatSession{}); delErr.Error != nil {
-				logger.Warn("failed to delete chat sessions", zap.Error(delErr.Error))
+				common.Warn("failed to delete chat sessions", zap.Error(delErr.Error))
 			}
 		}
 
 		// 10. Delete chats/dialogs
 		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&entity.Chat{}); delErr.Error != nil {
-			logger.Warn("failed to delete chats", zap.Error(delErr.Error))
+			common.Warn("failed to delete chats", zap.Error(delErr.Error))
 		}
 
 		// 11. Delete API tokens
 		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&entity.APIToken{}); delErr.Error != nil {
-			logger.Warn("failed to delete API tokens", zap.Error(delErr.Error))
+			common.Warn("failed to delete API tokens", zap.Error(delErr.Error))
 		}
 
 		// 12. Delete API4Conversations
 		if len(dialogIDs) > 0 {
 			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.API4Conversation{}); delErr.Error != nil {
-				logger.Warn("failed to delete API4Conversations", zap.Error(delErr.Error))
+				common.Warn("failed to delete API4Conversations", zap.Error(delErr.Error))
 			}
 		}
 
@@ -661,7 +659,7 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 
 		// 13. Delete tenant LLM configurations
 		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&entity.TenantLLM{}); delErr.Error != nil {
-			logger.Warn("failed to delete tenant LLM", zap.Error(delErr.Error))
+			common.Warn("failed to delete tenant LLM", zap.Error(delErr.Error))
 		}
 
 		var tenantCount int64
@@ -669,7 +667,7 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 		result.TenantCount = int(tenantCount)
 		// 14. Delete tenant
 		if delErr := tx.Unscoped().Where("id = ?", ownedTenantID).Delete(&entity.Tenant{}); delErr.Error != nil {
-			logger.Warn("failed to delete tenant", zap.Error(delErr.Error))
+			common.Warn("failed to delete tenant", zap.Error(delErr.Error))
 		}
 		result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted %d tenant.", result.TenantCount))
 	}
@@ -680,7 +678,7 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 
 	// 15. Delete user-tenant relations
 	if delErr := tx.Unscoped().Where("user_id = ?", user.ID).Delete(&entity.UserTenant{}); delErr.Error != nil {
-		logger.Warn("failed to delete user-tenant relations", zap.Error(delErr.Error))
+		common.Warn("failed to delete user-tenant relations", zap.Error(delErr.Error))
 	}
 	result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted %d user-tenant records.", result.UserTenantCount))
 
@@ -699,7 +697,7 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 
 	result.DeletedDetails = append(result.DeletedDetails, "Delete done!")
 
-	logger.Info("Delete user success with all related data", zap.String("username", username))
+	common.Info("Delete user success with all related data", zap.String("username", username))
 
 	return result, nil
 }

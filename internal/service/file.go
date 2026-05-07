@@ -19,13 +19,14 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
-	"ragflow/internal/logger"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
@@ -343,8 +344,8 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 		}
 		defer src.Close()
 
-		data := make([]byte, fileHeader.Size)
-		if _, err := src.Read(data); err != nil {
+		data, err := io.ReadAll(src)
+		if err != nil {
 			return nil, fmt.Errorf("failed to read file data: %w", err)
 		}
 
@@ -578,7 +579,7 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 		storageImpl := storage.GetStorageFactory().GetStorage()
 		if storageImpl != nil {
 			if err := storageImpl.Remove(file.ParentID, *file.Location); err != nil {
-				logger.Logger.Error(fmt.Sprintf("Fail to remove object: %s/%s, error: %v", file.ParentID, *file.Location, err))
+				common.Logger.Error(fmt.Sprintf("Fail to remove object: %s/%s, error: %v", file.ParentID, *file.Location, err))
 			}
 		}
 	}
@@ -607,14 +608,14 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 					if tenantID != "" {
 						// Delete from document engine
 						if err := s.deleteDocumentFromEngine(ctx, doc, tenantID); err != nil {
-							logger.Logger.Error(fmt.Sprintf("Fail to delete document from engine: %s, error: %v", doc.ID, err))
+							common.Logger.Error(fmt.Sprintf("Fail to delete document from engine: %s, error: %v", doc.ID, err))
 						}
 					}
 				}
 
 				// Delete document record
 				if err := documentDAO.Delete(docID); err != nil {
-					logger.Logger.Error(fmt.Sprintf("Fail to delete document: %s, error: %v", docID, err))
+					common.Logger.Error(fmt.Sprintf("Fail to delete document: %s, error: %v", docID, err))
 				}
 			}
 

@@ -4,7 +4,7 @@ import MessageItem from '@/components/next-message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType } from '@/constants/chat';
-import { useUploadCanvasFileWithProgress } from '@/hooks/use-agent-request';
+import { useUploadAgentFileWithProgress } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IAgentLogResponse } from '@/interfaces/database/agent';
 import { IMessage } from '@/interfaces/database/chat';
@@ -55,16 +55,16 @@ export function SessionChat({ session }: SessionChatProps) {
     useClickDrawer();
 
   // File upload
-  const { uploadCanvasFile, loading: isUploading } =
-    useUploadCanvasFileWithProgress();
+  const { uploadAgentFile, loading: isUploading } =
+    useUploadAgentFileWithProgress();
 
   const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
     useCallback(
       async (files, options) => {
-        const ret = await uploadCanvasFile({ files, options });
+        const ret = await uploadAgentFile({ files, options });
         appendUploadResponseList(ret.data, files);
       },
-      [appendUploadResponseList, uploadCanvasFile],
+      [appendUploadResponseList, uploadAgentFile],
     );
 
   useEffect(() => {

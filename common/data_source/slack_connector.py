@@ -528,8 +528,6 @@ class SlackConnector(
 
     def retrieve_all_slim_docs_perm_sync(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
         callback: Any = None,
     ) -> GenerateSlimDocumentOutput:
         if self.client is None:

@@ -6,7 +6,6 @@ import {
 } from '@/hooks/use-agent-request';
 import { useSendAgentMessage } from '@/pages/agent/chat/use-send-agent-message';
 import { buildBeginInputListFromObject } from '@/pages/agent/form/begin-form/utils';
-import api from '@/utils/api';
 import { get, isEmpty } from 'lodash';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router';
@@ -63,7 +62,6 @@ export const useSendSessionMessage = () => {
     value,
     ...chatLogic
   } = useSendAgentMessage({
-    url: api.runCanvasExplore(canvasId!),
     beginParams,
   });
 

@@ -51,13 +51,13 @@ class RAGFlowAzureSasBlob:
         _bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
         return self.conn.upload_blob(name=fnm, data=BytesIO(binary), length=len(binary))
 
-    def put(self, bucket, fnm, binary):
+    def put(self, bucket, fnm, binary, tenant_id=None):
         blob_name = f"{bucket}/{fnm}"
         for _ in range(3):
             try:
                 return self.conn.upload_blob(name=blob_name, data=BytesIO(binary), length=len(binary))
             except Exception:
-                logging.exception(f"Fail put {bucket}/{fnm}")
+                logging.exception(f"Fail put {blob_name}")
                 self.__open__()
                 time.sleep(1)
 
@@ -74,7 +74,7 @@ class RAGFlowAzureSasBlob:
                 r = self.conn.download_blob(blob_name)
                 return r.read()
             except Exception:
-                logging.exception(f"fail get {bucket}/{fnm}")
+                logging.exception(f"fail get {blob_name}")
                 self.__open__()
                 time.sleep(1)
         return
@@ -92,7 +92,7 @@ class RAGFlowAzureSasBlob:
             try:
                 return self.conn.get_presigned_url("GET", bucket, blob_name, expires)
             except Exception:
-                logging.exception(f"fail get {bucket}/{fnm}")
+                logging.exception(f"fail get {blob_name}")
                 self.__open__()
                 time.sleep(1)
         return

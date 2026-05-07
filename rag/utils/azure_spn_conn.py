@@ -68,15 +68,15 @@ class RAGFlowAzureSpnBlob:
         f.append_data(binary, offset=0, length=len(binary))
         return f.flush_data(len(binary))
 
-    def put(self, bucket, fnm, binary):
-        f_path = f"{bucket}/{fnm}"
+    def put(self, bucket, fnm, binary, tenant_id=None):
+        blob = f"{bucket}/{fnm}"
         for _ in range(3):
             try:
-                f = self.conn.create_file(f_path)
+                f = self.conn.create_file(f"{blob}")
                 f.append_data(binary, offset=0, length=len(binary))
                 return f.flush_data(len(binary))
             except Exception:
-                logging.exception(f"Fail put {bucket}/{fnm}")
+                logging.exception(f"Fail put {blob}")
                 self.__open__()
                 time.sleep(1)
                 return None
@@ -89,14 +89,14 @@ class RAGFlowAzureSpnBlob:
             logging.exception(f"Fail rm {bucket}/{fnm}")
 
     def get(self, bucket, fnm):
-        f_path = f"{bucket}/{fnm}"
+        blob = f"{bucket}/{fnm}"
         for _ in range(1):
             try:
-                client = self.conn.get_file_client(f_path)
+                client = self.conn.get_file_client(f"{blob}")
                 r = client.download_file()
                 return r.read()
             except Exception:
-                logging.exception(f"fail get {bucket}/{fnm}")
+                logging.exception(f"fail get {blob}")
                 self.__open__()
                 time.sleep(1)
         return None

@@ -4,8 +4,10 @@ COPY --from=ghcr.io/astral-sh/uv:0.7.5 /uv /uvx /bin/
 ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ENV MPLBACKEND=Agg
 ENV MPLCONFIGDIR=/tmp/matplotlib
+ENV MATPLOTLIBRC=/usr/local/etc/matplotlibrc
 
 COPY requirements.txt .
+COPY matplotlibrc /usr/local/etc/matplotlibrc
 
 RUN grep -rl 'deb.debian.org' /etc/apt/ | xargs sed -i 's|http[s]*://deb.debian.org|https://mirrors.tuna.tsinghua.edu.cn|g' && \
     apt-get update && \

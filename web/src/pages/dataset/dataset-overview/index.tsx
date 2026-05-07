@@ -220,7 +220,6 @@ const FileLogsPage: FC = () => {
   }, [active, t]);
 
   const tableList = useMemo(() => {
-    console.log('tableList', tableOriginData);
     if (tableOriginData && tableOriginData.logs?.length) {
       return tableOriginData.logs.map((item) => {
         return {
