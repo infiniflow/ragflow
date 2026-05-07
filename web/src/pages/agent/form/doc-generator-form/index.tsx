@@ -34,6 +34,7 @@ function DocGeneratorForm({ node }: INextOperatorForm) {
     watermark: z.string().optional(),
     add_page_numbers: z.boolean(),
     add_timestamp: z.boolean(),
+    include_download_info_in_content: z.boolean(),
     font_size: z.coerce.number().min(12, 'Font size must be at least 12'),
     outputs: z.object({
       download: z.object({ type: z.string() }),
@@ -109,6 +110,29 @@ function DocGeneratorForm({ node }: INextOperatorForm) {
                   ></PromptEditor>
                 </FormControl>
                 <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="include_download_info_in_content"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <FormLabel>
+                    {t(
+                      'flow.includeDownloadInfoInContent',
+                      'Append download info to content',
+                    )}
+                  </FormLabel>
+                </div>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
               </FormItem>
             )}
           />
