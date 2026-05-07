@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"hash"
 	"os"
+	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
@@ -642,8 +643,10 @@ func (s *UserService) decryptPassword(encryptedPassword string) (string, error) 
 // using itsdangerous URLSafeTimedSerializer to get the actual access_token
 func (s *UserService) GetUserByToken(authorization string) (*entity.User, common.ErrorCode, error) {
 	// Get secret key from config
-	variables := server.GetVariables()
-	secretKey := variables.SecretKey
+	secretKey, err := server.GetSecretKey(cache.Get())
+	if err != nil {
+		return nil, common.CodeUnauthorized, err
+	}
 
 	// Extract access token from authorization header
 	// Equivalent to: access_token = str(jwt.loads(authorization)) in Python

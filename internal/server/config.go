@@ -91,8 +91,9 @@ type OAuthConfig struct {
 
 // ServerConfig server configuration
 type ServerConfig struct {
-	Mode string `mapstructure:"mode"` // debug, release
-	Port int    `mapstructure:"port"`
+	Mode      string  `mapstructure:"mode"` // debug, release
+	Port      int     `mapstructure:"port"`
+	SecretKey *string `mapstructure:"secret_key"`
 }
 
 // DatabaseConfig database configuration
@@ -372,6 +373,12 @@ func Init(configPath string) error {
 }
 
 func FromEnvironments() error {
+	// Secret key
+	secretKey := strings.ToLower(os.Getenv("RAGFLOW_SECRET_KEY"))
+	if secretKey != "" {
+		globalConfig.Server.SecretKey = &secretKey
+	}
+
 	// Doc engine
 	docEngine := strings.ToLower(os.Getenv("DOC_ENGINE"))
 	switch docEngine {
@@ -572,6 +579,10 @@ func FromConfigFile(configPath string) error {
 				// If mode is not set, default to debug
 				if globalConfig.Server.Mode == "" {
 					globalConfig.Server.Mode = "release"
+				}
+				secretKey := ragflowConfig.GetString("secret_key")
+				if secretKey != "" {
+					globalConfig.Server.SecretKey = &secretKey
 				}
 			}
 		}
