@@ -68,7 +68,9 @@ def _find_mutable_gen_conf_defaults(path: Path):
                 continue
             # An empty dict literal `{}` is the original bug. A list literal
             # `[]` would be the same class of mistake. Anything else is fine.
-            if isinstance(default, (ast.Dict, ast.List)) and not default.keys and not getattr(default, "elts", None):
+            # ast.Dict exposes `.keys`; ast.List exposes `.elts`. Use getattr
+            # for both so `gen_conf=[]` doesn't crash on a missing `.keys`.
+            if isinstance(default, (ast.Dict, ast.List)) and not getattr(default, "keys", None) and not getattr(default, "elts", None):
                 bad.append((node.name, default.lineno))
     return bad
 

@@ -221,7 +221,7 @@ class Base(ABC):
                     ans += LENGTH_NOTIFICATION_EN
             yield ans, tol
 
-    async def async_chat_streamly(self, system, history, gen_conf: dict = None, **kwargs):
+    async def async_chat_streamly(self, system, history, gen_conf: dict | None = None, **kwargs):
         gen_conf = dict(gen_conf or {})
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
@@ -357,7 +357,7 @@ class Base(ABC):
         self.toolcall_session = toolcall_session
         self.tools = tools
 
-    async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict = None):
+    async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         if system and history and history[0].get("role") != "system":
@@ -419,7 +419,7 @@ class Base(ABC):
 
         assert False, "Shouldn't be here."
 
-    async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict = None):
+    async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         tools = self.tools
@@ -1549,7 +1549,7 @@ class LiteLLMBase(ABC):
         self.toolcall_session = toolcall_session
         self.tools = tools
 
-    async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict = None):
+    async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         if system and history and history[0].get("role") != "system":
@@ -1627,7 +1627,7 @@ class LiteLLMBase(ABC):
 
         assert False, "Shouldn't be here."
 
-    async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict = None):
+    async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         tools = self.tools
