@@ -18,7 +18,9 @@ package cli
 
 import (
 	"fmt"
-	ce "ragflow/internal/cli/contextengine"
+	"io"
+
+	ce "ragflow/internal/cli/filesystem"
 )
 
 // PasswordPromptFunc is a function type for password input
@@ -41,7 +43,6 @@ type RAGFlowClient struct {
 	CurrentModel   *CurrentModel      // Current model configuration
 }
 
-// NewRAGFlowClient creates a new RAGFlow client
 func NewRAGFlowClient(serverType string) *RAGFlowClient {
 	httpClient := NewHTTPClient()
 	// Set port from configuration file based on server type
@@ -68,6 +69,8 @@ func (c *RAGFlowClient) initContextEngine() {
 
 	// Register providers
 	engine.RegisterProvider(ce.NewDatasetProvider(&httpClientAdapter{c.HTTPClient}))
+	engine.RegisterProvider(ce.NewFileProvider(&httpClientAdapter{c.HTTPClient}))
+	engine.RegisterProvider(ce.NewSkillProvider(&httpClientAdapter{c.HTTPClient}))
 
 	c.ContextEngine = engine
 }
@@ -99,6 +102,10 @@ func (a *httpClientAdapter) Request(method, path string, useAPIBase bool, authKi
 		Headers:    resp.Headers,
 		Duration:   resp.Duration,
 	}, nil
+}
+
+func (a *httpClientAdapter) UploadMultipart(path string, contentType string, body io.Reader) error {
+	return a.client.UploadMultipart(path, contentType, body)
 }
 
 // ExecuteCommand executes a parsed command
@@ -164,6 +171,8 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowProvider(cmd)
 	case "list_provider_models":
 		return c.ListModels(cmd)
+	case "list_supported_models":
+		return c.ListSupportedModels(cmd)
 	case "list_instance_models":
 		return c.ListInstanceModels(cmd)
 	case "show_model":
@@ -214,6 +223,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowProvider(cmd)
 	case "list_provider_models":
 		return c.ListModels(cmd)
+	case "list_supported_models":
+		return c.ListSupportedModels(cmd)
 	case "list_instance_models":
 		return c.ListInstanceModels(cmd)
 	case "show_model":
@@ -232,22 +243,36 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListProviderInstances(cmd)
 	case "show_provider_instance":
 		return c.ShowProviderInstance(cmd)
+	case "show_instance_balance":
+		return c.ShowInstanceBalance(cmd)
 	case "alter_provider_instance":
 		return c.AlterProviderInstance(cmd)
 	case "drop_provider_instance":
 		return c.DropProviderInstance(cmd)
+	case "drop_instance_model":
+		return c.DropInstanceModel(cmd)
 	case "enable_model":
 		return c.EnableOrDisableModel(cmd, "enable")
 	case "disable_model":
 		return c.EnableOrDisableModel(cmd, "disable")
+	case "add_custom_model":
+		return c.AddCustomModel(cmd)
 	case "chat_to_model":
 		return c.ChatToModel(cmd)
 	case "think_chat_to_model":
 		return c.ChatToModel(cmd)
+	case "check_provider_connection":
+		return c.CheckProviderConnection(cmd)
 	case "use_model":
 		return c.UseModel(cmd)
 	case "show_current_model":
 		return c.ShowCurrentModel(cmd)
+	case "set_default_model":
+		return c.SetDefaultModel(cmd)
+	case "reset_default_model":
+		return c.ResetDefaultModel(cmd)
+	case "list_user_default_models":
+		return c.ListDefaultModels(cmd)
 	// Dataset, metadata commands
 	case "create_dataset_table":
 		return c.CreateDatasetInDocEngine(cmd)
@@ -270,14 +295,10 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "remove_chunks":
 		return c.RemoveChunks(cmd)
 	// ContextEngine commands
-	case "context_list":
-		return c.ContextList(cmd)
-	case "context_cat":
-		return c.ContextCat(cmd)
-	case "context_search":
-		return c.ContextSearch(cmd)
 	case "ce_ls":
 		return c.CEList(cmd)
+	case "ce_cat":
+		return c.CECat(cmd)
 	case "ce_search":
 		return c.CESearch(cmd)
 	// TODO: Implement other commands

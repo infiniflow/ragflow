@@ -142,6 +142,12 @@ def _load_dataset_module(monkeypatch):
     api_pkg.__path__ = [str(repo_root / "api")]
     monkeypatch.setitem(sys.modules, "api", api_pkg)
 
+    api_constants_mod = ModuleType("api.constants")
+    api_constants_mod.DATASET_NAME_LIMIT = 128
+    api_constants_mod.FILE_NAME_LEN_LIMIT = 255
+    monkeypatch.setitem(sys.modules, "api.constants", api_constants_mod)
+    api_pkg.constants = api_constants_mod
+
     utils_pkg = ModuleType("api.utils")
     utils_pkg.__path__ = [str(repo_root / "api" / "utils")]
     monkeypatch.setitem(sys.modules, "api.utils", utils_pkg)
@@ -161,6 +167,7 @@ def _load_dataset_module(monkeypatch):
 
     db_pkg = ModuleType("api.db")
     db_pkg.__path__ = []
+    db_pkg.FileType = SimpleNamespace()
     monkeypatch.setitem(sys.modules, "api.db", db_pkg)
     api_pkg.db = db_pkg
 
@@ -313,8 +320,14 @@ def _load_dataset_module(monkeypatch):
         def get_by_ids(_ids):
             return []
 
+    class _StubUserTenantService:
+        @staticmethod
+        def get_tenants_by_user_id(_user_id):
+            return []
+
     user_service_mod.TenantService = _StubTenantService
     user_service_mod.UserService = _StubUserService
+    user_service_mod.UserTenantService = _StubUserTenantService
     monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_service_mod)
     services_pkg.user_service = user_service_mod
 
@@ -662,143 +675,182 @@ def test_list_knowledge_graph_delete_kg_matrix_unit(monkeypatch):
 
 
 @pytest.mark.p3
-def test_run_trace_graphrag_matrix_unit(monkeypatch):
+def test_run_index_matrix_unit(monkeypatch):
     module = _load_dataset_module(monkeypatch)
 
     warnings = []
     monkeypatch.setattr(module.logging, "warning", lambda msg, *_args, **_kwargs: warnings.append(msg))
 
-    res = _run(inspect.unwrap(module.run_graphrag)("tenant-1", ""))
-    assert 'Dataset ID' in res["message"], res
+    # Invalid index type
+    _set_request_args(monkeypatch, module, {"type": "invalid"})
+    res = _run(inspect.unwrap(module.run_index)("tenant-1", "kb-1"))
+    assert "Invalid index type" in res["message"], res
 
+    # Missing dataset ID
+    _set_request_args(monkeypatch, module, {"type": "graph"})
+    res = _run(inspect.unwrap(module.run_index)("tenant-1", ""))
+    assert "Dataset ID" in res["message"], res
+
+    # No authorization
+    _set_request_args(monkeypatch, module, {"type": "graph"})
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: False)
-    res = _run(inspect.unwrap(module.run_graphrag)("tenant-1", "kb-1"))
+    res = _run(inspect.unwrap(module.run_index)("tenant-1", "kb-1"))
     assert res["code"] == module.RetCode.DATA_ERROR, res
 
+    # Invalid dataset ID
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
-    res = _run(inspect.unwrap(module.run_graphrag)("tenant-1", "kb-1"))
+    res = _run(inspect.unwrap(module.run_index)("tenant-1", "kb-1"))
     assert "Invalid Dataset ID" in res["message"], res
 
+    # Stale graphrag task + successful re-queue
     stale_kb = _KB(kb_id="kb-1", graphrag_task_id="task-old")
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, stale_kb))
     monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (False, None))
     monkeypatch.setattr(module.DocumentService, "get_by_kb_id", lambda **_kwargs: ([{"id": "doc-1"}], 1))
     monkeypatch.setattr(module.dataset_api_service, "queue_raptor_o_graphrag_tasks", lambda **_kwargs: "task-new")
     monkeypatch.setattr(module.KnowledgebaseService, "update_by_id", lambda *_args, **_kwargs: True)
-    res = _run(inspect.unwrap(module.run_graphrag)("tenant-1", "kb-1"))
+    _set_request_args(monkeypatch, module, {"type": "graph"})
+    res = _run(inspect.unwrap(module.run_index)("tenant-1", "kb-1"))
     assert res["code"] == module.RetCode.SUCCESS, res
-    assert any("GraphRAG" in msg for msg in warnings), warnings
+    assert any("Graph" in msg for msg in warnings), warnings
 
+    # Task already running
     monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (True, SimpleNamespace(progress=0)))
-    res = _run(inspect.unwrap(module.run_graphrag)("tenant-1", "kb-1"))
+    res = _run(inspect.unwrap(module.run_index)("tenant-1", "kb-1"))
     assert "already running" in res["message"], res
 
+    # Successful raptor run with save warning
     warnings.clear()
-    queue_calls = {}
-    no_task_kb = _KB(kb_id="kb-1", graphrag_task_id="")
+    no_task_kb = _KB(kb_id="kb-1", raptor_task_id="")
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, no_task_kb))
     monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (False, None))
     monkeypatch.setattr(module.DocumentService, "get_by_kb_id", lambda **_kwargs: ([{"id": "doc-1"}, {"id": "doc-2"}], 2))
 
+    queue_calls = {}
+
     def _queue(**kwargs):
         queue_calls.update(kwargs)
-        return "queued-id"
+        return "queued-raptor"
 
     monkeypatch.setattr(module.dataset_api_service, "queue_raptor_o_graphrag_tasks", _queue)
     monkeypatch.setattr(module.KnowledgebaseService, "update_by_id", lambda *_args, **_kwargs: False)
-    res = _run(inspect.unwrap(module.run_graphrag)("tenant-1", "kb-1"))
+    _set_request_args(monkeypatch, module, {"type": "raptor"})
+    res = _run(inspect.unwrap(module.run_index)("tenant-1", "kb-1"))
     assert res["code"] == module.RetCode.SUCCESS, res
-    assert res["data"]["graphrag_task_id"] == "queued-id", res
+    assert res["data"]["task_id"] == "queued-raptor", res
     assert queue_calls["doc_ids"] == ["doc-1", "doc-2"], queue_calls
-    assert any("Cannot save graphrag_task_id" in msg for msg in warnings), warnings
+    assert any("Cannot save" in msg for msg in warnings), warnings
 
-    res = inspect.unwrap(module.trace_graphrag)("tenant-1", "")
-    assert 'Dataset ID' in res["message"], res
 
+@pytest.mark.p3
+def test_trace_index_matrix_unit(monkeypatch):
+    module = _load_dataset_module(monkeypatch)
+
+    # Invalid index type
+    _set_request_args(monkeypatch, module, {"type": "invalid"})
+    res = inspect.unwrap(module.trace_index)("tenant-1", "kb-1")
+    assert "Invalid index type" in res["message"], res
+
+    # Missing dataset ID
+    _set_request_args(monkeypatch, module, {"type": "graph"})
+    res = inspect.unwrap(module.trace_index)("tenant-1", "")
+    assert "Dataset ID" in res["message"], res
+
+    # No authorization
+    _set_request_args(monkeypatch, module, {"type": "graph"})
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: False)
-    res = inspect.unwrap(module.trace_graphrag)("tenant-1", "kb-1")
+    res = inspect.unwrap(module.trace_index)("tenant-1", "kb-1")
     assert res["code"] == module.RetCode.DATA_ERROR, res
 
+    # Invalid dataset ID
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
-    res = inspect.unwrap(module.trace_graphrag)("tenant-1", "kb-1")
+    res = inspect.unwrap(module.trace_index)("tenant-1", "kb-1")
     assert "Invalid Dataset ID" in res["message"], res
 
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, _KB(kb_id="kb-1", graphrag_task_id="task-1")))
-    monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (False, None))
-    res = inspect.unwrap(module.trace_graphrag)("tenant-1", "kb-1")
+    # No existing task — returns empty
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, _KB(kb_id="kb-1", graphrag_task_id="")))
+    res = inspect.unwrap(module.trace_index)("tenant-1", "kb-1")
     assert res["code"] == module.RetCode.SUCCESS, res
     assert res["data"] == {}, res
 
+    # Task ID set but task not found — returns empty
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, _KB(kb_id="kb-1", graphrag_task_id="task-1")))
+    monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (False, None))
+    res = inspect.unwrap(module.trace_index)("tenant-1", "kb-1")
+    assert res["code"] == module.RetCode.SUCCESS, res
+    assert res["data"] == {}, res
+
+    # Task found — returns task data
     monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (True, SimpleNamespace(to_dict=lambda: {"id": _task_id, "progress": 1})))
-    res = inspect.unwrap(module.trace_graphrag)("tenant-1", "kb-1")
+    res = inspect.unwrap(module.trace_index)("tenant-1", "kb-1")
     assert res["code"] == module.RetCode.SUCCESS, res
     assert res["data"]["id"] == "task-1", res
 
 
 @pytest.mark.p3
-def test_run_trace_raptor_matrix_unit(monkeypatch):
+def test_delete_index_wipe_flag_unit(monkeypatch):
+    """`?wipe=false` cancels the task without deleting graph artefacts.
+
+    Backend plumbing for pausing/resuming GraphRAG without losing the
+    partial knowledge graph (PR #14238).
+    """
     module = _load_dataset_module(monkeypatch)
 
-    warnings = []
-    monkeypatch.setattr(module.logging, "warning", lambda msg, *_args, **_kwargs: warnings.append(msg))
+    deleted = []
+    cleared_phase_markers = []
+    redis_calls = []
+    deleted_tasks = []
 
-    res = _run(inspect.unwrap(module.run_raptor)("tenant-1", ""))
-    assert 'Dataset ID' in res["message"], res
+    # Stub the lazy imports inside dataset_api_service.delete_index.
+    redis_conn_mod = ModuleType("rag.utils.redis_conn")
 
-    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: False)
-    res = _run(inspect.unwrap(module.run_raptor)("tenant-1", "kb-1"))
-    assert res["code"] == module.RetCode.DATA_ERROR, res
+    class _RedisConn:
+        @staticmethod
+        def set(key, value):
+            redis_calls.append((key, value))
 
+    redis_conn_mod.REDIS_CONN = _RedisConn
+    monkeypatch.setitem(sys.modules, "rag.utils.redis_conn", redis_conn_mod)
+
+    phase_markers_mod = ModuleType("rag.graphrag.phase_markers")
+    phase_markers_mod.clear_phase_markers = lambda dataset_id: cleared_phase_markers.append(dataset_id)
+    monkeypatch.setitem(sys.modules, "rag.graphrag.phase_markers", phase_markers_mod)
+
+    monkeypatch.setattr(
+        module.settings,
+        "docStoreConn",
+        SimpleNamespace(delete=lambda *args, **_kwargs: deleted.append(args)),
+    )
+    monkeypatch.setattr(module.TaskService, "delete_by_id", lambda task_id: deleted_tasks.append(task_id), raising=False)
+
+    kb = _KB(kb_id="kb-1", graphrag_task_id="graph-task", raptor_task_id="raptor-task")
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
-    res = _run(inspect.unwrap(module.run_raptor)("tenant-1", "kb-1"))
-    assert "Invalid Dataset ID" in res["message"], res
-
-    stale_kb = _KB(kb_id="kb-1", raptor_task_id="task-old")
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, stale_kb))
-    monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (False, None))
-    monkeypatch.setattr(module.DocumentService, "get_by_kb_id", lambda **_kwargs: ([{"id": "doc-1"}], 1))
-    monkeypatch.setattr(module.dataset_api_service, "queue_raptor_o_graphrag_tasks", lambda **_kwargs: "task-new")
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
     monkeypatch.setattr(module.KnowledgebaseService, "update_by_id", lambda *_args, **_kwargs: True)
-    res = _run(inspect.unwrap(module.run_raptor)("tenant-1", "kb-1"))
+
+    # wipe=false (graph): cancel, but no docStore.delete and no marker clear.
+    _set_request_args(monkeypatch, module, {"wipe": "false"})
+    res = inspect.unwrap(module.delete_index)("tenant-1", "kb-1", "graph")
     assert res["code"] == module.RetCode.SUCCESS, res
-    assert any("RAPTOR" in msg for msg in warnings), warnings
+    assert ("graph-task-cancel", "x") in redis_calls, redis_calls
+    assert deleted == [], f"docStore.delete must not be called when wipe=false: {deleted}"
+    assert cleared_phase_markers == [], cleared_phase_markers
+    assert deleted_tasks == ["graph-task"], deleted_tasks
 
-    monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (True, SimpleNamespace(progress=0)))
-    res = _run(inspect.unwrap(module.run_raptor)("tenant-1", "kb-1"))
-    assert "already running" in res["message"], res
-
-    warnings.clear()
-    no_task_kb = _KB(kb_id="kb-1", raptor_task_id="")
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, no_task_kb))
-    monkeypatch.setattr(module.DocumentService, "get_by_kb_id", lambda **_kwargs: ([{"id": "doc-1"}], 1))
-    monkeypatch.setattr(module.dataset_api_service, "queue_raptor_o_graphrag_tasks", lambda **_kwargs: "queued-raptor")
-    monkeypatch.setattr(module.KnowledgebaseService, "update_by_id", lambda *_args, **_kwargs: False)
-    res = _run(inspect.unwrap(module.run_raptor)("tenant-1", "kb-1"))
+    # wipe=0 (raptor): cancel, but no docStore.delete.
+    deleted_tasks.clear()
+    _set_request_args(monkeypatch, module, {"wipe": "0"})
+    res = inspect.unwrap(module.delete_index)("tenant-1", "kb-1", "raptor")
     assert res["code"] == module.RetCode.SUCCESS, res
-    assert res["data"]["raptor_task_id"] == "queued-raptor", res
-    assert any("Cannot save raptor_task_id" in msg for msg in warnings), warnings
+    assert deleted == [], f"docStore.delete must not be called when wipe=0: {deleted}"
 
-    res = inspect.unwrap(module.trace_raptor)("tenant-1", "")
-    assert 'Dataset ID' in res["message"], res
-
-    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: False)
-    res = inspect.unwrap(module.trace_raptor)("tenant-1", "kb-1")
-    assert res["code"] == module.RetCode.DATA_ERROR, res
-
-    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
-    res = inspect.unwrap(module.trace_raptor)("tenant-1", "kb-1")
-    assert "Invalid Dataset ID" in res["message"], res
-
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, _KB(kb_id="kb-1", raptor_task_id="task-1")))
-    monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (False, None))
-    res = inspect.unwrap(module.trace_raptor)("tenant-1", "kb-1")
-    assert "RAPTOR Task Not Found" in res["message"], res
-
-    monkeypatch.setattr(module.TaskService, "get_by_id", lambda _task_id: (True, SimpleNamespace(to_dict=lambda: {"id": _task_id, "progress": -1})))
-    res = inspect.unwrap(module.trace_raptor)("tenant-1", "kb-1")
+    # Default (no wipe arg) preserves historical behaviour for graph: docStore
+    # IS deleted and phase markers ARE cleared.
+    _set_request_args(monkeypatch, module, {})
+    res = inspect.unwrap(module.delete_index)("tenant-1", "kb-1", "graph")
     assert res["code"] == module.RetCode.SUCCESS, res
-    assert res["data"]["id"] == "task-1", res
+    assert len(deleted) == 1, f"default wipe must call docStore.delete once: {deleted}"
+    assert cleared_phase_markers == ["kb-1"], cleared_phase_markers
+

@@ -1,0 +1,8 @@
+{
+  "name": "lmstudio",
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "local"
+}

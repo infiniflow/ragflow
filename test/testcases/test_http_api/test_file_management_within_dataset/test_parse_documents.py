@@ -42,6 +42,7 @@ def condition(_auth, _dataset_id, _document_ids=None):
 
 
 def validate_document_details(auth, dataset_id, document_ids):
+    # currently list_documents not support search by document id
     for document_id in document_ids:
         res = list_documents(auth, dataset_id, params={"id": document_id})
         doc = res["data"]["docs"][0]
@@ -57,11 +58,11 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
+                401,
+                "<Unauthorized '401: Unauthorized'>",
             ),
         ],
     )
@@ -100,7 +101,7 @@ class TestDocumentsParse:
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
-            ("", 100, "<MethodNotAllowed '405: Method Not Allowed'>"),
+            ("", 102, "You don't own the dataset ."),
             (
                 "invalid_dataset_id",
                 102,

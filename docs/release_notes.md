@@ -9,6 +9,75 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.25.1
+
+Released on April 29, 2026.
+
+### Improvements
+
+- API refactoring and unification: Standardizes web APIs to RESTful conventions across all endpoints, unifying document creation and indexing flows while maintaining backward compatibility.
+- Parsing optimizations: Adds [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf) PDF parser backend. [#14097](https://github.com/infiniflow/ragflow/pull/14097)
+- Introduces lazy loading and chunked parsing for large PDFs (&gt;50 pages), significantly reducing memory footprint. [#14385](https://github.com/infiniflow/ragflow/pull/14385)
+
+### Data source
+
+Enables synchronizing deleted files in Bitbucket, Gmail, Google Drive, and Airtable.
+
+### Model support
+
+- DeepSeek v4
+
+### Model providers
+
+- UCloud
+
+### Bug fixes
+
+- Metadata visibility issues during v0.24.0 to v0.25.0 upgrades.
+- Duplicate chat output.
+
+## v0.25.0
+
+Released on April 21, 2026.
+
+### New features
+
+- Agent
+  - Introduces seven prebuilt ingestion pipeline templates.
+  - Agent apps can be published.
+  - Supports sandbox code execution and chart generation.
+  - Adds a beginner's data analytics Agent template.
+- Memory: Supports user-level memory storage and retrieval.
+- New UI language: Arabic (implemented a Right-to-Left layout), Bulgarian, and Turkish.
+- Ecosystem integration: RAGFlow datasets are accessible via OpenClaw.
+
+### Improvements
+
+- Optimizes Docx parsing by supporting image lazy-loading, reducing memory footprint.
+- Optimizes Chat, Agent, and Search embedded dialog pages for mobile compatibility.
+- Underlying system & infrastructure optimization:
+  - Bumps RAGFlow's document engine, Elasticsearch to 9.x.
+  - Switches the default object storage container to `pgsty/minio` due to the deprecation of the official MinIO images.
+  - Adds database migration scripts; see [this readme](https://github.com/infiniflow/ragflow/tree/74b44e1aa3ecd6687b3aa4ef731d0187720c3cb5/tools/scripts) for further details.
+
+### Model support
+
+- MiniMax-M2.7 series
+- Perplexity embedding model (pplx-embed)
+- Tongyi rerank model
+
+### New model providers
+
+- avian.io
+- ragcon.ai
+
+### Data sources
+
+- Seafile
+- RSS
+- DingTalk AI Table
+- GitHub: Enables synchronization for deleted files.
+
 ## v0.24.0
 
 Released on February 10, 2026.
@@ -67,7 +136,6 @@ Released on December 31, 2025.
 - Memory: Enhances the stability of memory extraction when all memory types are selected.
 - RAG: Refines the context window extraction strategy for images and tables.
 
-
 ### Fixed issues
 
 - Memory: 
@@ -89,20 +157,20 @@ Released on December 27, 2025.
 ### New features
 
 - Memory
-   - Implements a **Memory** interface for managing memory.
-   - Supports configuring context via the **Retrieval** or **Message** component.
+  - Implements a **Memory** interface for managing memory.
+  - Supports configuring context via the **Retrieval** or **Message** component.
 - Agent
-   - Improves the **Agent** component's performance by refactoring the underlying architecture.
-   - The **Agent** component can now output structured data for use in downstream components.
-   - Supports using webhook to trigger agent execution.
-   - Supports voice input/output.
-   - Supports configuring multiple **Retrieval** components per **Agent** component.
+  - Improves the **Agent** component's performance by refactoring the underlying architecture.
+  - The **Agent** component can now output structured data for use in downstream components.
+  - Supports using webhook to trigger agent execution.
+  - Supports voice input/output.
+  - Supports configuring multiple **Retrieval** components per **Agent** component.
 - Ingestion pipeline
   - Supports extracting table of contents in the **Transformer** component to improve long-context RAG performance.
 - Dataset
-   - Supports configuring context window for images and tables.
-   - Introduces parent-child chunking strategy.
-   - Supports auto-generation of metadata during file parsing.
+  - Supports configuring context window for images and tables.
+  - Introduces parent-child chunking strategy.
+  - Supports auto-generation of metadata during file parsing.
 - Chat: Supports voice input.
 
 ### Improvements

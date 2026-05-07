@@ -42,6 +42,13 @@ def convert_conditions(metadata_condition):
 def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
     doc_ids = set([])
 
+    def normalize_string_values(value):
+        if isinstance(value, str):
+            return value.lower()
+        if isinstance(value, list):
+            return [item.lower() if isinstance(item, str) else item for item in value]
+        return value
+
     def filter_out(v2docs, operator, value):
         ids = []
         for input, docids in v2docs.items():
@@ -96,10 +103,8 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
                         value = value.lower()
             else:
                 # Non-comparison operators: maintain original logic
-                if isinstance(input, str):
-                    input = input.lower()
-                if isinstance(value, str):
-                    value = value.lower()
+                input = normalize_string_values(input)
+                value = normalize_string_values(value)
 
             matched = False
             try:

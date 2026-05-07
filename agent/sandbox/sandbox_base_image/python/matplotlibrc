@@ -1,0 +1,11 @@
+## RAGFlow sandbox – matplotlib defaults
+## Only overrides are listed; all other settings use matplotlib built-in defaults.
+
+# Prefer CJK-capable fonts so Chinese / Japanese / Korean text renders correctly.
+# matplotlib silently skips fonts that are not installed, falling back to the
+# next entry in the list, so this is safe even without any CJK font package.
+font.family: sans-serif
+font.sans-serif: Noto Sans CJK SC, Noto Sans CJK TC, Noto Sans CJK JP, Noto Sans CJK KR, Source Han Sans SC, Source Han Sans CN, WenQuanYi Zen Hei, Microsoft YaHei, SimHei, PingFang SC, Heiti SC, STHeiti, Arial Unicode MS, DejaVu Sans, Bitstream Vera Sans, Computer Modern Sans Serif, Lucida Grande, Verdana, Geneva, Lucid, Arial, Helvetica, Avant Garde, sans-serif
+
+# Use ASCII hyphen-minus for the minus sign so it renders correctly with any font.
+axes.unicode_minus: False

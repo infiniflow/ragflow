@@ -192,7 +192,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		})
 		return
 	}
-	models, err := dao.GetModelProviderManager().ListModels(providerName)
+	providerModels, err := dao.GetModelProviderManager().ListModels(providerName)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeNotFound,
@@ -203,7 +203,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
-		"data":    models,
+		"data":    providerModels,
 	})
 }
 
@@ -241,7 +241,9 @@ func (h *ProviderHandler) ShowModel(c *gin.Context) {
 
 type CreateProviderInstanceRequest struct {
 	InstanceName string `json:"instance_name" binding:"required"`
-	APIKey       string `json:"api_key" binding:"required"`
+	APIKey       string `json:"api_key"`
+	BaseURL      string `json:"base_url"`
+	Region       string `json:"region"`
 }
 
 func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
@@ -263,18 +265,9 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 		return
 	}
 
-	// Check if instance name is "default"
-	if req.InstanceName == "default" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": "Instance name cannot be 'default'",
-		})
-		return
-	}
-
 	userID := c.GetString("user_id")
 
-	_, err := h.modelProviderService.CreateProviderInstance(providerName, req.InstanceName, req.APIKey, userID)
+	_, err := h.modelProviderService.CreateProviderInstance(providerName, req.InstanceName, req.APIKey, req.BaseURL, req.Region, userID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeServerError,
@@ -352,6 +345,81 @@ func (h *ProviderHandler) ShowProviderInstance(c *gin.Context) {
 		"code":    0,
 		"message": "success",
 		"data":    instance,
+	})
+}
+
+func (h *ProviderHandler) ShowInstanceBalance(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	// Get tenant ID from user
+	balance, errorCode, err := h.modelProviderService.ShowInstanceBalance(providerName, instanceName, userID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    errorCode,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    balance,
+	})
+}
+
+func (h *ProviderHandler) CheckProviderConnection(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	// Get tenant ID from user
+	errorCode, err := h.modelProviderService.CheckProviderConnection(providerName, instanceName, userID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    errorCode,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
 	})
 }
 
@@ -458,7 +526,42 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 		})
 		return
 	}
-	models, err := h.modelProviderService.ListInstanceModels(providerName, instanceName, c.GetString("user_id"))
+
+	keywords := ""
+	if queryKeywords := c.Query("supported"); queryKeywords != "" {
+		keywords = queryKeywords
+	}
+
+	// convert keywords to small case
+	keywords = strings.ToLower(keywords)
+	if keywords == "true" {
+		// list supported models
+
+		modelList, err := h.modelProviderService.ListSupportedModels(providerName, instanceName, c.GetString("user_id"))
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeServerError,
+				"message": err.Error(),
+			})
+			return
+		}
+
+		var modelResponse []map[string]string
+		for _, modelName := range modelList {
+			modelResponse = append(modelResponse, map[string]string{
+				"model_name": modelName,
+			})
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"message": "success",
+			"data":    modelResponse,
+		})
+		return
+	}
+
+	modelInstances, err := h.modelProviderService.ListInstanceModels(providerName, instanceName, c.GetString("user_id"))
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeNotFound,
@@ -469,7 +572,7 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
-		"data":    models,
+		"data":    modelInstances,
 	})
 }
 
@@ -497,6 +600,9 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 	}
 
 	modelName := c.Param("model_name")
+	if modelName != "" {
+		modelName = strings.TrimPrefix(modelName, "/")
+	}
 	if modelName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
@@ -532,13 +638,71 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 	})
 }
 
-type ChatToModelRequest struct {
-	Message   string `json:"message" binding:"required"`
-	Stream    bool   `json:"stream"`
-	Reasoning bool   `json:"reasoning"`
+func (h *ProviderHandler) AddCustomModel(c *gin.Context) {
+	var req service.AddCustomModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		println("JSON bind error: %v (type: %T)", err, err)
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if req.ProviderName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	if req.InstanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	if req.ModelName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Model name is required",
+		})
+		return
+	}
+
+	if req.ModelTypes == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Model type is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	errorCode, err := h.modelProviderService.AddCustomModel(&req, userID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    errorCode,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
+	})
+
 }
 
-func (h *ProviderHandler) ChatToModel(c *gin.Context) {
+type DropInstanceModelRequest struct {
+	Models []string `json:"models" binding:"required"`
+}
+
+func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -547,7 +711,6 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		})
 		return
 	}
-
 	instanceName := c.Param("instance_name")
 	if instanceName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -557,15 +720,44 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		return
 	}
 
-	modelName := c.Param("model_name")
-	if modelName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Model name is required",
+	var req DropInstanceModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
 		})
 		return
 	}
 
+	userID := c.GetString("user_id")
+
+	_, err := h.modelProviderService.DropInstanceModels(providerName, instanceName, userID, req.Models)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+	})
+}
+
+type ChatToModelRequest struct {
+	ProviderName *string                  `json:"provider_name"`
+	InstanceName *string                  `json:"instance_name"`
+	ModelName    *string                  `json:"model_name"`
+	Messages     []map[string]interface{} `json:"messages"`
+	Stream       bool                     `json:"stream"`
+	Thinking     bool                     `json:"thinking"`
+	Effort       *string                  `json:"effort"`
+	Verbosity    *string                  `json:"verbosity"`
+}
+
+func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	var req ChatToModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
@@ -576,7 +768,54 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		return
 	}
 
+	if req.ProviderName == nil || *req.ProviderName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	if req.InstanceName == nil || *req.InstanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	if req.ModelName == nil || *req.ModelName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Model name is required",
+		})
+		return
+	}
+
 	userID := c.GetString("user_id")
+
+	if !req.Thinking {
+		req.Effort = nil
+		req.Verbosity = nil
+	}
+
+	apiConfig := models.APIConfig{
+		ApiKey: nil,
+		Region: nil,
+	}
+
+	chatConfig := models.ChatConfig{
+		Thinking:    &req.Thinking,
+		Stream:      &req.Stream,
+		Vision:      nil,
+		Stop:        &[]string{},
+		DoSample:    nil,
+		MaxTokens:   nil,
+		Temperature: nil,
+		TopP:        nil,
+		Effort:      req.Effort,
+		Verbosity:   req.Verbosity,
+	}
 
 	// Check if it's a stream request
 	if req.Stream {
@@ -610,27 +849,37 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 			return nil
 		}
 
-		chatConfig := models.ChatConfig{
-			Reasoning:   &req.Reasoning,
-			Stream:      &req.Stream,
-			Stop:        &[]string{},
-			DoSample:    nil,
-			MaxTokens:   nil,
-			Temperature: nil,
-			TopP:        nil,
+		// Convert []map[string]interface{} to []models.Message
+		messages := make([]models.Message, len(req.Messages))
+		for i, msg := range req.Messages {
+			role, _ := msg["role"].(string)
+			content := msg["content"]
+			messages[i] = models.Message{Role: role, Content: content}
 		}
 
 		// Stream response using sender function (best performance, no channel)
-		errorCode := h.modelProviderService.ChatToModelStreamWithSender(providerName, instanceName, modelName, userID, req.Message, &chatConfig, sender)
+		errorCode, err := h.modelProviderService.ChatToModelStreamWithSender(*req.ProviderName, *req.InstanceName, *req.ModelName, userID, messages, &apiConfig, &chatConfig, sender)
 
 		if errorCode != common.CodeSuccess {
-			c.SSEvent("error", "stream failed")
+			c.SSEvent("error", err.Error())
 		}
 		return
 	}
 
 	// Non-stream response
-	response, errorCode, err := h.modelProviderService.ChatToModel(providerName, instanceName, modelName, userID, req.Message)
+	var response *models.ChatResponse
+	var errorCode common.ErrorCode
+	var err error
+
+	// Convert []map[string]interface{} to []models.Message
+	messages := make([]models.Message, len(req.Messages))
+	for i, msg := range req.Messages {
+		role, _ := msg["role"].(string)
+		content := msg["content"]
+		messages[i] = models.Message{Role: role, Content: content}
+	}
+	response, errorCode, err = h.modelProviderService.ChatToModelWithMessages(*req.ProviderName, *req.InstanceName, *req.ModelName, userID, messages, &apiConfig, &chatConfig)
+
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    errorCode,
@@ -640,7 +889,8 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": response,
+		"code":              0,
+		"reasoning_content": response.ReasonContent,
+		"answer":            response.Answer,
 	})
 }

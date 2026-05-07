@@ -122,6 +122,16 @@ func (dao *DocumentDAO) GetAllDocIDsByKBIDs(kbIDs []string) ([]map[string]string
 	return result, nil
 }
 
+// GetByIDs retrieves documents by multiple IDs
+func (dao *DocumentDAO) GetByIDs(ids []string) ([]*entity.Document, error) {
+	var documents []*entity.Document
+	err := DB.Where("id IN ?", ids).Find(&documents).Error
+	if err != nil {
+		return nil, err
+	}
+	return documents, nil
+}
+
 // CountByTenantID counts documents by tenant ID
 func (dao *DocumentDAO) CountByTenantID(tenantID string) (int64, error) {
 	var count int64
