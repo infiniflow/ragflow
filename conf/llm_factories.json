@@ -422,13 +422,6 @@
                     "is_tools": false
                 },
                 {
-                    "llm_name": "deepseek-r1-distill-qwen-7b",
-                    "tags": "LLM,CHAT,32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
                     "llm_name": "deepseek-r1-distill-qwen-14b",
                     "tags": "LLM,CHAT,32K",
                     "max_tokens": 32768,
