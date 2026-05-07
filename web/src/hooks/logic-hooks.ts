@@ -10,7 +10,7 @@ import {
   IMessage,
   Message,
 } from '@/interfaces/database/chat';
-import { IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { IKnowledgeFile } from '@/interfaces/database/dataset';
 import { changeLanguageAsync } from '@/locales/config';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';

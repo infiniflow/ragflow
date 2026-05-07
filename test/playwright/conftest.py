@@ -1189,9 +1189,9 @@ def _ensure_dataset_ready_via_api(
     base_url: str, auth_header: str, dataset_name: str
 ) -> dict:
     headers = {"Authorization": auth_header}
-    list_url = _build_url(base_url, "/v1/kb/list?page=1&page_size=200")
+    list_url = _build_url(base_url, "/api/v1/datasets?page=1&page_size=200")
 
-    _, list_payload = _api_request_json(list_url, method="POST", payload={}, headers=headers)
+    _, list_payload = _api_request_json(list_url, method="GET", headers=headers)
     existing = _find_dataset_by_name(list_payload, dataset_name)
     if existing:
         return {
@@ -1201,7 +1201,7 @@ def _ensure_dataset_ready_via_api(
         }
 
     _, create_payload = _api_request_json(
-        _build_url(base_url, "/v1/kb/create"),
+        _build_url(base_url, "/api/v1/datasets"),
         method="POST",
         payload={"name": dataset_name},
         headers=headers,
@@ -1212,12 +1212,12 @@ def _ensure_dataset_ready_via_api(
         return {"kb_id": kb_id, "kb_name": dataset_name, "reused": False}
 
     _, list_payload_after = _api_request_json(
-        list_url, method="POST", payload={}, headers=headers
+        list_url, method="GET", headers=headers
     )
     existing_after = _find_dataset_by_name(list_payload_after, dataset_name)
     if not existing_after:
         raise RuntimeError(
-            f"Dataset {dataset_name!r} not found after kb/create response={create_payload}"
+            f"Dataset {dataset_name!r} not found after /api/v1/datasets create response={create_payload}"
         )
     return {
         "kb_id": existing_after.get("id"),

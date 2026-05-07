@@ -20,9 +20,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/logger"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
@@ -105,7 +105,7 @@ func responseWithCode(c *gin.Context, message string, httpCode int, errorCode co
 	}
 }
 
-// Health health check
+// Health check
 func (h *Handler) Health(c *gin.Context) {
 	c.JSON(200, gin.H{"status": "ok"})
 }
@@ -135,7 +135,7 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	// Use userService.LoginByEmail with adminLogin=true
-	// This allows default admin account to login admin system
+	// This allows default admin account to log in admin system
 	user, code, err := h.userService.LoginByEmail(&req)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -154,8 +154,15 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	variables := server.GetVariables()
-	secretKey := variables.SecretKey
+	secretKey, err := server.GetSecretKey(cache.Get())
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": fmt.Sprintf("Failed to get secret key: %s", err.Error()),
+		})
+		return
+	}
+
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -1220,7 +1227,7 @@ func (h *Handler) HandleNoRoute(c *gin.Context) {
 
 // GetLogLevel returns the current log level
 func (h *Handler) GetLogLevel(c *gin.Context) {
-	level := logger.GetLevel()
+	level := common.GetLevel()
 	success(c, gin.H{"level": level}, "")
 }
 
@@ -1237,7 +1244,7 @@ func (h *Handler) SetLogLevel(c *gin.Context) {
 		return
 	}
 
-	if err := logger.SetLevel(req.Level); err != nil {
+	if err := common.SetLevel(req.Level); err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
 	}
@@ -1277,5 +1284,5 @@ func (h *Handler) Reports(c *gin.Context) {
 		return
 	}
 
-	responseWithCode(c, message, int(http.StatusOK), errCode)
+	responseWithCode(c, message, http.StatusOK, errCode)
 }

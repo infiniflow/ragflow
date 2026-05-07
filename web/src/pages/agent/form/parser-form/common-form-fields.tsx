@@ -157,6 +157,28 @@ export function RmdirFormField({ prefix }: CommonProps) {
   );
 }
 
+export function RemoveHeaderFooterFormField({ prefix }: CommonProps) {
+  const { t } = useTranslation();
+  return (
+    <RAGFlowFormItem
+      name={buildFieldNameWithPrefix(`remove_header_footer`, prefix)}
+      label={t('flow.removeHeaderFooter')}
+      horizontal={true}
+      labelClassName="w-full"
+      valueClassName="w-8"
+    >
+      {(field) => (
+        <Switch
+          checked={field.value}
+          onCheckedChange={(checked) => {
+            field.onChange?.(checked);
+          }}
+        />
+      )}
+    </RAGFlowFormItem>
+  );
+}
+
 export function LanguageFormField({ prefix }: CommonProps) {
   const { t } = useTranslation();
 

@@ -158,6 +158,7 @@ def _load_file_api_module(monkeypatch):
     api_utils_mod.get_error_argument_result = lambda message: {"code": 400, "data": None, "message": message}
     api_utils_mod.get_error_data_result = lambda message: {"code": 500, "data": None, "message": message}
     api_utils_mod.get_result = lambda data=None: {"code": 0, "data": data, "message": ""}
+    api_utils_mod.get_json_result = lambda code=0, message="success", data=None: {"code": code, "data": data, "message": message}
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
     validation_mod = ModuleType("api.utils.validation_utils")
@@ -259,7 +260,7 @@ def test_list_files_validation_error(monkeypatch):
     module = _load_file_api_module(monkeypatch)
     monkeypatch.setattr(module, "validate_and_parse_request_args", lambda _request, _schema: (None, "bad args"))
 
-    res = module.list_files("tenant1")
+    res = _run(module.list_files("tenant1"))
     assert res["code"] == 400
     assert res["message"] == "bad args"
 
@@ -330,12 +331,11 @@ def test_download_falls_back_to_document_storage(monkeypatch):
 def test_parent_and_ancestors_use_new_routes(monkeypatch):
     module = _load_file_api_module(monkeypatch)
 
-    parent_res = module.parent_folder("tenant1", "file1")
-    ancestors_res = module.ancestors("tenant1", "file1")
+    parent_res = _run(module.parent_folder("tenant1", "file1"))
+    ancestors_res = _run(module.ancestors("tenant1", "file1"))
 
     assert parent_res["code"] == 0
     assert parent_res["data"]["parent_folder"]["id"] == "parent1"
     assert ancestors_res["code"] == 0
     assert ancestors_res["data"]["parent_folders"][0]["id"] == "root"
-
 

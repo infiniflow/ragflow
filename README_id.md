@@ -10,9 +10,9 @@
   <a href="./README_tzh.md"><img alt="繁體中文版自述文件" src="https://img.shields.io/badge/繁體中文-DFE0E5"></a>
   <a href="./README_ja.md"><img alt="日本語のREADME" src="https://img.shields.io/badge/日本語-DFE0E5"></a>
   <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/한국어-DFE0E5"></a>
+  <a href="./README_fr.md"><img alt="README en Français" src="https://img.shields.io/badge/Français-DFE0E5"></a>
   <a href="./README_id.md"><img alt="Bahasa Indonesia" src="https://img.shields.io/badge/Bahasa Indonesia-DBEDFA"></a>
   <a href="./README_pt_br.md"><img alt="Português(Brasil)" src="https://img.shields.io/badge/Português(Brasil)-DFE0E5"></a>
-  <a href="./README_fr.md"><img alt="README en Français" src="https://img.shields.io/badge/Français-DFE0E5"></a>
   <a href="./README_ar.md"><img alt="README in Arabic" src="https://img.shields.io/badge/Arabic-DFE0E5"></a>
   <a href="./README_tr.md"><img alt="Türkçe README" src="https://img.shields.io/badge/Türkçe-DFE0E5"></a>
 </p>
@@ -22,10 +22,10 @@
         <img src="https://img.shields.io/twitter/follow/infiniflow?logo=X&color=%20%23f5f5f5" alt="Ikuti di X (Twitter)">
     </a>
     <a href="https://cloud.ragflow.io" target="_blank">
-        <img alt="Lencana Daring" src="https://img.shields.io/badge/Online-Demo-4e6b99">
+        <img alt="Lencana Daring" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.25.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.25.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Rilis%20Terbaru" alt="Rilis Terbaru">
@@ -39,11 +39,10 @@
 </p>
 
 <h4 align="center">
+  <a href="https://cloud.ragflow.io">Cloud</a> |
   <a href="https://ragflow.io/docs/dev/">Dokumentasi</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/12241">Peta Jalan</a> |
-  <a href="https://twitter.com/infiniflowai">Twitter</a> |
-  <a href="https://discord.gg/NjYzJD3GM3">Discord</a> |
-  <a href="https://cloud.ragflow.io">Demo</a>
+  <a href="https://discord.gg/NjYzJD3GM3">Discord</a>
 </h4>
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
@@ -58,11 +57,11 @@
 <summary><b>📕 Daftar Isi </b> </summary>
 
 - 💡 [Apa Itu RAGFlow?](#-apa-itu-ragflow)
-- 🎮 [Demo](#-demo)
+- 🎮 [Mulai](#-mulai)
 - 📌 [Pembaruan Terbaru](#-pembaruan-terbaru)
 - 🌟 [Fitur Utama](#-fitur-utama)
 - 🔎 [Arsitektur Sistem](#-arsitektur-sistem)
-- 🎬 [Mulai](#-mulai)
+- 🎬 [Pengelolaan Mandiri](#-pengelolaan-mandiri)
 - 🔧 [Konfigurasi](#-konfigurasi)
 - 🔧 [Membangun Image Docker](#-membangun-docker-image)
 - 🔨 [Meluncurkan aplikasi dari Sumber untuk Pengembangan](#-meluncurkan-aplikasi-dari-sumber-untuk-pengembangan)
@@ -77,9 +76,9 @@
 
 [RAGFlow](https://ragflow.io/) adalah mesin [RAG](https://ragflow.io/basics/what-is-rag) (Retrieval-Augmented Generation) open-source terkemuka yang mengintegrasikan teknologi RAG mutakhir dengan kemampuan Agent untuk menciptakan lapisan kontekstual superior bagi LLM. Menyediakan alur kerja RAG yang efisien dan dapat diadaptasi untuk perusahaan segala skala. Didukung oleh mesin konteks terkonvergensi dan template Agent yang telah dipra-bangun, RAGFlow memungkinkan pengembang mengubah data kompleks menjadi sistem AI kesetiaan-tinggi dan siap-produksi dengan efisiensi dan presisi yang luar biasa.
 
-## 🎮 Demo
+## 🎮 Mulai
 
-Coba demo kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
+Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -88,6 +87,7 @@ Coba demo kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 2026-04-24 Mendukung DeepSeek v4.
 - 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — Menyediakan skill resmi untuk mengakses dataset RAGFlow melalui OpenClaw.
 - 2025-12-26 Mendukung 'Memori' untuk agen AI.
 - 2025-11-19 Mendukung Gemini 3 Pro.
@@ -144,7 +144,7 @@ Coba demo kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 <img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
-## 🎬 Mulai
+## 🎬 Pengelolaan Mandiri
 
 ### 📝 Prasyarat
 
@@ -192,12 +192,12 @@ Coba demo kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 > Semua gambar Docker dibangun untuk platform x86. Saat ini, kami tidak menawarkan gambar Docker untuk ARM64.
 > Jika Anda menggunakan platform ARM64, [silakan gunakan panduan ini untuk membangun gambar Docker yang kompatibel dengan sistem Anda](https://ragflow.io/docs/dev/build_docker_image).
 
-> Perintah di bawah ini mengunduh edisi v0.25.0 dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.25.0, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server.
+> Perintah di bawah ini mengunduh edisi v0.25.1 dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.25.1, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server.
 
 ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.25.0
+   # git checkout v0.25.1
    # Opsional: gunakan tag stabil (lihat releases: https://github.com/infiniflow/ragflow/releases)
    # This steps ensures the **entrypoint.sh** file in the code matches the Docker image version.
 

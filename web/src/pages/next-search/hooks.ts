@@ -12,7 +12,7 @@ import {
 } from '@/hooks/use-knowledge-request';
 import { ResponsePostType } from '@/interfaces/database/base';
 import { IAnswer } from '@/interfaces/database/chat';
-import { ITestingResult } from '@/interfaces/database/knowledge';
+import { ITestingResult } from '@/interfaces/database/dataset';
 import { IAskRequestBody } from '@/interfaces/request/chat';
 import kbService from '@/services/knowledge-service';
 import chatService from '@/services/next-chat-service';

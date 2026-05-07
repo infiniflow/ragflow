@@ -10,9 +10,9 @@
   <a href="./README_tzh.md"><img alt="繁體版中文自述文件" src="https://img.shields.io/badge/繁體中文-DFE0E5"></a>
   <a href="./README_ja.md"><img alt="日本語のREADME" src="https://img.shields.io/badge/日本語-DFE0E5"></a>
   <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/한국어-DFE0E5"></a>
+  <a href="./README_fr.md"><img alt="README en Français" src="https://img.shields.io/badge/Français-DBEDFA"></a>
   <a href="./README_id.md"><img alt="Bahasa Indonesia" src="https://img.shields.io/badge/Bahasa Indonesia-DFE0E5"></a>
   <a href="./README_pt_br.md"><img alt="Português(Brasil)" src="https://img.shields.io/badge/Português(Brasil)-DFE0E5"></a>
-  <a href="./README_fr.md"><img alt="README en Français" src="https://img.shields.io/badge/Français-DBEDFA"></a>
   <a href="./README_ar.md"><img alt="README in Arabic" src="https://img.shields.io/badge/Arabic-DFE0E5"></a>
   <a href="./README_tr.md"><img alt="Türkçe README" src="https://img.shields.io/badge/Türkçe-DFE0E5"></a>
 </p>
@@ -22,10 +22,10 @@
         <img src="https://img.shields.io/twitter/follow/infiniflow?logo=X&color=%20%23f5f5f5" alt="suivre sur X(Twitter)">
     </a>
     <a href="https://cloud.ragflow.io" target="_blank">
-        <img alt="Badge statique" src="https://img.shields.io/badge/Online-Demo-4e6b99">
+        <img alt="Badge statique" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.25.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.25.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Dernière%20version" alt="Dernière version">
@@ -39,11 +39,10 @@
 </p>
 
 <h4 align="center">
+  <a href="https://cloud.ragflow.io">Cloud</a> |
   <a href="https://ragflow.io/docs/dev/">Documentation</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/12241">Roadmap</a> |
-  <a href="https://twitter.com/infiniflowai">Twitter</a> |
-  <a href="https://discord.gg/NjYzJD3GM3">Discord</a> |
-  <a href="https://cloud.ragflow.io">Démo</a>
+  <a href="https://discord.gg/NjYzJD3GM3">Discord</a>
 </h4>
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
@@ -58,11 +57,11 @@
 <summary><b>📕 Table des matières</b></summary>
 
 - 💡 [Qu'est-ce que RAGFlow?](#-quest-ce-que-ragflow)
-- 🎮 [Démo](#-démo)
+- 🎮 [Démarrage](#-démarrage)
 - 📌 [Dernières mises à jour](#-dernières-mises-à-jour)
 - 🌟 [Fonctionnalités clés](#-fonctionnalités-clés)
 - 🔎 [Architecture du système](#-architecture-du-système)
-- 🎬 [Démarrage](#-démarrage)
+- 🎬 [Auto-hébergement](#-auto-hébergement)
 - 🔧 [Configurations](#-configurations)
 - 🔧 [Construire une image Docker](#-construire-une-image-docker)
 - 🔨 [Lancer le service depuis les sources pour le développement](#-lancer-le-service-depuis-les-sources-pour-le-développement)
@@ -77,9 +76,9 @@
 
 [RAGFlow](https://ragflow.io/) est un moteur de [RAG](https://ragflow.io/basics/what-is-rag) (Retrieval-Augmented Generation) open-source de premier plan qui fusionne les technologies RAG de pointe avec des capacités Agent pour créer une couche de contexte supérieure pour les LLM. Il offre un flux de travail RAG rationalisé, adaptable aux entreprises de toute taille. Alimenté par un [moteur de contexte](https://ragflow.io/basics/what-is-agent-context-engine) convergent et des modèles d'agents préconstruits, RAGFlow permet aux développeurs de transformer des données complexes en systèmes d'IA haute-fidélité, prêts pour la production, avec une efficacité et une précision exceptionnelles.
 
-## 🎮 Démo
+## 🎮 Démarrage
 
-Essayez notre démo sur [https://cloud.ragflow.io](https://cloud.ragflow.io).
+Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -88,6 +87,7 @@ Essayez notre démo sur [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 ## 🔥 Dernières mises à jour
 
+- 24-04-2026 Prise en charge de DeepSeek v4.
 - 24-03-2026 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — Fournit un skill officiel pour accéder aux datasets RAGFlow via OpenClaw.
 - 26-12-2025 Prise en charge de la « Mémoire » pour l'agent IA.
 - 19-11-2025 Prise en charge de Gemini 3 Pro.
@@ -142,7 +142,7 @@ Essayez notre démo sur [https://cloud.ragflow.io](https://cloud.ragflow.io).
 <img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
-## 🎬 Démarrage
+## 🎬 Auto-hébergement
 
 ### 📝 Prérequis
 
@@ -189,12 +189,12 @@ Essayez notre démo sur [https://cloud.ragflow.io](https://cloud.ragflow.io).
 > Toutes les images Docker sont construites pour les plateformes x86. Nous ne proposons pas actuellement d'images Docker pour ARM64.
 > Si vous êtes sur une plateforme ARM64, suivez [ce guide](https://ragflow.io/docs/dev/build_docker_image) pour construire une image Docker compatible avec votre système.
 
-> La commande ci-dessous télécharge l'édition `v0.25.0` de l'image Docker RAGFlow. Consultez le tableau suivant pour les descriptions des différentes éditions de RAGFlow. Pour télécharger une édition de RAGFlow différente de `v0.25.0`, mettez à jour la variable `RAGFLOW_IMAGE` dans **docker/.env** avant d'utiliser `docker compose` pour démarrer le serveur.
+> La commande ci-dessous télécharge l'édition `v0.25.1` de l'image Docker RAGFlow. Consultez le tableau suivant pour les descriptions des différentes éditions de RAGFlow. Pour télécharger une édition de RAGFlow différente de `v0.25.1`, mettez à jour la variable `RAGFLOW_IMAGE` dans **docker/.env** avant d'utiliser `docker compose` pour démarrer le serveur.
 
 ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.25.0
+   # git checkout v0.25.1
    # Optionnel : utiliser un tag stable (voir les versions : https://github.com/infiniflow/ragflow/releases)
    # Cette étape garantit que le fichier **entrypoint.sh** dans le code correspond à la version de l'image Docker.
 

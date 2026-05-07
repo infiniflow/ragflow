@@ -49,6 +49,7 @@ def _load_apps_module(monkeypatch):
 
     settings_mod = ModuleType("common.settings")
     settings_mod.SECRET_KEY = "test-secret-key"
+    settings_mod.get_secret_key = lambda: "test-secret-key"
     settings_mod.init_settings = lambda: None
     settings_mod.decrypt_database_config = lambda name=None: {}
     monkeypatch.setitem(sys.modules, "common.settings", settings_mod)
@@ -78,6 +79,10 @@ def _load_apps_module(monkeypatch):
     api_utils_mod.get_json_result = _get_json_result
     api_utils_mod.server_error_response = _server_error_response
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
+
+    backward_compat_mod = ModuleType("api.apps.backward_compat")
+    backward_compat_mod.register_backward_compat_routes = lambda _app: None
+    monkeypatch.setitem(sys.modules, "api.apps.backward_compat", backward_compat_mod)
 
     module_name = "test_apps_init_unit_module"
     module_path = repo_root / "api" / "apps" / "__init__.py"

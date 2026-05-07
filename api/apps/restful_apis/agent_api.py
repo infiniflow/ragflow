@@ -14,18 +14,25 @@
 #  limitations under the License.
 #
 
-import inspect
+import asyncio
+import base64
 import copy
+import hashlib
+import hmac
+import inspect
+import ipaddress
 import json
 import logging
-from functools import partial
+import time
+from functools import partial, wraps
 
+import jwt
 from quart import Response, jsonify, request
 
-from agent.component import LLM
 from agent.canvas import Canvas
+from agent.component import LLM
 from agent.dsl_migration import normalize_chunker_dsl
-from api.apps import login_required
+from api.apps import current_user, login_required
 from api.apps.services.canvas_replica_service import CanvasReplicaService
 from api.db import CanvasCategory
 from api.db.db_models import Task
@@ -52,13 +59,42 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
+from common import settings
 from common.constants import RetCode
 from common.misc_utils import get_uuid, thread_pool_exec
-from common import settings
 from peewee import MySQLDatabase, PostgresqlDatabase
 from rag.flow.pipeline import Pipeline
 from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
+
+
+def _require_canvas_access_sync(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not UserCanvasService.accessible(kwargs.get('agent_id'), kwargs.get('tenant_id')):
+            return get_json_result(data=False, message="Make sure you have permission to access the agent.", code=RetCode.OPERATING_ERROR)
+        return func(*args, **kwargs)
+    return wrapper
+
+
+def _require_canvas_access_async(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        agent_id = kwargs.get('agent_id')
+        tenant_id = kwargs.get('tenant_id')
+        if not await thread_pool_exec(UserCanvasService.accessible, agent_id, tenant_id):
+            return get_json_result(data=False, message="Make sure you have permission to access the agent.", code=RetCode.OPERATING_ERROR)
+        return await func(*args, **kwargs)
+    return wrapper
+
+
+def _require_canvas_owner_sync(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not UserCanvasService.query(user_id=kwargs.get('tenant_id'), id=kwargs.get('agent_id')):
+            return get_json_result(data=False, message="Only the owner of the agent is authorized for this operation.", code=RetCode.OPERATING_ERROR)
+        return func(*args, **kwargs)
+    return wrapper
 
 
 def _get_user_nickname(user_id: str) -> str:
@@ -116,14 +152,8 @@ def _agent_session_list_result(data, total):
 @manager.route("/agents/<agent_id>/sessions", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_access_sync
 def list_agent_sessions(agent_id, tenant_id):
-    if not UserCanvasService.accessible(agent_id, tenant_id):
-        return get_json_result(
-            data=False,
-            message="Only owner of canvas authorized for this operation.",
-            code=RetCode.OPERATING_ERROR,
-        )
-
     session_id = request.args.get("id")
     user_id = request.args.get("user_id")
     page_number = int(request.args.get("page", 1))
@@ -162,6 +192,7 @@ def list_agent_sessions(agent_id, tenant_id):
 @manager.route("/agents/<agent_id>/sessions", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_access_async
 async def create_agent_session(agent_id, tenant_id):
     req = await get_request_json()
     user_id = req.get("user_id") or request.args.get("user_id", tenant_id)
@@ -199,13 +230,8 @@ async def create_agent_session(agent_id, tenant_id):
 @manager.route("/agents/<agent_id>/sessions/<session_id>", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_access_sync
 def get_agent_session(agent_id, session_id, tenant_id):
-    if not UserCanvasService.accessible(agent_id, tenant_id):
-        return get_json_result(
-            data=False,
-            message="Only owner of canvas authorized for this operation.",
-            code=RetCode.OPERATING_ERROR,
-        )
     _, conv = API4ConversationService.get_by_id(session_id)
     return get_json_result(data=conv.to_dict())
 
@@ -213,13 +239,8 @@ def get_agent_session(agent_id, session_id, tenant_id):
 @manager.route("/agents/<agent_id>/sessions/<session_id>", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_access_sync
 def delete_agent_session_item(agent_id, session_id, tenant_id):
-    if not UserCanvasService.accessible(agent_id, tenant_id):
-        return get_json_result(
-            data=False,
-            message="Only owner of canvas authorized for this operation.",
-            code=RetCode.OPERATING_ERROR,
-        )
     return get_json_result(data=API4ConversationService.delete_by_id(session_id))
 
 
@@ -422,18 +443,12 @@ async def upload_agent_file(agent_id):
 @manager.route("/agents/<agent_id>/components/<component_id>/input-form", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_access_sync
 def get_agent_component_input_form(agent_id, component_id, tenant_id):
     try:
         exists, user_canvas = UserCanvasService.get_by_id(agent_id)
         if not exists:
             return get_data_error_result(message="canvas not found.")
-        if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
-            return get_json_result(
-                data=False,
-                message="Only owner of canvas authorized for this operation.",
-                code=RetCode.OPERATING_ERROR,
-            )
-
         canvas = Canvas(json.dumps(user_canvas.dsl), tenant_id, canvas_id=user_canvas.id)
         return get_json_result(data=canvas.get_component_input_form(component_id))
     except Exception as exc:
@@ -444,14 +459,9 @@ def get_agent_component_input_form(agent_id, component_id, tenant_id):
 @validate_request("params")
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_access_async
 async def debug_agent_component(agent_id, component_id, tenant_id):
     req = await get_request_json()
-    if not UserCanvasService.accessible(agent_id, tenant_id):
-        return get_json_result(
-            data=False,
-            message="Only owner of canvas authorized for this operation.",
-            code=RetCode.OPERATING_ERROR,
-        )
     try:
         _, user_canvas = UserCanvasService.get_by_id(agent_id)
         canvas = Canvas(json.dumps(user_canvas.dsl), tenant_id, canvas_id=user_canvas.id)
@@ -524,14 +534,8 @@ def get_agent(agent_id, tenant_id):
 @manager.route("/agents/<agent_id>/versions", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_access_sync
 def list_agent_versions(agent_id, tenant_id):
-    if not UserCanvasService.accessible(agent_id, tenant_id):
-        return get_json_result(
-            data=False,
-            message="Only owner of canvas authorized for this operation.",
-            code=RetCode.OPERATING_ERROR,
-        )
-
     try:
         versions = sorted(
             [item.to_dict() for item in UserCanvasVersionService.list_by_canvas_id(agent_id)],
@@ -545,14 +549,8 @@ def list_agent_versions(agent_id, tenant_id):
 @manager.route("/agents/<agent_id>/versions/<version_id>", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_access_sync
 def get_agent_version(agent_id, version_id, tenant_id):
-    if not UserCanvasService.accessible(agent_id, tenant_id):
-        return get_json_result(
-            data=False,
-            message="Only owner of canvas authorized for this operation.",
-            code=RetCode.OPERATING_ERROR,
-        )
-
     try:
         exists, version = UserCanvasVersionService.get_by_id(version_id)
         if not exists or not version or str(version.user_canvas_id) != str(agent_id):
@@ -565,14 +563,8 @@ def get_agent_version(agent_id, version_id, tenant_id):
 @manager.route("/agents/<agent_id>/logs/<message_id>", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_access_sync
 def get_agent_logs(agent_id, message_id, tenant_id):
-    if not UserCanvasService.accessible(agent_id, tenant_id):
-        return get_json_result(
-            data=False,
-            message="Only owner of canvas authorized for this operation.",
-            code=RetCode.OPERATING_ERROR,
-        )
-
     try:
         binary = REDIS_CONN.get(f"{agent_id}-{message_id}-logs")
         if not binary:
@@ -587,14 +579,8 @@ def get_agent_logs(agent_id, message_id, tenant_id):
 @manager.route("/agents/<agent_id>", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_owner_sync
 def delete_agent(agent_id, tenant_id):
-    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
-        return get_json_result(
-            data=False,
-            message="Only owner of canvas authorized for this operation.",
-            code=RetCode.OPERATING_ERROR,
-        )
-
     UserCanvasService.delete_by_id(agent_id)
     return get_json_result(data=True)
 
@@ -602,9 +588,10 @@ def delete_agent(agent_id, tenant_id):
 @manager.route("/agents/<agent_id>", methods=["PUT"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_access_async
 async def update_agent(agent_id, tenant_id):
     req = {k: v for k, v in (await get_request_json()).items() if v is not None}
-    req["user_id"] = tenant_id
+    req["release"] = bool(req.get("release", ""))
 
     if req.get("dsl") is not None:
         try:
@@ -618,13 +605,6 @@ async def update_agent(agent_id, tenant_id):
 
     if req.get("title") is not None:
         req["title"] = req["title"].strip()
-
-    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
-        return get_json_result(
-            data=False,
-            message="Only owner of canvas authorized for this operation.",
-            code=RetCode.OPERATING_ERROR,
-        )
 
     _, current_agent = UserCanvasService.get_by_id(agent_id)
     agent_title_for_version = req.get("title") or (current_agent.title if current_agent else "")
@@ -640,6 +620,7 @@ async def update_agent(agent_id, tenant_id):
             user_canvas_id=agent_id,
             title=UserCanvasVersionService.build_version_title(owner_nickname, agent_title_for_version),
             dsl=req["dsl"],
+            release=req.get("release"),
         )
         replica_ok = CanvasReplicaService.replace_for_set(
             canvas_id=agent_id,
@@ -658,14 +639,8 @@ async def update_agent(agent_id, tenant_id):
 @manager.route("/agents/<agent_id>/reset", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_access_async
 async def reset_agent(agent_id, tenant_id):
-    if not UserCanvasService.accessible(agent_id, tenant_id):
-        return get_json_result(
-            data=False,
-            message="Only owner of canvas authorized for this operation.",
-            code=RetCode.OPERATING_ERROR,
-        )
-
     try:
         exists, user_canvas = UserCanvasService.get_by_id(agent_id)
         if not exists:
@@ -838,9 +813,10 @@ async def test_db_connection():
 
 
 @manager.route("/agents/chat/completion", methods=["POST"])  # noqa: F821
+@manager.route("/agents/chat/completions", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def agent_chat_completion(tenant_id):
+async def agent_chat_completion(tenant_id, agent_id=None):
     # This endpoint serves two execution modes:
     # 1. Draft/runtime execution without session state. The request runs against the caller's
     #    runtime replica, which is populated from the editable canvas state.
@@ -857,7 +833,7 @@ async def agent_chat_completion(tenant_id):
     # - Regular mode emits internal agent events.
     # - openai-compatible mode reshapes the same execution into an OpenAI-like wire format.
     req = await get_request_json()
-    agent_id = req.get("agent_id")
+    agent_id = agent_id or req.get("agent_id")
     openai_compatible = bool(req.get("openai-compatible", False))
     if not agent_id:
         return get_json_result(
@@ -920,23 +896,41 @@ async def agent_chat_completion(tenant_id):
 
     if not session_id:
         # Without session state, run against the runtime replica that tracks draft edits.
-        query = req.get("query", "")
+        query = req.get("query", "") or req.get("question", "")
         files = req.get("files", [])
         inputs = req.get("inputs", {})
         runtime_user_id = req.get("user_id") or tenant_id
         user_id = str(runtime_user_id)
-        if not await thread_pool_exec(UserCanvasService.accessible, agent_id, tenant_id):
+        custom_header = req.get("custom_header", "")
+
+        if not UserCanvasService.accessible(agent_id, tenant_id):
             return get_json_result(
                 data=False,
-                message="Only owner of canvas authorized for this operation.",
+                message="Make sure you have permission to access the agent.",
                 code=RetCode.OPERATING_ERROR,
             )
+
+        _, cvs = await thread_pool_exec(UserCanvasService.get_by_id, agent_id)
+        if not cvs:
+            return get_data_error_result(message="canvas not found.")
 
         replica_payload = CanvasReplicaService.load_for_run(
             canvas_id=agent_id,
             tenant_id=str(tenant_id),
             runtime_user_id=user_id,
         )
+        if not replica_payload:
+            try:
+                replica_payload = CanvasReplicaService.bootstrap(
+                    canvas_id=agent_id,
+                    tenant_id=str(tenant_id),
+                    runtime_user_id=user_id,
+                    dsl=cvs.dsl,
+                    canvas_category=getattr(cvs, "canvas_category", CanvasCategory.Agent),
+                    title=getattr(cvs, "title", ""),
+                )
+            except ValueError as exc:
+                return get_data_error_result(message=str(exc))
         if not replica_payload:
             return get_data_error_result(message="canvas replica not found, please fetch the agent first.")
 
@@ -945,7 +939,6 @@ async def agent_chat_completion(tenant_id):
         canvas_category = replica_payload.get("canvas_category", CanvasCategory.Agent)
         dsl_str = json.dumps(replica_dsl, ensure_ascii=False)
 
-        _, cvs = await thread_pool_exec(UserCanvasService.get_by_id, agent_id)
         if cvs.canvas_category == CanvasCategory.DataFlow:
             task_id = get_uuid()
             Pipeline(
@@ -969,41 +962,91 @@ async def agent_chat_completion(tenant_id):
             return get_json_result(data={"message_id": task_id})
 
         try:
-            canvas = Canvas(dsl_str, str(tenant_id), canvas_id=agent_id)
+            canvas = Canvas(dsl_str, str(tenant_id), canvas_id=agent_id, custom_header=custom_header)
         except Exception as exc:
             return server_error_response(exc)
 
-        async def sse():
-            nonlocal canvas
-            try:
-                async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
-                    yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
-
-                commit_ok = CanvasReplicaService.commit_after_run(
-                    canvas_id=agent_id,
-                    tenant_id=str(tenant_id),
-                    runtime_user_id=user_id,
-                    dsl=json.loads(str(canvas)),
-                    canvas_category=canvas_category,
-                    title=canvas_title,
+        async def commit_runtime_replica():
+            commit_ok = CanvasReplicaService.commit_after_run(
+                canvas_id=agent_id,
+                tenant_id=str(tenant_id),
+                runtime_user_id=user_id,
+                dsl=json.loads(str(canvas)),
+                canvas_category=canvas_category,
+                title=canvas_title,
+            )
+            if not commit_ok:
+                logging.error(
+                    "Canvas runtime replica commit failed: canvas_id=%s tenant_id=%s runtime_user_id=%s",
+                    agent_id,
+                    tenant_id,
+                    user_id,
                 )
-                if not commit_ok:
-                    logging.error(
-                        "Canvas runtime replica commit failed: canvas_id=%s tenant_id=%s runtime_user_id=%s",
-                        agent_id,
-                        tenant_id,
-                        user_id,
+
+        if req.get("stream", True):
+            async def sse():
+                nonlocal canvas
+                try:
+                    async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+                        yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+
+                    await commit_runtime_replica()
+                except Exception as exc:
+                    logging.exception(exc)
+                    canvas.cancel_task()
+                    yield (
+                        "data:"
+                        + json.dumps({"code": 500, "message": str(exc), "data": False}, ensure_ascii=False)
+                        + "\n\n"
                     )
-            except Exception as exc:
-                logging.exception(exc)
-                canvas.cancel_task()
-                yield (
-                    "data:"
-                    + json.dumps({"code": 500, "message": str(exc), "data": False}, ensure_ascii=False)
-                    + "\n\n"
-                )
 
-        return _build_sse_response(sse())
+            return _build_sse_response(sse())
+
+        full_content = ""
+        reference = {}
+        final_ans = {}
+        trace_items = []
+        structured_output = {}
+        try:
+            async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+                if ans.get("event") == "message":
+                    full_content += ans.get("data", {}).get("content", "")
+                if ans.get("data", {}).get("reference", None):
+                    reference.update(ans["data"]["reference"])
+                if ans.get("event") == "node_finished":
+                    data = ans.get("data", {})
+                    node_out = data.get("outputs", {})
+                    component_id = data.get("component_id")
+                    if component_id is not None and "structured" in node_out:
+                        structured_output[component_id] = copy.deepcopy(node_out["structured"])
+                    if req.get("return_trace", False):
+                        trace_items.append(
+                            {
+                                "component_id": data.get("component_id"),
+                                "trace": [copy.deepcopy(data)],
+                            }
+                        )
+                final_ans = ans
+        except Exception as exc:
+            logging.exception(exc)
+            canvas.cancel_task()
+            return get_result(data=f"**ERROR**: {str(exc)}")
+
+        if not final_ans:
+            await commit_runtime_replica()
+            return get_result(data={})
+
+        if "data" not in final_ans or not isinstance(final_ans["data"], dict):
+            final_ans["data"] = {}
+        final_ans["data"]["content"] = full_content
+        final_ans["data"]["reference"] = reference
+        if structured_output:
+            final_ans["data"]["structured"] = structured_output
+        if trace_items:
+            final_ans["data"]["trace"] = trace_items
+
+        await commit_runtime_replica()
+        return get_result(data=final_ans)
 
     return_trace = bool(req.get("return_trace", False))
     if req.get("stream", True):
@@ -1017,7 +1060,7 @@ async def agent_chat_completion(tenant_id):
 
     full_content = ""
     reference = {}
-    final_ans = ""
+    final_ans = {}
     trace_items = []
     structured_output = {}
     async for ans in _iter_session_completion_events(tenant_id, agent_id, req, return_trace):
@@ -1033,11 +1076,21 @@ async def agent_chat_completion(tenant_id):
                 if component_id is not None and "structured" in node_out:
                     structured_output[component_id] = copy.deepcopy(node_out["structured"])
                 if return_trace:
-                    trace_items = ans.get("data", {}).get("trace", trace_items)
+                    trace_items.append(
+                        {
+                            "component_id": data.get("component_id"),
+                            "trace": [copy.deepcopy(data)],
+                        }
+                    )
             final_ans = ans
         except Exception as exc:
             return get_result(data=f"**ERROR**: {str(exc)}")
 
+    if not final_ans:
+        return get_result(data={})
+
+    if "data" not in final_ans or not isinstance(final_ans["data"], dict):
+        final_ans["data"] = {}
     final_ans["data"]["content"] = full_content
     final_ans["data"]["reference"] = reference
     if structured_output:
@@ -1045,3 +1098,795 @@ async def agent_chat_completion(tenant_id):
     if return_trace and final_ans:
         final_ans["data"]["trace"] = trace_items
     return get_result(data=final_ans)
+
+
+@manager.route("/agents/<agent_id>/webhook", methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"])  # noqa: F821
+@manager.route("/agents/<agent_id>/webhook/test",methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"],)  # noqa: F821
+async def webhook(agent_id: str):
+    is_test = request.path.startswith(f"/api/v1/agents/{agent_id}/webhook/test")
+    start_ts = time.time()
+
+    # 1. Fetch canvas by agent_id
+    exists, cvs = UserCanvasService.get_by_id(agent_id)
+    if not exists:
+        return get_data_error_result(code=RetCode.BAD_REQUEST,message="Canvas not found."),RetCode.BAD_REQUEST
+
+    # 2. Check canvas category
+    if cvs.canvas_category == CanvasCategory.DataFlow:
+        return get_data_error_result(code=RetCode.BAD_REQUEST,message="Dataflow can not be triggered by webhook."),RetCode.BAD_REQUEST
+
+    # 3. Load DSL from canvas
+    dsl = getattr(cvs, "dsl", None)
+    if not isinstance(dsl, dict):
+        return get_data_error_result(code=RetCode.BAD_REQUEST,message="Invalid DSL format."),RetCode.BAD_REQUEST
+
+    # 4. Check webhook configuration in DSL
+    webhook_cfg = {}
+    components = dsl.get("components", {})
+    for k, _ in components.items():
+        cpn_obj = components[k]["obj"]
+        if cpn_obj["component_name"].lower() == "begin" and cpn_obj["params"]["mode"] == "Webhook":
+            webhook_cfg = cpn_obj["params"]
+
+    if not webhook_cfg:
+        return get_data_error_result(code=RetCode.BAD_REQUEST,message="Webhook not configured for this agent."),RetCode.BAD_REQUEST
+
+    # 5. Validate request method against webhook_cfg.methods
+    allowed_methods = webhook_cfg.get("methods", [])
+    request_method = request.method.upper()
+    if allowed_methods and request_method not in allowed_methods:
+        return get_data_error_result(
+            code=RetCode.BAD_REQUEST,message=f"HTTP method '{request_method}' not allowed for this webhook."
+        ),RetCode.BAD_REQUEST
+
+    # 6. Validate webhook security
+    async def validate_webhook_security(security_cfg: dict):
+        """Validate webhook security rules based on security configuration."""
+
+        if not security_cfg:
+            return  # No security config → allowed by default
+
+        # 1. Validate max body size
+        await _validate_max_body_size(security_cfg)
+
+        # 2. Validate IP whitelist
+        _validate_ip_whitelist(security_cfg)
+
+        # # 3. Validate rate limiting
+        _validate_rate_limit(security_cfg)
+
+        # 4. Validate authentication
+        auth_type = security_cfg.get("auth_type", "none")
+
+        if auth_type == "none":
+            return
+
+        if auth_type == "token":
+            _validate_token_auth(security_cfg)
+
+        elif auth_type == "basic":
+            _validate_basic_auth(security_cfg)
+
+        elif auth_type == "jwt":
+            _validate_jwt_auth(security_cfg)
+
+        else:
+            raise Exception(f"Unsupported auth_type: {auth_type}")
+
+    async def _validate_max_body_size(security_cfg):
+        """Check request size does not exceed max_body_size."""
+        max_size = security_cfg.get("max_body_size")
+        if not max_size:
+            return
+
+        # Convert "10MB" → bytes
+        units = {"kb": 1024, "mb": 1024**2}
+        size_str = max_size.lower()
+
+        for suffix, factor in units.items():
+            if size_str.endswith(suffix):
+                limit = int(size_str.replace(suffix, "")) * factor
+                break
+        else:
+            raise Exception("Invalid max_body_size format")
+        MAX_LIMIT = 10 * 1024 * 1024  # 10MB
+        if limit > MAX_LIMIT:
+            raise Exception("max_body_size exceeds maximum allowed size (10MB)")
+
+        content_length = request.content_length or 0
+        if content_length > limit:
+            raise Exception(f"Request body too large: {content_length} > {limit}")
+
+    def _validate_ip_whitelist(security_cfg):
+        """Allow only IPs listed in ip_whitelist."""
+        whitelist = security_cfg.get("ip_whitelist", [])
+        if not whitelist:
+            return
+
+        client_ip = request.remote_addr
+
+
+        for rule in whitelist:
+            if "/" in rule:
+                # CIDR notation
+                if ipaddress.ip_address(client_ip) in ipaddress.ip_network(rule, strict=False):
+                    return
+            else:
+                # Single IP
+                if client_ip == rule:
+                    return
+
+        raise Exception(f"IP {client_ip} is not allowed by whitelist")
+
+    def _validate_rate_limit(security_cfg):
+        """Simple in-memory rate limiting."""
+        rl = security_cfg.get("rate_limit")
+        if not rl:
+            return
+
+        limit = int(rl.get("limit", 60))
+        if limit <= 0:
+            raise Exception("rate_limit.limit must be > 0")
+        per = rl.get("per", "minute")
+
+        window = {
+            "second": 1,
+            "minute": 60,
+            "hour": 3600,
+            "day": 86400,
+        }.get(per)
+
+        if not window:
+            raise Exception(f"Invalid rate_limit.per: {per}")
+
+        capacity = limit
+        rate = limit / window
+        cost = 1
+
+        key = f"rl:tb:{agent_id}"
+        now = time.time()
+
+        try:
+            res = REDIS_CONN.lua_token_bucket(
+                keys=[key],
+                args=[capacity, rate, now, cost],
+                client=REDIS_CONN.REDIS,
+            )
+
+            allowed = int(res[0])
+            if allowed != 1:
+                raise Exception("Too many requests (rate limit exceeded)")
+
+        except Exception as e:
+            raise Exception(f"Rate limit error: {e}")
+
+    def _validate_token_auth(security_cfg):
+        """Validate header-based token authentication."""
+        token_cfg = security_cfg.get("token",{})
+        header = token_cfg.get("token_header")
+        token_value = token_cfg.get("token_value")
+
+        provided = request.headers.get(header)
+        if provided != token_value:
+            raise Exception("Invalid token authentication")
+
+    def _validate_basic_auth(security_cfg):
+        """Validate HTTP Basic Auth credentials."""
+        auth_cfg = security_cfg.get("basic_auth", {})
+        username = auth_cfg.get("username")
+        password = auth_cfg.get("password")
+
+        auth = request.authorization
+        if not auth or auth.username != username or auth.password != password:
+            raise Exception("Invalid Basic Auth credentials")
+
+    def _validate_jwt_auth(security_cfg):
+        """Validate JWT token in Authorization header."""
+        jwt_cfg = security_cfg.get("jwt", {})
+        secret = jwt_cfg.get("secret")
+        if not secret:
+            raise Exception("JWT secret not configured")
+
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            raise Exception("Missing Bearer token")
+
+        token = auth_header[len("Bearer "):].strip()
+        if not token:
+            raise Exception("Empty Bearer token")
+
+        alg = (jwt_cfg.get("algorithm") or "HS256").upper()
+
+        decode_kwargs = {
+            "key": secret,
+            "algorithms": [alg],
+        }
+        options = {}
+        if jwt_cfg.get("audience"):
+            decode_kwargs["audience"] = jwt_cfg["audience"]
+            options["verify_aud"] = True
+        else:
+            options["verify_aud"] = False
+
+        if jwt_cfg.get("issuer"):
+            decode_kwargs["issuer"] = jwt_cfg["issuer"]
+            options["verify_iss"] = True
+        else:
+            options["verify_iss"] = False
+        try:
+            decoded = jwt.decode(
+                token,
+                options=options,
+                **decode_kwargs,
+            )
+        except Exception as e:
+            raise Exception(f"Invalid JWT: {str(e)}")
+
+        raw_required_claims = jwt_cfg.get("required_claims", [])
+        if isinstance(raw_required_claims, str):
+            required_claims = [raw_required_claims]
+        elif isinstance(raw_required_claims, (list, tuple, set)):
+            required_claims = list(raw_required_claims)
+        else:
+            required_claims = []
+
+        required_claims = [
+            c for c in required_claims
+            if isinstance(c, str) and c.strip()
+        ]
+
+        RESERVED_CLAIMS = {"exp", "sub", "aud", "iss", "nbf", "iat"}
+        for claim in required_claims:
+            if claim in RESERVED_CLAIMS:
+                raise Exception(f"Reserved JWT claim cannot be required: {claim}")
+
+        for claim in required_claims:
+            if claim not in decoded:
+                raise Exception(f"Missing JWT claim: {claim}")
+
+        return decoded
+
+    try:
+        security_config=webhook_cfg.get("security", {})
+        await validate_webhook_security(security_config)
+    except Exception as e:
+        return get_data_error_result(code=RetCode.BAD_REQUEST,message=str(e)),RetCode.BAD_REQUEST
+    if not isinstance(cvs.dsl, str):
+        dsl = json.dumps(cvs.dsl, ensure_ascii=False)
+    try:
+        canvas = Canvas(dsl, cvs.user_id, agent_id, canvas_id=agent_id)
+    except Exception as e:
+        resp=get_data_error_result(code=RetCode.BAD_REQUEST,message=str(e))
+        resp.status_code = RetCode.BAD_REQUEST
+        return resp
+
+    # 7. Parse request body
+    async def parse_webhook_request(content_type):
+        """Parse request based on content-type and return structured data."""
+
+        # 1. Query
+        query_data = {k: v for k, v in request.args.items()}
+
+        # 2. Headers
+        header_data = {k: v for k, v in request.headers.items()}
+
+        # 3. Body
+        ctype = request.headers.get("Content-Type", "").split(";")[0].strip()
+        if ctype and ctype != content_type:
+            raise ValueError(
+                f"Invalid Content-Type: expect '{content_type}', got '{ctype}'"
+            )
+
+        body_data: dict = {}
+
+        try:
+            if ctype == "application/json":
+                body_data = await request.get_json() or {}
+
+            elif ctype == "multipart/form-data":
+                nonlocal canvas
+                form = await request.form
+                files = await request.files
+
+                body_data = {}
+
+                for key, value in form.items():
+                    body_data[key] = value
+
+                if len(files) > 10:
+                    raise Exception("Too many uploaded files")
+                for key, file in files.items():
+                    desc = FileService.upload_info(
+                        cvs.user_id,           # user
+                        file,              # FileStorage
+                        None                   # url (None for webhook)
+                    )
+                    file_parsed= await canvas.get_files_async([desc])
+                    body_data[key] = file_parsed
+
+            elif ctype == "application/x-www-form-urlencoded":
+                form = await request.form
+                body_data = dict(form)
+
+            else:
+                # text/plain / octet-stream / empty / unknown
+                raw = await request.get_data()
+                if raw:
+                    try:
+                        body_data = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        body_data = {}
+                else:
+                    body_data = {}
+
+        except Exception:
+            body_data = {}
+
+        return {
+            "query": query_data,
+            "headers": header_data,
+            "body": body_data,
+            "content_type": ctype,
+        }
+
+    def extract_by_schema(data, schema, name="section"):
+        """
+        Extract only fields defined in schema.
+        Required fields must exist.
+        Optional fields default to type-based default values.
+        Type validation included.
+        """
+        props = schema.get("properties", {})
+        required = schema.get("required", [])
+
+        extracted = {}
+
+        for field, field_schema in props.items():
+            field_type = field_schema.get("type")
+
+            # 1. Required field missing
+            if field in required and field not in data:
+                raise Exception(f"{name} missing required field: {field}")
+
+            # 2. Optional → default value
+            if field not in data:
+                extracted[field] = default_for_type(field_type)
+                continue
+
+            raw_value = data[field]
+
+            # 3. Auto convert value
+            try:
+                value = auto_cast_value(raw_value, field_type)
+            except Exception as e:
+                raise Exception(f"{name}.{field} auto-cast failed: {str(e)}")
+
+            # 4. Type validation
+            if not validate_type(value, field_type):
+                raise Exception(
+                    f"{name}.{field} type mismatch: expected {field_type}, got {type(value).__name__}"
+                )
+
+            extracted[field] = value
+
+        return extracted
+
+
+    def default_for_type(t):
+        """Return default value for the given schema type."""
+        if t == "file":
+            return []
+        if t == "object":
+            return {}
+        if t == "boolean":
+            return False
+        if t == "number":
+            return 0
+        if t == "string":
+            return ""
+        if t and t.startswith("array"):
+            return []
+        if t == "null":
+            return None
+        return None
+
+    def auto_cast_value(value, expected_type):
+        """Convert string values into schema type when possible."""
+
+        # Non-string values already good
+        if not isinstance(value, str):
+            return value
+
+        v = value.strip()
+
+        # Boolean
+        if expected_type == "boolean":
+            if v.lower() in ["true", "1"]:
+                return True
+            if v.lower() in ["false", "0"]:
+                return False
+            raise Exception(f"Cannot convert '{value}' to boolean")
+
+        # Number
+        if expected_type == "number":
+            # integer
+            if v.isdigit() or (v.startswith("-") and v[1:].isdigit()):
+                return int(v)
+
+            # float
+            try:
+                return float(v)
+            except Exception:
+                raise Exception(f"Cannot convert '{value}' to number")
+
+        # Object
+        if expected_type == "object":
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, dict):
+                    return parsed
+                else:
+                    raise Exception("JSON is not an object")
+            except Exception:
+                raise Exception(f"Cannot convert '{value}' to object")
+
+        # Array <T>
+        if expected_type.startswith("array"):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+                else:
+                    raise Exception("JSON is not an array")
+            except Exception:
+                raise Exception(f"Cannot convert '{value}' to array")
+
+        # String (accept original)
+        if expected_type == "string":
+            return value
+
+        # File
+        if expected_type == "file":
+            return value
+        # Default: do nothing
+        return value
+
+
+    def validate_type(value, t):
+        """Validate value type against schema type t."""
+        if t == "file":
+            return isinstance(value, list)
+
+        if t == "string":
+            return isinstance(value, str)
+
+        if t == "number":
+            return isinstance(value, (int, float))
+
+        if t == "boolean":
+            return isinstance(value, bool)
+
+        if t == "object":
+            return isinstance(value, dict)
+
+        # array<string> / array<number> / array<object>
+        if t.startswith("array"):
+            if not isinstance(value, list):
+                return False
+
+            if "<" in t and ">" in t:
+                inner = t[t.find("<") + 1 : t.find(">")]
+
+                # Check each element type
+                for item in value:
+                    if not validate_type(item, inner):
+                        return False
+
+            return True
+
+        return True
+    parsed = await parse_webhook_request(webhook_cfg.get("content_types"))
+    SCHEMA = webhook_cfg.get("schema", {"query": {}, "headers": {}, "body": {}})
+
+    # Extract strictly by schema
+    try:
+        query_clean  = extract_by_schema(parsed["query"],   SCHEMA.get("query", {}),  name="query")
+        header_clean = extract_by_schema(parsed["headers"], SCHEMA.get("headers", {}), name="headers")
+        body_clean   = extract_by_schema(parsed["body"],    SCHEMA.get("body", {}),    name="body")
+    except Exception as e:
+        return get_data_error_result(code=RetCode.BAD_REQUEST,message=str(e)),RetCode.BAD_REQUEST
+
+    clean_request = {
+        "query": query_clean,
+        "headers": header_clean,
+        "body": body_clean,
+        "input": parsed
+    }
+
+    execution_mode = webhook_cfg.get("execution_mode", "Immediately")
+    response_cfg = webhook_cfg.get("response", {})
+
+    def append_webhook_trace(agent_id: str, start_ts: float,event: dict, ttl=600):
+        key = f"webhook-trace-{agent_id}-logs"
+
+        raw = REDIS_CONN.get(key)
+        obj = json.loads(raw) if raw else {"webhooks": {}}
+
+        ws = obj["webhooks"].setdefault(
+            str(start_ts),
+            {"start_ts": start_ts, "events": []}
+        )
+
+        ws["events"].append({
+            "ts": time.time(),
+            **event
+        })
+
+        REDIS_CONN.set_obj(key, obj, ttl)
+
+    if execution_mode == "Immediately":
+        status = response_cfg.get("status", 200)
+        try:
+            status = int(status)
+        except (TypeError, ValueError):
+            return get_data_error_result(code=RetCode.BAD_REQUEST,message=str(f"Invalid response status code: {status}")),RetCode.BAD_REQUEST
+
+        if not (200 <= status <= 399):
+            return get_data_error_result(code=RetCode.BAD_REQUEST,message=str(f"Invalid response status code: {status}, must be between 200 and 399")),RetCode.BAD_REQUEST
+
+        body_tpl = response_cfg.get("body_template", "")
+
+        def parse_body(body: str):
+            if not body:
+                return None, "application/json"
+
+            try:
+                parsed = json.loads(body)
+                return parsed, "application/json"
+            except (json.JSONDecodeError, TypeError):
+                return body, "text/plain"
+
+
+        body, content_type = parse_body(body_tpl)
+        resp = Response(
+            json.dumps(body, ensure_ascii=False) if content_type == "application/json" else body,
+            status=status,
+            content_type=content_type,
+        )
+
+        async def background_run():
+            try:
+                async for ans in canvas.run(
+                    query="",
+                    user_id=cvs.user_id,
+                    webhook_payload=clean_request
+                ):
+                    if is_test:
+                        append_webhook_trace(agent_id, start_ts, ans)
+
+                if is_test:
+                    append_webhook_trace(
+                        agent_id,
+                        start_ts,
+                        {
+                            "event": "finished",
+                            "elapsed_time": time.time() - start_ts,
+                            "success": True,
+                        }
+                    )
+
+                cvs.dsl = json.loads(str(canvas))
+                UserCanvasService.update_by_id(cvs.user_id, cvs.to_dict())
+
+            except Exception as e:
+                logging.exception("Webhook background run failed")
+                if is_test:
+                    try:
+                        append_webhook_trace(
+                            agent_id,
+                            start_ts,
+                            {
+                                "event": "error",
+                                "message": str(e),
+                                "error_type": type(e).__name__,
+                            }
+                        )
+                        append_webhook_trace(
+                            agent_id,
+                            start_ts,
+                            {
+                                "event": "finished",
+                                "elapsed_time": time.time() - start_ts,
+                                "success": False,
+                            }
+                        )
+                    except Exception:
+                        logging.exception("Failed to append webhook trace")
+
+        asyncio.create_task(background_run())
+        return resp
+    else:
+        async def sse():
+            nonlocal canvas
+            contents: list[str] = []
+            status = 200
+            try:
+                async for ans in canvas.run(
+                    query="",
+                    user_id=cvs.user_id,
+                    webhook_payload=clean_request,
+                ):
+                    if ans["event"] == "message":
+                        content = ans["data"]["content"]
+                        if ans["data"].get("start_to_think", False):
+                            content = "<think>"
+                        elif ans["data"].get("end_to_think", False):
+                            content = "</think>"
+                        if content:
+                            contents.append(content)
+                    if ans["event"] == "message_end":
+                        status = int(ans["data"].get("status", status))
+                    if is_test:
+                        append_webhook_trace(
+                            agent_id,
+                            start_ts,
+                            ans
+                        )
+                if is_test:
+                    append_webhook_trace(
+                        agent_id,
+                        start_ts,
+                        {
+                            "event": "finished",
+                            "elapsed_time": time.time() - start_ts,
+                            "success": True,
+                        }
+                    )
+                final_content = "".join(contents)
+                return {
+                    "message": final_content,
+                    "success": True,
+                    "code":  status,
+                }
+
+            except Exception as e:
+                if is_test:
+                    append_webhook_trace(
+                        agent_id,
+                        start_ts,
+                        {
+                            "event": "error",
+                            "message": str(e),
+                            "error_type": type(e).__name__,
+                        }
+                    )
+                    append_webhook_trace(
+                        agent_id,
+                        start_ts,
+                        {
+                            "event": "finished",
+                            "elapsed_time": time.time() - start_ts,
+                            "success": False,
+                        }
+                    )
+                return {"code": 400, "message": str(e),"success":False}
+
+        result = await sse()
+        return Response(
+            json.dumps(result),
+            status=result["code"],
+            mimetype="application/json",
+        )
+
+
+@manager.route("/agents/<agent_id>/webhook/logs", methods=["GET"])  # noqa: F821
+@login_required
+async def webhook_trace(agent_id: str):
+    exists, cvs = UserCanvasService.get_by_id(agent_id)
+    if not exists or str(cvs.user_id) != str(current_user.id):
+        return get_data_error_result(
+            message="Canvas not found.",
+        )
+
+    def encode_webhook_id(start_ts: str) -> str:
+        WEBHOOK_ID_SECRET = "webhook_id_secret"
+        sig = hmac.new(
+            WEBHOOK_ID_SECRET.encode("utf-8"),
+            start_ts.encode("utf-8"),
+            hashlib.sha256,
+        ).digest()
+        return base64.urlsafe_b64encode(sig).decode("utf-8").rstrip("=")
+
+    def decode_webhook_id(enc_id: str, webhooks: dict) -> str | None:
+        for ts in webhooks.keys():
+            if encode_webhook_id(ts) == enc_id:
+                return ts
+        return None
+    since_ts = request.args.get("since_ts", type=float)
+    webhook_id = request.args.get("webhook_id")
+
+    key = f"webhook-trace-{agent_id}-logs"
+    raw = REDIS_CONN.get(key)
+
+    if since_ts is None:
+        now = time.time()
+        return get_json_result(
+            data={
+                "webhook_id": None,
+                "events": [],
+                "next_since_ts": now,
+                "finished": False,
+            }
+        )
+
+    if not raw:
+        return get_json_result(
+            data={
+                "webhook_id": None,
+                "events": [],
+                "next_since_ts": since_ts,
+                "finished": False,
+            }
+        )
+
+    obj = json.loads(raw)
+    webhooks = obj.get("webhooks", {})
+
+    if webhook_id is None:
+        candidates = [
+            float(k) for k in webhooks.keys() if float(k) > since_ts
+        ]
+
+        if not candidates:
+            return get_json_result(
+                data={
+                    "webhook_id": None,
+                    "events": [],
+                    "next_since_ts": since_ts,
+                    "finished": False,
+                }
+            )
+
+        start_ts = min(candidates)
+        real_id = str(start_ts)
+        webhook_id = encode_webhook_id(real_id)
+
+        return get_json_result(
+            data={
+                "webhook_id": webhook_id,
+                "events": [],
+                "next_since_ts": start_ts,
+                "finished": False,
+            }
+        )
+
+    real_id = decode_webhook_id(webhook_id, webhooks)
+
+    if not real_id:
+        return get_json_result(
+            data={
+                "webhook_id": webhook_id,
+                "events": [],
+                "next_since_ts": since_ts,
+                "finished": True,
+            }
+        )
+
+    ws = webhooks.get(str(real_id))
+    events = ws.get("events", [])
+    new_events = [e for e in events if e.get("ts", 0) > since_ts]
+
+    next_ts = since_ts
+    for e in new_events:
+        next_ts = max(next_ts, e["ts"])
+
+    finished = any(e.get("event") == "finished" for e in new_events)
+
+    return get_json_result(
+        data={
+            "webhook_id": webhook_id,
+            "events": new_events,
+            "next_since_ts": next_ts,
+            "finished": finished,
+        }
+    )

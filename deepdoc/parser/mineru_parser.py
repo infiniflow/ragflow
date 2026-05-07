@@ -37,6 +37,8 @@ from strenum import StrEnum
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from deepdoc.parser.utils import extract_pdf_outlines
 
+from common.constants import MAXIMUM_PAGE_NUMBER
+
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
@@ -320,7 +322,7 @@ class MinerUParser(RAGFlowPdfParser):
         except requests.RequestException as e:
             raise RuntimeError(f"[MinerU] api failed with exception {e}")
 
-    def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=600, callback=None):
+    def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         self.page_from = page_from
         self.page_to = page_to
         try:
@@ -512,7 +514,7 @@ class MinerUParser(RAGFlowPdfParser):
             return sanitized or "unnamed"
 
         safe_stem = _sanitize_filename(file_stem)
-        content_names = (f"{file_stem}_content_list.json", f"{safe_stem}_content_list.json")
+        content_names = tuple(dict.fromkeys((f"{file_stem}_content_list.json", f"{safe_stem}_content_list.json")))
         allowed_names = set(content_names)
         self.logger.info(f"[MinerU] Expected output files: {', '.join(sorted(allowed_names))}")
         self.logger.info(f"[MinerU] Searching output in: {output_dir}")
@@ -552,12 +554,54 @@ class MinerUParser(RAGFlowPdfParser):
                     for candidate in output_dir.glob(f"**/{parse_subdir}/{content_name}"):
                         self.logger.info(f"[MinerU] Trying parse-method path: {candidate}")
                         attempted.append(candidate)
-                        if candidate.exists():
-                            subdir = candidate.parent
-                            json_file = candidate
-                            break
+                        subdir = candidate.parent
+                        json_file = candidate
+                        break
                     if json_file:
                         break
+
+        if not json_file:
+            stem_dirs = tuple(dict.fromkeys((file_stem, safe_stem)))
+            patterns = []
+            if parse_subdir:
+                for stem_dir in stem_dirs:
+                    patterns.extend(
+                        [
+                            f"**/{stem_dir}/{parse_subdir}/content_list.json",
+                            f"**/{stem_dir}/{parse_subdir}/*_content_list.json",
+                        ]
+                    )
+                patterns.extend(
+                    [
+                        f"**/{parse_subdir}/content_list.json",
+                        f"**/{parse_subdir}/*_content_list.json",
+                    ]
+                )
+            for stem_dir in stem_dirs:
+                patterns.extend(
+                    [
+                        f"**/{stem_dir}/content_list.json",
+                        f"**/{stem_dir}/*_content_list.json",
+                    ]
+                )
+            patterns.extend(["**/content_list.json", "**/*_content_list.json"])
+
+            for pattern in patterns:
+                for candidate in sorted(output_dir.glob(pattern)):
+                    self.logger.info(f"[MinerU] Trying fallback path: {candidate}")
+                    if candidate.name.endswith("_content_list.json"):
+                        rel_parts = candidate.relative_to(output_dir).parts
+                        in_stem_dir = any(stem_dir in rel_parts for stem_dir in stem_dirs)
+                        stem_match = candidate.stem.startswith(file_stem) or candidate.stem.startswith(safe_stem)
+                        if not (stem_match or in_stem_dir):
+                            self.logger.info(f"[MinerU] Skip unrelated fallback candidate: {candidate}")
+                            continue
+                    attempted.append(candidate)
+                    subdir = candidate.parent
+                    json_file = candidate
+                    break
+                if json_file:
+                    break
 
         if not json_file:
             raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(p) for p in attempted)}")
