@@ -80,7 +80,9 @@ def _require_canvas_access_sync(func):
 def _require_canvas_access_async(func):
     @wraps(func)
     async def wrapper(*args, **kwargs):
-        if not UserCanvasService.accessible(kwargs.get('agent_id'), kwargs.get('tenant_id')):
+        agent_id = kwargs.get('agent_id')
+        tenant_id = kwargs.get('tenant_id')
+        if not await thread_pool_exec(UserCanvasService.accessible, agent_id, tenant_id):
             return get_json_result(data=False, message="Make sure you have permission to access the agent.", code=RetCode.OPERATING_ERROR)
         return await func(*args, **kwargs)
     return wrapper
