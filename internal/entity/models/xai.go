@@ -234,7 +234,7 @@ func (z *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -410,7 +410,7 @@ func (z *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
