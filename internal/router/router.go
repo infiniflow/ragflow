@@ -136,6 +136,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				users.GET("/me", r.userHandler.Info)
 			}
 
+			tenants := v1.Group("/tenants")
+			{
+				tenants.GET("", r.tenantHandler.TenantList)
+			}
+
 			// Document routes
 			documents := v1.Group("/documents")
 			{

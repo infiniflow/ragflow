@@ -97,7 +97,7 @@ export default defineConfig(({ mode }) => {
         changeOrigin: true,
         ws: true,
       },
-      '^(/api/v1/auth/login)|^(/api/v1/users/me)|^(/api/v1/system/config)|^(/api/v1/system/version)':
+      '^(/api/v1/auth/login)|^(/api/v1/users/me)|^(/api/v1/system/config)|^(/api/v1/system/version)|^(/api/v1/tenants)':
         {
           target: 'http://127.0.0.1:9384/',
           changeOrigin: true,
