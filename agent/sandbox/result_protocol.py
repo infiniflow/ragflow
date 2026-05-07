@@ -68,8 +68,14 @@ def extract_structured_result(stdout: str) -> tuple[str, dict[str, Any]]:
     for line in str(stdout).splitlines():
         if line.startswith(RESULT_MARKER_PREFIX):
             payload_b64 = line[len(RESULT_MARKER_PREFIX) :].strip()
-            payload = base64.b64decode(payload_b64, validate=True).decode("utf-8")
-            structured_result = json.loads(payload)
+            if not payload_b64:
+                cleaned_lines.append(line)
+                continue
+            try:
+                payload = base64.b64decode(payload_b64, validate=True).decode("utf-8")
+                structured_result = json.loads(payload)
+            except Exception:
+                cleaned_lines.append(line)
             continue
         cleaned_lines.append(line)
 

@@ -70,14 +70,14 @@ class LocalProvider(SandboxProvider):
         if not _env_enabled("SANDBOX_LOCAL_ENABLED"):
             raise SandboxProviderConfigError("Local code execution is disabled. Set SANDBOX_LOCAL_ENABLED=true to enable it.")
 
-        self.python_bin = str(config.get("python_bin") or os.environ.get("SANDBOX_LOCAL_PYTHON_BIN", "python3"))
-        self.node_bin = str(config.get("node_bin") or os.environ.get("SANDBOX_LOCAL_NODE_BIN", "node"))
-        self.work_dir = Path(config.get("work_dir") or os.environ.get("SANDBOX_LOCAL_WORK_DIR", "/tmp/ragflow-codeexec")).resolve()
-        self.timeout = int(config.get("timeout") or os.environ.get("SANDBOX_LOCAL_TIMEOUT", 30))
-        self.max_memory_mb = int(config.get("max_memory_mb") or os.environ.get("SANDBOX_LOCAL_MAX_MEMORY_MB", 512))
-        self.max_output_bytes = int(config.get("max_output_bytes") or os.environ.get("SANDBOX_LOCAL_MAX_OUTPUT_BYTES", 1024 * 1024))
-        self.max_artifacts = int(config.get("max_artifacts") or os.environ.get("SANDBOX_LOCAL_MAX_ARTIFACTS", 20))
-        self.max_artifact_bytes = int(config.get("max_artifact_bytes") or os.environ.get("SANDBOX_LOCAL_MAX_ARTIFACT_BYTES", 10 * 1024 * 1024))
+        self.python_bin = str(self._resolve_config_value(config, "python_bin", "SANDBOX_LOCAL_PYTHON_BIN", "python3"))
+        self.node_bin = str(self._resolve_config_value(config, "node_bin", "SANDBOX_LOCAL_NODE_BIN", "node"))
+        self.work_dir = Path(self._resolve_config_value(config, "work_dir", "SANDBOX_LOCAL_WORK_DIR", "/tmp/ragflow-codeexec")).resolve()
+        self.timeout = int(self._resolve_config_value(config, "timeout", "SANDBOX_LOCAL_TIMEOUT", 30))
+        self.max_memory_mb = int(self._resolve_config_value(config, "max_memory_mb", "SANDBOX_LOCAL_MAX_MEMORY_MB", 512))
+        self.max_output_bytes = int(self._resolve_config_value(config, "max_output_bytes", "SANDBOX_LOCAL_MAX_OUTPUT_BYTES", 1024 * 1024))
+        self.max_artifacts = int(self._resolve_config_value(config, "max_artifacts", "SANDBOX_LOCAL_MAX_ARTIFACTS", 20))
+        self.max_artifact_bytes = int(self._resolve_config_value(config, "max_artifact_bytes", "SANDBOX_LOCAL_MAX_ARTIFACT_BYTES", 10 * 1024 * 1024))
 
         self._validate_limits()
         self.work_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -117,7 +117,10 @@ class LocalProvider(SandboxProvider):
         instance_dir = self._instances[instance_id]
         args_json = json.dumps(arguments or {}, ensure_ascii=False)
         command, script_path = self._prepare_script(instance_dir, normalized_lang, code, args_json)
-        exec_timeout = min(int(timeout or self.timeout), self.timeout)
+        requested_timeout = self.timeout if timeout is None else int(timeout)
+        if requested_timeout <= 0:
+            raise RuntimeError(f"Execution timeout must be greater than 0 seconds, got {requested_timeout}.")
+        exec_timeout = min(requested_timeout, self.timeout)
 
         start_time = time.time()
         process = subprocess.Popen(
@@ -214,6 +217,13 @@ class LocalProvider(SandboxProvider):
             script_path.write_text(build_javascript_wrapper(code, args_json), encoding="utf-8")
             return [self.node_bin, str(script_path)], script_path
         raise RuntimeError(f"Unsupported language for local provider: {language}")
+
+    @staticmethod
+    def _resolve_config_value(config: Dict[str, Any], key: str, env_name: str, default: Any) -> Any:
+        value = config.get(key)
+        if value is not None:
+            return value
+        return os.environ.get(env_name, default)
 
     def _build_child_env(self, instance_dir: Path) -> dict[str, str]:
         return {
