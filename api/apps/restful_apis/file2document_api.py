@@ -18,6 +18,7 @@ import asyncio
 import logging
 from pathlib import Path
 
+from api.common.check_team_permission import check_file_team_permission, check_kb_team_permission
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 
@@ -91,10 +92,12 @@ async def convert():
                 return get_data_error_result(message="File not found!")
 
         # Validate all kb_ids exist before scheduling background work
+        kb_map = {}
         for kb_id in kb_ids:
-            e, _ = KnowledgebaseService.get_by_id(kb_id)
+            e, kb = KnowledgebaseService.get_by_id(kb_id)
             if not e:
                 return get_data_error_result(message="Can't find this dataset!")
+            kb_map[kb_id] = kb
 
         # Expand folders to their innermost file IDs
         all_file_ids = []
@@ -106,6 +109,17 @@ async def convert():
                 all_file_ids.append(file_id)
 
         user_id = current_user.id
+        for file_id in all_file_ids:
+            e, file = FileService.get_by_id(file_id)
+            if not e or not file:
+                return get_data_error_result(message="File not found!")
+            if not check_file_team_permission(file, user_id):
+                return get_data_error_result(message="No authorization.")
+
+        for kb in kb_map.values():
+            if not check_kb_team_permission(kb, user_id):
+                return get_data_error_result(message="No authorization.")
+
         # Run the blocking DB work in a thread so the event loop is not blocked.
         # For large folders this prevents 504 Gateway Timeout by returning as
         # soon as the background task is scheduled.
