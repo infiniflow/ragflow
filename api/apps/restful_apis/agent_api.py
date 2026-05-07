@@ -846,9 +846,10 @@ async def test_db_connection():
 
 
 @manager.route("/agents/chat/completion", methods=["POST"])  # noqa: F821
+@manager.route("/agents/chat/completions", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def agent_chat_completion(tenant_id):
+async def agent_chat_completion(tenant_id, agent_id=None):
     # This endpoint serves two execution modes:
     # 1. Draft/runtime execution without session state. The request runs against the caller's
     #    runtime replica, which is populated from the editable canvas state.
@@ -865,7 +866,7 @@ async def agent_chat_completion(tenant_id):
     # - Regular mode emits internal agent events.
     # - openai-compatible mode reshapes the same execution into an OpenAI-like wire format.
     req = await get_request_json()
-    agent_id = req.get("agent_id")
+    agent_id = agent_id or req.get("agent_id")
     openai_compatible = bool(req.get("openai-compatible", False))
     if not agent_id:
         return get_json_result(
@@ -928,11 +929,12 @@ async def agent_chat_completion(tenant_id):
 
     if not session_id:
         # Without session state, run against the runtime replica that tracks draft edits.
-        query = req.get("query", "")
+        query = req.get("query", "") or req.get("question", "")
         files = req.get("files", [])
         inputs = req.get("inputs", {})
         runtime_user_id = req.get("user_id") or tenant_id
         user_id = str(runtime_user_id)
+        custom_header = req.get("custom_header", "")
         if not await thread_pool_exec(UserCanvasService.accessible, agent_id, tenant_id):
             return get_json_result(
                 data=False,
@@ -940,11 +942,27 @@ async def agent_chat_completion(tenant_id):
                 code=RetCode.OPERATING_ERROR,
             )
 
+        _, cvs = await thread_pool_exec(UserCanvasService.get_by_id, agent_id)
+        if not cvs:
+            return get_data_error_result(message="canvas not found.")
+
         replica_payload = CanvasReplicaService.load_for_run(
             canvas_id=agent_id,
             tenant_id=str(tenant_id),
             runtime_user_id=user_id,
         )
+        if not replica_payload:
+            try:
+                replica_payload = CanvasReplicaService.bootstrap(
+                    canvas_id=agent_id,
+                    tenant_id=str(tenant_id),
+                    runtime_user_id=user_id,
+                    dsl=cvs.dsl,
+                    canvas_category=getattr(cvs, "canvas_category", CanvasCategory.Agent),
+                    title=getattr(cvs, "title", ""),
+                )
+            except ValueError as exc:
+                return get_data_error_result(message=str(exc))
         if not replica_payload:
             return get_data_error_result(message="canvas replica not found, please fetch the agent first.")
 
@@ -953,7 +971,6 @@ async def agent_chat_completion(tenant_id):
         canvas_category = replica_payload.get("canvas_category", CanvasCategory.Agent)
         dsl_str = json.dumps(replica_dsl, ensure_ascii=False)
 
-        _, cvs = await thread_pool_exec(UserCanvasService.get_by_id, agent_id)
         if cvs.canvas_category == CanvasCategory.DataFlow:
             task_id = get_uuid()
             Pipeline(
@@ -977,41 +994,91 @@ async def agent_chat_completion(tenant_id):
             return get_json_result(data={"message_id": task_id})
 
         try:
-            canvas = Canvas(dsl_str, str(tenant_id), canvas_id=agent_id)
+            canvas = Canvas(dsl_str, str(tenant_id), canvas_id=agent_id, custom_header=custom_header)
         except Exception as exc:
             return server_error_response(exc)
 
-        async def sse():
-            nonlocal canvas
-            try:
-                async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
-                    yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
-
-                commit_ok = CanvasReplicaService.commit_after_run(
-                    canvas_id=agent_id,
-                    tenant_id=str(tenant_id),
-                    runtime_user_id=user_id,
-                    dsl=json.loads(str(canvas)),
-                    canvas_category=canvas_category,
-                    title=canvas_title,
+        async def commit_runtime_replica():
+            commit_ok = CanvasReplicaService.commit_after_run(
+                canvas_id=agent_id,
+                tenant_id=str(tenant_id),
+                runtime_user_id=user_id,
+                dsl=json.loads(str(canvas)),
+                canvas_category=canvas_category,
+                title=canvas_title,
+            )
+            if not commit_ok:
+                logging.error(
+                    "Canvas runtime replica commit failed: canvas_id=%s tenant_id=%s runtime_user_id=%s",
+                    agent_id,
+                    tenant_id,
+                    user_id,
                 )
-                if not commit_ok:
-                    logging.error(
-                        "Canvas runtime replica commit failed: canvas_id=%s tenant_id=%s runtime_user_id=%s",
-                        agent_id,
-                        tenant_id,
-                        user_id,
+
+        if req.get("stream", True):
+            async def sse():
+                nonlocal canvas
+                try:
+                    async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+                        yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+
+                    await commit_runtime_replica()
+                except Exception as exc:
+                    logging.exception(exc)
+                    canvas.cancel_task()
+                    yield (
+                        "data:"
+                        + json.dumps({"code": 500, "message": str(exc), "data": False}, ensure_ascii=False)
+                        + "\n\n"
                     )
-            except Exception as exc:
-                logging.exception(exc)
-                canvas.cancel_task()
-                yield (
-                    "data:"
-                    + json.dumps({"code": 500, "message": str(exc), "data": False}, ensure_ascii=False)
-                    + "\n\n"
-                )
 
-        return _build_sse_response(sse())
+            return _build_sse_response(sse())
+
+        full_content = ""
+        reference = {}
+        final_ans = {}
+        trace_items = []
+        structured_output = {}
+        try:
+            async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+                if ans.get("event") == "message":
+                    full_content += ans.get("data", {}).get("content", "")
+                if ans.get("data", {}).get("reference", None):
+                    reference.update(ans["data"]["reference"])
+                if ans.get("event") == "node_finished":
+                    data = ans.get("data", {})
+                    node_out = data.get("outputs", {})
+                    component_id = data.get("component_id")
+                    if component_id is not None and "structured" in node_out:
+                        structured_output[component_id] = copy.deepcopy(node_out["structured"])
+                    if req.get("return_trace", False):
+                        trace_items.append(
+                            {
+                                "component_id": data.get("component_id"),
+                                "trace": [copy.deepcopy(data)],
+                            }
+                        )
+                final_ans = ans
+        except Exception as exc:
+            logging.exception(exc)
+            canvas.cancel_task()
+            return get_result(data=f"**ERROR**: {str(exc)}")
+
+        if not final_ans:
+            await commit_runtime_replica()
+            return get_result(data={})
+
+        if "data" not in final_ans or not isinstance(final_ans["data"], dict):
+            final_ans["data"] = {}
+        final_ans["data"]["content"] = full_content
+        final_ans["data"]["reference"] = reference
+        if structured_output:
+            final_ans["data"]["structured"] = structured_output
+        if trace_items:
+            final_ans["data"]["trace"] = trace_items
+
+        await commit_runtime_replica()
+        return get_result(data=final_ans)
 
     return_trace = bool(req.get("return_trace", False))
     if req.get("stream", True):
@@ -1025,7 +1092,7 @@ async def agent_chat_completion(tenant_id):
 
     full_content = ""
     reference = {}
-    final_ans = ""
+    final_ans = {}
     trace_items = []
     structured_output = {}
     async for ans in _iter_session_completion_events(tenant_id, agent_id, req, return_trace):
@@ -1041,11 +1108,21 @@ async def agent_chat_completion(tenant_id):
                 if component_id is not None and "structured" in node_out:
                     structured_output[component_id] = copy.deepcopy(node_out["structured"])
                 if return_trace:
-                    trace_items = ans.get("data", {}).get("trace", trace_items)
+                    trace_items.append(
+                        {
+                            "component_id": data.get("component_id"),
+                            "trace": [copy.deepcopy(data)],
+                        }
+                    )
             final_ans = ans
         except Exception as exc:
             return get_result(data=f"**ERROR**: {str(exc)}")
 
+    if not final_ans:
+        return get_result(data={})
+
+    if "data" not in final_ans or not isinstance(final_ans["data"], dict):
+        final_ans["data"] = {}
     final_ans["data"]["content"] = full_content
     final_ans["data"]["reference"] = reference
     if structured_output:

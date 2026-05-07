@@ -241,8 +241,21 @@ const kbService = {
   ...chunkService,
 };
 
-export const getKbDetail = (datasetId: string) =>
-  request.get(api.getKbDetail(datasetId));
+export const getKbDetail = async (datasetId: string) => {
+  const response = await request.get(api.getKbDetail(datasetId));
+  // The /api/v1/datasets/<id> endpoint returns chunk_count/document_count,
+  // but legacy consumers (e.g. the GraphRAG/Raptor "magic wand" enable check
+  // in dataset/index.tsx) read chunk_num/doc_num. Normalize both shapes.
+  if (response.data?.code === 0 && response.data.data) {
+    const d = response.data.data;
+    response.data.data = {
+      ...d,
+      chunk_num: d.chunk_num ?? d.chunk_count,
+      doc_num: d.doc_num ?? d.document_count,
+    };
+  }
+  return response;
+};
 
 export const listTag = (knowledgeId: string) =>
   request.get(api.listTag(knowledgeId));
@@ -422,11 +435,13 @@ export const kbUpdateMetaData = (
 export function deletePipelineTask({
   kb_id,
   type,
+  wipe,
 }: {
   kb_id: string;
   type: ProcessingType;
+  wipe?: boolean;
 }) {
-  return request.delete(api.unbindPipelineTask(kb_id, type));
+  return request.delete(api.unbindPipelineTask(kb_id, type, wipe));
 }
 
 export default kbService;
