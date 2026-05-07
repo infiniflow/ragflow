@@ -134,6 +134,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			users := v1.Group("/users")
 			{
 				users.GET("/me", r.userHandler.Info)
+				// User settings endpoint
+				users.PATCH("/me", r.userHandler.Setting)
 			}
 
 			tenants := v1.Group("/tenants")
@@ -151,12 +153,40 @@ func (r *Router) Setup(engine *gin.Engine) {
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
 			}
 
-			// RESTful dataset routes
+			// Chat routes
+			chats := v1.Group("/chats")
+			{
+				chats.GET("", r.chatHandler.ListChats)
+				chats.GET("/:chat_id", r.chatHandler.GetChat)
+				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
+			}
+
+			// Dataset routes
 			datasets := v1.Group("/datasets")
 			{
 				datasets.GET("", r.datasetsHandler.ListDatasets)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
+			}
+
+			// Search routes
+			searches := v1.Group("/searches")
+			{
+				searches.GET("", r.searchHandler.ListSearches)
+				searches.POST("", r.searchHandler.CreateSearch)
+				searches.GET("/:search_id", r.searchHandler.GetSearch)
+				searches.PUT("/:search_id", r.searchHandler.UpdateSearch)
+				searches.DELETE("/:search_id", r.searchHandler.DeleteSearch)
+			}
+
+			file := v1.Group("/files")
+			{
+				file.POST("", r.fileHandler.UploadFile)
+				file.GET("", r.fileHandler.ListFiles)
+				file.DELETE("", r.fileHandler.DeleteFiles)
+				file.POST("/move", r.fileHandler.MoveFiles)
+				file.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
+				file.GET("/:id", r.fileHandler.Download)
 			}
 
 			// Author routes
@@ -207,31 +237,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				skills.POST("/index", r.skillSearchHandler.IndexSkills)
 				skills.DELETE("/index", r.skillSearchHandler.DeleteSkillIndex)
 				skills.POST("/reindex", r.skillSearchHandler.Reindex)
-			}
-
-			chats := v1.Group("/chats")
-			{
-				chats.GET("", r.chatHandler.ListChats)
-				chats.GET("/:chat_id", r.chatHandler.GetChat)
-			}
-
-			searches := v1.Group("/searches")
-			{
-				searches.GET("", r.searchHandler.ListSearches)
-				searches.POST("", r.searchHandler.CreateSearch)
-				searches.GET("/:search_id", r.searchHandler.GetSearch)
-				searches.PUT("/:search_id", r.searchHandler.UpdateSearch)
-				searches.DELETE("/:search_id", r.searchHandler.DeleteSearch)
-			}
-
-			file := v1.Group("/files")
-			{
-				file.POST("", r.fileHandler.UploadFile)
-				file.GET("", r.fileHandler.ListFiles)
-				file.DELETE("", r.fileHandler.DeleteFiles)
-				file.POST("/move", r.fileHandler.MoveFiles)
-				file.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
-				file.GET("/:id", r.fileHandler.Download)
 			}
 
 			// provider pool route group
