@@ -30,7 +30,6 @@ https://api.aliyun.com/api/AgentRun/2025-09-10/CreateSandbox?lang=PYTHON
 import logging
 import os
 import time
-import base64
 import json
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
@@ -39,10 +38,10 @@ from agentrun.sandbox import TemplateType, CodeLanguage, Template, TemplateInput
 from agentrun.utils.config import Config
 from agentrun.utils.exception import ServerError
 
+from agent.sandbox.result_protocol import build_javascript_wrapper, build_python_wrapper, extract_structured_result
 from .base import SandboxProvider, SandboxInstance, ExecutionResult
 
 logger = logging.getLogger(__name__)
-RESULT_MARKER_PREFIX = "__RAGFLOW_RESULT__:"
 
 
 class AliyunCodeInterpreterProvider(SandboxProvider):
@@ -234,9 +233,9 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
             # Matches self_managed provider behavior: call main(**arguments)
             args_json = json.dumps(arguments or {})
             wrapped_code = (
-                self._build_python_wrapper(code, args_json)
+                build_python_wrapper(code, args_json)
                 if normalized_lang == "python"
-                else self._build_javascript_wrapper(code, args_json)
+                else build_javascript_wrapper(code, args_json)
             )
             logger.debug(f"Aliyun Code Interpreter: Wrapped code (first 200 chars): {wrapped_code[:200]}")
 
@@ -284,7 +283,7 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
 
             stdout = "\n".join(stdout_parts)
             stderr = "\n".join(stderr_parts)
-            stdout, structured_result = self._extract_structured_result(stdout)
+            stdout, structured_result = extract_structured_result(stdout)
 
             logger.info(f"Aliyun Code Interpreter: stdout length={len(stdout)}, stderr length={len(stderr)}, exit_code={exit_code}")
             if stdout:
@@ -363,71 +362,6 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
             logger.warning(f"Aliyun Code Interpreter health check failed: {str(e)}")
             # If we get any response (even an error), the service is reachable
             return "connection" not in str(e).lower()
-
-    @staticmethod
-    def _build_python_wrapper(code: str, args_json: str) -> str:
-        marker = RESULT_MARKER_PREFIX
-        return f'''{code}
-
-if __name__ == "__main__":
-    import base64
-    import json
-
-    result = main(**{args_json})
-    payload = json.dumps({{"present": True, "value": result, "type": "json"}}, ensure_ascii=False, separators=(",", ":"))
-    print("{marker}" + base64.b64encode(payload.encode("utf-8")).decode("ascii"))
-'''
-
-    @staticmethod
-    def _build_javascript_wrapper(code: str, args_json: str) -> str:
-        marker = RESULT_MARKER_PREFIX
-        return f'''{code}
-
-const __ragflowArgs = {args_json};
-
-(async () => {{
-  try {{
-    const output = await Promise.resolve(main(__ragflowArgs));
-    if (typeof output === 'undefined') {{
-      throw new Error('main() must return a value. Use null for an empty result.');
-    }}
-    const payload = JSON.stringify({{ present: true, value: output, type: 'json' }});
-    if (typeof payload === 'undefined') {{
-      throw new Error('main() returned a non-JSON-serializable value.');
-    }}
-    console.log('{marker}' + Buffer.from(payload, 'utf8').toString('base64'));
-  }} catch (err) {{
-    console.error(err instanceof Error ? err.stack || err.message : String(err));
-  }}
-}})();
-'''
-
-    @staticmethod
-    def _extract_structured_result(stdout: str) -> tuple[str, Dict[str, Any]]:
-        if not stdout:
-            return "", {}
-
-        cleaned_lines: list[str] = []
-        structured_result: Dict[str, Any] = {}
-
-        for line in str(stdout).splitlines():
-            if line.startswith(RESULT_MARKER_PREFIX):
-                payload_b64 = line[len(RESULT_MARKER_PREFIX) :].strip()
-                if not payload_b64:
-                    continue
-                try:
-                    payload = base64.b64decode(payload_b64).decode("utf-8")
-                    structured_result = json.loads(payload)
-                except Exception as exc:
-                    logger.warning(f"Aliyun Code Interpreter: failed to decode structured result marker: {exc}")
-                    cleaned_lines.append(line)
-                continue
-            cleaned_lines.append(line)
-
-        cleaned_stdout = "\n".join(cleaned_lines)
-        if stdout.endswith("\n") and cleaned_stdout and not cleaned_stdout.endswith("\n"):
-            cleaned_stdout += "\n"
-        return cleaned_stdout, structured_result
 
     def get_supported_languages(self) -> List[str]:
         """
