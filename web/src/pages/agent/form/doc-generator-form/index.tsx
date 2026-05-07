@@ -11,9 +11,9 @@ import { Input } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { t } from 'i18next';
 import { memo, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
@@ -23,6 +23,7 @@ import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-form-change';
 
 function DocGeneratorForm({ node }: INextOperatorForm) {
+  const { t } = useTranslation();
   const values = useValues(node);
 
   const FormSchema = z.object({
