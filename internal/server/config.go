@@ -36,6 +36,7 @@ const DefaultConnectTimeout = 5 * time.Second
 // Config application configuration
 type Config struct {
 	Server           ServerConfig           `mapstructure:"server"`
+	Authentication   AuthenticationConfig   `mapstructure:"authentication"`
 	Database         DatabaseConfig         `mapstructure:"database"`
 	Redis            RedisConfig            `mapstructure:"redis"`
 	Log              LogConfig              `mapstructure:"log"`
@@ -53,6 +54,11 @@ type Config struct {
 type AdminConfig struct {
 	Host string `mapstructure:"host"`
 	Port int    `mapstructure:"http_port"`
+}
+
+type AuthenticationConfig struct {
+	DisablePasswordLogin bool `mapstructure:"disable_password_login"`
+	RegisterEnabled      bool `mapstructure:"register_enabled"`
 }
 
 type DefaultSuperUser struct {
@@ -374,9 +380,28 @@ func Init(configPath string) error {
 
 func FromEnvironments() error {
 	// Secret key
-	secretKey := strings.ToLower(os.Getenv("RAGFLOW_SECRET_KEY"))
-	if secretKey != "" {
-		globalConfig.Server.SecretKey = &secretKey
+	if envVal := os.Getenv("RAGFLOW_SECRET_KEY"); envVal != "" {
+		globalConfig.Server.SecretKey = &envVal
+	}
+
+	// Load REGISTER_ENABLED from environment variable (default: true)
+	if envVal := os.Getenv("REGISTER_ENABLED"); envVal != "" {
+		str := strings.ToLower(envVal)
+		if str == "true" || str == "1" || str == "yes" {
+			globalConfig.Authentication.RegisterEnabled = true
+		} else {
+			globalConfig.Authentication.RegisterEnabled = false
+		}
+	}
+
+	// Load DISABLE_PASSWORD_LOGIN from environment variable (default: false)
+	if envVal := os.Getenv("DISABLE_PASSWORD_LOGIN"); envVal != "" {
+		str := strings.ToLower(envVal)
+		if str == "true" || str == "1" || str == "yes" {
+			globalConfig.Authentication.DisablePasswordLogin = true
+		} else {
+			globalConfig.Authentication.DisablePasswordLogin = false
+		}
 	}
 
 	// Doc engine
@@ -542,14 +567,23 @@ func FromConfigFile(configPath string) error {
 		globalConfig.Admin.Port += 2
 	}
 
-	// Load REGISTER_ENABLED from environment variable (default: 1)
-	registerEnabled := 1
-	if envVal := os.Getenv("REGISTER_ENABLED"); envVal != "" {
-		if parsed, err := strconv.Atoi(envVal); err == nil {
-			registerEnabled = parsed
+	// authentication section
+	if globalConfig != nil {
+		// Try to map from mysql section
+		globalConfig.Authentication.DisablePasswordLogin = false
+		globalConfig.Authentication.RegisterEnabled = true
+		if v.IsSet("authentication") {
+			authenticationConfig := v.Sub("authentication")
+			if authenticationConfig != nil {
+				if authenticationConfig.IsSet("disable_password_login") {
+					globalConfig.Authentication.DisablePasswordLogin = authenticationConfig.GetBool("disable_password_login")
+				}
+				if authenticationConfig.IsSet("enable_register") {
+					globalConfig.Authentication.RegisterEnabled = authenticationConfig.GetBool("enable_register")
+				}
+			}
 		}
 	}
-	globalConfig.RegisterEnabled = registerEnabled
 
 	// If we loaded service_conf.yaml, map mysql fields to DatabaseConfig
 	if globalConfig != nil && globalConfig.Database.Host == "" {

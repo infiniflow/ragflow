@@ -90,15 +90,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 	// System endpoints
 	engine.GET("/v1/system/ping", r.systemHandler.Ping)
-	engine.GET("/v1/system/config", r.systemHandler.GetConfig)
+	engine.GET("/api/v1/system/config", r.systemHandler.GetConfig)
 	engine.GET("/v1/system/configs", r.systemHandler.GetConfigs)
 	engine.GET("/v1/system/version", r.systemHandler.GetVersion)
 	engine.POST("/v1/user/register", r.userHandler.Register)
 	// User login channels endpoint
-	engine.GET("/v1/user/login/channels", r.userHandler.GetLoginChannels)
+	engine.GET("/api/v1/auth/login/channels", r.userHandler.GetLoginChannels)
 
 	// User login by email endpoint
-	engine.POST("/v1/user/login", r.userHandler.LoginByEmail)
+	engine.POST("/api/v1/auth/login", r.userHandler.LoginByEmail)
 
 	// User logout endpoint
 	engine.GET("/v1/user/logout", r.userHandler.Logout)
@@ -123,6 +123,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
 		{
+			// Auth routes
+			auth := v1.Group("/auth")
+			{
+				// User logout endpoint
+				auth.GET("/logout", r.userHandler.Logout)
+			}
+
 			// User routes
 			//users := v1.Group("/users")
 			//{
@@ -167,38 +174,38 @@ func (r *Router) Setup(engine *gin.Engine) {
 				memory.GET("/:memory_id", r.memoryHandler.GetMemoryMessages)
 			}
 
-		// TODO: Message routes - Implementation pending - depends on CanvasService, TaskService and embedding engine
-		// message := v1.Group("/messages")
-		// {
-		// 	message.POST("", r.memoryHandler.AddMessage)
-		// 	message.DELETE("/:memory_id/:message_id", r.memoryHandler.ForgetMessage)
-		// 	message.PUT("/:memory_id/:message_id", r.memoryHandler.UpdateMessage)
-		// 	message.GET("/search", r.memoryHandler.SearchMessage)
-		// 	message.GET("", r.memoryHandler.GetMessages)
-		// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
-		// }
+			// TODO: Message routes - Implementation pending - depends on CanvasService, TaskService and embedding engine
+			// message := v1.Group("/messages")
+			// {
+			// 	message.POST("", r.memoryHandler.AddMessage)
+			// 	message.DELETE("/:memory_id/:message_id", r.memoryHandler.ForgetMessage)
+			// 	message.PUT("/:memory_id/:message_id", r.memoryHandler.UpdateMessage)
+			// 	message.GET("/search", r.memoryHandler.SearchMessage)
+			// 	message.GET("", r.memoryHandler.GetMessages)
+			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
+			// }
 
-		// Skill search routes
-		skills := v1.Group("/skills")
-		{
-			// Skill Space management
-			skills.GET("/spaces", r.skillSearchHandler.ListSpaces)
-			skills.POST("/spaces", r.skillSearchHandler.CreateSpace)
-			skills.GET("/spaces/:space_id", r.skillSearchHandler.GetSpace)
-			skills.PUT("/spaces/:space_id", r.skillSearchHandler.UpdateSpace)
-			skills.DELETE("/spaces/:space_id", r.skillSearchHandler.DeleteSpace)
-			skills.GET("/space/by-folder", r.skillSearchHandler.GetSpaceByFolder)
+			// Skill search routes
+			skills := v1.Group("/skills")
+			{
+				// Skill Space management
+				skills.GET("/spaces", r.skillSearchHandler.ListSpaces)
+				skills.POST("/spaces", r.skillSearchHandler.CreateSpace)
+				skills.GET("/spaces/:space_id", r.skillSearchHandler.GetSpace)
+				skills.PUT("/spaces/:space_id", r.skillSearchHandler.UpdateSpace)
+				skills.DELETE("/spaces/:space_id", r.skillSearchHandler.DeleteSpace)
+				skills.GET("/space/by-folder", r.skillSearchHandler.GetSpaceByFolder)
 
-			// Skill search config
-			skills.GET("/config", r.skillSearchHandler.GetConfig)
-			skills.POST("/config", r.skillSearchHandler.UpdateConfig)
+				// Skill search config
+				skills.GET("/config", r.skillSearchHandler.GetConfig)
+				skills.POST("/config", r.skillSearchHandler.UpdateConfig)
 
-			// Skill search and indexing
-			skills.POST("/search", r.skillSearchHandler.Search)
-			skills.POST("/index", r.skillSearchHandler.IndexSkills)
-			skills.DELETE("/index", r.skillSearchHandler.DeleteSkillIndex)
-			skills.POST("/reindex", r.skillSearchHandler.Reindex)
-		}
+				// Skill search and indexing
+				skills.POST("/search", r.skillSearchHandler.Search)
+				skills.POST("/index", r.skillSearchHandler.IndexSkills)
+				skills.DELETE("/index", r.skillSearchHandler.DeleteSkillIndex)
+				skills.POST("/reindex", r.skillSearchHandler.Reindex)
+			}
 
 			chats := v1.Group("/chats")
 			{
@@ -206,16 +213,16 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.GET("/:chat_id", r.chatHandler.GetChat)
 			}
 
-		searches := v1.Group("/searches")
-		{
-			searches.GET("", r.searchHandler.ListSearches)
-			searches.POST("", r.searchHandler.CreateSearch)
-			searches.GET("/:search_id", r.searchHandler.GetSearch)
-			searches.PUT("/:search_id", r.searchHandler.UpdateSearch)
-			searches.DELETE("/:search_id", r.searchHandler.DeleteSearch)
-		}
+			searches := v1.Group("/searches")
+			{
+				searches.GET("", r.searchHandler.ListSearches)
+				searches.POST("", r.searchHandler.CreateSearch)
+				searches.GET("/:search_id", r.searchHandler.GetSearch)
+				searches.PUT("/:search_id", r.searchHandler.UpdateSearch)
+				searches.DELETE("/:search_id", r.searchHandler.DeleteSearch)
+			}
 
-		file := v1.Group("/files")
+			file := v1.Group("/files")
 			{
 				file.POST("", r.fileHandler.UploadFile)
 				file.GET("", r.fileHandler.ListFiles)

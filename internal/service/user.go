@@ -105,23 +105,23 @@ type UserResponse struct {
 // Register user registration
 func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.ErrorCode, error) {
 	cfg := server.GetConfig()
-	if cfg.RegisterEnabled == 0 {
-		return nil, common.CodeOperatingError, fmt.Errorf("User registration is disabled!")
+	if !cfg.Authentication.RegisterEnabled {
+		return nil, common.CodeOperatingError, fmt.Errorf("user registration is disabled")
 	}
 
 	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
 	if !emailRegex.MatchString(req.Email) {
-		return nil, common.CodeOperatingError, fmt.Errorf("Invalid email address: %s!", req.Email)
+		return nil, common.CodeOperatingError, fmt.Errorf("invalid email address: %s", req.Email)
 	}
 
 	existUser, _ := s.userDAO.GetByEmail(req.Email)
 	if existUser != nil {
-		return nil, common.CodeOperatingError, fmt.Errorf("Email: %s has already registered!", req.Email)
+		return nil, common.CodeOperatingError, fmt.Errorf("email: %s has already registered", req.Email)
 	}
 
 	decryptedPassword, err := s.decryptPassword(req.Password)
 	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("Fail to decrypt password")
+		return nil, common.CodeServerError, fmt.Errorf("fail to decrypt password")
 	}
 
 	var hashedPassword string
