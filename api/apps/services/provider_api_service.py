@@ -221,14 +221,9 @@ def create_provider_instance(tenant_id: str, provider_name: str, instance_name: 
     if not provider_obj:
         return False, f"Provider '{provider_name}' does not exist"
 
-    TenantModelInstanceService.insert(
-        id=get_uuid(),
-        provider_id=provider_obj.id,
-        instance_name=instance_name,
-        api_key=api_key
-    )
+    TenantModelInstanceService.create_instance(provider_id=provider_obj.id,instance_name=instance_name,api_key=api_key)
 
-    return True, None
+    return True, "success"
 
 
 def list_provider_instances(tenant_id: str, provider_name: str):

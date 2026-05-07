@@ -13,12 +13,19 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from common.misc_utils import get_uuid
 from api.db.db_models import DB, TenantModelInstance
 from api.db.services.common_service import CommonService
-
+from api.db.services import duplicate_name
 
 class TenantModelInstanceService(CommonService):
     model = TenantModelInstance
+
+    @classmethod
+    @DB.connection_context()
+    def create_instance(cls, provider_id: str, instance_name: str, api_key: str):
+        unique_instance_name = duplicate_name(cls.query, name_field="instance_name", provider_id=provider_id, instance_name=instance_name)
+        return cls.insert(id=get_uuid(), provider_id=provider_id, instance_name=unique_instance_name, api_key=api_key)
 
     @classmethod
     @DB.connection_context()
