@@ -511,9 +511,18 @@ func (z *DeepSeekModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 		region = *apiConfig.Region
 	}
 
-	baseURL, ok := z.BaseURL[region]
-	if !ok || baseURL == "" {
-		return nil, fmt.Errorf("deepseek: no base URL configured for region %q", region)
+	// Look up the base URL for the requested region. If the region was
+	// supplied but is not configured (or is empty), fall back to the
+	// "default" region instead of erroring out, so a stray region value
+	// does not break an otherwise valid request.
+	baseURL := z.BaseURL["default"]
+	if region != "default" {
+		if regional, ok := z.BaseURL[region]; ok && regional != "" {
+			baseURL = regional
+		}
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("deepseek: no base URL configured for default region")
 	}
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Balance)
