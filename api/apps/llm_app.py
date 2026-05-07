@@ -430,11 +430,14 @@ def my_llms():
 
                 _, is_tools, _ = TenantLLMService._decode_api_key_config(o_dict.get("api_key", ""))
                 if is_tools is None:
-                    base_name, fid = TenantLLMService.split_model_name_and_factory(o_dict["llm_name"])
-                    llm_cfg = LLMService.query(llm_name=base_name, fid=fid) if fid else LLMService.query(llm_name=base_name)
-                    if not llm_cfg and fid:
-                        llm_cfg = LLMService.query(llm_name=base_name)
-                    is_tools = llm_cfg[0].is_tools if llm_cfg else False
+                    try:
+                        base_name, fid = TenantLLMService.split_model_name_and_factory(o_dict["llm_name"])
+                        llm_cfg = LLMService.query(llm_name=base_name, fid=fid) if fid else LLMService.query(llm_name=base_name)
+                        if not llm_cfg and fid:
+                            llm_cfg = LLMService.query(llm_name=base_name)
+                        is_tools = llm_cfg[0].is_tools if llm_cfg else False
+                    except Exception:
+                        is_tools = False
                 is_tools = bool(is_tools)
 
                 res[o_dict["llm_factory"]]["llm"].append(
