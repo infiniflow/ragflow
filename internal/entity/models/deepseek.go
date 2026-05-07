@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -483,8 +484,83 @@ func (z *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return models, nil
 }
 
+// deepseekBalanceResponse is the shape returned by
+// GET /user/balance. The balance fields are strings in the
+// upstream API, so we parse them on our side.
+type deepseekBalanceResponse struct {
+	IsAvailable  bool `json:"is_available"`
+	BalanceInfos []struct {
+		Currency        string `json:"currency"`
+		TotalBalance    string `json:"total_balance"`
+		GrantedBalance  string `json:"granted_balance"`
+		ToppedUpBalance string `json:"topped_up_balance"`
+	} `json:"balance_infos"`
+}
+
+// Balance returns the user's available balance on DeepSeek by
+// calling GET /user/balance with the configured Bearer token.
+// The result map matches the shape used by the Moonshot driver,
+// so the UI can render it without provider-specific code.
 func (z *DeepSeekModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL, ok := z.BaseURL[region]
+	if !ok || baseURL == "" {
+		return nil, fmt.Errorf("deepseek: no base URL configured for region %q", region)
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Balance)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("DeepSeek balance API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed deepseekBalanceResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(parsed.BalanceInfos) == 0 {
+		return nil, fmt.Errorf("no balance info in response")
+	}
+
+	// Pick the first balance entry, the same way the Moonshot
+	// driver returns a single {balance, currency} pair to the UI.
+	first := parsed.BalanceInfos[0]
+	total, err := strconv.ParseFloat(first.TotalBalance, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid total_balance %q: %w", first.TotalBalance, err)
+	}
+
+	return map[string]interface{}{
+		"balance":  total,
+		"currency": first.Currency,
+	}, nil
 }
 
 func (z *DeepSeekModel) CheckConnection(apiConfig *APIConfig) error {
