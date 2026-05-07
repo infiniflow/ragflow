@@ -24,7 +24,7 @@ import ipaddress
 import json
 import logging
 import time
-from functools import partial
+from functools import partial, wraps
 
 import jwt
 from quart import Response, jsonify, request
@@ -66,6 +66,16 @@ from peewee import MySQLDatabase, PostgresqlDatabase
 from rag.flow.pipeline import Pipeline
 from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
+
+
+def _require_canvas_access_sync(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not UserCanvasService.accessible(kwargs.get('agent_id'), kwargs.get('tenant_id')):
+            return get_json_result(data=False, message="Only owner of canvas authorized for this operation.", code=RetCode.OPERATING_ERROR)
+        return func(*args, **kwargs)
+    return wrapper
+
 
 def _get_user_nickname(user_id: str) -> str:
     exists, user = UserService.get_by_id(user_id)
@@ -122,14 +132,8 @@ def _agent_session_list_result(data, total):
 @manager.route("/agents/<agent_id>/sessions", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_access_sync
 def list_agent_sessions(agent_id, tenant_id):
-    if not UserCanvasService.accessible(agent_id, tenant_id):
-        return get_json_result(
-            data=False,
-            message="Only owner of canvas authorized for this operation.",
-            code=RetCode.OPERATING_ERROR,
-        )
-
     session_id = request.args.get("id")
     user_id = request.args.get("user_id")
     page_number = int(request.args.get("page", 1))
@@ -205,13 +209,8 @@ async def create_agent_session(agent_id, tenant_id):
 @manager.route("/agents/<agent_id>/sessions/<session_id>", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_access_sync
 def get_agent_session(agent_id, session_id, tenant_id):
-    if not UserCanvasService.accessible(agent_id, tenant_id):
-        return get_json_result(
-            data=False,
-            message="Only owner of canvas authorized for this operation.",
-            code=RetCode.OPERATING_ERROR,
-        )
     _, conv = API4ConversationService.get_by_id(session_id)
     return get_json_result(data=conv.to_dict())
 
@@ -219,13 +218,8 @@ def get_agent_session(agent_id, session_id, tenant_id):
 @manager.route("/agents/<agent_id>/sessions/<session_id>", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_access_sync
 def delete_agent_session_item(agent_id, session_id, tenant_id):
-    if not UserCanvasService.accessible(agent_id, tenant_id):
-        return get_json_result(
-            data=False,
-            message="Only owner of canvas authorized for this operation.",
-            code=RetCode.OPERATING_ERROR,
-        )
     return get_json_result(data=API4ConversationService.delete_by_id(session_id))
 
 
@@ -530,14 +524,8 @@ def get_agent(agent_id, tenant_id):
 @manager.route("/agents/<agent_id>/versions", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_access_sync
 def list_agent_versions(agent_id, tenant_id):
-    if not UserCanvasService.accessible(agent_id, tenant_id):
-        return get_json_result(
-            data=False,
-            message="Only owner of canvas authorized for this operation.",
-            code=RetCode.OPERATING_ERROR,
-        )
-
     try:
         versions = sorted(
             [item.to_dict() for item in UserCanvasVersionService.list_by_canvas_id(agent_id)],
@@ -551,14 +539,8 @@ def list_agent_versions(agent_id, tenant_id):
 @manager.route("/agents/<agent_id>/versions/<version_id>", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_access_sync
 def get_agent_version(agent_id, version_id, tenant_id):
-    if not UserCanvasService.accessible(agent_id, tenant_id):
-        return get_json_result(
-            data=False,
-            message="Only owner of canvas authorized for this operation.",
-            code=RetCode.OPERATING_ERROR,
-        )
-
     try:
         exists, version = UserCanvasVersionService.get_by_id(version_id)
         if not exists or not version or str(version.user_canvas_id) != str(agent_id):
@@ -571,14 +553,8 @@ def get_agent_version(agent_id, version_id, tenant_id):
 @manager.route("/agents/<agent_id>/logs/<message_id>", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_access_sync
 def get_agent_logs(agent_id, message_id, tenant_id):
-    if not UserCanvasService.accessible(agent_id, tenant_id):
-        return get_json_result(
-            data=False,
-            message="Only owner of canvas authorized for this operation.",
-            code=RetCode.OPERATING_ERROR,
-        )
-
     try:
         binary = REDIS_CONN.get(f"{agent_id}-{message_id}-logs")
         if not binary:
