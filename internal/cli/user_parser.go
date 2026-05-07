@@ -1322,10 +1322,6 @@ func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 		return nil, fmt.Errorf("expected instance name: %w", err)
 	}
 
-	// Check if instance_name is "default"
-	if instanceName == "default" {
-		return nil, fmt.Errorf("instance name cannot be 'default'")
-	}
 	p.nextToken()
 
 	if p.curToken.Type != TokenKey {

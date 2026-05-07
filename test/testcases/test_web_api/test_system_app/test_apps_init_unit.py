@@ -49,6 +49,7 @@ def _load_apps_module(monkeypatch):
 
     settings_mod = ModuleType("common.settings")
     settings_mod.SECRET_KEY = "test-secret-key"
+    settings_mod.get_secret_key = lambda: "test-secret-key"
     settings_mod.init_settings = lambda: None
     settings_mod.decrypt_database_config = lambda name=None: {}
     monkeypatch.setitem(sys.modules, "common.settings", settings_mod)
