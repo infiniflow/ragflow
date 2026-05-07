@@ -261,15 +261,7 @@ class SyncBase:
                 task["connector_id"],
                 task["kb_id"],
             )
-        elif file_list:
-            logging.info(
-                "[%s] Starting stale document reconciliation. Snapshot size: %d "
-                "(connector_id=%s, kb_id=%s)",
-                self.SOURCE_NAME,
-                len(file_list),
-                task["connector_id"],
-                task["kb_id"],
-            )
+        elif file_list is not None:
             removed_docs, _ = ConnectorService.cleanup_stale_documents_for_task(
                 task["id"],
                 task["connector_id"],
@@ -937,14 +929,6 @@ class WebDAV(SyncBase):
             end_ts = datetime.now(timezone.utc).timestamp()
             if self.conf.get("sync_deleted_files"):
                 file_list = []
-                logging.info(
-                    "WebDAV: fetching slim snapshot for stale-document reconciliation "
-                    "(connector_id=%s, kb_id=%s, base_url=%s, path=%s)",
-                    task["connector_id"],
-                    task["kb_id"],
-                    self.conf["base_url"],
-                    self.conf.get("remote_path", "/"),
-                )
                 try:
                     for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
                         file_list.extend(slim_batch)
@@ -1560,14 +1544,6 @@ class SeaFile(SyncBase):
             end_ts = datetime.now(timezone.utc).timestamp()
             if self.conf.get("sync_deleted_files"):
                 file_list = []
-                logging.info(
-                    "SeaFile: fetching slim snapshot for stale-document reconciliation "
-                    "(connector_id=%s, kb_id=%s, scope=%s)",
-                    task["connector_id"],
-                    task["kb_id"],
-                    conf.get("sync_scope")
-                    or SeafileSyncScope.ACCOUNT.value,
-                )
                 try:
                     for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
                         file_list.extend(slim_batch)
@@ -1668,82 +1644,66 @@ class DingTalkAITable(SyncBase):
         return document_generator, file_list
 
 
-class MySQL(SyncBase):
+class _RDBMSBase(SyncBase):
+    DB_TYPE: str = ""
+    LOG_NAME: str = ""
+    DEFAULT_PORT: int = 0
+
+    async def _generate(self, task: dict):
+        self.connector = RDBMSConnector(
+            db_type=self.DB_TYPE,
+            host=self.conf.get("host", "localhost"),
+            port=int(self.conf.get("port", self.DEFAULT_PORT)),
+            database=self.conf.get("database", ""),
+            query=self.conf.get("query", ""),
+            content_columns=self.conf.get("content_columns", ""),
+            metadata_columns=self.conf.get("metadata_columns", ""),
+            id_column=self.conf.get("id_column") or None,
+            timestamp_column=self.conf.get("timestamp_column") or None,
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+
+        credentials = self.conf.get("credentials")
+        if not credentials:
+            raise ValueError(f"{self.DB_TYPE} connector is missing credentials.")
+
+        self.connector.load_credentials(credentials)
+        self.connector.validate_connector_settings()
+        self.connector.prepare_sync_state(task["connector_id"], self.conf)
+
+        file_list = None
+        if task["reindex"] == "1" or not task["poll_range_start"] or not self.connector.timestamp_column:
+            document_generator = self.connector.load_from_state()
+            _begin_info = "totally"
+        else:
+            poll_start = task["poll_range_start"]
+            start_cursor_value = self.connector.get_saved_sync_cursor_value()
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
+            document_generator = self.connector.load_from_cursor_range(
+                start_cursor_value,
+                self.connector._pending_sync_cursor_value,
+            )
+            _begin_info = f"from {poll_start}"
+
+        self.log_connection(self.LOG_NAME, f"{self.conf.get('host')}:{self.conf.get('database')}", task)
+        return document_generator, file_list
+
+
+class MySQL(_RDBMSBase):
     SOURCE_NAME: str = FileSource.MYSQL
-
-    async def _generate(self, task: dict):
-        self.connector = RDBMSConnector(
-            db_type="mysql",
-            host=self.conf.get("host", "localhost"),
-            port=int(self.conf.get("port", 3306)),
-            database=self.conf.get("database", ""),
-            query=self.conf.get("query", ""),
-            content_columns=self.conf.get("content_columns", ""),
-            metadata_columns=self.conf.get("metadata_columns", ""),
-            id_column=self.conf.get("id_column") or None,
-            timestamp_column=self.conf.get("timestamp_column") or None,
-            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
-        )
-
-        credentials = self.conf.get("credentials")
-        if not credentials:
-            raise ValueError("MySQL connector is missing credentials.")
-
-        self.connector.load_credentials(credentials)
-        self.connector.validate_connector_settings()
-
-        if task["reindex"] == "1" or not task["poll_range_start"]:
-            document_generator = self.connector.load_from_state()
-            _begin_info = "totally"
-        else:
-            poll_start = task["poll_range_start"]
-            document_generator = self.connector.poll_source(
-                poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp()
-            )
-            _begin_info = f"from {poll_start}"
-
-        self.log_connection("MySQL", f"{self.conf.get('host')}:{self.conf.get('database')}", task)
-        return document_generator
+    DB_TYPE: str = "mysql"
+    LOG_NAME: str = "MySQL"
+    DEFAULT_PORT: int = 3306
 
 
-class PostgreSQL(SyncBase):
+class PostgreSQL(_RDBMSBase):
     SOURCE_NAME: str = FileSource.POSTGRESQL
-
-    async def _generate(self, task: dict):
-        self.connector = RDBMSConnector(
-            db_type="postgresql",
-            host=self.conf.get("host", "localhost"),
-            port=int(self.conf.get("port", 5432)),
-            database=self.conf.get("database", ""),
-            query=self.conf.get("query", ""),
-            content_columns=self.conf.get("content_columns", ""),
-            metadata_columns=self.conf.get("metadata_columns", ""),
-            id_column=self.conf.get("id_column") or None,
-            timestamp_column=self.conf.get("timestamp_column") or None,
-            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
-        )
-
-        credentials = self.conf.get("credentials")
-        if not credentials:
-            raise ValueError("PostgreSQL connector is missing credentials.")
-
-        self.connector.load_credentials(credentials)
-        self.connector.validate_connector_settings()
-
-        if task["reindex"] == "1" or not task["poll_range_start"]:
-            document_generator = self.connector.load_from_state()
-            _begin_info = "totally"
-        else:
-            poll_start = task["poll_range_start"]
-            document_generator = self.connector.poll_source(
-                poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp()
-            )
-            _begin_info = f"from {poll_start}"
-
-        self.log_connection("PostgreSQL", f"{self.conf.get('host')}:{self.conf.get('database')}", task)
-        return document_generator
+    DB_TYPE: str = "postgresql"
+    LOG_NAME: str = "PostgreSQL"
+    DEFAULT_PORT: int = 5432
 
 
 func_factory = {
