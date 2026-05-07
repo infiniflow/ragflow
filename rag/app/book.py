@@ -125,7 +125,11 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             parser_config["chunk_token_num"] = 0
 
         # Normalize sections to 2-tuples: (text, position_tag)
-        sections = [(s[0], s[-1] if len(s) >= 2 else "") for s in sections if s[0]]
+        sections = [
+            (s[0], s[-1] if len(s) >= 2 else "")
+            for s in sections
+            if isinstance(s, (tuple, list)) and len(s) > 0 and s[0]
+        ]
 
         callback(0.8, "Finish parsing.")
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
