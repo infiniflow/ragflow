@@ -54,6 +54,11 @@ func NewOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenAIModel
 	transport.MaxIdleConnsPerHost = 10
 	transport.IdleConnTimeout = 90 * time.Second
 	transport.DisableCompression = false
+	// Cap how long the client waits for the first response header.
+	// This protects ChatStreamlyWithSender, which has no client-wide
+	// timeout, against a server that opens the TCP connection and
+	// then never sends a response.
+	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &OpenAIModel{
 		BaseURL:   baseURL,
@@ -200,7 +205,7 @@ func (z *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	// xAI reasoning models (grok-3-mini and similar) return reasoning text in
+	// OpenAI reasoning models (o-series and similar) return reasoning text in
 	// the reasoning_content field. Pass it through when present.
 	var reasonContent string
 	if rc, ok := messageMap["reasoning_content"].(string); ok {
@@ -288,7 +293,12 @@ func (z *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	// Use an explicit background context here so the request is at least
+	// cancellable in principle. We do not attach a hard deadline because
+	// SSE streams are long-lived. The transport's ResponseHeaderTimeout
+	// caps the connection-establishment phase. Threading a real ctx
+	// through the ModelDriver interface is a wider change for a follow-up.
+	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -393,8 +403,10 @@ func (z *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	return nil
 }
 
-// Encode encodes a list of texts into embeddings. xAI does not expose a
-// public embedding API yet, so this is left unimplemented.
+// Encode encodes a list of texts into embeddings. OpenAI does expose
+// embedding endpoints (text-embedding-3-* and text-embedding-ada-002),
+// but this initial driver intentionally leaves embedding support
+// unimplemented. A follow-up PR can add it.
 func (z *OpenAIModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
 	return nil, fmt.Errorf("not implemented")
 }
@@ -424,7 +436,7 @@ func (z *OpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	// GET has no body, so Content-Type is not needed.
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := z.httpClient.Do(req)
@@ -469,7 +481,7 @@ func (z *OpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return models, nil
 }
 
-// Balance is not exposed by the xAI API, so this returns "no such method".
+// Balance is not exposed by the OpenAI API, so this returns "no such method".
 func (z *OpenAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
@@ -483,8 +495,8 @@ func (z *OpenAIModel) CheckConnection(apiConfig *APIConfig) error {
 	return nil
 }
 
-// Rerank calculates similarity scores between query and texts. xAI does not
-// expose a rerank API, so this is left unimplemented.
+// Rerank calculates similarity scores between query and texts. OpenAI does
+// not expose a rerank API, so this is left unimplemented.
 func (z *OpenAIModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }
