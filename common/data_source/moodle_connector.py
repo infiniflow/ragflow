@@ -21,14 +21,19 @@ from common.data_source.interfaces import (
     LoadConnector,
     PollConnector,
     SecondsSinceUnixEpoch,
+    SlimConnectorWithPermSync,
 )
-from common.data_source.models import Document
+from common.data_source.models import (
+    Document,
+    GenerateSlimDocumentOutput,
+    SlimDocument,
+)
 from common.data_source.utils import batch_generator, rl_requests
 
 logger = logging.getLogger(__name__)
 
 
-class MoodleConnector(LoadConnector, PollConnector):
+class MoodleConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     """Moodle LMS connector for accessing course content"""
 
     def __init__(self, moodle_url: str, batch_size: int = INDEX_BATCH_SIZE) -> None:
@@ -136,6 +141,78 @@ class MoodleConnector(LoadConnector, PollConnector):
         yield from self._yield_in_batches(
             self._get_updated_content(courses, start, end)
         )
+
+    @staticmethod
+    def _slim_doc_id_for_module(module) -> Optional[str]:
+        """Return the indexed document id for a Moodle module, or None.
+
+        The id format must match the ones produced by the _process_*
+        helpers below. Module types that we never ingest (label, url) and
+        modules with no id return None.
+        """
+        mtype = getattr(module, "modname", None)
+        mid = getattr(module, "id", None)
+        if not mtype or mid is None:
+            return None
+        if mtype in ("label", "url"):
+            return None
+        if mtype == "resource":
+            return f"moodle_resource_{mid}"
+        if mtype == "forum":
+            return f"moodle_forum_{mid}"
+        if mtype == "page":
+            return f"moodle_page_{mid}"
+        if mtype == "book":
+            return f"moodle_book_{mid}"
+        if mtype in ("assign", "quiz"):
+            return f"moodle_{mtype}_{mid}"
+        return None
+
+    def retrieve_all_slim_docs_perm_sync(
+        self,
+        callback: Any = None,
+    ) -> GenerateSlimDocumentOutput:
+        """List the ids of every Moodle module that could be indexed.
+
+        This is a lightweight pass over courses and modules with no file
+        downloads. The caller compares the returned ids against the index
+        and removes any indexed document whose id is not in this list.
+        """
+        del callback
+        if not self.moodle_client:
+            raise ConnectorMissingCredentialError("Moodle client not initialized")
+
+        logger.info("Starting Moodle slim snapshot for stale-document cleanup")
+        courses = self._get_enrolled_courses()
+        if not courses:
+            logger.warning("No courses found for slim snapshot")
+            return
+
+        batch: list[SlimDocument] = []
+        total = 0
+        for course in courses:
+            try:
+                contents = self._get_course_contents(course.id)
+                for section in contents:
+                    for module in section.modules:
+                        slim_id = self._slim_doc_id_for_module(module)
+                        if slim_id is None:
+                            continue
+                        batch.append(SlimDocument(id=slim_id))
+                        total += 1
+                        if len(batch) >= self.batch_size:
+                            yield batch
+                            batch = []
+            except Exception as e:
+                self._log_error(
+                    f"slim snapshot for course {getattr(course, 'fullname', '?')}",
+                    e,
+                )
+
+        if batch:
+            yield batch
+
+        logger.info(f"Moodle slim snapshot completed: {total} documents listed")
 
     @retry(tries=3, delay=1, backoff=2)
     def _get_enrolled_courses(self) -> list:
