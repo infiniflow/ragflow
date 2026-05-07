@@ -531,7 +531,7 @@ func (z *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 type siliconflowBalanceResponse struct {
 	Code    int    `json:"code"`
-	Status  bool   `json:"status"`
+	Status  string `json:"status"`
 	Message string `json:"message"`
 	Data    struct {
 		Balance      string `json:"balance"`
@@ -587,6 +587,14 @@ func (z *SiliconflowModel) Balance(apiConfig *APIConfig) (map[string]interface{}
 	var parsed siliconflowBalanceResponse
 	if err = json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if parsed.Code != 20000 {
+		msg := parsed.Message
+		if msg == "" {
+			msg = "unknown API error"
+		}
+		return nil, fmt.Errorf("SiliconFlow API error (code %d): %s", parsed.Code, msg)
 	}
 
 	raw := parsed.Data.TotalBalance
