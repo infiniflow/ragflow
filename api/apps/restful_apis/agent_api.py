@@ -77,6 +77,15 @@ def _require_canvas_access_sync(func):
     return wrapper
 
 
+def _require_canvas_access_async(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        if not UserCanvasService.accessible(kwargs.get('agent_id'), kwargs.get('tenant_id')):
+            return get_json_result(data=False, message="Make sure you have permission to access the agent.", code=RetCode.OPERATING_ERROR)
+        return await func(*args, **kwargs)
+    return wrapper
+
+
 def _require_canvas_owner_sync(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -181,7 +190,7 @@ def list_agent_sessions(agent_id, tenant_id):
 @manager.route("/agents/<agent_id>/sessions", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-@_require_canvas_access_sync
+@_require_canvas_access_async
 async def create_agent_session(agent_id, tenant_id):
     req = await get_request_json()
     user_id = req.get("user_id") or request.args.get("user_id", tenant_id)
@@ -448,7 +457,7 @@ def get_agent_component_input_form(agent_id, component_id, tenant_id):
 @validate_request("params")
 @login_required
 @add_tenant_id_to_kwargs
-@_require_canvas_access_sync
+@_require_canvas_access_async
 async def debug_agent_component(agent_id, component_id, tenant_id):
     req = await get_request_json()
     try:
@@ -577,7 +586,7 @@ def delete_agent(agent_id, tenant_id):
 @manager.route("/agents/<agent_id>", methods=["PUT"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-@_require_canvas_access_sync
+@_require_canvas_access_async
 async def update_agent(agent_id, tenant_id):
     req = {k: v for k, v in (await get_request_json()).items() if v is not None}
     req["release"] = bool(req.get("release", ""))
@@ -628,7 +637,7 @@ async def update_agent(agent_id, tenant_id):
 @manager.route("/agents/<agent_id>/reset", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-@_require_canvas_access_sync
+@_require_canvas_access_async
 async def reset_agent(agent_id, tenant_id):
     try:
         exists, user_canvas = UserCanvasService.get_by_id(agent_id)
@@ -805,7 +814,6 @@ async def test_db_connection():
 @manager.route("/agents/chat/completions", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-@_require_canvas_access_sync
 async def agent_chat_completion(tenant_id, agent_id=None):
     # This endpoint serves two execution modes:
     # 1. Draft/runtime execution without session state. The request runs against the caller's
@@ -892,6 +900,13 @@ async def agent_chat_completion(tenant_id, agent_id=None):
         runtime_user_id = req.get("user_id") or tenant_id
         user_id = str(runtime_user_id)
         custom_header = req.get("custom_header", "")
+
+        if not UserCanvasService.accessible(agent_id, tenant_id):
+            return get_json_result(
+                data=False,
+                message="Make sure you have permission to access the agent.",
+                code=RetCode.OPERATING_ERROR,
+            )
 
         _, cvs = await thread_pool_exec(UserCanvasService.get_by_id, agent_id)
         if not cvs:
