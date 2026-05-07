@@ -75,6 +75,22 @@ class Message(ComponentBase):
             key in value for key in ("doc_id", "filename", "mime_type")
         )
 
+    @staticmethod
+    def _download_info_includes_content(value: Any) -> bool:
+        return isinstance(value, dict) and bool(value.get("include_download_info_in_content"))
+
+    @staticmethod
+    def _normalize_download_info(value: Any) -> Any:
+        if isinstance(value, list):
+            return [Message._normalize_download_info(item) for item in value]
+
+        if not isinstance(value, dict):
+            return value
+
+        normalized = value.copy()
+        normalized.pop("include_download_info_in_content", None)
+        return normalized
+
     def _extract_downloads(self, value: Any) -> list[dict[str, Any]]:
         if isinstance(value, str):
             try:
@@ -100,7 +116,19 @@ class Message(ComponentBase):
         extracted_downloads = self._extract_downloads(value)
         if extracted_downloads:
             if downloads is not None:
-                downloads.extend(extracted_downloads)
+                downloads.extend(self._normalize_download_info(item) for item in extracted_downloads)
+            if any(self._download_info_includes_content(item) for item in extracted_downloads):
+                if isinstance(value, str):
+                    try:
+                        value = json.loads(value)
+                    except Exception:
+                        return value
+                try:
+                    return json.dumps(self._normalize_download_info(value), ensure_ascii=False)
+                except Exception:
+                    if fallback_to_str:
+                        return str(value)
+                    return ""
             return ""
 
         if value is None:

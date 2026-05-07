@@ -21,6 +21,8 @@ export const useValues = (node?: Node) => {
       watermark_text: nextValues.watermark_text,
       add_page_numbers: nextValues.add_page_numbers,
       add_timestamp: nextValues.add_timestamp,
+      include_download_info_in_content:
+        nextValues.include_download_info_in_content ?? false,
       font_size: Math.max(12, Number(nextValues.font_size) || 12),
       outputs: initialDocGeneratorValues.outputs,
     };
