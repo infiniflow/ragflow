@@ -514,14 +514,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         if start_value is not None and end_value <= start_value:
             self._close_connection()
             return iter(())
-
-        def _generator():
-            # Update the saved cursor only after all incremental batches are done.
-            for batch in self._yield_documents(start_value, end_value):
-                yield batch
-            self.persist_sync_state()
-
-        return _generator()
+        return self._yield_documents(start_value, end_value)
 
 
     def poll_source(

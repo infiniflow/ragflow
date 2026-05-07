@@ -253,6 +253,7 @@ class SyncBase:
             and task.get("poll_range_start")
             and self.conf.get("sync_deleted_files")
         )
+        cleanup_errors = []
         if expects_deleted_file_snapshot and file_list is None:
             logging.warning(
                 "%s deleted-file snapshot retrieval failed "
@@ -262,7 +263,7 @@ class SyncBase:
                 task["kb_id"],
             )
         elif file_list is not None:
-            removed_docs, _ = ConnectorService.cleanup_stale_documents_for_task(
+            removed_docs, cleanup_errors = ConnectorService.cleanup_stale_documents_for_task(
                 task["id"],
                 task["connector_id"],
                 task["kb_id"],
@@ -280,6 +281,13 @@ class SyncBase:
             summary = f"{summary}, skipped={failed_docs}"
         logging.info(summary)
 
+        if (
+            isinstance(self, _RDBMSBase)
+            and failed_docs == 0
+            and (not expects_deleted_file_snapshot or file_list is not None)
+            and not cleanup_errors
+        ):
+            self.connector.persist_sync_state()
         SyncLogsService.done(task["id"], task["connector_id"])
         task["poll_range_start"] = next_update
 
@@ -1672,16 +1680,24 @@ class _RDBMSBase(SyncBase):
         self.connector.prepare_sync_state(task["connector_id"], self.conf)
 
         file_list = None
-        if task["reindex"] == "1" or not task["poll_range_start"] or not self.connector.timestamp_column:
+        if (
+            task["reindex"] != "1"
+            and task["poll_range_start"]
+            and self.conf.get("sync_deleted_files")
+        ):
+            file_list = []
+            for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                file_list.extend(slim_batch)
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
+        elif not self.connector.timestamp_column:
+            document_generator = self.connector.load_from_state()
+            _begin_info = f"from {task['poll_range_start']}"
         else:
             poll_start = task["poll_range_start"]
             start_cursor_value = self.connector.get_saved_sync_cursor_value()
-            if self.conf.get("sync_deleted_files"):
-                file_list = []
-                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
-                    file_list.extend(slim_batch)
             document_generator = self.connector.load_from_cursor_range(
                 start_cursor_value,
                 self.connector._pending_sync_cursor_value,
