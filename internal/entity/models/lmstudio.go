@@ -390,7 +390,12 @@ func (l *LmStudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	// LM Studio is a local provider and the API key is optional. Only
+	// set the Authorization header when a non-empty key was supplied.
+	// This also avoids a nil-pointer dereference on apiConfig or ApiKey.
+	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
 
 	resp, err := l.httpClient.Do(req)
 	if err != nil {
