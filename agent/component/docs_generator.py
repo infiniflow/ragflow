@@ -129,7 +129,6 @@ class DocGenerator(Message, ABC):
                 download_info = {
                     "doc_id": doc_id,
                     "filename": filename,
-                    "path": file_path,
                     "mime_type": mime_type,
                     "size": file_size,
                     "base64": file_base64,
