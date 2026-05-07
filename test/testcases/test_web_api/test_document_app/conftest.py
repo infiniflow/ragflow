@@ -130,7 +130,7 @@ def document_app_module(monkeypatch):
     stub_apps.login_required = lambda func: func
     monkeypatch.setitem(sys.modules, "api.apps", stub_apps)
 
-    module_path = repo_root / "api" / "apps" / "document_app.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "document_api.py"
     spec = importlib.util.spec_from_file_location("test_document_app_unit", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
