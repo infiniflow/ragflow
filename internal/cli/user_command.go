@@ -21,7 +21,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	netUrl "net/url"
 	"os"
 	ce "ragflow/internal/cli/filesystem"
@@ -1755,7 +1758,16 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list instance models: %w", err)
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, fmt.Errorf("connection closed (EOF): upstream overloaded or proxy timeout: %w", err)
+		}
+
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			return nil, fmt.Errorf("request timeout: model took too long to respond: %w", err)
+		}
+
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
