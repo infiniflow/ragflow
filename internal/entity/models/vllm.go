@@ -433,8 +433,13 @@ func (z *VllmModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error
 	return nil, fmt.Errorf("no such method")
 }
 
+// CheckConnection verifies that the configured vLLM base URL is
+// reachable and that the API key (if any) is accepted, by issuing a
+// lightweight ListModels call. Mirrors the pattern used by the xai,
+// moonshot, deepseek, aliyun, and gitee drivers.
 func (z *VllmModel) CheckConnection(apiConfig *APIConfig) error {
-	return fmt.Errorf("no such method")
+	_, err := z.ListModels(apiConfig)
+	return err
 }
 
 // Rerank calculates similarity scores between query and texts

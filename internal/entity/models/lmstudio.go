@@ -420,6 +420,11 @@ func (l *LmStudioModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 	return nil, fmt.Errorf("no such method")
 }
 
+// CheckConnection verifies that the configured LM Studio base URL
+// is reachable and that the API key (if any) is accepted, by issuing
+// a lightweight ListModels call. Mirrors the pattern used by the
+// xai, moonshot, deepseek, aliyun, and gitee drivers.
 func (l *LmStudioModel) CheckConnection(apiConfig *APIConfig) error {
-	return fmt.Errorf("no such method")
+	_, err := l.ListModels(apiConfig)
+	return err
 }

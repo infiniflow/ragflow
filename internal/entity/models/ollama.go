@@ -418,6 +418,11 @@ func (o *OllamaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, err
 	return nil, fmt.Errorf("no such method")
 }
 
+// CheckConnection verifies that the configured Ollama base URL is
+// reachable and that the API key (if any) is accepted, by issuing a
+// lightweight ListModels call. Mirrors the pattern used by the xai,
+// moonshot, deepseek, aliyun, and gitee drivers.
 func (o *OllamaModel) CheckConnection(apiConfig *APIConfig) error {
-	return fmt.Errorf("no such method")
+	_, err := o.ListModels(apiConfig)
+	return err
 }
