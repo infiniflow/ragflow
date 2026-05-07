@@ -974,8 +974,15 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
     if meta_data_filter:
-        metas = DocMetadataService.get_flatted_meta_by_kbs([dataset_id])
-        local_doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, local_doc_ids)
+        local_doc_ids = await apply_meta_data_filter(
+            meta_data_filter,
+            None,
+            question,
+            chat_mdl,
+            local_doc_ids,
+            kb_ids=[dataset_id],
+            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs([dataset_id]),
+        )
 
     tenant_ids = []
     tenants = UserTenantService.query(user_id=tenant_id)
