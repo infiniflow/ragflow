@@ -363,11 +363,19 @@ func (l *LmStudioModel) Rerank(modelName *string, query string, texts []string, 
 // ListModels list supported models
 func (l *LmStudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", l.BaseURL[region], l.URLSuffix.Models)
+	baseURL := l.BaseURL[region]
+	if baseURL == "" {
+		baseURL = l.BaseURL["default"]
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("missing base URL: please configure the local access address for LM Studio (e.g., http://127.0.0.1:1234/v1)")
+	}
+
+	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Models)
 
 	reqBody := map[string]interface{}{}
 
@@ -382,7 +390,12 @@ func (l *LmStudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	// LM Studio is a local provider and the API key is optional. Only
+	// set the Authorization header when a non-empty key was supplied.
+	// This also avoids a nil-pointer dereference on apiConfig or ApiKey.
+	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
 
 	resp, err := l.httpClient.Do(req)
 	if err != nil {
@@ -420,6 +433,27 @@ func (l *LmStudioModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 	return nil, fmt.Errorf("no such method")
 }
 
+// CheckConnection verifies that the configured LM Studio base URL
+// is reachable and that the API key (if any) is accepted, by issuing
+// a lightweight ListModels call. The empty-URL guard runs first so
+// a user who has not yet set the local access address gets a clear,
+// actionable error instead of a low-level transport message.
 func (l *LmStudioModel) CheckConnection(apiConfig *APIConfig) error {
-	return fmt.Errorf("no such method")
+	var region = "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := l.BaseURL[region]
+	if baseURL == "" {
+		baseURL = l.BaseURL["default"]
+	}
+	if baseURL == "" {
+		return fmt.Errorf("missing base URL: please configure the local access address for LM Studio (e.g., http://127.0.0.1:1234/v1)")
+	}
+
+	if _, err := l.ListModels(apiConfig); err != nil {
+		return fmt.Errorf("connection check failed: %w", err)
+	}
+	return nil
 }

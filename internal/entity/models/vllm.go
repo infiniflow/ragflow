@@ -376,11 +376,19 @@ func (z *VllmModel) Encode(modelName *string, texts []string, apiConfig *APIConf
 func (z *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
 
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Models)
+	baseURL := z.BaseURL[region]
+	if baseURL == "" {
+		baseURL = z.BaseURL["default"]
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
+	}
+
+	url := fmt.Sprintf("%s/%s", baseURL, z.URLSuffix.Models)
 
 	reqBody := map[string]interface{}{}
 
@@ -395,7 +403,12 @@ func (z *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	// vLLM is a local provider and the API key is optional. Only set
+	// the Authorization header when a non-empty key was supplied. This
+	// also avoids a nil-pointer dereference on apiConfig or ApiKey.
+	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
 
 	resp, err := z.httpClient.Do(req)
 	if err != nil {
@@ -433,8 +446,29 @@ func (z *VllmModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error
 	return nil, fmt.Errorf("no such method")
 }
 
+// CheckConnection verifies that the configured vLLM base URL is
+// reachable and that the API key (if any) is accepted, by issuing a
+// lightweight ListModels call. The empty-URL guard runs first so a
+// user who has not yet set the local access address gets a clear,
+// actionable error instead of a low-level transport message.
 func (z *VllmModel) CheckConnection(apiConfig *APIConfig) error {
-	return fmt.Errorf("no such method")
+	var region = "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := z.BaseURL[region]
+	if baseURL == "" {
+		baseURL = z.BaseURL["default"]
+	}
+	if baseURL == "" {
+		return fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
+	}
+
+	if _, err := z.ListModels(apiConfig); err != nil {
+		return fmt.Errorf("connection check failed: %w", err)
+	}
+	return nil
 }
 
 // Rerank calculates similarity scores between query and texts
