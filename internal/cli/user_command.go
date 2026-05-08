@@ -1764,16 +1764,7 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
-		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-			return nil, fmt.Errorf("connection closed (EOF): upstream overloaded or proxy timeout: %w", err)
-		}
-
-		var netErr net.Error
-		if errors.As(err, &netErr) && netErr.Timeout() {
-			return nil, fmt.Errorf("request timeout: model took too long to respond: %w", err)
-		}
-
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, formatRequestError("Chat request", err)
 	}
 
 	if resp.StatusCode != 200 {
@@ -2406,4 +2397,22 @@ func (c *RAGFlowClient) RemoveChunks(cmd *Command) (ResponseIf, error) {
 	}
 	result.Duration = 0
 	return &result, nil
+}
+
+// formatRequestError Uniformly handle and format network errors in HTTP requests
+func formatRequestError(action string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var netErr net.Error
+
+	switch {
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return fmt.Errorf("%s failed - connection closed (EOF): upstream overloaded or proxy timeout: %w", action, err)
+	case errors.As(err, &netErr) && netErr.Timeout():
+		return fmt.Errorf("%s failed - request timeout: server took too long to respond: %w", action, err)
+	default:
+		return fmt.Errorf("%s failed: %w", action, err)
+	}
 }
