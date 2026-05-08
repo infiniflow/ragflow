@@ -22,6 +22,7 @@ export const extractRaptorConfigExt = (
     random_seed,
     scope,
     auto_disable_for_structured_data,
+    clustering_method,
     ext,
     ...raptorExt
   } = raptorConfig;
@@ -34,6 +35,7 @@ export const extractRaptorConfigExt = (
     random_seed,
     scope,
     auto_disable_for_structured_data,
+    clustering_method: clustering_method ?? 'gmm',
     ext: { ...ext, ...raptorExt },
   };
 };

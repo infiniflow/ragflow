@@ -19,6 +19,7 @@ import re
 
 import numpy as np
 import umap
+from sklearn.cluster import AgglomerativeClustering
 from sklearn.mixture import GaussianMixture
 
 from api.db.services.task_service import has_canceled
@@ -45,6 +46,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         max_token=512,
         threshold=0.1,
         max_errors=3,
+        clustering_method="gmm",
     ):
         self._max_cluster = max_cluster
         self._llm_model = llm_model
@@ -54,7 +56,8 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         self._max_token = max_token
         self._max_errors = max(1, max_errors)
         self._error_count = 0
-        
+        self._clustering_method = clustering_method
+
     def _check_task_canceled(self, task_id: str, message: str = ""):
         if task_id and has_canceled(task_id):
             log_msg = f"Task {task_id} cancelled during RAPTOR {message}."
@@ -96,6 +99,82 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         await thread_pool_exec(set_embed_cache, self._embd_model.llm_name, txt, embds)
         return embds
 
+    def _get_clusters_ahc(self, embeddings: np.ndarray) -> np.ndarray:
+        """Cluster embeddings with Agglomerative Hierarchical Clustering.
+
+        The number of clusters is determined automatically by locating the
+        largest gap in the Ward linkage dendrogram (no BIC optimisation
+        needed), which avoids the uniform-cluster-size effect of GMM.
+        """
+        n = len(embeddings)
+        logging.debug("RAPTOR AHC clustering: n=%d, max_cluster=%d", n, self._max_cluster)
+        if self._max_cluster <= 1:
+            logging.info("RAPTOR AHC selected 1 cluster because max_cluster=%d", self._max_cluster)
+            return np.zeros(n, dtype=int)
+        if n <= 2:
+            logging.info("RAPTOR AHC selected %d clusters for small input", n)
+            return np.arange(n)
+
+        # Build the full dendrogram to find natural cluster boundaries.
+        full_clust = AgglomerativeClustering(
+            n_clusters=None,
+            distance_threshold=0,
+            compute_distances=True,
+            linkage="ward",
+        )
+        full_clust.fit(embeddings)
+
+        distances = full_clust.distances_
+        if len(distances) > 1:
+            gaps = np.diff(distances)
+            max_gap_idx = int(np.argmax(gaps))
+            # After (max_gap_idx + 1) merges the next merge would cross the
+            # largest gap, so we stop there: n - (max_gap_idx + 1) clusters.
+            n_clusters = min(max(2, n - max_gap_idx - 1), self._max_cluster)
+            logging.info(
+                "RAPTOR AHC selected %d clusters for %d embeddings (max_gap_idx=%d, gap=%.6f)",
+                n_clusters,
+                n,
+                max_gap_idx,
+                float(gaps[max_gap_idx]),
+            )
+        else:
+            n_clusters = min(2, self._max_cluster)
+            logging.info("RAPTOR AHC selected fallback cluster count=%d for %d embeddings", n_clusters, n)
+
+        clustering = AgglomerativeClustering(n_clusters=n_clusters, linkage="ward")
+        return clustering.fit_predict(embeddings)
+
+    def _adjust_tree_nodes(
+        self, embeddings: np.ndarray, labels: np.ndarray, max_iter: int = 5
+    ) -> np.ndarray:
+        """Refine cluster assignments via centroid-based reassignment.
+
+        Inspired by the tree-node adjustment step in Psi-RAG: after the
+        initial AHC pass each node is re-assigned to the nearest cluster
+        centroid until convergence, preventing "stranded" outliers from
+        inflating summaries of the wrong cluster.
+        """
+        labels = labels.copy()
+        for iteration in range(max_iter):
+            unique_labels = np.unique(labels)
+            centroids = np.stack(
+                [embeddings[labels == lbl].mean(axis=0) for lbl in unique_labels]
+            )
+            diffs = embeddings[:, np.newaxis, :] - centroids[np.newaxis, :, :]
+            sq_dists = (diffs ** 2).sum(axis=2)
+            new_label_indices = np.argmin(sq_dists, axis=1)
+            new_labels = unique_labels[new_label_indices]
+            if np.array_equal(new_labels, labels):
+                logging.debug("RAPTOR AHC node adjustment converged after %d iteration(s)", iteration + 1)
+                break
+            # Remap to contiguous ints in case any cluster became empty.
+            unique_new = np.unique(new_labels)
+            remap = {old: new for new, old in enumerate(unique_new)}
+            labels = np.array([remap[int(lbl)] for lbl in new_labels])
+        logging.info("RAPTOR AHC node adjustment final clusters=%d", len(np.unique(labels)))
+        return labels
+
     def _get_optimal_clusters(self, embeddings: np.ndarray, random_state: int, task_id: str = ""):
         max_clusters = min(self._max_cluster, len(embeddings))
         n_clusters = np.arange(1, max_clusters)
@@ -115,6 +194,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         chunks = [(s, a) for s, a in chunks if s and a is not None and len(a) > 0]
         layers = [(0, len(chunks))]
         start, end = 0, len(chunks)
+        logging.info("RAPTOR clustering method=%s, max_cluster=%d", self._clustering_method, self._max_cluster)
 
         @timeout(60 * 20)
         async def summarize(ck_idx: list[int]):
@@ -180,15 +260,26 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 n_components=min(12, len(embeddings) - 2),
                 metric="cosine",
             ).fit_transform(embeddings)
-            n_clusters = self._get_optimal_clusters(reduced_embeddings, random_state, task_id=task_id)
-            if n_clusters == 1:
-                lbls = [0 for _ in range(len(reduced_embeddings))]
+            if self._clustering_method == "ahc":
+                raw_labels = self._get_clusters_ahc(reduced_embeddings)
+                if len(np.unique(raw_labels)) > 1:
+                    adjusted = self._adjust_tree_nodes(reduced_embeddings, raw_labels)
+                else:
+                    adjusted = raw_labels
+                unique_labels = np.unique(adjusted)
+                label_map = {old: idx for idx, old in enumerate(unique_labels)}
+                lbls = [label_map[int(lbl)] for lbl in adjusted]
+                n_clusters = len(unique_labels)
             else:
-                gm = GaussianMixture(n_components=n_clusters, random_state=random_state)
-                gm.fit(reduced_embeddings)
-                probs = gm.predict_proba(reduced_embeddings)
-                lbls = [np.where(prob > self._threshold)[0] for prob in probs]
-                lbls = [lbl[0] if isinstance(lbl, np.ndarray) else lbl for lbl in lbls]
+                n_clusters = self._get_optimal_clusters(reduced_embeddings, random_state, task_id=task_id)
+                if n_clusters == 1:
+                    lbls = [0 for _ in range(len(reduced_embeddings))]
+                else:
+                    gm = GaussianMixture(n_components=n_clusters, random_state=random_state)
+                    gm.fit(reduced_embeddings)
+                    probs = gm.predict_proba(reduced_embeddings)
+                    lbls = [np.where(prob > self._threshold)[0] for prob in probs]
+                    lbls = [lbl[0] if isinstance(lbl, np.ndarray) else lbl for lbl in lbls]
 
             tasks = []
             for c in range(n_clusters):

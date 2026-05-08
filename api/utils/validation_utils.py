@@ -345,6 +345,7 @@ class RaptorConfig(Base):
     random_seed: Annotated[int, Field(default=0, ge=0)]
     scope: Annotated[Literal["file", "dataset"], Field(default="file")]
     auto_disable_for_structured_data: Annotated[bool, Field(default=True)]
+    clustering_method: Annotated[Literal["gmm", "ahc"], Field(default="gmm")]
     ext: Annotated[dict, Field(default={})]
 
 

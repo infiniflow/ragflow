@@ -865,6 +865,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
             raptor_config["max_token"],
             raptor_config["threshold"],
             max_errors=max_errors,
+            clustering_method=raptor_config.get("clustering_method", "gmm"),
         )
         original_length = len(chunks)
         chunks, layers = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])

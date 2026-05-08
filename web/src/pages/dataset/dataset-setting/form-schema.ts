@@ -47,6 +47,7 @@ export const formSchema = z
             max_cluster: z.number().optional(),
             random_seed: z.number().optional(),
             scope: z.string().optional(),
+            clustering_method: z.enum(['gmm', 'ahc']).optional(),
           })
           .refine(
             (data) => {

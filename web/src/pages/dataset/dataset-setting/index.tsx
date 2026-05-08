@@ -94,6 +94,7 @@ export default function DatasetSettings() {
           max_cluster: 64,
           random_seed: 0,
           scope: 'file',
+          clustering_method: 'gmm',
           prompt: t('knowledgeConfiguration.promptText'),
         },
         graphrag: {
