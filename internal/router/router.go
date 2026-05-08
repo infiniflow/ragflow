@@ -90,7 +90,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 	// System endpoints
 	engine.GET("/v1/system/configs", r.systemHandler.GetConfigs)
-	engine.POST("/v1/user/register", r.userHandler.Register)
+	//engine.POST("/v1/user/register", r.userHandler.Register)
 
 	// User logout endpoint
 	engine.GET("/v1/user/logout", r.userHandler.Logout)
@@ -135,7 +135,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			auth := v1.Group("/auth")
 			{
 				// User logout endpoint
-				auth.GET("/logout", r.userHandler.Logout)
+				auth.POST("/logout", r.userHandler.Logout)
 			}
 
 			// Users routes
