@@ -357,6 +357,7 @@ class CodeExec(ToolBase, ABC):
             # Try using the new sandbox provider system first
             try:
                 from agent.sandbox.client import execute_code as sandbox_execute_code
+                from agent.sandbox.providers.base import SandboxProviderConfigError
 
                 if self.check_if_canceled("CodeExec execution"):
                     return
@@ -376,8 +377,16 @@ class CodeExec(ToolBase, ABC):
                     execution_metadata=result.metadata,
                 )
 
-            except (ImportError, RuntimeError) as provider_error:
-                # Provider system not available or not configured, fall back to HTTP
+            except SandboxProviderConfigError as provider_error:
+                self.set_output("_ERROR", str(provider_error))
+                return self.output()
+            except ImportError as provider_error:
+                # Provider modules are unavailable, fall back to legacy HTTP sandbox.
+                logging.info(f"[CodeExec]: Provider system not available, using HTTP fallback: {provider_error}")
+            except RuntimeError as provider_error:
+                if not self._should_fallback_to_http(provider_error):
+                    self.set_output("_ERROR", f"Provider system execution failed: {provider_error}")
+                    return self.output()
                 logging.info(f"[CodeExec]: Provider system not available, using HTTP fallback: {provider_error}")
 
             # Fallback to direct HTTP request
@@ -486,6 +495,15 @@ class CodeExec(ToolBase, ABC):
         if metadata.get("result_present") is True:
             return metadata.get("result_value"), False
         return self._deserialize_stdout(stdout), True
+
+    @staticmethod
+    def _should_fallback_to_http(provider_error: RuntimeError) -> bool:
+        message = str(provider_error).lower()
+        fallback_markers = (
+            "no sandbox provider configured",
+            "sandbox provider type not configured",
+        )
+        return any(marker in message for marker in fallback_markers)
 
     @classmethod
     def _ensure_bucket_lifecycle(cls):
