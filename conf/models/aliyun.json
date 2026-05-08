@@ -8,6 +8,7 @@
   "url_suffix": {
     "chat": "compatible-mode/v1/chat/completions",
     "embedding": "compatible-mode/v1/embeddings",
+    "rerank": "compatible-mode/v1/rerank",
     "models": "api/v1/deployments/models"
   },
   "models": [
@@ -30,6 +31,20 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
+      ]
+    },
+    {
+      "name": "gte-rerank-v2",
+      "max_tokens": 4096,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "gte-rerank",
+      "max_tokens": 4096,
+      "model_types": [
+        "rerank"
       ]
     }
   ],
