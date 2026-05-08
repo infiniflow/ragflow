@@ -207,8 +207,10 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
 
 async def async_iframe_completion(dialog_id, question, session_id=None, stream=True, tenant_id=None, **kwargs):
     if tenant_id:
-        dia = DialogService.query(id=dialog_id, tenant_id=tenant_id, status=StatusEnum.VALID.value)
-        if not dia:
+        exists, dia = DialogService.get_by_id(dialog_id)
+        if (not exists
+                or getattr(dia, "tenant_id", None) != tenant_id
+                or str(getattr(dia, "status", "")) != StatusEnum.VALID.value):
             logger.warning(
                 "Dialog lookup failed for tenant-scoped iframe completion: "
                 "tenant_id=%s dialog_id=%s required_status=%s",
@@ -217,7 +219,6 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
                 StatusEnum.VALID.value,
             )
             raise AssertionError("Dialog not found")
-        dia = dia[0]
     else:
         e, dia = DialogService.get_by_id(dialog_id)
         assert e, "Dialog not found"
