@@ -58,7 +58,7 @@ func (z *AliyunModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (z *AliyunModel) Name() string {
-	return "siliconflow"
+	return "aliyun"
 }
 
 func (z *AliyunModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
@@ -71,7 +71,17 @@ func (z *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
+	baseURL := z.BaseURL["default"]
+	if region != "default" {
+		if regional, ok := z.BaseURL[region]; ok && regional != "" {
+			baseURL = regional
+		}
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("aliyun: no base URL configured for default region")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Chat)
 
 	// Convert messages to the format expected by API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -207,7 +217,17 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
+	baseURL := z.BaseURL["default"]
+	if region != "default" {
+		if regional, ok := z.BaseURL[region]; ok && regional != "" {
+			baseURL = regional
+		}
+	}
+	if baseURL == "" {
+		return fmt.Errorf("aliyun: no base URL configured for default region")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -585,7 +605,17 @@ func (z *AliyunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Models)
+	baseURL := z.BaseURL["default"]
+	if region != "default" {
+		if regional, ok := z.BaseURL[region]; ok && regional != "" {
+			baseURL = regional
+		}
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("aliyun: no base URL configured for default region")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
