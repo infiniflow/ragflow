@@ -6882,7 +6882,7 @@ Failure:
 **GET** `/api/v1/documents/{doc_id}/download`
 
 :::caution DEPRECATED
-The previous endpoint `GET /api/v1/document/download/{doc_id}` is deprecated. Please use this endpoint instead.
+The previous endpoint `GET /v1/document/download/{doc_id}` is deprecated. Please use this endpoint instead.
 :::
 
 Downloads a runtime attachment previously uploaded via the [Upload document](#upload-document) method.
