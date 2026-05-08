@@ -199,6 +199,56 @@ func TestDeepSeekEncode_RejectsOutOfRangeIndex(t *testing.T) {
 	}
 }
 
+func TestDeepSeekEncode_RejectsDuplicateIndex(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Server returns two vectors both claiming index 0; without
+		// the duplicate check, the second would silently overwrite
+		// the first and the input at index 1 would end up with no
+		// embedding at all.
+		_, _ = w.Write([]byte(`{
+			"data": [
+				{"index": 0, "embedding": [0.1]},
+				{"index": 0, "embedding": [0.2]}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	model := newDeepSeekTestModel(server.URL)
+
+	_, err := model.Encode(
+		ptr("text-embedding-v3"),
+		[]string{"a", "b"},
+		&APIConfig{ApiKey: ptr("sk-test")},
+		&EmbeddingConfig{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index") {
+		t.Fatalf("expected duplicate-index error, got %v", err)
+	}
+}
+
+func TestDeepSeekEncode_RejectsEmptyEmbedding(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Empty embedding array is technically well-formed JSON but
+		// useless to the caller; fail fast rather than store a
+		// zero-length vector that downstream code might index into.
+		_, _ = w.Write([]byte(`{"data": [{"index": 0, "embedding": []}]}`))
+	}))
+	defer server.Close()
+
+	model := newDeepSeekTestModel(server.URL)
+
+	_, err := model.Encode(
+		ptr("text-embedding-v3"),
+		[]string{"x"},
+		&APIConfig{ApiKey: ptr("sk-test")},
+		&EmbeddingConfig{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "empty embedding") {
+		t.Fatalf("expected empty-embedding error, got %v", err)
+	}
+}
+
 func TestDeepSeekEncode_RejectsMissingIndex(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Server returns a vector for input 0 only; input 1 is missing.

@@ -512,6 +512,9 @@ func (z *DeepSeekModel) Encode(modelName *string, texts []string, apiConfig *API
 		if embeddings[item.Index] != nil {
 			return nil, fmt.Errorf("duplicate embedding index %d", item.Index)
 		}
+		if len(item.Embedding) == 0 {
+			return nil, fmt.Errorf("empty embedding for input at index %d", item.Index)
+		}
 
 		vec := make([]float64, len(item.Embedding))
 		for j, v := range item.Embedding {
