@@ -442,27 +442,8 @@ func (l *LmStudioModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 	return nil, fmt.Errorf("no such method")
 }
 
-// CheckConnection verifies that the configured LM Studio base URL
-// is reachable and that the API key (if any) is accepted, by issuing
-// a lightweight ListModels call. The empty-URL guard runs first so
-// a user who has not yet set the local access address gets a clear,
-// actionable error instead of a low-level transport message.
+// CheckConnection verifies that the configured LM Studio base URL is reachable
 func (l *LmStudioModel) CheckConnection(apiConfig *APIConfig) error {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL := l.BaseURL[region]
-	if baseURL == "" {
-		baseURL = l.BaseURL["default"]
-	}
-	if baseURL == "" {
-		return fmt.Errorf("missing base URL: please configure the local access address for LM Studio (e.g., http://127.0.0.1:1234/v1)")
-	}
-
-	if _, err := l.ListModels(apiConfig); err != nil {
-		return fmt.Errorf("connection check failed: %w", err)
-	}
-	return nil
+	_, err := l.ListModels(apiConfig)
+	return err
 }
