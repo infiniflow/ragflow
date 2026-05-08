@@ -320,16 +320,16 @@ func (s *UserService) Login(req *LoginRequest) (*entity.User, common.ErrorCode, 
 func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*entity.User, common.ErrorCode, error) {
 	user, err := s.userDAO.GetByEmail(req.Email)
 	if err != nil {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("Email: %s is not registered!", req.Email)
+		return nil, common.CodeAuthenticationError, fmt.Errorf("email: %s is not registered!", req.Email)
 	}
 
 	decryptedPassword, err := s.decryptPassword(req.Password)
 	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("Fail to crypt password")
+		return nil, common.CodeServerError, fmt.Errorf("fail to crypt password")
 	}
 
 	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("Email and password do not match!")
+		return nil, common.CodeAuthenticationError, fmt.Errorf("email and password do not match!")
 	}
 
 	if user.IsActive == "0" {

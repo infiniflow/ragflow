@@ -305,6 +305,12 @@ func (c *RAGFlowClient) RegisterUser(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("no password")
 	}
 
+	// Encrypt password using RSA
+	encryptedPassword, err := EncryptPassword(password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt password: %w", err)
+	}
+
 	var nickname string
 	nickname, ok = cmd.Params["nickname"].(string)
 	if !ok {
@@ -313,11 +319,11 @@ func (c *RAGFlowClient) RegisterUser(cmd *Command) (ResponseIf, error) {
 
 	payload := map[string]interface{}{
 		"email":    email,
-		"password": password,
+		"password": encryptedPassword,
 		"nickname": nickname,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/user/register", "admin", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/users", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register user: %w", err)
 	}

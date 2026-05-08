@@ -51,7 +51,7 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 // @Produce json
 // @Param request body service.RegisterRequest true "registration info"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/user/register [post]
+// @Router /api/v1/users [post]
 func (h *UserHandler) Register(c *gin.Context) {
 	var req service.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
