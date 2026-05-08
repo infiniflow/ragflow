@@ -129,7 +129,7 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
         cnt = "\nID: {}".format(i if not hash_id else hash_str2int(get_value(ck, "id", "chunk_id"), 500))
         cnt += draw_node("Title", get_value(ck, "docnm_kwd", "document_name"))
         cnt += draw_node("URL", ck.get('url', ''))
-        meta = ck.get("document_metadata", {})
+        meta = ck.get("document_metadata") or {}
         for k, v in meta.items():
             cnt += draw_node(k, v)
         cnt += "\n└── Content:\n"
