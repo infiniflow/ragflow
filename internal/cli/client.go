@@ -80,7 +80,7 @@ type httpClientAdapter struct {
 	client *HTTPClient
 }
 
-func (a *httpClientAdapter) Request(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*ce.HTTPResponse, error) {
+func (a *httpClientAdapter) Request(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*ce.HTTPResponse, error) {
 	// Auto-detect auth kind based on available tokens
 	// If authKind is "auto" or empty, determine based on token availability
 	if authKind == "auto" || authKind == "" {
@@ -92,7 +92,7 @@ func (a *httpClientAdapter) Request(method, path string, useAPIBase bool, authKi
 			authKind = "web" // default
 		}
 	}
-	resp, err := a.client.Request(method, path, useAPIBase, authKind, headers, jsonBody)
+	resp, err := a.client.Request(method, path, authKind, headers, jsonBody)
 	if err != nil {
 		return nil, err
 	}

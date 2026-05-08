@@ -6879,14 +6879,18 @@ Failure:
 
 ### Download attachment
 
-**GET** `/v1/document/download/{attachment_id}`
+**GET** `/api/v1/documents/{doc_id}/download`
+
+:::caution DEPRECATED
+The previous endpoint `GET /api/v1/document/download/{doc_id}` is deprecated. Please use this endpoint instead.
+:::
 
 Downloads a runtime attachment previously uploaded via the [Upload document](#upload-document) method.
 
 #### Request
 
 - Method: GET
-- URL: `/v1/document/download/{attachment_id}`
+- URL: `/api/v1/documents/{doc_id}/download`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Query parameter:
@@ -6896,15 +6900,15 @@ Downloads a runtime attachment previously uploaded via the [Upload document](#up
 
 ```bash
 curl --request GET \
-     --url 'http://{address}/v1/document/download/{attachment_id}?ext=pdf' \
+     --url 'http://{address}/api/v1/documents/{doc_id}/download?ext=pdf' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --output ./downloaded_attachment.pdf
 ```
 
 ##### Request parameters
 
-- `attachment_id`: (*Path parameter*), `string`, *Required*
-  The `id` value returned by the [Upload document](#upload-document) method.
+- `doc_id`: (*Path parameter*), `string`, *Required*
+  The document ID whose attachment should be downloaded.
 - `ext`: (*Query parameter*), `string`, *Optional*
   A file extension hint specifying the response's Content-Type. Defaults to `"markdown"`. Available values:
   - `"markdown"`
