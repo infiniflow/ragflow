@@ -33,6 +33,7 @@ from api.db.services import duplicate_name
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.db_models import Task
 from api.db.services.document_service import DocumentService
+from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.common.check_team_permission import check_kb_team_permission
@@ -48,7 +49,7 @@ from common.constants import ParserType, RetCode, TaskStatus, SANDBOX_ARTIFACT_B
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
 from common.misc_utils import get_uuid, thread_pool_exec
 from api.utils.file_utils import filename_type, thumbnail
-from api.utils.web_utils import html2pdf, is_valid_url, apply_safe_file_response_headers
+from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url, apply_safe_file_response_headers
 from common.ssrf_guard import assert_url_is_safe
 from rag.nlp import search
 
@@ -1854,3 +1855,46 @@ async def batch_update_document_status(tenant_id, dataset_id):
     if has_error:
         return get_json_result(data=result, message="Partial failure", code=RetCode.SERVER_ERROR)
     return get_json_result(data=result)
+
+@manager.route("/documents/<doc_id>/preview", methods=["GET"])  # noqa: F821
+@login_required
+async def get(doc_id):
+    try:
+        e, doc = DocumentService.get_by_id(doc_id)
+        if not e:
+            return get_data_error_result(message="Document not found!")
+
+        b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
+        response = await make_response(data)
+
+        ext = re.search(r"\.([^.]+)$", doc.name.lower())
+        ext = ext.group(1) if ext else None
+        content_type = None
+        if ext:
+            fallback_prefix = "image" if doc.type == FileType.VISUAL.value else "application"
+            content_type = CONTENT_TYPE_MAP.get(ext, f"{fallback_prefix}/{ext}")
+        apply_safe_file_response_headers(response, content_type, ext)
+        return response
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/documents/<doc_id>/download", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def download_attachment(tenant_id=None, doc_id=None, attachment_id=None):
+    try:
+        # Keep backward compatibility with older callers and unit tests that still
+        # pass `attachment_id` instead of the route parameter name.
+        doc_id = doc_id or attachment_id
+        ext = request.args.get("ext", "markdown")
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, doc_id)
+        response = await make_response(data)
+        content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
+        apply_safe_file_response_headers(response, content_type, ext)
+
+        return response
+
+    except Exception as e:
+        return server_error_response(e)

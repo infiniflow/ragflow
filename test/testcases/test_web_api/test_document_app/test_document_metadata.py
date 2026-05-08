@@ -394,7 +394,7 @@ class TestDocumentMetadataUnit:
             "apply_safe_file_response_headers",
             lambda response, content_type, extension: response.headers.update({"content_type": content_type, "extension": extension}),
         )
-        res = _run(module.download_attachment("att1"))
+        res = _run(module.download_attachment(attachment_id="att1"))
         assert isinstance(res, _DummyResponse)
         assert res.data == b"attachment"
         assert res.headers["content_type"] == "application/abc"
@@ -405,7 +405,7 @@ class TestDocumentMetadataUnit:
 
         monkeypatch.setattr(module, "thread_pool_exec", raise_error)
         monkeypatch.setattr(module, "server_error_response", lambda e: {"code": 500, "message": str(e)})
-        res = _run(module.download_attachment("att1"))
+        res = _run(module.download_attachment(attachment_id="att1"))
         assert res["code"] == 500
         assert "download boom" in res["message"]
 
