@@ -1133,7 +1133,7 @@ func (c *RAGFlowClient) ListAdminTasks(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to drop token: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("drop token failed: invalid JSON (%w)", err)
 	}
