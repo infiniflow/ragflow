@@ -22,7 +22,6 @@ start_ts = time.time()
 
 import asyncio
 import socket
-import concurrent
 # from beartype import BeartypeConf
 # from beartype.claw import beartype_all  # <-- you didn't sign up for this
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
@@ -1073,7 +1072,6 @@ async def do_handle_task(task):
     task_parser_config = task["parser_config"]
     task_start_ts = timer()
     toc_thread = None
-    executor = concurrent.futures.ThreadPoolExecutor()
 
     # prepare the progress callback function
     progress_callback = partial(set_progress, task_id, task_from_page, task_to_page)
@@ -1235,7 +1233,7 @@ async def do_handle_task(task):
         logging.info(progress_message)
         progress_callback(msg=progress_message)
         if task["parser_id"].lower() == "naive" and task["parser_config"].get("toc_extraction", False):
-            toc_thread = executor.submit(build_TOC, task, chunks, progress_callback)
+            toc_thread = asyncio.create_task(asyncio.to_thread(build_TOC, task, chunks, progress_callback))
 
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
     start_ts = timer()
@@ -1265,7 +1263,7 @@ async def do_handle_task(task):
         progress_callback(msg="Indexing done ({:.2f}s).".format(timer() - start_ts))
 
         if toc_thread:
-            d = toc_thread.result()
+            d = await toc_thread
             if d:
                 if not await _maybe_insert_chunks([d]):
                     return
@@ -1284,7 +1282,6 @@ async def do_handle_task(task):
         )
 
     finally:
-        executor.shutdown(wait=False)
         if has_canceled(task_id):
             try:
                 exists = await thread_pool_exec(
