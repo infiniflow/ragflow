@@ -113,27 +113,6 @@ func (p *Parser) parseListCommand() (*Command, error) {
 	p.nextToken() // consume LIST
 
 	switch p.curToken.Type {
-	case TokenServices:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("list_services"), nil
-	case TokenUsers:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("list_users"), nil
-	case TokenRoles:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("list_roles"), nil
 	case TokenVars:
 		p.nextToken()
 		// Semicolon is optional for SHOW TOKEN
@@ -335,9 +314,9 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 				p.nextToken()
 			}
 			return NewCommand("show_current_model"), nil
-		} else {
-			return nil, fmt.Errorf("expected USER or MODEL after CURRENT")
 		}
+
+		return nil, fmt.Errorf("expected USER or MODEL after CURRENT")
 	case TokenUser:
 		return p.parseShowUser()
 	case TokenRole:
