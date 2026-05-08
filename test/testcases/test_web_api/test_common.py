@@ -26,7 +26,6 @@ from utils.file_utils import create_txt_file
 HEADERS = {"Content-Type": "application/json"}
 
 DATASETS_URL = f"/api/{VERSION}/datasets"
-DOCUMENT_APP_URL = f"/{VERSION}/document"
 CHUNK_APP_URL = f"/{VERSION}/chunk"
 CHUNK_API_URL = f"/api/{VERSION}/datasets/{{dataset_id}}/documents/{{document_id}}/chunks"
 # SESSION_WITH_CHAT_ASSISTANT_API_URL = "/api/v1/chats/{chat_id}/sessions"
@@ -404,8 +403,31 @@ def document_infos(auth, dataset_id, params=None, payload=None, *, headers=HEADE
 
 
 def document_metadata_summary(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/metadata/summary", headers=headers, auth=auth, json=payload, data=data)
+    dataset_id = (payload or {}).get("kb_id")
+    doc_ids = (payload or {}).get("doc_ids")
+    if not dataset_id:
+        return {"code": 101, "message": "KB ID is required"}
+    params = {}
+    if doc_ids:
+        params["doc_ids"] = ",".join(doc_ids)
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_URL}/{dataset_id}/metadata/summary", headers=headers, auth=auth, params=params, data=data)
     return res.json()
+
+
+def document_get(auth, document_id, *, headers=HEADERS, data=None):
+    res = requests.get(url=f"{HOST_ADDRESS}/api/{VERSION}/documents/{document_id}/preview", headers=headers, auth=auth, data=data)
+    return res
+
+
+def document_download(auth, attachment_id, *, ext="markdown", headers=HEADERS, data=None):
+    res = requests.get(
+        url=f"{HOST_ADDRESS}/api/{VERSION}/documents/{attachment_id}/download",
+        headers=headers,
+        auth=auth,
+        params={"ext": ext},
+        data=data,
+    )
+    return res
 
 
 def document_metadata_update(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):

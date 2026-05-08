@@ -29,6 +29,8 @@ Deprecated APIs and their replacements:
 - POST /api/v1/file/convert -> POST /api/v1/files/link-to-datasets
 - GET /api/v1/file/* -> GET /api/v1/files*
 - POST /api/v1/file/* -> POST /api/v1/files*
+- GET /api/v1/document/get/{doc_id} -> GET /api/v1/documents/{doc_id}/preview
+- GET /api/v1/document/download/{doc_id} -> GET /api/v1/documents/{doc_id}/download
 - POST /api/v1/sessions/related_questions -> POST /api/v1/chat/recommandation
 - PUT (chunk update) -> PATCH (chunk update)
 """
@@ -393,6 +395,44 @@ async def deprecated_file_upload_info():
     # Need to pass tenant_id explicitly since we're calling the function directly
     tenant_id = current_user.id
     return await document_api.upload_info(tenant_id=tenant_id)
+
+
+# =============================================================================
+# Document APIs
+# =============================================================================
+
+@manager.route("/document/get/<doc_id>", methods=["GET"])
+@login_required
+async def deprecated_document_get(doc_id):
+    """
+    Deprecated: Use GET /api/v1/documents/{doc_id}/preview instead.
+
+    Old path: GET /api/v1/document/get/{doc_id}
+    New path: GET /api/v1/documents/{doc_id}/preview
+    """
+    logging.warning(
+        "API endpoint /api/v1/document/get/%s is deprecated. "
+        "Please use /api/v1/documents/%s/preview instead.",
+        doc_id, doc_id,
+    )
+    return await document_api.get(doc_id)
+
+
+@manager.route("/document/download/<doc_id>", methods=["GET"])
+@login_required
+async def deprecated_document_download(doc_id):
+    """
+    Deprecated: Use GET /api/v1/documents/{doc_id}/download instead.
+
+    Old path: GET /api/v1/document/download/{doc_id}
+    New path: GET /api/v1/documents/{doc_id}/download
+    """
+    logging.warning(
+        "API endpoint /api/v1/document/download/%s is deprecated. "
+        "Please use /api/v1/documents/%s/download instead.",
+        doc_id, doc_id,
+    )
+    return await document_api.download_attachment(doc_id=doc_id)
 
 # =============================================================================
 # Agent Chat API

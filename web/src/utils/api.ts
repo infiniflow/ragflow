@@ -127,9 +127,9 @@ export default {
   documentChangeParser: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
   documentThumbnails: `${restAPIv1}/thumbnails`,
-  getDocumentFile: `${webAPI}/document/get`,
+  getDocumentFile: `${restAPIv1}/documents`,
   getDocumentFileDownload: (docId: string) =>
-    `${webAPI}/document/download/${docId}`,
+    `${restAPIv1}/documents/${docId}/download`,
   documentUpload: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents`,
   webCrawl: (datasetId: string) =>
