@@ -76,7 +76,7 @@ from api.db.joint_services.tenant_model_service import get_model_config_by_type_
 from common.versions import get_ragflow_version
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, \
-    email, tag
+    email, tag, external_loader
 from rag.nlp import search, rag_tokenizer, add_positions
 from rag.raptor import (
     RAPTOR_TREE_BUILDER,
@@ -114,7 +114,8 @@ FACTORY = {
     ParserType.AUDIO.value: audio,
     ParserType.EMAIL.value: email,
     ParserType.KG.value: naive,
-    ParserType.TAG.value: tag
+    ParserType.TAG.value: tag,
+    ParserType.EXTERNAL.value: external_loader,
 }
 
 TASK_TYPE_TO_PIPELINE_TASK_TYPE = {

@@ -170,3 +170,37 @@ user_default_llm:
 #   secret_id: '${TENCENT_SECRET_ID}'
 #   secret_key: '${TENCENT_SECRET_KEY}'
 #   region: '${TENCENT_REGION}'
+# external_loaders:
+#   # Routes file extensions to either an external REST API (url) or a built-in
+#   # RAGFlow parser (parser). First matching route wins (case-insensitive).
+#   # url and parser are mutually exclusive within a route.
+#   #
+#   # External loader API contract:
+#   #   Method  : as configured (default POST)
+#   #   Body    : raw file binary
+#   #   Headers : Content-Type (MIME), X-Filename (URL-encoded basename),
+#   #             Authorization: Bearer <api_key>  (omitted when empty)
+#   #   Response: JSON with at least a "page_content" string field
+#   #
+#   routes:
+#     - extensions: [".docx", ".doc", ".odt"]
+#       url: "http://doc-loader:8080/process"
+#       api_key: ""
+#       method: POST
+#     - extensions: [".xlsx", ".xls"]
+#       parser: table        # delegate to RAGFlow's built-in table parser
+#     - extensions: [".pdf"]
+#       url: "http://pdf-loader:8080/process"
+#       api_key: ""
+#     - extensions: [".png", ".jpg", ".jpeg", ".webp", ".tiff", ".bmp"]
+#       url: "http://vision-loader:8080/process"
+#       api_key: ""
+#   fallback:
+#     # Applied when no route matches. Same url/parser choice as routes.
+#     # Option A – send unmatched extensions to a generic external loader:
+#     # url: "http://generic-loader:8080/process"
+#     # api_key: ""
+#     # Option B – delegate to a built-in RAGFlow parser
+#     # (naive, paper, book, manual, laws, presentation, picture, qa, table,
+#     #  resume, one, audio, email, tag):
+#     # parser: naive
