@@ -6,7 +6,8 @@
   "url_suffix": {
     "chat": "chat/completions",
     "models": "models",
-    "balance": "user/balance"
+    "balance": "user/balance",
+    "embedding": "embeddings"
   },
   "class": "deepseek",
   "models": [
@@ -31,6 +32,13 @@
         "default_value": true,
         "clear_thinking": true
       }
+    },
+    {
+      "name": "text-embedding-v3",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
     }
   ]
 }
