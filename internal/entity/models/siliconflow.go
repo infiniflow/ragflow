@@ -474,7 +474,7 @@ func (s *SiliconflowModel) Encode(modelName *string, texts []string, apiConfig *
 
 func (z *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
