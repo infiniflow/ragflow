@@ -405,6 +405,22 @@ class TestDocumentMetadataUnit:
         module = document_app_module
         monkeypatch.setattr(module, "request", _DummyRequest(args={"ext": "abc"}))
 
+        # Cross-tenant access is denied -> "Document not found!" (no ID enumeration).
+        accessible_calls = []
+
+        def fake_accessible_denied(doc_id, user_id):
+            accessible_calls.append((doc_id, user_id))
+            return False
+
+        monkeypatch.setattr(module.DocumentService, "accessible", fake_accessible_denied)
+        res = _run(module.download_attachment(attachment_id="att1"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert "Document not found!" in res["message"]
+        assert accessible_calls == [("att1", "user-1")]
+
+        # From here on the user is authorized; exercise the original branches.
+        monkeypatch.setattr(module.DocumentService, "accessible", lambda _doc_id, _user_id: True)
+
         async def fake_thread_pool_exec(*_args, **_kwargs):
             return b"attachment"
 

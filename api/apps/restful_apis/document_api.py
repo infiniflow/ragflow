@@ -1893,10 +1893,19 @@ async def get(doc_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def download_attachment(tenant_id=None, doc_id=None, attachment_id=None):
+    """Stream a document's underlying file to the requesting user.
+
+    Mirrors the authorization model of the preview endpoint: the user must belong
+    to the tenant that owns the document's knowledge base. A denial returns the
+    same "Document not found!" response so the endpoint cannot be used to
+    enumerate doc ids across tenants.
+    """
     try:
         # Keep backward compatibility with older callers and unit tests that still
         # pass `attachment_id` instead of the route parameter name.
         doc_id = doc_id or attachment_id
+        if not DocumentService.accessible(doc_id, current_user.id):
+            return get_data_error_result(message="Document not found!")
         ext = request.args.get("ext", "markdown")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, doc_id)
         response = await make_response(data)
