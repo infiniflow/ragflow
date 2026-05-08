@@ -1883,8 +1883,11 @@ async def get(doc_id):
 @manager.route("/documents/<doc_id>/download", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def download_attachment(tenant_id, doc_id):
+async def download_attachment(tenant_id=None, doc_id=None, attachment_id=None):
     try:
+        # Keep backward compatibility with older callers and unit tests that still
+        # pass `attachment_id` instead of the route parameter name.
+        doc_id = doc_id or attachment_id
         ext = request.args.get("ext", "markdown")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, doc_id)
         response = await make_response(data)
