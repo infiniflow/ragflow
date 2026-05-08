@@ -71,7 +71,7 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 	}
 
 	region := "default"
-	if apiConfig.Region != nil {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
@@ -208,7 +208,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -457,7 +457,7 @@ func (z *ZhipuAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, er
 
 func (z *ZhipuAIModel) CheckConnection(apiConfig *APIConfig) error {
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 

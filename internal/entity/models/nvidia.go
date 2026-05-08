@@ -165,15 +165,20 @@ func (n *NvidiaModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	var modelClass *string
-	if chatModelConfig != nil {
-		modelClass = chatModelConfig.ModelClass
+	var reasonContent string
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+		reasonContent, ok = messageMap["reasoning_content"].(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid content format")
+		}
+		if reasonContent != "" && reasonContent[0] == '\n' {
+			reasonContent = reasonContent[1:]
+		}
 	}
-	thinking, answer := GetThinkingAndAnswer(modelClass, &content)
 
 	chatResponse := &ChatResponse{
-		Answer:        answer,
-		ReasonContent: thinking,
+		Answer:        &content,
+		ReasonContent: &reasonContent,
 	}
 
 	return chatResponse, nil
@@ -185,7 +190,7 @@ func (n *NvidiaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	}
 
 	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 

@@ -79,7 +79,7 @@ func (z *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -196,11 +196,20 @@ func (z *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelClass, &content)
+	var reasonContent string
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+		reasonContent, ok = messageMap["reasoning_content"].(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid content format")
+		}
+		if reasonContent != "" && reasonContent[0] == '\n' {
+			reasonContent = reasonContent[1:]
+		}
+	}
 
 	chatResponse := &ChatResponse{
-		Answer:        answer,
-		ReasonContent: thinking,
+		Answer:        &content,
+		ReasonContent: &reasonContent,
 	}
 
 	return chatResponse, nil
@@ -213,7 +222,7 @@ func (z *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message,
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 

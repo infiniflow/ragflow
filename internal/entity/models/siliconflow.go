@@ -91,7 +91,7 @@ func (z *SiliconflowModel) ChatWithMessages(modelName string, messages []Message
 	}
 
 	region := "default"
-	if apiConfig.Region != nil {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
@@ -222,7 +222,7 @@ func (z *SiliconflowModel) ChatStreamlyWithSender(modelName string, messages []M
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -383,7 +383,7 @@ func (s *SiliconflowModel) Encode(modelName *string, texts []string, apiConfig *
 	}
 
 	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -630,7 +630,7 @@ func (s *SiliconflowModel) Rerank(modelName *string, query string, texts []strin
 	}
 
 	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
