@@ -1476,7 +1476,9 @@ def test_searchbots_retrieval_test_embedded_matrix_unit(monkeypatch):
     )
     monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kb_ids: [{"id": "doc-1"}])
 
-    async def _apply_filter(_meta_filter, _metas, _question, _chat_mdl, _local_doc_ids):
+    async def _apply_filter(_meta_filter, _metas, _question, _chat_mdl, _local_doc_ids, **kwargs):
+        assert kwargs["kb_ids"] == ["kb-1"]
+        assert callable(kwargs["metas_loader"])
         return ["doc-filtered"]
 
     monkeypatch.setattr(module, "apply_meta_data_filter", _apply_filter)
