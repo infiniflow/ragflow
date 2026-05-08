@@ -43,11 +43,11 @@ func (c *RAGFlowClient) PingServer(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode: multiple iterations
-		return c.HTTPClient.RequestWithIterations("GET", "/system/ping", false, "web", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/system/ping", "web", nil, nil, iterations)
 	}
 
 	// Single mode
-	resp, err := c.HTTPClient.Request("GET", "/system/ping", false, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/system/ping", "web", nil, nil)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		fmt.Println("Server is down")
@@ -75,11 +75,11 @@ func (c *RAGFlowClient) ShowServerVersion(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode: multiple iterations
-		return c.HTTPClient.RequestWithIterations("GET", "/system/version", true, "web", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/system/version", "web", nil, nil, iterations)
 	}
 
 	// Single mode
-	resp, err := c.HTTPClient.Request("GET", "/system/version", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/system/version", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show version: %w", err)
 	}
@@ -110,11 +110,11 @@ func (c *RAGFlowClient) ListConfigs(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode: multiple iterations
-		return c.HTTPClient.RequestWithIterations("GET", "/system/configs", true, "web", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/system/configs", "web", nil, nil, iterations)
 	}
 
 	// Single mode
-	resp, err := c.HTTPClient.Request("GET", "/system/configs", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/system/configs", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list configs: %w", err)
 	}
@@ -260,7 +260,7 @@ func (c *RAGFlowClient) SetLogLevel(cmd *Command) (ResponseIf, error) {
 			"level": logLevel,
 		}
 
-		resp, err := c.HTTPClient.Request("PUT", "/system/log", true, "admin", nil, payload)
+		resp, err := c.HTTPClient.Request("PUT", "/system/log", "admin", nil, payload)
 		if err != nil {
 			return nil, fmt.Errorf("failed to change log level: %w", err)
 		}
@@ -317,7 +317,7 @@ func (c *RAGFlowClient) RegisterUser(cmd *Command) (ResponseIf, error) {
 		"nickname": nickname,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/user/register", false, "admin", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/user/register", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register user: %w", err)
 	}
@@ -368,11 +368,11 @@ func (c *RAGFlowClient) ListDatasets(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("GET", "/datasets", true, authKind, nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/datasets", authKind, nil, nil, iterations)
 	}
 
 	// Normal mode
-	resp, err := c.HTTPClient.Request("GET", "/datasets", true, authKind, nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/datasets", authKind, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list datasets: %w", err)
 	}
@@ -396,7 +396,7 @@ func (c *RAGFlowClient) ListDatasets(cmd *Command) (ResponseIf, error) {
 
 // getDatasetID gets dataset ID by name
 func (c *RAGFlowClient) getDatasetID(datasetName string) (string, error) {
-	resp, err := c.HTTPClient.Request("GET", "/datasets", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/datasets", "web", nil, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to list datasets: %w", err)
 	}
@@ -500,11 +500,11 @@ func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("POST", "/chunk/retrieval_test", false, "web", nil, payload, iterations)
+		return c.HTTPClient.RequestWithIterations("POST", "/chunk/retrieval_test", "web", nil, payload, iterations)
 	}
 
 	// Normal mode
-	resp, err := c.HTTPClient.Request("POST", "/chunk/retrieval_test", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/chunk/retrieval_test", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search on datasets: %w", err)
 	}
@@ -579,7 +579,7 @@ func (c *RAGFlowClient) CreateToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/system/tokens", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("POST", "/system/tokens", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create token: %w", err)
 	}
@@ -610,7 +610,7 @@ func (c *RAGFlowClient) ListTokens(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", "/system/tokens", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/system/tokens", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tokens: %w", err)
 	}
@@ -642,7 +642,7 @@ func (c *RAGFlowClient) DropToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("token not provided")
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/system/tokens/%s", token), true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/system/tokens/%s", token), "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop token: %w", err)
 	}
@@ -683,7 +683,7 @@ func (c *RAGFlowClient) SetToken(cmd *Command) (ResponseIf, error) {
 	c.HTTPClient.useAPIToken = true
 
 	// Validate token by calling list tokens API
-	resp, err := c.HTTPClient.Request("GET", "/tokens", true, "api", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/tokens", "api", nil, nil)
 	if err != nil {
 		// Restore original token on error
 		c.HTTPClient.APIToken = savedToken
@@ -792,7 +792,7 @@ func (c *RAGFlowClient) CreateDataset(cmd *Command) (ResponseIf, error) {
 		"vector_size": vectorSize,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/kb/doc_engine_table", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/kb/doc_engine_table", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create table: %w", err)
 	}
@@ -849,7 +849,7 @@ func (c *RAGFlowClient) CreateDatasetInDocEngine(cmd *Command) (ResponseIf, erro
 		"vector_size": vectorSize,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/kb/doc_engine_table", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/kb/doc_engine_table", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create table: %w", err)
 	}
@@ -900,7 +900,7 @@ func (c *RAGFlowClient) DropDatasetInDocEngine(cmd *Command) (ResponseIf, error)
 		"kb_id": datasetID,
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", "/kb/doc_engine_table", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("DELETE", "/kb/doc_engine_table", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop dataset: %w", err)
 	}
@@ -936,7 +936,7 @@ func (c *RAGFlowClient) CreateMetadataInDocEngine(cmd *Command) (ResponseIf, err
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/tenant/doc_engine_metadata_table", false, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("POST", "/tenant/doc_engine_metadata_table", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create metadata table: %w", err)
 	}
@@ -972,7 +972,7 @@ func (c *RAGFlowClient) DropMetadataInDocEngine(cmd *Command) (ResponseIf, error
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", "/tenant/doc_engine_metadata_table", false, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("DELETE", "/tenant/doc_engine_metadata_table", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop metadata table: %w", err)
 	}
@@ -1020,7 +1020,7 @@ func (c *RAGFlowClient) AddProvider(cmd *Command) (ResponseIf, error) {
 		"provider_name": providerName,
 	}
 
-	resp, err := c.HTTPClient.Request("PUT", "/providers", true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("PUT", "/providers", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add provider: %w", err)
 	}
@@ -1049,7 +1049,7 @@ func (c *RAGFlowClient) ListProviders(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", "/providers", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/providers", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list providers: %w", err)
 	}
@@ -1090,7 +1090,7 @@ func (c *RAGFlowClient) DeleteProvider(cmd *Command) (ResponseIf, error) {
 		"llm_factory": providerName,
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", url, true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("DELETE", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete provider: %w", err)
 	}
@@ -1153,7 +1153,7 @@ func (c *RAGFlowClient) CreateProviderInstance(cmd *Command) (ResponseIf, error)
 		"region":        region,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create provider instance: %w", err)
 	}
@@ -1189,7 +1189,7 @@ func (c *RAGFlowClient) ListProviderInstances(cmd *Command) (ResponseIf, error) 
 
 	url := fmt.Sprintf("/providers/%s/instances", providerName)
 
-	resp, err := c.HTTPClient.Request("GET", url, true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list instances: %w", err)
 	}
@@ -1230,7 +1230,7 @@ func (c *RAGFlowClient) ShowProviderInstance(cmd *Command) (ResponseIf, error) {
 
 	url := fmt.Sprintf("/providers/%s/instances/%s", providerName, instanceName)
 
-	resp, err := c.HTTPClient.Request("GET", url, true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show instance: %w", err)
 	}
@@ -1271,7 +1271,7 @@ func (c *RAGFlowClient) ShowInstanceBalance(cmd *Command) (ResponseIf, error) {
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/balance", providerName, instanceName)
 
-	resp, err := c.HTTPClient.Request("GET", url, true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show instance: %w", err)
 	}
@@ -1321,7 +1321,7 @@ func (c *RAGFlowClient) AlterProviderInstance(cmd *Command) (ResponseIf, error) 
 		"llm_name": newName,
 	}
 
-	resp, err := c.HTTPClient.Request("PUT", url, true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("PUT", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to alter instance: %w", err)
 	}
@@ -1366,7 +1366,7 @@ func (c *RAGFlowClient) DropProviderInstance(cmd *Command) (ResponseIf, error) {
 
 	url := fmt.Sprintf("/providers/%s/instances", providerName)
 
-	resp, err := c.HTTPClient.Request("DELETE", url, true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("DELETE", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop instance: %w", err)
 	}
@@ -1416,7 +1416,7 @@ func (c *RAGFlowClient) DropInstanceModel(cmd *Command) (ResponseIf, error) {
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
 
-	resp, err := c.HTTPClient.Request("DELETE", url, true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("DELETE", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop instance: %w", err)
 	}
@@ -1454,7 +1454,7 @@ func (c *RAGFlowClient) ListInstanceModels(cmd *Command) (ResponseIf, error) {
 	var endPoint string
 	endPoint = fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
 
-	resp, err := c.HTTPClient.Request("GET", endPoint, true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list instance models: %w", err)
 	}
@@ -1501,7 +1501,7 @@ func (c *RAGFlowClient) EnableOrDisableModel(cmd *Command, status string) (Respo
 		"status": status,
 	}
 
-	resp, err := c.HTTPClient.Request("PATCH", url, true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("PATCH", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to enable/disable model: %w", err)
 	}
@@ -1687,7 +1687,7 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	if stream {
 		// Call stream http api
 		startTime := time.Now()
-		reader, err := c.HTTPClient.RequestStream("POST", url, true, "web", nil, payload)
+		reader, err := c.HTTPClient.RequestStream("POST", url, "web", nil, payload)
 		if err != nil {
 			return nil, fmt.Errorf("failed to chat model: %w", err)
 		}
@@ -1756,7 +1756,7 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 		return result, nil
 	}
 
-	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
 		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 			return nil, fmt.Errorf("connection closed (EOF): upstream overloaded or proxy timeout: %w", err)
@@ -1807,7 +1807,7 @@ func (c *RAGFlowClient) CheckProviderConnection(cmd *Command) (ResponseIf, error
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/connection", providerName, instanceName)
 
-	resp, err := c.HTTPClient.Request("GET", url, true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check provider connection: %w", err)
 	}
@@ -1929,7 +1929,7 @@ func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
 		payload["thinking"] = supportThink
 	}
 
-	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check provider connection: %w", err)
 	}
@@ -2070,7 +2070,7 @@ func (c *RAGFlowClient) InsertDatasetFromFile(cmd *Command) (ResponseIf, error) 
 		"file_path": filePath,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/kb/insert_from_file", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/kb/insert_from_file", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert dataset from file: %w", err)
 	}
@@ -2115,7 +2115,7 @@ func (c *RAGFlowClient) InsertMetadataFromFile(cmd *Command) (ResponseIf, error)
 		"file_path": filePath,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/tenant/insert_metadata_from_file", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/tenant/insert_metadata_from_file", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert metadata from file: %w", err)
 	}
@@ -2173,7 +2173,7 @@ func (c *RAGFlowClient) UpdateChunk(cmd *Command) (ResponseIf, error) {
 	}
 
 	// Try to get doc_id from the chunk retrieval endpoint
-	getResp, err := c.HTTPClient.Request("GET", "/chunk/get?chunk_id="+chunkID, false, "web", nil, nil)
+	getResp, err := c.HTTPClient.Request("GET", "/chunk/get?chunk_id="+chunkID, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get chunk info: %w", err)
 	}
@@ -2205,7 +2205,7 @@ func (c *RAGFlowClient) UpdateChunk(cmd *Command) (ResponseIf, error) {
 	payload["document_id"] = docID
 	payload["chunk_id"] = chunkID
 
-	resp, err := c.HTTPClient.Request("POST", "/chunk/update", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/chunk/update", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update chunk: %w", err)
 	}
@@ -2256,7 +2256,7 @@ func (c *RAGFlowClient) SetMeta(cmd *Command) (ResponseIf, error) {
 		"meta":   metaJSON,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/document/set_meta", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/document/set_meta", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set metadata: %w", err)
 	}
@@ -2311,7 +2311,7 @@ func (c *RAGFlowClient) RmTags(cmd *Command) (ResponseIf, error) {
 		"tags": tags,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/kb/"+kbID+"/rm_tags", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/kb/"+kbID+"/rm_tags", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove tags: %w", err)
 	}
@@ -2363,7 +2363,7 @@ func (c *RAGFlowClient) RemoveChunks(cmd *Command) (ResponseIf, error) {
 		payload["chunk_ids"] = chunkIDs
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/chunk/rm", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/chunk/rm", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove chunks: %w", err)
 	}

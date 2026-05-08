@@ -33,11 +33,11 @@ func (c *RAGFlowClient) PingAdmin(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode: multiple iterations
-		return c.HTTPClient.RequestWithIterations("GET", "/admin/ping", false, "web", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/admin/ping", "web", nil, nil, iterations)
 	}
 
 	// Single mode
-	resp, err := c.HTTPClient.Request("GET", "/admin/ping", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/admin/ping", "web", nil, nil)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		fmt.Println("Server is down")
@@ -67,11 +67,11 @@ func (c *RAGFlowClient) ShowAdminVersion(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode: multiple iterations
-		return c.HTTPClient.RequestWithIterations("GET", "/admin/version", false, "web", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/admin/version", "web", nil, nil, iterations)
 	}
 
 	// Single mode
-	resp, err := c.HTTPClient.Request("GET", "/admin/version", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/admin/version", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show admin version: %w", err)
 	}
@@ -106,10 +106,10 @@ func (c *RAGFlowClient) ListRoles(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("GET", "/admin/roles", true, "admin", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/admin/roles", "admin", nil, nil, iterations)
 	}
 
-	resp, err := c.HTTPClient.Request("GET", "/admin/roles", true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/admin/roles", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list roles: %w", err)
 	}
@@ -153,10 +153,10 @@ func (c *RAGFlowClient) ShowRole(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("GET", endPoint, true, "admin", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", endPoint, "admin", nil, nil, iterations)
 	}
 
-	resp, err := c.HTTPClient.Request("GET", endPoint, true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", endPoint, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show role: %w", err)
 	}
@@ -197,7 +197,7 @@ func (c *RAGFlowClient) CreateRole(cmd *Command) (ResponseIf, error) {
 		payload["description"] = description
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/admin/roles", true, "admin", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/admin/roles", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create role: %w", err)
 	}
@@ -230,7 +230,7 @@ func (c *RAGFlowClient) DropRole(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("role_name not provided")
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/admin/roles/%s", roleName), true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/admin/roles/%s", roleName), "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop role: %w", err)
 	}
@@ -271,7 +271,7 @@ func (c *RAGFlowClient) AlterRole(cmd *Command) (ResponseIf, error) {
 		payload["description"] = description
 	}
 
-	resp, err := c.HTTPClient.Request("PUT", fmt.Sprintf("/admin/roles/%s", roleName), true, "admin", nil, payload)
+	resp, err := c.HTTPClient.Request("PUT", fmt.Sprintf("/admin/roles/%s", roleName), "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to alter role: %w", err)
 	}
@@ -304,7 +304,7 @@ func (c *RAGFlowClient) GrantAdmin(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.HTTPClient.Request("PUT", fmt.Sprintf("/admin/users/%s/admin", userName), true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("PUT", fmt.Sprintf("/admin/users/%s/admin", userName), "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to grant admin: %w", err)
 	}
@@ -337,7 +337,7 @@ func (c *RAGFlowClient) RevokeAdmin(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/admin/users/%s/admin", userName), true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/admin/users/%s/admin", userName), "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to revoke admin: %w", err)
 	}
@@ -387,7 +387,7 @@ func (c *RAGFlowClient) CreateUser(cmd *Command) (ResponseIf, error) {
 		"role":     "user",
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/admin/users", true, "admin", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/admin/users", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
@@ -434,7 +434,7 @@ func (c *RAGFlowClient) ActivateUser(cmd *Command) (ResponseIf, error) {
 		"activate_status": activateStatus,
 	}
 
-	resp, err := c.HTTPClient.Request("PUT", fmt.Sprintf("/admin/users/%s/activate", userName), true, "admin", nil, payload)
+	resp, err := c.HTTPClient.Request("PUT", fmt.Sprintf("/admin/users/%s/activate", userName), "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update user status: %w", err)
 	}
@@ -482,7 +482,7 @@ func (c *RAGFlowClient) AlterUserPassword(cmd *Command) (ResponseIf, error) {
 		"new_password": encryptedPassword,
 	}
 
-	resp, err := c.HTTPClient.Request("PUT", fmt.Sprintf("/admin/users/%s/password", userName), true, "admin", nil, payload)
+	resp, err := c.HTTPClient.Request("PUT", fmt.Sprintf("/admin/users/%s/password", userName), "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to change user password: %w", err)
 	}
@@ -524,10 +524,10 @@ func (c *RAGFlowClient) ListServices(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("GET", "/admin/services", true, "admin", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/admin/services", "admin", nil, nil, iterations)
 	}
 
-	resp, err := c.HTTPClient.Request("GET", "/admin/services", true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/admin/services", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list services: %w", err)
 	}
@@ -571,10 +571,10 @@ func (c *RAGFlowClient) ShowService(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("GET", endPoint, true, "admin", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", endPoint, "admin", nil, nil, iterations)
 	}
 
-	resp, err := c.HTTPClient.Request("GET", endPoint, true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", endPoint, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show service: %w", err)
 	}
@@ -611,10 +611,10 @@ func (c *RAGFlowClient) ListUsers(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("GET", "/admin/users", true, "admin", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/admin/users", "admin", nil, nil, iterations)
 	}
 
-	resp, err := c.HTTPClient.Request("GET", "/admin/users", true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/admin/users", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list users: %w", err)
 	}
@@ -651,7 +651,7 @@ func (c *RAGFlowClient) DropUser(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/admin/users/%s", userName), true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/admin/users/%s", userName), "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop user: %w", err)
 	}
@@ -684,7 +684,7 @@ func (c *RAGFlowClient) ShowUser(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s", userName), true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s", userName), "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show user: %w", err)
 	}
@@ -726,10 +726,10 @@ func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), true, "admin", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), "admin", nil, nil, iterations)
 	}
 
-	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list datasets: %w", err)
 	}
@@ -781,10 +781,10 @@ func (c *RAGFlowClient) ListAgents(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("GET", fmt.Sprintf("/admin/users/%s/agents", userName), true, "admin", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", fmt.Sprintf("/admin/users/%s/agents", userName), "admin", nil, nil, iterations)
 	}
 
-	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/agents", userName), true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/agents", userName), "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agents: %w", err)
 	}
@@ -827,7 +827,7 @@ func (c *RAGFlowClient) GrantPermission(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/keys", userName), true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/keys", userName), "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tokens: %w", err)
 	}
@@ -887,7 +887,7 @@ func (c *RAGFlowClient) RevokePermission(cmd *Command) (ResponseIf, error) {
 		"actions":  actions,
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/admin/roles/%s/permission", roleName), true, "admin", nil, payload)
+	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/admin/roles/%s/permission", roleName), "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to revoke permission: %w", err)
 	}
@@ -934,7 +934,7 @@ func (c *RAGFlowClient) AlterUserRole(cmd *Command) (ResponseIf, error) {
 		"role_name": roleName,
 	}
 
-	resp, err := c.HTTPClient.Request("PUT", fmt.Sprintf("/admin/users/%s/role", userName), true, "admin", nil, payload)
+	resp, err := c.HTTPClient.Request("PUT", fmt.Sprintf("/admin/users/%s/role", userName), "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to alter user role: %w", err)
 	}
@@ -972,7 +972,7 @@ func (c *RAGFlowClient) ShowUserPermission(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/permission", userName), true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/permission", userName), "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show user permission: %w", err)
 	}
@@ -1010,7 +1010,7 @@ func (c *RAGFlowClient) GenerateAdminToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.HTTPClient.Request("POST", fmt.Sprintf("/admin/users/%s/keys", userName), true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("POST", fmt.Sprintf("/admin/users/%s/keys", userName), "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
@@ -1047,7 +1047,7 @@ func (c *RAGFlowClient) ListAdminTokens(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/keys", userName), true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/keys", userName), "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tokens: %w", err)
 	}
@@ -1097,7 +1097,7 @@ func (c *RAGFlowClient) DropAdminToken(cmd *Command) (ResponseIf, error) {
 	// URL encode the token to handle special characters
 	encodedToken := url.QueryEscape(token)
 
-	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/admin/users/%s/keys/%s", userName, encodedToken), true, "admin", nil, nil)
+	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/admin/users/%s/keys/%s", userName, encodedToken), "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop token: %w", err)
 	}

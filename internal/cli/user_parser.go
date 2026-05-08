@@ -68,39 +68,39 @@ func (p *Parser) parseRegisterCommand() (*Command, error) {
 	if err := p.expectPeek(TokenUser); err != nil {
 		return nil, err
 	}
-	p.nextToken()
+	p.nextToken() // consume USER
 
 	userName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 	cmd.Params["user_name"] = userName
+	p.nextToken() // consume Email
 
-	p.nextToken()
 	if p.curToken.Type != TokenAs {
 		return nil, fmt.Errorf("expected AS")
 	}
+	p.nextToken() // consume AS
 
-	p.nextToken()
 	nickname, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 	cmd.Params["nickname"] = nickname
+	p.nextToken() // consume nickname
 
-	p.nextToken()
 	if p.curToken.Type != TokenPassword {
 		return nil, fmt.Errorf("expected PASSWORD")
 	}
+	p.nextToken() // consume PASSWORD
 
-	p.nextToken()
 	password, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 	cmd.Params["password"] = password
+	p.nextToken() // consume 'password'
 
-	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
