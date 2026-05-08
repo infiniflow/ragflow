@@ -8,7 +8,7 @@
   "url_suffix": {
     "chat": "compatible-mode/v1/chat/completions",
     "embedding": "compatible-mode/v1/embeddings",
-    "rerank": "compatible-mode/v1/rerank",
+    "rerank": "compatible-api/v1/reranks",
     "models": "api/v1/deployments/models"
   },
   "models": [
