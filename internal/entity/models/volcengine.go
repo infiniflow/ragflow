@@ -217,7 +217,7 @@ func (z *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 
 	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -378,7 +378,7 @@ func (z *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 
 	var region = "default"
 
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -576,7 +576,7 @@ func (z *VolcEngine) Balance(apiConfig *APIConfig) (map[string]interface{}, erro
 
 func (z *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 

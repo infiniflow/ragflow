@@ -71,7 +71,7 @@ func (z *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 
 	region := "default"
-	if apiConfig.Region != nil {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
@@ -218,7 +218,7 @@ func (z *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
