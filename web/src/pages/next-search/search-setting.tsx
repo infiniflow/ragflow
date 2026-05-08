@@ -26,11 +26,7 @@ import { MultiSelect } from '@/components/ui/multi-select';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  useFetchKnowledgeList,
-  useFetchKnowledgeMetadataKeys,
-} from '@/hooks/use-knowledge-request';
+import { useFetchKnowledgeMetadataKeys } from '@/hooks/use-knowledge-request';
 import {
   useComposeLlmOptionsByModelTypes,
   useSelectLlmOptionsByModelType,
@@ -232,14 +228,29 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
   }, [metadataKeys]);
 
   useEffect(() => {
-    const currentFields = formMethods.getValues('search_config.reference_metadata.fields');
-    if (referenceMetadataEnabled && Array.isArray(currentFields) && currentFields.length > 0 && metadataKeys) {
-      const validFields = currentFields.filter((field) => metadataKeys.includes(field));
+    const currentFields = formMethods.getValues(
+      'search_config.reference_metadata.fields',
+    );
+    if (
+      referenceMetadataEnabled &&
+      Array.isArray(currentFields) &&
+      currentFields.length > 0 &&
+      metadataKeys
+    ) {
+      const validFields = currentFields.filter((field) =>
+        metadataKeys.includes(field),
+      );
       if (validFields.length !== currentFields.length) {
-        formMethods.setValue('search_config.reference_metadata.fields', validFields);
+        formMethods.setValue(
+          'search_config.reference_metadata.fields',
+          validFields,
+        );
       }
     } else if (!referenceMetadataEnabled) {
-        formMethods.setValue('search_config.reference_metadata.fields', undefined);
+      formMethods.setValue(
+        'search_config.reference_metadata.fields',
+        undefined,
+      );
     }
   }, [selectedKbIds, metadataKeys, referenceMetadataEnabled, formMethods]);
 

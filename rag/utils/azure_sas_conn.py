@@ -52,44 +52,49 @@ class RAGFlowAzureSasBlob:
         return self.conn.upload_blob(name=f"{bucket}/{fnm}", data=BytesIO(binary), length=len(binary))
 
     def put(self, bucket, fnm, binary, tenant_id=None):
+        blob_name = f"{bucket}/{fnm}"
         for _ in range(3):
             try:
-                return self.conn.upload_blob(name=f"{bucket}/{fnm}", data=BytesIO(binary), length=len(binary))
+                return self.conn.upload_blob(name=blob_name, data=BytesIO(binary), length=len(binary))
             except Exception:
-                logging.exception(f"Fail put {bucket}/{fnm}")
+                logging.exception(f"Fail put {blob_name}")
                 self.__open__()
                 time.sleep(1)
 
     def rm(self, bucket, fnm):
+        blob_name = f"{bucket}/{fnm}"
         try:
-            self.conn.delete_blob(f"{bucket}/{fnm}")
+            self.conn.delete_blob(blob_name)
         except Exception:
-            logging.exception(f"Fail rm {bucket}/{fnm}")
+            logging.exception(f"Fail rm {blob_name}")
 
     def get(self, bucket, fnm):
+        blob_name = f"{bucket}/{fnm}"
         for _ in range(1):
             try:
-                r = self.conn.download_blob(f"{bucket}/{fnm}")
+                r = self.conn.download_blob(blob_name)
                 return r.read()
             except Exception:
-                logging.exception(f"fail get {bucket}/{fnm}")
+                logging.exception(f"fail get {blob_name}")
                 self.__open__()
                 time.sleep(1)
-        return
+        return None
 
     def obj_exist(self, bucket, fnm):
+        blob_name = f"{bucket}/{fnm}"
         try:
-            return self.conn.get_blob_client(f"{bucket}/{fnm}").exists()
+            return self.conn.get_blob_client(blob_name).exists()
         except Exception:
-            logging.exception(f"Fail put {bucket}/{fnm}")
+            logging.exception(f"Fail put {blob_name}")
         return False
 
     def get_presigned_url(self, bucket, fnm, expires):
+        blob_name = f"{bucket}/{fnm}"
         for _ in range(10):
             try:
-                return self.conn.get_presigned_url("GET", f"{bucket}/{fnm}", expires)
+                return self.conn.get_blob_client(blob_name).url
             except Exception:
-                logging.exception(f"fail get {bucket}/{fnm}")
+                logging.exception(f"fail get {blob_name}")
                 self.__open__()
                 time.sleep(1)
-        return
+        return None

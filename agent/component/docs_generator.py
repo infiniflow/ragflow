@@ -1,3 +1,4 @@
+import base64
 import logging
 import json
 import os
@@ -48,6 +49,7 @@ class DocGeneratorParam(ComponentParamBase):
         self.watermark_text = ""
         self.add_page_numbers = True
         self.add_timestamp = True
+        self.include_download_info_in_content = False
         self.font_size = 12
         self.outputs = {
             "download": {"value": "", "type": "string"},
@@ -113,6 +115,7 @@ class DocGenerator(Message, ABC):
                     raise Exception("Document file is empty")
 
                 file_size = len(file_bytes)
+                file_base64 = base64.b64encode(file_bytes).decode("utf-8")
                 doc_id = get_uuid()
                 settings.STORAGE_IMPL.put(self._canvas.get_tenant_id(), doc_id, file_bytes)
 
@@ -128,6 +131,8 @@ class DocGenerator(Message, ABC):
                     "filename": filename,
                     "mime_type": mime_type,
                     "size": file_size,
+                    "base64": file_base64,
+                    "include_download_info_in_content": self._param.include_download_info_in_content,
                 }
                 self.set_output("download", json.dumps(download_info))
                 return download_info

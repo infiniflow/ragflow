@@ -53,6 +53,14 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewVolcEngine(baseURL, urlSuffix), nil
 	case "vllm":
 		return NewVllmModel(baseURL, urlSuffix), nil
+	case "xai":
+		return NewXAIModel(baseURL, urlSuffix), nil
+	case "lmstudio":
+		return NewLmStudioModel(baseURL, urlSuffix), nil
+	case "nvidia":
+		return NewNvidiaModel(baseURL, urlSuffix), nil
+	case "openrouter":
+		return NewOpenRouterModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

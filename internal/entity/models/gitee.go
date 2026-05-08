@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/logger"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 )
@@ -71,7 +71,7 @@ func (z *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 
 	region := "default"
-	if apiConfig.Region != nil {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
@@ -84,7 +84,7 @@ func (z *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 			"content": msg.Content,
 		}
 	}
-	logger.Info(fmt.Sprintf("GiteeAPI messages: %+v", apiMessages))
+	common.Info(fmt.Sprintf("GiteeAPI messages: %+v", apiMessages))
 
 	// Build request body
 	reqBody := map[string]interface{}{
@@ -133,7 +133,7 @@ func (z *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	logger.Info(fmt.Sprintf("GiteeAPI request body: %s", string(jsonData)))
+	common.Info(fmt.Sprintf("GiteeAPI request body: %s", string(jsonData)))
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -218,7 +218,7 @@ func (z *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -309,7 +309,7 @@ func (z *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		logger.Info(line)
+		common.Info(line)
 
 		// SSE data line starts with "data:"
 		if !strings.HasPrefix(line, "data:") {

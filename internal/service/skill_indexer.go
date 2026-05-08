@@ -21,10 +21,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
-	"ragflow/internal/logger"
 	"ragflow/internal/storage"
 	"ragflow/internal/tokenizer"
 	"strings"
@@ -100,7 +100,7 @@ func (s *SkillIndexerService) IndexSkill(ctx context.Context, tenantID, spaceID 
 	// Generate embedding (optional - continue on failure)
 	vector, err := s.generateEmbedding(ctx, vectorText, embdID, tenantID)
 	if err != nil {
-		logger.Warn(fmt.Sprintf("Failed to generate embedding for skill %s: %v. Continuing with text-only index.", skill.ID, err))
+		common.Warn(fmt.Sprintf("Failed to generate embedding for skill %s: %v. Continuing with text-only index.", skill.ID, err))
 	}
 
 	// Build document with RAG tokenization for ES
@@ -172,7 +172,7 @@ func (s *SkillIndexerService) IndexSkill(ctx context.Context, tenantID, spaceID 
 	if docEngine.GetType() == "infinity" {
 		exists, _ := docEngine.TableExists(ctx, indexName)
 		if !exists {
-			logger.Info(fmt.Sprintf("Creating Infinity table with dimension %d", dimension))
+			common.Info(fmt.Sprintf("Creating Infinity table with dimension %d", dimension))
 			if err := s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, dimension); err != nil {
 				return fmt.Errorf("failed to create index with dimension %d: %w", dimension, err)
 			}
@@ -181,20 +181,20 @@ func (s *SkillIndexerService) IndexSkill(ctx context.Context, tenantID, spaceID 
 
 	// Delete old versions (both new format and old format with version suffix)
 	// This ensures only the latest version is indexed
-	logger.Debug(fmt.Sprintf("Deleting old versions of skill if exists: indexName=%s, skillName=%s", indexName, skill.Name))
+	common.Debug(fmt.Sprintf("Deleting old versions of skill if exists: indexName=%s, skillName=%s", indexName, skill.Name))
 	if err := s.DeleteSkillByName(ctx, tenantID, spaceID, skill.Name, docEngine); err != nil {
-		logger.Debug(fmt.Sprintf("No existing document to delete for skill %s (this is normal for new skills)", skill.Name))
+		common.Debug(fmt.Sprintf("No existing document to delete for skill %s (this is normal for new skills)", skill.Name))
 	}
 
 	// ES document ID cannot contain '/' - replace with '_'
 	docID := strings.ReplaceAll(skill.ID, "/", "_")
 
-	logger.Info(fmt.Sprintf("Calling IndexDocument: indexName=%s, docID=%s, engineType=%s", indexName, docID, docEngine.GetType()))
+	common.Info(fmt.Sprintf("Calling IndexDocument: indexName=%s, docID=%s, engineType=%s", indexName, docID, docEngine.GetType()))
 	if err := docEngine.IndexDocument(ctx, indexName, docID, doc); err != nil {
-		logger.Error(fmt.Sprintf("IndexDocument failed: indexName=%s, docID=%s", indexName, docID), err)
+		common.Error(fmt.Sprintf("IndexDocument failed: indexName=%s, docID=%s", indexName, docID), err)
 		return fmt.Errorf("failed to index document: %w", err)
 	}
-	logger.Info(fmt.Sprintf("IndexDocument succeeded: indexName=%s, docID=%s", indexName, docID))
+	common.Info(fmt.Sprintf("IndexDocument succeeded: indexName=%s, docID=%s", indexName, docID))
 
 	return nil
 }
@@ -232,39 +232,39 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, sp
 	if err != nil {
 		return fmt.Errorf("failed to get embedding dimension: %w", err)
 	}
-	logger.Info(fmt.Sprintf("Using embedding dimension: %d", dimension))
+	common.Info(fmt.Sprintf("Using embedding dimension: %d", dimension))
 	vectorField := fmt.Sprintf("q_%d_vec", dimension)
 
 	// Generate embeddings in batch
-	logger.Info(fmt.Sprintf("Generating embeddings for %d skills with embdID=%s", len(skills), embdID))
+	common.Info(fmt.Sprintf("Generating embeddings for %d skills with embdID=%s", len(skills), embdID))
 	vectors, err := s.generateEmbeddings(ctx, vectorTexts, embdID, tenantID)
 	if err != nil {
-		logger.Warn(fmt.Sprintf("Failed to generate embeddings: %v. Continuing with text-only index.", err))
+		common.Warn(fmt.Sprintf("Failed to generate embeddings: %v. Continuing with text-only index.", err))
 		vectors = nil // Continue without vectors
 	} else {
-		logger.Info(fmt.Sprintf("Generated %d vectors", len(vectors)))
+		common.Info(fmt.Sprintf("Generated %d vectors", len(vectors)))
 	}
 
 	// Ensure index exists with correct dimension
 	indexName := getSkillIndexName(tenantID, spaceID)
 	if docEngine.GetType() == "infinity" {
 		// For Infinity: must ensure table exists with correct dimension BEFORE inserting
-		logger.Info(fmt.Sprintf("Checking if index exists: %s", indexName))
+		common.Info(fmt.Sprintf("Checking if index exists: %s", indexName))
 		exists, err := docEngine.TableExists(ctx, indexName)
 		if err != nil {
-			logger.Warn(fmt.Sprintf("Error checking index existence: %v", err))
+			common.Warn(fmt.Sprintf("Error checking index existence: %v", err))
 		}
-		logger.Info(fmt.Sprintf("Index exists: %v", exists))
+		common.Info(fmt.Sprintf("Index exists: %v", exists))
 
 		if !exists {
 			// Only create if table doesn't exist
-			logger.Info(fmt.Sprintf("Creating index with actual dimension %d", dimension))
+			common.Info(fmt.Sprintf("Creating index with actual dimension %d", dimension))
 			if err := s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, dimension); err != nil {
 				return fmt.Errorf("failed to create index with dimension %d: %w", dimension, err)
 			}
-			logger.Info("Index created successfully")
+			common.Info("Index created successfully")
 		} else {
-			logger.Info("Index already exists, skipping creation")
+			common.Info("Index already exists, skipping creation")
 		}
 	} else {
 		// For ES: just ensure index exists
@@ -283,7 +283,7 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, sp
 		// Delete old versions (both new format and old format with version suffix)
 		// This ensures only the latest version is indexed
 		if err := s.DeleteSkillByName(ctx, tenantID, spaceID, skill.Name, docEngine); err != nil {
-			logger.Debug(fmt.Sprintf("No existing document to delete for skill %s (this is normal for new skills)", skill.Name))
+			common.Debug(fmt.Sprintf("No existing document to delete for skill %s (this is normal for new skills)", skill.Name))
 		}
 
 		// ES document ID cannot contain '/' - replace with '_'
@@ -313,7 +313,7 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, sp
 		if vectors != nil && i < len(vectors) {
 			doc[vectorField] = vectors[i]
 		} else {
-			logger.Info(fmt.Sprintf("No vector for skill %s, creating text-only index", skill.ID))
+			common.Info(fmt.Sprintf("No vector for skill %s, creating text-only index", skill.ID))
 			// For Infinity: use zero vector as placeholder (table schema requires vector column)
 			if docEngine.GetType() == "infinity" {
 				zeroVector := make([]float64, dimension)
@@ -340,9 +340,9 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, sp
 			}
 		}
 
-		logger.Info("Batch: Calling IndexDocument", zap.String("indexName", indexName), zap.String("docID", docID), zap.Int("index", i))
+		common.Info("Batch: Calling IndexDocument", zap.String("indexName", indexName), zap.String("docID", docID), zap.Int("index", i))
 		if err := docEngine.IndexDocument(ctx, indexName, docID, doc); err != nil {
-			logger.Error(fmt.Sprintf("Failed to index skill %s", skill.ID), err)
+			common.Error(fmt.Sprintf("Failed to index skill %s", skill.ID), err)
 			indexErrors = append(indexErrors, fmt.Sprintf("%s: %v", skill.ID, err))
 			continue
 		}
@@ -365,10 +365,10 @@ func (s *SkillIndexerService) DeleteSkillIndex(ctx context.Context, tenantID, sp
 	if err := docEngine.DeleteDocument(ctx, indexName, docID); err != nil {
 		// Check if it's a "not found" error - this is OK, document might not have been indexed
 		if strings.Contains(err.Error(), "not found") {
-			logger.Debug(fmt.Sprintf("Document %s not found in index %s, treating as already deleted", skillID, indexName))
+			common.Debug(fmt.Sprintf("Document %s not found in index %s, treating as already deleted", skillID, indexName))
 			return nil
 		}
-		logger.Error(fmt.Sprintf("Failed to delete document %s from index %s", skillID, indexName), err)
+		common.Error(fmt.Sprintf("Failed to delete document %s from index %s", skillID, indexName), err)
 		return err
 	}
 	return nil
@@ -382,7 +382,7 @@ func (s *SkillIndexerService) DeleteSkillByName(ctx context.Context, tenantID, s
 
 	docID := strings.ReplaceAll(skillName, "/", "_")
 	if err := docEngine.DeleteDocument(ctx, indexName, docID); err != nil {
-		logger.Debug(fmt.Sprintf("Document %s not found in index %s", skillName, indexName))
+		common.Debug(fmt.Sprintf("Document %s not found in index %s", skillName, indexName))
 	}
 
 	return nil
@@ -394,7 +394,7 @@ func (s *SkillIndexerService) UpdateSkillVersion(ctx context.Context, tenantID, 
 	// Delete old version first (upsert behavior)
 	if err := s.DeleteSkillByName(ctx, tenantID, spaceID, skill.Name, docEngine); err != nil {
 		// Log but don't fail - the document might not exist
-		logger.Debug(fmt.Sprintf("No existing index to delete for skill %s", skill.Name))
+		common.Debug(fmt.Sprintf("No existing index to delete for skill %s", skill.Name))
 	}
 
 	// Index new version
@@ -405,10 +405,10 @@ func (s *SkillIndexerService) UpdateSkillVersion(ctx context.Context, tenantID, 
 // Increments semantic version, deletes old table, and reindexes all skills from file system
 // For Infinity: if embedding model changed (different dimension), recreates the table
 // Behavior:
-//   1. Delete the existing table
-//   2. Traverse all skill folders under the space
-//   3. For each skill, get the latest version
-//   4. Reindex all skills
+//  1. Delete the existing table
+//  2. Traverse all skill folders under the space
+//  3. For each skill, get the latest version
+//  4. Reindex all skills
 func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, spaceID string, docEngine engine.DocEngine, embdID string) (map[string]interface{}, error) {
 	spaceID = normalizeSpaceID(spaceID)
 	// Get current config and increment semantic version
@@ -430,20 +430,20 @@ func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, spaceID 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get new embedding dimension: %w", err)
 	}
-	logger.Info(fmt.Sprintf("ReindexAll: new embedding dimension is %d", newDimension))
+	common.Info(fmt.Sprintf("ReindexAll: new embedding dimension is %d", newDimension))
 
 	// Delete existing index and recreate with new dimension (for both ES and Infinity)
 	indexName := getSkillIndexName(tenantID, spaceID)
 	exists, _ := docEngine.TableExists(ctx, indexName)
 	if exists {
-		logger.Info(fmt.Sprintf("ReindexAll: deleting existing index %s", indexName))
+		common.Info(fmt.Sprintf("ReindexAll: deleting existing index %s", indexName))
 		if err := docEngine.DropTable(ctx, indexName); err != nil {
-			logger.Warn(fmt.Sprintf("ReindexAll: failed to delete existing index: %v", err))
+			common.Warn(fmt.Sprintf("ReindexAll: failed to delete existing index: %v", err))
 		}
 	}
 
 	// Create new index with correct dimension
-	logger.Info(fmt.Sprintf("ReindexAll: creating new index %s with dimension %d", indexName, newDimension))
+	common.Info(fmt.Sprintf("ReindexAll: creating new index %s with dimension %d", indexName, newDimension))
 	if err := s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, newDimension); err != nil {
 		return nil, fmt.Errorf("failed to create index with dimension %d: %w", newDimension, err)
 	}
@@ -463,7 +463,7 @@ func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, spaceID 
 	if err != nil {
 		return nil, fmt.Errorf("failed to find space folder: %w", err)
 	}
-	logger.Info(fmt.Sprintf("ReindexAll: found space folder ID %s for space %s (stored FolderID was %s)", spaceFolderID, space.Name, space.FolderID))
+	common.Info(fmt.Sprintf("ReindexAll: found space folder ID %s for space %s (stored FolderID was %s)", spaceFolderID, space.Name, space.FolderID))
 
 	// Traverse all skill folders under the space
 	skills, err := s.getSkillsFromFileSystem(ctx, tenantID, spaceFolderID, spaceID)
@@ -471,20 +471,20 @@ func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, spaceID 
 		return nil, fmt.Errorf("failed to get skills from file system: %w", err)
 	}
 
-	logger.Info(fmt.Sprintf("ReindexAll: found %d skills to index", len(skills)))
+	common.Info(fmt.Sprintf("ReindexAll: found %d skills to index", len(skills)))
 
 	// Index all skills with new version using batch indexing for better performance
 	if len(skills) > 0 {
-		logger.Info(fmt.Sprintf("ReindexAll: batch indexing %d skills", len(skills)))
+		common.Info(fmt.Sprintf("ReindexAll: batch indexing %d skills", len(skills)))
 		if err := s.BatchIndexSkills(ctx, tenantID, spaceID, skills, docEngine, embdID); err != nil {
-			logger.Error("ReindexAll: batch indexing failed", err)
+			common.Error("ReindexAll: batch indexing failed", err)
 			return nil, fmt.Errorf("failed to batch index skills: %w", err)
 		}
 	}
 
 	// Clean up old version documents
 	if err := s.cleanupOldVersions(ctx, tenantID, spaceID, newVersion, docEngine); err != nil {
-		logger.Error("Failed to cleanup old versions", err)
+		common.Error("Failed to cleanup old versions", err)
 	}
 
 	result := map[string]interface{}{
@@ -507,7 +507,7 @@ func (s *SkillIndexerService) getSkillsFromFileSystem(ctx context.Context, tenan
 		return nil, fmt.Errorf("failed to list skill folders: %w", err)
 	}
 
-	logger.Info(fmt.Sprintf("getSkillsFromFileSystem: found %d skill folders in space %s", len(skillFolders), spaceID))
+	common.Info(fmt.Sprintf("getSkillsFromFileSystem: found %d skill folders in space %s", len(skillFolders), spaceID))
 
 	for _, skillFolder := range skillFolders {
 		if skillFolder.Type != "folder" {
@@ -517,31 +517,31 @@ func (s *SkillIndexerService) getSkillsFromFileSystem(ctx context.Context, tenan
 		// Get all versions of this skill
 		versions, err := s.fileDAO.ListByParentID(skillFolder.ID)
 		if err != nil {
-			logger.Warn(fmt.Sprintf("failed to list versions for skill %s: %v", skillFolder.Name, err))
+			common.Warn(fmt.Sprintf("failed to list versions for skill %s: %v", skillFolder.Name, err))
 			continue
 		}
 
 		if len(versions) == 0 {
-			logger.Info(fmt.Sprintf("no versions found for skill %s", skillFolder.Name))
+			common.Info(fmt.Sprintf("no versions found for skill %s", skillFolder.Name))
 			continue
 		}
 
 		// Find the latest version (highest semantic version)
 		latestVersion := s.findLatestVersion(versions)
 		if latestVersion == nil {
-			logger.Warn(fmt.Sprintf("no valid version found for skill %s", skillFolder.Name))
+			common.Warn(fmt.Sprintf("no valid version found for skill %s", skillFolder.Name))
 			continue
 		}
 
 		// Get skill content from the latest version folder
 		skillInfo, err := s.getSkillContentFromFolder(ctx, tenantID, skillFolder, latestVersion, spaceID)
 		if err != nil {
-			logger.Warn(fmt.Sprintf("failed to get skill content for %s: %v", skillFolder.Name, err))
+			common.Warn(fmt.Sprintf("failed to get skill content for %s: %v", skillFolder.Name, err))
 			continue
 		}
 
 		skills = append(skills, *skillInfo)
-		logger.Info(fmt.Sprintf("added skill %s version %s for indexing", skillFolder.Name, latestVersion.Name))
+		common.Info(fmt.Sprintf("added skill %s version %s for indexing", skillFolder.Name, latestVersion.Name))
 	}
 
 	return skills, nil
@@ -609,7 +609,7 @@ func (s *SkillIndexerService) getSkillContentFromFolder(ctx context.Context, ten
 		// Get file content (this might need to be implemented based on your storage system)
 		fileContent, err := s.getFileContent(ctx, tenantID, file)
 		if err != nil {
-			logger.Warn(fmt.Sprintf("failed to get content for file %s: %v", file.Name, err))
+			common.Warn(fmt.Sprintf("failed to get content for file %s: %v", file.Name, err))
 			continue
 		}
 
@@ -842,20 +842,20 @@ func (s *SkillIndexerService) InitializeIndex(ctx context.Context, tenantID, spa
 	// Check if index exists
 	indexName := getSkillIndexName(tenantID, spaceID)
 
-	logger.Info("Checking skill index existence", zap.String("indexName", indexName), zap.String("tenantID", tenantID), zap.String("spaceID", spaceID))
+	common.Info("Checking skill index existence", zap.String("indexName", indexName), zap.String("tenantID", tenantID), zap.String("spaceID", spaceID))
 
 	exists, err := docEngine.TableExists(ctx, indexName)
 	if err != nil {
-		logger.Error("Failed to check index existence", err)
+		common.Error("Failed to check index existence", err)
 		return fmt.Errorf("failed to check index existence: %w", err)
 	}
 
 	if !exists {
-		logger.Info("Skill index does not exist, creating...", zap.String("indexName", indexName))
+		common.Info("Skill index does not exist, creating...", zap.String("indexName", indexName))
 		return s.createIndex(ctx, tenantID, spaceID, docEngine, embdID)
 	}
 
-	logger.Info("Skill search index already exists", zap.String("indexName", indexName))
+	common.Info("Skill search index already exists", zap.String("indexName", indexName))
 	return nil
 }
 
@@ -873,7 +873,7 @@ func (s *SkillIndexerService) createIndex(ctx context.Context, tenantID, spaceID
 func (s *SkillIndexerService) createIndexWithDimension(ctx context.Context, tenantID, spaceID string, docEngine engine.DocEngine, embdID string, dimension int) error {
 	indexName := getSkillIndexName(tenantID, spaceID)
 
-	logger.Info(fmt.Sprintf("Creating skill index with dimension %d", dimension),
+	common.Info(fmt.Sprintf("Creating skill index with dimension %d", dimension),
 		zap.String("indexName", indexName),
 		zap.String("spaceID", spaceID),
 		zap.Int("dimension", dimension),
@@ -883,13 +883,13 @@ func (s *SkillIndexerService) createIndexWithDimension(ctx context.Context, tena
 	if docEngine.GetType() == "infinity" {
 		exists, err := docEngine.TableExists(ctx, indexName)
 		if err != nil {
-			logger.Warn(fmt.Sprintf("Error checking if index exists: %v", err))
+			common.Warn(fmt.Sprintf("Error checking if index exists: %v", err))
 		}
 		if exists {
-			logger.Info(fmt.Sprintf("Index exists, deleting for recreation with dimension %d", dimension),
+			common.Info(fmt.Sprintf("Index exists, deleting for recreation with dimension %d", dimension),
 				zap.String("indexName", indexName))
 			if err := docEngine.DropTable(ctx, indexName); err != nil {
-				logger.Warn(fmt.Sprintf("Failed to delete existing index: %v", err))
+				common.Warn(fmt.Sprintf("Failed to delete existing index: %v", err))
 			}
 		}
 	}
@@ -898,10 +898,10 @@ func (s *SkillIndexerService) createIndexWithDimension(ctx context.Context, tena
 	// The mapping file is loaded from conf/skill_es_mapping.json or conf/skill_infinity_mapping.json
 	err := docEngine.CreateDataset(ctx, indexName, "skill", dimension, "")
 	if err != nil {
-		logger.Error("Failed to create skill index", err)
+		common.Error("Failed to create skill index", err)
 		return err
 	}
-	logger.Info("Successfully created skill index", zap.String("indexName", indexName))
+	common.Info("Successfully created skill index", zap.String("indexName", indexName))
 	return nil
 }
 
@@ -946,7 +946,7 @@ func (s *SkillIndexerService) generateEmbedding(ctx context.Context, text, embdI
 // generateEmbeddings generates embeddings for multiple texts in batch
 // This is more efficient than calling generateEmbedding individually
 func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []string, embdID, tenantID string) ([][]float64, error) {
-	logger.Info(fmt.Sprintf("generateEmbeddings called: texts=%d, embdID=%s, tenantID=%s", len(texts), embdID, tenantID))
+	common.Info(fmt.Sprintf("generateEmbeddings called: texts=%d, embdID=%s, tenantID=%s", len(texts), embdID, tenantID))
 
 	if s.modelProvider == nil {
 		return nil, fmt.Errorf("model provider not set")
@@ -956,10 +956,10 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	logger.Info(fmt.Sprintf("Getting embedding model for %s", embdID))
+	common.Info(fmt.Sprintf("Getting embedding model for %s", embdID))
 	embeddingModel, err := s.modelProvider.GetEmbeddingModel(tenantID, embdID)
 	if err != nil {
-		logger.Error(fmt.Sprintf("Failed to get embedding model: %v", err), err)
+		common.Error(fmt.Sprintf("Failed to get embedding model: %v", err), err)
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
 
@@ -973,17 +973,17 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 		truncatedTexts[i] = truncate(text, maxLen-10)
 	}
 
-	logger.Info(fmt.Sprintf("Encoding %d texts", len(truncatedTexts)))
+	common.Info(fmt.Sprintf("Encoding %d texts", len(truncatedTexts)))
 	// Use batch encode API (consistent with Python's encode(texts: list))
 	vectors, err := embeddingModel.ModelDriver.Encode(embeddingModel.ModelName, truncatedTexts, embeddingModel.APIConfig, nil)
 	if err != nil {
-		logger.Error(fmt.Sprintf("Failed to encode texts: %v", err), err)
+		common.Error(fmt.Sprintf("Failed to encode texts: %v", err), err)
 		return nil, fmt.Errorf("failed to encode texts: %w", err)
 	}
 
-	logger.Info(fmt.Sprintf("Encoded successfully, got %d vectors", len(vectors)))
+	common.Info(fmt.Sprintf("Encoded successfully, got %d vectors", len(vectors)))
 	if len(vectors) > 0 {
-		logger.Info(fmt.Sprintf("Vector dimension: %d", len(vectors[0])))
+		common.Info(fmt.Sprintf("Vector dimension: %d", len(vectors[0])))
 	}
 
 	return vectors, nil
@@ -1031,6 +1031,6 @@ func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantI
 	}
 
 	dimension := len(vectors[0])
-	logger.Info(fmt.Sprintf("Got embedding dimension from API: %d", dimension))
+	common.Info(fmt.Sprintf("Got embedding dimension from API: %d", dimension))
 	return dimension, nil
 }
