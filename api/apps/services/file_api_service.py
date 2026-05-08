@@ -507,6 +507,18 @@ async def move_files(uid: str, src_file_ids: list, dest_file_id: str = None, new
             if f.name == new_name:
                 return False, "Duplicated file name in the same folder."
 
+    if dest_folder:
+        for file in files:
+            if file.type == FileType.FOLDER.value and file.id == dest_folder.id:
+                return False, "Cannot move a folder to itself."
+        # Check if any source folder is an ancestor of the destination folder
+        # to prevent infinite recursion in _move_entry_recursive
+        dest_ancestors = FileService.get_all_parent_folders(dest_folder.id)
+        dest_ancestor_ids = {f.id for f in dest_ancestors}
+        for file in files:
+            if file.type == FileType.FOLDER.value and file.id in dest_ancestor_ids:
+                return False, "Cannot move a folder into its own subfolder."
+
     def _move_entry_recursive(source_file_entry, dest_folder_entry, override_name=None):
         effective_name = override_name or source_file_entry.name
 
