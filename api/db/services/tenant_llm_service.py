@@ -501,7 +501,7 @@ class LLM4Tenant:
         self.llm_name = model_config["llm_name"]
         self.model_config = model_config
         self.mdl = TenantLLMService.model_instance(model_config, lang=lang, **kwargs)
-        assert self.mdl, "Can't find model for {}/{}/{}".format(tenant_id, model_config["llm_type"], model_config["llm_name"])
+        assert self.mdl, "Can't find model for {}/{}/{}".format(tenant_id, model_config["model_type"], model_config["llm_name"])
         self.max_length = model_config.get("max_tokens", 8192)
 
         self.is_tools = model_config.get("is_tools", False)
