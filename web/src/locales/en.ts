@@ -881,7 +881,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       graphRagMethod: 'Method',
       graphRagMethodTip: `
       Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>
-      General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships`,
+      General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships.</br>
+      Keyword: Extract a deterministic co-occurrence graph from repeated terms without LLM calls. Entity resolution and community reports are skipped in this mode.`,
       resolution: 'Entity resolution',
       resolutionTip: `An entity deduplication switch. When enabled, the LLM will combine similar entities - e.g., '2025' and 'the year of 2025', or 'IT' and 'Information Technology' - to construct a more accurate graph`,
       community: 'Community reports',

@@ -28,6 +28,7 @@ from rag.graphrag.entity_resolution import EntityResolution
 from rag.graphrag.general.community_reports_extractor import CommunityReportsExtractor
 from rag.graphrag.general.extractor import Extractor
 from rag.graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
+from rag.graphrag.keyword_extractor import KeywordGraphExtractor
 from rag.graphrag.light.graph_extractor import GraphExtractor as LightKGExt
 from rag.graphrag.phase_markers import (
     PHASE_COMMUNITY,
@@ -52,6 +53,18 @@ from rag.utils.redis_conn import RedisDistributedLock
 from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
 
+
+def get_graphrag_extractor(kb_parser_config: dict):
+    method = (kb_parser_config.get("graphrag", {}).get("method") or "light").lower()
+    if method == "general":
+        return GeneralKGExt
+    if method in {"keyword", "non_llm", "non-llm", "rule"}:
+        return KeywordGraphExtractor
+    return LightKGExt
+
+
+def is_keyword_graphrag_method(kb_parser_config: dict) -> bool:
+    return get_graphrag_extractor(kb_parser_config) is KeywordGraphExtractor
 
 
 async def load_subgraph_from_store(tenant_id: str, kb_id: str, doc_id: str):
@@ -111,9 +124,19 @@ async def run_graphrag(
     embedding_model,
     callback,
 ):
+    """Run GraphRAG for one document.
+
+    Keyword mode is deterministic and skips LLM-based resolution/community
+    phases even when those switches are enabled.
+    """
     enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
     start = asyncio.get_running_loop().time()
     tenant_id, kb_id, doc_id = row["tenant_id"], str(row["kb_id"]), row["doc_id"]
+    if is_keyword_graphrag_method(row["kb_parser_config"]) and (with_resolution or with_community):
+        with_resolution = False
+        with_community = False
+        logging.info("GraphRAG keyword mode skips LLM-based resolution/community for doc %s.", doc_id)
+        callback(msg=f"[GraphRAG] keyword mode skips LLM-based resolution/community for doc:{doc_id}.")
     chunks = []
     for d in settings.retriever.chunk_list(doc_id, tenant_id, [kb_id], max_count=10000, fields=["content_with_weight", "doc_id"], sort_by_position=True):
         chunks.append(d["content_with_weight"])
@@ -123,9 +146,7 @@ async def run_graphrag(
     try:
         subgraph = await asyncio.wait_for(
             generate_subgraph(
-                LightKGExt if "method" not in row["kb_parser_config"].get("graphrag", {})
-                    or row["kb_parser_config"]["graphrag"]["method"] != "general"
-                else GeneralKGExt,
+                get_graphrag_extractor(row["kb_parser_config"]),
                 tenant_id,
                 kb_id,
                 doc_id,
@@ -211,7 +232,17 @@ async def run_graphrag_for_kb(
     with_community: bool = True,
     max_parallel_docs: int = 4,
 ) -> dict:
+    """Run GraphRAG across a KB.
+
+    Keyword mode is deterministic and skips LLM-based resolution/community
+    phases even when those switches are enabled.
+    """
     tenant_id, kb_id = row["tenant_id"], row["kb_id"]
+    if is_keyword_graphrag_method(kb_parser_config) and (with_resolution or with_community):
+        with_resolution = False
+        with_community = False
+        logging.info("GraphRAG keyword mode skips LLM-based resolution/community for kb %s.", kb_id)
+        callback(msg=f"[GraphRAG] keyword mode skips LLM-based resolution/community for kb:{kb_id}.")
     enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
     start = asyncio.get_running_loop().time()
     fields_for_chunks = ["content_with_weight", "doc_id"]
@@ -294,7 +325,7 @@ async def run_graphrag_for_kb(
             callback(msg=f"[GraphRAG] doc:{doc_id} has no available chunks, skip generation.")
             return
 
-        kg_extractor = LightKGExt if ("method" not in kb_parser_config.get("graphrag", {}) or kb_parser_config["graphrag"]["method"] != "general") else GeneralKGExt
+        kg_extractor = get_graphrag_extractor(kb_parser_config)
 
         deadline = max(120, len(chunks) * 60 * 10) if enable_timeout_assertion else 10000000000
 

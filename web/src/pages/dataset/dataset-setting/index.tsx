@@ -56,6 +56,7 @@ const initialEntityTypes = [
 
 const enum MethodValue {
   General = 'general',
+  Keyword = 'keyword',
   Light = 'light',
 }
 
