@@ -23,7 +23,7 @@ from quart import request, make_response
 from peewee import OperationalError
 from pydantic import ValidationError
 
-from api.apps import login_required
+from api.apps import current_user, login_required
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.apps.services.document_api_service import validate_document_update_fields, map_doc_keys, \
     map_doc_keys_with_run_status, update_document_name_only, update_chunk_method, update_document_status_only, \
@@ -1859,7 +1859,16 @@ async def batch_update_document_status(tenant_id, dataset_id):
 @manager.route("/documents/<doc_id>/preview", methods=["GET"])  # noqa: F821
 @login_required
 async def get(doc_id):
+    """Return the raw file bytes for a document the requesting user is authorized to read.
+
+    The user must belong to the tenant that owns the document's knowledge base; otherwise
+    the response is indistinguishable from a missing document to avoid cross-tenant ID
+    enumeration.
+    """
     try:
+        if not DocumentService.accessible(doc_id, current_user.id):
+            return get_data_error_result(message="Document not found!")
+
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
             return get_data_error_result(message="Document not found!")
