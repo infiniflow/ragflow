@@ -333,9 +333,11 @@ async def create_provider_instance(tenant_id: str = None, provider_name: str = N
 
     instance_name = data["instance_name"]
     api_key = data["api_key"]
+    base_url = data.get("base_url", "")
+    region = data.get("region", "")
 
     try:
-        success, msg = provider_api_service.create_provider_instance(tenant_id, provider_name, instance_name, api_key)
+        success, msg = provider_api_service.create_provider_instance(tenant_id, provider_name, instance_name, api_key, base_url, region)
         if success:
             return get_result(message=msg)
         else:

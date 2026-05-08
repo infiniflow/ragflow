@@ -192,7 +192,7 @@ def show_provider_model(provider_name: str, model_name: str):
     }
 
 
-def create_provider_instance(tenant_id: str, provider_name: str, instance_name: str, api_key: str):
+def create_provider_instance(tenant_id: str, provider_name: str, instance_name: str, api_key: str, base_url: str, region: str):
     """
     Create a provider instance. In the old model, this maps to creating/updating
     TenantLLM entries for the provider with the given API key.
@@ -204,6 +204,8 @@ def create_provider_instance(tenant_id: str, provider_name: str, instance_name: 
     :param provider_name: provider/factory name
     :param instance_name: instance name (used as a logical identifier)
     :param api_key: API key
+    :param base_url: base url
+    :param region: region
     :return: (success, result_or_error_message)
     """
     if not provider_name:
@@ -221,7 +223,8 @@ def create_provider_instance(tenant_id: str, provider_name: str, instance_name: 
     if not provider_obj:
         return False, f"Provider '{provider_name}' does not exist"
 
-    TenantModelInstanceService.create_instance(provider_id=provider_obj.id,instance_name=instance_name,api_key=api_key)
+    import json
+    TenantModelInstanceService.create_instance(provider_id=provider_obj.id,instance_name=instance_name,api_key=api_key, extra=json.dumps({"base_url": base_url, "region": region}))
 
     return True, "success"
 
