@@ -1,10 +1,37 @@
 .markdownContentWrapper {
-  :global(section.think) {
+  :global(details.think) {
     padding-inline-start: 10px;
     color: #8b8b8b;
     border-inline-start: 2px solid #d5d3d3;
     margin-bottom: 10px;
     font-size: 12px;
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+      color: #999;
+      user-select: none;
+      &:hover {
+        color: #666;
+      }
+    }
+  }
+  :global(details.retrieving) {
+    padding-inline-start: 10px;
+    color: #8b8b8b;
+    border-inline-start: 2px solid #a3d5c9;
+    margin-bottom: 10px;
+    font-size: 12px;
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+      color: #6ba89a;
+      user-select: none;
+      &:hover {
+        color: #4a8a7c;
+      }
+    }
   }
   :global(blockquote) {
     padding-inline-start: 10px;

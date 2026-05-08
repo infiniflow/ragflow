@@ -665,9 +665,9 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             while True:
                 msg = await queue.get()
                 if msg.find("<START_DEEP_RESEARCH>") == 0:
-                    yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "start_to_think": True}
+                    yield {"answer": "<retrieving>", "reference": {}, "audio_binary": None, "final": False}
                 elif msg.find("<END_DEEP_RESEARCH>") == 0:
-                    yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "end_to_think": True}
+                    yield {"answer": "</retrieving>", "reference": {}, "audio_binary": None, "final": False}
                     break
                 else:
                     yield {"answer": msg, "reference": {}, "audio_binary": None, "final": False}
