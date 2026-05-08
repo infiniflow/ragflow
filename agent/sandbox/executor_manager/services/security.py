@@ -78,6 +78,14 @@ class SecurePythonAnalyzer(ast.NodeVisitor):
         if isinstance(node.func, ast.Name) and node.func.id in self.DANGEROUS_CALLS:
             self.unsafe_items.append((f"Call: {node.func.id}", node.lineno))
         elif isinstance(node.func, ast.Attribute) and node.func.attr in self.DANGEROUS_CALLS:
+            # Surface the attribute-style match in the analyzer log so that
+            # incident response can grep for it just like the other unsafe-item
+            # findings; the bare append is invisible to operators.
+            logger.warning(
+                "[SafeCheck] Attribute-style dangerous call detected: %s (line %s)",
+                node.func.attr,
+                node.lineno,
+            )
             self.unsafe_items.append((f"Call: {node.func.attr}", node.lineno))
         self.generic_visit(node)
 
