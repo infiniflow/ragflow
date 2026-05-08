@@ -464,6 +464,7 @@ def get_parser_config(chunk_method, parser_config):
         },
         "email": None,
         "picture": None,
+        "external": {"chunk_token_num": 512, "delimiter": "\n", "raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
     }
 
     default_config = key_mapping[chunk_method]

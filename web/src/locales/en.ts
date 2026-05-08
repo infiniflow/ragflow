@@ -428,7 +428,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         deleteSettingValueWarn: `This value will be deleted; existing metadata won't be affected.`,
       },
       redoAll: 'Clear existing chunks',
-      applyAutoMetadataSettings: 'Apply global auto-metadata settings',
+      applyAutoMetadataSettings:
+        'Apply dataset settings (chunk size, delimiters, metadata...)',
       parseFileTip: 'Are you sure to parse?',
       parseFile: 'Parse file',
       emptyMetadata: 'No metadata',

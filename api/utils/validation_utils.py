@@ -454,7 +454,7 @@ class UpdateDocumentReq(Base):
         """Validate an optional document parser method."""
         if chunk_method:
             # Validate chunk method if present
-            valid_chunk_method = {"naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one", "knowledge_graph", "email", "tag"}
+            valid_chunk_method = {"naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one", "knowledge_graph", "email", "tag", "external"}
             if chunk_method not in valid_chunk_method:
                 raise PydanticCustomError("format_invalid", "`chunk_method` {chunk_method} doesn't exist", {"chunk_method": chunk_method})
 
@@ -744,8 +744,8 @@ class CreateDatasetReq(Base):
     @classmethod
     def validate_chunk_method(cls, v: Any, handler, info: ValidationInfo) -> Any:
         """Wrap validation to unify error messages, including type errors (e.g. list)."""
-        allowed = {"naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "resume"}
-        error_msg = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
+        allowed = {"naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "resume", "external"}
+        error_msg = f"Input should be in {allowed}"
         try:
             # Run inner validation (type checking)
             result = handler(v)

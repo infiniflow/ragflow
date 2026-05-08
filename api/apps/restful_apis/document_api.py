@@ -1391,9 +1391,12 @@ def _run_sync(user_id:str, req):
                 e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
                 if not e:
                     raise LookupError("Can't find this dataset!")
-                doc.parser_config["llm_id"] = kb.parser_config.get("llm_id")
-                doc.parser_config["enable_metadata"] = kb.parser_config.get("enable_metadata", False)
-                doc.parser_config["metadata"] = kb.parser_config.get("metadata", {})
+                for _k in ("llm_id", "enable_metadata", "metadata",
+                           "chunk_token_num", "delimiter", "children_delimiter",
+                           "auto_keywords", "auto_questions", "layout_recognize",
+                           "raptor", "graphrag", "parent_child"):
+                    if _k in kb.parser_config:
+                        doc.parser_config[_k] = kb.parser_config[_k]
                 DocumentService.update_parser_config(doc.id, doc.parser_config)
             doc_dict = doc.to_dict()
             DocumentService.run(doc_tenant_id, doc_dict, kb_table_num_map)

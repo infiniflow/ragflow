@@ -94,14 +94,10 @@ export const ReparseDialog = memo(
           </div>
         ),
       };
-      if (chunk_num > 0 && enable_metadata) {
+      if (chunk_num > 0) {
         setFields([deleteField, applyKBField]);
-      } else if (chunk_num > 0 && !enable_metadata) {
-        setFields([deleteField]);
-      } else if (chunk_num <= 0 && enable_metadata) {
-        setFields([applyKBField]);
       } else {
-        setFields([]);
+        setFields([applyKBField]);
       }
     }, [chunk_num, t, enable_metadata]);
 
