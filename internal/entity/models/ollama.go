@@ -361,11 +361,19 @@ func (o *OllamaModel) Rerank(modelName *string, query string, texts []string, ap
 func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
 
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Models)
+	baseURL := o.BaseURL[region]
+	if baseURL == "" {
+		baseURL = o.BaseURL["default"]
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("missing base URL: please configure the local access address for Ollama (e.g., http://127.0.0.1:11434/v1)")
+	}
+
+	url := fmt.Sprintf("%s/%s", baseURL, o.URLSuffix.Models)
 
 	reqBody := map[string]interface{}{}
 
@@ -380,7 +388,12 @@ func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	// Ollama is a local provider and the API key is optional. Only set
+	// the Authorization header when a non-empty key was supplied. This
+	// also avoids a nil-pointer dereference on apiConfig or ApiKey.
+	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
 
 	resp, err := o.httpClient.Do(req)
 	if err != nil {
@@ -418,6 +431,27 @@ func (o *OllamaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, err
 	return nil, fmt.Errorf("no such method")
 }
 
+// CheckConnection verifies that the configured Ollama base URL is
+// reachable and that the API key (if any) is accepted, by issuing a
+// lightweight ListModels call. The empty-URL guard runs first so a
+// user who has not yet set the local access address gets a clear,
+// actionable error instead of a low-level transport message.
 func (o *OllamaModel) CheckConnection(apiConfig *APIConfig) error {
-	return fmt.Errorf("no such method")
+	var region = "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := o.BaseURL[region]
+	if baseURL == "" {
+		baseURL = o.BaseURL["default"]
+	}
+	if baseURL == "" {
+		return fmt.Errorf("missing base URL: please configure the local access address for Ollama (e.g., http://127.0.0.1:11434/v1)")
+	}
+
+	if _, err := o.ListModels(apiConfig); err != nil {
+		return fmt.Errorf("connection check failed: %w", err)
+	}
+	return nil
 }
