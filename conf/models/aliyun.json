@@ -34,15 +34,8 @@
       ]
     },
     {
-      "name": "gte-rerank-v2",
-      "max_tokens": 4096,
-      "model_types": [
-        "rerank"
-      ]
-    },
-    {
-      "name": "gte-rerank",
-      "max_tokens": 4096,
+      "name": "qwen3-rerank",
+      "max_tokens": 8192,
       "model_types": [
         "rerank"
       ]
