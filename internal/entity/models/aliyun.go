@@ -546,7 +546,13 @@ func (z *AliyunModel) Rerank(modelName *string, query string, texts []string, ap
 	for _, r := range rerankResp.Results {
 		if r.Index >= 0 && r.Index < len(texts) {
 			scores[r.Index] = r.RelevanceScore
+		} else {
+			return nil, fmt.Errorf("aliyun rerank: result index %d out of range for %d documents", r.Index, len(texts))
 		}
+	}
+
+	if len(rerankResp.Results) != len(texts) {
+		return nil, fmt.Errorf("aliyun rerank: expected %d results, got %d", len(texts), len(rerankResp.Results))
 	}
 
 	return scores, nil
