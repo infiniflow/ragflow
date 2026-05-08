@@ -4,6 +4,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+import xxhash
 from common.data_source.utils import (
     create_s3_client,
     detect_bucket_region,
@@ -48,6 +49,30 @@ class BlobStorageConnector(LoadConnector, PollConnector):
         self.size_threshold: int | None = BLOB_STORAGE_SIZE_THRESHOLD
         self.bucket_region: Optional[str] = None
         self.european_residency: bool = european_residency
+        self.existing_content_hashes: dict[str, str] = {}
+        self.latest_seen_doc_updated_at = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+    @staticmethod
+    def _get_document_id(bucket_type: BlobType, bucket_name: str, key: str) -> str:
+        return f"{bucket_type}:{bucket_name}:{key}"
+
+    @staticmethod
+    def _get_stored_document_id(document_id: str) -> str:
+        return xxhash.xxh128(document_id).hexdigest()
+
+    @staticmethod
+    def _content_hash_from_etag(obj: dict[str, Any]) -> str | None:
+        etag = obj.get("ETag")
+        if not etag:
+            return None
+        normalized_etag = str(etag).strip().strip('"')
+        if not normalized_etag:
+            return None
+        return xxhash.xxh128(normalized_etag).hexdigest()
+
+    def set_existing_content_hashes(self, hashes: dict[str, str]) -> None:
+        """Set known hashes keyed by connector document id for unchanged-object skips."""
+        self.existing_content_hashes = hashes
 
     def set_allow_images(self, allow_images: bool) -> None:
         """Set whether to process images"""
@@ -133,8 +158,11 @@ class BlobStorageConnector(LoadConnector, PollConnector):
         batch: list[Document] = []
         for obj in all_objects:
             last_modified = obj["LastModified"].replace(tzinfo=timezone.utc)
+            self.latest_seen_doc_updated_at = max(self.latest_seen_doc_updated_at, last_modified)
             file_name = os.path.basename(obj["Key"])
             key = obj["Key"]
+            doc_id = self._get_document_id(self.bucket_type, self.bucket_name, key)
+            content_hash = self._content_hash_from_etag(obj)
 
             size_bytes = extract_size_bytes(obj)
             if (
@@ -145,6 +173,10 @@ class BlobStorageConnector(LoadConnector, PollConnector):
                 logging.warning(
                     f"{file_name} exceeds size threshold of {self.size_threshold}. Skipping."
                 )
+                continue
+
+            if content_hash and self.existing_content_hashes.get(self._get_stored_document_id(doc_id)) == content_hash:
+                logging.debug("Skipping unchanged blob object %s using ETag fingerprint.", key)
                 continue
 
             try:
@@ -158,13 +190,14 @@ class BlobStorageConnector(LoadConnector, PollConnector):
 
                 batch.append(
                     Document(
-                        id=f"{self.bucket_type}:{self.bucket_name}:{key}",
+                        id=doc_id,
                         blob=blob,
                         source=DocumentSource(self.bucket_type.value),
                         semantic_identifier=semantic_id,
                         extension=get_file_ext(file_name),
                         doc_updated_at=last_modified,
                         size_bytes=size_bytes if size_bytes else 0,
+                        content_hash=content_hash,
                     )
                 )
                 if len(batch) == self.batch_size:

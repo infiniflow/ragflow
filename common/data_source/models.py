@@ -95,6 +95,7 @@ class Document(BaseModel):
     blob: bytes
     doc_updated_at: datetime
     size_bytes: int
+    content_hash: Optional[str] = None
     externale_access: Optional[ExternalAccess] = None
     primary_owners: Optional[list] = None
     metadata: Optional[dict[str, Any]] = None

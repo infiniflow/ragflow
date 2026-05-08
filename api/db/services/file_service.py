@@ -482,7 +482,7 @@ class FileService(CommonService):
                         err.append(file.filename + ": " + user_msg)
                         continue
                     blob = file.read()
-                    new_hash = xxhash.xxh128(blob).hexdigest()
+                    new_hash = getattr(file, "content_hash", None) or xxhash.xxh128(blob).hexdigest()
                     old_hash = doc.content_hash or ""
                     settings.STORAGE_IMPL.put(kb.id, doc.location, blob, kb.tenant_id)
                     doc.size = len(blob)
@@ -532,7 +532,7 @@ class FileService(CommonService):
                     "location": location,
                     "size": len(blob),
                     "thumbnail": thumbnail_location,
-                    "content_hash": xxhash.xxh128(blob).hexdigest(),
+                    "content_hash": getattr(file, "content_hash", None) or xxhash.xxh128(blob).hexdigest(),
                 }
                 DocumentService.insert(doc)
 

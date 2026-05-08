@@ -211,6 +211,8 @@ class SyncBase:
                     "doc_updated_at": doc.doc_updated_at,
                     "blob": doc.blob,
                 }
+                if doc.content_hash:
+                    d["content_hash"] = doc.content_hash
                 if doc.metadata:
                     d["metadata"] = doc.metadata
                 docs.append(d)
@@ -244,6 +246,11 @@ class SyncBase:
 
                 failed_docs += len(docs)
                 continue
+
+        connector_instance = getattr(self, "connector", None)
+        connector_latest_update = getattr(connector_instance, "latest_seen_doc_updated_at", None)
+        if connector_latest_update:
+            next_update = max(next_update, connector_latest_update)
 
         prefix = self._get_source_prefix()
         prefix = f"{prefix} " if prefix else ""
@@ -311,6 +318,24 @@ class _BlobLikeBase(SyncBase):
         )
         self.connector.set_allow_images(self.conf.get("allow_images", False))
         self.connector.load_credentials(self.conf["credentials"])
+        if task["reindex"] != "1" and task["poll_range_start"]:
+            source_type = f"{self.SOURCE_NAME}/{task['connector_id']}"
+            existing_content_hashes = {
+                doc["id"]: doc["content_hash"]
+                for doc in DocumentService.list_doc_headers_by_kb_and_source_type(
+                    task["kb_id"],
+                    source_type,
+                )
+                if doc.get("content_hash")
+            }
+            sample_doc_ids = list(existing_content_hashes.keys())[:5]
+            logging.info(
+                "[%s] Loaded %d existing content hashes for ETag skip (sample_doc_ids=%s)",
+                self.SOURCE_NAME,
+                len(existing_content_hashes),
+                sample_doc_ids,
+            )
+            self.connector.set_existing_content_hashes(existing_content_hashes)
 
         file_list = None
         document_batch_generator = (

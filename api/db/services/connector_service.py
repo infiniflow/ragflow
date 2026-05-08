@@ -276,12 +276,21 @@ class SyncLogsService(CommonService):
             id: str
             filename: str
             blob: bytes
+            content_hash: str | None = None
 
             def read(self) -> bytes:
                 return self.blob
 
         errs = []
-        files = [FileObj(id=d["id"], filename=d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else ""), blob=d["blob"]) for d in docs]
+        files = [
+            FileObj(
+                id=d["id"],
+                filename=d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else ""),
+                blob=d["blob"],
+                content_hash=d.get("content_hash"),
+            )
+            for d in docs
+        ]
         doc_ids = []
         err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src)
         errs.extend(err)
@@ -369,4 +378,3 @@ class Connector2KbService(CommonService):
                         cls.model.kb_id==kb_id
                     ).dicts()
         )
-

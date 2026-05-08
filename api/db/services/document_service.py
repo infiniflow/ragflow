@@ -372,7 +372,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def list_doc_headers_by_kb_and_source_type(cls, kb_id, source_type, page_size=500):
-        fields = [cls.model.id, cls.model.kb_id, cls.model.source_type, cls.model.name]
+        fields = [cls.model.id, cls.model.kb_id, cls.model.source_type, cls.model.name, cls.model.content_hash]
         docs = cls.model.select(*fields).where(
             cls.model.kb_id == kb_id,
             cls.model.source_type == source_type,

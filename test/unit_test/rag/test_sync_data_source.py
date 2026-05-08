@@ -82,6 +82,7 @@ _install_xgboost_stub_if_unavailable()
 _install_ollama_stub()
 
 sync_data_source = importlib.import_module("rag.svr.sync_data_source")
+blob_connector_module = importlib.import_module("common.data_source.blob_connector")
 
 
 class _FakeSync(sync_data_source.SyncBase):
@@ -103,6 +104,7 @@ def _make_fake_doc(doc_id="doc-1", updated_at=None):
         size_bytes=1,
         doc_updated_at=updated_at or datetime(2026, 1, 1, tzinfo=timezone.utc),
         blob=b"x",
+        content_hash=None,
         metadata=None,
     )
 
@@ -129,6 +131,127 @@ def _patch_common_dependencies(monkeypatch):
         "done",
         lambda *_args, **_kwargs: None,
     )
+
+
+class _FakePaginator:
+    def __init__(self, objects):
+        self.objects = objects
+
+    def paginate(self, **_kwargs):
+        return [{"Contents": self.objects}]
+
+
+class _FakeS3Client:
+    def __init__(self, objects):
+        self.objects = objects
+
+    def get_paginator(self, _name):
+        return _FakePaginator(self.objects)
+
+
+class _FakeBlobStorageConnector(blob_connector_module.BlobStorageConnector):
+    instance = None
+    objects = []
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _FakeBlobStorageConnector.instance = self
+
+    def load_credentials(self, credentials):
+        self.credentials = credentials
+        self.s3_client = _FakeS3Client(_FakeBlobStorageConnector.objects)
+        return None
+
+
+@pytest.mark.p2
+def test_blob_connector_skips_unchanged_etag_without_download(monkeypatch):
+    updated_at = datetime(2026, 1, 2, tzinfo=timezone.utc)
+    key = "docs/a.txt"
+    raw_doc_id = "s3:bucket-1:docs/a.txt"
+    etag_hash = blob_connector_module.BlobStorageConnector._content_hash_from_etag({"ETag": '"etag-1"'})
+    connector = blob_connector_module.BlobStorageConnector("s3", "bucket-1")
+    connector.s3_client = _FakeS3Client(
+        [{"Key": key, "LastModified": updated_at, "ETag": '"etag-1"', "Size": 8}]
+    )
+    connector.set_existing_content_hashes(
+        {sync_data_source.hash128(raw_doc_id): etag_hash}
+    )
+
+    def _fail_download(*_args, **_kwargs):
+        raise AssertionError("unchanged object should not be downloaded")
+
+    monkeypatch.setattr(blob_connector_module, "download_object", _fail_download)
+
+    assert list(connector.poll_source(0, updated_at.timestamp())) == []
+    assert connector.latest_seen_doc_updated_at == updated_at
+
+
+@pytest.mark.anyio
+@pytest.mark.p2
+async def test_blob_generate_passes_stored_hashes_to_connector_for_etag_skip(monkeypatch):
+    poll_start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    updated_at = datetime(2026, 1, 2, tzinfo=timezone.utc)
+    key = "docs/a.txt"
+    raw_doc_id = "s3:bucket-1:docs/a.txt"
+    stored_doc_id = sync_data_source.hash128(raw_doc_id)
+    etag_hash = blob_connector_module.BlobStorageConnector._content_hash_from_etag(
+        {"ETag": '"etag-1"'}
+    )
+    _FakeBlobStorageConnector.instance = None
+    _FakeBlobStorageConnector.objects = [
+        {"Key": key, "LastModified": updated_at, "ETag": '"etag-1"', "Size": 8}
+    ]
+
+    monkeypatch.setattr(sync_data_source, "BlobStorageConnector", _FakeBlobStorageConnector)
+    monkeypatch.setattr(
+        sync_data_source.DocumentService,
+        "list_doc_headers_by_kb_and_source_type",
+        lambda *_args, **_kwargs: [{"id": stored_doc_id, "content_hash": etag_hash}],
+    )
+
+    def _fail_download(*_args, **_kwargs):
+        raise AssertionError("unchanged object should not be downloaded")
+
+    monkeypatch.setattr(blob_connector_module, "download_object", _fail_download)
+
+    task = {
+        **_make_task(),
+        "reindex": "0",
+        "poll_range_start": poll_start,
+        "skip_connection_log": True,
+    }
+    sync = sync_data_source.S3(
+        {
+            "bucket_name": "bucket-1",
+            "credentials": {},
+            "prefix": "",
+        }
+    )
+
+    document_generator, file_list = await sync._generate(task)
+    connector = _FakeBlobStorageConnector.instance
+
+    assert connector is not None
+    assert connector.existing_content_hashes == {stored_doc_id: etag_hash}
+    assert list(document_generator) == []
+    assert file_list is None
+    assert connector.latest_seen_doc_updated_at == updated_at
+
+
+@pytest.mark.p2
+def test_blob_connector_attaches_etag_fingerprint_to_changed_doc(monkeypatch):
+    updated_at = datetime(2026, 1, 2, tzinfo=timezone.utc)
+    connector = blob_connector_module.BlobStorageConnector("s3", "bucket-1")
+    connector.s3_client = _FakeS3Client(
+        [{"Key": "docs/a.txt", "LastModified": updated_at, "ETag": '"etag-2"', "Size": 8}]
+    )
+    monkeypatch.setattr(blob_connector_module, "download_object", lambda *_args, **_kwargs: b"changed")
+
+    batches = list(connector.poll_source(0, updated_at.timestamp()))
+
+    assert len(batches) == 1
+    assert batches[0][0].content_hash == blob_connector_module.BlobStorageConnector._content_hash_from_etag({"ETag": '"etag-2"'})
+    assert batches[0][0].blob == b"changed"
 
 
 @pytest.mark.anyio
