@@ -1126,6 +1126,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       Verify: 'Verify',
       keyValid: 'Your API key is valid.',
       keyInvalid: 'Your API key is invalid.',
+      enableToolCall: 'Enable tool call',
+      enableToolCallTip:
+        'Allow this model to call tools when the selected model type supports tool calling.',
       deleteModel: 'Delete model',
       bedrockCredentialsHint:
         'Tip: Leave Access Key / Secret Key blank to use AWS IAM authentication.',

@@ -66,7 +66,7 @@ func (k *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 	}
 
 	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -206,7 +206,7 @@ func (k *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 

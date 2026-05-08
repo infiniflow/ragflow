@@ -26,8 +26,14 @@ def get_model_config_by_id(tenant_model_id: int) -> dict:
     if not found:
         raise LookupError(f"Tenant Model with id {tenant_model_id} not found")
     config_dict = model_config.to_dict()
+    api_key, is_tools, api_key_payload = TenantLLMService._decode_api_key_config(config_dict.get("api_key", ""))
+    config_dict["api_key"] = api_key
+    if api_key_payload is not None:
+        config_dict["api_key_payload"] = api_key_payload
+    if is_tools is not None:
+        config_dict["is_tools"] = is_tools
     llm = LLMService.query(llm_name=config_dict["llm_name"])
-    if llm:
+    if "is_tools" not in config_dict and llm:
         config_dict["is_tools"] = llm[0].is_tools
     return config_dict
 
@@ -73,6 +79,12 @@ def get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_nam
     else:
         # model_name without @factory
         config_dict = model_config.to_dict()
+    api_key, is_tools, api_key_payload = TenantLLMService._decode_api_key_config(config_dict.get("api_key", ""))
+    config_dict["api_key"] = api_key
+    if api_key_payload is not None:
+        config_dict["api_key_payload"] = api_key_payload
+    if is_tools is not None:
+        config_dict["is_tools"] = is_tools
     config_model_type = config_dict.get("model_type")
     config_model_type = config_model_type.value if hasattr(config_model_type, "value") else config_model_type
     if config_model_type != model_type_val and not (
@@ -83,7 +95,7 @@ def get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_nam
             f"Tenant Model with name {model_name} has type {config_model_type}, expected {model_type_val}"
         )
     llm = LLMService.query(llm_name=config_dict["llm_name"])
-    if llm:
+    if "is_tools" not in config_dict and llm:
         config_dict["is_tools"] = llm[0].is_tools
     return config_dict
 
