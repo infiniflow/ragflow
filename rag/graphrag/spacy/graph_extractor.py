@@ -441,12 +441,12 @@ class GraphExtractor(Extractor):
             sent_idx = self._keyword_sent_idx(doc, kw)
 
             # Description: use the containing sentence (LinearRAG semantic bridging).
-            sent_text = self._keyword_sent_text(doc, kw)
+            #sent_text = self._keyword_sent_text(doc, kw)
 
             ent_record = dict(
                 entity_name=kw_upper,
                 entity_type=app_type.upper(),
-                description=sent_text or kw,
+                #description=sent_text or kw,
                 source_id=chunk_key,
             )
             # A keyword may appear multiple times; keep the first.
@@ -496,7 +496,7 @@ class GraphExtractor(Extractor):
                     # Relationship description: shared sentence text
                     # (LinearRAG semantic bridging — the sentence is the
                     # semantic bridge between entities).
-                    desc = self._cooccurrence_description(doc, ea["entity_name"], eb["entity_name"])
+                    #desc = self._cooccurrence_description(doc, ea["entity_name"], eb["entity_name"])
 
                     # Edge weight: TF-normalised (LinearRAG) or fixed.
                     if self._use_tf_weight:
@@ -511,7 +511,7 @@ class GraphExtractor(Extractor):
                         src_id=pair[0],
                         tgt_id=pair[1],
                         weight=weight,
-                        description=desc,
+                        #description=desc,
                         keywords=[ea["entity_name"], eb["entity_name"]],
                         source_id=chunk_key,
                     )
