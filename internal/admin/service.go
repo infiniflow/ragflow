@@ -100,6 +100,13 @@ func (s *Service) Logout(user interface{}) error {
 	return nil
 }
 
+
+// ListTasks
+func (s *Service) ListTasks() ([]map[string]interface{}, error) {
+	var result []map[string]interface{}
+	return result, nil
+}
+
 // GetUserByToken get user by access token
 func (s *Service) GetUserByToken(token string) (*entity.User, error) {
 	user, err := s.userDAO.GetByAccessToken(token)
