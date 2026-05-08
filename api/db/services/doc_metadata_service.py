@@ -773,6 +773,110 @@ class DocMetadataService:
             return {}
 
     @classmethod
+    def filter_doc_ids_by_meta_pushdown(
+        cls,
+        kb_ids: List[str],
+        filters: List[Dict],
+        logic: str = "and",
+        limit: int = 10000,
+    ) -> Optional[List[str]]:
+        """Run a metadata filter directly against ES, returning matching doc IDs.
+
+        Returns ``None`` to signal "push-down not viable, use the in-memory
+        ``meta_filter`` fallback". Reasons for ``None``:
+
+        - Active doc store is not Elasticsearch (Infinity / OceanBase have
+          different filter semantics for the JSON ``meta_fields`` column).
+        - One of the user filters cannot be expressed in ES DSL.
+        - The ES request itself failed (network, mapping, missing index).
+
+        On success returns the deduplicated, ordered list of document IDs the
+        ES query matched. Callers can union or intersect this with their own
+        base ``doc_ids`` rather than fetching the entire metadata table.
+        """
+        from common.metadata_es_filter import (
+            UnsupportedMetaFilter,
+            build_meta_filter_query,
+            extract_doc_ids,
+            is_pushdown_supported,
+        )
+
+        if not kb_ids:
+            return []
+
+        if settings.DOC_ENGINE_INFINITY:
+            # Infinity stores ``meta_fields`` as a JSON column without dotted
+            # field access; the in-memory path is still the reliable answer.
+            return None
+
+        es_client = getattr(settings.docStoreConn, "es", None)
+        if es_client is None:
+            return None
+
+        if not is_pushdown_supported(filters):
+            return None
+
+        try:
+            kb = Knowledgebase.get_by_id(kb_ids[0])
+        except Exception as e:
+            logging.warning(f"[meta_pushdown] cannot resolve tenant for kb {kb_ids[0]}: {e}")
+            return None
+        if not kb:
+            return None
+
+        tenant_id = kb.tenant_id
+        index_name = cls._get_doc_meta_index_name(tenant_id)
+
+        try:
+            if not settings.docStoreConn.index_exist(index_name, ""):
+                # No metadata index → no metadata-filtered docs. Returning an
+                # empty list (rather than ``None``) so callers don't bounce
+                # back to the in-memory path and re-query MySQL for nothing.
+                return []
+        except Exception as e:
+            logging.warning(f"[meta_pushdown] index_exist check failed for {index_name}: {e}")
+            return None
+
+        try:
+            query_body = build_meta_filter_query(filters, logic, kb_ids)
+        except UnsupportedMetaFilter as e:
+            logging.debug(f"[meta_pushdown] falling back to in-memory: {e.reason}")
+            return None
+
+        # Only the doc id is needed downstream; trimming ``_source`` keeps the
+        # response small when the metadata blob is large.
+        request_body = {
+            **query_body,
+            "size": limit,
+            "_source": ["id"],
+        }
+
+        try:
+            response = es_client.search(index=index_name, body=request_body)
+        except Exception as e:
+            logging.warning(f"[meta_pushdown] ES query failed for {index_name}: {e}")
+            return None
+
+        doc_ids = extract_doc_ids(response if isinstance(response, dict) else dict(response))
+        # Preserve order while removing duplicates so caller-side de-dupe stays
+        # cheap.
+        seen: set[str] = set()
+        unique: List[str] = []
+        for did in doc_ids:
+            if did in seen:
+                continue
+            seen.add(did)
+            unique.append(did)
+
+        if len(unique) >= limit:
+            logging.warning(
+                f"[meta_pushdown] hit limit {limit} for KBs {kb_ids}; some matches may be missing"
+            )
+
+        logging.debug(f"[meta_pushdown] {len(unique)} matches for KBs {kb_ids}")
+        return unique
+
+    @classmethod
     def get_metadata_keys_by_kbs(cls, kb_ids: List[str]) -> List[str]:
         """
         Get unique metadata field names across multiple knowledge bases.

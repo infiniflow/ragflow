@@ -108,8 +108,8 @@ class TestAgentSessions:
         update_url = f"{HOST_ADDRESS}/api/{VERSION}/agents/invalid-agent-id"
         res = requests.put(update_url, auth=HttpApiAuth, json={"title": "updated", "dsl": MINIMAL_DSL}).json()
         assert res["code"] == 103, res
-        assert "Only owner of canvas authorized" in res["message"], res
+        assert "Make sure you have permission to access the agent." in res["message"], res
 
         res = delete_agent(HttpApiAuth, "invalid-agent-id")
         assert res["code"] == 103, res
-        assert "Only owner of canvas authorized" in res["message"], res
+        assert "Only the owner of the agent is authorized for this operation." in res["message"], res
