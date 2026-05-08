@@ -5,7 +5,8 @@
   },
   "url_suffix": {
     "chat": "chat/completions",
-    "files": "files"
+    "files": "files",
+    "embedding": "embeddings/multimodal"
   },
   "class": "volcengine",
   "models": [
@@ -19,6 +20,13 @@
         "default_value": true,
         "clear_thinking": true
       }
+    },
+    {
+      "name": "doubao-embedding-vision-250615",
+      "max_tokens": 131072,
+      "model_types": [
+        "embedding"
+      ]
     }
   ]
 }

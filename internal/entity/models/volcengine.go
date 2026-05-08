@@ -408,7 +408,86 @@ func (z *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 
 // Encode encodes a list of texts into embeddings
 func (z *VolcEngine) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
-	return nil, fmt.Errorf("not implemented")
+	if len(texts) == 0 {
+		return [][]float64{}, nil
+	}
+
+	var region = "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Embedding)
+
+	embeddings := make([][]float64, len(texts))
+
+	for i, text := range texts {
+
+		reqBody := map[string]interface{}{
+			"model":           *modelName,
+			"encoding_format": "float",
+			"input": []map[string]interface{}{
+				{
+					"type": "text",
+					"text": text,
+				},
+			},
+		}
+
+		jsonData, err := json.Marshal(reqBody)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"failed to marshal request: %w",
+				err,
+			)
+		}
+
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+		resp, err := z.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to send request: %w", err)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		}
+
+		// Volcengine multimodal embedding response
+		type VolcengineEmbeddingResponse struct {
+			Data struct {
+				Embedding []float64 `json:"embedding"`
+				Object    string    `json:"object"`
+			} `json:"data"`
+		}
+
+		var result VolcengineEmbeddingResponse
+
+		if err = json.Unmarshal(body, &result); err != nil {
+			return nil, fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		if len(result.Data.Embedding) == 0 {
+			return nil, fmt.Errorf("empty embedding in response")
+		}
+
+		embeddings[i] = result.Data.Embedding
+	}
+
+	return embeddings, nil
 }
 
 // Rerank calculates similarity scores between query and texts

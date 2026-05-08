@@ -455,29 +455,10 @@ func (z *VllmModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error
 	return nil, fmt.Errorf("no such method")
 }
 
-// CheckConnection verifies that the configured vLLM base URL is
-// reachable and that the API key (if any) is accepted, by issuing a
-// lightweight ListModels call. The empty-URL guard runs first so a
-// user who has not yet set the local access address gets a clear,
-// actionable error instead of a low-level transport message.
+// CheckConnection verifies that the configured vLLM base URL is reachable
 func (z *VllmModel) CheckConnection(apiConfig *APIConfig) error {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL := z.BaseURL[region]
-	if baseURL == "" {
-		baseURL = z.BaseURL["default"]
-	}
-	if baseURL == "" {
-		return fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
-	}
-
-	if _, err := z.ListModels(apiConfig); err != nil {
-		return fmt.Errorf("connection check failed: %w", err)
-	}
-	return nil
+	_, err := z.ListModels(apiConfig)
+	return err
 }
 
 // Rerank calculates similarity scores between query and texts

@@ -440,27 +440,8 @@ func (o *OllamaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, err
 	return nil, fmt.Errorf("no such method")
 }
 
-// CheckConnection verifies that the configured Ollama base URL is
-// reachable and that the API key (if any) is accepted, by issuing a
-// lightweight ListModels call. The empty-URL guard runs first so a
-// user who has not yet set the local access address gets a clear,
-// actionable error instead of a low-level transport message.
+// CheckConnection verifies that the configured Ollama base URL is reachable
 func (o *OllamaModel) CheckConnection(apiConfig *APIConfig) error {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL := o.BaseURL[region]
-	if baseURL == "" {
-		baseURL = o.BaseURL["default"]
-	}
-	if baseURL == "" {
-		return fmt.Errorf("missing base URL: please configure the local access address for Ollama (e.g., http://127.0.0.1:11434/v1)")
-	}
-
-	if _, err := o.ListModels(apiConfig); err != nil {
-		return fmt.Errorf("connection check failed: %w", err)
-	}
-	return nil
+	_, err := o.ListModels(apiConfig)
+	return err
 }
