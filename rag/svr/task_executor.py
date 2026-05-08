@@ -1282,6 +1282,8 @@ async def do_handle_task(task):
         )
 
     finally:
+        if toc_thread is not None and not toc_thread.done():
+            toc_thread.cancel()
         if has_canceled(task_id):
             try:
                 exists = await thread_pool_exec(
