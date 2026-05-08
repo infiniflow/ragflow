@@ -543,12 +543,16 @@ func (z *AliyunModel) Rerank(modelName *string, query string, texts []string, ap
 	}
 
 	scores := make([]float64, len(texts))
+	seen := make([]bool, len(texts))
 	for _, r := range rerankResp.Results {
-		if r.Index >= 0 && r.Index < len(texts) {
-			scores[r.Index] = r.RelevanceScore
-		} else {
+		if r.Index < 0 || r.Index >= len(texts) {
 			return nil, fmt.Errorf("aliyun rerank: result index %d out of range for %d documents", r.Index, len(texts))
 		}
+		if seen[r.Index] {
+			return nil, fmt.Errorf("aliyun rerank: duplicate result index %d", r.Index)
+		}
+		scores[r.Index] = r.RelevanceScore
+		seen[r.Index] = true
 	}
 
 	if len(rerankResp.Results) != len(texts) {
