@@ -25,6 +25,7 @@ from api.utils.validation_utils import (
     DeleteDatasetReq,
     ListDatasetReq,
     SearchDatasetReq,
+    SearchDatasetsReq,
     UpdateDatasetReq,
     validate_and_parse_json_request,
     validate_and_parse_request_args,
@@ -477,6 +478,35 @@ async def rename_tag(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
+@manager.route("/datasets/search", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def search_datasets(tenant_id):
+    """Search (retrieval test) across multiple datasets.
+
+    POST /api/v1/datasets/search
+    JSON body: {"dataset_ids": list[str] (required), "question": str (required), "doc_ids": list[str], "top_k": int, "page": int, "size": int,
+               "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool,
+               "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict}
+    Success: {"code": 0, "data": {"chunks": [...], "total": int, "labels": [...]}}
+    Errors: ARGUMENT_ERROR (101) for invalid payload; DATA_ERROR (102) for access denied or internal errors.
+    """
+    req, err = await validate_and_parse_json_request(request, SearchDatasetsReq)
+    if err is not None:
+        return get_error_argument_result(err)
+    try:
+        success, result = await dataset_api_service.search_datasets(tenant_id, req)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        if "not_found" in str(e):
+            return get_error_data_result(message="No chunk found! Check the chunk status please!")
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route("/datasets/<dataset_id>/search", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -493,8 +523,9 @@ async def search(tenant_id, dataset_id):
     req, err = await validate_and_parse_json_request(request, SearchDatasetReq)
     if err is not None:
         return get_error_argument_result(err)
+    req['dataset_ids'] = [dataset_id]
     try:
-        success, result = await dataset_api_service.search(dataset_id, tenant_id, req)
+        success, result = await dataset_api_service.search_datasets(tenant_id, req)
         if success:
             return get_result(data=result)
         else:
@@ -503,21 +534,6 @@ async def search(tenant_id, dataset_id):
         logging.exception(e)
         if "not_found" in str(e):
             return get_error_data_result(message="No chunk found! Check the chunk status please!")
-        return get_error_data_result(message="Internal server error")
-
-
-@manager.route("/datasets/<dataset_id>/graph/search", methods=["GET"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-async def knowledge_graph(tenant_id, dataset_id):
-    try:
-        success, result = await dataset_api_service.get_knowledge_graph(dataset_id, tenant_id)
-        if success:
-            return get_result(data=result)
-        else:
-            return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
-    except Exception as e:
-        logging.exception(e)
         return get_error_data_result(message="Internal server error")
 
 
