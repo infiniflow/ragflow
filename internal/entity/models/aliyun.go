@@ -71,14 +71,9 @@ func (z *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 		region = *apiConfig.Region
 	}
 
-	baseURL := z.BaseURL["default"]
-	if region != "default" {
-		if regional, ok := z.BaseURL[region]; ok && regional != "" {
-			baseURL = regional
-		}
-	}
-	if baseURL == "" {
-		return nil, fmt.Errorf("aliyun: no base URL configured for default region")
+	baseURL, ok := z.BaseURL[region]
+	if !ok || baseURL == "" {
+		return nil, fmt.Errorf("aliyun: no base URL configured for region %q", region)
 	}
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Chat)
@@ -217,14 +212,9 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		region = *apiConfig.Region
 	}
 
-	baseURL := z.BaseURL["default"]
-	if region != "default" {
-		if regional, ok := z.BaseURL[region]; ok && regional != "" {
-			baseURL = regional
-		}
-	}
-	if baseURL == "" {
-		return fmt.Errorf("aliyun: no base URL configured for default region")
+	baseURL, ok := z.BaseURL[region]
+	if !ok || baseURL == "" {
+		return fmt.Errorf("aliyun: no base URL configured for region %q", region)
 	}
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Chat)
@@ -605,14 +595,9 @@ func (z *AliyunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		region = *apiConfig.Region
 	}
 
-	baseURL := z.BaseURL["default"]
-	if region != "default" {
-		if regional, ok := z.BaseURL[region]; ok && regional != "" {
-			baseURL = regional
-		}
-	}
-	if baseURL == "" {
-		return nil, fmt.Errorf("aliyun: no base URL configured for default region")
+	baseURL, ok := z.BaseURL[region]
+	if !ok || baseURL == "" {
+		return nil, fmt.Errorf("aliyun: no base URL configured for region %q", region)
 	}
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Models)
