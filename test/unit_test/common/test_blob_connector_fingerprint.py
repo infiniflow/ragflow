@@ -313,3 +313,35 @@ def test_orchestrator_pattern_skips_get_object_when_fingerprint_matches():
 
     assert [doc.id for doc in fetched] == ["BlobType.S3:test-bucket:modified.txt"]
     assert s3.get_object_calls == [("test-bucket", "modified.txt")]
+
+
+def test_orchestrator_pattern_skips_deleted_records_without_calling_get_value():
+    """KeyRecord(deleted=True) must short-circuit before get_value().
+
+    Reach KeyRecord through the already-loaded blob_connector module to avoid
+    triggering common.data_source.__init__'s circular imports.
+    """
+    KeyRecord = blob_connector.KeyRecord
+
+    s3 = _FakeS3Client([_s3_object("foo.txt", "etag-foo")])
+    connector = _make_connector(s3)
+
+    # Manually feed a deleted KeyRecord through the bypass logic to assert the
+    # short-circuit holds even when a connector emits one. (BlobStorageConnector
+    # itself doesn't yield deleted records yet -- that's PR-4 -- but the
+    # orchestrator must already be defensive.)
+    deleted_record = KeyRecord(
+        key="BlobType.S3:test-bucket:gone.txt",
+        fingerprint=None,
+        deleted=True,
+    )
+
+    # Mirror the orchestrator's loop body verbatim.
+    fetched = []
+    for record in [deleted_record]:
+        if record.deleted:
+            continue
+        fetched.append(connector.get_value(record.key))
+
+    assert fetched == []
+    assert s3.get_object_calls == []

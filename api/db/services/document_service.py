@@ -396,12 +396,16 @@ class DocumentService(CommonService):
         Used by the fingerprint-bypass path to decide which keys can skip a
         re-fetch -- if the connector's listing fingerprint equals content_hash,
         the body hasn't changed since the last sync.
+
+        Ordered by create_time so LIMIT/OFFSET pagination is stable under
+        concurrent writes; without this, page boundaries can drop or duplicate
+        rows and the resulting map would silently miss entries.
         """
         fields = [cls.model.id, cls.model.content_hash]
         docs = cls.model.select(*fields).where(
             cls.model.kb_id == kb_id,
             cls.model.source_type == source_type,
-        )
+        ).order_by(cls.model.create_time.asc())
         offset = 0
         result: dict[str, str] = {}
         while True:

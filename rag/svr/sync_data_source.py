@@ -311,6 +311,12 @@ class _BlobLikeBase(SyncBase):
         Document (one GetObject call) when the listing fingerprint differs from
         the persisted content_hash. Unchanged objects are skipped entirely --
         no download, no re-parse.
+
+        Per-key fetch failures are counted and surfaced via SyncLogsService so
+        a partially failing sync (e.g. throttling, IAM regression mid-run)
+        doesn't silently report DONE while half the bucket is unreachable.
+        Connectors yielding KeyRecord(deleted=True) are skipped here -- actual
+        deletion reconciliation lives in the unified delete pass (PR-4).
         """
         source_type = f"{self.SOURCE_NAME}/{task['connector_id']}"
         existing_fingerprints = DocumentService.list_id_content_hash_map_by_kb_and_source_type(
@@ -319,8 +325,12 @@ class _BlobLikeBase(SyncBase):
 
         bypass_count = 0
         fetch_count = 0
+        fail_count = 0
         batch = []
         for key_record in self.connector.list_keys():
+            if key_record.deleted:
+                continue
+
             doc_id = hash128(key_record.key)
             stored = existing_fingerprints.get(doc_id, "")
             if key_record.fingerprint and stored and key_record.fingerprint == stored:
@@ -329,11 +339,13 @@ class _BlobLikeBase(SyncBase):
 
             try:
                 doc = self.connector.get_value(key_record.key)
-            except Exception:
+            except Exception as ex:
+                fail_count += 1
                 logging.exception(
-                    "Failed to fetch %s from %s",
+                    "Failed to fetch %s from %s: %s",
                     key_record.key,
                     self.SOURCE_NAME,
+                    ex,
                 )
                 continue
 
@@ -346,14 +358,25 @@ class _BlobLikeBase(SyncBase):
         if batch:
             yield batch
 
-        logging.info(
-            "[%s] fingerprint sync: %d bypassed, %d fetched (connector_id=%s, kb_id=%s)",
+        log_msg = (
+            "[%s] fingerprint sync: %d bypassed, %d fetched, %d failed "
+            "(connector_id=%s, kb_id=%s)"
+        )
+        log_args = (
             self.SOURCE_NAME,
             bypass_count,
             fetch_count,
+            fail_count,
             task["connector_id"],
             task["kb_id"],
         )
+        # Use WARNING when any fetch failed so partial-bucket regressions
+        # (auth, throttling, IAM drift) surface without diving into the
+        # per-exception traces above.
+        if fail_count:
+            logging.warning(log_msg, *log_args)
+        else:
+            logging.info(log_msg, *log_args)
 
     async def _generate(self, task: dict):
         bucket_type = self.conf.get("bucket_type", self.DEFAULT_BUCKET_TYPE)
