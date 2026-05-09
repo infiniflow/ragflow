@@ -520,10 +520,16 @@ func (b *BaiduModel) Rerank(modelName *string, query string, documents []string,
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(b.BaseURL[region], "/"), b.URLSuffix.Rerank)
 
+	var topN = rerankConfig.TopN
+	if rerankConfig.TopN == 0 {
+		topN = len(documents)
+	}
+
 	reqBody := map[string]interface{}{
 		"model":     *modelName,
 		"query":     query,
 		"documents": documents,
+		"top_n":     topN,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
