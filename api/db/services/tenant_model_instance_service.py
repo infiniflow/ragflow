@@ -23,9 +23,9 @@ class TenantModelInstanceService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def create_instance(cls, provider_id: str, instance_name: str, api_key: str):
+    def create_instance(cls, provider_id: str, instance_name: str, api_key: str, extra: str):
         unique_instance_name = duplicate_name(cls.query, name_field="instance_name", provider_id=provider_id, instance_name=instance_name)
-        return cls.insert(id=get_uuid(), provider_id=provider_id, instance_name=unique_instance_name, api_key=api_key)
+        return cls.insert(id=get_uuid(), provider_id=provider_id, instance_name=unique_instance_name, api_key=api_key, extra=extra)
 
     @classmethod
     @DB.connection_context()
