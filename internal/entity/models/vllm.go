@@ -79,7 +79,7 @@ func (z *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -196,11 +196,20 @@ func (z *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelClass, &content)
+	var reasonContent string
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+		reasonContent, ok = messageMap["reasoning_content"].(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid content format")
+		}
+		if reasonContent != "" && reasonContent[0] == '\n' {
+			reasonContent = reasonContent[1:]
+		}
+	}
 
 	chatResponse := &ChatResponse{
-		Answer:        answer,
-		ReasonContent: thinking,
+		Answer:        &content,
+		ReasonContent: &reasonContent,
 	}
 
 	return chatResponse, nil
@@ -213,7 +222,7 @@ func (z *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message,
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -376,11 +385,19 @@ func (z *VllmModel) Encode(modelName *string, texts []string, apiConfig *APIConf
 func (z *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
 
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Models)
+	baseURL := z.BaseURL[region]
+	if baseURL == "" {
+		baseURL = z.BaseURL["default"]
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
+	}
+
+	url := fmt.Sprintf("%s/%s", baseURL, z.URLSuffix.Models)
 
 	reqBody := map[string]interface{}{}
 
@@ -395,7 +412,12 @@ func (z *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	// vLLM is a local provider and the API key is optional. Only set
+	// the Authorization header when a non-empty key was supplied. This
+	// also avoids a nil-pointer dereference on apiConfig or ApiKey.
+	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
 
 	resp, err := z.httpClient.Do(req)
 	if err != nil {
@@ -433,8 +455,10 @@ func (z *VllmModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error
 	return nil, fmt.Errorf("no such method")
 }
 
+// CheckConnection verifies that the configured vLLM base URL is reachable
 func (z *VllmModel) CheckConnection(apiConfig *APIConfig) error {
-	return fmt.Errorf("no such method")
+	_, err := z.ListModels(apiConfig)
+	return err
 }
 
 // Rerank calculates similarity scores between query and texts

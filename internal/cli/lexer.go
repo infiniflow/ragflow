@@ -427,6 +427,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenRegion, Value: ident}
 	case "URL":
 		return Token{Type: TokenURL, Value: ident}
+	case "TASKS":
+		return Token{Type: TokenTasks, Value: ident}
 	case "LOG":
 		return Token{Type: TokenLog, Value: ident}
 	case "LEVEL":

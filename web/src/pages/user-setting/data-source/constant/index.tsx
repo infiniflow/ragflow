@@ -126,6 +126,15 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.RSS]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.MOODLE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.MYSQL]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.POSTGRESQL]: {
+    syncDeletedFiles: true,
+  },
 };
 
 const isDataSourceFeatureVisible = (

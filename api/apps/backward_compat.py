@@ -29,6 +29,9 @@ Deprecated APIs and their replacements:
 - POST /api/v1/file/convert -> POST /api/v1/files/link-to-datasets
 - GET /api/v1/file/* -> GET /api/v1/files*
 - POST /api/v1/file/* -> POST /api/v1/files*
+- GET /api/v1/document/get/{doc_id} -> GET /api/v1/documents/{doc_id}/preview
+- GET /api/v1/document/download/{doc_id} -> GET /api/v1/documents/{doc_id}/download
+- GET /v1/document/download/{attachment_id} -> GET /api/v1/documents/{attachment_id}/download
 - POST /api/v1/sessions/related_questions -> POST /api/v1/chat/recommandation
 - PUT (chunk update) -> PATCH (chunk update)
 """
@@ -43,6 +46,7 @@ from api.apps.services import file_api_service
 from api.utils.api_utils import get_data_error_result, get_json_result, add_tenant_id_to_kwargs
 
 manager = Blueprint("backward_compat", __name__)
+document_download_manager = Blueprint("backward_compat_document_download", __name__)
 
 
 # =============================================================================
@@ -394,6 +398,61 @@ async def deprecated_file_upload_info():
     tenant_id = current_user.id
     return await document_api.upload_info(tenant_id=tenant_id)
 
+
+# =============================================================================
+# Document APIs
+# =============================================================================
+
+@manager.route("/document/get/<doc_id>", methods=["GET"])
+@login_required
+async def deprecated_document_get(doc_id):
+    """
+    Deprecated: Use GET /api/v1/documents/{doc_id}/preview instead.
+
+    Old path: GET /api/v1/document/get/{doc_id}
+    New path: GET /api/v1/documents/{doc_id}/preview
+    """
+    logging.warning(
+        "API endpoint /api/v1/document/get/%s is deprecated. "
+        "Please use /api/v1/documents/%s/preview instead.",
+        doc_id, doc_id,
+    )
+    return await document_api.get(doc_id)
+
+
+@manager.route("/document/download/<doc_id>", methods=["GET"])
+@login_required
+async def deprecated_document_download(doc_id):
+    """
+    Deprecated: Use GET /api/v1/documents/{doc_id}/download instead.
+
+    Old path: GET /api/v1/document/download/{doc_id}
+    New path: GET /api/v1/documents/{doc_id}/download
+    """
+    logging.warning(
+        "API endpoint /api/v1/document/download/%s is deprecated. "
+        "Please use /api/v1/documents/%s/download instead.",
+        doc_id, doc_id,
+    )
+    return await document_api.download_attachment(doc_id=doc_id)
+
+
+@document_download_manager.route("/document/download/<attachment_id>", methods=["GET"])
+@login_required
+async def document_download_v1(attachment_id):
+    """
+    Compatibility alias for document download under /v1.
+
+    Old path: GET /v1/document/download/{attachment_id}
+    New path: GET /api/v1/documents/{attachment_id}/download
+    """
+    logging.warning(
+        "API endpoint /v1/document/download/%s is deprecated. "
+        "Please use /api/v1/documents/%s/download instead.",
+        attachment_id, attachment_id,
+    )
+    return await document_api.download_attachment(attachment_id=attachment_id)
+
 # =============================================================================
 # Agent Chat API
 # =============================================================================
@@ -420,4 +479,5 @@ def register_backward_compat_routes(app_instance):
     Register all backward compatibility routes with the app.
     """
     app_instance.register_blueprint(manager, url_prefix="/api/v1")
+    app_instance.register_blueprint(document_download_manager, url_prefix="/v1")
     logging.info("Backward compatibility routes registered successfully.")

@@ -1298,6 +1298,17 @@ class LiteLLMBase(ABC):
         elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
             self.api_key = json.loads(key).get("api_key", "")
             self.api_version = json.loads(key).get("api_version", "2024-02-01")
+        elif self.provider == SupportedLiteLLMProvider.MiniMax:
+            # MiniMax requires GroupId as a query parameter for API authentication
+            try:
+                key_obj = json.loads(key) if isinstance(key, str) else key
+                self.api_key = key_obj.get("api_key", key) if isinstance(key_obj, dict) else key
+                self.group_id = key_obj.get("group_id", "") if isinstance(key_obj, dict) else ""
+            except (json.JSONDecodeError, TypeError):
+                self.api_key = key
+                self.group_id = ""
+        else:
+            self.group_id = ""
 
     def _get_delay(self):
         return self.base_delay * random.uniform(10, 150)
@@ -1848,6 +1859,11 @@ class LiteLLMBase(ABC):
         extra_headers = deepcopy(completion_args.get("extra_headers") or {})
         if self.provider == SupportedLiteLLMProvider.Ollama and self.api_key and "Authorization" not in extra_headers:
             extra_headers["Authorization"] = f"Bearer {self.api_key}"
+        # MiniMax requires GroupId as a query parameter for API authentication
+        if self.provider == SupportedLiteLLMProvider.MiniMax and hasattr(self, 'group_id') and self.group_id:
+            api_base = completion_args.get("api_base", self.base_url)
+            separator = "&" if "?" in api_base else "?"
+            completion_args["api_base"] = f"{api_base}{separator}GroupId={self.group_id}"
         if extra_headers:
             completion_args["extra_headers"] = extra_headers
         return completion_args

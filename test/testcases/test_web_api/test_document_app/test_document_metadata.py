@@ -343,6 +343,31 @@ class TestDocumentMetadataUnit:
 
     def test_get_route_not_found_success_and_exception_unit(self, document_app_module, monkeypatch):
         module = document_app_module
+
+        # Cross-tenant access is denied -> "Document not found!" (no ID enumeration).
+        # Stub get_by_id to a valid document so the test can only pass via the
+        # accessible() early return; if that check ever regresses, the route would
+        # proceed and the assertions below would no longer match.
+        accessible_calls = []
+
+        def fake_accessible_denied(doc_id, user_id):
+            accessible_calls.append((doc_id, user_id))
+            return False
+
+        monkeypatch.setattr(module.DocumentService, "accessible", fake_accessible_denied)
+        monkeypatch.setattr(
+            module.DocumentService,
+            "get_by_id",
+            lambda _doc_id: (True, SimpleNamespace(name="real.bin", type=module.FileType.OTHER.value)),
+        )
+        res = _run(module.get("doc1"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert "Document not found!" in res["message"]
+        assert accessible_calls == [("doc1", "user-1")]
+
+        # From here on the user is authorized; exercise the original branches.
+        monkeypatch.setattr(module.DocumentService, "accessible", lambda _doc_id, _user_id: True)
+
         monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (False, None))
         res = _run(module.get("doc1"))
         assert res["code"] == RetCode.DATA_ERROR
@@ -380,6 +405,22 @@ class TestDocumentMetadataUnit:
         module = document_app_module
         monkeypatch.setattr(module, "request", _DummyRequest(args={"ext": "abc"}))
 
+        # Cross-tenant access is denied -> "Document not found!" (no ID enumeration).
+        accessible_calls = []
+
+        def fake_accessible_denied(doc_id, user_id):
+            accessible_calls.append((doc_id, user_id))
+            return False
+
+        monkeypatch.setattr(module.DocumentService, "accessible", fake_accessible_denied)
+        res = _run(module.download_attachment(attachment_id="att1"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert "Document not found!" in res["message"]
+        assert accessible_calls == [("att1", "user-1")]
+
+        # From here on the user is authorized; exercise the original branches.
+        monkeypatch.setattr(module.DocumentService, "accessible", lambda _doc_id, _user_id: True)
+
         async def fake_thread_pool_exec(*_args, **_kwargs):
             return b"attachment"
 
@@ -394,7 +435,7 @@ class TestDocumentMetadataUnit:
             "apply_safe_file_response_headers",
             lambda response, content_type, extension: response.headers.update({"content_type": content_type, "extension": extension}),
         )
-        res = _run(module.download_attachment("att1"))
+        res = _run(module.download_attachment(attachment_id="att1"))
         assert isinstance(res, _DummyResponse)
         assert res.data == b"attachment"
         assert res.headers["content_type"] == "application/abc"
@@ -405,7 +446,7 @@ class TestDocumentMetadataUnit:
 
         monkeypatch.setattr(module, "thread_pool_exec", raise_error)
         monkeypatch.setattr(module, "server_error_response", lambda e: {"code": 500, "message": str(e)})
-        res = _run(module.download_attachment("att1"))
+        res = _run(module.download_attachment(attachment_id="att1"))
         assert res["code"] == 500
         assert "download boom" in res["message"]
 

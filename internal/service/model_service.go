@@ -199,15 +199,18 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
 
+	driver := providerInfo.ModelDriver
+
 	// For local deployed models
 	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
 		newURL := map[string]string{
 			region: baseURL,
 		}
-		providerInfo.ModelDriver = providerInfo.ModelDriver.NewInstance(newURL)
+
+		driver = driver.NewInstance(newURL)
 	}
 
-	return providerInfo.ModelDriver.ListModels(apiConfig)
+	return driver.ListModels(apiConfig)
 }
 
 func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName, apiKey, baseURL, region, userID string) (common.ErrorCode, error) {
@@ -455,7 +458,15 @@ func (m *ModelProviderService) CheckProviderConnection(providerName, instanceNam
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
 
-	err = providerInfo.ModelDriver.CheckConnection(apiConfig)
+	driver := providerInfo.ModelDriver
+	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
+		newURL := map[string]string{
+			region: baseURL,
+		}
+		driver = driver.NewInstance(newURL)
+	}
+
+	err = driver.CheckConnection(apiConfig)
 	if err != nil {
 		return common.CodeServerError, err
 	}

@@ -726,7 +726,7 @@ class User(DataBaseModel, AuthUser):
         return self.email
 
     def get_id(self):
-        jwt = Serializer(secret_key=settings.SECRET_KEY)
+        jwt = Serializer(secret_key=settings.get_secret_key())
         return jwt.dumps(str(self.access_token))
 
     class Meta:

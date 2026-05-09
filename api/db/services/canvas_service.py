@@ -221,8 +221,6 @@ class UserCanvasService(CommonService):
         e, cvs = cls.get_by_id(agent_id)
         if not e:
             raise LookupError("Agent not found.")
-        if tenant_id and cvs.user_id != tenant_id:
-            raise PermissionError("You do not own the agent.")
 
         if release_mode:
             released_version = UserCanvasVersionService.get_latest_released(agent_id)
