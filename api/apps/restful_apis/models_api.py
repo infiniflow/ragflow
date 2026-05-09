@@ -27,7 +27,7 @@ from api.utils.api_utils import (
 )
 
 
-@manager.route("/models", methods=["GET"])  # noqa: F821
+@manager.route("/models/default", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 def get_models(tenant_id: str):
@@ -80,7 +80,7 @@ def get_models(tenant_id: str):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/models", methods=["PATCH"])  # noqa: F821
+@manager.route("/models/default", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def set_models(tenant_id: str):
