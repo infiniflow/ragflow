@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -71,14 +72,6 @@ type SiliconflowRerankRequest struct {
 	OverlapTokens   int      `json:"overlap_tokens"`
 }
 
-// SiliconflowRerankResponse represents SILICONFLOW rerank response
-type SiliconflowRerankResponse struct {
-	Results []struct {
-		Index          int     `json:"index"`
-		RelevanceScore float64 `json:"relevance_score"`
-	} `json:"results"`
-}
-
 // ChatWithMessages sends multiple messages with roles and returns response
 func (z *SiliconflowModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
@@ -90,7 +83,7 @@ func (z *SiliconflowModel) ChatWithMessages(modelName string, messages []Message
 	}
 
 	region := "default"
-	if apiConfig.Region != nil {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
@@ -221,7 +214,7 @@ func (z *SiliconflowModel) ChatStreamlyWithSender(modelName string, messages []M
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -382,7 +375,7 @@ func (s *SiliconflowModel) Encode(modelName *string, texts []string, apiConfig *
 	}
 
 	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -473,7 +466,7 @@ func (s *SiliconflowModel) Encode(modelName *string, texts []string, apiConfig *
 
 func (z *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -528,8 +521,90 @@ func (z *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return models, nil
 }
 
+type siliconflowBalanceResponse struct {
+	Code    int    `json:"code"`
+	Status  bool   `json:"status"`
+	Message string `json:"message"`
+	Data    struct {
+		Balance      string `json:"balance"`
+		TotalBalance string `json:"totalBalance"`
+	} `json:"data"`
+}
+
 func (z *SiliconflowModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := z.BaseURL["default"]
+	if region != "default" {
+		if regional, ok := z.BaseURL[region]; ok && regional != "" {
+			baseURL = regional
+		}
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("siliconflow: no base URL configured for default region")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Balance)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("SiliconFlow balance API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed siliconflowBalanceResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if !parsed.Status {
+		msg := parsed.Message
+		if msg == "" {
+			msg = "unknown API error"
+		}
+		return nil, fmt.Errorf("SiliconFlow API error (code %d): %s", parsed.Code, msg)
+	}
+
+	raw := parsed.Data.TotalBalance
+	if raw == "" {
+		raw = parsed.Data.Balance
+	}
+	if raw == "" {
+		return nil, fmt.Errorf("no balance info in response")
+	}
+
+	total, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid balance %q: %w", raw, err)
+	}
+
+	return map[string]interface{}{
+		"balance":  total,
+		"currency": "CNY",
+	}, nil
 }
 
 func (z *SiliconflowModel) CheckConnection(apiConfig *APIConfig) error {
@@ -540,14 +615,40 @@ func (z *SiliconflowModel) CheckConnection(apiConfig *APIConfig) error {
 	return nil
 }
 
-// Rerank calculates similarity scores between query and texts
-func (s *SiliconflowModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
-	if len(texts) == 0 {
-		return []float64{}, nil
+// SiliconflowRerankResponse represents SILICONFLOW rerank response
+type SiliconflowRerankResponse struct {
+	ID      string `json:"id"`
+	Results []struct {
+		Index    int `json:"index"`
+		Document struct {
+			Text string `json:"text"`
+		} `json:"document"`
+		RelevanceScore float64 `json:"relevance_score"`
+	} `json:"results"`
+	Meta struct {
+		Tokens struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+			ImageTokens  int `json:"image_tokens"`
+		} `json:"tokens"`
+		BilledUnits struct {
+			InputTokens     int `json:"input_tokens"`
+			OutputTokens    int `json:"output_tokens"`
+			ImageTokens     int `json:"image_tokens"`
+			SearchUnits     int `json:"search_units"`
+			Classifications int `json:"classifications"`
+		} `json:"billed_units"`
+	} `json:"meta"`
+}
+
+// Rerank calculates similarity scores between query and documents
+func (s *SiliconflowModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
 	}
 
 	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -559,8 +660,8 @@ func (s *SiliconflowModel) Rerank(modelName *string, query string, texts []strin
 	reqBody := SiliconflowRerankRequest{
 		Model:           *modelName,
 		Query:           query,
-		Documents:       texts,
-		TopN:            len(texts),
+		Documents:       documents,
+		TopN:            rerankConfig.TopN,
 		ReturnDocuments: false,
 		MaxChunksPerDoc: 1024,
 		OverlapTokens:   80,
@@ -596,17 +697,17 @@ func (s *SiliconflowModel) Rerank(modelName *string, query string, texts []strin
 
 	body, _ := io.ReadAll(resp.Body)
 
-	var rerankResp SiliconflowRerankResponse
-	if err := json.Unmarshal(body, &rerankResp); err != nil {
+	var siliconflowRerankResp SiliconflowRerankResponse
+	if err = json.Unmarshal(body, &siliconflowRerankResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	scores := make([]float64, len(texts))
-	for _, result := range rerankResp.Results {
-		if result.Index >= 0 && result.Index < len(texts) {
-			scores[result.Index] = result.RelevanceScore
-		}
+	var rerankResponse RerankResponse
+	for _, result := range siliconflowRerankResp.Results {
+		rerankResponse.Data = append(rerankResponse.Data, RerankResult{
+			Index:          result.Index,
+			RelevanceScore: result.RelevanceScore,
+		})
 	}
-
-	return scores, nil
+	return &rerankResponse, nil
 }
