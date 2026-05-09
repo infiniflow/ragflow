@@ -470,9 +470,9 @@ type OpenRouterRerankResponse struct {
 	} `json:"results"`
 }
 
-func (o *OpenRouterModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
-	if len(texts) == 0 {
-		return []float64{}, nil
+func (o *OpenRouterModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
 	}
 
 	var region = "default"
@@ -480,11 +480,16 @@ func (o *OpenRouterModel) Rerank(modelName *string, query string, texts []string
 		region = *apiConfig.Region
 	}
 
+	var topN = rerankConfig.TopN
+	if rerankConfig.TopN == 0 {
+		topN = len(documents)
+	}
+
 	reqBody := OpenRouterRerankRequest{
 		Model:     *modelName,
 		Query:     query,
-		Documents: texts,
-		TopN:      len(texts),
+		Documents: documents,
+		TopN:      topN,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -522,16 +527,16 @@ func (o *OpenRouterModel) Rerank(modelName *string, query string, texts []string
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	scores := make([]float64, len(texts))
-
+	var rerankResponse RerankResponse
 	for _, result := range rerankResp.Results {
-		if result.Index >= 0 &&
-			result.Index < len(texts) {
-			scores[result.Index] = result.RelevanceScore
+		rerankResult := RerankResult{
+			Index:          result.Index,
+			RelevanceScore: result.RelevanceScore,
 		}
+		rerankResponse.Data = append(rerankResponse.Data, rerankResult)
 	}
 
-	return scores, nil
+	return &rerankResponse, nil
 }
 
 func (o *OpenRouterModel) ListModels(apiConfig *APIConfig) ([]string, error) {
