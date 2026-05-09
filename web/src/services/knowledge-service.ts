@@ -121,6 +121,7 @@ const mapDocumentToLegacy = (doc: Record<string, any>) => ({
   ...doc,
   chunk_num: doc.chunk_num ?? doc.chunk_count,
   kb_id: doc.kb_id || doc.dataset_id,
+  parser_id: doc.parser_id || doc.chunk_method,
 });
 
 const mapChunkPayloadToRest = (payload: Record<string, any>) => ({
