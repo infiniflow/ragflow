@@ -102,6 +102,11 @@ const (
 	TokenASR
 	TokenTTS
 	TokenOCR
+	TokenEmbed
+	TokenText
+	TokenQuery
+	TokenTop
+	TokenDimension
 	TokenAsync
 	TokenSync
 	TokenBenchmark

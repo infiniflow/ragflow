@@ -134,20 +134,20 @@ func RerankByModel(
 	// Calculate token similarity
 	tsim = TokenSimilarity(keywords, insTw, qb)
 
+	var modelSim []float64
 	// Get similarity scores from reranker model
-	modelSim, err := rerankModel.ModelDriver.Rerank(rerankModel.ModelName, query, docs, rerankModel.APIConfig)
+	rerankResponse, err := rerankModel.ModelDriver.Rerank(rerankModel.ModelName, query, docs, rerankModel.APIConfig, &models.RerankConfig{})
 	if err != nil {
 		common.Error("RerankByModel: rerankModel.Rerank failed; falling back to token-only similarity", err)
 		// If model fails, fall back to token similarity only
 		modelSim = make([]float64, len(tsim))
 	}
-	if len(modelSim) != chunkCount {
-		common.Warn("reranker returned mismatched score length; padding/truncating",
-			zap.Int("got", len(modelSim)), zap.Int("want", chunkCount))
-		fixed := make([]float64, chunkCount)
-		copy(fixed, modelSim)
-		modelSim = fixed
+
+	loopCount := min(chunkCount, len(rerankResponse.Data))
+	for i := 0; i < loopCount; i++ {
+		modelSim = append(modelSim, rerankResponse.Data[i].RelevanceScore)
 	}
+
 	// Combine token similarity with model similarity
 	// Model similarity is treated as vector similarity component
 	sim = make([]float64, chunkCount)

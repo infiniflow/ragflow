@@ -473,9 +473,9 @@ type aliyunRerankResponse struct {
 	} `json:"results"`
 }
 
-func (z *AliyunModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
-	if len(texts) == 0 {
-		return []float64{}, nil
+func (z *AliyunModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
 	}
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
@@ -501,11 +501,16 @@ func (z *AliyunModel) Rerank(modelName *string, query string, texts []string, ap
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Rerank)
 
+	var topN = rerankConfig.TopN
+	if rerankConfig.TopN == 0 {
+		topN = len(documents)
+	}
+
 	reqBody := aliyunRerankRequest{
 		Model:           *modelName,
 		Query:           query,
-		Documents:       texts,
-		TopN:            len(texts),
+		Documents:       documents,
+		TopN:            topN,
 		ReturnDocuments: false,
 	}
 
@@ -537,29 +542,12 @@ func (z *AliyunModel) Rerank(modelName *string, query string, texts []string, ap
 		return nil, fmt.Errorf("Aliyun rerank API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var rerankResp aliyunRerankResponse
-	if err = json.Unmarshal(body, &rerankResp); err != nil {
+	var rerankResponse RerankResponse
+	if err = json.Unmarshal(body, &rerankResponse); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	scores := make([]float64, len(texts))
-	seen := make([]bool, len(texts))
-	for _, r := range rerankResp.Results {
-		if r.Index < 0 || r.Index >= len(texts) {
-			return nil, fmt.Errorf("aliyun rerank: result index %d out of range for %d documents", r.Index, len(texts))
-		}
-		if seen[r.Index] {
-			return nil, fmt.Errorf("aliyun rerank: duplicate result index %d", r.Index)
-		}
-		scores[r.Index] = r.RelevanceScore
-		seen[r.Index] = true
-	}
-
-	if len(rerankResp.Results) != len(texts) {
-		return nil, fmt.Errorf("aliyun rerank: expected %d results, got %d", len(texts), len(rerankResp.Results))
-	}
-
-	return scores, nil
+	return &rerankResponse, nil
 }
 
 type AliyunModelItem struct {

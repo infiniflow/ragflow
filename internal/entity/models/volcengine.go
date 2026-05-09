@@ -490,8 +490,8 @@ func (z *VolcEngine) Encode(modelName *string, texts []string, apiConfig *APICon
 	return embeddings, nil
 }
 
-// Rerank calculates similarity scores between query and texts
-func (z *VolcEngine) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+// Rerank calculates similarity scores between query and documents
+func (z *VolcEngine) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }
 

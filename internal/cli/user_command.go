@@ -1572,7 +1572,6 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 				"text": message,
 			})
 		}
-
 	}
 
 	images, ok := cmd.Params["images"].([]string)
@@ -1783,6 +1782,146 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+func (c *RAGFlowClient) EmbedUserText(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	var providerName, instanceName, modelName string
+
+	// Check if composite_model_name is provided in command
+	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
+		names := strings.Split(compositeModelName, "@")
+		if len(names) != 3 {
+			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+		}
+		providerName = names[2]
+		instanceName = names[1]
+		modelName = names[0]
+	} else if c.CurrentModel != nil {
+		// Use current model if set
+		providerName = c.CurrentModel.Provider
+		instanceName = c.CurrentModel.Instance
+		modelName = c.CurrentModel.Model
+	} else {
+		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
+	}
+
+	texts, ok := cmd.Params["texts"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("texts not provided")
+	}
+
+	dimension, ok := cmd.Params["dimension"].(int)
+	if !ok {
+		dimension = 0
+	}
+
+	payload := map[string]interface{}{
+		"provider_name": providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+		"texts":         texts,
+		"dimension":     dimension,
+	}
+
+	url := "/embeddings"
+
+	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to embed text: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to embed text: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("embed text failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) RerankUserDocument(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	var providerName, instanceName, modelName string
+
+	// Check if composite_model_name is provided in command
+	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
+		names := strings.Split(compositeModelName, "@")
+		if len(names) != 3 {
+			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+		}
+		providerName = names[2]
+		instanceName = names[1]
+		modelName = names[0]
+	} else if c.CurrentModel != nil {
+		// Use current model if set
+		providerName = c.CurrentModel.Provider
+		instanceName = c.CurrentModel.Instance
+		modelName = c.CurrentModel.Model
+	} else {
+		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
+	}
+
+	query, ok := cmd.Params["query"].(string)
+	if !ok {
+		return nil, fmt.Errorf("query not provided")
+	}
+
+	documents, ok := cmd.Params["documents"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("documents not provided")
+	}
+
+	topN, ok := cmd.Params["top_n"].(int)
+	if !ok {
+		return nil, fmt.Errorf("top n not provided")
+	}
+
+	payload := map[string]interface{}{
+		"provider_name": providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+		"query":         query,
+		"documents":     documents,
+		"top_n":         topN,
+	}
+
+	url := "/rerank"
+
+	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to rerank document: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to rerank document: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("rerank document failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 func (c *RAGFlowClient) CheckProviderConnection(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")
@@ -1820,7 +1959,6 @@ func (c *RAGFlowClient) CheckProviderConnection(cmd *Command) (ResponseIf, error
 	}
 	result.Duration = resp.Duration
 	return &result, nil
-
 }
 
 // UseModel sets the current model for chat
@@ -1928,14 +2066,14 @@ func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check provider connection: %w", err)
+		return nil, fmt.Errorf("failed to add custom model: %w", err)
 	}
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to check provider connection: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to add custom model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 	var result SimpleResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("add custom model failed: invalid JSON (%w)", err)
 	}
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)

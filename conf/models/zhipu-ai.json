@@ -242,7 +242,7 @@
       ]
     },
     {
-      "name": "glm-asr",
+      "name": "glm-asr-2512",
       "max_tokens": 4096,
       "model_types": [
         "asr"
@@ -261,7 +261,7 @@
       ]
     },
     {
-      "name": "glm-rerank",
+      "name": "rerank",
       "model_types": [
         "rerank"
       ]

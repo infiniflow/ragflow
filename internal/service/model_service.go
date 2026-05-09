@@ -890,6 +890,238 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 	return common.CodeServerError, errors.New("model is disabled")
 }
 
+// EmbedText sends texts to the embedding model
+func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, userID string, texts []string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.EmbeddingConfig) (*modelModule.EmbeddingResponse, common.ErrorCode, error) {
+	if apiConfig == nil {
+		apiConfig = &modelModule.APIConfig{}
+	}
+	if modelConfig == nil {
+		modelConfig = &modelModule.EmbeddingConfig{}
+	}
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return nil, common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	modelInfo, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+	if err != nil {
+		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+		if providerInfo == nil {
+			return nil, common.CodeNotFound, errors.New("provider not found")
+		}
+
+		var model *entity.Model = nil
+		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		if err != nil {
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
+		}
+
+		if !model.ModelTypeMap["embedding"] {
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s is not an embedding model", providerName, modelName))
+		}
+
+		var extra map[string]string
+		err = json.Unmarshal([]byte(instance.Extra), &extra)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+
+		region := extra["region"]
+		apiConfig.Region = &region
+		apiConfig.ApiKey = &instance.APIKey
+
+		var embeddingList [][]float64
+		embeddingList, err = providerInfo.ModelDriver.Encode(&modelName, texts, apiConfig, modelConfig)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		if embeddingList == nil {
+			return nil, common.CodeServerError, errors.New("empty embed response")
+		}
+
+		response := &modelModule.EmbeddingResponse{
+			Data: make([]modelModule.EmbeddingResult, len(embeddingList)),
+		}
+		for i, embedding := range embeddingList {
+			response.Data[i] = modelModule.EmbeddingResult{
+				Index:     i,
+				Dimension: len(embedding),
+				//Embedding: embedding,
+			}
+		}
+
+		return response, common.CodeSuccess, nil
+	}
+
+	if modelInfo.Status == "active" {
+		// For local deployed models
+		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+		if providerInfo == nil {
+			return nil, common.CodeNotFound, errors.New("provider not found")
+		}
+
+		var extra map[string]string
+		err = json.Unmarshal([]byte(instance.Extra), &extra)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+
+		region := extra["region"]
+		apiConfig.Region = &region
+		apiConfig.ApiKey = &instance.APIKey
+
+		newURL := map[string]string{
+			region: extra["base_url"],
+		}
+		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
+
+		var embeddingList [][]float64
+		embeddingList, err = newProviderInfo.Encode(&modelName, texts, apiConfig, modelConfig)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		if embeddingList == nil {
+			return nil, common.CodeServerError, errors.New("empty embed response")
+		}
+
+		response := &modelModule.EmbeddingResponse{
+			Data: make([]modelModule.EmbeddingResult, len(embeddingList)),
+		}
+		for i, embedding := range embeddingList {
+			response.Data[i] = modelModule.EmbeddingResult{
+				Index:     i,
+				Dimension: len(embedding),
+				//Embedding: embedding,
+			}
+		}
+
+		return response, common.CodeSuccess, nil
+	}
+
+	return nil, common.CodeServerError, errors.New("model is disabled")
+}
+
+// RerankDocument sends texts to the embedding model
+func (m *ModelProviderService) RerankDocument(providerName, instanceName, modelName, userID, query string, documents []string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.RerankConfig) (*modelModule.RerankResponse, common.ErrorCode, error) {
+	if apiConfig == nil {
+		apiConfig = &modelModule.APIConfig{}
+	}
+	if modelConfig == nil {
+		modelConfig = &modelModule.RerankConfig{}
+	}
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return nil, common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	modelInfo, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+	if err != nil {
+		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+		if providerInfo == nil {
+			return nil, common.CodeNotFound, errors.New("provider not found")
+		}
+
+		var model *entity.Model = nil
+		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		if err != nil {
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
+		}
+
+		if !model.ModelTypeMap["rerank"] {
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s is not an embedding model", providerName, modelName))
+		}
+
+		var extra map[string]string
+		err = json.Unmarshal([]byte(instance.Extra), &extra)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+
+		region := extra["region"]
+		apiConfig.Region = &region
+		apiConfig.ApiKey = &instance.APIKey
+
+		var response *modelModule.RerankResponse
+		response, err = providerInfo.ModelDriver.Rerank(&modelName, query, documents, apiConfig, modelConfig)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+
+		return response, common.CodeSuccess, nil
+	}
+
+	if modelInfo.Status == "active" {
+		// For local deployed models
+		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+		if providerInfo == nil {
+			return nil, common.CodeNotFound, errors.New("provider not found")
+		}
+
+		var extra map[string]string
+		err = json.Unmarshal([]byte(instance.Extra), &extra)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+
+		region := extra["region"]
+		apiConfig.Region = &region
+		apiConfig.ApiKey = &instance.APIKey
+
+		newURL := map[string]string{
+			region: extra["base_url"],
+		}
+		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
+
+		var response *modelModule.RerankResponse
+		response, err = newProviderInfo.Rerank(&modelName, query, documents, apiConfig, modelConfig)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+
+		return response, common.CodeSuccess, nil
+	}
+
+	return nil, common.CodeServerError, errors.New("model is disabled")
+}
+
 // GetEmbeddingModel returns an EmbeddingModel wrapper for the given tenant
 func (m *ModelProviderService) GetEmbeddingModel(tenantID, compositeModelName string) (*modelModule.EmbeddingModel, error) {
 	driver, modelName, apiConfig, maxTokens, err := m.getModelConfig(tenantID, compositeModelName)

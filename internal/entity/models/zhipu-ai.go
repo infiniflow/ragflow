@@ -374,9 +374,11 @@ func (z *ZhipuAIModel) Encode(modelName *string, texts []string, apiConfig *APIC
 	embeddings := make([][]float64, len(texts))
 
 	for i, text := range texts {
-		reqBody := map[string]interface{}{
-			"model": modelName,
-			"input": text,
+		reqBody := map[string]interface{}{}
+		reqBody["model"] = modelName
+		reqBody["input"] = text
+		if embeddingConfig.Dimension > 0 {
+			reqBody["dimensions"] = embeddingConfig.Dimension
 		}
 
 		jsonData, err := json.Marshal(reqBody)
@@ -503,18 +505,26 @@ type zhipuRerankRequest struct {
 // zhipuRerankResponse is the response shape for the ZhipuAI rerank
 // endpoint.
 type zhipuRerankResponse struct {
+	Created   int64  `json:"created"`
+	ID        string `json:"id"`
+	RequestID string `json:"request_id"`
+	Usage     struct {
+		CompletionTokens int `json:"completion_tokens"`
+		PromptTokens     int `json:"prompt_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 	Results []struct {
 		Index          int     `json:"index"`
 		RelevanceScore float64 `json:"relevance_score"`
 	} `json:"results"`
 }
 
-// Rerank calculates similarity scores between query and texts using
+// Rerank calculates similarity scores between query and documents using
 // the ZhipuAI /rerank endpoint (e.g. glm-rerank). The result is one
-// score per input text, in the same order the texts were given.
-func (z *ZhipuAIModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
-	if len(texts) == 0 {
-		return []float64{}, nil
+// score per input text, in the same order the documents were given.
+func (z *ZhipuAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
 	}
 
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
@@ -537,11 +547,16 @@ func (z *ZhipuAIModel) Rerank(modelName *string, query string, texts []string, a
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Rerank)
 
+	var topN = rerankConfig.TopN
+	if rerankConfig.TopN == 0 {
+		topN = len(documents)
+	}
+
 	reqBody := zhipuRerankRequest{
 		Model:           *modelName,
 		Query:           query,
-		Documents:       texts,
-		TopN:            len(texts),
+		Documents:       documents,
+		TopN:            topN,
 		ReturnDocuments: false,
 	}
 
@@ -573,17 +588,19 @@ func (z *ZhipuAIModel) Rerank(modelName *string, query string, texts []string, a
 		return nil, fmt.Errorf("ZhipuAI rerank API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var rerankResp zhipuRerankResponse
-	if err = json.Unmarshal(body, &rerankResp); err != nil {
+	var zhipuRerankResp zhipuRerankResponse
+	if err = json.Unmarshal(body, &zhipuRerankResp); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	scores := make([]float64, len(texts))
-	for _, r := range rerankResp.Results {
-		if r.Index >= 0 && r.Index < len(texts) {
-			scores[r.Index] = r.RelevanceScore
+	var rerankResponse RerankResponse
+	for _, result := range zhipuRerankResp.Results {
+		rerankResult := RerankResult{
+			Index:          result.Index,
+			RelevanceScore: result.RelevanceScore,
 		}
+		rerankResponse.Data = append(rerankResponse.Data, rerankResult)
 	}
 
-	return scores, nil
+	return &rerankResponse, nil
 }

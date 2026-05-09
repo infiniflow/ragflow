@@ -411,17 +411,10 @@ type giteeRerankRequest struct {
 	ReturnDocuments bool     `json:"return_documents"`
 }
 
-type giteeRerankResponse struct {
-	Results []struct {
-		Index          int     `json:"index"`
-		RelevanceScore float64 `json:"relevance_score"`
-	} `json:"results"`
-}
-
-// Rerank calculates similarity scores between query and texts
-func (z *GiteeModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
-	if len(texts) == 0 {
-		return []float64{}, nil
+// Rerank calculates similarity scores between query and documents
+func (z *GiteeModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
 	}
 
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
@@ -449,11 +442,16 @@ func (z *GiteeModel) Rerank(modelName *string, query string, texts []string, api
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Rerank)
 
+	var topN = rerankConfig.TopN
+	if rerankConfig.TopN == 0 {
+		topN = len(documents)
+	}
+
 	reqBody := giteeRerankRequest{
 		Model:           *modelName,
 		Query:           query,
-		Documents:       texts,
-		TopN:            len(texts),
+		Documents:       documents,
+		TopN:            topN,
 		ReturnDocuments: false,
 	}
 
@@ -488,20 +486,12 @@ func (z *GiteeModel) Rerank(modelName *string, query string, texts []string, api
 		return nil, fmt.Errorf("Gitee rerank API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var parsed giteeRerankResponse
-	if err = json.Unmarshal(body, &parsed); err != nil {
+	var rerankResponse RerankResponse
+	if err = json.Unmarshal(body, &rerankResponse); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	scores := make([]float64, len(texts))
-	for _, r := range parsed.Results {
-		if r.Index < 0 || r.Index >= len(texts) {
-			return nil, fmt.Errorf("unexpected rerank index %d for %d inputs", r.Index, len(texts))
-		}
-		scores[r.Index] = r.RelevanceScore
-	}
-
-	return scores, nil
+	return &rerankResponse, nil
 }
 
 func (z *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {

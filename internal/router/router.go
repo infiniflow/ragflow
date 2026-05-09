@@ -269,6 +269,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.POST("/:provider_name/instances/:instance_name/models", r.providerHandler.AddCustomModel)
 				provider.DELETE("/:provider_name/instances/:instance_name/models", r.providerHandler.DropInstanceModels)
 				v1.POST("/chat/completions", r.providerHandler.ChatToModel)
+				v1.POST("/embeddings", r.providerHandler.EmbedText)
+				v1.POST("/rerank", r.providerHandler.RerankDocument)
 			}
 
 			model := v1.Group("/models")

@@ -2603,6 +2603,126 @@ func (p *Parser) parseStreamCommand() (*Command, error) {
 	return command, nil
 }
 
+func (p *Parser) parseEmbedCommand() (*Command, error) {
+	p.nextToken() // consume EMBED
+
+	if p.curToken.Type != TokenText {
+		return nil, fmt.Errorf("expected WITH after EMBED")
+	}
+	p.nextToken() // consume TEXT
+
+	var texts []string
+
+textLoop:
+	for {
+		if p.curToken.Type != TokenQuotedString {
+			break textLoop
+		}
+		text, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		text = strings.TrimSpace(text)
+		texts = append(texts, text)
+		p.nextToken()
+	}
+
+	if p.curToken.Type != TokenWith {
+		return nil, fmt.Errorf("expected WITH after EMBED")
+	}
+	p.nextToken() // consume WITH
+
+	compositeModelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenDimension {
+		return nil, fmt.Errorf("expected DIMENSION")
+	}
+	p.nextToken() // consume WITH
+
+	dimension, err := p.parseNumber()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	cmd := NewCommand("embed_user_text")
+	cmd.Params["composite_model_name"] = compositeModelName
+	cmd.Params["texts"] = texts
+	cmd.Params["dimension"] = dimension
+	return cmd, nil
+}
+
+func (p *Parser) parseRerankCommand() (*Command, error) {
+	p.nextToken() // consume RERANK
+
+	if p.curToken.Type != TokenQuery {
+		return nil, fmt.Errorf("expected WITH after EMBED")
+	}
+	p.nextToken() // consume QUERY
+
+	query, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	query = strings.TrimSpace(query)
+	p.nextToken() // consume query
+
+	if p.curToken.Type != TokenDocument {
+		return nil, fmt.Errorf("expected DOCUMENT after query")
+	}
+	p.nextToken() // consume DOCUMENT
+
+	var documents []string
+
+documentLoop:
+	for {
+		if p.curToken.Type != TokenQuotedString {
+			break documentLoop
+		}
+		var document string
+		document, err = p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		document = strings.TrimSpace(document)
+		documents = append(documents, document)
+		p.nextToken()
+	}
+
+	if p.curToken.Type != TokenWith {
+		return nil, fmt.Errorf("expected WITH after EMBED")
+	}
+	p.nextToken() // consume WITH
+
+	compositeModelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenTop {
+		return nil, fmt.Errorf("expected TOP after model")
+	}
+	p.nextToken()
+
+	topN, err := p.parseNumber()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	cmd := NewCommand("rarank_user_document")
+	cmd.Params["composite_model_name"] = compositeModelName
+	cmd.Params["query"] = query
+	cmd.Params["documents"] = documents
+	cmd.Params["top_n"] = topN
+	return cmd, nil
+}
+
 func (p *Parser) parseCheckCommand() (*Command, error) {
 	p.nextToken() // consume CHECK
 
