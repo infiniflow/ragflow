@@ -407,8 +407,8 @@ docker build --platform linux/amd64 \
 
 ## 🏄 開源社群
 
-- [Discord](https://discord.gg/zd4qPW6t)
-- [Twitter](https://twitter.com/infiniflowai)
+- [Discord](https://discord.gg/NjYzJD3GM3)
+- [X](https://x.com/infiniflowai)
 - [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 
 ## 🙌 貢獻指南

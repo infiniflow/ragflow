@@ -410,8 +410,8 @@ docker build --platform linux/amd64 \
 
 ## 🏄 开源社区
 
-- [Discord](https://discord.gg/zd4qPW6t)
-- [Twitter](https://twitter.com/infiniflowai)
+- [Discord](https://discord.gg/NjYzJD3GM3)
+- [X](https://x.com/infiniflowai)
 - [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 
 ## 🙌 贡献指南
