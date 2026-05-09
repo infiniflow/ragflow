@@ -16,7 +16,7 @@
 import logging
 from datetime import datetime
 import os
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 
 from anthropic import BaseModel
 from peewee import SQL, fn
@@ -276,12 +276,13 @@ class SyncLogsService(CommonService):
             id: str
             filename: str
             blob: bytes
+            fingerprint: Optional[str] = None
 
             def read(self) -> bytes:
                 return self.blob
 
         errs = []
-        files = [FileObj(id=d["id"], filename=d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else ""), blob=d["blob"]) for d in docs]
+        files = [FileObj(id=d["id"], filename=d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else ""), blob=d["blob"], fingerprint=d.get("fingerprint")) for d in docs]
         doc_ids = []
         err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src)
         errs.extend(err)
