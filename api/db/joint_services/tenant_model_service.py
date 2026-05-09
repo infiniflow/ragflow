@@ -13,12 +13,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import os
 import enum
 from common import settings
 from common.constants import LLMType
 from api.db.services.llm_service import LLMService
 from api.db.services.tenant_llm_service import TenantLLMService, TenantService
+
+logger = logging.getLogger(__name__)
 
 
 def get_model_config_by_id(tenant_model_id: int) -> dict:
@@ -71,6 +74,23 @@ def get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_nam
             if not model_config:
                 raise LookupError(f"Tenant Model with name {model_name} and type {model_type_val} not found")
             config_dict = model_config.to_dict()
+        elif model_type_val == LLMType.IMAGE2TEXT.value:
+            model_config = TenantLLMService.get_api_key(tenant_id, pure_model_name, LLMType.IMAGE2TEXT.value)
+            if not model_config:
+                # Fall back to a chat model only if it has declared IMAGE2TEXT capability (tag check via llm table)
+                chat_config = TenantLLMService.get_api_key(tenant_id, pure_model_name, LLMType.CHAT.value)
+                logger.debug("IMAGE2TEXT config not found for %s; chat_config found: %s", pure_model_name, chat_config is not None)
+                if chat_config:
+                    llm_entry = LLMService.query(fid=chat_config.llm_factory, llm_name=chat_config.llm_name)
+                    tags = [t.strip() for t in (llm_entry[0].tags or "").split(",")] if llm_entry else []
+                    logger.debug("LLM tags for %s/%s: %s", chat_config.llm_factory, chat_config.llm_name, tags)
+                    if "IMAGE2TEXT" in tags:
+                        logger.debug("Promoting chat config to IMAGE2TEXT for %s", pure_model_name)
+                        model_config = chat_config
+            if not model_config:
+                raise LookupError(f"Tenant Model with name {model_name} and type {model_type_val} not found")
+            config_dict = model_config.to_dict()
+            config_dict["model_type"] = LLMType.IMAGE2TEXT.value
         else:
             model_config = TenantLLMService.get_api_key(tenant_id, pure_model_name, model_type_val)
             if not model_config:
@@ -90,6 +110,9 @@ def get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_nam
     if config_model_type != model_type_val and not (
             model_type_val == LLMType.CHAT.value
             and config_model_type == LLMType.IMAGE2TEXT.value
+    ) and not (
+            model_type_val == LLMType.IMAGE2TEXT.value
+            and config_model_type == LLMType.CHAT.value
     ):
         raise LookupError(
             f"Tenant Model with name {model_name} has type {config_model_type}, expected {model_type_val}"
