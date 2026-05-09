@@ -396,7 +396,7 @@ Voir la [Feuille de route RAGFlow 2026](https://github.com/infiniflow/ragflow/is
 ## 🏄 Communauté
 
 - [Discord](https://discord.gg/NjYzJD3GM3)
-- [Twitter](https://twitter.com/infiniflowai)
+- [X](https://x.com/infiniflowai)
 - [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 
 ## 🙌 Contribuer

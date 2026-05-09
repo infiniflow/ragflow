@@ -12,39 +12,38 @@ import (
 	"time"
 )
 
-// OllamaModel implements ModelDriver for Ollama AI
-type OllamaModel struct {
+// HuggingFaceModel implements ModelDriver for HuggingFace
+type HuggingFaceModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
 	httpClient *http.Client
 }
 
-// NewOllamaModel creates a new Ollama AI model instance
-func NewOllamaModel(baseURL map[string]string, urlSuffix URLSuffix) *OllamaModel {
-	return &OllamaModel{
+// NewHuggingFaceModel creates a new huggingFace model instance
+func NewHuggingFaceModel(baseURL map[string]string, urlSuffix URLSuffix) *HuggingFaceModel {
+	return &HuggingFaceModel{
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
+				MaxIdleConns:        10,
+				MaxIdleConnsPerHost: 100,
 				IdleConnTimeout:     90 * time.Second,
 				DisableCompression:  false,
 			},
 		},
 	}
 }
-
-func (o *OllamaModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &OllamaModel{
+func (h *HuggingFaceModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return &HuggingFaceModel{
 		BaseURL:   baseURL,
-		URLSuffix: o.URLSuffix,
+		URLSuffix: h.URLSuffix,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
+				MaxIdleConns:        10,
+				MaxIdleConnsPerHost: 100,
 				IdleConnTimeout:     90 * time.Second,
 				DisableCompression:  false,
 			},
@@ -52,29 +51,23 @@ func (o *OllamaModel) NewInstance(baseURL map[string]string) ModelDriver {
 	}
 }
 
-func (o *OllamaModel) Name() string {
-	return "ollama"
+func (h *HuggingFaceModel) Name() string {
+	return "huggingface"
 }
 
-func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (h *HuggingFaceModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if len(messages) == 0 {
-		return nil, fmt.Errorf("message is nil")
+		return nil, fmt.Errorf("messages is empty")
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", h.BaseURL[region], h.URLSuffix.Chat)
 
-	// For qwen/glm models, use async chat endpoint
-	modelType := strings.Split(modelName, "_")[0]
-	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.AsyncChat)
-	}
-
-	// Convert messages to API format
+	// Convert messages to the format expected by API
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
 		apiMessages[i] = map[string]interface{}{
@@ -88,7 +81,7 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 		"model":       modelName,
 		"messages":    apiMessages,
 		"stream":      false,
-		"temperature": 1,
+		"temperature": 0.6,
 	}
 
 	if chatModelConfig != nil {
@@ -130,15 +123,17 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := h.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -146,7 +141,7 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -185,6 +180,7 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 		if !ok {
 			return nil, fmt.Errorf("invalid content format")
 		}
+		// if first char of reasonContent is \n remove the \n
 		if reasonContent != "" && reasonContent[0] == '\n' {
 			reasonContent = reasonContent[1:]
 		}
@@ -198,7 +194,7 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 	return chatResponse, nil
 }
 
-func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (h *HuggingFaceModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
@@ -208,13 +204,9 @@ func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Chat)
-	modelType := strings.Split(modelName, "-")[0]
-	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.AsyncChat)
-	}
+	url := fmt.Sprintf("%s/chat/completions", h.BaseURL[region])
 
-	// Convert messages to API format (supporting multimodal content)
+	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
 		apiMessages[i] = map[string]interface{}{
@@ -279,7 +271,7 @@ func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := h.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -359,31 +351,80 @@ func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	return scanner.Err()
 }
 
-func (o *OllamaModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+type hfEmbeddingRequest struct {
+	Inputs []string `json:"inputs"`
+}
+
+type hfEmbeddingResponse [][]float64
+
+func (h *HuggingFaceModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+	if len(texts) == 0 {
+		return [][]float64{}, nil
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	reqBody := map[string]interface{}{
+		"inputs": texts,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("https://router.huggingface.co/hf-inference/models/%s", *modelName)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HF embeddings API error: %s", string(body))
+	}
+
+	var result [][]float64
+	if err = json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func (h *HuggingFaceModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
-func (o *OllamaModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("no such method")
-}
-
-func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (h *HuggingFaceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
-
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
-	baseURL := o.BaseURL[region]
-	if baseURL == "" {
-		baseURL = o.BaseURL["default"]
-	}
-	if baseURL == "" {
-		return nil, fmt.Errorf("missing base URL: please configure the local access address for Ollama (e.g., http://127.0.0.1:11434/v1)")
-	}
+	url := fmt.Sprintf("%s/%s", h.BaseURL[region], h.URLSuffix.Models)
 
-	url := fmt.Sprintf("%s/%s", baseURL, o.URLSuffix.Models)
-
+	// Build request body
 	reqBody := map[string]interface{}{}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -397,14 +438,9 @@ func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	// Ollama is a local provider and the API key is optional. Only set
-	// the Authorization header when a non-empty key was supplied. This
-	// also avoids a nil-pointer dereference on apiConfig or ApiKey.
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := h.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -425,7 +461,6 @@ func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// convert result["data"] to []map[string]interface{}
 	models := make([]string, 0)
 	for _, model := range result["data"].([]interface{}) {
 		modelMap := model.(map[string]interface{})
@@ -436,12 +471,11 @@ func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return models, nil
 }
 
-func (o *OllamaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (h *HuggingFaceModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
-// CheckConnection verifies that the configured Ollama base URL is reachable
-func (o *OllamaModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := o.ListModels(apiConfig)
+func (h *HuggingFaceModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := h.ListModels(apiConfig)
 	return err
 }
