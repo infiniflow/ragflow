@@ -42,6 +42,14 @@ class TenantModelInstanceService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_by_provider_id_and_api_key(cls, provider_id, api_key):
+        return cls.model.get_or_none(
+            cls.model.provider_id == provider_id,
+            cls.model.api_key == api_key
+        )
+
+    @classmethod
+    @DB.connection_context()
     def delete_by_provider_id_and_instance_name(cls, provider_id, instance_name):
         return cls.model.delete().where(
             cls.model.provider_id == provider_id,

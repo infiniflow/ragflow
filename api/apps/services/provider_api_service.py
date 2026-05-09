@@ -223,6 +223,11 @@ def create_provider_instance(tenant_id: str, provider_name: str, instance_name: 
     if not provider_obj:
         return False, f"Provider '{provider_name}' does not exist"
 
+    if api_key:
+        same_key_instance = TenantModelInstanceService.get_by_provider_id_and_api_key(provider_obj.id, api_key)
+        if same_key_instance:
+            return False, f"Already exist instance: {same_key_instance.instance_name} with api_key {api_key}"
+
     import json
     extra_fields = {}
     if base_url:
