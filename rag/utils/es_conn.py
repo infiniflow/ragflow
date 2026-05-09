@@ -247,7 +247,7 @@ class ESConnection(ESConnectionBase):
                 elif field == "id":
                     continue # id as "text", not a "keyword", order by it will cause error
                 else:
-                    order_info = {"order": order, "unmapped_type": "text"}
+                    order_info = {"order": order, "unmapped_type": "keyword"}
                 orders.append({field: order_info})
             s = s.sort(*orders)
         if agg_fields:
