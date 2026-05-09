@@ -495,8 +495,8 @@ func (z *OpenAIModel) CheckConnection(apiConfig *APIConfig) error {
 	return nil
 }
 
-// Rerank calculates similarity scores between query and texts. OpenAI does
+// Rerank calculates similarity scores between query and documents. OpenAI does
 // not expose a rerank API, so this is left unimplemented.
-func (z *OpenAIModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+func (z *OpenAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }

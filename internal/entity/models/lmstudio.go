@@ -468,7 +468,7 @@ func (l *LmStudioModel) Encode(modelName *string, texts []string, apiConfig *API
 	return embeddings, nil
 }
 
-func (l *LmStudioModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+func (l *LmStudioModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
