@@ -347,7 +347,7 @@ def list_instance_models(tenant_id: str, provider_name: str, instance_name: str,
         if not factory_info:
             return False, f"Provider '{provider_name}' not found"
         llms = factory_info[0].get("llm", [])
-        models = [{"name": llm["name"]} for llm in llms]
+        models = [{"name": llm["llm_name"]} for llm in llms]
         return True, models
 
     # Get instance
@@ -368,14 +368,14 @@ def list_instance_models(tenant_id: str, provider_name: str, instance_name: str,
     llms = factory_info[0].get("llm", [])
     models = []
     for llm in llms:
-        record_status = model_status_map.get(llm["name"])
+        record_status = model_status_map.get(llm["llm_name"])
         if record_status == ActiveStatusEnum.INACTIVE.value:
             status = "disabled"
         else:
             # No record or status=active → enabled
             status = "enabled"
         models.append({
-            "name": llm["name"],
+            "name": llm["llm_name"],
             "model_type": llm["model_type"],
             "max_tokens": llm.get("max_tokens"),
             "status": status,
