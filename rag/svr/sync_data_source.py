@@ -213,6 +213,8 @@ class SyncBase:
                 }
                 if doc.metadata:
                     d["metadata"] = doc.metadata
+                if getattr(doc, "fingerprint", None):
+                    d["fingerprint"] = doc.fingerprint
                 docs.append(d)
 
             try:
@@ -301,6 +303,81 @@ class SyncBase:
 class _BlobLikeBase(SyncBase):
     DEFAULT_BUCKET_TYPE: str = "s3"
 
+    def _fingerprint_filtered_generator(self, task: dict):
+        """Generator that uses list_keys() + get_value() to skip unchanged objects.
+
+        Pre-loads {doc_id: content_hash} for the connector's existing docs in
+        this KB, iterates the bucket via list_keys(), and only materializes a
+        Document (one GetObject call) when the listing fingerprint differs from
+        the persisted content_hash. Unchanged objects are skipped entirely --
+        no download, no re-parse.
+
+        Per-key fetch failures are counted and surfaced via SyncLogsService so
+        a partially failing sync (e.g. throttling, IAM regression mid-run)
+        doesn't silently report DONE while half the bucket is unreachable.
+        Connectors yielding KeyRecord(deleted=True) are skipped here -- actual
+        deletion reconciliation lives in the unified delete pass (PR-4).
+        """
+        source_type = f"{self.SOURCE_NAME}/{task['connector_id']}"
+        existing_fingerprints = DocumentService.list_id_content_hash_map_by_kb_and_source_type(
+            task["kb_id"], source_type,
+        )
+
+        bypass_count = 0
+        fetch_count = 0
+        fail_count = 0
+        batch = []
+        for key_record in self.connector.list_keys():
+            if key_record.deleted:
+                continue
+
+            doc_id = hash128(key_record.key)
+            stored = existing_fingerprints.get(doc_id, "")
+            if key_record.fingerprint and stored and key_record.fingerprint == stored:
+                bypass_count += 1
+                continue
+
+            try:
+                doc = self.connector.get_value(key_record.key)
+            except Exception as ex:
+                fail_count += 1
+                logging.exception(
+                    "Failed to fetch %s from %s: %s",
+                    key_record.key,
+                    self.SOURCE_NAME,
+                    ex,
+                )
+                continue
+
+            fetch_count += 1
+            batch.append(doc)
+            if len(batch) >= self.connector.batch_size:
+                yield batch
+                batch = []
+
+        if batch:
+            yield batch
+
+        log_msg = (
+            "[%s] fingerprint sync: %d bypassed, %d fetched, %d failed "
+            "(connector_id=%s, kb_id=%s)"
+        )
+        log_args = (
+            self.SOURCE_NAME,
+            bypass_count,
+            fetch_count,
+            fail_count,
+            task["connector_id"],
+            task["kb_id"],
+        )
+        # Use WARNING when any fetch failed so partial-bucket regressions
+        # (auth, throttling, IAM drift) surface without diving into the
+        # per-exception traces above.
+        if fail_count:
+            logging.warning(log_msg, *log_args)
+        else:
+            logging.info(log_msg, *log_args)
+
     async def _generate(self, task: dict):
         bucket_type = self.conf.get("bucket_type", self.DEFAULT_BUCKET_TYPE)
 
@@ -313,14 +390,13 @@ class _BlobLikeBase(SyncBase):
         self.connector.load_credentials(self.conf["credentials"])
 
         file_list = None
-        document_batch_generator = (
-            self.connector.load_from_state()
-            if task["reindex"] == "1" or not task["poll_range_start"]
-            else self.connector.poll_source(
-                task["poll_range_start"].timestamp(),
-                datetime.now(timezone.utc).timestamp(),
-            )
-        )
+        # Fingerprint-bypass path: skip GetObject for unchanged ETags. Disabled
+        # on full reindex (we want to re-fetch everything in that case).
+        use_fingerprint_path = task["reindex"] != "1"
+        if use_fingerprint_path:
+            document_batch_generator = self._fingerprint_filtered_generator(task)
+        else:
+            document_batch_generator = self.connector.load_from_state()
 
         if (
             task["reindex"] != "1"
@@ -332,9 +408,9 @@ class _BlobLikeBase(SyncBase):
                 file_list.extend(slim_batch)
 
         _begin_info = (
-            "totally"
-            if task["reindex"] == "1" or not task["poll_range_start"]
-            else "from {}".format(task["poll_range_start"])
+            "fingerprint-bypass"
+            if use_fingerprint_path
+            else "full reindex"
         )
 
         logging.info(

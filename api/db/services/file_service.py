@@ -482,7 +482,12 @@ class FileService(CommonService):
                         err.append(file.filename + ": " + user_msg)
                         continue
                     blob = file.read()
-                    new_hash = xxhash.xxh128(blob).hexdigest()
+                    # Connector-supplied fingerprint (e.g. xxhash128(S3 ETag))
+                    # takes precedence: for connector-sourced docs the bypass
+                    # path uses the fingerprint as content_hash, so reverting
+                    # to xxhash128(blob) here would defeat it.
+                    incoming_fp = getattr(file, "fingerprint", None)
+                    new_hash = incoming_fp or xxhash.xxh128(blob).hexdigest()
                     old_hash = doc.content_hash or ""
                     settings.STORAGE_IMPL.put(kb.id, doc.location, blob, kb.tenant_id)
                     doc.size = len(blob)
@@ -518,6 +523,7 @@ class FileService(CommonService):
                     thumbnail_location = f"thumbnail_{doc_id}.png"
                     settings.STORAGE_IMPL.put(kb.id, thumbnail_location, img)
 
+                incoming_fp = getattr(file, "fingerprint", None)
                 doc = {
                     "id": doc_id,
                     "kb_id": kb.id,
@@ -532,7 +538,7 @@ class FileService(CommonService):
                     "location": location,
                     "size": len(blob),
                     "thumbnail": thumbnail_location,
-                    "content_hash": xxhash.xxh128(blob).hexdigest(),
+                    "content_hash": incoming_fp or xxhash.xxh128(blob).hexdigest(),
                 }
                 DocumentService.insert(doc)
 
