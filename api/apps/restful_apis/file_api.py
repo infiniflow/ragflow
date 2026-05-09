@@ -335,7 +335,7 @@ async def parent_folder(tenant_id: str = None, file_id: str = None):
         description: Parent folder information.
     """
     try:
-        success, result = file_api_service.get_parent_folder(file_id)
+        success, result = file_api_service.get_parent_folder(file_id, user_id=tenant_id)
         if success:
             return get_result(data=result)
         else:
@@ -366,7 +366,7 @@ async def ancestors(tenant_id: str = None, file_id: str = None):
         description: List of ancestor folders.
     """
     try:
-        success, result = file_api_service.get_all_parent_folders(file_id)
+        success, result = file_api_service.get_all_parent_folders(file_id, user_id=tenant_id)
         if success:
             return get_result(data=result)
         else:
