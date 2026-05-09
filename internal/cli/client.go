@@ -177,6 +177,8 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListInstanceModels(cmd)
 	case "show_model":
 		return c.ShowModel(cmd)
+	case "list_admin_tasks":
+		return c.ListAdminTasks(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)

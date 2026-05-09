@@ -55,6 +55,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Auth
 			protected.GET("/auth", r.handler.AuthCheck)
 
+			// Tasks
+			protected.GET("/tasks", r.handler.ListTasks)
+
 			// User management
 			protected.GET("/users", r.handler.ListUsers)
 			protected.POST("/users", r.handler.CreateUser)

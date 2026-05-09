@@ -34,6 +34,7 @@ import (
 	"ragflow/internal/utility"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -98,6 +99,37 @@ func (s *Service) Logout(user interface{}) error {
 		return s.userDAO.UpdateAccessToken(u, invalidToken)
 	}
 	return nil
+}
+
+// ListTasks
+func (s *Service) ListTasks() ([]map[string]interface{}, error) {
+
+	tasks, err := s.taskDAO.GetAllTasks()
+	if err != nil {
+		return nil, err
+	}
+
+	var result []map[string]interface{}
+	for _, task := range tasks {
+		// task.ChunkIDs is a string, delimiter is space, count the word count
+		ChunkCount := strings.Count(*task.ChunkIDs, " ")
+		result = append(result, map[string]interface{}{
+			"id":          task.ID,
+			"task_type":   task.TaskType,
+			"document_id": task.DocID,
+			"chunk_count": ChunkCount,
+			"from_page":   task.FromPage,
+			"to_page":     task.ToPage,
+			"priority":    task.Priority,
+			"duration":    task.ProcessDuration,
+			"progress":    task.Progress,
+			//"message":     *task.ProgressMsg,
+			"retry_count": task.RetryCount,
+			"digest":      task.Digest,
+		})
+	}
+
+	return result, nil
 }
 
 // GetUserByToken get user by access token
