@@ -245,7 +245,7 @@ def list_provider_instances(tenant_id: str, provider_name: str):
     provider_id = provider_obj.id
     instance_objs = TenantModelInstanceService.get_all_by_provider_id(provider_id)
     if not instance_objs:
-        return False, f"No instances found for provider '{provider_name}'"
+        return True, []
     instances = []
     for instance_obj in instance_objs:
         extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
