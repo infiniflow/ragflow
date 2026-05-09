@@ -7,7 +7,8 @@
     "chat": "chat/completions",
     "models": "models",
     "embedding": "embeddings",
-    "rerank": "rerank"
+    "rerank": "rerank",
+    "balance": "user/info"
   },
   "models": [
     {

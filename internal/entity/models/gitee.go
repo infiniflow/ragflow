@@ -19,11 +19,12 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/logger"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 )
@@ -71,7 +72,7 @@ func (z *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 
 	region := "default"
-	if apiConfig.Region != nil {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
@@ -84,7 +85,7 @@ func (z *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 			"content": msg.Content,
 		}
 	}
-	logger.Info(fmt.Sprintf("GiteeAPI messages: %+v", apiMessages))
+	common.Info(fmt.Sprintf("GiteeAPI messages: %+v", apiMessages))
 
 	// Build request body
 	reqBody := map[string]interface{}{
@@ -133,7 +134,7 @@ func (z *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	logger.Info(fmt.Sprintf("GiteeAPI request body: %s", string(jsonData)))
+	common.Info(fmt.Sprintf("GiteeAPI request body: %s", string(jsonData)))
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -218,7 +219,7 @@ func (z *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -309,7 +310,7 @@ func (z *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		logger.Info(line)
+		common.Info(line)
 
 		// SSE data line starts with "data:"
 		if !strings.HasPrefix(line, "data:") {
@@ -402,9 +403,105 @@ func (z *GiteeModel) Encode(modelName *string, texts []string, apiConfig *APICon
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
+type giteeRerankRequest struct {
+	Model           string   `json:"model"`
+	Query           string   `json:"query"`
+	Documents       []string `json:"documents"`
+	TopN            int      `json:"top_n"`
+	ReturnDocuments bool     `json:"return_documents"`
+}
+
+type giteeRerankResponse struct {
+	Results []struct {
+		Index          int     `json:"index"`
+		RelevanceScore float64 `json:"relevance_score"`
+	} `json:"results"`
+}
+
 // Rerank calculates similarity scores between query and texts
 func (z *GiteeModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
-	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
+	if len(texts) == 0 {
+		return []float64{}, nil
+	}
+
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := z.BaseURL["default"]
+	if region != "default" {
+		if regional, ok := z.BaseURL[region]; ok && regional != "" {
+			baseURL = regional
+		}
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("gitee: no base URL configured for default region")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Rerank)
+
+	reqBody := giteeRerankRequest{
+		Model:           *modelName,
+		Query:           query,
+		Documents:       texts,
+		TopN:            len(texts),
+		ReturnDocuments: false,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Gitee rerank API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed giteeRerankResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	scores := make([]float64, len(texts))
+	for _, r := range parsed.Results {
+		if r.Index < 0 || r.Index >= len(texts) {
+			return nil, fmt.Errorf("unexpected rerank index %d for %d inputs", r.Index, len(texts))
+		}
+		scores[r.Index] = r.RelevanceScore
+	}
+
+	return scores, nil
 }
 
 func (z *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {

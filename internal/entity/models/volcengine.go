@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/logger"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 )
@@ -60,156 +60,6 @@ func (z *VolcEngine) Name() string {
 	return "volcengine"
 }
 
-// Chat sends a message and returns response
-func (z *VolcEngine) Chat(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig) (*ChatResponse, error) {
-	if message == nil {
-		return nil, fmt.Errorf("message is nil")
-	}
-
-	var region = "default"
-	if apiConfig.Region != nil {
-		region = *apiConfig.Region
-	}
-
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
-
-	//Build request body
-	reqBody := map[string]interface{}{
-		"model": modelName,
-		"messages": []map[string]string{
-			{"role": "user", "content": *message},
-		},
-		"stream":      false,
-		"temperature": 1,
-	}
-
-	if modelConfig.Stream != nil {
-		reqBody["stream"] = *modelConfig.Stream
-	}
-
-	if modelConfig.MaxTokens != nil {
-		reqBody["max_tokens"] = *modelConfig.MaxTokens
-	}
-
-	if modelConfig.Temperature != nil {
-		reqBody["temperature"] = *modelConfig.Temperature
-	}
-
-	if modelConfig.TopP != nil {
-		reqBody["top_p"] = *modelConfig.TopP
-	}
-	// TODO VolcEngine has `auto` mode
-	if modelConfig.Thinking != nil {
-		if *modelConfig.Thinking {
-			var thinkingFlag string
-			switch *modelConfig.Effort {
-			case "none", "minimal":
-				thinkingFlag = "disabled"
-				reqBody["reasoning_effort"] = "minimal"
-				break
-			case "low":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "low"
-				break
-			case "medium":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "medium"
-				break
-			case "auto", "default":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "medium"
-				break
-			case "high":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "high"
-				break
-			default:
-				return nil, fmt.Errorf("invalid effort level")
-			}
-			reqBody["thinking"] = map[string]interface{}{
-				"type": thinkingFlag,
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
-			}
-		}
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := z.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in responses")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	var reasonContent string
-	if modelConfig.Thinking != nil && *modelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid reasonContent format")
-		}
-		// if first char of reasonContent is \n remove the \n
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
-		}
-	}
-
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-	}
-
-	return chatResponse, nil
-}
-
 // ChatWithMessages sends multiple messages with roles and returns response
 func (z *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if len(messages) == 0 {
@@ -217,7 +67,7 @@ func (z *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 
 	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -378,7 +228,7 @@ func (z *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 
 	var region = "default"
 
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -491,7 +341,7 @@ func (z *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		logger.Info(line)
+		common.Info(line)
 
 		// SSE data line start with data:
 		if !strings.HasPrefix(line, "data:") {
@@ -558,7 +408,86 @@ func (z *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 
 // Encode encodes a list of texts into embeddings
 func (z *VolcEngine) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
-	return nil, fmt.Errorf("not implemented")
+	if len(texts) == 0 {
+		return [][]float64{}, nil
+	}
+
+	var region = "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Embedding)
+
+	embeddings := make([][]float64, len(texts))
+
+	for i, text := range texts {
+
+		reqBody := map[string]interface{}{
+			"model":           *modelName,
+			"encoding_format": "float",
+			"input": []map[string]interface{}{
+				{
+					"type": "text",
+					"text": text,
+				},
+			},
+		}
+
+		jsonData, err := json.Marshal(reqBody)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"failed to marshal request: %w",
+				err,
+			)
+		}
+
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+		resp, err := z.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to send request: %w", err)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		}
+
+		// Volcengine multimodal embedding response
+		type VolcengineEmbeddingResponse struct {
+			Data struct {
+				Embedding []float64 `json:"embedding"`
+				Object    string    `json:"object"`
+			} `json:"data"`
+		}
+
+		var result VolcengineEmbeddingResponse
+
+		if err = json.Unmarshal(body, &result); err != nil {
+			return nil, fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		if len(result.Data.Embedding) == 0 {
+			return nil, fmt.Errorf("empty embedding in response")
+		}
+
+		embeddings[i] = result.Data.Embedding
+	}
+
+	return embeddings, nil
 }
 
 // Rerank calculates similarity scores between query and texts
@@ -576,7 +505,7 @@ func (z *VolcEngine) Balance(apiConfig *APIConfig) (map[string]interface{}, erro
 
 func (z *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 

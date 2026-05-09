@@ -17,6 +17,8 @@ import os
 import json
 import secrets
 import logging
+from datetime import date
+
 from common.constants import RAG_FLOW_SERVICE_NAME
 from common.file_utils import get_project_base_directory
 from common.config_utils import get_base_config, decrypt_database_config
@@ -42,6 +44,8 @@ from rag.nlp import search
 import memory.utils.es_conn as memory_es_conn
 import memory.utils.infinity_conn as memory_infinity_conn
 import memory.utils.ob_conn as memory_ob_conn
+
+TIMEZONE = os.getenv("TZ", "Asia/Shanghai")
 
 LLM = None
 LLM_FACTORY = None
@@ -137,6 +141,24 @@ def get_svr_queue_name(priority: int) -> str:
 def get_svr_queue_names():
     return [get_svr_queue_name(priority) for priority in [1, 0]]
 
+def init_secret_key():
+    secret_key = os.environ.get("RAGFLOW_SECRET_KEY")
+    if secret_key and len(secret_key) >= 32:
+        return secret_key
+
+    # Check if there's a configured secret key
+    configured_key = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("secret_key")
+    if configured_key and configured_key != str(date.today()) and len(configured_key) >= 32:
+        return configured_key
+    return None
+
+
+def get_secret_key():
+    global SECRET_KEY
+    if SECRET_KEY is None:
+        return _get_or_create_secret_key()
+    return SECRET_KEY
+
 def _get_or_create_secret_key():
     # secret_key = os.environ.get("RAGFLOW_SECRET_KEY")
     # if secret_key and len(secret_key) >= 32:
@@ -152,7 +174,8 @@ def _get_or_create_secret_key():
 
     generated_key = secrets.token_hex(32)
     secret_key = REDIS_CONN.get_or_create_secret_key("ragflow:system:secret_key", generated_key)
-    logging.warning("SECURITY WARNING: Using auto-generated SECRET_KEY.")
+    if generated_key == secret_key:
+        logging.warning("SECURITY WARNING: Using auto-generated SECRET_KEY.")
     return secret_key
 
 class StorageFactory:
@@ -243,7 +266,7 @@ def init_settings():
     HOST_PORT = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("http_port")
 
     global SECRET_KEY
-    SECRET_KEY = _get_or_create_secret_key()
+    SECRET_KEY = init_secret_key()
 
 
     # authentication

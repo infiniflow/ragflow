@@ -32,16 +32,13 @@ func (c *RAGFlowClient) LoginUserInteractive(username, password string) error {
 	// For admin mode, use /admin/ping with useAPIBase=true
 	// For user mode, use /system/ping with useAPIBase=false
 	var pingPath string
-	var useAPIBase bool
 	if c.ServerType == "admin" {
 		pingPath = "/admin/ping"
-		useAPIBase = true
 	} else {
 		pingPath = "/system/ping"
-		useAPIBase = false
 	}
 
-	resp, err := c.HTTPClient.Request("GET", pingPath, useAPIBase, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", pingPath, "web", nil, nil)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		fmt.Println("Can't access server for login (connection failed)")
@@ -99,16 +96,13 @@ func (c *RAGFlowClient) LoginUser(cmd *Command) error {
 	// For admin mode, use /admin/ping with useAPIBase=true
 	// For user mode, use /system/ping with useAPIBase=false
 	var pingPath string
-	var useAPIBase bool
 	if c.ServerType == "admin" {
 		pingPath = "/admin/ping"
-		useAPIBase = true
 	} else {
 		pingPath = "/system/ping"
-		useAPIBase = false
 	}
 
-	resp, err := c.HTTPClient.Request("GET", pingPath, useAPIBase, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", pingPath, "web", nil, nil)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		fmt.Println("Can't access server for login (connection failed)")
@@ -182,10 +176,10 @@ func (c *RAGFlowClient) loginUser(email, password string) (string, error) {
 	if c.ServerType == "admin" {
 		path = "/admin/login"
 	} else {
-		path = "/user/login"
+		path = "/auth/login"
 	}
 
-	resp, err := c.HTTPClient.Request("POST", path, c.ServerType == "admin", "", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", path, "", nil, payload)
 	if err != nil {
 		return "", err
 	}
@@ -216,10 +210,10 @@ func (c *RAGFlowClient) Logout() (ResponseIf, error) {
 	if c.ServerType == "admin" {
 		path = "/admin/logout"
 	} else {
-		path = "/user/logout"
+		path = "/auth/logout"
 	}
 
-	resp, err := c.HTTPClient.Request("GET", path, c.ServerType == "admin", "web", nil, nil)
+	resp, err := c.HTTPClient.Request("POST", path, "web", nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +239,7 @@ func (c *RAGFlowClient) ListAvailableProviders(cmd *Command) (ResponseIf, error)
 		endPoint = fmt.Sprintf("/providers?available=true")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", endPoint, true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list providers: %w", err)
 	}
@@ -279,7 +273,7 @@ func (c *RAGFlowClient) ShowProvider(cmd *Command) (ResponseIf, error) {
 		endPoint = fmt.Sprintf("/providers/%s", providerName)
 	}
 
-	resp, err := c.HTTPClient.Request("GET", endPoint, true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show provider: %w", err)
 	}
@@ -314,7 +308,7 @@ func (c *RAGFlowClient) ListModels(cmd *Command) (ResponseIf, error) {
 		endPoint = fmt.Sprintf("/providers/%s/models", providerName)
 	}
 
-	resp, err := c.HTTPClient.Request("GET", endPoint, true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list models: %w", err)
 	}
@@ -353,7 +347,7 @@ func (c *RAGFlowClient) ListSupportedModels(cmd *Command) (ResponseIf, error) {
 		endPoint = fmt.Sprintf("/providers/%s/instances/%s/models?supported=true", providerName, instanceName)
 	}
 
-	resp, err := c.HTTPClient.Request("GET", endPoint, true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list models: %w", err)
 	}
@@ -391,7 +385,7 @@ func (c *RAGFlowClient) ShowModel(cmd *Command) (ResponseIf, error) {
 		endPoint = fmt.Sprintf("/providers/%s/models/%s", providerName, modelName)
 	}
 
-	resp, err := c.HTTPClient.Request("GET", endPoint, true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show model: %w", err)
 	}
@@ -440,7 +434,7 @@ func (c *RAGFlowClient) SetDefaultModel(cmd *Command) (ResponseIf, error) {
 		"model_name":     modelName,
 	}
 
-	resp, err := c.HTTPClient.Request("PATCH", "/models", true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("PATCH", "/models", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set default model: %w", err)
 	}
@@ -472,7 +466,7 @@ func (c *RAGFlowClient) ResetDefaultModel(cmd *Command) (ResponseIf, error) {
 		"model_type": modelType,
 	}
 
-	resp, err := c.HTTPClient.Request("PATCH", "/models", true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("PATCH", "/models", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reset default model: %w", err)
 	}
@@ -494,7 +488,7 @@ func (c *RAGFlowClient) ResetDefaultModel(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *RAGFlowClient) ListDefaultModels(cmd *Command) (ResponseIf, error) {
-	resp, err := c.HTTPClient.Request("GET", "/models", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/models", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list default models: %w", err)
 	}

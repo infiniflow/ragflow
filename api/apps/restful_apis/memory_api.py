@@ -130,7 +130,7 @@ async def delete_memory(memory_id):
 @login_required
 async def list_memory():
     filter_params = {
-        k: request.args.get(k) for k in ["memory_type", "tenant_id", "storage_type"] if k in request.args
+        k: request.args.get(k) for k in ["memory_type", "tenant_id", "owner_ids", "storage_type"] if k in request.args
     }
     keywords = request.args.get("keywords")
     page = int(request.args.get("page", 1))

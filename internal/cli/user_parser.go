@@ -68,39 +68,39 @@ func (p *Parser) parseRegisterCommand() (*Command, error) {
 	if err := p.expectPeek(TokenUser); err != nil {
 		return nil, err
 	}
-	p.nextToken()
+	p.nextToken() // consume USER
 
 	userName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 	cmd.Params["user_name"] = userName
+	p.nextToken() // consume Email
 
-	p.nextToken()
 	if p.curToken.Type != TokenAs {
 		return nil, fmt.Errorf("expected AS")
 	}
+	p.nextToken() // consume AS
 
-	p.nextToken()
 	nickname, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 	cmd.Params["nickname"] = nickname
+	p.nextToken() // consume nickname
 
-	p.nextToken()
 	if p.curToken.Type != TokenPassword {
 		return nil, fmt.Errorf("expected PASSWORD")
 	}
+	p.nextToken() // consume PASSWORD
 
-	p.nextToken()
 	password, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 	cmd.Params["password"] = password
+	p.nextToken() // consume 'password'
 
-	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
@@ -113,27 +113,6 @@ func (p *Parser) parseListCommand() (*Command, error) {
 	p.nextToken() // consume LIST
 
 	switch p.curToken.Type {
-	case TokenServices:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("list_services"), nil
-	case TokenUsers:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("list_users"), nil
-	case TokenRoles:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("list_roles"), nil
 	case TokenVars:
 		p.nextToken()
 		// Semicolon is optional for SHOW TOKEN
@@ -335,9 +314,9 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 				p.nextToken()
 			}
 			return NewCommand("show_current_model"), nil
-		} else {
-			return nil, fmt.Errorf("expected USER or MODEL after CURRENT")
 		}
+
+		return nil, fmt.Errorf("expected USER or MODEL after CURRENT")
 	case TokenUser:
 		return p.parseShowUser()
 	case TokenRole:
@@ -1322,10 +1301,6 @@ func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 		return nil, fmt.Errorf("expected instance name: %w", err)
 	}
 
-	// Check if instance_name is "default"
-	if instanceName == "default" {
-		return nil, fmt.Errorf("instance name cannot be 'default'")
-	}
 	p.nextToken()
 
 	if p.curToken.Type != TokenKey {
@@ -2412,102 +2387,176 @@ func (p *Parser) parseDisableCommand() (*Command, error) {
 	return cmd, nil
 }
 
+// CHAT 'model@instance@provider' 'hello world'
+// CHAT WITH 'model@instance@provider' MESSAGE 'hello world' 'who are you' IMAGE 'url1' 'file0' VIDEO "url2.mov" "file1" FILE "url" "path file2" AUDIO "file.wav"
 func (p *Parser) parseChatCommand() (*Command, error) {
 	p.nextToken() // consume CHAT
 
-	var compositeModelName string
-	var message string
-
-	// Check if we have a quoted string that looks like a model identifier (contains two slashes)
-	// Format: 'model@instance@provider' or just 'message'
-	if p.curToken.Type == TokenQuotedString {
-		firstArg := p.curToken.Value
-
-		// Check if it looks like a model identifier (contains exactly 2 slashes)
-		slashCount := strings.Count(firstArg, "@")
-		if slashCount == 2 {
-			// This is likely a model identifier, expect another quoted string for message
-			compositeModelName = firstArg
-			p.nextToken()
-
-			// After model name, expect message
-			if p.curToken.Type != TokenQuotedString {
-				return nil, fmt.Errorf("expected message after model name")
-			}
-			message = p.curToken.Value
-			p.nextToken()
-		} else {
-			// This is just a message, use current model
-			message = firstArg
-			p.nextToken()
-		}
-	} else if p.curToken.Type == TokenIdentifier {
-		// Context engine style: chat <message>
-		message = p.curToken.Value
-		p.nextToken()
-	} else {
-		return nil, fmt.Errorf("expected model name (quoted string) or message")
-	}
-
-	cmd := NewCommand("chat_to_model")
-
+	var err error
+	var compositeModelName string = ""
+	var messages []string
+	var images []string
+	var videos []string
+	var audios []string
+	var files []string
 	effort := "default"
 	verbosity := "low"
-	if p.curToken.Type == TokenWith {
-		p.nextToken() // pass WITH
+
+optionsLoop:
+	for {
 		switch p.curToken.Type {
+		case TokenWith:
+			p.nextToken()
+			// 'model@instance@provider'
+			if compositeModelName != "" {
+				return nil, fmt.Errorf("model name is already set")
+			}
+			compositeModelName, err = p.parseQuotedString()
+			if err != nil {
+				return nil, err
+			}
+			p.nextToken()
+		case TokenMessage:
+			p.nextToken()
+			if len(messages) != 0 {
+				return nil, fmt.Errorf("message is already set")
+			}
+		messageLoop:
+			for {
+				if p.curToken.Type != TokenQuotedString {
+					break messageLoop
+				}
+				var message string
+				message, err = p.parseQuotedString()
+				if err != nil {
+					return nil, err
+				}
+				message = strings.TrimSpace(message)
+				messages = append(messages, message)
+				p.nextToken()
+			}
+		case TokenImage:
+			p.nextToken()
+			if len(images) != 0 {
+				return nil, fmt.Errorf("image is already set")
+			}
+		imageLoop:
+			for {
+				if p.curToken.Type != TokenQuotedString {
+					break imageLoop
+				}
+				var image string
+				image, err = p.parseQuotedString()
+				if err != nil {
+					return nil, err
+				}
+				images = append(images, image)
+				p.nextToken()
+			}
+		case TokenVideo:
+			p.nextToken()
+			if len(videos) != 0 {
+				return nil, fmt.Errorf("video is already set")
+			}
+		videoLoop:
+			for {
+				if p.curToken.Type != TokenQuotedString {
+					break videoLoop
+				}
+				var video string
+				video, err = p.parseQuotedString()
+				if err != nil {
+					return nil, err
+				}
+				videos = append(videos, video)
+				p.nextToken()
+			}
+		case TokenAudio:
+			p.nextToken()
+			if len(audios) != 0 {
+				return nil, fmt.Errorf("video is already set")
+			}
+		audioLoop:
+			for {
+				if p.curToken.Type != TokenQuotedString {
+					break audioLoop
+				}
+				var audio string
+				audio, err = p.parseQuotedString()
+				if err != nil {
+					return nil, err
+				}
+				audios = append(audios, audio)
+				p.nextToken()
+			}
+		case TokenFile:
+			p.nextToken()
+			if len(files) != 0 {
+				return nil, fmt.Errorf("video is already set")
+			}
+		fileLoop:
+			for {
+				if p.curToken.Type != TokenQuotedString {
+					break fileLoop
+				}
+				var file string
+				file, err = p.parseQuotedString()
+				if err != nil {
+					return nil, err
+				}
+				files = append(files, file)
+				p.nextToken()
+			}
 		case TokenEffort:
-			{
-				p.nextToken() // pass Effort
-				switch p.curToken.Type {
-				case TokenNone:
-					effort = "none"
-				case TokenMinimal:
-					effort = "minimal"
-				case TokenLow:
-					effort = "low"
-				case TokenMedium:
-					effort = "medium"
-				case TokenHigh:
-					effort = "high"
-				case TokenMax:
-					effort = "max"
-				default:
-					return nil, fmt.Errorf("invalid effort level")
-				}
-				p.nextToken()
-				break
+			p.nextToken() // pass Effort
+			switch p.curToken.Type {
+			case TokenNone:
+				effort = "none"
+			case TokenMinimal:
+				effort = "minimal"
+			case TokenLow:
+				effort = "low"
+			case TokenMedium:
+				effort = "medium"
+			case TokenHigh:
+				effort = "high"
+			case TokenMax:
+				effort = "max"
+			default:
+				return nil, fmt.Errorf("invalid effort level")
 			}
+			p.nextToken()
+			break optionsLoop
 		case TokenVerbosity:
-			{
-				p.nextToken() // pass VERBOSITY
-				switch p.curToken.Type {
-				case TokenLow:
-					verbosity = "low"
-				case TokenMedium:
-					verbosity = "median"
-				case TokenHigh:
-					verbosity = "high"
-				default:
-					return nil, fmt.Errorf("invalid verbosity level")
-				}
-				p.nextToken()
-				break
+			p.nextToken() // pass VERBOSITY
+			switch p.curToken.Type {
+			case TokenLow:
+				verbosity = "low"
+			case TokenMedium:
+				verbosity = "median"
+			case TokenHigh:
+				verbosity = "high"
+			default:
+				return nil, fmt.Errorf("invalid verbosity level")
 			}
+			p.nextToken()
+			break optionsLoop
+		case TokenSemicolon:
+			p.nextToken()
+			break optionsLoop // done
 		default:
-			return nil, fmt.Errorf("expected VERBOSITY or EFFORT")
+			// No more options to process
+			break optionsLoop
 		}
 	}
+	cmd := NewCommand("chat_to_model")
 
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	if compositeModelName != "" {
-		cmd.Params["composite_model_name"] = compositeModelName
-	}
-	cmd.Params["message"] = message
+	cmd.Params["composite_model_name"] = compositeModelName
+	cmd.Params["messages"] = messages
+	cmd.Params["images"] = images
+	cmd.Params["videos"] = videos
+	cmd.Params["audios"] = audios
+	cmd.Params["files"] = files
 	cmd.Params["thinking"] = false
 	cmd.Params["stream"] = false
 	cmd.Params["effort"] = effort
