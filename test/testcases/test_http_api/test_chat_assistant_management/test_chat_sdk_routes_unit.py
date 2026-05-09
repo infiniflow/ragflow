@@ -218,6 +218,11 @@ def _load_chat_module(monkeypatch):
 
     misc_utils_mod = ModuleType("common.misc_utils")
     misc_utils_mod.get_uuid = lambda: "generated-chat-id"
+
+    async def _thread_pool_exec(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    misc_utils_mod.thread_pool_exec = _thread_pool_exec
     monkeypatch.setitem(sys.modules, "common.misc_utils", misc_utils_mod)
 
     dialog_service_mod = ModuleType("api.db.services.dialog_service")
