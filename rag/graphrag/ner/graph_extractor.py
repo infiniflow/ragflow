@@ -35,10 +35,9 @@ chunks.
 """
 
 import logging
-import re
 from collections import defaultdict
 
-from rag.graphrag.general.extractor import DEFAULT_ENTITY_TYPES, Extractor
+from rag.graphrag.general.extractor import Extractor
 from rag.llm.chat_model import Base as CompletionLLM
 
 # ---------------------------------------------------------------------------
@@ -446,7 +445,7 @@ class GraphExtractor(Extractor):
             ent_record = dict(
                 entity_name=kw_upper,
                 entity_type=app_type.upper(),
-                #description=sent_text or kw,
+                description="", #sent_text or kw,
                 source_id=chunk_key,
             )
             # A keyword may appear multiple times; keep the first.
@@ -511,7 +510,7 @@ class GraphExtractor(Extractor):
                         src_id=pair[0],
                         tgt_id=pair[1],
                         weight=weight,
-                        #description=desc,
+                        description="", #desc,
                         keywords=[ea["entity_name"], eb["entity_name"]],
                         source_id=chunk_key,
                     )
