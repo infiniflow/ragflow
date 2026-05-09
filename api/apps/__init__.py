@@ -96,6 +96,7 @@ def _load_user():
     jwt = Serializer(secret_key=settings.get_secret_key())
     authorization = request.headers.get("Authorization")
     g.user = None
+    g.auth_via_api_token = False
     if not authorization:
         return None
 
@@ -126,6 +127,7 @@ def _load_user():
             if not user[0].access_token or not user[0].access_token.strip():
                 logging.warning(f"User {user[0].email} has empty access_token in database")
                 return None
+            g.auth_via_api_token = False
             g.user = user[0]
             return user[0]
         return None
@@ -141,6 +143,7 @@ def _load_user():
                 if not user[0].access_token or not user[0].access_token.strip():
                     logging.warning(f"User {user[0].email} has empty access_token in database")
                     return None
+                g.auth_via_api_token = True
                 g.user = user[0]
                 return user[0]
             logging.warning(f"load_user: No user found for tenant_id={objs[0].tenant_id} from APIToken")
