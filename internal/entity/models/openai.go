@@ -446,6 +446,9 @@ func (z *OpenAIModel) Encode(modelName *string, texts []string, apiConfig *APICo
 		"model": *modelName,
 		"input": texts,
 	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["dimensions"] = embeddingConfig.Dimension
+	}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
