@@ -32,22 +32,43 @@ Deprecated APIs and their replacements:
 - GET /api/v1/document/get/{doc_id} -> GET /api/v1/documents/{doc_id}/preview
 - GET /api/v1/document/download/{doc_id} -> GET /api/v1/documents/{doc_id}/download
 - GET /v1/document/download/{attachment_id} -> GET /api/v1/documents/{attachment_id}/download
+- GET /v1/system/healthz -> GET /api/v1/system/healthz
 - POST /api/v1/sessions/related_questions -> POST /api/v1/chat/recommandation
 - PUT (chunk update) -> PATCH (chunk update)
 """
 import logging
 
-from quart import Blueprint, request
+from quart import Blueprint, jsonify, request
 
 from api.apps import login_required
 from api.apps.restful_apis import chat_api, file_api, file2document_api, chunk_api, openai_api, document_api
+from api.apps.restful_apis.system_api import run_health_checks
 from api.apps.restful_apis import agent_api
 from api.apps.services import file_api_service
 from api.utils.api_utils import get_data_error_result, get_json_result, add_tenant_id_to_kwargs
 
 manager = Blueprint("backward_compat", __name__)
-document_download_manager = Blueprint("backward_compat_document_download", __name__)
+legacy_v1_manager = Blueprint("backward_compat_legacy_v1", __name__)
 
+
+# =============================================================================
+# System APIs
+# =============================================================================
+
+@legacy_v1_manager.route("/system/healthz", methods=["GET"])
+async def deprecated_system_healthz():
+    """
+    Deprecated: Use GET /api/v1/system/healthz instead.
+
+    Old path: GET /v1/system/healthz
+    New path: GET /api/v1/system/healthz
+    """
+    logging.warning(
+        "API endpoint /v1/system/healthz is deprecated. "
+        "Please use /api/v1/system/healthz instead."
+    )
+    result, all_ok = run_health_checks()
+    return jsonify(result), (200 if all_ok else 500)
 
 # =============================================================================
 # Chat Completion APIs
@@ -455,7 +476,7 @@ async def deprecated_document_download(doc_id):
     return await document_api.download_attachment(doc_id=doc_id)
 
 
-@document_download_manager.route("/document/download/<attachment_id>", methods=["GET"])
+@legacy_v1_manager.route("/document/download/<attachment_id>", methods=["GET"])
 @login_required
 async def document_download_v1(attachment_id):
     """
@@ -497,5 +518,5 @@ def register_backward_compat_routes(app_instance):
     Register all backward compatibility routes with the app.
     """
     app_instance.register_blueprint(manager, url_prefix="/api/v1")
-    app_instance.register_blueprint(document_download_manager, url_prefix="/v1")
+    app_instance.register_blueprint(legacy_v1_manager, url_prefix="/v1")
     logging.info("Backward compatibility routes registered successfully.")
