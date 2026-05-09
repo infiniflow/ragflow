@@ -29,7 +29,7 @@ from rag.graphrag.general.community_reports_extractor import CommunityReportsExt
 from rag.graphrag.general.extractor import Extractor
 from rag.graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
 from rag.graphrag.light.graph_extractor import GraphExtractor as LightKGExt
-from rag.graphrag.spacy.graph_extractor import GraphExtractor as SpacyKGExt
+from rag.graphrag.ner.graph_extractor import GraphExtractor as NerKGExt
 from rag.graphrag.phase_markers import (
     PHASE_COMMUNITY,
     PHASE_RESOLUTION,
@@ -62,14 +62,14 @@ def _select_extractor(graphrag_config: dict):
       earlier versions).
     - ``"light"``   – LightRAG-style LLM-based extractor (the default when
       *method* is omitted or unrecognised).
-    - ``"spacy"``   – spaCy NER + dependency-parsing extractor (no LLM
+    - ``"ner"``     – NER-based extractor using spaCy (no LLM
       needed for entity / relation extraction itself).
     """
     method = graphrag_config.get("method", "light")
     if method == "general":
         return GeneralKGExt
-    if method == "spacy":
-        return SpacyKGExt
+    if method == "ner":
+        return NerKGExt
     return LightKGExt
 
 

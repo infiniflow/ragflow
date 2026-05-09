@@ -35,7 +35,7 @@ export const showTagItems = (parserId: DocumentParserType) => {
 const enum MethodValue {
   General = 'general',
   Light = 'light',
-  Spacy = 'spacy',
+  NER = 'ner',
 }
 
 export const excludedParseMethods = [
@@ -123,10 +123,10 @@ const GraphRagItems = ({
   });
 
   const methodOptions = useMemo(() => {
-    return [MethodValue.Light, MethodValue.General, MethodValue.Spacy].map(
+    return [MethodValue.Light, MethodValue.General, MethodValue.NER].map(
       (x) => ({
         value: x,
-        label: upperFirst(x),
+        label: x === MethodValue.NER ? 'NER' : upperFirst(x),
       }),
     );
   }, []);

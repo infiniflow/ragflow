@@ -812,7 +812,7 @@ export default {
       graphRagMethod: '方法',
       graphRagMethodTip: `Light：实体和关系提取提示来自 GitHub - HKUDS/LightRAG：“LightRAG：简单快速的检索增强生成”<br>
 General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于图的模块化检索增强生成 (RAG) 系统<br>
-Spacy：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系，无需 LLM 参与提取过程，速度快且资源消耗低`,
+NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系，无需 LLM 参与提取过程，速度快且资源消耗低`,
       resolution: '实体归一化',
       resolutionTip: `解析过程会将具有相同含义的实体合并在一起，从而使知识图谱更简洁、更准确。应合并以下实体：特朗普总统、唐纳德·特朗普、唐纳德·J·特朗普、唐纳德·约翰·特朗普`,
       community: '社区报告生成',

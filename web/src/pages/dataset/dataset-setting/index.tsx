@@ -57,7 +57,7 @@ const initialEntityTypes = [
 const enum MethodValue {
   General = 'general',
   Light = 'light',
-  Spacy = 'spacy',
+  NER = 'ner',
 }
 
 export default function DatasetSettings() {
