@@ -657,11 +657,16 @@ func (s *SiliconflowModel) Rerank(modelName *string, query string, documents []s
 		apiKey = *apiConfig.ApiKey
 	}
 
+	var topN = rerankConfig.TopN
+	if rerankConfig.TopN == 0 {
+		topN = len(documents)
+	}
+
 	reqBody := SiliconflowRerankRequest{
 		Model:           *modelName,
 		Query:           query,
 		Documents:       documents,
-		TopN:            rerankConfig.TopN,
+		TopN:            topN,
 		ReturnDocuments: false,
 		MaxChunksPerDoc: 1024,
 		OverlapTokens:   80,
