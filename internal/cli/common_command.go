@@ -210,10 +210,10 @@ func (c *RAGFlowClient) Logout() (ResponseIf, error) {
 	if c.ServerType == "admin" {
 		path = "/admin/logout"
 	} else {
-		path = "/user/logout"
+		path = "/auth/logout"
 	}
 
-	resp, err := c.HTTPClient.Request("GET", path, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("POST", path, "web", nil, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -48,7 +48,7 @@ func NewChunkHandler(chunkService *service.ChunkService, userService *service.Us
 // @Produce json
 // @Param request body service.RetrievalTestRequest true "retrieval test parameters"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/chunk/retrieval_test [post]
+// @Router /api/v1/datasets/search [post]
 func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -304,13 +304,13 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 
 	// Allowed fields for update (exclude ID fields)
 	allowedFields := map[string]bool{
-		"content":              true,
-		"important_keywords":    true,
-		"questions":             true,
-		"available":             true,
-		"positions":             true,
-		"tag_kwd":              true,
-		"tag_feas":             true,
+		"content":            true,
+		"important_keywords": true,
+		"questions":          true,
+		"available":          true,
+		"positions":          true,
+		"tag_kwd":            true,
+		"tag_feas":           true,
 	}
 	for field := range rawBody {
 		if field != "dataset_id" && field != "document_id" && field != "chunk_id" && !allowedFields[field] {

@@ -90,7 +90,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 	// System endpoints
 	engine.GET("/v1/system/configs", r.systemHandler.GetConfigs)
-	engine.POST("/v1/user/register", r.userHandler.Register)
+	//engine.POST("/v1/user/register", r.userHandler.Register)
 
 	// User logout endpoint
 	engine.GET("/v1/user/logout", r.userHandler.Logout)
@@ -135,7 +135,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			auth := v1.Group("/auth")
 			{
 				// User logout endpoint
-				auth.GET("/logout", r.userHandler.Logout)
+				auth.POST("/logout", r.userHandler.Logout)
 			}
 
 			// Users routes
@@ -175,6 +175,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("", r.datasetsHandler.ListDatasets)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
+				datasets.POST("/search", r.chunkHandler.RetrievalTest)
 			}
 
 			// Search routes
@@ -268,6 +269,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.POST("/:provider_name/instances/:instance_name/models", r.providerHandler.AddCustomModel)
 				provider.DELETE("/:provider_name/instances/:instance_name/models", r.providerHandler.DropInstanceModels)
 				v1.POST("/chat/completions", r.providerHandler.ChatToModel)
+				v1.POST("/embeddings", r.providerHandler.EmbedText)
+				v1.POST("/rerank", r.providerHandler.RerankDocument)
 			}
 
 			model := v1.Group("/models")
